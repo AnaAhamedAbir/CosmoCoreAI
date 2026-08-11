@@ -1,0 +1,112 @@
+import numpy as np
+import pandas as pd
+from typing import Tuple, List, Union
+
+class AdvancedDataHandler:
+    """
+    Handles data preparation for advanced ML models.
+    Converts tabular data into time-series sequences (Sliding Windows).
+    """
+    
+    @staticmethod
+    def create_sequences(
+        df: pd.DataFrame, 
+        features: List[str], 
+        sequence_length: int = 60,
+        target_col: Union[str, List[str]] = 'Target'
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Transforms a DataFrame into 3D sequences for Transformer/LSTM.
+        
+        Args:
+            df: The input DataFrame.
+            features: List of feature column names.
+            sequence_length: Number of past steps to include in each sequence.
+            target_col: The column to use as target (optional). Can be list of strings.
+            
+        Returns:
+            X: (samples, sequence_length, feature_count)
+            y: (samples,) or (samples, targets)
+        """
+        X_data = df[features].values
+        
+        if isinstance(target_col, list):
+            y_data = df[target_col].values if all(col in df.columns for col in target_col) else None
+        else:
+            y_data = df[target_col].values if target_col in df.columns else None
+        
+        X, y = [], []
+        
+        for i in range(len(df) - sequence_length + 1):
+            X.append(X_data[i : i + sequence_length])
+            if y_data is not None:
+                # Target is usually at the end of the sequence or the step after
+                y.append(y_data[i + sequence_length - 1])
+                
+        return np.array(X), np.array(y)
+
+    @staticmethod
+    def prepare_rl_data(
+        df: pd.DataFrame, 
+        features: List[str], 
+        sequence_length: int = 1,
+        scaler_path: str = None
+    ) -> pd.DataFrame:
+        """
+        Prepares data specifically for the TradingEnv.
+        If sequence_length > 1, it 'rolls' the features into the columns?
+        Actually, for Transformer-RL, we often keep the Env returning 1 step, 
+        and the Policy handles the internal state (like LSTM/Transformer memory).
+        
+        However, if using a non-recurrent policy with a window, we flatten the window.
+        """
+        # For now, we return the filtered dataframe. 
+        # The environment will handle the current step.
+        needed_cols = features.copy()
+        if 'Close' not in needed_cols:
+            needed_cols.append('Close')
+        if 'Target' in df.columns and 'Target' not in needed_cols:
+            needed_cols.append('Target')
+            
+        # FIX: Only include columns that actually exist in the dataframe to prevent KeyErrors
+        needed_cols = [col for col in needed_cols if col in df.columns]
+            
+        res_df = df[needed_cols].copy()
+        
+        # FIX: Preserve Raw_Close for unscaled PnL calculation in the TradingEnv
+        if 'Close' in df.columns:
+            res_df['Raw_Close'] = df['Close']
+        
+        # FIX: Ensure no NaNs or Infs
+        res_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+        res_df.ffill(inplace=True)
+        res_df.fillna(0, inplace=True)
+        
+        # Normalize features for RL Neural Network (MlpPolicy)
+        from sklearn.preprocessing import StandardScaler
+        import joblib
+        import logging
+        
+        valid_features = [f for f in features if f in res_df.columns]
+        if len(valid_features) > 0:
+            scaler = StandardScaler()
+            scaled_vals = scaler.fit_transform(res_df[valid_features].values)
+            
+            if scaler_path:
+                try:
+                    import os
+                    os.makedirs(os.path.dirname(scaler_path), exist_ok=True)
+                    joblib.dump(scaler, scaler_path)
+                except Exception as e:
+                    logging.getLogger(__name__).warning(f"Could not save scaler to {scaler_path}: {e}")
+
+            scaled_vals = np.nan_to_num(scaled_vals, nan=0.0)
+            # Strict clip to prevent extreme outliers from blowing up SAC gradients
+            scaled_vals = np.clip(scaled_vals, -10.0, 10.0)
+            res_df[valid_features] = scaled_vals
+            
+        res_df = res_df.copy()
+        if 'Close' in df.columns:
+            res_df['Raw_Close'] = df['Close'].copy()
+        return res_df
+

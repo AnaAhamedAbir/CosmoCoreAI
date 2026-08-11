@@ -1,0 +1,25 @@
+355:         self.total_wins = 0
+356:         self.total_losses = 0
+1176:             f"🏆 Wins: {self.total_wins} | 💔 Losses: {self.total_losses}"
+1186:             total_closed = getattr(self, 'total_wins', 0) + getattr(self, 'total_losses', 0)
+1192:                 f"✅ Wins: {getattr(self, 'total_wins', 0)} | ❌ Losses: {getattr(self, 'total_losses', 0)}\n"
+1239:                 "total_wins": self.total_wins,
+1240:                 "total_losses": self.total_losses,
+3009:                         self.total_wins += 1
+3011:                         self.total_losses += 1
+3085:                         self.total_wins += 1
+3087:                         self.total_losses += 1
+3278:                     self.total_wins += 1
+3280:                     await self._send_telegram(f"🎯 WallHunter EXIT - Full TP Hit (Dust Prevented)!\nPair: {self.symbol}\nMode: {getattr(self, 'strategy_mode', 'long').upper()}\n💰 Locked Profit: ${pnl_val:.2f}\n\n📊 Net PnL: ${self.total_realized_pnl:.2f}\n💰 Gross: ${self.total_gross_pnl:.2f} | 💸 Fees: ${self.total_fees_paid:.2f}\n🏆 Wins: {self.total_wins} | 💔 Losses: {self.total_losses}")
+3287:                     await self._send_telegram(f"🔓 Partial TP Hit!\nPair: {self.symbol}\nMode: {getattr(self, 'strategy_mode', 'long').upper()}\n💰 Locked Profit: ${pnl_val:.2f}\n\n📊 Net PnL: ${self.total_realized_pnl:.2f}\n💰 Gross: ${self.total_gross_pnl:.2f} | 💸 Fees: ${self.total_fees_paid:.2f}\n🏆 Wins: {self.total_wins} | 💔 Losses: {self.total_losses}")
+3384:                                     self.total_wins += 1 if pnl_val > 0 else 0
+3385:                                     self.total_losses += 1 if pnl_val <= 0 else 0
+3570:                  self.total_wins += 1
+3575:                      self.total_wins += 1
+3578:                      self.total_losses += 1
+3672:                 self.total_wins += 1
+3674:                 self.total_losses += 1
+3789:                 self.total_wins += 1
+3791:                 self.total_losses += 1
+3897:                 self.total_wins += 1
+3899:                 self.total_losses += 1

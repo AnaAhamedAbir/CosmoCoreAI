@@ -1,0 +1,16 @@
+38:     def decrypt_key(key):
+45:     def __init__(self, bot_id: int):
+50:     def _push_redis(self, log_type: str, message: str):
+71:     def info(self, msg, *args, **kwargs):
+75:     def warning(self, msg, *args, **kwargs):
+79:     def error(self, msg, *args, **kwargs):
+83:     def debug(self, msg, *args, **kwargs):
+90:     def __init__(self, bot_id: int, config: Dict[str, Any], db_session=None, owner_id: int = None):
+391:     def _normalize_symbol(self, symbol: str) -> str:
+399:     def total_realized_pnl(self):
+403:     def total_realized_pnl(self, value):
+409:     def _save_state(self):
+451:     def update_config(self, new_config: dict):
+1203:     def _publish_status(self, current_price: float):
+2388:     def calculate_oib(self, orderbook: Dict[str, Any], depth: int = 10) -> float:
+2890:     def _calculate_net_pnl(self, gross_pnl, entry_price, exit_price, amount, is_maker=False):

@@ -1,0 +1,65 @@
+346:         self.active_pos = None
+1207:             entry_price = 0.0
+1214:                 entry_price = self.active_pos.get('entry', 0)
+1220:                     pnl_val = (entry_price - current_price) * amount
+1221:                     if entry_price > 0:
+1222:                         pnl_pct = ((entry_price - current_price) / entry_price) * 100
+1224:                     pnl_val = (current_price - entry_price) * amount
+1225:                     if entry_price > 0:
+1226:                         pnl_pct = ((current_price - entry_price) / entry_price) * 100
+1243:                 "entry_price": float(f"{entry_price:.10f}"),
+1364:                                 self.active_pos = recovered_pos
+1385:                                     self.active_pos = recovered_pos
+1393:                                 self.active_pos = recovered_pos
+1428:                                     self.active_pos = {
+1446:                                     self.active_pos = {
+2424:         entry_price = override_limit_price if override_limit_price else base_limit_price
+2448:                 if entry_price <= best_bid:
+2451:                         f"⚠️ [Maker Guard] SELL price {entry_price} ≤ best_bid {best_bid}! "
+2454:                     entry_price = adjusted
+2457:                 if entry_price >= best_ask:
+2460:                         f"⚠️ [Maker Guard] BUY price {entry_price} ≥ best_ask {best_ask}! "
+2463:                     entry_price = adjusted
+2473:             base_amount = float(f"{input_amount / entry_price:.6f}")
+2483:         execution_price = current_mid_price if self.is_paper_trading else entry_price
+2494:         res = await self.engine.execute_trade(side, base_amount, execution_price, order_type=snipe_order_type, params=order_params)
+2512:                         entry_price=initial_entry, 
+2557:             self.active_pos = {
+2604:                             self.active_pos = None
+2620:             # Safely extract average fill price. Fallback to requested entry_price if not provided or 0
+2669:                 self.active_pos = {
+2687:                 limit_res = await self.engine.execute_trade(close_side, close_amount, tp_price, order_type="limit", params={"postOnly": True})
+2736:                 self.active_pos = {
+2756:                     limit_res = await self.engine.execute_trade(close_side, close_amount, self.active_pos['tp'], order_type="limit", params={"postOnly": True})
+2878:                         limit_res = await self.engine.execute_trade(close_side, close_amount, self.active_pos['tp'], order_type="limit", params={"postOnly": True})
+2890:     def _calculate_net_pnl(self, gross_pnl, entry_price, exit_price, amount, is_maker=False):
+2891:         entry_fee = (entry_price * amount) * getattr(self, 'taker_fee', 0.001)
+2944:                         self.active_pos = None
+2950:                     self.active_pos = None
+3016:                     self.active_pos = None
+3025:                     self.active_pos = None
+3059:                 limit_res = await self.engine.execute_trade(close_side, close_amount, self.active_pos['tp'], order_type="limit", params={"postOnly": True})
+3091:                     self.active_pos = None
+3248:             res = await self.engine.execute_trade(close_side, sell_amount, current_price, order_type="market")
+3260:                         limit_res = await self.engine.execute_trade(close_side, rem_close_amount_raw, self.active_pos['tp'], order_type="limit", params={"postOnly": True})
+3282:                     self.active_pos = None
+3389:                                     self.active_pos = None
+3421:                 res = await self.engine.execute_trade(close_side, sell_amount, current_price, order_type="market")
+3438:                 limit_sl_res = await self.engine.execute_trade(close_side, sell_amount, target_maker_price, order_type="limit", params={"postOnly": True})
+3449:                 limit_sl_res = await self.engine.execute_trade(close_side, sell_amount, current_price, order_type="limit", params={"postOnly": True})
+3478:                                 res = await self.engine.execute_trade(close_side, sweep_amt, current_price, order_type="market")
+3484:                     res = await self.engine.execute_trade(close_side, sell_amount, current_price, order_type="market")
+3492:                 res = await self.engine.execute_trade(close_side, sell_amount, bounded_price, order_type="limit")
+3494:                     res = await self.engine.execute_trade(close_side, sell_amount, current_price, order_type="market")
+3556:                             await self.engine.execute_trade(close_side, sweep_amount, current_price, order_type="market", params=sweep_params)
+3581:             self.active_pos = None
+3602:                 res = await self.engine.execute_trade(close_side, sell_amount, current_price)
+3639:                                 await self.engine.execute_trade(close_side, sweep_amount, current_price, order_type="market", params=sweep_params)
+3648:                     await self.engine.execute_trade(close_side, sell_amount, self.active_pos['tp'])
+3677:             self.active_pos = None
+3716:             maker_res = await self.engine.execute_trade(close_side, amount, maker_price, order_type="limit", params={"postOnly": True})
+3769:                             await self.engine.execute_trade(close_side, sweep_amount, maker_price, order_type="market", params=sweep_params)
+3795:             self.active_pos = None
+3886:             await self.engine.execute_trade(close_side, sell_amount, current_price, order_type=actual_type)
+3901:             self.active_pos = None
+3907:             limit_res = await self.engine.execute_trade(close_side, sell_amount, close_price, order_type="limit")

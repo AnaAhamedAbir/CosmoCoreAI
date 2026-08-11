@@ -1,0 +1,24 @@
+# Advanced RL Models Requirements for CosmoQuantAI
+# These dependencies are separated to manage heavy RAM/GPU requirements.
+
+# Core ML/RL Frameworks
+torch>=2.1.0
+torchaudio>=2.1.0
+torchvision>=0.16.0
+stable-baselines3>=2.2.1
+# ray[rllib]>=2.9.0 (Disabled: conflicts with imitation's gymnasium~=0.29 requirement)
+
+# Multi-Agent and Custom Environments
+# pettingzoo>=1.24.3 (Disabled: conflicts with imitation's gymnasium~=0.29 requirement)
+# gymnasium>=0.29.1 (Let primary requirements.txt resolve gymnasium)
+
+# Meta Learning
+# learn2learn>=0.2.0 (Temporarily disabled: incompatible with Python 3.12 C-API)
+
+# Memory Profiling & Optimization (For RAM Management Phase)
+memory-profiler>=0.61.0
+psutil>=5.9.6
+
+# Fast data handling
+numpy>=1.26.0
+pandas>=2.1.1

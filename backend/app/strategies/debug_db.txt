@@ -1,0 +1,28 @@
+11: from app.db.session import SessionLocal
+90:     def __init__(self, bot_id: int, config: Dict[str, Any], db_session=None, owner_id: int = None):
+99:         from app.db.session import SessionLocal
+101:         db = db_session if db_session else SessionLocal()
+103:             bot_record = db.query(Bot).filter(Bot.id == self.bot_id).first()
+109:             if not db_session:
+110:                 db.close()
+228:             self.logger.info(f"Proxy Orderbook Routing Enabled! Tracking {self.proxy_symbol}{ext_suffix} for Trade Entry on {self.symbol}.")
+383:         from app.db.session import SessionLocal
+385:             db = SessionLocal()
+386:             await NotificationService.send_photo_bytes(db, self.owner_id, photo_bytes, caption=caption)
+387:             db.close()
+520:                 updates.append(f"Trade Amount: {old_amount} -> {new_config['amount_per_trade']}")
+1165:             f"Trade Types: {mode_str}\n"
+1166:             f"Trade Duration: {duration_str}\n"
+1173:         msg += f"💰 Trade PnL: ${pnl_val:.7f}\n\n"
+1191:                 f"🔹 Closed Trades: {total_closed}\n"
+1197:             db = SessionLocal()
+1198:             await NotificationService.send_message(db, self.owner_id, msg)
+1199:             db.close()
+2130:                                         self.logger.info(f"⚠️ [AI Filter] Model unavailable. Trade allowed by default.")
+2331:                                             self.logger.info(f"⚠️ [AI Filter] Model unavailable. Trade allowed by default.")
+2496:             self.logger.info(f"✅ [WallHunter {self.bot_id}] Trade executed successfully. Order ID: {res.get('id')}")
+2718:                     f"Trade Types: {trade_type}\n"
+2761:                 self.logger.info(f"Entered Trade at {actual_entry}. SL: {self.active_pos['sl']}")
+2798:                     f"Trade Types: {trade_type}\n"
+3970:         self.logger.info(f"📣 [WallHunter {self.bot_id}] Starting Trades Listener for CVD Absorption...")
+3991:                     self.logger.warning(f"Trade Listener Error: {e}")

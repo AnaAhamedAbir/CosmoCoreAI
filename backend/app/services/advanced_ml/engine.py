@@ -1,0 +1,748 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+from stable_baselines3 import PPO, SAC
+from stable_baselines3.common.vec_env import DummyVecEnv
+import pandas as pd
+import numpy as np
+import os
+import time
+import json
+from datetime import datetime
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error, mean_absolute_error
+
+from app.services.advanced_ml.trading_env import AdvancedTradingEnv
+from app.services.advanced_ml.architectures import TimeSeriesTransformer, TransformerRLFeatureExtractor, TCNModel, TabNetEncoder, AutoEncoder
+from app.services.advanced_ml.data_handler import AdvancedDataHandler
+from app.services.ml_data_prep import apply_data_split
+from app import models
+
+class AdvancedMLEngine:
+    """
+    Main coordination engine for Advanced ML Training.
+    Handles Transformer Supervised Learning and PPO Reinforcement Learning.
+    """
+
+    @staticmethod
+    def train_transformer(job, df, features, db, add_log, previous_model_path=None):
+        """Supervised Training for Transformer Model."""
+        config = job.config or {}
+        seq_len = int(config.get("lookback_window", config.get("sequence_length", 30)))
+        
+        add_log(f"Preparing sequence data (Window Size: {seq_len})...")
+        
+        if len(df) < seq_len:
+            error_msg = f"❌ Not enough data: You have {len(df)} candles but sequence length is {seq_len}. Suggestion: Decrease 'Sequence Length' to {max(1, len(df)-1)} or use a lower 'Timeframe' to generate more candles."
+            add_log(error_msg)
+            raise Exception(error_msg)
+
+        prediction_target = config.get("prediction_target", "classification")
+        if prediction_target == "multi_task":
+            target_col = ["Target_Class", "Target_Reg"]
+        elif prediction_target == "advanced_setup":
+            target_col = ["Target_Direction", "Target_SL", "Target_TP"]
+        else:
+            target_col = "Target"
+
+        from app.services.advanced_ml.data_handler import AdvancedDataHandler
+        X, y = AdvancedDataHandler.create_sequences(df, features, sequence_length=seq_len, target_col=target_col)
+        
+        from app.services.ml_training_engine import apply_data_split
+        X_train, X_test, y_train, y_test = apply_data_split(X, y, config, add_log)
+        
+        add_log(f"Initializing Transformer Architecture (Input Dim: {len(features)})...")
+        from app.services.advanced_ml.architectures import TimeSeriesTransformer
+        from app.services.mtl.trainer import PyTorchTrainer
+        import os
+        
+        model_dir = os.path.join("uploads", "models", f"job_{job.id}")
+        os.makedirs(model_dir, exist_ok=True)
+        model_path = os.path.join(model_dir, f"model_{job.id}.pt")
+
+        if prediction_target == "multi_task":
+            from app.services.mtl.wrapper import DualHeadModel
+            base_model = TimeSeriesTransformer(input_dim=len(features), d_model=64, nhead=4, num_layers=3, output_dim=64)
+            model = DualHeadModel(base_model=base_model, hidden_dim=64)
+        else:
+            out_size = 3 if prediction_target == "advanced_setup" else 1
+            model = TimeSeriesTransformer(input_dim=len(features), d_model=64, nhead=4, num_layers=3, output_dim=out_size)
+            
+        def dummy_process_metrics(metrics_str, is_classification):
+            add_log(metrics_str)
+            
+        from app.services.ml_training_engine import calculate_classification_metrics, calculate_regression_metrics
+        
+        final_latency, _ = PyTorchTrainer.train_model(
+            model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
+            config=config, job=job, add_log=add_log, process_metrics=dummy_process_metrics,
+            calculate_classification_metrics=calculate_classification_metrics, calculate_regression_metrics=calculate_regression_metrics,
+            model_path=model_path, previous_model_path=previous_model_path
+        )
+        
+        metrics = {"latency": final_latency}
+        return model, model_path, metrics
+
+    @staticmethod
+    def train_tcn(job, df, features, db, add_log, previous_model_path=None):
+        """Supervised Training for TCN Model."""
+        config = job.config or {}
+        seq_len = int(config.get("lookback_window", config.get("sequence_length", 30)))
+        
+        add_log(f"Preparing sequence data (Window Size: {seq_len})...")
+        
+        if len(df) < seq_len:
+            error_msg = f"❌ Not enough data: You have {len(df)} candles but sequence length is {seq_len}. Suggestion: Decrease 'Sequence Length' to {max(1, len(df)-1)} or use a lower 'Timeframe' to generate more candles."
+            add_log(error_msg)
+            raise Exception(error_msg)
+
+        prediction_target = config.get("prediction_target", "classification")
+        if prediction_target == "multi_task":
+            target_col = ["Target_Class", "Target_Reg"]
+        elif prediction_target == "advanced_setup":
+            target_col = ["Target_Direction", "Target_SL", "Target_TP"]
+        else:
+            target_col = "Target"
+
+        from app.services.advanced_ml.data_handler import AdvancedDataHandler
+        X, y = AdvancedDataHandler.create_sequences(df, features, sequence_length=seq_len, target_col=target_col)
+        
+        from app.services.ml_training_engine import apply_data_split
+        X_train, X_test, y_train, y_test = apply_data_split(X, y, config, add_log)
+        
+        add_log(f"Initializing TCN Architecture (Input Dim: {len(features)})...")
+        from app.services.advanced_ml.architectures import TCNModel
+        from app.services.mtl.trainer import PyTorchTrainer
+        import os
+        
+        model_dir = os.path.join("uploads", "models", f"job_{job.id}")
+        os.makedirs(model_dir, exist_ok=True)
+        model_path = os.path.join(model_dir, f"model_{job.id}.pt")
+
+        if prediction_target == "multi_task":
+            from app.services.mtl.wrapper import DualHeadModel
+            base_model = TCNModel(input_size=len(features), num_channels=[32, 64, 128], output_size=64)
+            model = DualHeadModel(base_model=base_model, hidden_dim=64)
+        else:
+            out_size = 3 if prediction_target == "advanced_setup" else 1
+            model = TCNModel(input_size=len(features), num_channels=[32, 64, 128], output_size=out_size)
+            
+        def dummy_process_metrics(metrics_str, is_classification):
+            add_log(metrics_str)
+            
+        from app.services.ml_training_engine import calculate_classification_metrics, calculate_regression_metrics
+        
+        final_latency, _ = PyTorchTrainer.train_model(
+            model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
+            config=config, job=job, add_log=add_log, process_metrics=dummy_process_metrics,
+            calculate_classification_metrics=calculate_classification_metrics, calculate_regression_metrics=calculate_regression_metrics,
+            model_path=model_path, previous_model_path=previous_model_path
+        )
+        
+        metrics = {"latency": final_latency}
+        return model, model_path, metrics
+
+    @staticmethod
+    def train_tabnet(job, df, features, db, add_log, previous_model_path=None):
+        """Supervised Training for TabNet Model."""
+        config = job.config or {}
+        epochs = int(config.get("epochs", 10))
+        lr = float(config.get("learning_rate", 0.01))
+        batch_size = 64
+        
+        X = df[features].fillna(0).values.copy()
+        y = df['Target'].fillna(0).values.copy()
+        
+        X_train, X_test, y_train, y_test = apply_data_split(X, y, config, add_log)
+        
+        X_train, X_test = torch.FloatTensor(X_train), torch.FloatTensor(X_test)
+        y_train, y_test = torch.FloatTensor(y_train).view(-1, 1), torch.FloatTensor(y_test).view(-1, 1)
+        
+        train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size, shuffle=True)
+        
+        model = TabNetEncoder(input_dim=len(features), output_dim=1)
+        
+        model_dir = os.path.join("uploads", "models", f"job_{job.id}")
+        os.makedirs(model_dir, exist_ok=True)
+        checkpoint_path = os.path.join(model_dir, "checkpoint_latest.pt")
+        state_path = os.path.join(model_dir, "training_state.json")
+        start_epoch = 0
+
+        # ── Auto-Resume Logic ─────────────────────────────────────────
+        if os.path.exists(checkpoint_path) and os.path.exists(state_path):
+            try:
+                model.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
+                with open(state_path, "r") as f:
+                    state = json.load(f)
+                    start_epoch = state.get("epoch", 0)
+                add_log(f"🔄 Auto-Resuming TabNet from checkpoint (Epoch {start_epoch}/{epochs})")
+            except Exception as e:
+                add_log(f"⚠️ Auto-Resume failed ({e}), checking previous model...")
+
+        if start_epoch == 0 and previous_model_path and os.path.exists(previous_model_path):
+            try:
+                model.load_state_dict(torch.load(previous_model_path, map_location='cpu'))
+                lr = lr * 0.1
+                add_log("✅ Fine-Tuning TabNet from checkpoint")
+            except Exception:
+                pass
+                
+        is_classification = config.get("prediction_target") == "classification"
+        if is_classification:
+            num_pos = max(y_train.sum().item(), 1.0)
+            num_neg = max(len(y_train) - y_train.sum().item(), 0.0)
+            pos_weight = torch.tensor([num_neg / num_pos], dtype=torch.float32)
+            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        else:
+            criterion = nn.MSELoss()
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+        
+        checkpoint_interval = max(1, epochs // 20)
+
+        for epoch in range(start_epoch, epochs):
+            model.train()
+            epoch_loss = 0
+            for batch_X, batch_y in train_loader:
+                optimizer.zero_grad()
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_y)
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.item()
+            db.refresh(job)
+            if job.status == models.TrainingStatus.PAUSED:
+                torch.save(model.state_dict(), checkpoint_path)
+                with open(state_path, "w") as f:
+                    json.dump({"epoch": epoch + 1}, f)
+                raise Exception("Training paused by user.")
+            if job.status == models.TrainingStatus.FAILED and job.error_message and "cancelled" in job.error_message.lower():
+                raise Exception("Training cancelled by user.")
+                
+            job.progress = 40 + (50 * (epoch + 1) / epochs)
+            db.commit()
+            add_log(f"Epoch [{epoch+1}/{epochs}], Avg Loss: {(epoch_loss / len(train_loader)):.6f}")
+
+            if (epoch + 1) % checkpoint_interval == 0 or (epoch + 1) == epochs:
+                torch.save(model.state_dict(), checkpoint_path)
+                with open(state_path, "w") as f:
+                    json.dump({"epoch": epoch + 1}, f)
+                
+        model_filename = f"model_{job.id}.pt"
+        model_path = os.path.join(model_dir, model_filename)
+        torch.save(model.state_dict(), model_path)
+        
+        model.eval()
+        with torch.no_grad():
+            test_outputs = model(X_test)
+            preds = (torch.sigmoid(test_outputs).squeeze() > 0.5).int().numpy() if config.get("prediction_target") == "classification" else test_outputs.squeeze().numpy()
+            y_true = y_test.int().numpy() if config.get("prediction_target") == "classification" else y_test.squeeze().numpy()
+            if config.get("prediction_target") == "classification":
+                metrics = {
+                    "accuracy": float(accuracy_score(y_true, preds)),
+                    "precision": float(precision_score(y_true, preds, zero_division=0)),
+                    "recall": float(recall_score(y_true, preds, zero_division=0)),
+                    "f1_score": float(f1_score(y_true, preds, zero_division=0))
+                }
+            else:
+                metrics = {
+                    "mse": float(mean_squared_error(y_true, preds)),
+                    "mae": float(mean_absolute_error(y_true, preds)),
+                    "rmse": float(np.sqrt(mean_squared_error(y_true, preds)))
+                }
+            add_log(f"[METRICS] {json.dumps(metrics)}")
+            
+        return model, model_path, metrics
+
+    @staticmethod
+    def train_autoencoder(job, df, features, db, add_log, previous_model_path=None):
+        """Unsupervised Training for AutoEncoder (Anomaly Detection)."""
+        config = job.config or {}
+        epochs = int(config.get("epochs", 20))
+        lr = float(config.get("learning_rate", 0.001))
+        batch_size = 64
+        
+        X = df[features].fillna(0).values
+        # AutoEncoder reconstructs its own input
+        X_tensor = torch.FloatTensor(X)
+        
+        train_loader = DataLoader(TensorDataset(X_tensor, X_tensor), batch_size=batch_size, shuffle=True)
+        
+        model = AutoEncoder(input_dim=len(features), hidden_dim=32)
+        
+        model_dir = os.path.join("uploads", "models", f"job_{job.id}")
+        os.makedirs(model_dir, exist_ok=True)
+        checkpoint_path = os.path.join(model_dir, "checkpoint_latest.pt")
+        state_path = os.path.join(model_dir, "training_state.json")
+        start_epoch = 0
+
+        # ── Auto-Resume Logic ─────────────────────────────────────────
+        if os.path.exists(checkpoint_path) and os.path.exists(state_path):
+            try:
+                model.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
+                with open(state_path, "r") as f:
+                    state = json.load(f)
+                    start_epoch = state.get("epoch", 0)
+                add_log(f"🔄 Auto-Resuming AutoEncoder from checkpoint (Epoch {start_epoch}/{epochs})")
+            except Exception as e:
+                add_log(f"⚠️ Auto-Resume failed ({e}), checking previous model...")
+
+        if start_epoch == 0 and previous_model_path and os.path.exists(previous_model_path):
+            try:
+                model.load_state_dict(torch.load(previous_model_path, map_location='cpu'))
+                add_log("✅ Fine-Tuning AutoEncoder")
+            except Exception:
+                pass
+                
+        criterion = nn.MSELoss()
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+        
+        checkpoint_interval = max(1, epochs // 20)
+
+        for epoch in range(start_epoch, epochs):
+            model.train()
+            epoch_loss = 0
+            for batch_X, _ in train_loader:
+                optimizer.zero_grad()
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_X)
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.item()
+            db.refresh(job)
+            if job.status == models.TrainingStatus.PAUSED:
+                torch.save(model.state_dict(), checkpoint_path)
+                with open(state_path, "w") as f:
+                    json.dump({"epoch": epoch + 1}, f)
+                raise Exception("Training paused by user.")
+            if job.status == models.TrainingStatus.FAILED and job.error_message and "cancelled" in job.error_message.lower():
+                raise Exception("Training cancelled by user.")
+                
+            job.progress = 40 + (50 * (epoch + 1) / epochs)
+            db.commit()
+            add_log(f"Epoch [{epoch+1}/{epochs}], Reconstruction Loss: {(epoch_loss / len(train_loader)):.6f}")
+
+            if (epoch + 1) % checkpoint_interval == 0 or (epoch + 1) == epochs:
+                torch.save(model.state_dict(), checkpoint_path)
+                with open(state_path, "w") as f:
+                    json.dump({"epoch": epoch + 1}, f)
+                
+        model_filename = f"model_{job.id}.pt"
+        model_path = os.path.join(model_dir, model_filename)
+        torch.save(model.state_dict(), model_path)
+        
+        # Calculate Anomaly Threshold (Mean + 2 StdDev of reconstruction error)
+        model.eval()
+        with torch.no_grad():
+            reconstructed = model(X_tensor)
+            mse = torch.mean((reconstructed - X_tensor) ** 2, dim=1).numpy()
+            threshold = float(np.mean(mse) + 2 * np.std(mse))
+            mean_mse = float(np.mean(mse))
+            
+            # Prevent Infinity/NaN which breaks Postgres JSON parser
+            import math
+            if math.isinf(threshold) or math.isnan(threshold):
+                threshold = 1e9
+            if math.isinf(mean_mse) or math.isnan(mean_mse):
+                mean_mse = 1e9
+
+            add_log(f"Anomaly Threshold set to: {threshold:.6f}")
+            
+            # Save threshold in metrics
+            metrics = {
+                "accuracy": 1.0,  # Dummy value for UI
+                "mse": mean_mse,
+                "anomaly_threshold": threshold
+            }
+            add_log(f"[METRICS] {json.dumps(metrics)}")
+            
+        return model, model_path, metrics
+
+    @staticmethod
+    def train_rl(job, df, features, db, add_log, previous_model_path=None, check_cancelled=None):
+        """Reinforcement Learning Training for PPO Agent."""
+        config = job.config or {}
+        epochs = int(config.get("epochs", 10))
+        lr = float(config.get("learning_rate", 0.0003))
+        initial_balance = float(config.get("initial_balance", 10000))
+        # Frontend sends percentage (e.g. 0.001 for 0.001%), so divide by 100
+        comm_val = config.get("commission")
+        commission_pct = float(comm_val) if comm_val is not None and comm_val != "" else 0.02
+        commission = commission_pct / 100.0
+        
+        slip_val = config.get("slippage")
+        slippage_pct = float(slip_val) if slip_val is not None and slip_val != "" else 0.01
+        slippage = slippage_pct / 100.0
+        
+        model_dir = os.path.join("uploads", "models", f"job_{job.id}")
+        scaler_path = os.path.join(model_dir, "scaler.pkl")
+        
+        # Apply TimeGAN Data Augmentation if requested
+        aug_strategy = config.get("augmentation_strategy", "none")
+        if aug_strategy == "timegan":
+            from app.services.ml_augmentation import apply_data_augmentation
+            aug_factor = int(config.get("augmentation_factor", 2))
+            aug_samples = int(config.get("augmentation_samples", 0))
+            add_log(f"Applying Data Augmentation ({aug_strategy}) to RL Environment...")
+            df = apply_data_augmentation(df, strategy=aug_strategy, factor=aug_factor, samples=aug_samples, is_rl=True)
+            add_log(f"Data Augmentation complete. RL env train size: {len(df)} rows.")
+
+        env_df = AdvancedDataHandler.prepare_rl_data(df, features, scaler_path=scaler_path)
+        
+        if len(env_df) < 100:
+            error_msg = f"❌ Not enough data for RL: You have {len(env_df)} candles. Please collect more rows or use a lower 'Timeframe'."
+            add_log(error_msg)
+            raise Exception(error_msg)
+        
+        def make_env():
+            base_env = AdvancedTradingEnv(
+                df=env_df, 
+                features=features,
+                initial_balance=initial_balance, 
+                commission=commission,
+                slippage=slippage,
+                prediction_target=config.get("prediction_target", "direction"),
+                is_continuous=(job.algorithm == "SAC-RL")
+            )
+            max_allowed_drawdown = float(config.get("max_allowed_drawdown", 0.0))
+            if max_allowed_drawdown > 0:
+                from app.services.advanced_ml.risk_layer import MaxDrawdownActionMasker
+                return MaxDrawdownActionMasker(base_env, max_allowed_drawdown=max_allowed_drawdown)
+            return base_env
+        
+        env = DummyVecEnv([make_env])
+        total_timesteps = epochs * len(df)
+        
+        # Cap LR at 0.001 to prevent exploding gradients in fresh and fine-tuned RL agents
+        safe_lr = min(lr, 0.001)
+
+        model_dir = os.path.join("uploads", "models", f"job_{job.id}")
+        os.makedirs(model_dir, exist_ok=True)
+        checkpoint_path = os.path.join(model_dir, "checkpoint_latest.zip")
+        state_path = os.path.join(model_dir, "training_state.json")
+        start_timestep = 0
+        model = None
+
+        # ── Auto-Resume Logic ─────────────────────────────────────────
+        if os.path.exists(checkpoint_path) and os.path.exists(state_path):
+            try:
+                if job.algorithm == "SAC-RL":
+                    model = SAC.load(checkpoint_path, env=env, learning_rate=safe_lr)
+                else:
+                    model = PPO.load(checkpoint_path, env=env, learning_rate=safe_lr)
+                
+                with open(state_path, "r") as f:
+                    state = json.load(f)
+                    start_timestep = state.get("timestep", 0)
+                
+                add_log(f"🔄 Auto-Resuming {job.algorithm} from checkpoint (Step {start_timestep}/{total_timesteps})")
+            except Exception as e:
+                add_log(f"⚠️ Auto-Resume failed ({e}), checking previous model...")
+                model = None
+
+        # ── Fine-Tune: continue from previous checkpoint ──────────────────
+        is_cross_algo = config.get("is_cross_algorithm_transfer", False)
+        
+        if model is None and previous_model_path and os.path.exists(previous_model_path):
+            try:
+                add_log(f"✅ Continuing {job.algorithm} from checkpoint: {previous_model_path}")
+                if job.algorithm == "SAC-RL":
+                    if is_cross_algo:
+                        # Extract features and init SAC
+                        add_log(f"🔄 Cross-Algorithm: Initializing SAC with weights from {previous_model_path}")
+                        # For true mapping we need state_dict mapping, but as fallback we init fresh with lower LR (handled by transfer engine config)
+                        model = SAC("MlpPolicy", env, verbose=0, learning_rate=safe_lr, tensorboard_log=f"./logs/{job.algorithm.lower()}_trading/")
+                        try:
+                            # Attempt to safely load matching policy layers (excluding output layers which cause NaNs)
+                            ppo_model = PPO.load(previous_model_path)
+                            ppo_dict = ppo_model.policy.state_dict()
+                            sac_dict = model.policy.state_dict()
+                            
+                            filtered_dict = {
+                                k: v for k, v in ppo_dict.items() 
+                                if k in sac_dict 
+                                and v.shape == sac_dict[k].shape 
+                                and "action" not in k.lower() 
+                                and "mu" not in k.lower() 
+                                and "log_std" not in k.lower()
+                            }
+                            sac_dict.update(filtered_dict)
+                            model.policy.load_state_dict(sac_dict)
+                            add_log(f"✅ Extracted Policy weights successfully (Shared Layers Only)!")
+                        except Exception as e:
+                            add_log(f"⚠️ Policy weight extraction failed, proceeding with transferred config: {e}")
+                    else:
+                        model = SAC.load(previous_model_path, env=env, learning_rate=safe_lr)
+                else:
+                    if is_cross_algo:
+                        # Extract features and init PPO
+                        add_log(f"🔄 Cross-Algorithm: Initializing PPO with weights from {previous_model_path}")
+                        model = PPO("MlpPolicy", env, verbose=0, learning_rate=safe_lr, tensorboard_log=f"./logs/{job.algorithm.lower()}_trading/")
+                        try:
+                            # Attempt to safely load matching policy layers
+                            sac_model = SAC.load(previous_model_path)
+                            sac_dict = sac_model.policy.state_dict()
+                            ppo_dict = model.policy.state_dict()
+                            
+                            filtered_dict = {
+                                k: v for k, v in sac_dict.items() 
+                                if k in ppo_dict 
+                                and v.shape == ppo_dict[k].shape 
+                                and "action" not in k.lower() 
+                                and "mu" not in k.lower() 
+                                and "log_std" not in k.lower()
+                            }
+                            ppo_dict.update(filtered_dict)
+                            model.policy.load_state_dict(ppo_dict)
+                            add_log(f"✅ Extracted Policy weights successfully (Shared Layers Only)!")
+                        except Exception as e:
+                            add_log(f"⚠️ Policy weight extraction failed, proceeding with transferred config: {e}")
+                    else:
+                        model = PPO.load(previous_model_path, env=env, learning_rate=safe_lr)
+                model.set_env(env)
+                add_log(f"🔄 Agent loaded. Continuing training for {total_timesteps} more timesteps...")
+            except Exception as _ft_e:
+                add_log(f"⚠️ {job.algorithm} checkpoint load failed ({_ft_e}), starting fresh agent.")
+                add_log(f"Initializing fresh {job.algorithm} Agent with MLP Policy...")
+                if job.algorithm == "SAC-RL":
+                    model = SAC("MlpPolicy", env, verbose=0, learning_rate=safe_lr, tensorboard_log=f"./logs/{job.algorithm.lower()}_trading/")
+                else:
+                    model = PPO("MlpPolicy", env, verbose=0, learning_rate=safe_lr, tensorboard_log=f"./logs/{job.algorithm.lower()}_trading/")
+        elif model is None:
+            add_log(f"Initializing fresh {job.algorithm} Agent with MLP Policy...")
+            if job.algorithm == "SAC-RL":
+                model = SAC("MlpPolicy", env, verbose=0, learning_rate=safe_lr, tensorboard_log=f"./logs/{job.algorithm.lower()}_trading/")
+            else:
+                model = PPO("MlpPolicy", env, verbose=0, learning_rate=safe_lr, tensorboard_log=f"./logs/{job.algorithm.lower()}_trading/")
+        
+        remaining_timesteps = max(1, total_timesteps - start_timestep)
+        add_log(f"Starting RL Training (Remaining Timesteps: {remaining_timesteps} / Total: {total_timesteps})...")
+        
+        # We use a callback or simple loop to update progress
+        start_time = time.time()
+        
+        from stable_baselines3.common.callbacks import BaseCallback
+        import redis
+        from app.core.config import settings
+
+        # Connect to Redis using the synchronous client since this runs in a Celery worker thread
+        try:
+            redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        except Exception as e:
+            add_log(f"⚠️ Failed to connect to Redis for live RL streaming: {e}")
+            redis_client = None
+
+        class LiveStreamingCallback(BaseCallback):
+            def __init__(self, check_interval=1000, stream_interval=10, checkpoint_interval=10000, checkpoint_path="", state_path=""):
+                super().__init__(verbose=0)
+                self.check_interval = check_interval
+                self.stream_interval = stream_interval
+                self.checkpoint_interval = checkpoint_interval
+                self.checkpoint_path = checkpoint_path
+                self.state_path = state_path
+                self.last_streamed_step = 0
+                self.last_stream_time = time.time()
+
+            def _on_step(self) -> bool:
+                now = time.time()
+                # 1. Cancel Check (Time-based, every 5 seconds)
+                if not hasattr(self, "last_db_check_time"):
+                    self.last_db_check_time = now
+                    
+                if now - self.last_db_check_time >= 5.0:
+                    if check_cancelled:
+                        check_cancelled()
+                    db.refresh(job)
+                    if job.status == models.TrainingStatus.PAUSED:
+                        self.model.save(self.checkpoint_path)
+                        current_job_timestep = self.n_calls + start_timestep
+                        with open(self.state_path, "w") as f:
+                            json.dump({"timestep": current_job_timestep}, f)
+                        raise Exception("Training paused by user.")
+                    if job.status == models.TrainingStatus.FAILED and job.error_message and "cancelled" in job.error_message.lower():
+                        raise Exception("Training cancelled by user.")
+                        
+                        # Update progress every 5 seconds
+                    current_job_timestep = self.n_calls + start_timestep
+                    current_progress = min(100.0, (current_job_timestep / total_timesteps) * 100)
+                    job.progress = current_progress
+                    db.commit()
+                    self.last_db_check_time = now
+                    
+                    # Log to terminal roughly every 10% or just rely on the step interval
+                    if not hasattr(self, "last_logged_progress"):
+                        self.last_logged_progress = 0.0
+                    
+                    if current_progress - self.last_logged_progress >= 5.0 or current_progress >= 100.0:
+                        add_log(f"RL Training Progress: {current_job_timestep}/{total_timesteps} steps ({current_progress:.1f}%)")
+                        self.last_logged_progress = current_progress
+
+                # 2. Stream Data to Frontend
+                now = time.time()
+                # Stream data at most once per second
+                if redis_client and (now - self.last_stream_time >= 1.0):
+                    env_instance = self.training_env.envs[0]
+                    unwrapped_env = getattr(env_instance, 'unwrapped', env_instance)
+                    # Extract latest step info
+                    if hasattr(unwrapped_env, 'net_worth'):
+                        trade_history = getattr(unwrapped_env, 'trade_history', [])
+                        buy_count = sum(1 for t in trade_history if t.get('type') == 'open_long')
+                        sell_count = sum(1 for t in trade_history if t.get('type') == 'open_short')
+                        closed_trades = [t for t in trade_history if t.get('type') == 'close']
+                        profitable_count = sum(1 for t in closed_trades if t.get('pnl', 0) > 0)
+                        loss_count = sum(1 for t in closed_trades if t.get('pnl', 0) <= 0)
+
+                        action_val = float(np.ravel(self.locals.get("actions", [0.0]))[0]) if "actions" in self.locals else 0.0
+                        reward_val = float(np.ravel(self.locals.get("rewards", [0.0]))[0]) if "rewards" in self.locals else 0.0
+                        
+                        payload = {
+                            "step": int(unwrapped_env.current_step),
+                            "net_worth": float(unwrapped_env.net_worth),
+                            "position": int(unwrapped_env.position),
+                            "balance": float(getattr(unwrapped_env, 'balance', 0)),
+                            "action": action_val,
+                            "reward": reward_val,
+                            "price": float(unwrapped_env.df.loc[unwrapped_env.current_step, 'Raw_Close'] if 'Raw_Close' in unwrapped_env.df.columns else unwrapped_env.df.loc[unwrapped_env.current_step, 'Close']) if unwrapped_env.current_step < len(unwrapped_env.df) else 0.0,
+                            "stats": {
+                                "buy_count": buy_count,
+                                "sell_count": sell_count,
+                                "profitable_count": profitable_count,
+                                "loss_count": loss_count
+                            }
+                        }
+                        
+                        current_job_timestep = self.n_calls + start_timestep
+                        capped_progress = min(100.0, (current_job_timestep / total_timesteps) * 100)
+                        message = {
+                            "task_type": "RL_TRAINING_STEP",
+                            "task_id": job.id,
+                            "status": "processing",
+                            "progress": int(capped_progress),
+                            "data": payload,
+                            "features": features
+                        }
+                        try:
+                            redis_client.publish("task_updates", json.dumps(message))
+                            self.last_streamed_step = current_job_timestep
+                            self.last_stream_time = now
+                        except Exception as e:
+                            add_log(f"⚠️ Live Stream Error: {e}")
+                
+                # 3. Save Checkpoint
+                current_job_timestep = self.n_calls + start_timestep
+                if current_job_timestep > 0 and current_job_timestep % self.checkpoint_interval == 0:
+                    tmp_path = self.checkpoint_path + ".tmp"
+                    self.model.save(tmp_path)
+                    os.replace(tmp_path, self.checkpoint_path)
+                    with open(self.state_path, "w") as f:
+                        json.dump({"timestep": current_job_timestep}, f)
+                
+                return True
+                
+        callback = LiveStreamingCallback(
+            check_interval=max(100, total_timesteps // 20),
+            stream_interval=max(1, total_timesteps // 1000), # Stream ~1000 points max to avoid overwhelming WS
+            checkpoint_interval=min(25000, max(1, total_timesteps // 100)), # Save max every 25k steps
+            checkpoint_path=checkpoint_path,
+            state_path=state_path
+        )
+        
+        # Set initial progress immediately before learning
+        job.progress = min(100.0, (start_timestep / total_timesteps) * 100)
+        db.commit()
+        
+        model.learn(total_timesteps=remaining_timesteps, callback=callback, reset_num_timesteps=False)
+        
+        # Save final model
+        model_filename = f"model_{job.id}.zip"
+        model_dir = os.path.join("uploads", "models", f"job_{job.id}")
+        os.makedirs(model_dir, exist_ok=True)
+        model_path = os.path.join(model_dir, model_filename)
+        model.save(model_path)
+        
+        # ✅ Save Replay File and Log Equity Curve
+        add_log("Running final evaluation pass to generate accurate metrics...")
+        equity_data = []
+        trade_data = []
+        try:
+            eval_env = env.envs[0]
+            obs, _info = eval_env.reset()
+            done = False
+            while not done:
+                action, _states = model.predict(obs, deterministic=True)
+                obs, reward, terminated, truncated, info = eval_env.step(action)
+                done = terminated or truncated
+                
+            equity_data = getattr(eval_env.unwrapped, 'equity_history', [])
+            trade_data = getattr(eval_env.unwrapped, 'trade_history', [])
+        except Exception as e:
+            add_log(f"⚠️ Evaluation pass error: {e}")
+
+        if equity_data:
+            
+            replay_payload = {
+                "initial_balance": initial_balance,
+                "algorithm": job.algorithm,
+                "symbol": job.symbol,
+                "equity_history": [float(e) for e in equity_data],
+                "trade_history": trade_data
+            }
+            
+            replay_file_path = os.path.join(model_dir, "replay.json")
+            try:
+                with open(replay_file_path, "w") as f:
+                    json.dump(replay_payload, f)
+                add_log(f"💾 Saved RL Replay data for frontend visualization.")
+            except Exception as e:
+                add_log(f"⚠️ Failed to save replay data: {e}")
+
+            step_size = max(1, len(equity_data) // 100)
+            downsampled_equity = [
+                {"step": i, "equity": float(equity_data[i])} 
+                for i in range(0, len(equity_data), step_size)
+            ]
+            add_log(f"[EQUITY_CURVE] {json.dumps(downsampled_equity)}")
+
+        # ✅ Calculate Trading Metrics for RL Agent
+        add_log("Finalizing Agent and Calculating Performance Metrics...")
+        rl_metrics = {
+            "total_return_pct": 0.0,
+            "win_rate": 0.0,
+            "sharpe_ratio": 0.0,
+            "trades_count": 0,
+            "net_profit": 0.0
+        }
+        if equity_data and len(equity_data) > 1:
+            equity = np.array(equity_data)
+            returns = np.diff(equity) / equity[:-1]
+            
+            # 1. Total Return
+            total_return = (equity[-1] - initial_balance) / initial_balance * 100
+            
+            # 2. Sharpe Ratio (Simplified)
+            sharpe = (np.mean(returns) / (np.std(returns) + 1e-9)) * np.sqrt(252 * 24 * 60) # Scaled for minute data
+            
+            # 3. Win Rate from trade_history
+            trades = trade_data
+            pnl_trades = [t['pnl'] for t in trades if 'pnl' in t]
+            
+            # Add unrealized PnL of current open position
+            if getattr(eval_env, 'position', 0) != 0:
+                unrealized_pnl = eval_env.net_worth - getattr(eval_env, 'entry_net_worth', initial_balance)
+                pnl_trades.append(unrealized_pnl)
+                
+            win_rate = (len([p for p in pnl_trades if p > 0]) / len(pnl_trades)) * 100 if pnl_trades else 0
+            
+            # Trades count should be the number of trade entries
+            open_trades = len([t for t in trades if t['type'].startswith('open')])
+            trades_count = open_trades if open_trades > 0 else len(pnl_trades)
+            
+            rl_metrics = {
+                "total_return_pct": float(total_return),
+                "win_rate": float(win_rate),
+                "sharpe_ratio": float(sharpe),
+                "trades_count": int(trades_count),
+                "net_profit": float(equity[-1] - initial_balance)
+            }
+            add_log(f"[METRICS] {json.dumps(rl_metrics)}")
+        
+        return model, model_path, rl_metrics

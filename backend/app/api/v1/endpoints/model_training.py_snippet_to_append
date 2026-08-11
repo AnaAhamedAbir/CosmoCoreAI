@@ -1,0 +1,30 @@
+
+class StartL2CollectorRequest(BaseModel):
+    symbol: str
+    target_rows: int
+
+@router.post("/start-l2-collector")
+def start_l2_collector(
+    request: StartL2CollectorRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """
+    Start the L2 Orderbook Data Collector script in the background.
+    """
+    import subprocess
+    import os
+    
+    script_path = os.path.join(os.getcwd(), "app", "..", "scripts", "l2_collector.py")
+    
+    # Run the collector in a non-blocking subprocess
+    try:
+        subprocess.Popen(
+            ["python", script_path, "--symbol", request.symbol.lower(), "--target", str(request.target_rows)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        return {"status": "success", "message": f"Started L2 Collector for {request.symbol} with target {request.target_rows}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start collector: {str(e)}")

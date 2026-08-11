@@ -1,0 +1,8 @@
+3241:             close_amount_raw = sell_amount_raw
+3323:                     close_amount_raw = sell_amount_raw
+3325:                 close_amount_raw = sell_amount_raw
+3394:                                     close_amount_raw = sell_amount_raw
+3396:                                     close_amount_raw = sell_amount_raw
+3568:             if self.active_pos.get('tp1_hit'):
+3591:                 close_amount_raw = sell_amount_raw
+3593:                 close_amount_raw = sell_amount_raw

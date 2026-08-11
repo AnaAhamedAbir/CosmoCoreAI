@@ -1,0 +1,20 @@
+# Next-Gen "God-Tier" Models Requirements for CosmoQuantAI
+# These dependencies are strictly for Mamba, KAN, JEPA, Time-LLM, TTFT, GNN-RL, SNN, and Sparse MoE Router.
+# Kept separate to ensure core system stability.
+
+# Selective State Space Models (Mamba)
+# mamba-ssm>=2.2.0  # Temporarily disabled: requires nvcc to build
+# causal-conv1d>=1.4.0 # Temporarily disabled: requires nvcc to build
+
+# Kolmogorov-Arnold Networks (KAN)
+pykan>=0.2.1
+
+# Temporal & Transformers (Time-LLM, TTFT, JEPA)
+transformers>=4.40.0
+einops>=0.8.0
+
+# Graph Neural Networks (GNN-RL)
+torch_geometric>=2.5.3
+
+# Spiking Neural Networks (SNN)
+snnTorch>=0.8.1

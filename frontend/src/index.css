@@ -1,0 +1,1720 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.dark body {
+  background-image: radial-gradient(circle at 1px 1px, rgba(203, 213, 225, 0.1) 1px, transparent 0);
+  background-size: 2rem 2rem;
+}
+
+.token-comment {
+  color: #6a9955;
+}
+
+.token-string {
+  color: #ce9178;
+}
+
+.token-keyword {
+  color: #569cd6;
+  font-weight: 500;
+}
+
+.token-number {
+  color: #b5cea8;
+}
+
+.token-function {
+  color: #dcdcaa;
+}
+
+.slider-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #6366F1;
+  /* brand-primary */
+  cursor: pointer;
+  border-radius: 9999px;
+  margin-top: -6px;
+  /* center thumb on track */
+}
+
+.slider-thumb::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #6366F1;
+  /* brand-primary */
+  cursor: pointer;
+  border-radius: 9999px;
+}
+
+.range-slider-container {
+  position: relative;
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.thumb,
+.thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.thumb {
+  pointer-events: none;
+  position: absolute;
+  height: 0;
+  width: 100%;
+  outline: none;
+  margin: 0;
+}
+
+.thumb--left {
+  z-index: 3;
+}
+
+.thumb--right {
+  z-index: 4;
+}
+
+.thumb::-webkit-slider-thumb {
+  background-color: #6366F1;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 0 1px 1px #ced4da;
+  cursor: pointer;
+  height: 16px;
+  width: 16px;
+  margin-top: 2px;
+  pointer-events: all;
+  position: relative;
+}
+
+.dark .thumb::-webkit-slider-thumb {
+  box-shadow: 0 0 1px 1px #1e293b;
+}
+
+.range-slider-track,
+.range-slider-range {
+  position: absolute;
+  border-radius: 3px;
+  height: 5px;
+}
+
+.range-slider-track {
+  background-color: #E2E8F0;
+  width: 100%;
+  z-index: 1;
+}
+
+.dark .range-slider-track {
+  background-color: #334155;
+}
+
+.range-slider-range {
+  background-color: #6366F1;
+  z-index: 2;
+}
+
+/* Hide native date picker icon for a custom UI */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  display: none;
+  -webkit-appearance: none;
+}
+
+/* For scroll animations */
+.fade-in-up {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+
+.fade-in-up.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@keyframes fade-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-down {
+  animation: fade-in-down 0.5s ease-out forwards;
+}
+
+@keyframes fade-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-fade-in-right {
+  animation: fade-in-right 0.3s ease-out forwards;
+}
+
+/* For market ticker animation */
+@keyframes marquee-slow {
+  0% {
+    transform: translateX(0%);
+  }
+
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee-slow {
+  animation: marquee-slow 25s linear infinite;
+  display: flex;
+  width: max-content;
+  will-change: transform;
+}
+
+/* For sign up zoom animation */
+@keyframes zoom-in-content {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-zoom-in-content {
+  animation: zoom-in-content 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes expanding-circle {
+  0% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.expanding-circle {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid #6366F1;
+  top: 50%;
+  left: 50%;
+  width: 100px;
+  height: 100px;
+  transform: translate(-50%, -50%);
+}
+
+/* For login transition animation */
+@keyframes pulse-logo {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.animate-pulse-logo {
+  animation: pulse-logo 1.5s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@keyframes draw-line {
+  from {
+    stroke-dashoffset: 1000;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-draw-line-1,
+.animate-draw-line-2 {
+  stroke-dasharray: 1000;
+  animation: draw-line 1s ease-out forwards;
+}
+
+.animate-draw-line-2 {
+  animation-delay: 0.2s;
+}
+
+@keyframes text-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-text-fade-up {
+  animation: text-fade-up 0.8s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* For modal fade-in */
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-modal-fade-in {
+  animation: modal-fade-in 0.3s ease-out forwards;
+}
+
+/* For BotLab modal animation */
+@keyframes backdrop-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-backdrop-fade-in {
+  animation: backdrop-fade-in 0.3s ease-out forwards;
+}
+
+@keyframes modal-content-slide-down {
+  from {
+    transform: translateY(-30px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-modal-content-slide-down {
+  animation: modal-content-slide-down 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* For Settings panel animation */
+@keyframes fade-in-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-slide-up {
+  animation: fade-in-slide-up 0.6s ease-out forwards;
+}
+
+/* For Dashboard animations */
+@keyframes count-up {
+  from {
+    transform: translateY(15px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-count-up {
+  animation: count-up 0.8s ease-out forwards;
+}
+
+@keyframes staggered-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.staggered-fade-in {
+  animation: staggered-fade-in 0.6s ease-out both;
+}
+
+@keyframes pie-explode {
+  from {
+    transform: scale(1);
+  }
+
+  to {
+    transform: scale(1.1);
+  }
+}
+
+.pie-explode {
+  animation: pie-explode 0.3s ease-out forwards;
+}
+
+/* New animations for Market page */
+@keyframes price-flash-up {
+  from {
+    color: #10B981;
+    text-shadow: 0 0 8px #10B981;
+    transform: scale(1.05);
+  }
+
+  to {
+    color: inherit;
+    text-shadow: none;
+    transform: scale(1);
+  }
+}
+
+.animate-price-flash-up {
+  animation: price-flash-up 0.5s ease-out;
+}
+
+@keyframes price-flash-down {
+  from {
+    color: #F43F5E;
+    text-shadow: 0 0 8px #F43F5E;
+    transform: scale(1.05);
+  }
+
+  to {
+    color: inherit;
+    text-shadow: none;
+    transform: scale(1);
+  }
+}
+
+.animate-price-flash-down {
+  animation: price-flash-down 0.5s ease-out;
+}
+
+@keyframes row-flash {
+  50% {
+    background-color: rgba(99, 102, 241, 0.1);
+  }
+}
+
+.animate-row-flash {
+  animation: row-flash 0.7s ease-out;
+}
+
+/* For Task Manager checkbox animation */
+.task-checkbox {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  position: relative;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.checkmark-circle {
+  width: 100%;
+  height: 100%;
+}
+
+.checkmark-circle .circle-bg {
+  stroke: #E2E8F0;
+  /* slate-200 */
+  stroke-width: 2;
+  fill: none;
+}
+
+.dark .checkmark-circle .circle-bg {
+  stroke: #475569;
+  /* slate-600 */
+}
+
+.checkmark-circle .circle-progress {
+  stroke: #6366F1;
+  /* brand-primary */
+  stroke-width: 2;
+  fill: transparent;
+  /* Start transparent */
+  stroke-dasharray: 63;
+  stroke-dashoffset: 63;
+  transition: stroke-dashoffset 0.3s ease-out;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+.checkmark-circle .checkmark-path {
+  stroke: white;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  transition: stroke-dashoffset 0.3s 0.2s ease-out;
+}
+
+.task-checkbox .checkmark-burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  border: 1px solid #6366F1;
+}
+
+.task-checkbox.completed .checkmark-circle .circle-progress {
+  stroke-dashoffset: 0;
+  animation: circle-fill-in 0.4s ease-out forwards;
+}
+
+.task-checkbox.completed .checkmark-circle .checkmark-path {
+  stroke-dashoffset: 0;
+}
+
+.task-checkbox.completed .checkmark-burst {
+  animation: check-burst-out 0.5s ease-out forwards;
+}
+
+@keyframes circle-fill-in {
+  from {
+    fill: transparent;
+  }
+
+  to {
+    fill: #6366F1;
+  }
+}
+
+@keyframes check-burst-out {
+  from {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 1;
+  }
+
+  to {
+    transform: translate(-50%, -50%) scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* Strikethrough animation */
+.strikethrough-line {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 2px;
+  background-color: #64748B;
+  /* slate-500 */
+  transform-origin: left;
+  transform: scaleX(0);
+  width: 100%;
+  transition: transform 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.dark .strikethrough-line {
+  background-color: #94A3B8;
+  /* slate-400 */
+}
+
+.strikethrough-line.completed {
+  transform: scaleX(1);
+}
+
+/* New Task Manager animations */
+@keyframes slide-in-top {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in-top {
+  animation: slide-in-top 0.4s ease-out forwards;
+}
+
+@keyframes fade-out-shrink {
+  from {
+    opacity: 1;
+    transform: scaleY(1);
+    max-height: 100px;
+  }
+
+  to {
+    opacity: 0;
+    transform: scaleY(0);
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-bottom: 0;
+  }
+}
+
+.animate-fade-out-shrink {
+  transform-origin: center;
+  animation: fade-out-shrink 0.4s ease-out forwards;
+  overflow: hidden;
+}
+
+/* New animations for Liquidation Map */
+@keyframes pulse {
+  0% {
+    transform: scale(0.9);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
+  }
+
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+  }
+
+  100% {
+    transform: scale(0.9);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+@keyframes flash-line {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes flash-bg-green {
+  50% {
+    background-color: rgba(16, 185, 129, 0.2);
+  }
+}
+
+@keyframes flash-bg-red {
+  50% {
+    background-color: rgba(244, 63, 94, 0.2);
+  }
+}
+
+/* New animations for Sentiment Engine */
+@keyframes pulse-green {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.8));
+  }
+}
+
+.animate-pulse-green {
+  animation: pulse-green 2.5s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(244, 63, 94, 0.8));
+  }
+}
+
+.animate-pulse-red {
+  animation: pulse-red 2.5s ease-in-out infinite;
+}
+
+@keyframes pulse-yellow {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(251, 191, 36, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.8));
+  }
+}
+
+.animate-pulse-yellow {
+  animation: pulse-yellow 2.5s ease-in-out infinite;
+}
+
+@keyframes fade-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-slide-in {
+  animation: fade-slide-in 0.5s ease-out forwards;
+}
+
+@keyframes flash-bg-blue {
+  50% {
+    background-color: rgba(99, 102, 241, 0.15);
+  }
+}
+
+.animate-flash-blue {
+  animation: flash-bg-blue 1s ease-out;
+}
+
+@keyframes title-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(1.05) translateY(0);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-title-pop-in {
+  animation: title-pop-in 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+
+/* General UI helpers */
+.body-no-scroll {
+  overflow: hidden;
+}
+
+@keyframes flash-line {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes flash-bg-green {
+  50% {
+    background-color: rgba(16, 185, 129, 0.2);
+  }
+}
+
+@keyframes flash-bg-red {
+  50% {
+    background-color: rgba(244, 63, 94, 0.2);
+  }
+}
+
+/* New animations for Sentiment Engine */
+@keyframes pulse-green {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.8));
+  }
+}
+
+.animate-pulse-green {
+  animation: pulse-green 2.5s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(244, 63, 94, 0.8));
+  }
+}
+
+.animate-pulse-red {
+  animation: pulse-red 2.5s ease-in-out infinite;
+}
+
+@keyframes pulse-yellow {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(251, 191, 36, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.8));
+  }
+}
+
+.animate-pulse-yellow {
+  animation: pulse-yellow 2.5s ease-in-out infinite;
+}
+
+@keyframes fade-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-slide-in {
+  animation: fade-slide-in 0.5s ease-out forwards;
+}
+
+@keyframes flash-bg-blue {
+  50% {
+    background-color: rgba(99, 102, 241, 0.15);
+  }
+}
+
+.animate-flash-blue {
+  animation: flash-bg-blue 1s ease-out;
+}
+
+@keyframes title-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(1.05) translateY(0);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-title-pop-in {
+  animation: title-pop-in 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+
+
+
+@keyframes pulse-yellow {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(251, 191, 36, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.8));
+  }
+}
+
+.animate-pulse-yellow {
+  animation: pulse-yellow 2.5s ease-in-out infinite;
+}
+
+@keyframes fade-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-slide-in {
+  animation: fade-slide-in 0.5s ease-out forwards;
+}
+
+@keyframes flash-bg-blue {
+  50% {
+    background-color: rgba(99, 102, 241, 0.15);
+  }
+}
+
+.animate-flash-blue {
+  animation: flash-bg-blue 1s ease-out;
+}
+
+@keyframes title-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(1.05) translateY(0);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-title-pop-in {
+  animation: title-pop-in 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+
+/* General UI helpers */
+.body-no-scroll {
+  overflow: hidden;
+}
+
+@keyframes flash-line {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes flash-bg-green {
+  50% {
+    background-color: rgba(16, 185, 129, 0.2);
+  }
+}
+
+@keyframes flash-bg-red {
+  50% {
+    background-color: rgba(244, 63, 94, 0.2);
+  }
+}
+
+/* New animations for Sentiment Engine */
+@keyframes pulse-green {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.8));
+  }
+}
+
+.animate-pulse-green {
+  animation: pulse-green 2.5s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(244, 63, 94, 0.8));
+  }
+}
+
+.animate-pulse-red {
+  animation: pulse-red 2.5s ease-in-out infinite;
+}
+
+@keyframes pulse-yellow {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(251, 191, 36, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.8));
+  }
+}
+
+.animate-pulse-yellow {
+  animation: pulse-yellow 2.5s ease-in-out infinite;
+}
+
+@keyframes fade-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-slide-in {
+  animation: fade-slide-in 0.5s ease-out forwards;
+}
+
+@keyframes flash-bg-blue {
+  50% {
+    background-color: rgba(99, 102, 241, 0.15);
+  }
+}
+
+.animate-flash-blue {
+  animation: flash-bg-blue 1s ease-out;
+}
+
+@keyframes title-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(1.05) translateY(0);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-title-pop-in {
+  animation: title-pop-in 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+
+/* General UI helpers */
+.body-no-scroll {
+  overflow: hidden;
+}
+
+@keyframes flash-line {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes flash-bg-green {
+  50% {
+    background-color: rgba(16, 185, 129, 0.2);
+  }
+}
+
+@keyframes flash-bg-red {
+  50% {
+    background-color: rgba(244, 63, 94, 0.2);
+  }
+}
+
+/* New animations for Sentiment Engine */
+@keyframes pulse-green {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.8));
+  }
+}
+
+.animate-pulse-green {
+  animation: pulse-green 2.5s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.6));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 10px rgba(244, 63, 94, 0.8));
+  }
+}
+
+/* Custom DatePicker Styles */
+.react-datepicker-wrapper {
+  width: 100%;
+}
+
+.dark .react-datepicker {
+  background-color: #1e293b;
+  /* slate-800 */
+  border-color: #334155;
+  /* slate-700 */
+  color: #f8fafc;
+  /* slate-50 */
+  font-family: inherit;
+}
+
+.dark .react-datepicker__header {
+  background-color: #0f172a;
+  /* slate-900 */
+  border-bottom-color: #334155;
+  /* slate-700 */
+}
+
+.dark .react-datepicker__current-month,
+.dark .react-datepicker-time__header,
+.dark .react-datepicker-year-header,
+.dark .react-datepicker__day-name {
+  color: #f8fafc;
+  /* slate-50 */
+}
+
+.dark .react-datepicker__day {
+  color: #cbd5e1;
+  /* slate-300 */
+}
+
+.dark .react-datepicker__day:hover {
+  background-color: #334155;
+  /* slate-700 */
+  color: white;
+}
+
+.dark .react-datepicker__day--selected,
+.dark .react-datepicker__day--keyboard-selected {
+  background-color: #6366f1;
+  /* brand-primary */
+  color: white;
+}
+
+.dark .react-datepicker__day--disabled {
+  color: #475569;
+  /* slate-600 */
+}
+
+.react-datepicker-popper {
+  z-index: 9999 !important;
+}
+
+/* React Datepicker Dark Mode Overrides */
+@layer components {
+  /* মেইন ক্যালেন্ডার কন্টেইনার */
+  .dark .react-datepicker {
+    @apply bg-slate-800 border border-slate-700 text-slate-200 shadow-xl;
+    font-family: inherit;
+  }
+
+  /* ক্যালেন্ডার হেডার (যেখানে মাস ও বছর থাকে) */
+  .dark .react-datepicker__header {
+    @apply bg-slate-900 border-b border-slate-700;
+  }
+
+  /* টেক্সট কালার (মাসের নাম, দিনের নাম) */
+  .dark .react-datepicker__current-month,
+  .dark .react-datepicker-time__header,
+  .dark .react-datepicker-year-header,
+  .dark .react-datepicker__day-name {
+    @apply text-slate-200;
+  }
+
+  /* সাধারণ দিনগুলো */
+  .dark .react-datepicker__day {
+    @apply text-slate-300 hover:bg-slate-700 hover:text-white rounded-full transition-colors;
+  }
+
+  /* সিলেক্ট করা দিন (Brand Color ব্যবহার করা হয়েছে) */
+  .dark .react-datepicker__day--selected,
+  .dark .react-datepicker__day--keyboard-selected {
+    @apply bg-brand-primary text-white font-bold hover:bg-brand-primary/90;
+  }
+
+  /* ডিজেবল বা অন্য মাসের দিনগুলো */
+  .dark .react-datepicker__day--disabled,
+  .dark .react-datepicker__day--outside-month {
+    @apply text-slate-600 hover:bg-transparent cursor-not-allowed;
+  }
+
+  /* বছরের ড্রপডাউন মেনু (Year Dropdown) */
+  .dark .react-datepicker__year-dropdown,
+  .dark .react-datepicker__month-dropdown,
+  .dark .react-datepicker__year-dropdown-container {
+    @apply bg-slate-800 border border-slate-600 text-slate-200 shadow-lg;
+  }
+
+  .dark .react-datepicker__year-option:hover,
+  .dark .react-datepicker__month-option:hover {
+    @apply bg-slate-700 text-white;
+  }
+
+  /* ড্রপডাউন অ্যারো (Arrow) আইকন ফিক্স */
+  .dark .react-datepicker__year-read-view--down-arrow,
+  .dark .react-datepicker__month-read-view--down-arrow {
+    border-top-color: #cbd5e1 !important; /* slate-300 */
+  }
+  
+  /* টুডে বাটন (যদি থাকে) */
+  .dark .react-datepicker__today-button {
+    @apply bg-slate-800 border-t border-slate-700 text-brand-primary font-bold;
+  }
+}
+
+/* --- Custom Scrollbar Utilities --- */
+/* Hide scrollbar completely but allow scrolling */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Elegant slim scrollbar for tabs content */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3); /* gray-400 with opacity */
+  border-radius: 4px;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Page-level scrollbar for Level2_Wallhunter_Bot */
+.page-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.page-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+.page-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.5);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.page-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.8);
+}
+.dark .page-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.4);
+}
+.dark .page-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.4);
+}
+.dark .page-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.7);
+}
+
+/* =============================================
+   FUTURISTIC LANDING PAGE ANIMATIONS
+   ============================================= */
+
+/* Floating orb animations */
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0px) translateX(0px) scale(1); }
+  33% { transform: translateY(-30px) translateX(20px) scale(1.05); }
+  66% { transform: translateY(20px) translateX(-15px) scale(0.95); }
+}
+
+@keyframes float-medium {
+  0%, 100% { transform: translateY(0px) translateX(0px); }
+  50% { transform: translateY(-40px) translateX(30px); }
+}
+
+@keyframes float-fast {
+  0%, 100% { transform: translateY(0px) translateX(0px); }
+  25% { transform: translateY(-15px) translateX(-20px); }
+  75% { transform: translateY(25px) translateX(15px); }
+}
+
+.animate-float-slow {
+  animation: float-slow 12s ease-in-out infinite;
+}
+
+.animate-float-medium {
+  animation: float-medium 8s ease-in-out infinite;
+}
+
+.animate-float-fast {
+  animation: float-fast 6s ease-in-out infinite;
+}
+
+/* Radial glow background for hero */
+.bg-radial-glow {
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    rgba(6, 182, 212, 0.08) 0%,
+    rgba(139, 92, 246, 0.05) 40%,
+    transparent 70%
+  );
+}
+
+/* Glowing text effect */
+@keyframes glow-pulse {
+  0%, 100% {
+    text-shadow: 0 0 20px rgba(6, 182, 212, 0.4), 0 0 40px rgba(6, 182, 212, 0.2);
+  }
+  50% {
+    text-shadow: 0 0 30px rgba(6, 182, 212, 0.7), 0 0 60px rgba(6, 182, 212, 0.4), 0 0 80px rgba(139, 92, 246, 0.3);
+  }
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+/* Cyber scan line effect */
+@keyframes scan-line {
+  0% { top: -10%; }
+  100% { top: 110%; }
+}
+
+.cyber-scan::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.6), transparent);
+  animation: scan-line 4s linear infinite;
+}
+
+/* Neon border glow */
+.neon-border-cyan {
+  box-shadow: 0 0 5px rgba(6, 182, 212, 0.3),
+              0 0 10px rgba(6, 182, 212, 0.2),
+              0 0 20px rgba(6, 182, 212, 0.1),
+              inset 0 0 5px rgba(6, 182, 212, 0.05);
+}
+
+.neon-border-violet {
+  box-shadow: 0 0 5px rgba(139, 92, 246, 0.3),
+              0 0 10px rgba(139, 92, 246, 0.2),
+              0 0 20px rgba(139, 92, 246, 0.1),
+              inset 0 0 5px rgba(139, 92, 246, 0.05);
+}
+
+/* Grid pattern for futuristic backgrounds */
+.cyber-grid {
+  background-image:
+    linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* Holographic shimmer */
+@keyframes holographic {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.holographic-text {
+  background: linear-gradient(
+    270deg,
+    #06b6d4, #8b5cf6, #ec4899, #06b6d4
+  );
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: holographic 4s ease infinite;
+}
+
+/* Typewriter cursor blink */
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: cursor-blink 1s step-end infinite;
+}
+
+/* Stagger children animations */
+.stagger > *:nth-child(1) { animation-delay: 0s; }
+.stagger > *:nth-child(2) { animation-delay: 0.1s; }
+.stagger > *:nth-child(3) { animation-delay: 0.2s; }
+.stagger > *:nth-child(4) { animation-delay: 0.3s; }
+.stagger > *:nth-child(5) { animation-delay: 0.4s; }
+
+/* Background glow blob */
+.glow-blob {
+  filter: blur(80px);
+  will-change: transform;
+}
+
+/* Cyber button hover effect */
+.cyber-btn {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.cyber-btn::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 100%; height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.cyber-btn:hover::before {
+  left: 100%;
+}
+
+/* Data grid borders */
+.data-grid-border {
+  border-image: linear-gradient(
+    135deg,
+    rgba(6, 182, 212, 0.5),
+    rgba(139, 92, 246, 0.3),
+    rgba(6, 182, 212, 0.1)
+  ) 1;
+}
+
+/* ============================================================
+   1366x768 RESOLUTION OPTIMIZATION
+   Safe, additive-only overrides. No existing styles removed.
+   Target: screens with max-width 1366px (laptop HD screens).
+   ============================================================ */
+
+@media screen and (max-width: 1366px) {
+  /* --- Global Font Scale ---
+     Scales the entire UI down proportionally (16px → 14px).
+     rem-based values throughout Tailwind will scale automatically. */
+  html {
+    font-size: 14px;
+  }
+
+  /* --- Sidebar Width Overrides ---
+     Tailwind's w-72 (288px) is too wide for 1366px.
+     Expanded sidebar → 240px, collapsed stays at 80px. */
+  aside.w-72 {
+    width: 220px !important;
+  }
+
+  /* Sidebar logo area: reduce vertical padding */
+  aside .p-6 {
+    padding: 1rem !important;
+  }
+
+  /* Sidebar nav item spacing: tighter */
+  aside nav .mb-8 {
+    margin-bottom: 1.25rem !important;
+  }
+
+  /* Sidebar nav items: smaller padding */
+  aside nav a.px-4.py-3 {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+    margin-bottom: 0.125rem !important;
+  }
+
+  /* --- Header Height Override ---
+     Reduce header height from h-16 (64px) to 52px on laptop screens. */
+  header .h-16 {
+    height: 52px !important;
+  }
+
+  header .grid.grid-cols-3 {
+    padding-left: 1.25rem !important;
+    padding-right: 1.25rem !important;
+  }
+
+  /* --- Main Content Padding ---
+     p-8 (32px) is too much on 1366px. Reduce to p-4 (16px). */
+  main.p-8 {
+    padding: 1rem !important;
+  }
+
+  /* --- Card & Panel Padding ---
+     Most cards use p-6. Reduce to p-4 for compact screens. */
+  .laptop-compact-card {
+    padding: 1rem !important;
+  }
+
+  /* --- Typography Scale ---
+     Reduce large headings slightly so they don't dominate small screens. */
+  .text-2xl {
+    font-size: 1.25rem !important;
+    line-height: 1.75rem !important;
+  }
+
+  .text-3xl {
+    font-size: 1.5rem !important;
+    line-height: 2rem !important;
+  }
+
+  .text-4xl {
+    font-size: 1.75rem !important;
+    line-height: 2.25rem !important;
+  }
+
+  /* --- Grid Adjustments ---
+     3-column grids that are too wide on 1366px → force to 2 columns. */
+  .laptop-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* --- Gap Reductions ---
+     Large gaps on small screens waste space. */
+  .gap-6 {
+    gap: 1rem !important;
+  }
+
+  .gap-8 {
+    gap: 1.25rem !important;
+  }
+
+  /* --- Stat/KPI Cards ---
+     Common pattern: icon + number + label in a card with p-6. */
+  .stat-card-compact {
+    padding: 0.875rem !important;
+  }
+
+  /* --- Modal / Overlay Sizing ---
+     Ensure modals don't overflow on 1366px screens. */
+  .modal-container {
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+  }
+
+  /* --- Table / Data Grid ---
+     Tighten up table cell padding for data-dense pages. */
+  table td,
+  table th {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+
+  /* --- Scrollbar styling for compact screens ---
+     Thinner scrollbar saves horizontal space. */
+  ::-webkit-scrollbar {
+    width: 4px !important;
+    height: 4px !important;
+  }
+}
+
+/* Extra compact: for exactly 1366x768 viewport (browser reports ~1366px) */
+@media screen and (max-width: 1366px) and (max-height: 768px) {
+  html {
+    font-size: 13.5px;
+  }
+
+  /* Sidebar: slightly narrower */
+  aside.w-72 {
+    width: 210px !important;
+  }
+
+  /* Header: even more compact */
+  header .h-16 {
+    height: 48px !important;
+  }
+
+  /* Main content: minimal padding */
+  main.p-8 {
+    padding: 0.75rem !important;
+  }
+
+  /* Nav items: ultra compact */
+  aside nav a.px-4.py-3 {
+    padding-top: 0.375rem !important;
+    padding-bottom: 0.375rem !important;
+  }
+}
+
+/* ============================================================
+   PHASE 2: Deeper Component-Level Optimizations
+   Scoped to main content area — safe, non-destructive rules.
+   ============================================================ */
+
+@media screen and (max-width: 1366px) {
+
+  /* --- Vertical Spacing (space-y-*) ---
+     React's space-y utility adds margin-top to children.
+     We reduce these to keep more content visible on screen. */
+  main .space-y-8 > * + * {
+    margin-top: 1.25rem !important;   /* 32px → 20px */
+  }
+  main .space-y-6 > * + * {
+    margin-top: 0.875rem !important;  /* 24px → 14px */
+  }
+
+  /* --- Section Bottom Margins ---
+     Common mb-6 / mb-4 in card headers waste space on small screens. */
+  main .mb-6 {
+    margin-bottom: 0.75rem !important;
+  }
+  main .mb-4 {
+    margin-bottom: 0.5rem !important;
+  }
+
+  /* --- Chart Heights ---
+     Recharts containers: h-64 and h-72 are very tall on 1366px screens. */
+  main .h-64 {
+    height: 9rem !important;   /* 256px → 144px */
+  }
+  main .h-72 {
+    height: 10rem !important;  /* 288px → 160px */
+  }
+
+  /* --- Order Book Row Density (Market page) ---
+     Make each price row thinner for more visible depth. */
+  .font-mono.py-1.px-2 {
+    padding-top: 0.1rem !important;
+    padding-bottom: 0.1rem !important;
+  }
+
+  /* --- ModelCard icon container ---
+     w-14 h-14 icon is too large on compact cards. */
+  main .w-14.h-14 {
+    width: 2.75rem !important;
+    height: 2.75rem !important;
+  }
+
+  /* --- Modal max-height ---
+     Ensure modals with max-h-[70vh] don't clip content on 768px height. */
+  [class*="max-h-[70vh]"] {
+    max-height: 80vh !important;
+  }
+
+  /* --- Nav category headers ---
+     Reduce spacing between nav groups in sidebar. */
+  aside nav .mb-8:last-child {
+    margin-bottom: 0.5rem !important;
+  }
+
+  /* --- Page content min-height ---
+     Prevent oversized empty areas. */
+  main .min-h-\[calc\(100vh-140px\)\] {
+    min-height: calc(100vh - 80px) !important;
+  }
+}
+

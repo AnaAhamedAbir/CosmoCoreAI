@@ -1,0 +1,42 @@
+2909:         if not self.active_pos: return
+2910:         
+2911:         # --- NEW: Entry Order Guard (Recovery/Pending Fill Monitoring) ---
+2912:         entry_order_id = self.active_pos.get('entry_order_id')
+2913:         if entry_order_id and not self.is_paper_trading:
+2914:             try:
+2915:                 # Check status of the order that opens the position
+2916:                 status = await self.engine.exchange.fetch_order(entry_order_id, self.symbol)
+2917:                 if status and status.get('status') in ['open', 'new']:
+2918:                     # Log once every roughly 100 loops or 5 seconds to avoid spam
+2919:                     if not hasattr(self, '_last_entry_wait_log') or time.time() - self._last_entry_wait_log > 5.0:
+2920:                         self.logger.info(f"⏳ Waiting for entry order {entry_order_id} to fill... ({status.get('status')})")
+2921:                         self._last_entry_wait_log = time.time()
+2922:                     return # Exit manage_risk early, don't execute actions yet
+2923:                 
+2924:                 elif status and status.get('status') in ['closed', 'filled']:
+2925:                     self.logger.info(f"✅ Entry Order {entry_order_id} has filled! Position is now officially active.")
+2926:                     # Update with actual fill details
+2927:                     self.active_pos['entry'] = status.get('average') or status.get('price') or self.active_pos['entry']
+2928:                     self.active_pos['amount'] = status.get('filled') or self.active_pos['amount']
+2929:                     self.active_pos.pop('entry_order_id', None) # Position established, clear the guard
+2930:                     self._save_state()
+2931:                     # Now continue to normal risk management (Self-Healing, TP, SL, etc.)
+2932:                 
+2933:                 elif status and status.get('status') in ['canceled', 'cancelled', 'expired', 'rejected']:
+2934:                     filled = status.get('filled', 0.0)
+2935:                     if filled > 0:
+2936:                         self.logger.info(f"⚠️ Entry Order {entry_order_id} was {status.get('status')}, but partially filled ({filled}). Continuing as partial position.")
+2937:                         self.active_pos['amount'] = filled
+2938:                         self.active_pos['entry'] = status.get('average') or status.get('price') or self.active_pos['entry']
+2939:                         self.active_pos.pop('entry_order_id', None)
+2940:                         self._save_state()
+2941:                     else:
+2942:                         self.logger.warning(f"🗑️ Entry Order {entry_order_id} was {status.get('status')} with zero fills. Discarding position.")
+2943:                         await self._clear_state()
+2944:                         self.active_pos = None
+2945:                         return
+2946:             except Exception as e:
+2947:                 if "Order not found" in str(e):
+2948:                     self.logger.error(f"❌ Entry order {entry_order_id} not found on Binance during recovery. Clearing state.")
+2949:                     await self._clear_state()
+2950:                     self.active_pos = None

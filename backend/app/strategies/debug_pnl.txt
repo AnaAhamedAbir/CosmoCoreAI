@@ -1,0 +1,13 @@
+1205:             pnl_val = 0.0
+1220:                     pnl_val = (entry_price - current_price) * amount
+1224:                     pnl_val = (current_price - entry_price) * amount
+3379:                                         pnl_val = (self.active_pos['entry'] - tp_fill_price) * filled_proper
+3381:                                         pnl_val = (tp_fill_price - self.active_pos['entry']) * filled_proper
+3564:                 pnl_val = (self.active_pos['entry'] - current_price) * sell_amount_raw
+3566:                 pnl_val = (current_price - self.active_pos['entry']) * sell_amount_raw
+3665:                 pnl_val = (self.active_pos['entry'] - current_price) * sell_amount_raw
+3667:                 pnl_val = (current_price - self.active_pos['entry']) * sell_amount_raw
+3782:                 pnl_val = (self.active_pos['entry'] - maker_price) * amount
+3784:                 pnl_val = (maker_price - self.active_pos['entry']) * amount
+3891:                 pnl_val = (self.active_pos['entry'] - current_price) * sell_amount
+3893:                 pnl_val = (current_price - self.active_pos['entry']) * sell_amount

@@ -438,10 +438,10 @@ const EventDrivenSimulator: React.FC = () => {
 
                                 <Button
                                     onClick={handleUpdateParams}
-                                    className="w-full bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 text-sm py-2 rounded-lg font-bold transition-all flex items-center justify-center gap-2 mt-4"
+                                    className="w-full bg-brand-primary hover:bg-brand-secondary text-white py-3 rounded-xl font-bold shadow-lg shadow-brand-primary/20 transition-all hover:scale-[1.02] flex items-center justify-center gap-2 mt-4"
                                     disabled={!isRunning}
                                 >
-                                    <Settings2 size={16} /> APPLY TO LIVE
+                                    <Settings2 size={18} /> APPLY TO LIVE
                                 </Button>
                             </div>
                         )}
@@ -618,7 +618,7 @@ const EventDrivenSimulator: React.FC = () => {
                         </Card>
 
                         {/* System Terminal */}
-                        <Card className="col-span-1 bg-slate-900 border border-slate-800 p-0 relative overflow-hidden flex flex-col rounded-2xl shadow-sm">
+                        <Card className="col-span-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-0 relative overflow-hidden flex flex-col rounded-2xl shadow-sm">
                             <LogConsole
                                 logs={logs}
                                 onClear={() => setLogs([])}

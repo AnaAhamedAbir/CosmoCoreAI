@@ -54,8 +54,8 @@ const OrderBookWidget: React.FC<OrderBookWidgetProps> = ({ bids, asks, currentPr
     // Bottom of Bids -> Lowest Bid
 
     return (
-        <div className="flex flex-col h-full bg-[#050505] text-xs font-mono select-none overflow-hidden">
-            <div className="flex justify-between px-2 py-1 border-b border-[#141414] text-slate-500 bg-[#0A0A0A]/50">
+        <div className="flex flex-col h-full bg-white dark:bg-[#050505] text-xs font-mono select-none overflow-hidden">
+            <div className="flex justify-between px-2 py-1 border-b border-slate-100 dark:border-[#141414] text-slate-500 bg-slate-50 dark:bg-[#0A0A0A]/50">
                 <span>Price ({symbol.split('/')[1]})</span>
                 <span>Amount</span>
             </div>
@@ -63,9 +63,9 @@ const OrderBookWidget: React.FC<OrderBookWidgetProps> = ({ bids, asks, currentPr
             {/* Asks (Red) - Top Half */}
             <div className="flex-1 overflow-hidden flex flex-col justify-end">
                 {processedAsks.map((level, i) => (
-                    <div key={`ask-${level.price}`} className="flex justify-between items-center px-2 py-0.5 relative group hover:bg-[#0A0A0A] cursor-pointer transition-colors">
+                    <div key={`ask-${level.price}`} className="flex justify-between items-center px-2 py-0.5 relative group hover:bg-slate-50 dark:hover:bg-[#0A0A0A] cursor-pointer transition-colors">
                         <span className="text-red-500 z-10">{level.price.toFixed(2)}</span>
-                        <span className="text-slate-300 z-10">{level.volume.toFixed(0)}</span>
+                        <span className="text-slate-600 dark:text-slate-300 z-10">{level.volume.toFixed(0)}</span>
 
                         {/* Depth Bar */}
                         <div
@@ -77,16 +77,16 @@ const OrderBookWidget: React.FC<OrderBookWidgetProps> = ({ bids, asks, currentPr
             </div>
 
             {/* Current Price / Spread Indicator */}
-            <div className="py-1 text-center font-bold text-lg bg-[#0A0A0A] border-y border-[#1F1F1F] text-white my-1">
-                {currentPrice.toFixed(2)} <span className="text-xs text-slate-400 font-normal">USD</span>
+            <div className="py-1 text-center font-bold text-lg bg-slate-50 dark:bg-[#0A0A0A] border-y border-slate-100 dark:border-[#1F1F1F] text-slate-800 dark:text-white my-1">
+                {currentPrice.toFixed(2)} <span className="text-xs text-slate-500 dark:text-slate-400 font-normal">USD</span>
             </div>
 
             {/* Bids (Green) - Bottom Half */}
             <div className="flex-1 overflow-hidden">
                 {processedBids.map((level, i) => (
-                    <div key={`bid-${level.price}`} className="flex justify-between items-center px-2 py-0.5 relative group hover:bg-[#0A0A0A] cursor-pointer transition-colors">
+                    <div key={`bid-${level.price}`} className="flex justify-between items-center px-2 py-0.5 relative group hover:bg-slate-50 dark:hover:bg-[#0A0A0A] cursor-pointer transition-colors">
                         <span className="text-green-500 z-10">{level.price.toFixed(2)}</span>
-                        <span className="text-slate-300 z-10">{level.volume.toFixed(0)}</span>
+                        <span className="text-slate-600 dark:text-slate-300 z-10">{level.volume.toFixed(0)}</span>
                         {/* Depth Bar */}
                         <div
                             className="absolute top-0 right-0 h-full bg-green-500/10 transition-all duration-300"

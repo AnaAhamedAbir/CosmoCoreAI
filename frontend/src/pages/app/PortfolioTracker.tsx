@@ -14,7 +14,7 @@ const COLORS = ['#6366F1', '#8B5CF6', '#D946EF', '#F43F5E', '#F59E0B', '#10B981'
 
 const GlassCard: React.FC<{ children: React.ReactNode, className?: string, style?: React.CSSProperties }> = ({ children, className = "", style }) => (
     <div 
-        className={`backdrop-blur-xl bg-white/5 dark:bg-[#050505]/40 border border-white/10 dark:border-white/5 rounded-[2rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] overflow-hidden ${className}`}
+        className={`backdrop-blur-xl bg-white/80 dark:bg-[#050505]/40 border border-slate-200 dark:border-white/10 rounded-[2rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] overflow-hidden ${className}`}
         style={style}
     >
         {children}
@@ -22,7 +22,7 @@ const GlassCard: React.FC<{ children: React.ReactNode, className?: string, style
 );
 
 const GlowingText: React.FC<{ children: React.ReactNode, className?: string }> = ({ children, className = "" }) => (
-    <span className={`text-transparent bg-clip-text bg-gradient-to-r from-white via-white/90 to-white/70 drop-shadow-[0_0_15px_rgba(255,255,255,0.5)] ${className}`}>
+    <span className={`text-transparent bg-clip-text bg-gradient-to-r from-slate-900 via-slate-700 to-slate-500 dark:from-white dark:via-white/90 dark:to-white/70 drop-shadow-[0_0_15px_rgba(0,0,0,0.1) dark:rgba(255,255,255,0.5)] ${className}`}>
         {children}
     </span>
 );
@@ -97,36 +97,36 @@ const ConnectExchangeModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xl z-[100] flex items-center justify-center p-4 animate-in fade-in zoom-in duration-300" onClick={onClose}>
-            <div className="bg-[#050505] border border-white/10 w-full max-w-xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-                <div className="p-8 border-b border-white/5 bg-white/5 flex justify-between items-center">
-                    <h2 className="text-2xl font-black text-white tracking-tight">Connect Data Stream</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors text-white/50 hover:text-white">&times;</button>
+            <div className="bg-white dark:bg-[#050505] border border-slate-200 dark:border-white/10 w-full max-w-xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="p-8 border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/5 flex justify-between items-center">
+                    <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Connect Data Stream</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:bg-white/10 rounded-full transition-colors text-slate-500 dark:text-white/50 hover:text-slate-900 dark:text-white">&times;</button>
                 </div>
                 <div className="p-8 space-y-4 overflow-y-auto max-h-[60vh] custom-scrollbar">
                     {exchanges.map(exchange => (
                         <div key={exchange.id} className="relative group">
-                            <div className={`p-6 rounded-2xl border transition-all duration-300 ${selectedExchange === exchange.id ? 'bg-brand-primary/10 border-brand-primary' : 'bg-white/5 border-white/5 hover:border-white/20'}`}>
+                            <div className={`p-6 rounded-2xl border transition-all duration-300 ${selectedExchange === exchange.id ? 'bg-brand-primary/10 border-brand-primary' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:border-slate-300 dark:border-white/20'}`}>
                                 <div className="flex items-center justify-between">
                                     <div className="flex flex-col">
-                                        <span className="text-lg font-bold text-white uppercase tracking-widest">{exchange.name}</span>
-                                        <span className="text-xs text-white/40">Secure API Endpoint</span>
+                                        <span className="text-lg font-bold text-slate-900 dark:text-white uppercase tracking-widest">{exchange.name}</span>
+                                        <span className="text-xs text-slate-500 dark:text-white/40">Secure API Endpoint</span>
                                     </div>
                                     {exchange.isConnected ? (
-                                        <button onClick={() => onDisconnect(exchange.id)} className="px-4 py-2 rounded-xl bg-rose-500/20 text-rose-400 text-xs font-bold hover:bg-rose-500 hover:text-white transition-all">
+                                        <button onClick={() => onDisconnect(exchange.id)} className="px-4 py-2 rounded-xl bg-rose-500/20 text-rose-400 text-xs font-bold hover:bg-rose-500 hover:text-slate-900 dark:text-white transition-all">
                                             Disconnect
                                         </button>
                                     ) : (
-                                        <button onClick={() => setSelectedExchange(selectedExchange === exchange.id ? null : exchange.id)} className="px-4 py-2 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all">
+                                        <button onClick={() => setSelectedExchange(selectedExchange === exchange.id ? null : exchange.id)} className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white text-xs font-bold hover:bg-slate-200 dark:bg-white/20 transition-all">
                                             {selectedExchange === exchange.id ? 'Cancel' : 'Configure'}
                                         </button>
                                     )}
                                 </div>
                                 {selectedExchange === exchange.id && !exchange.isConnected && (
                                     <div className="mt-6 space-y-4 animate-in slide-in-from-top-4 duration-300">
-                                        <input type="text" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/20 outline-none focus:border-brand-primary" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Public API Key" />
-                                        <input type="password" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/20 outline-none focus:border-brand-primary" value={secretKey} onChange={e => setSecretKey(e.target.value)} placeholder="Private Secret Key" />
+                                        <input type="text" className="w-full bg-black/40 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:text-white/20 outline-none focus:border-brand-primary" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Public API Key" />
+                                        <input type="password" className="w-full bg-black/40 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:text-white/20 outline-none focus:border-brand-primary" value={secretKey} onChange={e => setSecretKey(e.target.value)} placeholder="Private Secret Key" />
                                         {['kucoin', 'okx', 'bitget'].includes(exchange.id.toLowerCase()) && (
-                                            <input type="password" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/20 outline-none focus:border-brand-primary" value={passphrase} onChange={e => setPassphrase(e.target.value)} placeholder="Encrypted Passphrase" />
+                                            <input type="password" className="w-full bg-black/40 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:text-white/20 outline-none focus:border-brand-primary" value={passphrase} onChange={e => setPassphrase(e.target.value)} placeholder="Encrypted Passphrase" />
                                         )}
                                         <Button onClick={() => handleSubmit(exchange.id)} disabled={!apiKey || !secretKey || isSaving} className="w-full py-4 rounded-xl shadow-lg shadow-brand-primary/20">
                                             {isSaving ? 'Initiating Handshake...' : 'Establish Connection'}
@@ -342,10 +342,10 @@ const PortfolioTracker: React.FC = () => {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
                 <div className="relative h-24 w-24">
-                    <div className="absolute inset-0 rounded-full border-4 border-white/5 border-t-white animate-spin"></div>
-                    <div className="absolute inset-4 rounded-full border-4 border-white/5 border-b-white animate-spin-reverse"></div>
+                    <div className="absolute inset-0 rounded-full border-4 border-slate-200 dark:border-white/5 border-t-white animate-spin"></div>
+                    <div className="absolute inset-4 rounded-full border-4 border-slate-200 dark:border-white/5 border-b-white animate-spin-reverse"></div>
                 </div>
-                <p className="text-white/40 font-mono tracking-widest uppercase text-xs animate-pulse">Establishing Secure Stream...</p>
+                <p className="text-slate-500 dark:text-white/40 font-mono tracking-widest uppercase text-xs animate-pulse">Establishing Secure Stream...</p>
             </div>
         );
     }
@@ -370,24 +370,24 @@ const PortfolioTracker: React.FC = () => {
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
                 <GlassCard className="xl:col-span-8 p-10 relative group">
                     <div className="absolute top-0 right-0 p-8">
-                         <Button variant="secondary" className="bg-white/5 hover:bg-white/10 text-white border-white/10 backdrop-blur-md rounded-2xl px-6 py-3 transition-all transform hover:scale-105" onClick={() => setIsModalOpen(true)}>
+                         <Button variant="secondary" className="bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white border-slate-200 dark:border-white/10 backdrop-blur-md rounded-2xl px-6 py-3 transition-all transform hover:scale-105" onClick={() => setIsModalOpen(true)}>
                             + Add Data Stream
                          </Button>
                     </div>
 
                     <div className="space-y-1">
-                        <p className="text-white/40 uppercase tracking-[0.3em] text-[10px] font-black">Aggregated Delta Value</p>
-                        <h1 className="text-6xl md:text-8xl font-black text-white leading-tight">
+                        <p className="text-slate-500 dark:text-white/40 uppercase tracking-[0.3em] text-[10px] font-black">Aggregated Delta Value</p>
+                        <h1 className="text-6xl md:text-8xl font-black text-slate-900 dark:text-white leading-tight">
                             <GlowingText>${totalPortfolioValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</GlowingText>
                         </h1>
                         <div className={`flex items-center gap-4 mt-6 ${portfolio24hChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            <div className="px-4 py-2 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-2">
+                            <div className="px-4 py-2 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 flex items-center gap-2">
                                 <span className="font-black">{portfolio24hChange >= 0 ? '↗' : '↘'} {Math.abs(portfolio24hChangePercent).toFixed(2)}%</span>
                             </div>
-                            <span className="text-sm font-bold text-white/40 tracking-wider flex items-center">
-                                24H YIELD: <span className="text-white/80 ml-1">${Math.abs(portfolio24hChange).toLocaleString()}</span>
+                            <span className="text-sm font-bold text-slate-500 dark:text-white/40 tracking-wider flex items-center">
+                                24H YIELD: <span className="text-slate-700 dark:text-white/80 ml-1">${Math.abs(portfolio24hChange).toLocaleString()}</span>
                                 {activeMarket === 'forex' && (
-                                    <span className="ml-2 px-2 py-0.5 rounded bg-white/10 text-white font-mono text-[10px] tracking-normal">
+                                    <span className="ml-2 px-2 py-0.5 rounded bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white font-mono text-[10px] tracking-normal">
                                         ({portfolio24hChange >= 0 ? '+' : '-'}{Math.abs(portfolio24hChange * 0.1).toFixed(0)} Pips)
                                     </span>
                                 )}
@@ -401,19 +401,19 @@ const PortfolioTracker: React.FC = () => {
                                 <AreaChart data={assets[0]?.history || []}>
                                     <defs>
                                         <linearGradient id="glowGradient" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stopColor="#fff" stopOpacity={0.2}/>
-                                            <stop offset="100%" stopColor="#fff" stopOpacity={0}/>
+                                            <stop offset="0%" stopColor="var(--chart-line, #6366F1)" stopOpacity={0.2}/>
+                                            <stop offset="100%" stopColor="var(--chart-line, #6366F1)" stopOpacity={0}/>
                                         </linearGradient>
                                     </defs>
                                     <Tooltip 
                                         contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '1.5rem', backdropFilter: 'blur(10px)' }} 
                                         itemStyle={{ color: '#fff', fontSize: '12px' }}
                                     />
-                                    <Area type="monotone" dataKey="value" strokeWidth={4} stroke="#fff" fill="url(#glowGradient)" />
+                                    <Area type="monotone" dataKey="value" strokeWidth={4} stroke="var(--chart-line, #6366F1)" fill="url(#glowGradient)" />
                                 </AreaChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="h-full flex items-center justify-center border-2 border-dashed border-white/5 rounded-3xl text-white/10 font-mono italic">Awaiting connection parameters...</div>
+                            <div className="h-full flex items-center justify-center border-2 border-dashed border-slate-200 dark:border-white/5 rounded-3xl text-slate-300 dark:text-white/10 font-mono italic">Awaiting connection parameters...</div>
                         )}
                     </div>
                 </GlassCard>
@@ -421,7 +421,7 @@ const PortfolioTracker: React.FC = () => {
                 <div className="xl:col-span-4 space-y-8">
                      <GlassCard className="p-8 h-full">
                         <div className="flex justify-between items-center mb-10">
-                            <h3 className="text-sm font-black text-white/20 uppercase tracking-[0.4em]">Asset Weighting</h3>
+                            <h3 className="text-sm font-black text-slate-400 dark:text-white/20 uppercase tracking-[0.4em]">Asset Weighting</h3>
                         </div>
                         <div className="h-[280px]">
                             {allocationData.length > 0 && allocationData[0].name !== 'Empty' ? (
@@ -434,17 +434,17 @@ const PortfolioTracker: React.FC = () => {
                                     </PieChart>
                                 </ResponsiveContainer>
                             ) : (
-                                <div className="h-full flex items-center justify-center text-white/10 uppercase text-[10px] tracking-widest font-black">Zero Holdings detected</div>
+                                <div className="h-full flex items-center justify-center text-slate-300 dark:text-white/10 uppercase text-[10px] tracking-widest font-black">Zero Holdings detected</div>
                             )}
                         </div>
                         <div className="mt-8 space-y-3">
                              {allocationData.slice(0, 4).map((entry, index) => entry.name !== 'Empty' && (
-                                <div key={entry.name} className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/5">
+                                <div key={entry.name} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5">
                                     <div className="flex items-center gap-3">
                                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                                        <span className="text-xs font-bold text-white/60 tracking-widest uppercase">{entry.name}</span>
+                                        <span className="text-xs font-bold text-slate-600 dark:text-white/60 tracking-widest uppercase">{entry.name}</span>
                                     </div>
-                                    <span className="text-xs font-black text-white font-mono">{((entry.value / totalPortfolioValue) * 100).toFixed(1)}%</span>
+                                    <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{((entry.value / totalPortfolioValue) * 100).toFixed(1)}%</span>
                                 </div>
                             ))}
                         </div>
@@ -455,25 +455,25 @@ const PortfolioTracker: React.FC = () => {
             {/* Active Channels Row */}
             <div className="flex flex-wrap gap-4 staggered-fade-in group">
                  {exchanges.filter(e => e.isConnected).map(exchange => (
-                     <div key={exchange.id} className="glass-morphism-static px-6 py-4 rounded-2xl flex items-center gap-6 bg-white/5 border border-white/5 hover:border-white/20 transition-all cursor-default">
-                        <span className="text-xs font-black text-white uppercase tracking-[0.3em]">{exchange.name}</span>
+                     <div key={exchange.id} className="glass-morphism-static px-6 py-4 rounded-2xl flex items-center gap-6 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:border-white/20 transition-all cursor-default">
+                        <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-[0.3em]">{exchange.name}</span>
                         <ExchangeStatusIndicator connected={exchange.isConnected} />
                     </div>
                  ))}
                  {exchanges.filter(e => e.isConnected).length === 0 && (
-                    <div className="w-full text-center p-8 border-2 border-dashed border-white/5 rounded-[2rem] text-white/20 uppercase text-xs font-black tracking-[0.5em]">No active streams established</div>
+                    <div className="w-full text-center p-8 border-2 border-dashed border-slate-200 dark:border-white/5 rounded-[2rem] text-slate-400 dark:text-white/20 uppercase text-xs font-black tracking-[0.5em]">No active streams established</div>
                  )}
             </div>
 
             {/* Futuristic Holdings Matrix */}
             <GlassCard className="p-0">
-                <div className="p-10 border-b border-white/5">
-                    <h3 className="text-lg font-black text-white uppercase tracking-[0.5em]">Inventory Matrix</h3>
+                <div className="p-10 border-b border-slate-200 dark:border-white/5">
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-[0.5em]">Inventory Matrix</h3>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead>
-                            <tr className="text-[10px] text-white/30 uppercase tracking-[0.3em] bg-white/5">
+                            <tr className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-[0.3em] bg-slate-50 dark:bg-white/5">
                                 <th className="p-10 font-black">Identity</th>
                                 <th className="p-10 font-black text-right">Valuation</th>
                                 <th className="p-10 font-black text-right">Volume</th>
@@ -483,23 +483,23 @@ const PortfolioTracker: React.FC = () => {
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {assets.length === 0 && (
-                                <tr><td colSpan={5} className="p-20 text-center text-white/10 uppercase tracking-widest font-black italic">Awaiting inventory data...</td></tr>
+                                <tr><td colSpan={5} className="p-20 text-center text-slate-300 dark:text-white/10 uppercase tracking-widest font-black italic">Awaiting inventory data...</td></tr>
                             )}
                             {assets.map(asset => {
                                 const change24h = asset.price24h ? (asset.price - asset.price24h) / asset.price24h * 100 : 0;
                                 return (
-                                    <tr key={asset.id} onClick={() => { setSelectedAsset(asset); setGlobalSymbol(asset.symbol); if(asset.exchange) setGlobalExchange(asset.exchange.toLowerCase()); }} className={`group cursor-pointer hover:bg-white/10 transition-colors ${selectedAsset?.id === asset.id ? 'bg-white/5' : ''}`}>
+                                    <tr key={asset.id} onClick={() => { setSelectedAsset(asset); setGlobalSymbol(asset.symbol); if(asset.exchange) setGlobalExchange(asset.exchange.toLowerCase()); }} className={`group cursor-pointer hover:bg-slate-100 dark:hover:bg-white/10 transition-colors ${selectedAsset?.id === asset.id ? 'bg-slate-50 dark:bg-white/5' : ''}`}>
                                         <td className="p-10">
                                             <div className="flex flex-col">
-                                                <span className="text-xl font-black text-white tracking-widest uppercase">{asset.symbol}</span>
-                                                <span className="text-[10px] text-white/40 font-bold uppercase">{asset.name || asset.symbol}</span>
+                                                <span className="text-xl font-black text-slate-900 dark:text-white tracking-widest uppercase">{asset.symbol}</span>
+                                                <span className="text-[10px] text-slate-500 dark:text-white/40 font-bold uppercase">{asset.name || asset.symbol}</span>
                                             </div>
                                         </td>
-                                        <td className="p-10 text-right font-mono font-bold text-white/80">${asset.price.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
-                                        <td className="p-10 text-right font-mono text-white/50">{asset.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+                                        <td className="p-10 text-right font-mono font-bold text-slate-700 dark:text-white/80">${asset.price.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+                                        <td className="p-10 text-right font-mono text-slate-500 dark:text-white/50">{asset.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
                                         <td className="p-10 text-right">
                                             <div className="flex flex-col">
-                                                <span className="text-lg font-black text-white font-mono">${asset.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                                <span className="text-lg font-black text-slate-900 dark:text-white font-mono">${asset.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                                                 <span className={`text-[10px] font-black ${change24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                                     {change24h >= 0 ? '↗' : '↘'} {Math.abs(change24h).toFixed(2)}%
                                                 </span>
@@ -523,40 +523,40 @@ const PortfolioTracker: React.FC = () => {
                         <div className="p-4 bg-indigo-500/10 rounded-[1.5rem] text-indigo-400 border border-indigo-500/20">
                             <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>
                         </div>
-                        <h3 className="text-xl font-black text-white uppercase tracking-[0.5em]">Risk Simulation</h3>
+                        <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-[0.5em]">Risk Simulation</h3>
                     </div>
                     
                     <div className="space-y-10 flex-grow">
                         <div>
                             <div className="flex justify-between items-center mb-4">
-                                <label className="text-[10px] font-black text-white/40 uppercase tracking-widest">Tolerance Matrix</label>
+                                <label className="text-[10px] font-black text-slate-500 dark:text-white/40 uppercase tracking-widest">Tolerance Matrix</label>
                                 <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${riskTolerance > 66 ? 'bg-rose-500/20 text-rose-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
                                     {riskTolerance < 33 ? 'Conservative' : riskTolerance > 66 ? 'Aggressive' : 'Hyper-Growth'}
                                 </span>
                             </div>
-                            <input type="range" min="0" max="100" value={riskTolerance} onChange={(e) => setRiskTolerance(Number(e.target.value))} className="w-full h-1 bg-white/5 rounded-full appearance-none cursor-pointer accent-white" />
+                            <input type="range" min="0" max="100" value={riskTolerance} onChange={(e) => setRiskTolerance(Number(e.target.value))} className="w-full h-1 bg-slate-50 dark:bg-white/5 rounded-full appearance-none cursor-pointer accent-white" />
                         </div>
 
                         <div>
-                            <label className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-4 block">Event Horizon Scenarios</label>
+                            <label className="text-[10px] font-black text-slate-500 dark:text-white/40 uppercase tracking-widest mb-4 block">Event Horizon Scenarios</label>
                             <div className="flex flex-wrap gap-2">
                                  {(['Normal', 'Recession', 'High Inflation', 'Stagflation'] as const).map(s => (
-                                    <button key={s} onClick={() => setScenario(s)} className={`px-5 py-3 text-[10px] font-black rounded-2xl border transition-all duration-300 uppercase tracking-widest ${scenario === s ? 'bg-white text-slate-950 border-white' : 'bg-transparent border-white/5 text-white/60 hover:border-white/20'}`}>
+                                    <button key={s} onClick={() => setScenario(s)} className={`px-5 py-3 text-[10px] font-black rounded-2xl border transition-all duration-300 uppercase tracking-widest ${scenario === s ? 'bg-white text-slate-950 border-slate-300 dark:border-white' : 'bg-transparent border-slate-200 dark:border-white/5 text-slate-600 dark:text-white/60 hover:border-slate-300 dark:border-white/20'}`}>
                                         {s}
                                     </button>
                                  ))}
                             </div>
                         </div>
 
-                        <div className="p-8 bg-white/5 rounded-[2rem] border border-white/5 grid grid-cols-2 gap-8">
+                        <div className="p-8 bg-slate-50 dark:bg-white/5 rounded-[2rem] border border-slate-200 dark:border-white/5 grid grid-cols-2 gap-8">
                              <div>
-                                 <p className="text-[10px] text-white/30 font-black uppercase tracking-widest mb-2">Alpha Projection</p>
+                                 <p className="text-[10px] text-slate-400 dark:text-white/30 font-black uppercase tracking-widest mb-2">Alpha Projection</p>
                                  <p className={`text-4xl font-black ${simulationResult.projectedReturn >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                      {simulationResult.projectedReturn >= 0 ? '+' : ''}{simulationResult.projectedReturn.toFixed(1)}%
                                  </p>
                              </div>
                              <div>
-                                 <p className="text-[10px] text-white/30 font-black uppercase tracking-widest mb-2">Entropy Risk</p>
+                                 <p className="text-[10px] text-slate-400 dark:text-white/30 font-black uppercase tracking-widest mb-2">Entropy Risk</p>
                                  <p className="text-4xl font-black text-rose-500">-{simulationResult.maxDrawdown.toFixed(1)}%</p>
                              </div>
                         </div>
@@ -569,8 +569,8 @@ const PortfolioTracker: React.FC = () => {
                             <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                         </div>
                         <div>
-                            <h3 className="text-xl font-black text-white uppercase tracking-[0.5em]">AI Architect</h3>
-                            <p className="text-[10px] font-bold text-white/30 tracking-widest uppercase mt-1">Sourcing Neural Context</p>
+                            <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-[0.5em]">AI Architect</h3>
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 tracking-widest uppercase mt-1">Sourcing Neural Context</p>
                         </div>
                     </div>
                     
@@ -581,21 +581,21 @@ const PortfolioTracker: React.FC = () => {
                                     <div className="absolute inset-0 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin"></div>
                                     <div className="absolute inset-2 rounded-full border-2 border-rose-500/20 border-b-rose-500 animate-spin-reverse"></div>
                                 </div>
-                                <p className="text-white/40 font-black uppercase tracking-[0.3em] text-[10px]">Processing Synthesis...</p>
+                                <p className="text-slate-500 dark:text-white/40 font-black uppercase tracking-[0.3em] text-[10px]">Processing Synthesis...</p>
                             </div>
                         ) : recommendations.length > 0 ? (
                             <div className="space-y-4">
                                 {recommendations.map((rec, index) => (
-                                    <div key={index} className="flex gap-4 p-5 bg-white/5 rounded-[1.5rem] border border-white/5 transform hover:scale-[1.02] transition-transform">
+                                    <div key={index} className="flex gap-4 p-5 bg-slate-50 dark:bg-white/5 rounded-[1.5rem] border border-slate-200 dark:border-white/5 transform hover:scale-[1.02] transition-transform">
                                          <span className="text-brand-primary font-black text-lg">0{index + 1}</span>
-                                         <p className="text-sm text-white/80 leading-relaxed font-medium" dangerouslySetInnerHTML={{ __html: rec.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>') }}></p>
+                                         <p className="text-sm text-slate-700 dark:text-white/80 leading-relaxed font-medium" dangerouslySetInnerHTML={{ __html: rec.replace(/\*\*(.*?)\*\*/g, '<strong class="text-slate-900 dark:text-white">$1</strong>') }}></p>
                                     </div>
                                 ))}
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center justify-center h-full text-center p-10 border-2 border-dashed border-white/5 rounded-[2.5rem] gap-4">
-                                <p className="text-white/20 uppercase font-black tracking-widest text-[10px]">Neural engine standby</p>
-                                <p className="text-xs text-white/40 max-w-xs leading-relaxed">Initiate optimization analysis to synthesize portfolio-specific alpha recommendations based on current volatility exposure.</p>
+                            <div className="flex flex-col items-center justify-center h-full text-center p-10 border-2 border-dashed border-slate-200 dark:border-white/5 rounded-[2.5rem] gap-4">
+                                <p className="text-slate-400 dark:text-white/20 uppercase font-black tracking-widest text-[10px]">Neural engine standby</p>
+                                <p className="text-xs text-slate-500 dark:text-white/40 max-w-xs leading-relaxed">Initiate optimization analysis to synthesize portfolio-specific alpha recommendations based on current volatility exposure.</p>
                             </div>
                         )}
                     </div>

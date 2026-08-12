@@ -2774,11 +2774,13 @@ const OrderFlowChartPanel: React.FC<{
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isTradingViewMode, setIsTradingViewMode] = useState(false);
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
+    const activeWallHunterId = useBotStore(state => state.activeWallHunterId);
     const setActiveWallHunterId = useBotStore(state => state.setActiveWallHunterId);
-    const setBotForSymbol = useBotStore(state => state.setBotForSymbol);
-    const activeBotsBySymbol = useBotStore(state => state.activeBotsBySymbol);
+    const setBotForChart = useBotStore(state => state.setBotForChart);
+    const removeBotForChart = useBotStore(state => state.removeBotForChart);
+    const activeBotsByChartId = useBotStore(state => state.activeBotsByChartId);
 
-    const chartBotId = activeBotsBySymbol[config.symbol] || null;
+    const chartBotId = activeBotsByChartId[config.id] || null;
     const { statusData: botStatus } = useWallHunterStatus(chartBotId);
     
     const { bids, asks, walls, currentPrice, tradeEvent } = useLevel2MarketData(config.symbol, config.exchange);
@@ -2819,14 +2821,35 @@ const OrderFlowChartPanel: React.FC<{
                         <button onClick={() => setIsTradingViewMode(true)} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors flex items-center gap-1 ${isTradingViewMode ? 'bg-brand-primary text-white shadow-[0_0_10px_rgba(139,92,246,0.3)]' : 'text-gray-500 hover:text-gray-300'}`}>TradingView</button>
                     </div>
                     
-                    <button 
-                        onClick={() => setIsWallHunterOpen(true)}
-                        className="px-2 py-1 text-[10px] font-bold rounded-md bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500/20 border border-yellow-500/20 flex items-center gap-1 ml-2 transition-colors"
-                        title="Deploy WallHunter for this pair"
-                    >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                        Deploy Bot
-                    </button>
+                    {chartBotId ? (
+                        <button 
+                            onClick={async () => {
+                                try {
+                                    await botService.controlBot(chartBotId, 'stop');
+                                    removeBotForChart(config.id);
+                                    if (activeWallHunterId === chartBotId) {
+                                        setActiveWallHunterId(null);
+                                    }
+                                } catch (err) {
+                                    console.error("Failed to stop bot from chart panel", err);
+                                }
+                            }}
+                            className="px-2 py-1 text-[10px] font-bold rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 flex items-center gap-1 ml-2 transition-colors"
+                            title="Stop WallHunter Bot"
+                        >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            Stop Bot
+                        </button>
+                    ) : (
+                        <button 
+                            onClick={() => setIsWallHunterOpen(true)}
+                            className="px-2 py-1 text-[10px] font-bold rounded-md bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500/20 border border-yellow-500/20 flex items-center gap-1 ml-2 transition-colors"
+                            title="Deploy WallHunter for this pair"
+                        >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                            Deploy Bot
+                        </button>
+                    )}
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-gray-500 hover:text-brand-primary transition-colors">
@@ -2863,7 +2886,7 @@ const OrderFlowChartPanel: React.FC<{
                     asks={asks}
                     onDeploySuccess={(botId) => {
                         setActiveWallHunterId(Number(botId));
-                        setBotForSymbol(config.symbol, Number(botId));
+                        setBotForChart(config.id, Number(botId));
                         setIsWallHunterOpen(false);
                     }}
                 />
@@ -2875,7 +2898,7 @@ const OrderFlowChartPanel: React.FC<{
 // Main Page Component
 const OrderFlowHeatmap: React.FC = () => {
     const { globalExchange: exchange, setGlobalExchange: setExchange, globalSymbol: symbol, setGlobalSymbol: setSymbol, globalInterval: interval, setGlobalInterval: setInterval } = useMarketStore();
-    const { activeWallHunterId, setActiveWallHunterId, indicatorSettings, setIndicatorSettings, activeBotsBySymbol, setBotForSymbol, removeBotForSymbol } = useBotStore();
+    const { activeWallHunterId, setActiveWallHunterId, indicatorSettings, setIndicatorSettings, activeBotsByChartId, setBotForChart, removeBotForChart } = useBotStore();
     const { orderFlowActiveTab: activeTab, setOrderFlowActiveTab: setActiveTab, orderFlowShowFootprint: showFootprint, setOrderFlowShowFootprint: setShowFootprint } = useUIStore();
     const { settings: advancedMetrics, updateSettings: onAdvancedMetricsChange } = useAdvancedMetricsSettings();
     const advancedMetricsData = useAdvancedMetrics(symbol, exchange, interval, advancedMetrics);
@@ -2884,6 +2907,17 @@ const OrderFlowHeatmap: React.FC = () => {
     const [isEmergencySelling, setIsEmergencySelling] = useState(false); // NEW STATE
     
     const [additionalCharts, setAdditionalCharts] = useState<ChartConfig[]>([]);
+
+    const activeBotIds = useMemo(() => Array.from(new Set(Object.values(activeBotsByChartId))), [activeBotsByChartId]);
+    const [selectedHudBotId, setSelectedHudBotId] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (activeBotIds.length > 0 && (!selectedHudBotId || !activeBotIds.includes(selectedHudBotId))) {
+            setSelectedHudBotId(activeBotIds[0]);
+        } else if (activeBotIds.length === 0 && selectedHudBotId) {
+            setSelectedHudBotId(null);
+        }
+    }, [activeBotIds, selectedHudBotId]);
 
     const addChart = () => {
         if (additionalCharts.length < 3) {
@@ -2969,8 +3003,8 @@ const OrderFlowHeatmap: React.FC = () => {
     const [isAIDeploymentModalOpen, setIsAIDeploymentModalOpen] = useState(false);
     const { bids, asks, walls, currentPrice, tradeEvent } = useLevel2MarketData(symbol, exchange);
     const { volumeThreshold, setVolumeThreshold, volumeMode, setVolumeMode } = useVolumeFilter(5000000);
-    const mainChartBotId = activeBotsBySymbol[symbol] || null;
-    const { statusData: botStatus, isConnected: botWsConnected } = useWallHunterStatus(mainChartBotId);
+    const mainChartBotId = activeBotsByChartId['main'] || null;
+    const { statusData: botStatus, isConnected: botWsConnected } = useWallHunterStatus(selectedHudBotId);
     const [selectedApiKeyId, setSelectedApiKeyId] = useState<string | null>(null);
     const openOrders = useOpenOrders(selectedApiKeyId, symbol, 5000);
 
@@ -3002,10 +3036,10 @@ const OrderFlowHeatmap: React.FC = () => {
 
     // Emergency Sell Handler
     const handleEmergencySell = async (type: 'market' | 'limit') => {
-        if (!mainChartBotId || isEmergencySelling) return;
+        if (!selectedHudBotId || isEmergencySelling) return;
         setIsEmergencySelling(true);
         try {
-            await botService.emergencySell(mainChartBotId, type);
+            await botService.emergencySell(selectedHudBotId, type);
             toast.success(`Emergency ${type} sell triggered successfully`);
         } catch (err: any) {
             console.error(`Emergency ${type} sell failed:`, err);
@@ -3204,7 +3238,7 @@ const OrderFlowHeatmap: React.FC = () => {
 
 
                 {/* ACTIVE BOT STATUS HUD — DRAGGABLE */}
-                {mainChartBotId && botStatus && (
+                {selectedHudBotId && botStatus && (
                     <div
                         style={{
                             position: 'absolute',
@@ -3215,7 +3249,22 @@ const OrderFlowHeatmap: React.FC = () => {
                             width: '256px',
                         }}
                     >
-                        <div className="bg-white/10 dark:bg-black/40 backdrop-blur-xl border border-white/20 dark:border-white/10 p-4 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
+                        <div className="bg-white/10 dark:bg-black/40 backdrop-blur-xl border border-white/20 dark:border-white/10 p-4 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.3)] flex flex-col gap-3">
+                            {/* Tabs if multiple bots */}
+                            {activeBotIds.length > 1 && (
+                                <div className="flex gap-1 p-1 bg-black/20 rounded-lg overflow-x-auto hide-scrollbar w-full">
+                                    {activeBotIds.map(bId => (
+                                        <button
+                                            key={bId}
+                                            onClick={() => setSelectedHudBotId(bId)}
+                                            className={`px-3 py-1.5 text-xs font-bold rounded-md whitespace-nowrap transition-colors flex-1 ${selectedHudBotId === bId ? 'bg-indigo-500 text-white shadow-sm' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                        >
+                                            Bot {bId}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
                             {/* ── Drag Handle ── */}
                             <h4
                                 onMouseDown={startHudDrag}
@@ -3229,7 +3278,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                     <circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/>
                                 </svg>
                                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${botStatus.position ? 'bg-yellow-400 animate-pulse' : 'bg-indigo-500 animate-pulse'}`} />
-                                {botStatus.position ? `In Trade${botStatus.position_side ? ` (${botStatus.position_side === 'sell' ? 'Short' : 'Long'})` : ''}` : 'Monitoring L2 Wall'}
+                                {botStatus.position ? `In Trade${botStatus.position_side ? ` (${botStatus.position_side === 'sell' ? 'Short' : 'Long'})` : ''}` : `Bot ${selectedHudBotId} Monitoring L2 Wall`}
                             </h4>
 
                             <div className="flex flex-col gap-2">
@@ -3354,7 +3403,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 </button>
                             </div>
                             <div className="flex-1 overflow-y-auto custom-scrollbar relative">
-                                <BotLogsTab botId={activeWallHunterId} />
+                                <BotLogsTab botId={selectedHudBotId} />
                             </div>
                         </div>
                     </div>
@@ -3365,7 +3414,7 @@ const OrderFlowHeatmap: React.FC = () => {
             <div className="fixed bottom-8 right-8 z-[999] flex flex-row-reverse gap-4 items-center">
                 {/* WALLHUNTER FLOATING ACTION BUTTON */}
                 {
-                    mainChartBotId ? (
+                    selectedHudBotId ? (
                         <div className="flex flex-row gap-4 items-center opacity-100 transition-opacity duration-300">
                             <button
                                 onClick={() => setIsWallHunterOpen(true)}
@@ -3382,9 +3431,10 @@ const OrderFlowHeatmap: React.FC = () => {
                             <button
                                 onClick={async () => {
                                     try {
-                                        await botService.controlBot(mainChartBotId, 'stop');
-                                        removeBotForSymbol(symbol);
-                                        if (activeWallHunterId === mainChartBotId) {
+                                        await botService.controlBot(selectedHudBotId, 'stop');
+                                        const chartsWithBot = Object.entries(activeBotsByChartId).filter(([cId, bId]) => bId === selectedHudBotId).map(([cId]) => cId);
+                                        chartsWithBot.forEach(cId => removeBotForChart(cId));
+                                        if (activeWallHunterId === selectedHudBotId) {
                                             setActiveWallHunterId(null);
                                         }
                                     } catch (err) {
@@ -3518,7 +3568,8 @@ const OrderFlowHeatmap: React.FC = () => {
                 bids={bids}
                 asks={asks}
                 onDeploySuccess={(botId) => {
-                    setActiveWallHunterId(botId);
+                    setActiveWallHunterId(Number(botId));
+                    setBotForChart('main', Number(botId));
                     setIsWallHunterOpen(false);
                 }}
             />

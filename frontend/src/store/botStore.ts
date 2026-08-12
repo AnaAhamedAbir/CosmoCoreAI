@@ -5,9 +5,9 @@ import { IndicatorSettings } from '@/components/features/market/IndicatorSelecto
 interface BotState {
     activeWallHunterId: number | null;
     setActiveWallHunterId: (id: number | null) => void;
-    activeBotsBySymbol: Record<string, number>;
-    setBotForSymbol: (symbol: string, id: number) => void;
-    removeBotForSymbol: (symbol: string) => void;
+    activeBotsByChartId: Record<string, number>;
+    setBotForChart: (chartId: string, id: number) => void;
+    removeBotForChart: (chartId: string) => void;
     indicatorSettings: IndicatorSettings;
     setIndicatorSettings: (settings: IndicatorSettings) => void;
 }
@@ -17,12 +17,12 @@ export const useBotStore = create<BotState>()(
         (set) => ({
             activeWallHunterId: null,
             setActiveWallHunterId: (id) => set({ activeWallHunterId: id }),
-            activeBotsBySymbol: {},
-            setBotForSymbol: (symbol, id) => set((state) => ({ activeBotsBySymbol: { ...state.activeBotsBySymbol, [symbol]: id } })),
-            removeBotForSymbol: (symbol) => set((state) => {
-                const newBots = { ...state.activeBotsBySymbol };
-                delete newBots[symbol];
-                return { activeBotsBySymbol: newBots };
+            activeBotsByChartId: {},
+            setBotForChart: (chartId, id) => set((state) => ({ activeBotsByChartId: { ...state.activeBotsByChartId, [chartId]: id } })),
+            removeBotForChart: (chartId) => set((state) => {
+                const newBots = { ...state.activeBotsByChartId };
+                delete newBots[chartId];
+                return { activeBotsByChartId: newBots };
             }),
     indicatorSettings: {
         showEMA: false,

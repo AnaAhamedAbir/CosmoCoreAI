@@ -2746,18 +2746,177 @@ const formatDisplayPrice = (price: number | undefined | null) => {
     return price.toFixed(2);
 };
 
+interface ChartConfig {
+    id: string;
+    symbol: string;
+    exchange: string;
+    interval: string;
+}
+
+const OrderFlowChartPanel: React.FC<{
+    config: ChartConfig;
+    isMain: boolean;
+    onUpdate: (id: string, updates: Partial<ChartConfig>) => void;
+    onRemove: (id: string) => void;
+    showFootprint: boolean;
+    showCVD: boolean;
+    showVPVR: boolean;
+    indicatorSettings: any;
+    advancedMetrics: any;
+    selectedApiKeyId: string | null;
+    predictionResult: any;
+    activeMLModelId: string | null;
+    setExternalAIPrice: (price: number) => void;
+    setExternalAIOpenTrigger: (trigger: number) => void;
+    volumeThreshold: number;
+    volumeMode: string;
+}> = ({ config, isMain, onUpdate, onRemove, showFootprint, showCVD, showVPVR, indicatorSettings, advancedMetrics, selectedApiKeyId, predictionResult, activeMLModelId, setExternalAIPrice, setExternalAIOpenTrigger, volumeThreshold, volumeMode }) => {
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isTradingViewMode, setIsTradingViewMode] = useState(false);
+    const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
+    const setActiveWallHunterId = useBotStore(state => state.setActiveWallHunterId);
+    const setBotForSymbol = useBotStore(state => state.setBotForSymbol);
+    const activeBotsBySymbol = useBotStore(state => state.activeBotsBySymbol);
+
+    const chartBotId = activeBotsBySymbol[config.symbol] || null;
+    const { statusData: botStatus } = useWallHunterStatus(chartBotId);
+    
+    const { bids, asks, walls, currentPrice, tradeEvent } = useLevel2MarketData(config.symbol, config.exchange);
+    const advancedMetricsData = useAdvancedMetrics(config.symbol, config.exchange, config.interval, advancedMetrics);
+    const openOrders = useOpenOrders(selectedApiKeyId, config.symbol, 5000);
+
+    const filteredWalls = useMemo(() => {
+        if (volumeThreshold <= 0) return walls;
+        const newWalls: { price: number; type: 'buy' | 'sell'; size: number }[] = [];
+        asks.forEach(ask => {
+            const comparisonValue = volumeMode === 'quote' ? ask.size * ask.price : ask.size;
+            if (comparisonValue >= volumeThreshold) {
+                newWalls.push({ price: ask.price, type: 'sell', size: ask.size });
+            }
+        });
+        bids.forEach(bid => {
+            const comparisonValue = volumeMode === 'quote' ? bid.size * bid.price : bid.size;
+            if (comparisonValue >= volumeThreshold) {
+                newWalls.push({ price: bid.price, type: 'buy', size: bid.size });
+            }
+        });
+        return newWalls;
+    }, [walls, bids, asks, volumeThreshold, volumeMode]);
+
+    return (
+        <div className={isFullscreen ? 'fixed inset-0 z-[200] flex flex-col bg-gray-50 dark:bg-[#000000] p-4 overflow-y-auto hide-scrollbar' : 'h-full w-full bg-white dark:bg-[#000000] rounded-xl border border-gray-200 dark:border-white/5 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col min-h-[400px]'}>
+            <div className="p-2 border-b border-gray-200 dark:border-white/5 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                    {!isMain && (
+                        <>
+                            <HeatmapSymbolSelector symbol={config.symbol} exchange={config.exchange} onSymbolChange={(s) => onUpdate(config.id, { symbol: s })} onExchangeChange={(e) => onUpdate(config.id, { exchange: e })} />
+                            <TimeframeSelector interval={config.interval} onIntervalChange={(i) => onUpdate(config.id, { interval: i })} />
+                        </>
+                    )}
+                    
+                    <div className="flex bg-gray-100 dark:bg-black/20 p-1 rounded-lg border border-gray-200 dark:border-white/5">
+                        <button onClick={() => setIsTradingViewMode(false)} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors ${!isTradingViewMode ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Order Flow</button>
+                        <button onClick={() => setIsTradingViewMode(true)} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors flex items-center gap-1 ${isTradingViewMode ? 'bg-brand-primary text-white shadow-[0_0_10px_rgba(139,92,246,0.3)]' : 'text-gray-500 hover:text-gray-300'}`}>TradingView</button>
+                    </div>
+                    
+                    <button 
+                        onClick={() => setIsWallHunterOpen(true)}
+                        className="px-2 py-1 text-[10px] font-bold rounded-md bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500/20 border border-yellow-500/20 flex items-center gap-1 ml-2 transition-colors"
+                        title="Deploy WallHunter for this pair"
+                    >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                        Deploy Bot
+                    </button>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-gray-500 hover:text-brand-primary transition-colors">
+                        {isFullscreen ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>}
+                    </button>
+                    {!isMain && (
+                        <button onClick={() => onRemove(config.id)} className="text-gray-500 hover:text-red-500 transition-colors ml-2" title="Close Chart">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    )}
+                </div>
+            </div>
+            <div className="flex-1 relative min-h-0">
+                {isTradingViewMode ? (
+                    <TradingViewWidget symbol={config.symbol} interval={config.interval} />
+                ) : (
+                    <OrderFlowChart 
+                        exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId}
+                        onChartClickPrice={(price) => {
+                            setExternalAIPrice(price);
+                            setExternalAIOpenTrigger(Date.now());
+                        }}
+                    />
+                )}
+            </div>
+
+            {isWallHunterOpen && (
+                <WallHunterModal
+                    isOpen={isWallHunterOpen}
+                    onClose={() => setIsWallHunterOpen(false)}
+                    symbol={config.symbol}
+                    exchange={config.exchange}
+                    bids={bids}
+                    asks={asks}
+                    onDeploySuccess={(botId) => {
+                        setActiveWallHunterId(Number(botId));
+                        setBotForSymbol(config.symbol, Number(botId));
+                        setIsWallHunterOpen(false);
+                    }}
+                />
+            )}
+        </div>
+    );
+};
+
 // Main Page Component
 const OrderFlowHeatmap: React.FC = () => {
     const { globalExchange: exchange, setGlobalExchange: setExchange, globalSymbol: symbol, setGlobalSymbol: setSymbol, globalInterval: interval, setGlobalInterval: setInterval } = useMarketStore();
-    const { activeWallHunterId, setActiveWallHunterId, indicatorSettings, setIndicatorSettings } = useBotStore();
+    const { activeWallHunterId, setActiveWallHunterId, indicatorSettings, setIndicatorSettings, activeBotsBySymbol, setBotForSymbol, removeBotForSymbol } = useBotStore();
     const { orderFlowActiveTab: activeTab, setOrderFlowActiveTab: setActiveTab, orderFlowShowFootprint: showFootprint, setOrderFlowShowFootprint: setShowFootprint } = useUIStore();
     const { settings: advancedMetrics, updateSettings: onAdvancedMetricsChange } = useAdvancedMetricsSettings();
     const advancedMetricsData = useAdvancedMetrics(symbol, exchange, interval, advancedMetrics);
 
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
     const [isEmergencySelling, setIsEmergencySelling] = useState(false); // NEW STATE
-    const [isFullscreen, setIsFullscreen] = useState(false); // NEW STATE
-    const [isTradingViewMode, setIsTradingViewMode] = useState(false); // TRADINGVIEW TOGGLE STATE
+    
+    const [additionalCharts, setAdditionalCharts] = useState<ChartConfig[]>([]);
+
+    const addChart = () => {
+        if (additionalCharts.length < 3) {
+            setAdditionalCharts([...additionalCharts, {
+                id: Date.now().toString(),
+                symbol: symbol,
+                exchange: exchange,
+                interval: interval
+            }]);
+        }
+    };
+
+    const removeChart = (id: string) => {
+        setAdditionalCharts(additionalCharts.filter(c => c.id !== id));
+    };
+
+    const updateChart = (id: string, updates: Partial<ChartConfig>) => {
+        if (id === 'main') {
+            if (updates.symbol) setSymbol(updates.symbol);
+            if (updates.exchange) setExchange(updates.exchange);
+            if (updates.interval) setInterval(updates.interval);
+        } else {
+            setAdditionalCharts(additionalCharts.map(c => c.id === id ? { ...c, ...updates } : c));
+        }
+    };
+
+    const allCharts = useMemo(() => {
+        return [
+            { id: 'main', symbol, exchange, interval, isMain: true },
+            ...additionalCharts.map(c => ({ ...c, isMain: false }))
+        ];
+    }, [symbol, exchange, interval, additionalCharts]);
+
     const [predictionResult, setPredictionResult] = useState<PredictionResult | null>(null);
     const [activeMLModelId, setActiveMLModelId] = useState<string | null>(null);
 
@@ -2810,7 +2969,8 @@ const OrderFlowHeatmap: React.FC = () => {
     const [isAIDeploymentModalOpen, setIsAIDeploymentModalOpen] = useState(false);
     const { bids, asks, walls, currentPrice, tradeEvent } = useLevel2MarketData(symbol, exchange);
     const { volumeThreshold, setVolumeThreshold, volumeMode, setVolumeMode } = useVolumeFilter(5000000);
-    const { statusData: botStatus, isConnected: botWsConnected } = useWallHunterStatus(activeWallHunterId);
+    const mainChartBotId = activeBotsBySymbol[symbol] || null;
+    const { statusData: botStatus, isConnected: botWsConnected } = useWallHunterStatus(mainChartBotId);
     const [selectedApiKeyId, setSelectedApiKeyId] = useState<string | null>(null);
     const openOrders = useOpenOrders(selectedApiKeyId, symbol, 5000);
 
@@ -2842,10 +3002,10 @@ const OrderFlowHeatmap: React.FC = () => {
 
     // Emergency Sell Handler
     const handleEmergencySell = async (type: 'market' | 'limit') => {
-        if (!activeWallHunterId || isEmergencySelling) return;
+        if (!mainChartBotId || isEmergencySelling) return;
         setIsEmergencySelling(true);
         try {
-            await botService.emergencySell(activeWallHunterId, type);
+            await botService.emergencySell(mainChartBotId, type);
             toast.success(`Emergency ${type} sell triggered successfully`);
         } catch (err: any) {
             console.error(`Emergency ${type} sell failed:`, err);
@@ -2912,9 +3072,16 @@ const OrderFlowHeatmap: React.FC = () => {
                     </span>
                 </div>
                 <div className="flex gap-2">
+                    <button
+                        onClick={addChart}
+                        disabled={additionalCharts.length >= 3}
+                        className="text-xs font-semibold px-4 py-2 rounded-lg border transition-all bg-white dark:bg-black/20 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        + Add Chart
+                    </button>
                     <span className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${botWsConnected ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>
                         <span className={`w-2 h-2 rounded-full animate-pulse ${botWsConnected ? 'bg-indigo-500' : 'bg-green-500'}`}></span>
-                        {botWsConnected ? `Bot ${activeWallHunterId} Connected` : 'Live Data Socket'}
+                        {botWsConnected ? `Bot ${mainChartBotId} Connected` : 'Live Data Socket'}
                     </span>
                     <button
                         onClick={() => setShowVPVR(!showVPVR)}
@@ -3009,58 +3176,35 @@ const OrderFlowHeatmap: React.FC = () => {
             </div>
 
 
-            <div className={isFullscreen ? 'fixed inset-0 z-[200] flex flex-col bg-gray-50 dark:bg-[#000000] p-4 overflow-y-auto hide-scrollbar' : 'flex-1 flex flex-col p-4 overflow-y-auto hide-scrollbar relative bg-gray-50 dark:bg-[#000000]'}>
-                {/* IN FULLSCREEN MODE, RENDER ONLY THE MAIN CHART WITHOUT THE LEFT PADDING. OTHERWISE RENDER NORMALLY */}
-                <div className="flex-1 w-full">
-                    <div className="h-full w-full bg-white dark:bg-[#000000] rounded-xl border border-gray-200 dark:border-white/5 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col">
-                        <div className="p-3 border-b border-gray-200 dark:border-white/5 flex justify-between items-center">
-                            <div className="flex items-center gap-4">
-                                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Chart View</h3>
-                                <div className="flex bg-gray-100 dark:bg-black/20 p-1 rounded-lg border border-gray-200 dark:border-white/5">
-                                    <button
-                                        onClick={() => setIsTradingViewMode(false)}
-                                        className={`px-3 py-1 text-[10px] font-bold rounded-md transition-colors ${!isTradingViewMode ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
-                                    >
-                                        Order Flow Heatmap
-                                    </button>
-                                    <button
-                                        onClick={() => setIsTradingViewMode(true)}
-                                        className={`px-3 py-1 text-[10px] font-bold rounded-md transition-colors flex items-center gap-1 ${isTradingViewMode ? 'bg-brand-primary text-white shadow-[0_0_10px_rgba(139,92,246,0.3)]' : 'text-gray-500 hover:text-gray-300'}`}
-                                    >
-                                        TradingView (Drawings)
-                                    </button>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => setIsFullscreen(!isFullscreen)}
-                                className="text-gray-500 hover:text-brand-primary transition-colors"
-                            >
-                                {isFullscreen ? (
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                                ) : (
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
-                                )}
-                            </button>
-                        </div>
-                        <div className="flex-1 relative">
-                            {isTradingViewMode ? (
-                                <TradingViewWidget symbol={symbol} interval={interval} />
-                            ) : (
-                                <OrderFlowChart 
-                                    exchange={exchange} symbol={symbol} interval={interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId}
-                                    onChartClickPrice={(price) => {
-                                        setExternalAIPrice(price);
-                                        setExternalAIOpenTrigger(Date.now());
-                                    }}
-                                />
-                            )}
-                        </div>
-                    </div>
-                    {/* Level 2 Order Book moved to floating modal */}
+            <div className="flex-1 flex flex-col p-4 overflow-y-auto hide-scrollbar relative bg-gray-50 dark:bg-[#000000]">
+                {/* RENDER GRID OF CHARTS */}
+                <div className={`flex-1 w-full grid gap-4 ${allCharts.length === 1 ? 'grid-cols-1' : allCharts.length === 2 ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1 xl:grid-cols-2 grid-rows-2'}`}>
+                    {allCharts.map(c => (
+                        <OrderFlowChartPanel 
+                            key={c.id} 
+                            config={c} 
+                            isMain={c.isMain} 
+                            onUpdate={updateChart} 
+                            onRemove={removeChart} 
+                            showFootprint={showFootprint} 
+                            showCVD={showCVD} 
+                            showVPVR={showVPVR} 
+                            indicatorSettings={indicatorSettings} 
+                            advancedMetrics={advancedMetrics} 
+                            selectedApiKeyId={selectedApiKeyId} 
+                            predictionResult={c.isMain ? predictionResult : null} 
+                            activeMLModelId={c.isMain ? activeMLModelId : null} 
+                            setExternalAIPrice={c.isMain ? setExternalAIPrice : () => {}} 
+                            setExternalAIOpenTrigger={c.isMain ? setExternalAIOpenTrigger : () => {}} 
+                            volumeThreshold={volumeThreshold} 
+                            volumeMode={volumeMode} 
+                        />
+                    ))}
                 </div>
 
+
                 {/* ACTIVE BOT STATUS HUD — DRAGGABLE */}
-                {activeWallHunterId && botStatus && (
+                {mainChartBotId && botStatus && (
                     <div
                         style={{
                             position: 'absolute',
@@ -3221,7 +3365,7 @@ const OrderFlowHeatmap: React.FC = () => {
             <div className="fixed bottom-8 right-8 z-[999] flex flex-row-reverse gap-4 items-center">
                 {/* WALLHUNTER FLOATING ACTION BUTTON */}
                 {
-                    activeWallHunterId ? (
+                    mainChartBotId ? (
                         <div className="flex flex-row gap-4 items-center opacity-100 transition-opacity duration-300">
                             <button
                                 onClick={() => setIsWallHunterOpen(true)}
@@ -3238,8 +3382,11 @@ const OrderFlowHeatmap: React.FC = () => {
                             <button
                                 onClick={async () => {
                                     try {
-                                        await botService.controlBot(activeWallHunterId, 'stop');
-                                        setActiveWallHunterId(null);
+                                        await botService.controlBot(mainChartBotId, 'stop');
+                                        removeBotForSymbol(symbol);
+                                        if (activeWallHunterId === mainChartBotId) {
+                                            setActiveWallHunterId(null);
+                                        }
                                     } catch (err) {
                                         console.error("Failed to stop WallHunter bot", err);
                                     }
@@ -3357,7 +3504,7 @@ const OrderFlowHeatmap: React.FC = () => {
             <QuickTradeToolbar 
                 symbol={symbol} 
                 currentPrice={currentPrice}
-                isFullscreen={isFullscreen}
+                isFullscreen={false}
                 onDragStart={(side) => (window as any)._handleQuickTradeDragStart(side)}
                 onDragMove={(y) => (window as any)._handleQuickTradeDragMove(y)}
                 onDragEnd={(side, y, size, apiId) => (window as any)._handleQuickTradeDragEnd(side, y, size, apiId)}

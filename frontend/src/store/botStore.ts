@@ -5,6 +5,9 @@ import { IndicatorSettings } from '@/components/features/market/IndicatorSelecto
 interface BotState {
     activeWallHunterId: number | null;
     setActiveWallHunterId: (id: number | null) => void;
+    activeBotsBySymbol: Record<string, number>;
+    setBotForSymbol: (symbol: string, id: number) => void;
+    removeBotForSymbol: (symbol: string) => void;
     indicatorSettings: IndicatorSettings;
     setIndicatorSettings: (settings: IndicatorSettings) => void;
 }
@@ -14,6 +17,13 @@ export const useBotStore = create<BotState>()(
         (set) => ({
             activeWallHunterId: null,
             setActiveWallHunterId: (id) => set({ activeWallHunterId: id }),
+            activeBotsBySymbol: {},
+            setBotForSymbol: (symbol, id) => set((state) => ({ activeBotsBySymbol: { ...state.activeBotsBySymbol, [symbol]: id } })),
+            removeBotForSymbol: (symbol) => set((state) => {
+                const newBots = { ...state.activeBotsBySymbol };
+                delete newBots[symbol];
+                return { activeBotsBySymbol: newBots };
+            }),
     indicatorSettings: {
         showEMA: false,
         showBB: true,

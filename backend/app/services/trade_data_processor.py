@@ -44,7 +44,7 @@ def process_historical_trades(file_path: str = None, df_raw: pd.DataFrame = None
     df = calculate_advanced_trade_features(df, requested_features=apply_indicators)
     
     # List of advanced feature columns to aggregate (using 'last' value for the bar)
-    adv_cols = [c for c in df.columns if c not in ['datetime', 'timestamp', 'price', 'amount', 'side', 'trade_dir', 'signed_volume', 'trade_count', 'price_change', 'cum_vol', 'bar_id']]
+    adv_cols = [c for c in df.columns if c not in ['datetime', 'timestamp', 'price', 'amount', 'side', 'trade_dir', 'signed_volume', 'trade_count', 'price_change', 'cum_vol', 'bar_id', 'cvd', 'buy_volume', 'sell_volume']]
     
     add_log_func(f"Loaded {len(df)} raw trades. Generating {bar_type.upper()} bars...")
     
@@ -98,6 +98,11 @@ def process_historical_trades(file_path: str = None, df_raw: pd.DataFrame = None
             net_volume=('signed_volume', 'sum'),
             trade_count=('trade_count', 'sum')
         )
+        
+        # Aggregate advanced tick features (taking the last value of the tick window inside the bar)
+        adv_agg = df.groupby('bar_id')[adv_cols].last()
+        bars = bars.join(adv_agg)
+        
         bars.set_index('datetime', inplace=True)
         # Add temporal feature to understand the variable duration of volume bars
         bars['time_since_last_bar'] = bars.index.to_series().diff().dt.total_seconds().fillna(0)
@@ -105,10 +110,6 @@ def process_historical_trades(file_path: str = None, df_raw: pd.DataFrame = None
         bars['cvd'] = bars['net_volume'].cumsum()
         bars['buy_volume'] = (bars['volume'] + bars['net_volume']) / 2
         bars['sell_volume'] = (bars['volume'] - bars['net_volume']) / 2
-        
-        # Aggregate advanced tick features (taking the last value of the tick window inside the bar)
-        adv_agg = df.groupby('bar_id')[adv_cols].last()
-        bars = bars.join(adv_agg)
     else:
         raise ValueError("bar_type must be either 'time' or 'volume'")
         

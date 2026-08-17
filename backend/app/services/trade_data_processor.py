@@ -99,6 +99,9 @@ def process_historical_trades(file_path: str = None, df_raw: pd.DataFrame = None
             trade_count=('trade_count', 'sum')
         )
         bars.set_index('datetime', inplace=True)
+        # Add temporal feature to understand the variable duration of volume bars
+        bars['time_since_last_bar'] = bars.index.to_series().diff().dt.total_seconds().fillna(0)
+        
         bars['cvd'] = bars['net_volume'].cumsum()
         bars['buy_volume'] = (bars['volume'] + bars['net_volume']) / 2
         bars['sell_volume'] = (bars['volume'] - bars['net_volume']) / 2

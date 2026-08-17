@@ -516,3 +516,39 @@ def automl_select(current_user: models.User = Depends(deps.get_current_user)):
         return run_automl_feature_selection()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/optimal-volume-threshold")
+async def get_optimal_volume_threshold(
+    symbol: str,
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """
+    Calculate optimal volume threshold based on recent 24h market data.
+    """
+    try:
+        import ccxt.async_support as ccxt
+        exchange = ccxt.binance()
+        # Fetch last 24h of 5m candles
+        since = int((time.time() - 24 * 60 * 60) * 1000)
+        ohlcv = await exchange.fetch_ohlcv(symbol, '5m', since=since, limit=288)
+        await exchange.close()
+        
+        if not ohlcv:
+            return {"optimal_threshold": 10.0}
+            
+        import pandas as pd
+        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        
+        # Average volume per 5m
+        avg_vol = float(df['volume'].mean())
+        
+        # For RL, we might want roughly 1 bar per minute on average
+        optimal = round(avg_vol / 5.0, 2) 
+        if optimal < 1:
+            optimal = 1.0
+            
+        return {"optimal_threshold": optimal, "avg_5m_volume": avg_vol}
+        
+    except Exception as e:
+        print(f"Error calculating optimal threshold: {e}")
+        return {"optimal_threshold": 10.0}

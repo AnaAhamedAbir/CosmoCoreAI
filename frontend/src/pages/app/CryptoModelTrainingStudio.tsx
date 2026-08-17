@@ -219,6 +219,21 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
     const [tradeBarType, setTradeBarType] = useState('time');
     const [tradeBarSize, setTradeBarSize] = useState('1m');
     const [tradeVolumeThreshold, setTradeVolumeThreshold] = useState('10.0');
+    const [isCalculatingThreshold, setIsCalculatingThreshold] = useState(false);
+
+    const handleAutoCalculateThreshold = async () => {
+        setIsCalculatingThreshold(true);
+        try {
+            const response = await apiClient.get(`/model-training/optimal-volume-threshold?symbol=${encodeURIComponent(symbol)}`);
+            if (response.data && response.data.optimal_threshold) {
+                setTradeVolumeThreshold(String(response.data.optimal_threshold));
+            }
+        } catch (error) {
+            console.error("Failed to auto-calculate threshold", error);
+        } finally {
+            setIsCalculatingThreshold(false);
+        }
+    };
     const [selectedTradeFeatures, setSelectedTradeFeatures] = useState<string[]>(['cvd', 'buy_volume', 'sell_volume', 'trade_count']);
     const [initialLoadedTradeFeatures, setInitialLoadedTradeFeatures] = useState<string[]>([]);
 
@@ -1999,7 +2014,18 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 </div>
                                             ) : (
                                                 <div>
-                                                    <label className="block text-sm font-medium text-slate-300 mb-1">Volume Threshold (Units)</label>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <label className="block text-sm font-medium text-slate-300">Volume Threshold (Units)</label>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={handleAutoCalculateThreshold}
+                                                            disabled={isTraining || isCalculatingThreshold}
+                                                            className="text-xs bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 px-2 py-1 rounded border border-amber-500/30 transition-colors flex items-center gap-1"
+                                                        >
+                                                            {isCalculatingThreshold ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                                                            Auto-Calculate
+                                                        </button>
+                                                    </div>
                                                     <input 
                                                         type="number"
                                                         value={tradeVolumeThreshold} 

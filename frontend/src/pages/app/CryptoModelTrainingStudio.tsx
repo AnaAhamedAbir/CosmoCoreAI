@@ -811,6 +811,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                     // Alternative Data params
                     alt_features: selectedAltFeatures,
                     custom_indicators: customIndicators.filter(ind => ind.isActive),
+                    custom_features: customFeatures,
                     asmc_htf: asmcHtf,
                     asmc_ltf: asmcLtf,
                     use_automl: useAutoML,

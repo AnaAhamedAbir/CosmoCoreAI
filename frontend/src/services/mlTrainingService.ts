@@ -104,6 +104,7 @@ export interface TrainingConfig {
         moeRewardTarget?: 'PnL' | 'Sharpe' | 'Sortino';
         moeMode?: 'preset' | 'custom';
         custom_indicators?: any[];
+        custom_features?: any[];
         asmc_htf?: string;
         asmc_ltf?: string;
     };

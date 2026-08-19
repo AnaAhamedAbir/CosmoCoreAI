@@ -1007,6 +1007,19 @@ def train_model_task(job_id: str, db: Session):
                         add_log(f"Successfully applied custom indicator: {ind.get('name')}")
                     except Exception as e:
                         add_log(f"⚠️ Failed to apply custom indicator '{ind.get('name')}': {e}")
+                        
+            # --- CUSTOM FEATURES (Feature Builder) ---
+            custom_features = config.get("custom_features", [])
+            for cf in custom_features:
+                cf_name = cf.get("name")
+                cf_formula = cf.get("formula")
+                if cf_name and cf_formula:
+                    try:
+                        # Safely evaluate and assign to the dataframe
+                        df[cf_name] = df.eval(cf_formula, engine='python')
+                        add_log(f"Successfully evaluated custom formula: {cf_name}")
+                    except Exception as e:
+                        add_log(f"⚠️ Failed to evaluate custom formula '{cf_name}': {e}")
                 
             prediction_target = config.get("prediction_target", "classification")
             fee_threshold = float(config.get("fee_threshold", 0.001))
@@ -1191,6 +1204,19 @@ def train_model_task(job_id: str, db: Session):
                         add_log(f"Successfully applied custom indicator: {ind.get('name')}")
                     except Exception as e:
                         add_log(f"⚠️ Failed to apply custom indicator '{ind.get('name')}': {e}")
+                        
+            # --- CUSTOM FEATURES (Feature Builder) ---
+            custom_features = config.get("custom_features", [])
+            for cf in custom_features:
+                cf_name = cf.get("name")
+                cf_formula = cf.get("formula")
+                if cf_name and cf_formula:
+                    try:
+                        # Safely evaluate and assign to the dataframe
+                        df[cf_name] = df.eval(cf_formula, engine='python')
+                        add_log(f"Successfully evaluated custom formula: {cf_name}")
+                    except Exception as e:
+                        add_log(f"⚠️ Failed to evaluate custom formula '{cf_name}': {e}")
                 
             horizon = int(config.get("forecast_horizon", config.get("prediction_horizon", 5)))
             prediction_target = config.get("prediction_target", "classification")

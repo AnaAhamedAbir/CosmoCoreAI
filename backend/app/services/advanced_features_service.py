@@ -73,11 +73,11 @@ def calculate_correlation_matrix(features: List[str]) -> Dict[str, Any]:
     valid_features = [f for f in features if f in df_numeric.columns]
     
     # If the user asked for features that don't exist in the current raw data,
-    # we inject mock columns for them just so the UI matrix renders completely.
-    # This happens because the UI has many hardcoded feature checkboxes.
+    # fill them with NaN so they correctly show as 0 or empty in the matrix
+    # instead of rendering fake random correlation values.
     for f in features:
         if f not in df_numeric.columns:
-            df_numeric[f] = np.random.randn(len(df_numeric))
+            df_numeric[f] = np.nan
             valid_features.append(f)
             
     # Calculate correlation on the requested features
@@ -112,7 +112,8 @@ def validate_custom_formula(formula: str) -> Dict[str, Any]:
         
         for w in words:
             if w not in df.columns and w not in keywords:
-                df[w] = np.random.randn(len(df))
+                # Use ones instead of random data for validation to prevent false variance
+                df[w] = np.ones(len(df))
                 
         # Evaluate using pandas
         # Allowing engine='python' gives maximum flexibility for local functions
@@ -131,8 +132,7 @@ def validate_custom_formula(formula: str) -> Dict[str, Any]:
 
 def run_automl_feature_selection() -> Dict[str, Any]:
     """
-    Simulates an AutoML / SHAP feature selection process.
-    We use correlation against a generated target (future return) to find the top 20 features.
+    Runs an AutoML feature selection process using RandomForest feature importance.
     """
     df = _get_latest_dataset(rows=2000)
     df_numeric = df.select_dtypes(include=[np.number]).dropna(axis=1, how='all').fillna(0)
@@ -144,16 +144,33 @@ def run_automl_feature_selection() -> Dict[str, Any]:
     target_col = df_numeric.columns[0]
     df_numeric['target_y'] = df_numeric[target_col].pct_change(5).shift(-5).fillna(0)
     
-    # Calculate Absolute Correlation to Target
-    corr_series = df_numeric.corr()['target_y'].abs()
-    # Drop the target itself
-    corr_series = corr_series.drop(labels=['target_y', target_col], errors='ignore')
+    # Separate features (X) and target (y)
+    X = df_numeric.drop(columns=['target_y', target_col], errors='ignore')
+    y = df_numeric['target_y']
     
-    # Sort features by correlation score
-    corr_series = corr_series.sort_values(ascending=False)
+    if X.empty:
+        return {"top_features": []}
     
-    # Return top 20
-    top_features = corr_series.head(20).index.tolist()
+    try:
+        from sklearn.ensemble import RandomForestRegressor
+        
+        # Train a quick model to get feature importance
+        model = RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=-1)
+        model.fit(X, y)
+        
+        # Get importances and sort
+        importances = pd.Series(model.feature_importances_, index=X.columns)
+        importances = importances.sort_values(ascending=False)
+        
+        # Return top 20
+        top_features = importances.head(20).index.tolist()
+        method = "Random Forest Feature Importance"
+    except ImportError:
+        # Fallback to absolute correlation if sklearn is not installed
+        importances = df_numeric.corr()['target_y'].abs().drop(labels=['target_y', target_col], errors='ignore')
+        importances = importances.sort_values(ascending=False)
+        top_features = importances.head(20).index.tolist()
+        method = "Target Correlation (Fallback)"
     
     # If we don't have 20 features, supplement with some standard ones from the UI
     standard_features = [
@@ -167,5 +184,5 @@ def run_automl_feature_selection() -> Dict[str, Any]:
             
     return {
         "top_features": top_features,
-        "method": "Target Correlation (SHAP Proxy)"
+        "method": method
     }

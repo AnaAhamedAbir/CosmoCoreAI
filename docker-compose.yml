@@ -3,7 +3,7 @@ services:
   backend:
     build: ./backend
     container_name: cosmoquant_backend
-    command: bash -c "sed -i 's/\\r$$//' prestart.sh && bash prestart.sh && uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 65"
+    command: bash -c "sed 's/\\r$$//' prestart.sh > /tmp/prestart.sh && bash /tmp/prestart.sh && uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 65"
     restart: always
     volumes:
       - ./backend:/app

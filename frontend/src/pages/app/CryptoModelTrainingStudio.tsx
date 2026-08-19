@@ -30,6 +30,7 @@ import { AdvancedAIToolsPanel } from '@/components/ml/AdvancedAIToolsPanel';
 import { AdvancedHybridCollectorPanel } from '@/components/ml/AdvancedHybridCollectorPanel';
 import { FeatureCorrelationModal } from '@/components/ml/FeatureCorrelationModal';
 import { CustomFeatureBuilder } from '@/components/ml/CustomFeatureBuilder';
+import { ShapValueModal } from '@/components/ml/ShapValueModal';
 
 import { mlModelsService } from '@/services/mlModelsService';
 
@@ -190,18 +191,54 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
     const handleAutoMLSelect = async () => {
         try {
-            const res = await apiClient.post('/model-training/automl-feature-selection');
+            const res = await apiClient.post('/model-training/automl-feature-selection', {
+                symbol,
+                timeframe,
+                dataset_type: dataSource
+            });
             if (res.data && res.data.top_features) {
-                // Since this combines different feature types, for now we will just populate the L2 and Trade features
-                // In a real complex setup we'd map them to their respective categories
-                setSelectedL2Features(res.data.top_features);
-                alert(`✅ AutoML SHAP Analysis Complete! Top features selected via ${res.data.method}.`);
+                const features: string[] = res.data.top_features;
+                
+                if (res.data.top_features_with_scores) {
+                    setShapData(res.data.top_features_with_scores);
+                    setShapMethod(res.data.method || "XGBoost + SHAP");
+                    setShowShapModal(true);
+                }
+                
+                // Known indicators and trade features mapping
+                const knownIndicators = ['RSI', 'MACD', 'Stoch', 'ROC', 'CCI', 'WillR', 'MFI', 'VWAP_SD', 'SMA', 'EMA', 'BB', 'ATR', 'OBV'];
+                const knownTradeFeatures = ['buy_volume', 'sell_volume', 'trade_count', 'liquidation_volume', 'avg_trade_size', 'volume'];
+                
+                const selectedInds: string[] = [];
+                const selectedTrades: string[] = [];
+                const selectedL2: string[] = [];
+                
+                features.forEach(f => {
+                    if (knownIndicators.includes(f)) {
+                        selectedInds.push(f);
+                    } else if (knownTradeFeatures.includes(f)) {
+                        selectedTrades.push(f);
+                    } else {
+                        selectedL2.push(f);
+                    }
+                });
+                
+                if (selectedInds.length > 0) setSelectedIndicators(selectedInds);
+                if (selectedTrades.length > 0) setSelectedTradeFeatures(selectedTrades);
+                if (selectedL2.length > 0) setSelectedL2Features(selectedL2);
+                
+                if (!res.data.top_features_with_scores) {
+                    alert(`✅ AutoML Analysis Complete! Top features distributed smartly across engines. Method: ${res.data.method}`);
+                }
             }
         } catch (error) {
             console.error("AutoML selection failed", error);
             alert("Failed to run AutoML feature selection.");
         }
     };
+    const [shapData, setShapData] = useState<any[]>([]);
+    const [showShapModal, setShowShapModal] = useState(false);
+    const [shapMethod, setShapMethod] = useState("");
     
     const [currentJob, setCurrentJob] = useState<TrainingJob | null>(null);
     const [l2ScrapeJob, setL2ScrapeJob] = useState<TrainingJob | null>(null);
@@ -3213,6 +3250,13 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                     symbol={symbol} 
                 />
             )}
+
+            <ShapValueModal
+                isOpen={showShapModal}
+                onClose={() => setShowShapModal(false)}
+                data={shapData}
+                method={shapMethod}
+            />
 
             <FeatureCorrelationModal
                 isOpen={showCorrelationModal}

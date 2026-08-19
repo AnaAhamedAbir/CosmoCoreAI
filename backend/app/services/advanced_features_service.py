@@ -4,22 +4,43 @@ import pandas as pd
 import numpy as np
 from typing import List, Dict, Any
 
-def _get_latest_dataset(rows=1000) -> pd.DataFrame:
+def _get_latest_dataset(rows=1000, symbol=None, timeframe=None, dataset_type=None) -> pd.DataFrame:
     """
     Attempts to load the most recent dataset from raw data directories.
-    Prioritizes hybrid snapshots, then l2 snapshots.
+    Prioritizes specific symbol/type if provided, else falls back to hybrid/l2.
     """
     base_dir = os.path.join(os.getcwd(), "data", "raw")
-    
-    # Check hybrid first
-    hybrid_dir = os.path.join(base_dir, "hybrid_snapshots")
-    l2_dir = os.path.join(base_dir, "l2_snapshots")
-    
     files = []
-    if os.path.exists(hybrid_dir):
-        files.extend(glob.glob(os.path.join(hybrid_dir, "*.parquet")))
-    if os.path.exists(l2_dir):
-        files.extend(glob.glob(os.path.join(l2_dir, "*.parquet")))
+    
+    # Try to find specific files based on criteria
+    if symbol and dataset_type:
+        target_dir = None
+        if dataset_type == 'ohlcv':
+            target_dir = os.path.join(base_dir, "ohlcv")
+        elif dataset_type == 'historical_trades':
+            target_dir = os.path.join(base_dir, "historical_trades")
+        elif dataset_type == 'l2_orderbook':
+            target_dir = os.path.join(base_dir, "l2_snapshots")
+        elif dataset_type in ['hybrid', 'hybrid_deep']:
+            target_dir = os.path.join(base_dir, "hybrid_snapshots")
+            
+        if target_dir and os.path.exists(target_dir):
+            # Try specific symbol and timeframe
+            if timeframe:
+                files.extend(glob.glob(os.path.join(target_dir, f"*{symbol}*{timeframe}*.parquet")))
+            if not files:
+                # Try just symbol
+                files.extend(glob.glob(os.path.join(target_dir, f"*{symbol}*.parquet")))
+                
+    # Fallback to general hybrid/l2 if specific files not found
+    if not files:
+        hybrid_dir = os.path.join(base_dir, "hybrid_snapshots")
+        l2_dir = os.path.join(base_dir, "l2_snapshots")
+        
+        if os.path.exists(hybrid_dir):
+            files.extend(glob.glob(os.path.join(hybrid_dir, "*.parquet")))
+        if os.path.exists(l2_dir):
+            files.extend(glob.glob(os.path.join(l2_dir, "*.parquet")))
         
     if not files:
         # Fallback to generating mock data if no files exist, to ensure UI doesn't break
@@ -130,11 +151,12 @@ def validate_custom_formula(formula: str) -> Dict[str, Any]:
             "error": str(e)
         }
 
-def run_automl_feature_selection() -> Dict[str, Any]:
+def run_automl_feature_selection(symbol=None, timeframe=None, dataset_type=None) -> Dict[str, Any]:
     """
-    Runs an AutoML feature selection process using RandomForest feature importance.
+    Runs an AutoML feature selection process using XGBoost and SHAP.
+    Falls back to RandomForest feature importance if xgboost/shap are not installed.
     """
-    df = _get_latest_dataset(rows=2000)
+    df = _get_latest_dataset(rows=2000, symbol=symbol, timeframe=timeframe, dataset_type=dataset_type)
     df_numeric = df.select_dtypes(include=[np.number]).dropna(axis=1, how='all').fillna(0)
     
     if len(df_numeric.columns) == 0:
@@ -142,35 +164,73 @@ def run_automl_feature_selection() -> Dict[str, Any]:
         
     # Assume we are predicting 5-step future return of the first column (usually price or midprice)
     target_col = df_numeric.columns[0]
-    df_numeric['target_y'] = df_numeric[target_col].pct_change(5).shift(-5).fillna(0)
+    df_numeric['target_y'] = df_numeric[target_col].pct_change(5).shift(-5)
+    
+    # Clean infinity values and NaNs
+    df_numeric.replace([np.inf, -np.inf], np.nan, inplace=True)
+    df_numeric['target_y'] = df_numeric['target_y'].fillna(0)
     
     # Separate features (X) and target (y)
     X = df_numeric.drop(columns=['target_y', target_col], errors='ignore')
+    X = X.fillna(0) # Also clean X to be safe
     y = df_numeric['target_y']
     
     if X.empty:
         return {"top_features": []}
     
+    top_features = []
+    method = ""
+    
     try:
-        from sklearn.ensemble import RandomForestRegressor
+        import xgboost as xgb
+        import shap
         
-        # Train a quick model to get feature importance
-        model = RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=-1)
+        # Train XGBoost model
+        model = xgb.XGBRegressor(n_estimators=50, max_depth=3, random_state=42, n_jobs=-1)
         model.fit(X, y)
         
-        # Get importances and sort
-        importances = pd.Series(model.feature_importances_, index=X.columns)
+        # Calculate SHAP values
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X)
+        
+        # Mean absolute SHAP values for feature importance
+        mean_abs_shap = np.abs(shap_values).mean(axis=0)
+        importances = pd.Series(mean_abs_shap, index=X.columns)
         importances = importances.sort_values(ascending=False)
         
-        # Return top 20
         top_features = importances.head(20).index.tolist()
-        method = "Random Forest Feature Importance"
+        method = "XGBoost + SHAP Values"
+        
     except ImportError:
-        # Fallback to absolute correlation if sklearn is not installed
-        importances = df_numeric.corr()['target_y'].abs().drop(labels=['target_y', target_col], errors='ignore')
-        importances = importances.sort_values(ascending=False)
-        top_features = importances.head(20).index.tolist()
-        method = "Target Correlation (Fallback)"
+        # Fallback to Random Forest if xgboost or shap are missing
+        try:
+            from sklearn.ensemble import RandomForestRegressor
+            
+            # Train a quick model to get feature importance
+            model = RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=-1)
+            model.fit(X, y)
+            
+            # Get importances and sort
+            importances = pd.Series(model.feature_importances_, index=X.columns)
+            importances = importances.sort_values(ascending=False)
+            
+            # Return top 20
+            top_features = importances.head(20).index.tolist()
+            method = "Random Forest Feature Importance (Fallback)"
+        except ImportError:
+            # Fallback to absolute correlation if sklearn is not installed
+            importances = df_numeric.corr()['target_y'].abs().drop(labels=['target_y', target_col], errors='ignore')
+            importances = importances.sort_values(ascending=False)
+            top_features = importances.head(20).index.tolist()
+            method = "Target Correlation (Fallback)"
+    
+    top_features_with_scores = []
+    max_score = importances.max() if not importances.empty else 1.0
+    if max_score == 0: max_score = 1.0
+    
+    for f in top_features:
+        score = float(importances.get(f, 0.0)) / float(max_score)
+        top_features_with_scores.append({"feature": f, "score": score})
     
     # If we don't have 20 features, supplement with some standard ones from the UI
     standard_features = [
@@ -181,8 +241,10 @@ def run_automl_feature_selection() -> Dict[str, Any]:
     for f in standard_features:
         if f not in top_features and len(top_features) < 20:
             top_features.append(f)
+            top_features_with_scores.append({"feature": f, "score": 0.05}) # Default low score
             
     return {
         "top_features": top_features,
+        "top_features_with_scores": top_features_with_scores,
         "method": method
     }

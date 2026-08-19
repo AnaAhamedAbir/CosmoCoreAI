@@ -27,7 +27,9 @@ class FormulaValidationRequest(BaseModel):
     formula: str
 
 class AutoMLRequest(BaseModel):
-    pass  # Could take target feature or settings in the future
+    symbol: Optional[str] = None
+    timeframe: Optional[str] = None
+    dataset_type: Optional[str] = None
 
 router = APIRouter()
 
@@ -510,10 +512,10 @@ def validate_formula(request: FormulaValidationRequest, current_user: models.Use
     return result
 
 @router.post("/automl-feature-selection")
-def automl_select(current_user: models.User = Depends(deps.get_current_user)):
+def automl_select(request: AutoMLRequest, current_user: models.User = Depends(deps.get_current_user)):
     from app.services.advanced_features_service import run_automl_feature_selection
     try:
-        return run_automl_feature_selection()
+        return run_automl_feature_selection(request.symbol, request.timeframe, request.dataset_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

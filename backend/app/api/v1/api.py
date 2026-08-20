@@ -75,6 +75,12 @@ api_router.include_router(dataset_merger.router, prefix="/model-training/dataset
 from app.api.v1.endpoints import forex_model_training
 api_router.include_router(forex_model_training.router, prefix="/forex-model-training", tags=["forex-model-training"])
 
+from app.api.v1.endpoints import derivatives_api
+api_router.include_router(derivatives_api.router, prefix="/derivatives", tags=["derivatives"])
+
+from app.api.v1.endpoints import nlp_api
+api_router.include_router(nlp_api.router, prefix="/nlp-sentiment", tags=["nlp-sentiment"])
+
 # Forex Automated Trading Router (Isolated Domain)
 from app.forex import router as forex_router
 api_router.include_router(forex_router.router, prefix="/forex", tags=["forex"])

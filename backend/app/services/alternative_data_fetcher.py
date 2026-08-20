@@ -210,6 +210,38 @@ class AlternativeDataFetcher:
             })
 
     # ─────────────────────────────────────────────────────────────────────────
+    # 7. Derivatives (Funding Rate & OI) (DIRECT SERVICE IMPORT)
+    # ─────────────────────────────────────────────────────────────────────────
+    async def fetch_derivatives(self, symbol: str = "BTC/USDT") -> pd.DataFrame:
+        try:
+            from app.services.derivatives_service import derivatives_service
+            fr_data = await derivatives_service.get_funding_rate(symbol)
+            oi_data = await derivatives_service.get_open_interest(symbol)
+            return pd.DataFrame({
+                "funding_rate": [fr_data.get("funding_rate", 0.0)],
+                "open_interest": [oi_data.get("open_interest_usd", 0.0)],
+            })
+        except Exception as e:
+            logger.warning(f"Derivatives fetch failed: {e}")
+            return pd.DataFrame({"funding_rate": [0.0], "open_interest": [0.0]})
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 8. NLP Sentiment (Social & News) (DIRECT SERVICE IMPORT)
+    # ─────────────────────────────────────────────────────────────────────────
+    async def fetch_nlp_sentiment(self, symbol: str = "BTC") -> pd.DataFrame:
+        try:
+            from app.services.nlp_sentiment_service import nlp_sentiment_service
+            display_symbol = symbol.split('/')[0] if '/' in symbol else symbol
+            data = await nlp_sentiment_service.get_live_score(display_symbol)
+            return pd.DataFrame({
+                "social_nlp_score": [data.get("social_nlp_score", 0.0)],
+                "news_nlp_score": [data.get("news_nlp_score", 0.0)],
+            })
+        except Exception as e:
+            logger.warning(f"NLP Sentiment fetch failed: {e}")
+            return pd.DataFrame({"social_nlp_score": [0.0], "news_nlp_score": [0.0]})
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Master builder — concurrent fetch + robust alignment
     # ─────────────────────────────────────────────────────────────────────────
     async def build_alternative_features(self, df_index: pd.DatetimeIndex, symbol: str, selected_features: List[str] = None) -> pd.DataFrame:
@@ -252,7 +284,7 @@ class AlternativeDataFetcher:
 
         # ── Filter tasks based on selected_features ───────────────
         if selected_features is None:
-            selected_features = ["fng_value", "commit_count", "search_interest", "exchange_net_flow", "onchain_liquidity", "macro_cpi_surprise", "macro_nfp_surprise", "macro_rate_sentiment"]
+            selected_features = ["fng_value", "commit_count", "search_interest", "exchange_net_flow", "onchain_liquidity", "macro_cpi_surprise", "macro_nfp_surprise", "macro_rate_sentiment", "funding_rate", "open_interest", "social_nlp_score", "news_nlp_score"]
 
         async def _empty_async(): return None
         
@@ -264,10 +296,16 @@ class AlternativeDataFetcher:
         
         has_macro = any(f in selected_features for f in ["macro_cpi_surprise", "macro_nfp_surprise", "macro_rate_sentiment"])
         tasks.append(self.fetch_macro_intelligence() if has_macro else _empty_async())
+        
+        has_derivatives = any(f in selected_features for f in ["funding_rate", "open_interest"])
+        tasks.append(self.fetch_derivatives(symbol=symbol) if has_derivatives else _empty_async())
+        
+        has_nlp = any(f in selected_features for f in ["social_nlp_score", "news_nlp_score"])
+        tasks.append(self.fetch_nlp_sentiment(symbol=symbol) if has_nlp else _empty_async())
 
         # ── Run all async fetches concurrently ────────────────────
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        fng_df, gh_df, exchange_flow_df, liquidity_df, macro_df = results
+        fng_df, gh_df, exchange_flow_df, liquidity_df, macro_df, deriv_df, nlp_df = results
 
         def safe_df(result, fallback: dict) -> pd.DataFrame:
             return pd.DataFrame(fallback) if isinstance(result, Exception) or result is None or (isinstance(result, pd.DataFrame) and result.empty and fallback) else result
@@ -279,6 +317,8 @@ class AlternativeDataFetcher:
         macro_df         = safe_df(macro_df,          {"macro_cpi_surprise": [0.0],
                                                         "macro_nfp_surprise": [0.0],
                                                         "macro_rate_sentiment": [0.0]})
+        deriv_df         = safe_df(deriv_df,          {"funding_rate": [0.0], "open_interest": [0.0]})
+        nlp_df           = safe_df(nlp_df,            {"social_nlp_score": [0.0], "news_nlp_score": [0.0]})
 
         # Google Trends is sync
         if "search_interest" in selected_features:
@@ -321,13 +361,17 @@ class AlternativeDataFetcher:
         macro_cpi_surprise_val   = scalar(macro_df,         "macro_cpi_surprise",   0.0)
         macro_nfp_surprise_val   = scalar(macro_df,         "macro_nfp_surprise",   0.0)
         macro_rate_sentiment_val = scalar(macro_df,         "macro_rate_sentiment", 0.0)
+        funding_rate_val         = scalar(deriv_df,         "funding_rate",         0.0)
+        open_interest_val        = scalar(deriv_df,         "open_interest",        0.0)
+        social_nlp_score_val     = scalar(nlp_df,           "social_nlp_score",     0.0)
+        news_nlp_score_val       = scalar(nlp_df,           "news_nlp_score",       0.0)
 
         logger.info(
             f"Scalars → exchange_net_flow={exchange_net_flow_val:.4f}, "
             f"onchain_liquidity={onchain_liquidity_val:.4f}, "
             f"cpi_surprise={macro_cpi_surprise_val:.4f}, "
-            f"nfp_surprise={macro_nfp_surprise_val:.4f}, "
-            f"rate_sentiment={macro_rate_sentiment_val}"
+            f"funding_rate={funding_rate_val:.4f}, "
+            f"social_nlp={social_nlp_score_val:.4f}"
         )
 
         # ── Build final_df aligned to df_index ───────────────────
@@ -353,6 +397,10 @@ class AlternativeDataFetcher:
         final_df["macro_cpi_surprise"]   = macro_cpi_surprise_val
         final_df["macro_nfp_surprise"]   = macro_nfp_surprise_val
         final_df["macro_rate_sentiment"] = macro_rate_sentiment_val
+        final_df["funding_rate"]         = funding_rate_val
+        final_df["open_interest"]        = open_interest_val
+        final_df["social_nlp_score"]     = social_nlp_score_val
+        final_df["news_nlp_score"]       = news_nlp_score_val
 
         # ── Diagnostic log ────────────────────────────────────────
         neutral_map = {"fng_value": 50, "commit_count": 0, "search_interest": 50}

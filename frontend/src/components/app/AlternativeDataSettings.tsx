@@ -33,6 +33,8 @@ interface Category {
 const useLivePreviews = () => {
     const [fng, setFng] = useState<number | null>(null);
     const [netFlow, setNetFlow] = useState<number | null>(null);
+    const [fundingRate, setFundingRate] = useState<number | null>(null);
+    const [nlpScore, setNlpScore] = useState<number | null>(null);
 
     useEffect(() => {
         // Fear & Greed
@@ -46,9 +48,21 @@ const useLivePreviews = () => {
             .then(r => r.ok ? r.json() : null)
             .then(d => { if (d?.net_flow !== undefined) setNetFlow(Number(d.net_flow)); })
             .catch(() => {});
+            
+        // Funding Rate
+        fetch('/api/v1/derivatives/funding-rate')
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d?.funding_rate !== undefined) setFundingRate(Number(d.funding_rate)); })
+            .catch(() => {});
+
+        // NLP Score
+        fetch('/api/v1/nlp-sentiment/live-score')
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d?.composite_score !== undefined) setNlpScore(Number(d.composite_score)); })
+            .catch(() => {});
     }, []);
 
-    return { fng, netFlow };
+    return { fng, netFlow, fundingRate, nlpScore };
 };
 
 const STATUS_BADGE: Record<string, React.ReactElement> = {
@@ -198,6 +212,70 @@ const CATEGORIES: Category[] = [
             },
         ],
     },
+    {
+        key: 'derivatives',
+        label: 'Derivatives & Options Engine',
+        icon: Activity,
+        accent: 'rose',
+        features: [
+            {
+                id: 'funding_rate',
+                name: 'Funding Rate',
+                desc: 'Live perpetual futures funding rate. High positive = crowded longs (squeeze risk).',
+                icon: DollarSign,
+                color: 'text-rose-400',
+                bg: 'bg-rose-500/10',
+                border: 'border-rose-500/30',
+                status: 'live',
+                impact: 'high',
+                tooltip: 'Sourced via Binance Futures. Vital for detecting leverage extremes.',
+            },
+            {
+                id: 'open_interest',
+                name: 'Open Interest (OI)',
+                desc: 'Total value of open futures contracts. Rising OI + Flat Price = impending volatility.',
+                icon: BarChart2,
+                color: 'text-rose-400',
+                bg: 'bg-rose-500/10',
+                border: 'border-rose-500/30',
+                status: 'live',
+                impact: 'high',
+                tooltip: 'Sourced via Binance Futures API.',
+            }
+        ]
+    },
+    {
+        key: 'nlp_sentiment',
+        label: 'Live NLP Sentiment Engine',
+        icon: Globe,
+        accent: 'purple',
+        features: [
+            {
+                id: 'social_nlp_score',
+                name: 'Social Media NLP (Twitter/X)',
+                desc: 'Real-time NLP sentiment analysis from crypto Twitter (-1 to 1 score).',
+                icon: TrendingUp,
+                color: 'text-purple-400',
+                bg: 'bg-purple-500/10',
+                border: 'border-purple-500/30',
+                status: 'live',
+                impact: 'high',
+                tooltip: 'VADER/FinBERT models analyzing live streams.',
+            },
+            {
+                id: 'news_nlp_score',
+                name: 'News Aggregator NLP',
+                desc: 'NLP scoring of real-time crypto news headlines and articles.',
+                icon: Info,
+                color: 'text-purple-400',
+                bg: 'bg-purple-500/10',
+                border: 'border-purple-500/30',
+                status: 'live',
+                impact: 'medium',
+                tooltip: 'Sourced via News API and processed via FinBERT.',
+            }
+        ]
+    },
 ];
 
 export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = ({
@@ -205,11 +283,13 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
     selectedAltFeatures,
     setSelectedAltFeatures,
 }) => {
-    const { fng, netFlow } = useLivePreviews();
+    const { fng, netFlow, fundingRate, nlpScore } = useLivePreviews();
     const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
         sentiment: true,
         alternative: false,
         macro: false,
+        derivatives: true,
+        nlp_sentiment: true,
     });
     const [hoveredFeature, setHoveredFeature] = useState<string | null>(null);
 
@@ -265,8 +345,8 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
             </div>
 
             {/* ── Live Snapshot Bar ── */}
-            {(fng !== null || netFlow !== null) && (
-                <div className="flex items-center gap-4 px-5 py-2.5 bg-black/30 border-b border-white/5">
+            {(fng !== null || netFlow !== null || fundingRate !== null || nlpScore !== null) && (
+                <div className="flex items-center gap-4 px-5 py-2.5 bg-black/30 border-b border-white/5 overflow-x-auto whitespace-nowrap hide-scrollbar">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex-shrink-0">Live Pulse:</span>
                     {fng !== null && (
                         <div className="flex items-center gap-1.5">
@@ -293,9 +373,39 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                             </div>
                         </>
                     )}
+                    {fundingRate !== null && (
+                        <>
+                            <div className="w-px h-4 bg-white/10 flex-shrink-0" />
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <span className="text-[10px] text-slate-500">Funding</span>
+                                <span className={`text-xs font-black font-mono ${fundingRate < 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {fundingRate > 0 ? '+' : ''}{fundingRate.toFixed(4)}%
+                                </span>
+                            </div>
+                        </>
+                    )}
+                    {nlpScore !== null && (
+                        <>
+                            <div className="w-px h-4 bg-white/10 flex-shrink-0" />
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <span className="text-[10px] text-slate-500">NLP</span>
+                                <span className={`text-xs font-black font-mono ${nlpScore < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                    {nlpScore.toFixed(2)}
+                                </span>
+                            </div>
+                        </>
+                    )}
                     <CheckCircle className="w-3 h-3 text-emerald-500 ml-auto flex-shrink-0" />
                 </div>
             )}
+            
+            <div className="px-5 py-2.5 bg-indigo-500/10 border-b border-indigo-500/20">
+                 <p className="text-[10px] text-indigo-300 font-medium">
+                     <span className="font-bold text-indigo-200">System Notice:</span> 
+                     Currently, Derivatives (Funding Rate/OI) and NLP Sentiment use robust API placeholders. 
+                     In the future, you can replace the Python service methods (`get_funding_rate`, `get_live_score`) with real API keys (e.g., Binance Futures, Twitter API).
+                 </p>
+            </div>
 
             {/* ── Categories ── */}
             <div className="p-3 space-y-2">

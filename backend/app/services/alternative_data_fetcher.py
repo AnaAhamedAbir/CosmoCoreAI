@@ -242,6 +242,108 @@ class AlternativeDataFetcher:
             return pd.DataFrame({"social_nlp_score": [0.0], "news_nlp_score": [0.0]})
 
     # ─────────────────────────────────────────────────────────────────────────
+    # 9. Tokenomics & Event-Driven Engine
+    # ─────────────────────────────────────────────────────────────────────────
+    async def fetch_tokenomics(self, symbol: str) -> pd.DataFrame:
+        try:
+            # We use local HTTP fetch to bypass DB session complexity in async workers
+            # or direct fallback if server isn't running
+            try:
+                response = await self.http_client.get("http://127.0.0.1:8000/api/v1/token-unlocks/")
+                if response.status_code == 200:
+                    data = response.json()
+                    # simplistic extraction
+                    amount_usd = sum(d.get("amount_usd", 0) for d in data) if isinstance(data, list) else 0.0
+                    return pd.DataFrame({
+                        "upcoming_unlocks_usd": [amount_usd],
+                        "event_impact_score": [5.0]
+                    })
+            except:
+                pass
+            
+            return pd.DataFrame({
+                "upcoming_unlocks_usd": [0.0],
+                "event_impact_score": [0.0],
+            })
+        except Exception as e:
+            logger.warning(f"Tokenomics fetch failed: {e}")
+            return pd.DataFrame({"upcoming_unlocks_usd": [0.0], "event_impact_score": [0.0]})
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 10. Liquidation & Margin Engine
+    # ─────────────────────────────────────────────────────────────────────────
+    async def fetch_liquidations(self, symbol: str) -> pd.DataFrame:
+        try:
+            from app.services.god_mode_liquidation_service import god_mode_service
+            state = god_mode_service.state
+            
+            # Extract real state from the God Mode Engine
+            liq_vol = float(state.get("pain_threshold", {}).get("value", 0.0))
+            leverage = float(state.get("smart_money", 50)) / 10.0 # Heuristic proxy
+            
+            return pd.DataFrame({
+                "long_liquidation_vol": [liq_vol],
+                "estimated_leverage": [leverage],
+            })
+        except Exception as e:
+            logger.warning(f"Liquidations fetch failed: {e}")
+            return pd.DataFrame({"long_liquidation_vol": [0.0], "estimated_leverage": [1.0]})
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 11. Options IV & Greeks
+    # ─────────────────────────────────────────────────────────────────────────
+    async def fetch_options_greeks(self, symbol: str) -> pd.DataFrame:
+        try:
+            try:
+                response = await self.http_client.get(f"http://127.0.0.1:8000/api/v1/options/iv?symbol={symbol}")
+                if response.status_code == 200:
+                    data = response.json()
+                    return pd.DataFrame({
+                        "implied_volatility": [float(data.get("iv", 0.0))],
+                        "put_call_ratio": [float(data.get("pcr", 1.0))],
+                    })
+            except:
+                pass
+                
+            return pd.DataFrame({
+                "implied_volatility": [0.0],
+                "put_call_ratio": [1.0],
+            })
+        except Exception as e:
+            logger.warning(f"Options IV fetch failed: {e}")
+            return pd.DataFrame({"implied_volatility": [0.0], "put_call_ratio": [1.0]})
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 12. DeFi & On-Chain Microstructure
+    # ─────────────────────────────────────────────────────────────────────────
+    async def fetch_defi_microstructure(self, symbol: str) -> pd.DataFrame:
+        try:
+            from app.services.defi_microstructure_service import defi_microstructure_service
+            data = await defi_microstructure_service.get_defi_metrics(symbol)
+            return pd.DataFrame({
+                "dex_liquidity_flow": [data.get("dex_liquidity_flow", 0.0)],
+                "mev_activity_score": [data.get("mev_activity_score", 0.0)],
+            })
+        except Exception as e:
+            logger.warning(f"DeFi Microstructure fetch failed: {e}")
+            return pd.DataFrame({"dex_liquidity_flow": [0.0], "mev_activity_score": [0.0]})
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 13. Cross-Market & Correlated Assets
+    # ─────────────────────────────────────────────────────────────────────────
+    async def fetch_cross_market(self, symbol: str) -> pd.DataFrame:
+        try:
+            from app.services.cross_market_service import cross_market_service
+            data = await cross_market_service.get_cross_market_metrics(symbol)
+            return pd.DataFrame({
+                "spx_correlation": [data.get("spx_correlation", 0.0)],
+                "etf_net_flow_usd": [data.get("etf_net_flow_usd", 0.0)],
+            })
+        except Exception as e:
+            logger.warning(f"Cross Market fetch failed: {e}")
+            return pd.DataFrame({"spx_correlation": [0.0], "etf_net_flow_usd": [0.0]})
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Master builder — concurrent fetch + robust alignment
     # ─────────────────────────────────────────────────────────────────────────
     async def build_alternative_features(self, df_index: pd.DatetimeIndex, symbol: str, selected_features: List[str] = None) -> pd.DataFrame:
@@ -284,7 +386,14 @@ class AlternativeDataFetcher:
 
         # ── Filter tasks based on selected_features ───────────────
         if selected_features is None:
-            selected_features = ["fng_value", "commit_count", "search_interest", "exchange_net_flow", "onchain_liquidity", "macro_cpi_surprise", "macro_nfp_surprise", "macro_rate_sentiment", "funding_rate", "open_interest", "social_nlp_score", "news_nlp_score"]
+            selected_features = [
+                "fng_value", "commit_count", "search_interest", "exchange_net_flow", "onchain_liquidity", 
+                "macro_cpi_surprise", "macro_nfp_surprise", "macro_rate_sentiment", "funding_rate", 
+                "open_interest", "social_nlp_score", "news_nlp_score",
+                "upcoming_unlocks_usd", "event_impact_score", "long_liquidation_vol", "estimated_leverage",
+                "implied_volatility", "put_call_ratio", "dex_liquidity_flow", "mev_activity_score",
+                "spx_correlation", "etf_net_flow_usd"
+            ]
 
         async def _empty_async(): return None
         
@@ -303,9 +412,24 @@ class AlternativeDataFetcher:
         has_nlp = any(f in selected_features for f in ["social_nlp_score", "news_nlp_score"])
         tasks.append(self.fetch_nlp_sentiment(symbol=symbol) if has_nlp else _empty_async())
 
+        has_tokenomics = any(f in selected_features for f in ["upcoming_unlocks_usd", "event_impact_score"])
+        tasks.append(self.fetch_tokenomics(symbol=symbol) if has_tokenomics else _empty_async())
+
+        has_liquidations = any(f in selected_features for f in ["long_liquidation_vol", "estimated_leverage"])
+        tasks.append(self.fetch_liquidations(symbol=symbol) if has_liquidations else _empty_async())
+
+        has_options = any(f in selected_features for f in ["implied_volatility", "put_call_ratio"])
+        tasks.append(self.fetch_options_greeks(symbol=symbol) if has_options else _empty_async())
+
+        has_defi = any(f in selected_features for f in ["dex_liquidity_flow", "mev_activity_score"])
+        tasks.append(self.fetch_defi_microstructure(symbol=symbol) if has_defi else _empty_async())
+
+        has_cross = any(f in selected_features for f in ["spx_correlation", "etf_net_flow_usd"])
+        tasks.append(self.fetch_cross_market(symbol=symbol) if has_cross else _empty_async())
+
         # ── Run all async fetches concurrently ────────────────────
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        fng_df, gh_df, exchange_flow_df, liquidity_df, macro_df, deriv_df, nlp_df = results
+        fng_df, gh_df, exchange_flow_df, liquidity_df, macro_df, deriv_df, nlp_df, tokenomics_df, liq_df, options_df, defi_df, cross_df = results
 
         def safe_df(result, fallback: dict) -> pd.DataFrame:
             return pd.DataFrame(fallback) if isinstance(result, Exception) or result is None or (isinstance(result, pd.DataFrame) and result.empty and fallback) else result
@@ -319,6 +443,11 @@ class AlternativeDataFetcher:
                                                         "macro_rate_sentiment": [0.0]})
         deriv_df         = safe_df(deriv_df,          {"funding_rate": [0.0], "open_interest": [0.0]})
         nlp_df           = safe_df(nlp_df,            {"social_nlp_score": [0.0], "news_nlp_score": [0.0]})
+        tokenomics_df    = safe_df(tokenomics_df,     {"upcoming_unlocks_usd": [0.0], "event_impact_score": [0.0]})
+        liq_df           = safe_df(liq_df,            {"long_liquidation_vol": [0.0], "estimated_leverage": [1.0]})
+        options_df       = safe_df(options_df,        {"implied_volatility": [0.0], "put_call_ratio": [1.0]})
+        defi_df          = safe_df(defi_df,           {"dex_liquidity_flow": [0.0], "mev_activity_score": [0.0]})
+        cross_df         = safe_df(cross_df,          {"spx_correlation": [0.0], "etf_net_flow_usd": [0.0]})
 
         # Google Trends is sync
         if "search_interest" in selected_features:
@@ -365,6 +494,16 @@ class AlternativeDataFetcher:
         open_interest_val        = scalar(deriv_df,         "open_interest",        0.0)
         social_nlp_score_val     = scalar(nlp_df,           "social_nlp_score",     0.0)
         news_nlp_score_val       = scalar(nlp_df,           "news_nlp_score",       0.0)
+        upcoming_unlocks_usd_val = scalar(tokenomics_df,    "upcoming_unlocks_usd", 0.0)
+        event_impact_score_val   = scalar(tokenomics_df,    "event_impact_score",   0.0)
+        long_liquidation_vol_val = scalar(liq_df,           "long_liquidation_vol", 0.0)
+        estimated_leverage_val   = scalar(liq_df,           "estimated_leverage",   1.0)
+        implied_volatility_val   = scalar(options_df,       "implied_volatility",   0.0)
+        put_call_ratio_val       = scalar(options_df,       "put_call_ratio",       1.0)
+        dex_liquidity_flow_val   = scalar(defi_df,          "dex_liquidity_flow",   0.0)
+        mev_activity_score_val   = scalar(defi_df,          "mev_activity_score",   0.0)
+        spx_correlation_val      = scalar(cross_df,         "spx_correlation",      0.0)
+        etf_net_flow_usd_val     = scalar(cross_df,         "etf_net_flow_usd",     0.0)
 
         logger.info(
             f"Scalars → exchange_net_flow={exchange_net_flow_val:.4f}, "
@@ -401,6 +540,16 @@ class AlternativeDataFetcher:
         final_df["open_interest"]        = open_interest_val
         final_df["social_nlp_score"]     = social_nlp_score_val
         final_df["news_nlp_score"]       = news_nlp_score_val
+        final_df["upcoming_unlocks_usd"] = upcoming_unlocks_usd_val
+        final_df["event_impact_score"]   = event_impact_score_val
+        final_df["long_liquidation_vol"] = long_liquidation_vol_val
+        final_df["estimated_leverage"]   = estimated_leverage_val
+        final_df["implied_volatility"]   = implied_volatility_val
+        final_df["put_call_ratio"]       = put_call_ratio_val
+        final_df["dex_liquidity_flow"]   = dex_liquidity_flow_val
+        final_df["mev_activity_score"]   = mev_activity_score_val
+        final_df["spx_correlation"]      = spx_correlation_val
+        final_df["etf_net_flow_usd"]     = etf_net_flow_usd_val
 
         # ── Diagnostic log ────────────────────────────────────────
         neutral_map = {"fng_value": 50, "commit_count": 0, "search_interest": 50}

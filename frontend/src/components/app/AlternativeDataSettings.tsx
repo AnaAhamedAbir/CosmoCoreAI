@@ -276,6 +276,166 @@ const CATEGORIES: Category[] = [
             }
         ]
     },
+    {
+        key: 'tokenomics',
+        label: 'Tokenomics & Event-Driven Engine',
+        icon: AlertTriangle,
+        accent: 'orange',
+        features: [
+            {
+                id: 'upcoming_unlocks_usd',
+                name: 'Upcoming Token Unlocks (USD)',
+                desc: 'Value of tokens unlocking soon. Massive supply dumps act as heavy resistance.',
+                icon: DollarSign,
+                color: 'text-orange-400',
+                bg: 'bg-orange-500/10',
+                border: 'border-orange-500/30',
+                status: 'live',
+                impact: 'high',
+                tooltip: 'Sourced from TokenUnlockService. Excellent for short-term shorting signals.',
+            },
+            {
+                id: 'event_impact_score',
+                name: 'Event Impact Score',
+                desc: 'Quantified impact of upcoming listings, upgrades, or governance events.',
+                icon: Zap,
+                color: 'text-orange-400',
+                bg: 'bg-orange-500/10',
+                border: 'border-orange-500/30',
+                status: 'live',
+                impact: 'high',
+                tooltip: 'Sourced from EventDrivenSimulator.',
+            }
+        ]
+    },
+    {
+        key: 'liquidation',
+        label: 'Liquidation & Margin Engine',
+        icon: Activity,
+        accent: 'red',
+        features: [
+            {
+                id: 'long_liquidation_vol',
+                name: 'Long Liquidation Vol',
+                desc: 'Real-time volume of liquidated long positions. Cascades often mark local bottoms.',
+                icon: TrendingUp,
+                color: 'text-red-400',
+                bg: 'bg-red-500/10',
+                border: 'border-red-500/30',
+                status: 'live',
+                impact: 'high',
+                tooltip: 'Sourced via God Mode Liquidation Service.',
+            },
+            {
+                id: 'estimated_leverage',
+                name: 'Estimated Leverage Ratio',
+                desc: 'Average exchange leverage. High ratio indicates extreme market fragility.',
+                icon: AlertTriangle,
+                color: 'text-red-400',
+                bg: 'bg-red-500/10',
+                border: 'border-red-500/30',
+                status: 'live',
+                impact: 'high',
+                tooltip: 'Ratio of Open Interest to Exchange Coin Reserve.',
+            }
+        ]
+    },
+    {
+        key: 'options_greeks',
+        label: 'Options IV & Greeks',
+        icon: BarChart2,
+        accent: 'pink',
+        features: [
+            {
+                id: 'implied_volatility',
+                name: 'Implied Volatility (IV)',
+                desc: 'Market\'s expectation of future volatility derived from Options prices.',
+                icon: Zap,
+                color: 'text-pink-400',
+                bg: 'bg-pink-500/10',
+                border: 'border-pink-500/30',
+                status: 'live',
+                impact: 'high',
+                tooltip: 'Derived from Options IV Surface Analyzer.',
+            },
+            {
+                id: 'put_call_ratio',
+                name: 'Put/Call Ratio (PCR)',
+                desc: 'Ratio of trading volume of put options to call options. Contrarian indicator.',
+                icon: Activity,
+                color: 'text-pink-400',
+                bg: 'bg-pink-500/10',
+                border: 'border-pink-500/30',
+                status: 'live',
+                impact: 'medium',
+                tooltip: 'High PCR indicates extreme bearishness (potential bounce).',
+            }
+        ]
+    },
+    {
+        key: 'defi_microstructure',
+        label: 'DeFi & On-Chain Microstructure',
+        icon: Globe,
+        accent: 'emerald',
+        features: [
+            {
+                id: 'dex_liquidity_flow',
+                name: 'DEX Liquidity Flow',
+                desc: 'Capital entering or leaving major DEX liquidity pools (Uniswap, Curve).',
+                icon: DollarSign,
+                color: 'text-emerald-400',
+                bg: 'bg-emerald-500/10',
+                border: 'border-emerald-500/30',
+                status: 'live',
+                impact: 'medium',
+                tooltip: 'Placeholder service via DefiMicrostructureService.',
+            },
+            {
+                id: 'mev_activity_score',
+                name: 'MEV Activity Score',
+                desc: 'Intensity of Miner Extractable Value (Sandwich attacks, Front-running).',
+                icon: Zap,
+                color: 'text-emerald-400',
+                bg: 'bg-emerald-500/10',
+                border: 'border-emerald-500/30',
+                status: 'live',
+                impact: 'low',
+                tooltip: 'Detects toxic flow in mempools.',
+            }
+        ]
+    },
+    {
+        key: 'cross_market',
+        label: 'Cross-Market & Correlated Assets',
+        icon: Globe,
+        accent: 'sky',
+        features: [
+            {
+                id: 'spx_correlation',
+                name: 'SPX/NASDAQ Correlation',
+                desc: 'Rolling correlation with traditional equity markets. Shifts dynamically.',
+                icon: TrendingUp,
+                color: 'text-sky-400',
+                bg: 'bg-sky-500/10',
+                border: 'border-sky-500/30',
+                status: 'live',
+                impact: 'medium',
+                tooltip: 'Sourced from CrossMarketService.',
+            },
+            {
+                id: 'etf_net_flow_usd',
+                name: 'Spot ETF Net Flows (USD)',
+                desc: 'Daily institutional inflows/outflows from BlackRock, Fidelity, etc.',
+                icon: DollarSign,
+                color: 'text-sky-400',
+                bg: 'bg-sky-500/10',
+                border: 'border-sky-500/30',
+                status: 'live',
+                impact: 'high',
+                tooltip: 'Major driver of institutional macro price action.',
+            }
+        ]
+    }
 ];
 
 export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = ({

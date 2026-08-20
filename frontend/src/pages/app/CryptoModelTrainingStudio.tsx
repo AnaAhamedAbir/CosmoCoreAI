@@ -211,7 +211,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                 
                 const selectedInds: string[] = [];
                 const selectedTrades: string[] = [];
-                const selectedL2: string[] = [];
+                const selectedL2 = new Set<string>();
                 
                 features.forEach(f => {
                     if (knownIndicators.includes(f)) {
@@ -219,13 +219,33 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                     } else if (knownTradeFeatures.includes(f)) {
                         selectedTrades.push(f);
                     } else {
-                        selectedL2.push(f);
+                        // Map raw L2 columns to derived features
+                        if (f.includes('price_1') || f.includes('volume_1')) {
+                            selectedL2.add('Level_1_Imbalance');
+                            selectedL2.add('spread');
+                            selectedL2.add('microprice');
+                            selectedL2.add('obi');
+                        }
+                        if (f.match(/_(2|3|4|5)$/)) {
+                            selectedL2.add('Multi_Level_Imbalance_Top5');
+                            selectedL2.add('Depth_Ratio');
+                        }
+                        if (f.match(/_(6|7|8|9|10)$/)) {
+                            selectedL2.add('Multi_Level_Imbalance_Top10');
+                            selectedL2.add('Ask_Wall_Distance');
+                            selectedL2.add('Bid_Wall_Distance');
+                        }
+                        if (f.match(/_(11|12|13|14|15|16|17|18|19|20)$/)) {
+                            selectedL2.add('Order_Book_Skewness');
+                            selectedL2.add('Imbalance_Momentum');
+                        }
+                        selectedL2.add(f);
                     }
                 });
                 
                 if (selectedInds.length > 0) setSelectedIndicators(selectedInds);
                 if (selectedTrades.length > 0) setSelectedTradeFeatures(selectedTrades);
-                if (selectedL2.length > 0) setSelectedL2Features(selectedL2);
+                if (selectedL2.size > 0) setSelectedL2Features(Array.from(selectedL2));
                 
                 if (!res.data.top_features_with_scores) {
                     alert(`✅ AutoML Analysis Complete! Top features distributed smartly across engines. Method: ${res.data.method}`);

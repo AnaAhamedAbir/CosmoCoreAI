@@ -173,7 +173,7 @@ def run_automl_feature_selection(symbol=None, timeframe=None, dataset_type=None)
     # Separate features (X) and target (y)
     X = df_numeric.drop(columns=['target_y', target_col], errors='ignore')
     X = X.fillna(0) # Also clean X to be safe
-    y = df_numeric['target_y']
+    y = df_numeric['target_y'] * 10000 # Scale up for XGBoost numerical stability
     
     if X.empty:
         return {"top_features": []}

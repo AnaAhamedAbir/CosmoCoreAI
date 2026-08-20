@@ -60,8 +60,8 @@ export const ShapValueModal: React.FC<ShapValueModalProps> = ({ isOpen, onClose,
 
                     {/* Chart Container */}
                     <div className="p-6 flex-1 overflow-hidden min-h-[500px]">
-                        <div className="h-full w-full bg-black/20 rounded-xl border border-white/5 p-4 pt-6">
-                            <ResponsiveContainer width="100%" height="100%">
+                        <div className="h-full w-full bg-black/20 rounded-xl border border-white/5 p-4 pt-6" style={{ minHeight: '500px' }}>
+                            <ResponsiveContainer width="100%" height={450}>
                                 <BarChart
                                     data={data}
                                     layout="vertical"

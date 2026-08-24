@@ -102,7 +102,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "3000:3000"
+      - "2026:2026"
     depends_on:
       - backend
     environment:

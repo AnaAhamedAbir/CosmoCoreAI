@@ -32,7 +32,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Expose the port (same as Vite was using so we don't have to change docker-compose.yml)
-EXPOSE 3000
+EXPOSE 2026
 
 # Start Nginx
 CMD ["nginx", "-g", "daemon off;"]

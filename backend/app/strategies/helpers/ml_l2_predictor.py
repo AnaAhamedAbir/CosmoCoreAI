@@ -40,7 +40,6 @@ class MLL2Predictor:
         self.model_features = None
         self.is_loaded = False
         self._feature_mismatch_logged = False  # throttle warning — log once only
-        self._load_model()
 
         # State for stateful features (OFI, CVD need previous tick)
         self._prev_bb_p = None
@@ -60,6 +59,8 @@ class MLL2Predictor:
         self.last_features_list = []
         self.sequence_length = 15
         self._feature_sequence = []
+        
+        self._load_model()
 
     async def start_background_engine(self, symbol: str):
         """Starts the background engine if complex features are needed."""
@@ -139,13 +140,25 @@ class MLL2Predictor:
 
             # Attempt to load scaler
             model_dir = os.path.dirname(file_path)
-            scaler_path = os.path.join(model_dir, "scaler.pkl")
-            if os.path.exists(scaler_path):
+            model_basename = os.path.basename(file_path)
+            base_name_without_ext = os.path.splitext(model_basename)[0]
+            
+            # Potential scaler names based on training script outputs
+            timestamp = base_name_without_ext.split('_')[-1] if '_' in base_name_without_ext else ''
+            potential_scalers = [
+                os.path.join(model_dir, f"scaler_train_{timestamp}.pkl"),
+                os.path.join(model_dir, f"{base_name_without_ext}.scaler"),
+                os.path.join(model_dir, "scaler.pkl")
+            ]
+            
+            scaler_path = next((p for p in potential_scalers if os.path.exists(p)), None)
+            
+            if scaler_path:
                 try:
                     self.scaler = joblib.load(scaler_path)
                     logger.info(f"MLL2Predictor: Scaler loaded successfully from {scaler_path}.")
                 except Exception as e:
-                    logger.warning(f"MLL2Predictor: Failed to load scaler: {e}")
+                    logger.warning(f"MLL2Predictor: Failed to load scaler from {scaler_path}: {e}")
 
             if self.model_type in ["Random Forest", "XGBoost", "LightGBM", "CatBoost", "Ensemble"]:
                 self.model = joblib.load(file_path)

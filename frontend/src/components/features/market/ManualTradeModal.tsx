@@ -257,9 +257,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
 
             {/* Body */}
             <div 
-              className="p-4 space-y-4 cursor-default"
+              className="p-4 flex flex-col cursor-default"
               onPointerDown={(e) => e.stopPropagation()}
             >
+              {/* Scrollable Content */}
+              <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 pb-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/20">
               {/* Buy / Sell Tabs */}
               <div className="flex p-1 rounded-lg bg-black/40 border border-white/5 mb-2">
                 <button
@@ -713,8 +715,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                 </div>
               )}
 
+              </div> {/* End Scrollable Content */}
+
               {/* Action Buttons */}
-              <div className="flex space-x-3 pt-2">
+              <div className="flex space-x-3 pt-3 mt-2 border-t border-white/10">
                 <button
                   onClick={() => handleTrade(tradeSide)}
                   disabled={isSubmitting}

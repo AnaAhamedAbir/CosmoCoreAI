@@ -592,6 +592,82 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                   </AnimatePresence>
               </div>
 
+              {/* Attached Stop Loss (SL) Panel */}
+              <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-red-500/10 transition-all">
+                  <div className="flex justify-between items-center cursor-pointer group" onClick={() => setSlConfig({...slConfig, enabled: !slConfig.enabled})}>
+                      <div className="flex flex-col">
+                          <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors">Attached Stop-Loss (SL)</span>
+                          <span className="text-[10px] text-gray-500">Auto-trigger market stop to manage risk</span>
+                      </div>
+                      <div className={`relative w-8 h-4 rounded-full transition-colors ${slConfig.enabled ? 'bg-red-500' : 'bg-gray-600'}`}>
+                          <MotionDiv 
+                             className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                             animate={{ x: slConfig.enabled ? 16 : 0 }}
+                             transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                          />
+                      </div>
+                  </div>
+                  
+                  <AnimatePresence>
+                     {slConfig.enabled && (
+                        <MotionDiv
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="space-y-3 overflow-hidden pt-2 border-t border-white/5"
+                        >
+                            {/* Gap Mode */}
+                            <div className="space-y-1">
+                                <label className="text-[10px] text-gray-400 font-medium">Gap Mode</label>
+                                <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                    <button
+                                        onClick={() => setSlConfig({...slConfig, mode: 'percentage'})}
+                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                    >
+                                        %
+                                    </button>
+                                    <button
+                                        onClick={() => setSlConfig({...slConfig, mode: 'price'})}
+                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                    >
+                                        $
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            {/* Target Gap & Timeout */}
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-gray-400 font-medium">Stop Gap</label>
+                                    <div className="relative">
+                                        <input 
+                                            type="number"
+                                            value={slConfig.value}
+                                            onChange={(e) => setSlConfig({...slConfig, value: e.target.value})}
+                                            placeholder={slConfig.mode === 'percentage' ? "e.g. 1.0" : "e.g. 0.003"}
+                                            className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-xs focus:outline-none focus:border-red-500/50"
+                                        />
+                                        <span className="absolute right-2 top-1.5 text-[10px] text-red-500 font-bold">{slConfig.mode === 'percentage' ? '%' : '$'}</span>
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-gray-400 font-medium">Monitor Limit (Mins)</label>
+                                    <div className="flex items-center space-x-2">
+                                        <input 
+                                            type="range"
+                                            min="1" max="15" step="1"
+                                            value={slConfig.timeoutMins}
+                                            onChange={(e) => setSlConfig({...slConfig, timeoutMins: Number(e.target.value)})}
+                                            className="w-full accent-red-500 h-1 bg-black/50 rounded appearance-none"
+                                        />
+                                        <span className="text-[10px] text-gray-300 w-4 text-right">{slConfig.timeoutMins}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </MotionDiv>
+                     )}
+                  </AnimatePresence>
+              </div>
               {/* Futures Options Panel */}
               {isFutures && (
                 <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-white/5">

@@ -245,13 +245,38 @@ async def fetch_market_data_background():
         while True:
             try:
                 if local_exchange_client:
-                    # Timeout after 60s if no updates (Binance should update constantly)
-                    await asyncio.wait_for(local_exchange_client.watch_tickers(), timeout=60.0)
+                    # Dynamically get active crypto symbols
+                    active = list(manager.active_connections.keys())
+                    NON_MARKET_CHANNELS = {
+                        "general", "backtest", "block_trades", "dashboard",
+                        "options_live", "correlation_feed", "system_alerts", "container_logs",
+                        "training_visualizer"
+                    }
+                    
+                    crypto_symbols = []
+                    for sym in active:
+                        if (sym in NON_MARKET_CHANNELS or sym.startswith("logs_") or 
+                            sym.startswith("status_") or sym.startswith("godmode_") or "_" in sym):
+                            continue
+                        # Normalize symbol (BTCUSDT -> BTC/USDT)
+                        target = sym
+                        if "/" not in sym and local_exchange_client.markets:
+                             for m_symbol, m_info in local_exchange_client.markets.items():
+                                if m_info.get('id') == sym:
+                                    target = m_symbol
+                                    break
+                        crypto_symbols.append(target)
+
+                    if crypto_symbols:
+                        # Only watch what the users are currently looking at!
+                        await asyncio.wait_for(local_exchange_client.watch_tickers(crypto_symbols), timeout=60.0)
+                    else:
+                        await asyncio.sleep(5)
                 else:
                     await asyncio.sleep(5)
             except Exception as e:
                 print(f"⚠️ Watch Tickers Error or Timeout: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(60)  # Increased backoff to prevent fast ban loops
 
     asyncio.create_task(_keep_tickers_updated())
 

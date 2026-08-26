@@ -36,6 +36,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
     orderType: 'Limit' as 'Limit' | 'Market',
     timeoutMins: 5
   });
+  const [slConfig, setSlConfig] = useState({
+    enabled: false,
+    mode: 'percentage' as 'percentage' | 'price',
+    value: '',
+    timeoutMins: 5
+  });
 
   // Fetch API Keys
   React.useEffect(() => {
@@ -129,6 +135,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
       return;
     }
 
+    if (slConfig.enabled && (!slConfig.value || isNaN(Number(slConfig.value)) || Number(slConfig.value) <= 0)) {
+      toast.error('Please enter a valid gap for the Attached Stop-Loss.');
+      return;
+    }
+
     // Convert quote amount → base amount if needed
     let baseAmount = Number(size);
     if (sizeMode === 'quote') {
@@ -173,6 +184,15 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
           value: Number(tpConfig.value),
           order_type: tpConfig.orderType,
           timeout_mins: tpConfig.timeoutMins
+        };
+      }
+
+      if (slConfig.enabled && slConfig.value && Number(slConfig.value) > 0) {
+        payload.attached_sl = {
+          enabled: true,
+          mode: slConfig.mode,
+          value: Number(slConfig.value),
+          timeout_mins: slConfig.timeoutMins
         };
       }
 

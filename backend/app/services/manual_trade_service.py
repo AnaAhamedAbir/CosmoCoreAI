@@ -319,19 +319,23 @@ class ManualTradeService:
                 logger.warning(f"Failed to trigger telegram notification: {notify_err}")
 
             # [Bracket Order Link] — spawned as a background asyncio task, non-blocking
-            if getattr(order_req, 'attached_tp', None) and order_req.attached_tp.enabled:
+            has_tp = getattr(order_req, 'attached_tp', None) and order_req.attached_tp.enabled
+            has_sl = getattr(order_req, 'attached_sl', None) and order_req.attached_sl.enabled
+
+            if has_tp or has_sl:
                 initial_price = response.get('price') or response.get('average') or getattr(order_req, 'price', 0.0)
                 asyncio.create_task(
-                    bracket_order_service.monitor_and_execute_tp(
+                    bracket_order_service.monitor_and_execute_bracket(
                         api_key_record=api_key_record,
                         entry_order_id=response.get('id'),
                         symbol=order_req.symbol,
                         side=order_req.side,
                         amount=order_req.amount,
                         is_futures=is_futures,
-                        tp_config=order_req.attached_tp.dict(),
+                        tp_config=order_req.attached_tp.dict() if has_tp else None,
+                        sl_config=order_req.attached_sl.dict() if has_sl else None,
                         initial_entry_price=float(initial_price) if initial_price else 0.0,
-                        user_id=user_id  # BUG-07 fix: pass user_id for TP notification
+                        user_id=user_id
                     )
                 )
 

@@ -20,6 +20,11 @@ class AttachedTPConfig(BaseModel):
     order_type: str  # 'Limit' or 'Market'
     timeout_mins: float  # Background threshold for limit order monitor
 
+class AttachedSLConfig(BaseModel):
+    enabled: bool
+    mode: str  # 'percentage' or 'price'
+    value: float
+
 class OrderRequest(BaseModel):
     symbol: str
     side: str # 'buy' or 'sell'
@@ -31,6 +36,7 @@ class OrderRequest(BaseModel):
     params: Optional[dict] = {}
     client_timestamp: Optional[int] = None
     attached_tp: Optional[AttachedTPConfig] = None
+    attached_sl: Optional[AttachedSLConfig] = None
 
 class ConnectionTestRequest(BaseModel):
     exchange_id: str

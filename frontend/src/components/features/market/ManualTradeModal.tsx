@@ -114,8 +114,18 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
   }, [currentPrice, orderType, limitPrice]);
 
   const handleTrade = async (side: 'Buy' | 'Sell') => {
+    if (!selectedApi) {
+      toast.error('Please select an API Key to execute the trade.');
+      return;
+    }
+
     if (!size || isNaN(Number(size)) || Number(size) <= 0) {
       toast.error('Please enter a valid size');
+      return;
+    }
+
+    if (tpConfig.enabled && (!tpConfig.value || isNaN(Number(tpConfig.value)) || Number(tpConfig.value) <= 0)) {
+      toast.error('Please enter a valid target gap for the Attached TP.');
       return;
     }
 
@@ -456,7 +466,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                         }
 
                         const val = maxValue * percentage;
-                        const decimals = sizeMode === 'quote' ? 2 : 4;
+                        const decimals = sizeMode === 'quote' ? 2 : 6;
                         setSize((Math.floor(val * Math.pow(10, decimals)) / Math.pow(10, decimals)).toString());
                       }}
                     >

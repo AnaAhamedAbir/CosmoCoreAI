@@ -72,7 +72,7 @@ class ManualTradeService:
             
             # Pass symbol constraints if the exchange supports lightweight fetching
             try:
-                balance = await exchange.fetch_balance({'coin': quote_part})
+                balance = await exchange.fetch_balance()
             except Exception:  # BUG-06 fix: was bare except, now catches only Exception subclasses
                 balance = await exchange.fetch_balance()
 
@@ -143,15 +143,15 @@ class ManualTradeService:
                  
             # Extract position data consistently across exchanges
             # Binance uses 'positionAmt', CCXT standard uses 'contracts' and 'side' ('long' or 'short')
-            raw_amt = float(active_pos.get('contracts', 0))
+            raw_amt = float(active_pos.get('contracts') or 0.0)
             if raw_amt == 0:
                  # Fallback for Binance/MEXC if contracts is missing
-                 raw_amt = abs(float(active_pos.get('info', {}).get('positionAmt', 0)))
+                 raw_amt = abs(float(active_pos.get('info', {}).get('positionAmt') or 0.0))
             
             side = active_pos.get('side', 'none').lower()
             if side == 'none':
                  # Infer from positionAmt sign if available
-                 pos_amt = float(active_pos.get('info', {}).get('positionAmt', 0))
+                 pos_amt = float(active_pos.get('info', {}).get('positionAmt') or 0.0)
                  if pos_amt > 0: side = 'long'
                  elif pos_amt < 0: side = 'short'
             
@@ -193,10 +193,10 @@ class ManualTradeService:
                     orders.append({
                         'id': o.get('id'),
                         'side': o.get('side', '').lower(),  # 'buy' or 'sell'
-                        'price': float(o.get('price') or 0),
-                        'amount': float(o.get('amount') or 0),
-                        'filled': float(o.get('filled') or 0),
-                        'remaining': float(o.get('remaining') or 0),
+                        'price': float(o.get('price') or 0.0),
+                        'amount': float(o.get('amount') or 0.0),
+                        'filled': float(o.get('filled') or 0.0),
+                        'remaining': float(o.get('remaining') or 0.0),
                     })
 
             return {"orders": orders, "symbol": symbol, "exchange": api_key_record.exchange}
@@ -208,7 +208,7 @@ class ManualTradeService:
             raise HTTPException(status_code=500, detail=f"Open Orders Error: {str(e)}")
 
     @staticmethod
-    async def place_manual_trade(db: Session, user_id: int, order_req) -> dict:
+    async def place_manual_trade(db: Session, user_id: int, order_req, start_time: float = 0.0) -> dict:
         """
         Exchange Connection Pool ব্যবহার করে ultra-fast order execution।
         প্রথম অর্ডারের পরে পরবর্তী সব অর্ডার ~100-200ms এ সম্পন্ন হয়।
@@ -296,8 +296,8 @@ class ManualTradeService:
 
             # Calculate Latency (using backend perf_counter to eliminate PC-Server clock drift)
             latency_ms = 0
-            if hasattr(order_req, '_backend_start_time'):
-                latency_ms = int((time.perf_counter() - getattr(order_req, '_backend_start_time')) * 1000)
+            if start_time:
+                latency_ms = int((time.perf_counter() - start_time) * 1000)
             else:
                 # Fallback if somehow not set, just assume 0 or fast
                 latency_ms = 0

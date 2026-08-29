@@ -10,6 +10,7 @@ import { notificationService } from '@/services/notification';
 import { updateUserSecurity, uploadUserAvatar } from '@/services/auth';
 import { fetchExchangeBalance, syncExchangeBalance, ExchangeBalanceResult } from '@/services/settings';
 import { systemService } from '@/services/systemService';
+import { User, Shield, Key, Bell, Palette, Database, CreditCard } from 'lucide-react';
 
 // Icons
 const PlusIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
@@ -178,12 +179,13 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
         }
     };
 
-    // Refs
-    const profileRef = useRef<HTMLDivElement>(null);
-    const billingRef = useRef<HTMLDivElement>(null);
-    const securityRef = useRef<HTMLDivElement>(null);
-    const apiKeysRef = useRef<HTMLDivElement>(null);
-    const notificationRef = useRef<HTMLDivElement>(null);
+    const [activeTab, setActiveTab] = useState(initialSection || 'profile');
+
+    useEffect(() => {
+        if (initialSection) {
+            setActiveTab(initialSection);
+        }
+    }, [initialSection]);
 
     useEffect(() => {
         setFullName(userProfile.fullName);
@@ -193,20 +195,15 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
         setCurrency(userProfile.currency);
     }, [userProfile]);
 
-    useEffect(() => {
-        setTimeout(() => {
-            let targetRef: React.RefObject<HTMLDivElement> | null = null;
-            switch (initialSection) {
-                case 'profile': targetRef = profileRef; break;
-                case 'billing': targetRef = billingRef; break;
-                case 'api-keys': targetRef = apiKeysRef; break;
-                case 'notifications': targetRef = notificationRef; break;
-            }
-            if (targetRef?.current) {
-                targetRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
-        }, 100);
-    }, [initialSection]);
+    const TABS = [
+        { id: 'profile', label: 'Profile Settings', icon: <User className="w-5 h-5" /> },
+        { id: 'billing', label: 'Billing & Subscription', icon: <CreditCard className="w-5 h-5" /> },
+        { id: 'security', label: 'Security', icon: <Shield className="w-5 h-5" /> },
+        { id: 'api-keys', label: 'API Keys', icon: <Key className="w-5 h-5" /> },
+        { id: 'notifications', label: 'Notifications', icon: <Bell className="w-5 h-5" /> },
+        { id: 'appearance', label: 'Appearance', icon: <Palette className="w-5 h-5" /> },
+        { id: 'data', label: 'Data Management', icon: <Database className="w-5 h-5" /> },
+    ];
 
     // Fetch exchange info on modal open
     useEffect(() => {
@@ -369,8 +366,36 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
     const inputBaseClasses = "w-full bg-white dark:bg-[#0A0A0A]/50 border border-brand-border-light dark:border-[#1A1A1A] rounded-md p-2 text-slate-900 dark:text-white focus:ring-brand-primary focus:border-brand-primary transition-colors";
 
     return (
-        <div className="space-y-8 max-w-4xl animate-fade-in-slide-up">
+        <div className="flex flex-col md:flex-row gap-8 w-full max-w-6xl mx-auto animate-fade-in-slide-up">
+            {/* Sidebar / Tabs */}
+            <div className="w-full md:w-64 flex-shrink-0">
+                <div className="bg-white dark:bg-[#0A0A0A] rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden sticky top-4">
+                    <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+                        <h2 className="font-bold text-lg text-slate-900 dark:text-white">Settings</h2>
+                    </div>
+                    <div className="flex flex-col p-2 space-y-1">
+                        {TABS.map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
+                                    activeTab === tab.id
+                                        ? 'bg-brand-primary text-white shadow-md'
+                                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
+                                }`}
+                            >
+                                {tab.icon}
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 min-w-0">
             {/* Appearance Section */}
+            {activeTab === 'appearance' && (
             <Card>
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 border-b border-brand-border-light dark:border-[#1A1A1A] pb-4">Appearance</h2>
                 <div className="flex items-center space-x-4 p-4 bg-gray-100 dark:bg-[#0A0A0A]/50 rounded-lg">
@@ -384,9 +409,10 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
                     <span className="font-medium text-slate-900 dark:text-white">{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
                 </div>
             </Card>
+            )}
 
             {/* Profile Section */}
-            <div ref={profileRef}>
+            {activeTab === 'profile' && (
                 <Card>
                     <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 border-b border-brand-border-light dark:border-[#1A1A1A] pb-4">Profile Settings</h2>
                     <div className="space-y-6">
@@ -428,10 +454,22 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
                         </div>
                     </div>
                 </Card>
-            </div>
+            )}
+
+            {/* Billing Section (Placeholder) */}
+            {activeTab === 'billing' && (
+                <Card>
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 border-b border-brand-border-light dark:border-[#1A1A1A] pb-4">Billing & Subscription</h2>
+                    <div className="p-6 text-center text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-white/5 rounded-lg border border-dashed border-gray-200 dark:border-gray-800">
+                        <CreditCard className="w-12 h-12 mx-auto mb-3 text-gray-400 dark:text-gray-500 opacity-50" />
+                        <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-1">Billing portal coming soon</h3>
+                        <p className="text-sm">You are currently on the Pro Trader Plan.</p>
+                    </div>
+                </Card>
+            )}
 
             {/* Security Section (IP Whitelist) */}
-            <div ref={securityRef}>
+            {activeTab === 'security' && (
                 <Card>
                     <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 border-b border-brand-border-light dark:border-[#1A1A1A] pb-4">Security</h2>
 
@@ -493,10 +531,10 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
                         </div>
                     </div>
                 </Card>
-            </div>
+            )}
 
             {/* API Keys Section */}
-            <div ref={apiKeysRef}>
+            {activeTab === 'api-keys' && (
                 <Card>
                     <div className="flex justify-between items-center mb-6 border-b border-brand-border-light dark:border-[#1A1A1A] pb-4">
                         <div>
@@ -616,10 +654,10 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
                         </table>
                     </div>
                 </Card>
-            </div>
+            )}
 
             {/* Notification Section */}
-            <div ref={notificationRef}>
+            {activeTab === 'notifications' && (
                 <Card>
                     <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 border-b border-brand-border-light dark:border-[#1A1A1A] pb-4">Notifications</h2>
                     <div className="space-y-6">
@@ -742,10 +780,10 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
                         </div>
                     </div>
                 </Card>
-            </div>
+            )}
 
             {/* System Data Management Section */}
-            <div>
+            {activeTab === 'data' && (
                 <Card>
                     <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 border-b border-brand-border-light dark:border-[#1A1A1A] pb-4">Data Management</h2>
                     <div className="space-y-6">
@@ -770,6 +808,7 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
                         </div>
                     </div>
                 </Card>
+            )}
             </div>
 
             {/* Add Connection Modal */}

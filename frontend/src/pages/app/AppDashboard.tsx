@@ -5,7 +5,7 @@ import { Logo, DashboardIcon, PortfolioIcon, BacktesterIcon, BotLabIcon, MarketI
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getPathFromView, getViewFromPath } from '@/utils/routeUtils';
 import { AppView, TradingBot, IndicatorData } from '@/types';
-import { Cpu, LayoutDashboard, Database, Activity, LineChart, BrainCircuit, CloudLightning, Bot, Zap, History, Layers } from 'lucide-react';
+import { Cpu, LayoutDashboard, Database, Activity, LineChart, BrainCircuit, CloudLightning, Bot, Zap, History, Layers, Shield, Bell, Palette } from 'lucide-react';
 import Dashboard from './Dashboard';
 
 
@@ -363,7 +363,11 @@ const Sidebar: React.FC<{
                         <div className="flex-1 overflow-y-auto p-4 space-y-1">
                             <DropdownMenuItem icon={<UserCircleIcon />} label="Profile Settings" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/profile'); setIsProfileOpen(false); }} />
                             <DropdownMenuItem icon={<CreditCardIcon />} label="Billing & Subscription" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }} />
+                            <DropdownMenuItem icon={<Shield className="w-5 h-5" />} label="Security" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/security'); setIsProfileOpen(false); }} />
                             <DropdownMenuItem icon={<KeyIcon />} label="API Keys" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/api-keys'); setIsProfileOpen(false); }} />
+                            <DropdownMenuItem icon={<Bell className="w-5 h-5" />} label="Notifications" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/notifications'); setIsProfileOpen(false); }} />
+                            <DropdownMenuItem icon={<Palette className="w-5 h-5" />} label="Appearance" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/appearance'); setIsProfileOpen(false); }} />
+                            <DropdownMenuItem icon={<Database className="w-5 h-5" />} label="Data Management" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/data'); setIsProfileOpen(false); }} />
                         </div>
 
                         {/* Logout Footer */}

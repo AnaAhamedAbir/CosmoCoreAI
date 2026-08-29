@@ -150,7 +150,7 @@ const Sidebar: React.FC<{
     }, []);
 
     const DropdownMenuItem: React.FC<{ icon: React.ReactNode; label: string; onClick: () => void; }> = ({ icon, label, onClick }) => (
-        <button onClick={onClick} className="flex items-center w-full px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#0A0A0A]/50 hover:text-brand-primary transition-all rounded-lg group">
+        <button onClick={onClick} className="flex items-center w-full px-4 py-3.5 mb-1 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-brand-primary/5 dark:hover:bg-brand-primary/10 hover:text-brand-primary transition-all rounded-xl group">
             <span className="w-5 h-5 mr-3 text-gray-400 group-hover:text-brand-primary transition-colors">{icon}</span>
             {label}
         </button>
@@ -314,16 +314,69 @@ const Sidebar: React.FC<{
 
             {/* Profile Section */}
             <div className="p-4 relative z-20" ref={profileRef}>
-                {/* Dropdown Menu */}
-                <div className={`absolute bottom-[85px] w-[calc(100%-32px)] left-4 bg-white dark:bg-[#111111] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-2 z-50 origin-bottom transition-all duration-200 ease-out transform ${isProfileOpen ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'}`}>
-                    <div className="px-3 py-2 mb-1 border-b border-gray-100 dark:border-gray-700">
-                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">My Account</p>
+                {/* Backdrop Overlay */}
+                <div 
+                    className={`fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-[100] transition-opacity duration-300 ${isProfileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setIsProfileOpen(false);
+                    }}
+                />
+
+                {/* Slide-over Profile Drawer */}
+                <div 
+                    className={`fixed top-0 left-0 h-full w-80 bg-white dark:bg-[#0A0A0A] shadow-[10px_0_30px_rgba(0,0,0,0.1)] dark:shadow-[10px_0_30px_rgba(0,0,0,0.5)] border-r border-gray-200 dark:border-gray-800 z-[110] transform transition-transform duration-400 ease-in-out ${isProfileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="flex flex-col h-full">
+                        {/* Drawer Header */}
+                        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-800/50">
+                            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <UserCircleIcon className="w-5 h-5 text-brand-primary" />
+                                My Account
+                            </h2>
+                            <button 
+                                onClick={() => setIsProfileOpen(false)}
+                                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 text-gray-500 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
+                        
+                        {/* User Summary Info */}
+                        <div className="p-6 border-b border-gray-100 dark:border-gray-800/50 bg-gray-50/50 dark:bg-white/[0.02]">
+                            <div className="flex items-center gap-4">
+                                <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-brand-primary to-purple-500 text-white flex items-center justify-center font-bold text-xl shadow-md ring-4 ring-white dark:ring-[#000000]">
+                                    {userProfile.fullName ? userProfile.fullName.substring(0, 2).toUpperCase() : 'AA'}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="font-bold text-lg text-slate-900 dark:text-white truncate">{userProfile.fullName || 'User'}</h3>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5 mt-0.5">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
+                                        Pro Trader Plan
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Drawer Menu Items */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                            <DropdownMenuItem icon={<UserCircleIcon />} label="Profile Settings" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/profile'); setIsProfileOpen(false); }} />
+                            <DropdownMenuItem icon={<CreditCardIcon />} label="Billing & Subscription" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }} />
+                            <DropdownMenuItem icon={<KeyIcon />} label="API Keys" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/api-keys'); setIsProfileOpen(false); }} />
+                        </div>
+
+                        {/* Logout Footer */}
+                        <div className="p-6 border-t border-gray-100 dark:border-gray-800/50">
+                            <button 
+                                onClick={onLogout}
+                                className="flex items-center justify-center w-full gap-2 px-4 py-3.5 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 font-bold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors shadow-sm"
+                            >
+                                <LogoutIcon />
+                                Logout
+                            </button>
+                        </div>
                     </div>
-                    <DropdownMenuItem icon={<UserCircleIcon />} label="Profile" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/profile'); setIsProfileOpen(false); }} />
-                    <DropdownMenuItem icon={<CreditCardIcon />} label="Billing" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }} />
-                    <DropdownMenuItem icon={<KeyIcon />} label="API Keys" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/api-keys'); setIsProfileOpen(false); }} />
-                    <div className="my-1 border-t border-gray-100 dark:border-gray-700"></div>
-                    <DropdownMenuItem icon={<LogoutIcon />} label="Logout" onClick={onLogout} />
                 </div>
 
                 {/* Profile Button */}

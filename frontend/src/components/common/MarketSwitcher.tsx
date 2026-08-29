@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMarketStore, MarketType } from '@/store/marketStore';
-import { Bitcoin, LineChart, Building2, Droplets } from 'lucide-react'; 
+import { Bitcoin, LineChart } from 'lucide-react'; 
 
 const MarketSwitcher: React.FC = () => {
     const { activeMarket, setActiveMarket } = useMarketStore();
@@ -8,8 +8,6 @@ const MarketSwitcher: React.FC = () => {
     const markets: { id: MarketType; label: string; icon: React.ReactNode }[] = [
         { id: 'crypto', label: 'Crypto', icon: <Bitcoin className="w-4 h-4" /> },
         { id: 'forex', label: 'Forex', icon: <LineChart className="w-4 h-4" /> },
-        { id: 'stocks', label: 'Stocks', icon: <Building2 className="w-4 h-4" /> },
-        { id: 'commodities', label: 'Commodities', icon: <Droplets className="w-4 h-4" /> },
     ];
 
     return (

@@ -52,6 +52,7 @@ class EmergencySellRequest(BaseModel):
 class PanicRequest(BaseModel):
     target: str # "all", "losing", "strategy_type"
     value: str = None
+    liquidate_positions: bool = False
 
 @router.get("/stats", response_model=Dict[str, Any])
 def get_bot_stats(
@@ -436,8 +437,15 @@ async def panic_stop(
 
     if panic_in.target == "all":
         # Emergency: Stop everything currently running in Memory
-        # We use list(keys) to avoid runtime error if dict changes size
-        bots_to_stop = list(manager.active_bots.keys())
+        active_ids = list(manager.active_bots.keys())
+        if not active_ids:
+             return {"message": "No active bots to stop.", "stopped_count": 0}
+             
+        user_bots = db.query(models.Bot.id).filter(
+            models.Bot.owner_id == current_user.id,
+            models.Bot.id.in_(active_ids)
+        ).all()
+        bots_to_stop = [b[0] for b in user_bots]
         message = "Emergency Protocol: Stopping ALL active bots."
 
     elif panic_in.target == "losing":
@@ -475,11 +483,7 @@ async def panic_stop(
         
         target_bots = db.query(models.Bot).filter(
             models.Bot.id.in_(active_ids),
-            models.Bot.owner_id == current_user.id,
-            models.Bot.strategy == panic_in.value # Exact match, case sensitive? 
-            # Often frontend sends "grid", backend might have "Grid Trading".
-            # Let's assume frontend sends exact string found in DB or we do ilike.
-            # For robustness: func.lower(models.Bot.strategy) == panic_in.value.lower()
+            models.Bot.owner_id == current_user.id
         ).filter(func.lower(models.Bot.strategy) == panic_in.value.lower()).all()
         
         bots_to_stop = [b.id for b in target_bots]
@@ -498,13 +502,8 @@ async def panic_stop(
              # Wait, BotManager is a Singleton! It contains ALL users' bots if the system is multi-tenant?
              # If multi-tenant, we MUST check owner_id for 'all' too!
              
-             # SECURITY FIX for 'all':
-             if panic_in.target == "all":
-                 bot = db.query(models.Bot).filter(models.Bot.id == bot_id).first()
-                 if not bot or bot.owner_id != current_user.id:
-                     continue # Skip bots not owned by user
-             
-             res = await manager.stop_bot(bot_id, db)
+             # Security check is already handled in the DB query above for all targets
+             res = await manager.stop_bot(bot_id, db, liquidate_positions=panic_in.liquidate_positions)
              results.append(res)
              stopped_count += 1
         except Exception as e:

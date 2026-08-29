@@ -547,7 +547,7 @@ class BotManager:
         finally:
             if not db: local_db.close() # Close if we created it
 
-    async def stop_bot(self, bot_id: int, db: Session = None):
+    async def stop_bot(self, bot_id: int, db: Session = None, liquidate_positions: bool = False):
         """Stop a specific bot."""
         # 1. Prepare DB Session
         local_db = db or SessionLocal()
@@ -577,6 +577,27 @@ class BotManager:
 
                     # Stop Bot Internals
                     if bot_instance != "STARTING":
+                        # PANIC PROTOCOL: Cancel orders and liquidate if requested
+                        target_exchange = getattr(bot_instance, 'exchange', None)
+                        if not target_exchange and hasattr(bot_instance, 'engine'):
+                            target_exchange = getattr(bot_instance.engine, 'exchange', None)
+                        
+                        if target_exchange:
+                            try:
+                                target_symbol = getattr(bot_instance, 'symbol', getattr(bot_instance, 'bot', None) and getattr(bot_instance.bot, 'market', None))
+                                if target_symbol:
+                                    await target_exchange.cancel_all_orders(target_symbol)
+                                    logger.info(f"✅ Cancelled all open orders for {target_symbol} before stopping.")
+                            except Exception as e:
+                                logger.error(f"Failed to cancel orders during stop: {e}")
+
+                        if liquidate_positions and hasattr(bot_instance, "emergency_sell") and callable(bot_instance.emergency_sell):
+                            try:
+                                await bot_instance.emergency_sell('market')
+                                logger.info(f"✅ Executed emergency market sell for {bot_id} during panic.")
+                            except Exception as e:
+                                logger.error(f"Failed to execute emergency sell during stop: {e}")
+
                         try:
                             await bot_instance.stop()
                         except Exception as stop_e:

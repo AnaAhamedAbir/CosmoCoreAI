@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 const PanicButton = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [liquidatePositions, setLiquidatePositions] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
     // Close menu when clicking outside
@@ -30,7 +31,7 @@ const PanicButton = () => {
         const toastId = toast.loading("Executing Kill Protocol...");
 
         try {
-            const payload = { target, value };
+            const payload = { target, value, liquidate_positions: liquidatePositions };
             const response = await api.post('/bots/panic', payload);
 
             const { message, stopped_count } = response.data;
@@ -83,6 +84,27 @@ const PanicButton = () => {
                 <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-brand-surface border border-slate-200 dark:border-[#1F1F1F] rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 p-1">
                     <div className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-[#1F1F1F]/50 mb-1">
                         Select Action
+                    </div>
+                    
+                    <div className="px-3 py-2 border-b border-slate-100 dark:border-[#1F1F1F]/50 mb-1 bg-slate-50 dark:bg-[#1A1A1A]">
+                        <label className="flex items-center justify-between cursor-pointer group">
+                            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                                Market Sell Positions
+                            </span>
+                            <div className="relative">
+                                <input 
+                                    type="checkbox" 
+                                    className="sr-only" 
+                                    checked={liquidatePositions}
+                                    onChange={() => setLiquidatePositions(!liquidatePositions)}
+                                />
+                                <div className={`block w-8 h-5 rounded-full transition-colors ${liquidatePositions ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
+                                <div className={`absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition-transform ${liquidatePositions ? 'transform translate-x-3' : ''}`}></div>
+                            </div>
+                        </label>
+                        <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+                            If enabled, bots will market sell active holdings to USDT before shutting down.
+                        </p>
                     </div>
 
                     <div className="flex flex-col gap-1">

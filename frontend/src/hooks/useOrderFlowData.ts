@@ -33,11 +33,11 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
             setError(null);
 
             try {
-                const params = { symbol: symbol.toUpperCase(), exchange, interval, limit: 500 };
+                const params = { symbol: symbol.toUpperCase(), exchange, interval, limit: 2000 };
 
                 // Fetch real historic klines and order book heatmap data
                 const [klinesRes, heatmapRes] = await Promise.all([
-                    api.get('/market-data/klines', { params }).catch(() => ({ data: [] })),
+                    api.get('/market-depth/ohlcv', { params: { symbol: symbol.toUpperCase(), exchange, timeframe: interval, limit: 2000 } }).catch(() => ({ data: [] })),
                     api.get('/market-depth/heatmap', { params: { symbol: symbol.toUpperCase(), exchange, bucket_size: 50.0, depth: 100 } }).catch(() => ({ data: { bids: [], asks: [] } }))
                 ]);
 
@@ -49,12 +49,12 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
 
                 if (rawKlines && rawKlines.length > 0) {
                     const parsedKlines = rawKlines.map((k: any) => ({
-                        time: k[0] / 1000,
-                        open: parseFloat(k[1]),
-                        high: parseFloat(k[2]),
-                        low: parseFloat(k[3]),
-                        close: parseFloat(k[4]),
-                        volume: parseFloat(k[5] || 0),
+                        time: k.time,
+                        open: parseFloat(k.open),
+                        high: parseFloat(k.high),
+                        low: parseFloat(k.low),
+                        close: parseFloat(k.close),
+                        volume: parseFloat(k.volume || 0),
                     }));
 
                     // 1. Calculate realistic VPVR (Volume Profile Visible Range) from real klines
@@ -374,10 +374,10 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
                                       return newPrev;
                                   } else {
                                       // Start new candle's CVD
-                                      return [...prev.slice(-100), { time: currentCandleTime as any, value: lastPoint.value + cvdDelta }];
+                                      return [...prev.slice(-2000), { time: currentCandleTime as any, value: lastPoint.value + cvdDelta }];
                                   }
                               });
-                              setFootprintData([...activeFootprints.slice(-500)]);
+                              setFootprintData([...activeFootprints.slice(-2000)]);
                           }
                      }
                  } catch (e) {

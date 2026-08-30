@@ -39,6 +39,7 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data }) => {
                 borderColor: 'rgba(255, 255, 255, 0.1)',
                 autoScale: true,
             },
+            autoSize: true, // Attempt to natively auto-resize if supported
             crosshair: {
                 mode: 1, // normal crosshair
             }
@@ -70,7 +71,17 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data }) => {
         };
 
         window.addEventListener('resize', handleResize);
-        setTimeout(handleResize, 100);
+        
+        // Ensure container is sized before applying ranges
+        setTimeout(() => {
+            handleResize();
+            if (mainChart) {
+                const logicalRange = mainChart.timeScale().getVisibleLogicalRange();
+                if (logicalRange) {
+                    chart.timeScale().setVisibleLogicalRange(logicalRange);
+                }
+            }
+        }, 150);
 
         return () => {
             window.removeEventListener('resize', handleResize);
@@ -90,11 +101,18 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data }) => {
             
             try {
                 seriesRef.current.setData(sortedData as any);
+                // Immediately align with main chart's visible range to prevent flicker or auto-scaling
+                if (mainChart) {
+                    const logicalRange = mainChart.timeScale().getVisibleLogicalRange();
+                    if (logicalRange) {
+                        chartRef.current?.timeScale().setVisibleLogicalRange(logicalRange);
+                    }
+                }
             } catch (err) {
                 console.error("Failed to set CVD Chart data:", err);
             }
         }
-    }, [data]);
+    }, [data, mainChart]);
 
     // Sync Time Scales
     useEffect(() => {
@@ -105,21 +123,12 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data }) => {
         const cvdTimeScale = cvdChart.timeScale();
 
         const syncMainToCVD = (logicalRange: any) => {
-            if (!logicalRange || isSyncingRef.current) return;
-            isSyncingRef.current = true;
+            if (!logicalRange) return;
             cvdTimeScale.setVisibleLogicalRange(logicalRange);
-            isSyncingRef.current = false;
-        };
-
-        const syncCVDToMain = (logicalRange: any) => {
-            if (!logicalRange || isSyncingRef.current) return;
-            isSyncingRef.current = true;
-            mainTimeScale.setVisibleLogicalRange(logicalRange);
-            isSyncingRef.current = false;
         };
 
         const syncCrosshairMainToCVD = (param: any) => {
-            if (!param.point || isSyncingRef.current) {
+            if (!param.point) {
                 cvdChart.clearCrosshairPosition();
                 return;
             }
@@ -132,17 +141,9 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data }) => {
                     cvdChart.setCrosshairPosition((seriesData as any).value as number, param.time, seriesRef.current!);
                 }
             }
-            isSyncingRef.current = false;
-        };
-
-        const syncCrosshairCVDToMain = (param: any) => {
-            if (isSyncingRef.current) return;
-            // Full 2-way crosshair sync is tricky due to main chart having multiple series. 
-            // We mainly want Main scale -> CVD sync
         };
 
         mainTimeScale.subscribeVisibleLogicalRangeChange(syncMainToCVD);
-        cvdTimeScale.subscribeVisibleLogicalRangeChange(syncCVDToMain);
         mainChart.subscribeCrosshairMove(syncCrosshairMainToCVD);
 
         // Initial sync
@@ -151,7 +152,6 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data }) => {
 
         return () => {
             mainTimeScale.unsubscribeVisibleLogicalRangeChange(syncMainToCVD);
-            cvdTimeScale.unsubscribeVisibleLogicalRangeChange(syncCVDToMain);
             mainChart.unsubscribeCrosshairMove(syncCrosshairMainToCVD);
         };
     }, [mainChart]);

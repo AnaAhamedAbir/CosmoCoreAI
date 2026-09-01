@@ -65,8 +65,10 @@ export const LiquidationHeatmapGodModeRenderer: React.FC<LiquidationHeatmapGodMo
                 
                 // Height based on intensity (max 24px)
                 const height = Math.max(4, Math.min(24, (intensity / 100) * 24));
-                const opacity = (intensity / 100) * 0.4;
-                const glowOpacity = (intensity / 100) * 0.8;
+                const normalizedIntensity = Math.min(100, Math.max(10, intensity));
+                const opacity = Math.min(0.3, (normalizedIntensity / 100) * 0.25); // Reduced from 0.5 to 0.3 max
+                const glowOpacity = Math.min(0.4, (normalizedIntensity / 100) * 0.2); // Reduced glow max from 0.8 to 0.4
+                const blurRadius = Math.min(10, height * 0.5); // Cap the blur radius
                 
                 zoneEl.style.position = 'absolute';
                 zoneEl.style.left = '0px';
@@ -77,12 +79,12 @@ export const LiquidationHeatmapGodModeRenderer: React.FC<LiquidationHeatmapGodMo
                 
                 if (isShort) {
                     zoneEl.style.backgroundColor = `rgba(244, 63, 94, ${opacity})`; // rose-500
-                    zoneEl.style.boxShadow = `0 0 ${height * 1.5}px rgba(244, 63, 94, ${glowOpacity})`;
-                    zoneEl.style.borderTop = `1px solid rgba(244, 63, 94, ${opacity + 0.2})`;
+                    zoneEl.style.boxShadow = `0 0 ${blurRadius}px rgba(244, 63, 94, ${glowOpacity})`;
+                    zoneEl.style.borderTop = `1px solid rgba(244, 63, 94, ${opacity + 0.1})`;
                 } else {
                     zoneEl.style.backgroundColor = `rgba(16, 185, 129, ${opacity})`; // emerald-500
-                    zoneEl.style.boxShadow = `0 0 ${height * 1.5}px rgba(16, 185, 129, ${glowOpacity})`;
-                    zoneEl.style.borderBottom = `1px solid rgba(16, 185, 129, ${opacity + 0.2})`;
+                    zoneEl.style.boxShadow = `0 0 ${blurRadius}px rgba(16, 185, 129, ${glowOpacity})`;
+                    zoneEl.style.borderBottom = `1px solid rgba(16, 185, 129, ${opacity + 0.1})`;
                 }
 
                 // Add intensity label on the right side

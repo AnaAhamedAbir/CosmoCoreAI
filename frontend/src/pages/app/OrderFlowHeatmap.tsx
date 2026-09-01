@@ -2775,7 +2775,6 @@ const OrderFlowChartPanel: React.FC<{
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isTradingViewMode, setIsTradingViewMode] = useState(false);
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
-    const [isIndicatorModalOpen, setIsIndicatorModalOpen] = useState(false);
     const activeWallHunterId = useBotStore(state => state.activeWallHunterId);
     const setActiveWallHunterId = useBotStore(state => state.setActiveWallHunterId);
     const setBotForChart = useBotStore(state => state.setBotForChart);
@@ -2852,14 +2851,6 @@ const OrderFlowChartPanel: React.FC<{
                             Deploy Bot
                         </button>
                     )}
-                    <button
-                        onClick={() => setIsIndicatorModalOpen(true)}
-                        className="px-2 py-1 text-[10px] font-bold rounded-md bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 flex items-center gap-1 ml-2 transition-colors"
-                        title="Technical Analysis Watchlist"
-                    >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                        Indicators
-                    </button>
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-gray-500 hover:text-brand-primary transition-colors">
@@ -2901,12 +2892,6 @@ const OrderFlowChartPanel: React.FC<{
                     }}
                 />
             )}
-            
-            <TechnicalIndicatorModal
-                isOpen={isIndicatorModalOpen}
-                onClose={() => setIsIndicatorModalOpen(false)}
-                symbol={config.symbol}
-            />
         </div>
     );
 };
@@ -3016,6 +3001,7 @@ const OrderFlowHeatmap: React.FC = () => {
     const [showCVD, setShowCVD] = useState(false); // NEW STATE
     const [showVPVR, setShowVPVR] = useState(false); // NEW STATE
     const [isOrderBookModalOpen, setIsOrderBookModalOpen] = useState(false);
+    const [isIndicatorModalOpen, setIsIndicatorModalOpen] = useState(false);
     const [isAIDeploymentModalOpen, setIsAIDeploymentModalOpen] = useState(false);
     const { bids, asks, walls, currentPrice, tradeEvent } = useLevel2MarketData(symbol, exchange);
     const { volumeThreshold, setVolumeThreshold, volumeMode, setVolumeMode } = useVolumeFilter(5000000);
@@ -3540,6 +3526,17 @@ const OrderFlowHeatmap: React.FC = () => {
                         <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
                     </svg>
                 </button>
+
+                {/* FLOATING TECHNICAL INDICATORS BUTTON */}
+                <button
+                    onClick={() => setIsIndicatorModalOpen(true)}
+                    className="relative shrink-0 w-16 h-16 rounded-full flex items-center justify-center bg-gradient-to-br from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 border border-teal-400/30 text-white shadow-[0_0_24px_rgba(20,184,166,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                    title="Technical Analysis Indicators"
+                >
+                    <svg className="w-8 h-8 group-hover:scale-110 transition-transform bg-transparent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                </button>
             </div>
 
 
@@ -3605,6 +3602,12 @@ const OrderFlowHeatmap: React.FC = () => {
             <TopTokensModal 
                 isOpen={isTopTokensModalOpen} 
                 onClose={() => setIsTopTokensModalOpen(false)} 
+            />
+
+            <TechnicalIndicatorModal
+                isOpen={isIndicatorModalOpen}
+                onClose={() => setIsIndicatorModalOpen(false)}
+                symbol={symbol}
             />
         </div >
     );

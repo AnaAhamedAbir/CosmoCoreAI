@@ -4,6 +4,7 @@ import { IndicatorConfig, SignalType, TECHNICAL_INDICATORS } from './indicatorCo
 export interface IndicatorData extends IndicatorConfig {
   value: number | string;
   signal: SignalType;
+  mtf?: Record<string, { value: string | number; signal: SignalType }>;
 }
 
 export interface OverallSentiment {
@@ -22,7 +23,11 @@ const determineSignal = (score: number): SignalType => {
 
 export const useTechnicalIndicators = (symbol: string, isModalOpen: boolean) => {
   const [indicators, setIndicators] = useState<IndicatorData[]>([]);
+  const [confluenceAlerts, setConfluenceAlerts] = useState<any[]>([]);
+  const [aiSummary, setAiSummary] = useState<string>('');
+  const [winRates, setWinRates] = useState<Record<string, number>>({});
   const [overallSentiment, setOverallSentiment] = useState<OverallSentiment>({ score: 50, signal: 'NEUTRAL' });
+  const [wsRef, setWsRef] = useState<WebSocket | null>(null);
 
   // Fetch real data via WebSocket
   useEffect(() => {
@@ -38,6 +43,7 @@ export const useTechnicalIndicators = (symbol: string, isModalOpen: boolean) => 
       const wsUrl = `${protocol}//${host}/api/v1/indicators/ws/stream/${formattedSymbol}`;
       
       ws = new WebSocket(wsUrl);
+      setWsRef(ws);
 
       ws.onopen = () => {
         console.log(`Connected to Indicator Stream for ${symbol}`);
@@ -45,15 +51,40 @@ export const useTechnicalIndicators = (symbol: string, isModalOpen: boolean) => 
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
-          if (Array.isArray(data)) {
-            // Merge backend data with static config
+          const payload = JSON.parse(event.data);
+          
+          if (payload.type === 'mtf_data') {
+            const mtfData = payload.data; // { "1m": [...], "5m": [...] }
+            setConfluenceAlerts(payload.confluence_alerts || []);
+            setAiSummary(payload.ai_summary || '');
+            setWinRates(payload.win_rates || {});
+            
+            // Build unified MTF array
             const updatedIndicators = TECHNICAL_INDICATORS.map(config => {
-              const backendData = data.find((d: any) => d.id === config.id);
-              if (backendData) {
-                return { ...config, value: backendData.value, signal: backendData.signal };
-              }
-              return { ...config, value: '-', signal: 'NEUTRAL' as SignalType };
+              const mtfRecord: Record<string, any> = {};
+              let defaultVal = '-';
+              let defaultSig = 'NEUTRAL' as SignalType;
+              
+              Object.keys(mtfData).forEach(tf => {
+                const tfArray = mtfData[tf];
+                const backendData = tfArray.find((d: any) => d.id === config.id);
+                if (backendData) {
+                  mtfRecord[tf] = { value: backendData.value, signal: backendData.signal };
+                  if (tf === '15m') { // Use 15m as default for gauge
+                    defaultVal = backendData.value;
+                    defaultSig = backendData.signal;
+                  }
+                } else {
+                  mtfRecord[tf] = { value: '-', signal: 'NEUTRAL' };
+                }
+              });
+              
+              return { 
+                ...config, 
+                value: defaultVal, 
+                signal: defaultSig,
+                mtf: mtfRecord
+              };
             });
             setIndicators(updatedIndicators);
           }
@@ -111,5 +142,13 @@ export const useTechnicalIndicators = (symbol: string, isModalOpen: boolean) => 
     });
   }, [indicators]);
 
-  return { indicators, overallSentiment };
+  const updateConfig = useCallback((id: string, config: any) => {
+    if (wsRef && wsRef.readyState === WebSocket.OPEN) {
+      wsRef.send(JSON.stringify({ type: 'update_config', id, config }));
+    } else {
+      console.warn("WebSocket not connected. Cannot update config.");
+    }
+  }, [wsRef]);
+
+  return { indicators, overallSentiment, confluenceAlerts, aiSummary, winRates, updateConfig };
 };

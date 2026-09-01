@@ -306,6 +306,10 @@ async def websocket_indicator_stream(websocket: WebSocket, symbol_param: str):
             for tf, ohlcv in zip(timeframes, results_ohlcv):
                 if not ohlcv: continue
                 df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                # pandas_ta VWAP requires a DatetimeIndex
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                df.set_index('timestamp', inplace=True)
+                
                 # Offload CPU bound calculations to a thread pool
                 calc_result = await asyncio.to_thread(calculate_indicators, df, tf)
                 mtf_payload["data"][tf] = calc_result["indicators"]
@@ -330,7 +334,10 @@ async def websocket_indicator_stream(websocket: WebSocket, symbol_param: str):
                         response = await asyncio.to_thread(client.models.generate_content, model='gemini-2.5-flash', contents=prompt)
                         last_ai_summary = response.text.strip()
                     except Exception as e:
-                        last_ai_summary = f"AI Analysis temporarily unavailable: {e}"
+                        if "API_KEY_INVALID" in str(e) or "400" in str(e):
+                            last_ai_summary = "AI Insights require a valid Google Gemini API Key. Please configure your .env file."
+                        else:
+                            last_ai_summary = "AI Analysis temporarily unavailable. Check server logs for details."
                 else:
                     last_ai_summary = f"AI Summary: Market shows {bullish_count} bullish and {bearish_count} bearish confluences. (Gemini API Key missing)"
             

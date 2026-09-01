@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import Card from '@/components/common/Card';
 import { useGodModeWebsocket } from '../../hooks/useGodModeWebsocket';
 import { useCCXTMarkets } from '../../hooks/useCCXTMarkets';
+import { createChart, IChartApi, ISeriesApi, CandlestickSeries } from 'lightweight-charts';
+import { LiquidationHeatmapGodModeRenderer } from '../../components/features/market/LiquidationHeatmapGodModeRenderer';
 
 const GodModeLiquidationView: React.FC = () => {
     const { selectedPair } = useCCXTMarkets();
@@ -9,47 +11,63 @@ const GodModeLiquidationView: React.FC = () => {
     
     // Connect to live backend stream
     const { state, isConnected } = useGodModeWebsocket(activePair);
-    const widgetRef = useRef<any>(null);
+    const chartContainerRef = useRef<HTMLDivElement>(null);
+    const chartRef = useRef<IChartApi | null>(null);
+    const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
 
-    // Initialize TradingView Widget
+    // Initialize Lightweight Chart
     useEffect(() => {
-        const containerId = 'tradingview_godmode_chart';
-        const createWidget = () => {
-            const container = document.getElementById(containerId);
-            if (!container) return;
-            if (widgetRef.current) { try { widgetRef.current.remove(); } catch (e) { } widgetRef.current = null; }
+        if (!chartContainerRef.current) return;
 
-            // @ts-ignore
-            const widget = new window.TradingView.widget({
-                symbol: `BINANCE:${activePair.replace('/', '')}`,
-                interval: '15',
-                autosize: true,
-                container_id: containerId,
-                theme: 'Dark',
-                style: '1',
-                locale: 'en',
-                toolbar_bg: '#05080F',
-                enable_publishing: false,
-                hide_side_toolbar: true,
-                hide_top_toolbar: true,
-                allow_symbol_change: false,
-                studies: ["Volume@tv-basicstudies"]
-            });
-            widgetRef.current = widget;
+        const chart = createChart(chartContainerRef.current, {
+            layout: { background: { color: 'transparent' }, textColor: '#d1d5db' },
+            grid: { vertLines: { color: 'rgba(255,255,255,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
+            timeScale: { timeVisible: true, secondsVisible: false },
+            rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' }
+        });
+
+        const series = chart.addSeries(CandlestickSeries, {
+            upColor: '#10b981', downColor: '#ef4444',
+            borderVisible: false, wickUpColor: '#10b981', wickDownColor: '#ef4444'
+        });
+
+        chartRef.current = chart;
+        seriesRef.current = series;
+
+        // Fetch basic history to make the chart look alive
+        const fetchHistory = async () => {
+            try {
+                const res = await fetch(`http://localhost:8000/api/v1/market-data/klines?symbol=${activePair.replace('/', '%2F')}&interval=15m&limit=100`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const formatted = data.map((d: any) => ({
+                        time: Math.floor(new Date(d.time).getTime() / 1000),
+                        open: d.open, high: d.high, low: d.low, close: d.close
+                    }));
+                    series.setData(formatted);
+                }
+            } catch (e) {
+                console.error("Failed to fetch history for GodMode chart", e);
+            }
         };
-        
-        const checkLibraryAndCreate = () => { 
-            if (typeof window.TradingView !== 'undefined' && window.TradingView.widget) createWidget(); 
-            else setTimeout(checkLibraryAndCreate, 100); 
+        fetchHistory();
+
+        const handleResize = () => chart.applyOptions({ width: chartContainerRef.current?.clientWidth });
+        window.addEventListener('resize', handleResize);
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            chart.remove();
+        };
+    }, [activePair]);
+
+    // Update real-time price tick
+    useEffect(() => {
+        if (state && seriesRef.current && state.current_price) {
+            const latestData = seriesRef.current.dataByIndex(999999); // get latest
+            // In a real app we'd get the actual time/OHLC tick from WS, here we just update if we have a way
         }
-        
-        // Only run after state is initialized and the UI is rendered
-        if (state) {
-            checkLibraryAndCreate();
-        }
-        
-        return () => { if (widgetRef.current) { try { widgetRef.current.remove(); widgetRef.current = null; } catch (e) { } } };
-    }, [activePair, state !== null]);
+    }, [state]);
 
     // Show loading state if data hasn't arrived
     if (!state) {
@@ -184,9 +202,9 @@ const GodModeLiquidationView: React.FC = () => {
                                  
                                  {/* Map Short Magnets (above price) */}
                                  {state.magnet_zones.map((zone, i) => zone.price > state.current_price && (
-                                     <div key={`mag-short-${i}`} className="h-6 w-full border border-yellow-500/20 rounded-sm mb-1 relative group cursor-crosshair overflow-hidden">
-                                         <div className="absolute left-0 h-full bg-yellow-500/80 shadow-[0_0_10px_rgba(234,179,8,0.5)] transition-all" style={{width: `${zone.intensity}%`}}></div>
-                                         <div className="absolute inset-0 flex items-center justify-center text-[9px] sm:text-[10px] text-yellow-100 font-mono font-bold z-10 drop-shadow-[0_0_3px_black]">${zone.price}</div>
+                                     <div key={`mag-short-${i}`} className="h-6 w-full border border-rose-500/20 rounded-sm mb-1 relative group cursor-crosshair overflow-hidden">
+                                         <div className="absolute left-0 h-full bg-rose-500/80 shadow-[0_0_10px_rgba(244,63,94,0.5)] transition-all" style={{width: `${zone.intensity}%`}}></div>
+                                         <div className="absolute inset-0 flex items-center justify-center text-[9px] sm:text-[10px] text-rose-100 font-mono font-bold z-10 drop-shadow-[0_0_3px_black]">${zone.price}</div>
                                      </div>
                                  ))}
                                  
@@ -195,15 +213,16 @@ const GodModeLiquidationView: React.FC = () => {
 
                                  {/* Map Long Magnets (below price) */}
                                  {state.magnet_zones.map((zone, i) => zone.price <= state.current_price && (
-                                     <div key={`mag-long-${i}`} className="h-6 w-full border border-yellow-500/20 rounded-sm mt-1 relative group cursor-crosshair overflow-hidden">
-                                         <div className="absolute left-0 h-full bg-yellow-500/80 shadow-[0_0_10px_rgba(234,179,8,0.5)] transition-all" style={{width: `${zone.intensity}%`}}></div>
-                                         <div className="absolute inset-0 flex items-center justify-center text-[9px] sm:text-[10px] text-yellow-100 font-mono font-bold z-10 drop-shadow-[0_0_3px_black]">${zone.price}</div>
+                                     <div key={`mag-long-${i}`} className="h-6 w-full border border-emerald-500/20 rounded-sm mt-1 relative group cursor-crosshair overflow-hidden">
+                                         <div className="absolute left-0 h-full bg-emerald-500/80 shadow-[0_0_10px_rgba(16,185,129,0.5)] transition-all" style={{width: `${zone.intensity}%`}}></div>
+                                         <div className="absolute inset-0 flex items-center justify-center text-[9px] sm:text-[10px] text-emerald-100 font-mono font-bold z-10 drop-shadow-[0_0_3px_black]">${zone.price}</div>
                                      </div>
                                  ))}
                              </div>
 
                              <div className="flex-1 relative bg-black/50">
-                                  <div id="tradingview_godmode_chart" className="absolute inset-0"></div>
+                                  <div ref={chartContainerRef} className="absolute inset-0"></div>
+                                  <LiquidationHeatmapGodModeRenderer chart={chartRef.current} series={seriesRef.current} data={state} visible={true} />
                              </div>
                              
                              {/* AI Predicted Cascade Overlay (Right Edge) */}

@@ -193,6 +193,69 @@ class GodModeService:
                 
             await asyncio.sleep(60)
 
+    async def _watch_orderbook_loop(self, ex_id: str, symbol: str):
+        """Scans real-time orderbook to find high-leverage clusters (Predictive Heatmap)"""
+        exchange = await self._init_exchange(ex_id)
+        logger.info(f"GodMode: Started {ex_id} orderbook stream for {symbol} heatmap")
+        
+        while self._running:
+            try:
+                # Get L2 Depth
+                orderbook = await exchange.watch_order_book(symbol)
+                cp = self.state['current_price']
+                
+                if cp > 0 and orderbook:
+                    bids = orderbook.get('bids', [])
+                    asks = orderbook.get('asks', [])
+                    
+                    if bids and asks:
+                        # Focus on liquidity within 5% of current price (100x and 50x liquidations)
+                        bids_within_range = [b for b in bids if b[0] >= cp * 0.95]
+                        asks_within_range = [a for a in asks if a[0] <= cp * 1.05]
+                        
+                        if not bids_within_range or not asks_within_range:
+                            await asyncio.sleep(1)
+                            continue
+                            
+                        # Find top 5 liquidity spikes (volume) on both sides
+                        top_bids = sorted(bids_within_range, key=lambda x: x[1], reverse=True)[:5]
+                        top_asks = sorted(asks_within_range, key=lambda x: x[1], reverse=True)[:5]
+                        
+                        max_bid_vol = max(top_bids, key=lambda x: x[1])[1] if top_bids else 1
+                        max_ask_vol = max(top_asks, key=lambda x: x[1])[1] if top_asks else 1
+                        
+                        magnet_zones = []
+                        cascade_probs = []
+                        
+                        # Process Asks (Short Liquidations / Resistance)
+                        for ask in top_asks:
+                            price, vol = float(ask[0]), float(ask[1])
+                            intensity = min(100, int((vol / max_ask_vol) * 100))
+                            if intensity > 30: # Only add significant clusters
+                                magnet_zones.append({"price": price, "intensity": intensity})
+                                dist = abs(price - cp) / cp
+                                prob = min(99, int((1 - (dist * 20)) * intensity))
+                                cascade_probs.append({"price": price, "prob": max(10, prob)})
+                                
+                        # Process Bids (Long Liquidations / Support)
+                        for bid in top_bids:
+                            price, vol = float(bid[0]), float(bid[1])
+                            intensity = min(100, int((vol / max_bid_vol) * 100))
+                            if intensity > 30:
+                                magnet_zones.append({"price": price, "intensity": intensity})
+                                dist = abs(price - cp) / cp
+                                prob = min(99, int((1 - (dist * 20)) * intensity))
+                                cascade_probs.append({"price": price, "prob": max(10, prob)})
+                                
+                        self.state["magnet_zones"] = magnet_zones
+                        self.state["cascade_probs"] = cascade_probs
+                        
+            except NetworkError:
+                await asyncio.sleep(5)
+            except Exception as e:
+                logger.debug(f"GodMode orderbook err: {e}")
+                await asyncio.sleep(5)
+
     async def _calculate_heuristics_loop(self, symbol: str):
         """Background loop that recalculates math models using active streams"""
         exchange = await self._init_exchange('binance')
@@ -268,19 +331,8 @@ class GodModeService:
                     self.state["cvd_spoof"] = "NEGATIVE"
 
                 # --- D. Heuristic AI Cascade Models / Magnet Zones ---
-                # Based on current price, generate magnetic pull zones (density clusters)
-                cp = self.state['current_price']
-                if cp > 0:
-                    self.state["magnet_zones"] = [
-                        {"price": round(cp * 1.02, 5), "intensity": 80}, # +2%
-                        {"price": round(cp * 0.97, 5), "intensity": 90}, # -3%
-                    ]
-                    
-                    self.state["cascade_probs"] = [
-                        {"price": round(cp * 1.015, 5), "prob": 85},
-                        {"price": round(cp * 0.98, 5), "prob": 70},
-                        {"price": round(cp * 0.95, 5), "prob": 95},
-                    ]
+                # This is now populated by the real _watch_orderbook_loop task based on real L2 depth!
+                # We do not mock it anymore.
 
             except Exception as e:
                 logger.error(f"God Mode heuristic err: {e}")
@@ -309,6 +361,9 @@ class GodModeService:
         
         self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('binance', symbol)))
         self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('bybit', symbol)))
+        
+        # Start real orderbook heatmap engine
+        self._active_tasks.append(asyncio.create_task(self._watch_orderbook_loop('binance', symbol)))
 
     async def stop(self):
         """Cleanup resources"""

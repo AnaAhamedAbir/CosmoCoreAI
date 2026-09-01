@@ -17,6 +17,7 @@ import { VolumeProfileWidget, VPVRData } from '../../components/features/market/
 import { CVDChart, CVDDataPoint } from '../../components/features/market/CVDChart';
 import { FootprintRenderer, FootprintCandleData, FootprintDataTick } from '../../components/features/market/FootprintRenderer';
 import { GodModeHUD } from '../../components/features/market/GodModeHUD';
+import { LiquidationHeatmapGodModeRenderer } from '../../components/features/market/LiquidationHeatmapGodModeRenderer';
 import { LiquidationRenderer } from '../../components/features/market/LiquidationRenderer';
 import { useGodModeData } from '../../hooks/useGodModeData';
 import { FibonacciCloudRenderer, FibonacciData } from '../../components/features/market/FibonacciCloudRenderer';
@@ -2010,6 +2011,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     <AetherFlowRenderer chart={chartRef.current} series={candlestickSeriesRef.current!} data={aetherFlowData} settings={indicatorSettings} />
 
                     <LiquidityHeatmapRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={realHeatmapData} />
+                    <LiquidationHeatmapGodModeRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={godModeData} visible={indicatorSettings.showLiquidationHeatmap} />
                     <FibonacciCloudRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={fiboData} />
                     <BollingerBandsRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={bbData} visible={indicatorSettings.showBB} />
                     <MACDRenderer

@@ -9,6 +9,7 @@ class NotificationSettings(Base):
     telegram_bot_token = Column(String, nullable=True)
     telegram_chat_id = Column(String, nullable=True)
     is_enabled = Column(Boolean, default=False)
+    use_master_bot = Column(Boolean, default=False)
 
     # === Session Alert Preferences ===
     notify_sydney = Column(Boolean, default=True)

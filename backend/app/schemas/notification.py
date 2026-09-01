@@ -6,6 +6,7 @@ class NotificationSettingsBase(BaseModel):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     is_enabled: bool = False
+    use_master_bot: bool = False
 
     # Per-session toggles
     notify_sydney: bool = True

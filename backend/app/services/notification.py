@@ -46,11 +46,19 @@ class NotificationService:
                 logger.info(f"Notifications disabled for user {user_id}")
                 return
 
-            if not settings.telegram_bot_token or not settings.telegram_chat_id:
+            if getattr(settings, 'use_master_bot', False):
+                from app.core.config import settings as app_settings
+                bot_token = app_settings.TELEGRAM_MASTER_BOT_TOKEN
+            else:
+                bot_token = settings.telegram_bot_token
+                
+            chat_id = settings.telegram_chat_id
+
+            if not bot_token or not chat_id:
                 logger.warning(f"Incomplete Telegram credentials for user {user_id}")
                 return
 
-            bot = _make_bot(settings.telegram_bot_token)
+            bot = _make_bot(bot_token)
             
             # Implementation of the "Better than before" Retry Logic
             # Telegram message length limit is 4096. We truncate at 4000 to be safe.
@@ -60,7 +68,7 @@ class NotificationService:
             retries = 1
             while retries >= 0:
                 try:
-                    await bot.send_message(chat_id=settings.telegram_chat_id, text=message, parse_mode=parse_mode)
+                    await bot.send_message(chat_id=chat_id, text=message, parse_mode=parse_mode)
                     logger.info(f"Notification sent to user {user_id}")
                     break 
                 except telegram.error.TimedOut:
@@ -94,14 +102,25 @@ class NotificationService:
                 NotificationSettings.user_id == user_id
             ).first()
 
-            if not settings or not settings.is_enabled or not settings.telegram_bot_token or not settings.telegram_chat_id:
+            if not settings or not settings.is_enabled:
                 return
 
-            bot = _make_bot(settings.telegram_bot_token)
+            if getattr(settings, 'use_master_bot', False):
+                from app.core.config import settings as app_settings
+                bot_token = app_settings.TELEGRAM_MASTER_BOT_TOKEN
+            else:
+                bot_token = settings.telegram_bot_token
+                
+            chat_id = settings.telegram_chat_id
+            
+            if not bot_token or not chat_id:
+                return
+
+            bot = _make_bot(bot_token)
             
             with open(voice_path, 'rb') as voice_file:
                 await bot.send_voice(
-                    chat_id=settings.telegram_chat_id, 
+                    chat_id=chat_id, 
                     voice=voice_file, 
                     caption=caption, 
                     parse_mode=parse_mode
@@ -121,10 +140,21 @@ class NotificationService:
                 NotificationSettings.user_id == user_id
             ).first()
 
-            if not settings or not settings.is_enabled or not settings.telegram_bot_token or not settings.telegram_chat_id:
+            if not settings or not settings.is_enabled:
                 return
 
-            bot = _make_bot(settings.telegram_bot_token)
+            if getattr(settings, 'use_master_bot', False):
+                from app.core.config import settings as app_settings
+                bot_token = app_settings.TELEGRAM_MASTER_BOT_TOKEN
+            else:
+                bot_token = settings.telegram_bot_token
+                
+            chat_id = settings.telegram_chat_id
+            
+            if not bot_token or not chat_id:
+                return
+
+            bot = _make_bot(bot_token)
 
             # Download image ourselves to avoid CDN/auth issues with Telegram directly fetching
             import httpx, io
@@ -135,7 +165,7 @@ class NotificationService:
                 img_bytes.name = "thumbnail.jpg"
 
             await bot.send_photo(
-                chat_id=settings.telegram_chat_id,
+                chat_id=chat_id,
                 photo=img_bytes,
                 caption=caption,
                 parse_mode=parse_mode
@@ -155,17 +185,28 @@ class NotificationService:
                 NotificationSettings.user_id == user_id
             ).first()
 
-            if not settings or not settings.is_enabled or not settings.telegram_bot_token or not settings.telegram_chat_id:
+            if not settings or not settings.is_enabled:
                 return
 
-            bot = _make_bot(settings.telegram_bot_token)
+            if getattr(settings, 'use_master_bot', False):
+                from app.core.config import settings as app_settings
+                bot_token = app_settings.TELEGRAM_MASTER_BOT_TOKEN
+            else:
+                bot_token = settings.telegram_bot_token
+                
+            chat_id = settings.telegram_chat_id
+            
+            if not bot_token or not chat_id:
+                return
+
+            bot = _make_bot(bot_token)
             
             import io
             img_io = io.BytesIO(photo_bytes)
             img_io.name = "chart.png"
 
             await bot.send_photo(
-                chat_id=settings.telegram_chat_id,
+                chat_id=chat_id,
                 photo=img_io,
                 caption=caption,
                 parse_mode=parse_mode
@@ -197,15 +238,28 @@ class NotificationService:
         Useful for background tasks (Auto-Archiver, System Errors).
         """
         try:
+            from sqlalchemy import or_
             active_users = db.query(NotificationSettings).filter(
                 NotificationSettings.is_enabled == True,
-                NotificationSettings.telegram_bot_token != None,
                 NotificationSettings.telegram_chat_id != None,
+                or_(
+                    NotificationSettings.telegram_bot_token != None,
+                    NotificationSettings.use_master_bot == True
+                )
             ).all()
 
             for settings in active_users:
                 try:
-                    bot = _make_bot(settings.telegram_bot_token)
+                    if getattr(settings, 'use_master_bot', False):
+                        from app.core.config import settings as app_settings
+                        bot_token = app_settings.TELEGRAM_MASTER_BOT_TOKEN
+                    else:
+                        bot_token = settings.telegram_bot_token
+                        
+                    if not bot_token:
+                        continue
+                        
+                    bot = _make_bot(bot_token)
                     await bot.send_message(chat_id=settings.telegram_chat_id, text=message, parse_mode=parse_mode)
                     logger.info(f"Broadcast alert sent to user {settings.user_id}")
                 except Exception as e:

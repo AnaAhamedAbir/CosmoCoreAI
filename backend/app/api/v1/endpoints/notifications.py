@@ -49,11 +49,19 @@ async def send_test_notification(
     settings_in: NotificationSettingsCreate,
     current_user: User = Depends(get_current_user)
 ):
-    if not settings_in.telegram_bot_token or not settings_in.telegram_chat_id:
+    from app.core.config import settings
+    bot_token = settings_in.telegram_bot_token
+    
+    if getattr(settings_in, 'use_master_bot', False):
+        if not settings.TELEGRAM_MASTER_BOT_TOKEN:
+            raise HTTPException(status_code=400, detail="Master bot is not configured on the server")
+        bot_token = settings.TELEGRAM_MASTER_BOT_TOKEN
+        
+    if not bot_token or not settings_in.telegram_chat_id:
          raise HTTPException(status_code=400, detail="Bot token and Chat ID are required")
 
     success, message = await NotificationService.force_send_message(
-        bot_token=settings_in.telegram_bot_token,
+        bot_token=bot_token,
         chat_id=settings_in.telegram_chat_id,
         message="🔔 Test Notification from CosmoQuantAI"
     )
@@ -62,3 +70,21 @@ async def send_test_notification(
         raise HTTPException(status_code=400, detail=f"Failed to send message: {message}")
         
     return {"status": "success", "message": "Test notification sent"}
+
+@router.get("/connect-link")
+def get_telegram_connect_link(
+    current_user: User = Depends(get_current_user)
+):
+    from app.core.config import settings
+    bot_username = settings.TELEGRAM_MASTER_BOT_USERNAME
+    if not bot_username:
+        raise HTTPException(status_code=400, detail="Master bot username is not configured")
+    
+    # Remove @ if it exists
+    if bot_username.startswith("@"):
+        bot_username = bot_username[1:]
+        
+    payload = f"user_{current_user.id}"
+    link = f"https://t.me/{bot_username}?start={payload}"
+    return {"link": link}
+

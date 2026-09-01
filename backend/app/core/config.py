@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     # Network Timeouts (Seconds)
     DEFAULT_HTTP_TIMEOUT: int = 30
     TELEGRAM_TIMEOUT: int = 40
+    
+    # Telegram Master Bot
+    TELEGRAM_MASTER_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_MASTER_BOT_USERNAME: Optional[str] = None
 
     class Config:
         case_sensitive = True

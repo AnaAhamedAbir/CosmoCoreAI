@@ -5,6 +5,7 @@ export interface NotificationSettings {
     telegram_bot_token?: string;
     telegram_chat_id?: string;
     is_enabled: boolean;
+    use_master_bot?: boolean;
     // Per-session toggles
     notify_sydney: boolean;
     notify_tokyo: boolean;
@@ -33,12 +34,18 @@ export const notificationService = {
         return response.data;
     },
 
-    sendTestNotification: async (token: string, chatId: string): Promise<{ status: string, message: string }> => {
+    sendTestNotification: async (token: string, chatId: string, use_master_bot: boolean = false): Promise<{ status: string, message: string }> => {
         const response = await apiClient.post<{ status: string, message: string }>('/notifications/test', {
             telegram_bot_token: token,
             telegram_chat_id: chatId,
-            is_enabled: true // Required by schema but ignored by test endpoint logic usually, or needed for validation
+            is_enabled: true,
+            use_master_bot: use_master_bot
         });
+        return response.data;
+    },
+
+    getTelegramConnectLink: async (): Promise<{ link: string }> => {
+        const response = await apiClient.get<{ link: string }>('/notifications/connect-link');
         return response.data;
     }
 };

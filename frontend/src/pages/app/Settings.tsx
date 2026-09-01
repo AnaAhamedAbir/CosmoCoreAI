@@ -11,6 +11,7 @@ import { updateUserSecurity, uploadUserAvatar } from '@/services/auth';
 import { fetchExchangeBalance, syncExchangeBalance, ExchangeBalanceResult } from '@/services/settings';
 import { systemService } from '@/services/systemService';
 import { User, Shield, Key, Bell, Palette, Database, CreditCard } from 'lucide-react';
+import TelegramConnectionPanel from '@/components/features/settings/TelegramConnectionPanel';
 
 // Icons
 const PlusIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
@@ -134,9 +135,11 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
 
     // Notification State
     const [notificationSettings, setNotificationSettings] = useState({
+        user_id: 0,
         telegram_bot_token: '',
         telegram_chat_id: '',
         is_enabled: false,
+        use_master_bot: false,
         notify_sydney: true,
         notify_tokyo: true,
         notify_london: true,
@@ -222,9 +225,11 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
             .then(data => {
                 if (data) {
                     setNotificationSettings({
+                        user_id: data.user_id,
                         telegram_bot_token: data.telegram_bot_token || '',
                         telegram_chat_id: data.telegram_chat_id || '',
                         is_enabled: data.is_enabled,
+                        use_master_bot: data.use_master_bot || false,
                         notify_sydney: data.notify_sydney ?? true,
                         notify_tokyo: data.notify_tokyo ?? true,
                         notify_london: data.notify_london ?? true,
@@ -345,21 +350,6 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
             showToast('Failed to save settings.', 'error');
         } finally {
             setIsSavingNotifications(false);
-        }
-    };
-
-    const handleTestNotification = async () => {
-        setIsTestingNotification(true);
-        try {
-            await notificationService.sendTestNotification(
-                notificationSettings.telegram_bot_token,
-                notificationSettings.telegram_chat_id
-            );
-            showToast('Test message sent!', 'success');
-        } catch (e: any) {
-            showToast(`Test failed: ${e.response?.data?.detail || e.message}`, 'error');
-        } finally {
-            setIsTestingNotification(false);
         }
     };
 
@@ -678,36 +668,12 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
                             </label>
                         </div>
 
-                        {/* Telegram Credentials */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Bot Token</label>
-                                <input
-                                    type="password"
-                                    value={notificationSettings.telegram_bot_token}
-                                    onChange={(e) => setNotificationSettings(p => ({ ...p, telegram_bot_token: e.target.value }))}
-                                    placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-                                    className={inputBaseClasses}
-                                />
-                                <p className="text-xs text-gray-400 mt-1">Get this from @BotFather on Telegram.</p>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Chat ID</label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={notificationSettings.telegram_chat_id}
-                                        onChange={(e) => setNotificationSettings(p => ({ ...p, telegram_chat_id: e.target.value }))}
-                                        placeholder="123456789"
-                                        className={inputBaseClasses}
-                                    />
-                                    <Button variant="secondary" onClick={handleTestNotification} disabled={isTestingNotification || !notificationSettings.telegram_bot_token || !notificationSettings.telegram_chat_id}>
-                                        {isTestingNotification ? 'Sending...' : 'Test'}
-                                    </Button>
-                                </div>
-                                <p className="text-xs text-gray-400 mt-1">Send a message to your bot to find your Chat ID.</p>
-                            </div>
-                        </div>
+                        {/* Telegram Connections */}
+                        <TelegramConnectionPanel 
+                            settings={notificationSettings} 
+                            onChange={(updates) => setNotificationSettings(p => ({ ...p, ...updates }))} 
+                            inputBaseClasses={inputBaseClasses} 
+                        />
 
                         {/* Session Preferences */}
                         <div className="space-y-3 pt-2">

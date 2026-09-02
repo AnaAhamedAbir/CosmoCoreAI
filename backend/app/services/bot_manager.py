@@ -582,7 +582,7 @@ class BotManager:
                         if not target_exchange and hasattr(bot_instance, 'engine'):
                             target_exchange = getattr(bot_instance.engine, 'exchange', None)
                         
-                        if target_exchange:
+                        if target_exchange and getattr(target_exchange, "apiKey", None):
                             try:
                                 target_symbol = getattr(bot_instance, 'symbol', getattr(bot_instance, 'bot', None) and getattr(bot_instance.bot, 'market', None))
                                 if target_symbol:

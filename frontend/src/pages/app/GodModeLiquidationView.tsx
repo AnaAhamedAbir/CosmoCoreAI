@@ -4,6 +4,7 @@ import { useGodModeWebsocket } from '../../hooks/useGodModeWebsocket';
 import { useCCXTMarkets } from '../../hooks/useCCXTMarkets';
 import { createChart, IChartApi, ISeriesApi, CandlestickSeries } from 'lightweight-charts';
 import { LiquidationHeatmapGodModeRenderer } from '../../components/features/market/LiquidationHeatmapGodModeRenderer';
+import { marketDepthService } from '../../services/marketDepthService';
 
 const GodModeLiquidationView: React.FC = () => {
     const { selectedPair } = useCCXTMarkets();
@@ -17,7 +18,8 @@ const GodModeLiquidationView: React.FC = () => {
 
     // Initialize Lightweight Chart
     useEffect(() => {
-        if (!chartContainerRef.current) return;
+        // Wait until the loading screen is gone and the container is in the DOM
+        if (!state || !chartContainerRef.current) return;
 
         const chart = createChart(chartContainerRef.current, {
             layout: { background: { color: 'transparent' }, textColor: '#d1d5db' },
@@ -37,12 +39,27 @@ const GodModeLiquidationView: React.FC = () => {
         // Fetch basic history to make the chart look alive
         const fetchHistory = async () => {
             try {
-                const res = await fetch(`http://localhost:8000/api/v1/market-data/klines?symbol=${activePair.replace('/', '%2F')}&interval=15m&limit=100`);
-                if (res.ok) {
-                    const data = await res.json();
-                    const formatted = data.map((d: any) => ({
-                        time: Math.floor(new Date(d.time).getTime() / 1000),
-                        open: d.open, high: d.high, low: d.low, close: d.close
+                // Determine exchange (default to binance if not specified in symbol string format)
+                let exchange = 'binance';
+                let formattedSymbol = activePair;
+                if (activePair.includes(':')) {
+                    // For CCXT futures format like BTC/USDT:USDT we keep binance
+                }
+                
+                const data = await marketDepthService.getOHLCV(
+                    formattedSymbol,
+                    exchange,
+                    '15m',
+                    200
+                );
+
+                if (data && data.length > 0) {
+                    const formatted = data.map((k: any) => ({
+                        time: k.time as any,
+                        open: parseFloat(k.open),
+                        high: parseFloat(k.high),
+                        low: parseFloat(k.low),
+                        close: parseFloat(k.close)
                     }));
                     series.setData(formatted);
                 }
@@ -52,14 +69,21 @@ const GodModeLiquidationView: React.FC = () => {
         };
         fetchHistory();
 
-        const handleResize = () => chart.applyOptions({ width: chartContainerRef.current?.clientWidth });
-        window.addEventListener('resize', handleResize);
+        const resizeObserver = new ResizeObserver(entries => {
+            if (entries.length === 0 || entries[0].target !== chartContainerRef.current) { return; }
+            const newRect = entries[0].contentRect;
+            chart.applyOptions({ height: newRect.height, width: newRect.width });
+        });
+
+        if (chartContainerRef.current) {
+            resizeObserver.observe(chartContainerRef.current);
+        }
 
         return () => {
-            window.removeEventListener('resize', handleResize);
+            resizeObserver.disconnect();
             chart.remove();
         };
-    }, [activePair]);
+    }, [activePair, state !== null]);
 
     // Update real-time price tick
     useEffect(() => {

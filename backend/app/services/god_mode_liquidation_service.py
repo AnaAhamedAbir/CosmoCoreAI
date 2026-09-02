@@ -343,7 +343,10 @@ class GodModeService:
     async def start(self, symbol: str):
         """Initialize the streams for a specific symbol"""
         if self._running:
-            return
+            if self.state.get("symbol") == symbol:
+                return
+            logger.info(f"GodMode: Switching symbol from {self.state.get('symbol')} to {symbol}")
+            await self.stop()
             
         self._running = True
         self.state["symbol"] = symbol

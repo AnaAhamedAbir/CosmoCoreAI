@@ -691,9 +691,9 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         }
 
         if (form.selectedStrategy !== 'cascading_bb') {
-            if (!form.enableWallTrigger && !form.enableLiqTrigger && !form.enableMlFilter) {
+            if (!form.enableWallTrigger && !form.enableLiqTrigger && !form.enableMlFilter && !form.enableGodModeEntryTrigger) {
                 if (!form.enableUtBot && !form.enableDualEngine && !form.enableSupertrendBot && !form.enableWickSr) {
-                    setErrorMsg("Please enable at least one Entry Trigger (Orderbook Wall, Liquidation, ML Filter, Dual Engine, UT Bot, Supertrend, or Wick S/R).");
+                    setErrorMsg("Please enable at least one Entry Trigger (Orderbook Wall, Liquidation, ML Filter, Dual Engine, UT Bot, Supertrend, Wick S/R, or God Mode ML).");
                     return;
                 }
                 if (form.enableUtBot && !form.enableUtEntryTrigger && !form.enableDualEngine && !form.enableSupertrendBot) {

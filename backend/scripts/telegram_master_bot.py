@@ -18,6 +18,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Reduce httpx polling logs spam
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /start command."""
     args = context.args

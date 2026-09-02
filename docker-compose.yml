@@ -84,6 +84,23 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
     restart: always
 
+  # 2c. Telegram Master Bot Listener - NEW
+  telegram_bot:
+    build: ./backend
+    container_name: cosmo_telegram_bot
+    command: python scripts/telegram_master_bot.py
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    restart: always
+
   # 3. Redis Service - NEW
   redis:
     image: redis:7-alpine

@@ -997,6 +997,10 @@ class WallHunterFuturesStrategy:
         while self.running:
             try:
                 extras = []
+                
+                if getattr(self, 'enable_god_mode_entry_trigger', False):
+                    extras.append(f"🤖 God Mode ML (L:{getattr(self, 'god_mode_long_threshold', 80)}/S:{getattr(self, 'god_mode_short_threshold', -80)})")
+
                 any_ut = getattr(self, 'enable_ut_trend_filter', False) or getattr(self, 'enable_ut_entry_trigger', False) or getattr(self, 'enable_ut_trailing_sl', False)
                 if any_ut:
                     ut_mode = "Standalone" if (not getattr(self, 'enable_wall_trigger', False) and not getattr(self, 'enable_liq_trigger', False)) else "Confluence"

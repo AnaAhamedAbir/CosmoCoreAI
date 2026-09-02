@@ -1716,6 +1716,10 @@ class WallHunterBot:
         while self.running:
             try:
                 extras = []
+                
+                if getattr(self, 'enable_god_mode_entry_trigger', False):
+                    extras.append(f"🤖 God Mode ML (L:{getattr(self, 'god_mode_long_threshold', 80)}/S:{getattr(self, 'god_mode_short_threshold', -80)})")
+
                 any_ut = self.enable_ut_trend_filter or self.enable_ut_entry_trigger or self.enable_ut_trailing_sl
                 if any_ut:
                     ut_mode = "Standalone" if (not self.enable_wall_trigger and not self.enable_liq_trigger) else "Confluence"

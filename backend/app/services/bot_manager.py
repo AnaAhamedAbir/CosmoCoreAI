@@ -240,6 +240,10 @@ class BotManager:
                 if config.get('enable_wall_trigger', True):
                     triggers.append("Wall")
                 
+                if config.get('enable_god_mode_entry_trigger'):
+                    triggers.append("God Mode ML")
+
+                
                 if config.get('enable_ut_entry_trigger'):
                     ut_info = "UT Bot"
                     extra = []

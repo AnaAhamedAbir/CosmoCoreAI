@@ -73,7 +73,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
         await update.message.reply_text(
             f"✅ Successfully connected to CosmoQuantAI!\n\n"
-            f"User: {user.username or user.email}\n"
+            f"User: {user.full_name or user.email}\n"
             f"You will now receive alerts here."
         )
         logger.info(f"Successfully linked user {user_id} with chat_id {chat_id}")

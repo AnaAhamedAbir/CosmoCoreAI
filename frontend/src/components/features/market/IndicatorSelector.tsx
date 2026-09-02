@@ -172,6 +172,7 @@ export interface IndicatorSettings {
     luxShowKillzones: boolean;
     liquidationHeatmapIntensity: number;
     liquidationShowBubbles: boolean;
+    liquidationShowSignalArrow: boolean;
     // MSB-OB Settings
     showMsbOb: boolean;
     msbObZigzagLen: number;
@@ -1335,6 +1336,12 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ settings, 
                                         <label className="flex items-center justify-between cursor-pointer group">
                                             <span className="text-gray-400 font-bold group-hover:text-gray-200">Show Live Bubbles</span>
                                             <input type="checkbox" checked={settings.liquidationShowBubbles as boolean} onChange={() => onSettingsChange({ ...settings, liquidationShowBubbles: !settings.liquidationShowBubbles })} className="w-3 h-3 rounded" />
+                                        </label>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5 mt-2">
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <span className="text-gray-400 font-bold group-hover:text-gray-200">Show Live Signal Arrow</span>
+                                            <input type="checkbox" checked={settings.liquidationShowSignalArrow !== false} onChange={() => onSettingsChange({ ...settings, liquidationShowSignalArrow: settings.liquidationShowSignalArrow === false ? true : false })} className="w-3 h-3 rounded" />
                                         </label>
                                     </div>
                                     <div className="flex flex-col gap-1.5 mt-1 border-t dark:border-white/10 pt-2">

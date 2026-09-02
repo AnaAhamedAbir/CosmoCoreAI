@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import Card from '@/components/common/Card';
 import { useGodModeWebsocket } from '../../hooks/useGodModeWebsocket';
 import { useCCXTMarkets } from '../../hooks/useCCXTMarkets';
-import { createChart, IChartApi, ISeriesApi, CandlestickSeries } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, CandlestickSeries, createSeriesMarkers } from 'lightweight-charts';
 import { LiquidationHeatmapGodModeRenderer } from '../../components/features/market/LiquidationHeatmapGodModeRenderer';
 import { marketDepthService } from '../../services/marketDepthService';
+import { calculateGodModeSignal } from '../../utils/godModeSignal';
 
 const GodModeLiquidationView: React.FC = () => {
     const { selectedPair } = useCCXTMarkets();
@@ -15,6 +16,8 @@ const GodModeLiquidationView: React.FC = () => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+    const markersPluginRef = useRef<any>(null);
+    const lastCandleTimeRef = useRef<any>(null);
 
     // Initialize Lightweight Chart
     useEffect(() => {
@@ -32,6 +35,8 @@ const GodModeLiquidationView: React.FC = () => {
             upColor: '#10b981', downColor: '#ef4444',
             borderVisible: false, wickUpColor: '#10b981', wickDownColor: '#ef4444'
         });
+
+        markersPluginRef.current = createSeriesMarkers(series, []);
 
         chartRef.current = chart;
         seriesRef.current = series;
@@ -61,6 +66,9 @@ const GodModeLiquidationView: React.FC = () => {
                         low: parseFloat(k.low),
                         close: parseFloat(k.close)
                     }));
+                    if (formatted.length > 0) {
+                        lastCandleTimeRef.current = formatted[formatted.length - 1].time;
+                    }
                     series.setData(formatted);
                 }
             } catch (e) {
@@ -90,6 +98,25 @@ const GodModeLiquidationView: React.FC = () => {
         if (state && seriesRef.current && state.current_price) {
             const latestData = seriesRef.current.dataByIndex(999999); // get latest
             // In a real app we'd get the actual time/OHLC tick from WS, here we just update if we have a way
+        }
+    }, [state]);
+
+    // Render God Mode Signal Arrow
+    useEffect(() => {
+        if (!state || !markersPluginRef.current || !lastCandleTimeRef.current) return;
+        
+        const result = calculateGodModeSignal(state as any);
+        if (result.signal !== 'NEUTRAL') {
+            const isBuy = result.signal === 'BUY';
+            markersPluginRef.current.setMarkers([{
+                time: lastCandleTimeRef.current,
+                position: isBuy ? 'belowBar' : 'aboveBar',
+                color: isBuy ? '#10b981' : '#ef4444',
+                shape: isBuy ? 'arrowUp' : 'arrowDown',
+                text: `GM ${result.signal} (${result.score})`
+            }]);
+        } else {
+            markersPluginRef.current.setMarkers([]);
         }
     }, [state]);
 

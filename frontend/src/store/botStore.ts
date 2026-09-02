@@ -178,6 +178,7 @@ export const useBotStore = create<BotState>()(
         showLiquidationHeatmap: false,
         liquidationHeatmapIntensity: 1.0,
         liquidationShowBubbles: true,
+        liquidationShowSignalArrow: true,
         // Supertrend Defaults
         showSupertrend: true,
         supertrendAtrPeriod: 10,

@@ -23,6 +23,7 @@ import { useGodModeData } from '../../hooks/useGodModeData';
 import { FibonacciCloudRenderer, FibonacciData } from '../../components/features/market/FibonacciCloudRenderer';
 import { IchimokuRenderer } from '../../components/features/market/IchimokuRenderer';
 import { calculateQuantumAi, QuantumAiResult } from '../../utils/quantumAi';
+import { calculateGodModeSignal } from '../../utils/godModeSignal';
 import { IndicatorSelector, IndicatorSettings } from '../../components/features/market/IndicatorSelector';
 import { MACDRenderer } from '../../components/features/market/MACDRenderer';
 import { calculateEMA, calculateBollingerBands, BollingerBandsDataPoint, calculateMACD, calculateRSI, updateEMA, updateBollingerBands, updateRSI, calculateIchimoku, IchimokuDataPoint, calculateAdaptiveTrendFinder, TrendFinderResult, calculateUTBotAlerts, UTBotDataPoint, calculateSessions, SessionData, calculateSupertrend, SupertrendDataPoint, calculateMsbOb, MsbObResult, calculateWickRejectionSR, WickSRResult, calculateVWAPSD, VWAPSDDataPoint } from '../../utils/indicators';
@@ -108,6 +109,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     const botTradeMarkersRef = useRef<any[]>([]);
     const patternMarkersRef = useRef<any[]>([]);
     const aetherMarkersRef = useRef<any[]>([]);
+    const godModeMarkersRef = useRef<any[]>([]);
+    const botStatusIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const wallLinesRef = useRef<Map<string, any>>(new Map());
     const currentPriceLineRef = useRef<any>(null);
     const mlEntryLineRef = useRef<any>(null);
@@ -1006,6 +1009,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             ...patternMarkersRef.current,
             ...aetherMarkersRef.current,
             ...mlPredictionMarkersRef.current,
+            ...godModeMarkersRef.current,
         ];
 
         const grouped = allMarkers.reduce((acc, curr) => {
@@ -1054,6 +1058,29 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
         safeSetMarkers();
     }, [quantumAiData, indicatorSettings.showQuantumAI]);
+
+    // ── God Mode Signal Marker Rendering Effect ──
+    useEffect(() => {
+        if (!markersPluginRef.current || !lastCandleRef.current) return;
+        if (!indicatorSettings.showLiquidationHeatmap || !indicatorSettings.liquidationShowSignalArrow || !godModeData) {
+            godModeMarkersRef.current = [];
+        } else {
+            const result = calculateGodModeSignal(godModeData as any);
+            if (result.signal !== 'NEUTRAL') {
+                const isBuy = result.signal === 'BUY';
+                godModeMarkersRef.current = [{
+                    time: lastCandleRef.current.time,
+                    position: isBuy ? 'belowBar' : 'aboveBar',
+                    color: isBuy ? '#10b981' : '#ef4444',
+                    shape: isBuy ? 'arrowUp' : 'arrowDown',
+                    text: `GM ${result.signal} (${result.score})`
+                }];
+            } else {
+                godModeMarkersRef.current = [];
+            }
+        }
+        safeSetMarkers();
+    }, [godModeData, indicatorSettings.showLiquidationHeatmap, indicatorSettings.liquidationShowSignalArrow]);
 
     // ── SMC Flow / Aether Flow Marker Rendering Effect ──
     useEffect(() => {

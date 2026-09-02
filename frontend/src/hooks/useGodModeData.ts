@@ -27,7 +27,7 @@ export const useGodModeData = (symbol: string) => {
         
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const baseUrl = `${protocol}//${window.location.host}`;
-        const wsUrl = `${baseUrl}/ws/godmode/${targetSymbol}`;
+        const wsUrl = `${baseUrl}/api/v1/advanced_liquidation/ws/god-mode?symbol=${encodeURIComponent(symbol)}`;
 
         let ws: WebSocket;
         let reconnectTimeout: NodeJS.Timeout;

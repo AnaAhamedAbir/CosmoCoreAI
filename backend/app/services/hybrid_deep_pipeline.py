@@ -458,6 +458,7 @@ def build_hybrid_deep_dataset(job, db: Session, config: dict, add_log, check_can
         "aggressor_ratio", "large_trade_flag", "vwap_deviation",
     ])
     sel_plp         = config.get("plp_features", [])
+    sel_god_mode    = config.get("god_mode_features", [])
     pred_target     = config.get("prediction_target", "classification")
 
     hybrid_snapshot_file = config.get("hybrid_snapshot_file")
@@ -576,6 +577,25 @@ def build_hybrid_deep_dataset(job, db: Session, config: dict, add_log, check_can
     except Exception as e:
         add_log(f"[HybridDeep] ⚠️ Advanced L2 features skipped (non-fatal): {e}")
 
+    # ── Step 2.5: God Mode Feature Calculation ───────────────────────────────
+    if sel_god_mode:
+        add_log("[HybridDeep] Applying Modular God Mode Features from raw L2 depth...")
+        try:
+            from app.services.ml_god_mode_features import apply_god_mode_features_to_dataframe
+            
+            # Use l2_prep since it has Close, bids, asks properly mapped
+            df_god_mode = apply_god_mode_features_to_dataframe(l2_prep)
+            
+            # Attach back to df
+            df_god_mode.index = df.index[:len(df_god_mode)]
+            for col in sel_god_mode:
+                if col in df_god_mode.columns and col not in df.columns:
+                    df[col] = df_god_mode[col]
+                    
+            add_log(f"[HybridDeep] Added {len(sel_god_mode)} God Mode features.")
+        except Exception as e:
+            add_log(f"[HybridDeep] ⚠️ God Mode features skipped (non-fatal): {e}")
+
     # Drop raw bids/asks (not needed after feature extraction)
     df.drop(columns=['bids', 'asks'], inplace=True, errors='ignore')
 
@@ -665,9 +685,13 @@ def build_hybrid_deep_dataset(job, db: Session, config: dict, add_log, check_can
             f"[HybridDeep] Not enough data after processing: {len(df)} rows."
         )
 
-    # ── Step 6: Modular Feature List ──────────────────────────────────────────
-    forced_features = config.get("features")
+    # ── Step 6: Final Feature List Formatting ───────────────────────────
+    final_features = list(set(sel_l2 + sel_trade + sel_plp + sel_god_mode))
     
+    # Verify columns actually exist
+    valid_features = [f for f in final_features if f in df.columns]
+    
+    forced_features = config.get("features")
     if forced_features and isinstance(forced_features, list) and len(forced_features) > 0:
         add_log(f"🔄 Using forced feature list from config ({len(forced_features)} features) to preserve observation space.")
         final_features = forced_features

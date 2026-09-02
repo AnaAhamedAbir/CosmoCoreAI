@@ -22,6 +22,7 @@ import { DatasetVisualizerModal } from '@/components/DatasetVisualizerModal';
 import PredatoryLiquidityPipeline, { GET_DEFAULT_MANDATORY_PLP_FEATURES } from '@/components/ml/PredatoryLiquidityPipeline';
 import { AdvancedExecutionSettings } from '@/components/app/AdvancedExecutionSettings'; // ✅ New
 import { AlternativeDataSettings } from '@/components/app/AlternativeDataSettings'; // ✅ New
+import { GodModeFeaturesSettings, GOD_MODE_FEATURES } from '@/components/ml/GodModeFeaturesSettings'; // ✅ God Mode
 import { CustomIndicatorBuilder, CustomIndicator } from '@/components/features/market/CustomIndicatorBuilder';
 import EnsembleBuilder from '@/components/ml/EnsembleBuilder';
 import RLTrainingVisualizer from '@/components/ml/RLTrainingVisualizer';
@@ -63,6 +64,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
     const [isManualInputMode, setIsManualInputMode] = useState(false);
     const [isDeepTraining, setIsDeepTraining] = useState(false);
     const [isL2Scraping, setIsL2Scraping] = useState(false);
+    const [selectedGodModeFeatures, setSelectedGodModeFeatures] = useState<string[]>([]);
     
     // New Feature States
     const [predictionTarget, setPredictionTarget] = useState('classification');
@@ -883,6 +885,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                     rlAlgorithm: isEnsemble && ensembleMethod === 'rl_moe' ? rlAlgorithm : undefined,
                     moeRewardTarget: isEnsemble && ensembleMethod === 'rl_moe' ? moeRewardTarget : undefined,
                     moeMode: isEnsemble && ensembleMethod === 'rl_moe' ? moeMode : undefined,
+                    god_mode_features: selectedGodModeFeatures,
                 }
             });
             setCurrentJob(job);
@@ -2738,7 +2741,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                             onClick={() => !isTraining && handleToggleL2Feature(feat.internal)}
                                                             className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all ${selectedL2Features.includes(feat.internal) ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-200' : 'bg-black/30 border-white/5 text-slate-400 hover:bg-white/5'}`}
                                                         >
-                                                            <div className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center transition-colors flex-shrink-0 relative ${selectedL2Features.includes(feat.internal) ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-indigo-500 border-indigo-400') : 'border-white/20'}`}>
+                                                            <div className={`w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center transition-colors flex-shrink-0 relative ${selectedL2Features.includes(feat.internal) ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-indigo-500 border-indigo-400') : 'border-white/20'}`}>
                                                                 {selectedL2Features.includes(feat.internal) && <CheckCircle2 className="w-2.5 h-2.5 text-black" />}
                                                                 {isRetrainMode && initialLoadedL2Features.includes(feat.internal) && selectedL2Features.includes(feat.internal) && (
                                                                     <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-purple-300 rounded-full animate-ping"></div>
@@ -2917,6 +2920,13 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                             isTraining={isTraining}
                             selectedAltFeatures={selectedAltFeatures}
                             setSelectedAltFeatures={setSelectedAltFeatures}
+                        />
+
+                        {/* God Mode ML Integration */}
+                        <GodModeFeaturesSettings 
+                            isTraining={isTraining}
+                            selectedFeatures={selectedGodModeFeatures}
+                            setSelectedFeatures={setSelectedGodModeFeatures}
                         />
 
                         <AdvancedExecutionSettings 
@@ -3108,7 +3118,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                             try {
                                                 const metrics = JSON.parse(cleanLog.replace('[METRICS]', '').trim());
                                                 return (
-                                                    <motion.div key={idx} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mt-4 mb-4 p-4 bg-gradient-to-br from-emerald-900/40 to-cyan-900/20 border border-emerald-500/30 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.15)]">
+                                                    <motion.div key={idx} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mt-4 mb-4 p-4 bg-gradient-to-br from-emerald-900/40 to-cyan-900/20 border border-emerald-500/30 rounded-xl shadow-[0_0_20px_rgba(10,185,129,0.15)]">
                                                         <h4 className="text-emerald-400 font-bold text-xs mb-2 tracking-widest flex items-center gap-2">
                                                             <Activity className="w-4 h-4" /> PERFORMANCE METRICS
                                                         </h4>
@@ -3281,7 +3291,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
             <FeatureCorrelationModal
                 isOpen={showCorrelationModal}
                 onClose={() => setShowCorrelationModal(false)}
-                selectedFeatures={[...selectedIndicators, ...selectedL2Features, ...selectedTradeFeatures, ...selectedPlpFeatures, ...selectedAltFeatures, ...customFeatures.map(f => f.name)]}
+                selectedFeatures={[...selectedIndicators, ...selectedL2Features, ...selectedTradeFeatures, ...selectedPlpFeatures, ...selectedAltFeatures, ...selectedGodModeFeatures, ...customFeatures.map(f => f.name)]}
             />
 
             <CustomFeatureBuilder

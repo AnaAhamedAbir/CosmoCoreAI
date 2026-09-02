@@ -353,6 +353,22 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
         }
     };
 
+    const handleToggleSetting = async (key: string, checked: boolean) => {
+        const newSettings = { ...notificationSettings, [key]: checked };
+        setNotificationSettings(newSettings);
+        
+        setIsSavingNotifications(true);
+        try {
+            await notificationService.updateSettings(newSettings);
+            // Optionally, a subtle success toast could go here, but for toggles it's usually omitted
+        } catch (e) {
+            showToast('Failed to save setting.', 'error');
+            setNotificationSettings(notificationSettings); // Revert on failure
+        } finally {
+            setIsSavingNotifications(false);
+        }
+    };
+
     const inputBaseClasses = "w-full bg-white dark:bg-[#0A0A0A]/50 border border-brand-border-light dark:border-[#1A1A1A] rounded-md p-2 text-slate-900 dark:text-white focus:ring-brand-primary focus:border-brand-primary transition-colors";
 
     return (
@@ -695,7 +711,7 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
                                             <input
                                                 type="checkbox"
                                                 checked={!!notificationSettings[key as keyof typeof notificationSettings]}
-                                                onChange={(e) => setNotificationSettings(p => ({ ...p, [key]: e.target.checked }))}
+                                                onChange={(e) => handleToggleSetting(key, e.target.checked)}
                                                 className="w-3.5 h-3.5 text-brand-primary rounded"
                                             />
                                         </div>
@@ -729,7 +745,7 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
                                             <input
                                                 type="checkbox"
                                                 checked={!!notificationSettings[key as keyof typeof notificationSettings]}
-                                                onChange={(e) => setNotificationSettings(p => ({ ...p, [key]: e.target.checked }))}
+                                                onChange={(e) => handleToggleSetting(key, e.target.checked)}
                                                 className="w-3.5 h-3.5 text-brand-primary rounded"
                                             />
                                         </div>

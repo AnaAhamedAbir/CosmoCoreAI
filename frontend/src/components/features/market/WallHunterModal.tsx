@@ -9,6 +9,7 @@ import { HeatmapSymbolSelector } from './HeatmapSymbolSelector';
 import { mlModelsService } from '../../../services/mlModelsService';
 import { CustomMLModel } from '../../../types';
 import { AdvancedRiskManager } from './AdvancedRiskManager';
+import { GodModeBotTriggerSettings } from './GodModeBotTriggerSettings';
 
 export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol: string; exchange?: string; bids?: any[]; asks?: any[]; onDeploySuccess?: (botId: number) => void }> = ({ isOpen, onClose, symbol, exchange = 'binance', bids = [], asks = [], onDeploySuccess }) => {
     const [savedKeys, setSavedKeys] = useState<any[]>([]);
@@ -114,6 +115,11 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         enableIcebergTrigger: false,
         icebergTimeWindowSecs: 10,
         icebergMinAbsorbedVol: 100000,
+
+        // --- NEW: God Mode ML Trigger ---
+        enableGodModeEntryTrigger: false,
+        godModeLongThreshold: 80,
+        godModeShortThreshold: -80,
 
         // --- NEW: BTC Correlation Filter ---
         enableBtcCorrelation: false,
@@ -405,6 +411,11 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             enableIcebergTrigger: c.enable_iceberg_trigger !== undefined ? c.enable_iceberg_trigger : false,
                             icebergTimeWindowSecs: c.iceberg_time_window_secs || 10,
                             icebergMinAbsorbedVol: c.iceberg_min_absorbed_vol || 100000,
+
+                            enableGodModeEntryTrigger: c.enable_god_mode_entry_trigger !== undefined ? c.enable_god_mode_entry_trigger : false,
+                            godModeLongThreshold: c.god_mode_long_threshold || 80,
+                            godModeShortThreshold: c.god_mode_short_threshold || -80,
+
 
                             enableBtcCorrelation: c.enable_btc_correlation !== undefined ? c.enable_btc_correlation : false,
                             btcCorrelationThreshold: c.btc_correlation_threshold || 0.7,
@@ -792,6 +803,11 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     enable_iceberg_trigger: form.enableIcebergTrigger,
                     iceberg_time_window_secs: form.icebergTimeWindowSecs,
                     iceberg_min_absorbed_vol: form.icebergMinAbsorbedVol,
+
+                    // God Mode ML Trigger
+                    enable_god_mode_entry_trigger: form.enableGodModeEntryTrigger,
+                    god_mode_long_threshold: form.godModeLongThreshold,
+                    god_mode_short_threshold: form.godModeShortThreshold,
 
                     // BTC Correlation Filter
                     enable_btc_correlation: form.enableBtcCorrelation,
@@ -1800,6 +1816,13 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                     </div>
                                 )}
                             </div>
+
+                            <GodModeBotTriggerSettings
+                                enableGodModeEntryTrigger={form.enableGodModeEntryTrigger}
+                                godModeLongThreshold={form.godModeLongThreshold}
+                                godModeShortThreshold={form.godModeShortThreshold}
+                                onChange={handleFormChange}
+                            />
 
                             <div className={`border rounded-xl p-4 transition-colors cursor-pointer ${form.enableLiqTrigger ? 'bg-rose-500/5 border-rose-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableLiqTrigger', !form.enableLiqTrigger)}>
                                 <div className="flex items-center justify-between mb-2">

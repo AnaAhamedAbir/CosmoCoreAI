@@ -28,6 +28,7 @@ from app.strategies.helpers.vwap_sd_standalone_listener import VWAPSDStandaloneL
 from app.strategies.helpers.advanced_risk_manager import AdvancedRiskManager
 from app.services.ta_snapshot_service import ta_snapshot_service
 from app.strategies.smart_chase_executor import execute_smart_chase
+from app.strategies.helpers.god_mode_signal_evaluator import GodModeSignalEvaluator
 
 logger = logging.getLogger(__name__)
 
@@ -252,6 +253,11 @@ class WallHunterFuturesStrategy:
         ) if any_ut_enabled else None
         
         self.ut_standalone_listener = UTStandaloneListener(self)
+
+    # --- NEW: God Mode ML Trigger ---
+        self.enable_god_mode_entry_trigger = self.config.get("enable_god_mode_entry_trigger", False)
+        self.god_mode_long_threshold = self.config.get("god_mode_long_threshold", 80)
+        self.god_mode_short_threshold = self.config.get("god_mode_short_threshold", -80)
 
         # --- NEW: Modular Supertrend Alerts ---
         self.enable_supertrend_trend_filter = self.config.get("enable_supertrend_trend_filter", False)
@@ -1204,6 +1210,83 @@ class WallHunterFuturesStrategy:
                                 
                             self.tracked_walls.clear()
                             continue
+
+                    # === NEW: GOD MODE ML TRIGGER SEC ===
+                    if getattr(self, 'enable_god_mode_entry_trigger', False):
+                        god_mode_res = GodModeSignalEvaluator.evaluate(
+                            bids=orderbook.get('bids', []),
+                            asks=orderbook.get('asks', []),
+                            current_price=mid_price,
+                            threshold_long=getattr(self, 'god_mode_long_threshold', 80),
+                            threshold_short=getattr(self, 'god_mode_short_threshold', -80)
+                        )
+                        if god_mode_res.get('passed'):
+                            g_signal = god_mode_res['signal']
+                            g_score = god_mode_res['score']
+                            target_side = "buy" if g_signal == "LONG" else "sell"
+                            
+                            # Check strategy direction constraints
+                            allowed = True
+                            if self.direction == 'long' and target_side != 'buy':
+                                allowed = False
+                            if self.direction == 'short' and target_side != 'sell':
+                                allowed = False
+                                
+                            if allowed:
+                                # Confluence Check: L2 Machine Learning Filter
+                                if getattr(self, 'enable_ml_filter', False) and getattr(self, 'ml_predictor', None):
+                                    ml_mode = getattr(self, 'ml_execution_mode', 'basic')
+                                    is_ai_valid = False
+                                    if ml_mode == 'advanced':
+                                        advanced_setup = await self.ml_predictor.predict_advanced(orderbook, mid_price, target_side, self)
+                                        if advanced_setup and advanced_setup.get("is_valid", False):
+                                            is_ai_valid = True
+                                    else:
+                                        is_ai_valid = await self.ml_predictor.predict(orderbook, mid_price, target_side)
+                                        
+                                    if not is_ai_valid:
+                                        self.logger.info(f"🚫 [God Mode ML] Snipe at {mid_price} rejected by L2 ML Predictor Confluence!")
+                                        allowed = False
+
+                                # Confluence Check: Dual Engine
+                                if allowed and getattr(self, "dual_engine_tracker", None) and self.dual_engine_tracker.is_enabled:
+                                    if not self.dual_engine_tracker.is_aligned(target_side):
+                                        self.logger.info(f"🚫 [God Mode ML] Snipe at {mid_price} rejected by Dual Engine Confluence!")
+                                        allowed = False
+
+                            if allowed:
+                                self.logger.info(f"🤖 [God Mode ML] TRIGGER FIRED! Score: {g_score} | Executing {target_side.upper()} Snipe!")
+                                
+                                # Publish WebSocket Event
+                                try:
+                                    event_payload = {
+                                        "type": "GOD_MODE_TRIGGER",
+                                        "symbol": self.symbol,
+                                        "side": target_side,
+                                        "score": g_score,
+                                        "price": mid_price
+                                    }
+                                    if self.redis:
+                                        self.redis.publish("heatmap_events", json.dumps(event_payload))
+                                except Exception as e:
+                                    self.logger.error(f"Failed to publish God Mode event: {e}")
+
+                                if self.enable_proxy_wall:
+                                    try:
+                                        native_book = await self.public_exchange.fetch_order_book(self.symbol, limit=5)
+                                        native_best_bid = native_book['bids'][0][0]
+                                        native_best_ask = native_book['asks'][0][0]
+                                        native_mid = (native_best_bid + native_best_ask) / 2
+                                        await self.execute_snipe(mid_price, target_side, native_mid, native_best_bid, native_best_ask)
+                                    except Exception as e:
+                                        self.logger.warning(f"Error fetching native execution book for proxy snipe: {e}. Falling back to proxy price.")
+                                        await self.execute_snipe(mid_price, target_side, mid_price, best_bid, best_ask)
+                                else:
+                                    await self.execute_snipe(mid_price, target_side, mid_price, best_bid, best_ask)
+                                    
+                                self.tracked_walls.clear()
+                                continue # Skip the rest of the loop for this tick
+                    # === END GOD MODE SEC ===
 
                     if getattr(self, 'enable_wick_sr', False) and getattr(self, 'wick_sr_tracker', None):
                         wick_signals = self.wick_sr_tracker.get_signals(mid_price)
@@ -3223,6 +3306,17 @@ class WallHunterFuturesStrategy:
         """Update strategy parameters dynamically."""
         self.logger.info(f"🔄 [FuturesHunter {self.bot_id}] Live config update: {new_config}")
         
+        # --- NEW: God Mode ML Trigger Live Update ---
+        if "enable_god_mode_entry_trigger" in new_config and new_config["enable_god_mode_entry_trigger"] != self.enable_god_mode_entry_trigger:
+            self.enable_god_mode_entry_trigger = new_config["enable_god_mode_entry_trigger"]
+            self.logger.info(f"God Mode Trigger: {'ON' if self.enable_god_mode_entry_trigger else 'OFF'}")
+        if "god_mode_long_threshold" in new_config and new_config["god_mode_long_threshold"] != self.god_mode_long_threshold:
+            self.god_mode_long_threshold = new_config["god_mode_long_threshold"]
+            self.logger.info(f"God Mode Long Thresh: {self.god_mode_long_threshold}")
+        if "god_mode_short_threshold" in new_config and new_config["god_mode_short_threshold"] != self.god_mode_short_threshold:
+            self.god_mode_short_threshold = new_config["god_mode_short_threshold"]
+            self.logger.info(f"God Mode Short Thresh: {self.god_mode_short_threshold}")
+
         # --- Trading Session Live Update ---
         if "trading_sessions" in new_config and new_config["trading_sessions"] != self.trading_sessions:
             old_sessions = self.trading_sessions

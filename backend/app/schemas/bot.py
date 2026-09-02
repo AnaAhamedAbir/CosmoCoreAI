@@ -211,6 +211,11 @@ class StrategyConfig(BaseModel):
     auto_fibo_timeframe: Optional[str] = "5m"
     auto_fibo_lookback: Optional[int] = 50
 
+    # --- God Mode ML Trigger ---
+    enable_god_mode_entry_trigger: Optional[bool] = False
+    god_mode_long_threshold: Optional[int] = 80
+    god_mode_short_threshold: Optional[int] = -80
+
     # --- AI Model Execution ---
     ai_model_id: Optional[str] = None
     enable_ml_filter: Optional[bool] = False

@@ -45,7 +45,7 @@ class BinanceLiquidationStream:
             except Exception as e:
                 if self.running:
                     err_msg = str(e) or type(e).__name__
-                    if any(x in err_msg for x in ["1006", "1008", "1011", "1012", "closed by remote server", "Connection closed", "ConnectionClosedError", "timed out", "timeout", "keepalive ping"]):
+                    if any(x in err_msg for x in ["1006", "1008", "1011", "1012", "closed by remote server", "Connection closed", "ConnectionClosedError", "timed out", "timeout", "keepalive ping", "no close frame received"]):
                         logger.warning(f"WebSocket Connection Closed/Timeout: {err_msg}. Reconnecting in {reconnect_delay}s...")
                     else:
                         logger.error(f"WebSocket Error: {err_msg}. Reconnecting in {reconnect_delay}s...")

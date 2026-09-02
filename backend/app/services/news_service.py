@@ -266,7 +266,8 @@ class NewsService:
                             if bn_titles_list and len(bn_titles_list) == len(titles_to_translate):
                                 bn_titles_map = dict(zip(titles_to_translate, bn_titles_list))
                         except Exception as e:
-                            logger.warning(f"⚠️ Batch translation skipped (network): {e} — will use original titles.")
+                            err_msg = type(e).__name__
+                            logger.warning(f"⚠️ Batch translation skipped (network error: {err_msg}) — will use original titles.")
 
                     for r in new_resources:
                         # Translate title to Bengali

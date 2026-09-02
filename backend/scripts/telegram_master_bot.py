@@ -84,6 +84,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     finally:
         db.close()
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and handle exceptions gracefully."""
+    import httpx
+    from telegram.error import NetworkError
+    
+    if isinstance(context.error, (NetworkError, httpx.RemoteProtocolError, httpx.ReadTimeout)):
+        logger.warning(f"⚠️ Telegram Network Error (safely ignored): {type(context.error).__name__}")
+    else:
+        logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
+
 def main() -> None:
     """Start the bot."""
     token = settings.TELEGRAM_MASTER_BOT_TOKEN
@@ -95,6 +105,7 @@ def main() -> None:
     application = Application.builder().token(token).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_error_handler(error_handler)
 
     logger.info("Starting CosmoQuantAI Master Bot polling...")
     # Run the bot until the user presses Ctrl-C

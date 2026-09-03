@@ -16,6 +16,9 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
     
     // Track persisting bubbles
     const bubblesRef = useRef<any[]>([]);
+    
+    // Crosshair state for tooltips
+    const crosshairRef = useRef<{ price: number, x: number, y: number, visible: boolean }>({ price: 0, x: 0, y: 0, visible: false });
 
     const requestDraw = useCallback(() => {
         if (!drawRequested.current) {
@@ -48,20 +51,28 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
         }
 
         const currentPrice = data.current_price;
-        const zoneThickness = currentPrice * 0.005; // 0.5% thickness
 
         // 1. Draw Magnet Zones & Cascade Probs (Heatmap Bands)
         const allZones = [
-            ...(data.magnet_zones || []).map(z => ({ ...z, type: 'magnet' })),
-            ...(data.cascade_probs || []).map(z => ({ price: z.price, intensity: z.prob, type: 'cascade' }))
+            ...(data.magnet_zones || []).map(z => ({ ...z, type: 'magnet' as const })),
+            ...(data.cascade_probs || []).map(z => ({ price: z.price, intensity: z.prob, volume: z.volume, type: 'cascade' as const }))
         ];
 
         // Ensure text labels don't overlap vertically on compressed scales
         const drawnTextY: number[] = [];
 
         allZones.forEach(zone => {
-            const yTop = series.priceToCoordinate(zone.price + (zoneThickness/2));
-            const yBottom = series.priceToCoordinate(zone.price - (zoneThickness/2));
+            // Dynamic thickness based on volume (min 0.1%, max 0.6%)
+            const baseThickness = currentPrice * 0.001; 
+            let calculatedThickness = baseThickness;
+            if (zone.volume) {
+                // Cap volume multiplier at ~1M USD equivalent for visual sanity
+                const volumeScale = Math.min(5, zone.volume / 200000); 
+                calculatedThickness = baseThickness + (baseThickness * volumeScale);
+            }
+            
+            const yTop = series.priceToCoordinate(zone.price + (calculatedThickness/2));
+            const yBottom = series.priceToCoordinate(zone.price - (calculatedThickness/2));
             const yCenter = series.priceToCoordinate(zone.price);
 
             if (yTop !== null && yBottom !== null && yCenter !== null) {
@@ -74,7 +85,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                 
                 // ── TRADITIONAL HEATMAP BAND (Spans behind candles) ──
                 // Draw glow block exactly behind the candles
-                ctx.fillStyle = `rgba(${colorBase}, ${alpha * 0.25})`; // Soften background
+                ctx.fillStyle = `rgba(${colorBase}, ${alpha * 0.35})`; // Soften background
                 ctx.fillRect(0, Math.min(yTop, yBottom), timeWidth, height);
                 
                 // Center Horizontal Laser Line
@@ -214,6 +225,101 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                 }
             });
         }
+        
+        // 3. Draw Interactive Tooltip for hovered zone
+        if (crosshairRef.current.visible) {
+            const hoveredZone = allZones.find(z => Math.abs(z.price - crosshairRef.current.price) < (currentPrice * 0.003));
+            if (hoveredZone) {
+                const ttX = crosshairRef.current.x + 15;
+                const ttY = crosshairRef.current.y - 15;
+                
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.9)'; // Slate-900 background
+                ctx.strokeStyle = hoveredZone.type === 'magnet' ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)';
+                ctx.lineWidth = 1;
+                
+                const volText = hoveredZone.volume ? `Vol: $${(hoveredZone.volume / 1000).toFixed(1)}k` : `Int: ${hoveredZone.intensity}%`;
+                const typeText = hoveredZone.type === 'magnet' ? 'Magn. Support' : 'Liq. Cascade';
+                
+                // Calculate estimated leverage based on distance from current price
+                // 100x = 1%, 50x = 2%, 25x = 4%, 10x = 10%
+                const distancePct = Math.abs(currentPrice - hoveredZone.price) / currentPrice;
+                let levText = 'Est. Lev: ';
+                if (distancePct <= 0.015) levText += '100x';
+                else if (distancePct <= 0.03) levText += '50x';
+                else if (distancePct <= 0.055) levText += '20x-25x';
+                else if (distancePct <= 0.11) levText += '10x';
+                else levText += '<10x';
+                
+                ctx.beginPath();
+                ctx.roundRect(ttX, ttY - 40, 115, 48, 4);
+                ctx.fill();
+                ctx.stroke();
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 10px Inter';
+                ctx.textAlign = 'left';
+                ctx.fillText(typeText, ttX + 6, ttY - 26);
+                
+                ctx.fillStyle = 'rgba(148, 163, 184, 1)'; // Slate-400
+                ctx.font = '9px Inter';
+                ctx.fillText(volText, ttX + 6, ttY - 14);
+                
+                ctx.fillStyle = 'rgba(251, 191, 36, 1)'; // Amber-400 for leverage
+                ctx.fillText(levText, ttX + 6, ttY - 2);
+            }
+        }
+
+        // 4. Draw AI Trajectory Arrow
+        if (data.ai_trajectory && data.ai_trajectory.direction !== 'NEUTRAL') {
+            const currentY = series.priceToCoordinate(currentPrice);
+            const targetY = series.priceToCoordinate(data.ai_trajectory.target_price);
+            
+            if (currentY !== null && targetY !== null) {
+                const isUp = data.ai_trajectory.direction === 'UP';
+                const color = isUp ? '34, 197, 94' : '239, 68, 68'; // green : red
+                
+                // Calculate arrow start and end points
+                const startX = timeWidth * 0.85; // start near the right edge
+                const endX = timeWidth * 0.85;
+                
+                ctx.beginPath();
+                // Draw glowing line
+                ctx.strokeStyle = `rgba(${color}, 0.8)`;
+                ctx.shadowColor = `rgba(${color}, 1)`;
+                ctx.shadowBlur = 10;
+                ctx.lineWidth = 2 + (data.ai_trajectory.strength / 25); // thicker based on strength
+                
+                // Draw a dashed path
+                ctx.setLineDash([5, 5]);
+                ctx.moveTo(startX, currentY);
+                ctx.lineTo(endX, targetY);
+                ctx.stroke();
+                ctx.setLineDash([]); // reset
+                ctx.shadowBlur = 0; // reset
+                
+                // Draw arrow head
+                ctx.beginPath();
+                ctx.fillStyle = `rgba(${color}, 1)`;
+                const headSize = 8;
+                if (isUp) {
+                    ctx.moveTo(endX, targetY);
+                    ctx.lineTo(endX - headSize, targetY + headSize);
+                    ctx.lineTo(endX + headSize, targetY + headSize);
+                } else {
+                    ctx.moveTo(endX, targetY);
+                    ctx.lineTo(endX - headSize, targetY - headSize);
+                    ctx.lineTo(endX + headSize, targetY - headSize);
+                }
+                ctx.fill();
+                
+                // Label for Trajectory
+                ctx.fillStyle = `rgba(${color}, 1)`;
+                ctx.font = 'bold 9px Inter';
+                ctx.textAlign = 'center';
+                const lblY = isUp ? targetY - 12 : targetY + 18;
+                ctx.fillText(`AI TARGET`, endX, lblY);
+            }
+        }
 
     }, [chart, series, data, showBubbles, intensityScale]);
 
@@ -224,7 +330,21 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
         const timeScale = chart.timeScale();
         timeScale.subscribeVisibleTimeRangeChange(requestDraw);
         timeScale.subscribeSizeChange(requestDraw);
-        chart.subscribeCrosshairMove(requestDraw);
+        
+        const crosshairHandler = (param: any) => {
+            if (!param.point || !param.time) {
+                crosshairRef.current.visible = false;
+            } else {
+                crosshairRef.current = {
+                    price: series.coordinateToPrice(param.point.y) || 0,
+                    x: param.point.x,
+                    y: param.point.y,
+                    visible: true
+                };
+            }
+            requestDraw();
+        };
+        chart.subscribeCrosshairMove(crosshairHandler);
 
         // Continuous animation loop for bubbles
         let animationFrameId: number;
@@ -239,7 +359,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
         return () => {
             timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
             timeScale.unsubscribeSizeChange(requestDraw);
-            chart.unsubscribeCrosshairMove(requestDraw);
+            chart.unsubscribeCrosshairMove(crosshairHandler);
             cancelAnimationFrame(animationFrameId);
         };
     }, [chart, series, requestDraw, showBubbles]);

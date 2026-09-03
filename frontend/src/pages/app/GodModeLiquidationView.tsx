@@ -3,7 +3,7 @@ import Card from '@/components/common/Card';
 import { useGodModeWebsocket } from '../../hooks/useGodModeWebsocket';
 import { useCCXTMarkets } from '../../hooks/useCCXTMarkets';
 import { createChart, IChartApi, ISeriesApi, CandlestickSeries, createSeriesMarkers } from 'lightweight-charts';
-import { LiquidationHeatmapGodModeRenderer } from '../../components/features/market/LiquidationHeatmapGodModeRenderer';
+import { LiquidationRenderer } from '../../components/features/market/LiquidationRenderer';
 import { marketDepthService } from '../../services/marketDepthService';
 import { calculateGodModeSignal } from '../../utils/godModeSignal';
 
@@ -273,7 +273,7 @@ const GodModeLiquidationView: React.FC = () => {
 
                              <div className="flex-1 relative bg-black/50">
                                   <div ref={chartContainerRef} className="absolute inset-0"></div>
-                                  <LiquidationHeatmapGodModeRenderer chart={chartRef.current} series={seriesRef.current} data={state} visible={true} />
+                                  <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} showBubbles={true} intensityScale={100} />
                              </div>
                              
                              {/* AI Predicted Cascade Overlay (Right Edge) */}

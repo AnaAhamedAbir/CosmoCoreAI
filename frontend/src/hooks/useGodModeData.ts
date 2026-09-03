@@ -9,8 +9,9 @@ export interface GodModeState {
     dumb_money: number;
     cvd_spoof: string;
     whale_feed: any[];
-    magnet_zones: { price: number, intensity: number }[];
-    cascade_probs: { price: number, prob: number }[];
+    magnet_zones: { price: number, intensity: number, volume?: number }[];
+    cascade_probs: { price: number, prob: number, volume?: number }[];
+    ai_trajectory?: { target_price: number, strength: number, direction: 'UP' | 'DOWN' | 'NEUTRAL' };
     current_price: number;
 }
 

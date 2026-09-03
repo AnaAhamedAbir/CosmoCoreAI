@@ -33,6 +33,7 @@ class GodModeService:
             "whale_feed": [],
             "magnet_zones": [],
             "cascade_probs": [],
+            "ai_trajectory": {"target_price": 0, "strength": 0, "direction": "NEUTRAL"},
             "current_price": 0.0
         }
         
@@ -232,23 +233,40 @@ class GodModeService:
                             price, vol = float(ask[0]), float(ask[1])
                             intensity = min(100, int((vol / max_ask_vol) * 100))
                             if intensity > 30: # Only add significant clusters
-                                magnet_zones.append({"price": price, "intensity": intensity})
+                                magnet_zones.append({"price": price, "intensity": intensity, "volume": vol})
                                 dist = abs(price - cp) / cp
                                 prob = min(99, int((1 - (dist * 20)) * intensity))
-                                cascade_probs.append({"price": price, "prob": max(10, prob)})
+                                cascade_probs.append({"price": price, "prob": max(10, prob), "volume": vol})
                                 
                         # Process Bids (Long Liquidations / Support)
                         for bid in top_bids:
                             price, vol = float(bid[0]), float(bid[1])
                             intensity = min(100, int((vol / max_bid_vol) * 100))
                             if intensity > 30:
-                                magnet_zones.append({"price": price, "intensity": intensity})
+                                magnet_zones.append({"price": price, "intensity": intensity, "volume": vol})
                                 dist = abs(price - cp) / cp
                                 prob = min(99, int((1 - (dist * 20)) * intensity))
-                                cascade_probs.append({"price": price, "prob": max(10, prob)})
+                                cascade_probs.append({"price": price, "prob": max(10, prob), "volume": vol})
                                 
+                        # Calculate Magnetic Liquidity Pull Vector (AI Trajectory)
+                        ask_weight = sum(z["volume"] for z in magnet_zones if z["price"] > cp)
+                        bid_weight = sum(z["volume"] for z in magnet_zones if z["price"] < cp)
+                        
+                        trajectory = {"target_price": cp, "strength": 0, "direction": "NEUTRAL"}
+                        if ask_weight > bid_weight * 1.1:
+                            trajectory["direction"] = "UP"
+                            trajectory["strength"] = min(100, int((ask_weight / (bid_weight + 1)) * 30))
+                            target = max((z for z in magnet_zones if z["price"] > cp), key=lambda x: x["volume"], default=None)
+                            if target: trajectory["target_price"] = target["price"]
+                        elif bid_weight > ask_weight * 1.1:
+                            trajectory["direction"] = "DOWN"
+                            trajectory["strength"] = min(100, int((bid_weight / (ask_weight + 1)) * 30))
+                            target = max((z for z in magnet_zones if z["price"] < cp), key=lambda x: x["volume"], default=None)
+                            if target: trajectory["target_price"] = target["price"]
+                            
                         self.state["magnet_zones"] = magnet_zones
                         self.state["cascade_probs"] = cascade_probs
+                        self.state["ai_trajectory"] = trajectory
                         
             except NetworkError:
                 await asyncio.sleep(5)

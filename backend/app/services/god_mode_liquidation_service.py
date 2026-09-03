@@ -32,12 +32,22 @@ class GodModeService:
             "cvd_spoof": "NEGATIVE",
             "whale_feed": [],
             "magnet_zones": [],
+            "smoothed_zones": [],
             "cascade_probs": [],
+            "trailing_liquidity": {
+                "long_level": 0.0,
+                "short_level": 0.0,
+                "long_intensity": 0,
+                "short_intensity": 0
+            },
             "ai_trajectory": {"target_price": 0, "strength": 0, "direction": "NEUTRAL"},
             "current_price": 0.0
         }
         
         # Internal states for calculations
+        self._smoothed_zones_dict = {}
+        self._trailing_long = 0.0
+        self._trailing_short = 0.0
         self._liq_history_1m = []
         self._smart_vol = 0.0
         self._dumb_vol = 0.0
@@ -248,6 +258,38 @@ class GodModeService:
                                 prob = min(99, int((1 - (dist * 20)) * intensity))
                                 cascade_probs.append({"price": price, "prob": max(10, prob), "volume": vol})
                                 
+                        # --- Time-Weighted Liquidity Smoothing (TWLS) ---
+                        ALPHA = 0.15 # EMA Smoothing factor
+                        current_volumes = {}
+                        for ask in top_asks:
+                            p, v = float(ask[0]), float(ask[1])
+                            if v > max_ask_vol * 0.1: current_volumes[p] = v
+                        for bid in top_bids:
+                            p, v = float(bid[0]), float(bid[1])
+                            if v > max_bid_vol * 0.1: current_volumes[p] = v
+                            
+                        for p, v in current_volumes.items():
+                            if p in self._smoothed_zones_dict:
+                                self._smoothed_zones_dict[p] = (v * ALPHA) + (self._smoothed_zones_dict[p] * (1 - ALPHA))
+                            else:
+                                self._smoothed_zones_dict[p] = v
+                                
+                        keys_to_remove = []
+                        for p in self._smoothed_zones_dict:
+                            if p not in current_volumes:
+                                self._smoothed_zones_dict[p] *= (1 - ALPHA)
+                                if self._smoothed_zones_dict[p] < 5000:
+                                    keys_to_remove.append(p)
+                        for k in keys_to_remove: del self._smoothed_zones_dict[k]
+                        
+                        smoothed_zones = []
+                        for p, v in self._smoothed_zones_dict.items():
+                            ref_max = max_ask_vol if p > cp else max_bid_vol
+                            intensity = min(100, int((v / (ref_max + 1)) * 100))
+                            if intensity > 20:
+                                smoothed_zones.append({"price": p, "intensity": intensity, "volume": v})
+                               
+                                
                         # Calculate Magnetic Liquidity Pull Vector (AI Trajectory)
                         ask_weight = sum(z["volume"] for z in magnet_zones if z["price"] > cp)
                         bid_weight = sum(z["volume"] for z in magnet_zones if z["price"] < cp)
@@ -264,7 +306,31 @@ class GodModeService:
                             target = max((z for z in magnet_zones if z["price"] < cp), key=lambda x: x["volume"], default=None)
                             if target: trajectory["target_price"] = target["price"]
                             
+                        # --- Dynamic Trailing Liquidity Cloud (DTLC) ---
+                        # Trail up for longs (support below price)
+                        target_long_trail = cp * 0.985 # approx 1.5% trail
+                        if self._trailing_long == 0.0 or target_long_trail > self._trailing_long:
+                            # Smoothly catch up
+                            self._trailing_long += (target_long_trail - self._trailing_long) * 0.1
+                        if cp < self._trailing_long: # Price broke support
+                            self._trailing_long = target_long_trail
+                            
+                        # Trail down for shorts (resistance above price)
+                        target_short_trail = cp * 1.015
+                        if self._trailing_short == 0.0 or target_short_trail < self._trailing_short:
+                            self._trailing_short += (target_short_trail - self._trailing_short) * 0.1
+                        if cp > self._trailing_short: # Price broke resistance
+                            self._trailing_short = target_short_trail
+                            
+                        self.state["trailing_liquidity"] = {
+                            "long_level": round(self._trailing_long, 4),
+                            "short_level": round(self._trailing_short, 4),
+                            "long_intensity": min(100, max(20, int((bid_weight / 500000) * 100))),
+                            "short_intensity": min(100, max(20, int((ask_weight / 500000) * 100)))
+                        }
+                            
                         self.state["magnet_zones"] = magnet_zones
+                        self.state["smoothed_zones"] = smoothed_zones
                         self.state["cascade_probs"] = cascade_probs
                         self.state["ai_trajectory"] = trajectory
                         

@@ -10,6 +10,7 @@ import { calculateGodModeSignal } from '../../utils/godModeSignal';
 const GodModeLiquidationView: React.FC = () => {
     const { selectedPair } = useCCXTMarkets();
     const activePair = selectedPair || 'BTC/USDT';
+    const [trailingLiquidityEnabled, setTrailingLiquidityEnabled] = useState(false);
     
     // Connect to live backend stream
     const { state, isConnected } = useGodModeWebsocket(activePair);
@@ -241,6 +242,10 @@ const GodModeLiquidationView: React.FC = () => {
                                 <span className="text-[9px] sm:text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5"><div className="w-2 h-2 bg-yellow-400 rounded-sm"></div> Magnet Zones</span>
                             </div>
                             <div className="flex items-center gap-2 pr-2 sm:pr-4">
+                                 <label className="flex items-center gap-1.5 cursor-pointer bg-black/50 border border-brand-primary/20 rounded px-2 py-0.5 hover:bg-white/5 transition-colors">
+                                     <input type="checkbox" className="accent-brand-primary cursor-pointer w-2.5 h-2.5" checked={trailingLiquidityEnabled} onChange={(e) => setTrailingLiquidityEnabled(e.target.checked)} />
+                                     <span className="text-[8px] sm:text-[9px] font-mono text-gray-400 uppercase tracking-widest whitespace-nowrap">Anti-Spoof & DTLC</span>
+                                 </label>
                                  <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded font-mono uppercase whitespace-nowrap transition-colors ${state.cvd_spoof !== 'NEGATIVE' ? 'text-rose-500 border border-rose-500/50 bg-rose-500/20 blink' : 'text-brand-primary border border-brand-primary/30 bg-brand-primary/10'}`}>CVD Spoof Alert: {state.cvd_spoof}</span>
                             </div>
                         </div>
@@ -273,7 +278,7 @@ const GodModeLiquidationView: React.FC = () => {
 
                              <div className="flex-1 relative bg-black/50">
                                   <div ref={chartContainerRef} className="absolute inset-0"></div>
-                                  <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} showBubbles={true} intensityScale={100} />
+                                  <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} showBubbles={true} intensityScale={100} useTrailingLiquidity={trailingLiquidityEnabled} />
                              </div>
                              
                              {/* AI Predicted Cascade Overlay (Right Edge) */}

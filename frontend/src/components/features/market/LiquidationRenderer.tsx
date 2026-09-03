@@ -8,9 +8,10 @@ interface LiquidationRendererProps {
     data: GodModeState | null;
     showBubbles: boolean;
     intensityScale: number; // 10-100
+    useTrailingLiquidity?: boolean;
 }
 
-export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale }) => {
+export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
     
@@ -53,8 +54,10 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
         const currentPrice = data.current_price;
 
         // 1. Draw Magnet Zones & Cascade Probs (Heatmap Bands)
+        const activeMagnetZones = (useTrailingLiquidity && data.smoothed_zones) ? data.smoothed_zones : (data.magnet_zones || []);
+        
         const allZones = [
-            ...(data.magnet_zones || []).map(z => ({ ...z, type: 'magnet' as const })),
+            ...activeMagnetZones.map(z => ({ ...z, type: 'magnet' as const })),
             ...(data.cascade_probs || []).map(z => ({ price: z.price, intensity: z.prob, volume: z.volume, type: 'cascade' as const }))
         ];
 
@@ -121,6 +124,64 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                 ctx.fillText(label, timeWidth - 6, textY);
             }
         });
+        
+        // 1.5 Draw Trailing Liquidity Clouds (if enabled)
+        if (useTrailingLiquidity && data.trailing_liquidity) {
+            const tl = data.trailing_liquidity;
+            
+            // Draw Long Trail (Support Cloud below price)
+            if (tl.long_level > 0 && currentPrice >= tl.long_level) {
+                const yL = series.priceToCoordinate(tl.long_level);
+                if (yL !== null) {
+                    const cloudHeight = 60; // thick cloud
+                    const grad = ctx.createLinearGradient(0, yL - cloudHeight/2, 0, yL + cloudHeight/2);
+                    grad.addColorStop(0, 'rgba(16,185,129,0)');
+                    grad.addColorStop(0.5, `rgba(16,185,129,${Math.min(0.25, Math.max(0.05, tl.long_intensity/100))})`);
+                    grad.addColorStop(1, 'rgba(16,185,129,0)');
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(0, yL - cloudHeight/2, timeWidth, cloudHeight);
+                    
+                    ctx.beginPath();
+                    ctx.strokeStyle = `rgba(16, 185, 129, 0.6)`;
+                    ctx.setLineDash([12, 6]);
+                    ctx.lineWidth = 2;
+                    ctx.moveTo(0, yL);
+                    ctx.lineTo(timeWidth, yL);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    
+                    ctx.fillStyle = 'rgba(16, 185, 129, 0.8)';
+                    ctx.font = 'bold 10px Inter';
+                    ctx.fillText('TRAILING SUPPORT CLOUD', timeWidth / 2, yL - 6);
+                }
+            }
+            // Draw Short Trail (Resistance Cloud above price)
+            if (tl.short_level > 0 && currentPrice <= tl.short_level) {
+                const yS = series.priceToCoordinate(tl.short_level);
+                if (yS !== null) {
+                    const cloudHeight = 60; 
+                    const grad = ctx.createLinearGradient(0, yS - cloudHeight/2, 0, yS + cloudHeight/2);
+                    grad.addColorStop(0, 'rgba(239,68,68,0)');
+                    grad.addColorStop(0.5, `rgba(239,68,68,${Math.min(0.25, Math.max(0.05, tl.short_intensity/100))})`);
+                    grad.addColorStop(1, 'rgba(239,68,68,0)');
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(0, yS - cloudHeight/2, timeWidth, cloudHeight);
+                    
+                    ctx.beginPath();
+                    ctx.strokeStyle = `rgba(239, 68, 68, 0.6)`;
+                    ctx.setLineDash([12, 6]);
+                    ctx.lineWidth = 2;
+                    ctx.moveTo(0, yS);
+                    ctx.lineTo(timeWidth, yS);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
+                    ctx.font = 'bold 10px Inter';
+                    ctx.fillText('TRAILING RESISTANCE CLOUD', timeWidth / 2, yS + 12);
+                }
+            }
+        }
 
         // 2. Draw Live Liquidation Bubbles
         if (showBubbles && data.whale_feed) {

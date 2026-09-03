@@ -10,7 +10,14 @@ export interface GodModeState {
     cvd_spoof: string;
     whale_feed: any[];
     magnet_zones: { price: number, intensity: number, volume?: number }[];
+    smoothed_zones?: { price: number, intensity: number, volume?: number }[];
     cascade_probs: { price: number, prob: number, volume?: number }[];
+    trailing_liquidity?: {
+        long_level: number;
+        short_level: number;
+        long_intensity: number;
+        short_intensity: number;
+    };
     ai_trajectory?: { target_price: number, strength: number, direction: 'UP' | 'DOWN' | 'NEUTRAL' };
     current_price: number;
 }

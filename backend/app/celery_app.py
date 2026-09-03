@@ -52,6 +52,7 @@ celery_app.conf.beat_schedule = {
 }
 
 celery_app.conf.update(
+    task_ignore_result=True,
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",

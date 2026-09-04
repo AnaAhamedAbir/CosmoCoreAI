@@ -76,6 +76,7 @@ import { useAdvancedMetricsSettings, AdvancedMetricsSettings } from '../../hooks
 import { useAdvancedMetrics } from '../../hooks/useAdvancedMetrics';
 import { TradingViewWidget } from '../../components/features/market/TradingViewWidget';
 import { TopTokensModal } from '../../components/TopTokensModal';
+import { CandlestickTooltip, TooltipCandleData } from '../../components/features/market/CandlestickTooltip';
 // Helper to convert interval string to ms
 const parseIntervalToMs = (interval: string): number => {
     const value = parseInt(interval) || 1;
@@ -149,6 +150,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     const [wickSRCandles, setWickSRCandles] = useState<any[]>([]);
     const [bbData, setBbData] = useState<BollingerBandsDataPoint[]>([]);
     const [vwapSDData, setVwapSDData] = useState<VWAPSDDataPoint[]>([]);
+    const [tooltipData, setTooltipData] = useState<TooltipCandleData | null>(null);
+    const [tooltipPos, setTooltipPos] = useState<{ x: number, y: number } | null>(null);
 
     const { data: aetherFlowData } = useAetherFlowData(symbol, exchange, interval, indicatorSettings.showAetherFlow);
 
@@ -307,6 +310,57 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 // If the user is hovering the button, freeze its position so they can click it
                 return;
             }
+            
+            // Tooltip Modal Logic
+            if (!param.point || !param.time || param.point.x < 0 || param.point.x > (chartContainerRef.current?.clientWidth || 0) || param.point.y < 0 || param.point.y > (chartContainerRef.current?.clientHeight || 0)) {
+                setTooltipData(null);
+                setTooltipPos(null);
+            } else {
+                let candleData = null;
+                
+                // 1. Primary method: Get exact internal data point used by TradingView chart
+                if (candlestickSeriesRef.current && param.seriesData) {
+                    const cData = param.seriesData.get(candlestickSeriesRef.current) as any;
+                    const vData = volumeSeriesRef.current ? param.seriesData.get(volumeSeriesRef.current) as any : null;
+                    if (cData && cData.open !== undefined) {
+                        candleData = {
+                            time: cData.time as number,
+                            open: cData.open,
+                            high: cData.high,
+                            low: cData.low,
+                            close: cData.close,
+                            volume: vData?.value || 0
+                        };
+                    }
+                }
+                
+                // 2. Fallback method: Search raw CCXT data (accounting for JS string/number mismatches)
+                if (!candleData) {
+                    const fallbackCandle = allCandlesRef.current.find(c => {
+                        return c.time === param.time || String(c.time) === String(param.time) || Number(c.time) === Number(param.time);
+                    });
+                    if (fallbackCandle) {
+                        candleData = {
+                            time: fallbackCandle.time,
+                            open: fallbackCandle.open,
+                            high: fallbackCandle.high,
+                            low: fallbackCandle.low,
+                            close: fallbackCandle.close,
+                            volume: fallbackCandle.volume || 0
+                        };
+                    }
+                }
+
+                if (candleData) {
+                    setTooltipData(candleData);
+                    setTooltipPos({ x: param.point.x, y: param.point.y });
+                } else {
+                    setTooltipData(null);
+                    setTooltipPos(null);
+                }
+            }
+
+            // Quick Trade Ghost Line Logic
             if (param.point && param.point.y !== undefined && candlestickSeriesRef.current && crosshairBtnRef.current) {
                 const price = candlestickSeriesRef.current.coordinateToPrice(param.point.y as any);
                 if (price !== null) {
@@ -1986,6 +2040,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         <div className="w-full h-full flex flex-col absolute inset-0">
             <div className="flex-1 relative">
                 <div ref={chartContainerRef} className="w-full h-full absolute inset-0 z-0" />
+                <CandlestickTooltip candle={tooltipData} position={tooltipPos} chartContainerRef={chartContainerRef} />
                 <button
                     ref={crosshairBtnRef}
                     onClick={(e) => {

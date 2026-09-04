@@ -378,7 +378,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                 ctx.font = 'bold 9px Inter';
                 ctx.textAlign = 'center';
                 const lblY = isUp ? targetY - 12 : targetY + 18;
-                ctx.fillText(`AI TARGET`, endX, lblY);
+                ctx.fillText(`ALGO TARGET`, endX, lblY);
             }
         }
 

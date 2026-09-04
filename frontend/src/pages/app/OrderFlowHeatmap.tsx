@@ -2002,7 +2002,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                                     lineWidth: 2,
                                     lineStyle: 3,
                                     axisLabelVisible: true,
-                                    title: '🤖 AI Target',
+                                    title: '🤖 Algo Target',
                                 });
                             }
                         }
@@ -3510,7 +3510,7 @@ const OrderFlowHeatmap: React.FC = () => {
                     <FloatingTVChartButton symbol={symbol} exchange={exchange} />
                 </div>
 
-                {/* AI PREDICTOR MODAL */}
+                {/* ALGO PREDICTOR MODAL */}
                 <ModelPredictorModal 
                     currentPrice={currentPrice} 
                     onPrediction={setPredictionResult}

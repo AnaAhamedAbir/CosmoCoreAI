@@ -233,7 +233,7 @@ const GodModeLiquidationView: React.FC = () => {
                     </Card>
                 </div>
 
-                {/* CENTER HUD: Advanced Chart & Magnet Zones & AI Predictor */}
+                {/* CENTER HUD: Advanced Chart & Magnet Zones & Algo Predictor */}
                 <div className="col-span-12 lg:col-span-6 flex flex-col gap-4 min-h-[400px] relative">
                     <Card className="flex-1 bg-gradient-to-b from-[#090E17] to-[#05080F] border-brand-primary/20 p-0 relative overflow-hidden group shadow-[0_0_30px_rgba(0,0,0,0.8)] flex flex-col">
                         <div className="p-3 sm:p-4 border-b border-white/5 flex flex-col sm:flex-row gap-2 sm:items-center justify-between z-20 absolute top-0 w-full bg-black/40 backdrop-blur-md">
@@ -281,7 +281,7 @@ const GodModeLiquidationView: React.FC = () => {
                                   <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} showBubbles={true} intensityScale={100} useTrailingLiquidity={trailingLiquidityEnabled} />
                              </div>
                              
-                             {/* AI Predicted Cascade Overlay (Right Edge) */}
+                             {/* Algo Predicted Cascade Overlay (Right Edge) */}
                              <div className="w-16 sm:w-20 border-l border-white/10 bg-black/30 backdrop-blur-sm relative py-10 px-1 flex flex-col justify-center shrink-0">
                                  <div className="absolute top-2 left-0 w-full text-center text-[7px] sm:text-[8px] text-gray-500 font-mono uppercase tracking-widest px-1">Probs</div>
                                  

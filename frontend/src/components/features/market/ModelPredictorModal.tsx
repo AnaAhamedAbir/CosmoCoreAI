@@ -103,7 +103,7 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({ onPred
             <button
                 onClick={() => setIsOpen(true)}
                 className="relative shrink-0 w-16 h-16 rounded-full flex items-center justify-center bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 border border-indigo-400/30 text-white shadow-[0_0_24px_rgba(99,102,241,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
-                title="AI Predictor"
+                title="Algo Predictor"
             >
                 <BrainCircuit className="w-8 h-8 group-hover:scale-110 transition-transform bg-transparent" />
             </button>

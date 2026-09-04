@@ -262,7 +262,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     if (price < 0.000001) return price.toFixed(12);
                     if (price < 0.00001) return price.toFixed(10);
                     if (price < 0.0001) return price.toFixed(8);
-                    if (price < 0.001) return price.toFixed(6);
+                    if (price < 0.001) return price.toFixed(7);
                     if (price < 1) return price.toFixed(5);
                     if (price < 10) return price.toFixed(4);
                     return price.toFixed(2);

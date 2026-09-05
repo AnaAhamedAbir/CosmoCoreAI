@@ -35,7 +35,7 @@ END
 alembic upgrade head
 
 # Install any missing requirements quietly (allows docker-compose up to work without --build)
-pip install -q -r requirements.txt
+PIP_ROOT_USER_ACTION=ignore PYTHONWARNINGS="ignore" pip install -q -r requirements.txt
 
 # Automatically sync any models in the uploads/models folder to the database
 python -m scripts.sync_models

@@ -49,7 +49,7 @@ class NewsScraper:
         reddit_secret = settings.REDDIT_CLIENT_SECRET or ""
 
         if self._is_placeholder(reddit_id) or self._is_placeholder(reddit_secret):
-            logger.warning(
+            logger.info(
                 "Reddit credentials appear to be placeholder values. "
                 "Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in .env to enable Reddit."
             )
@@ -219,7 +219,7 @@ class NewsScraper:
                 if "mismatched tag" in excerpt or "SAXParseException" in excerpt:
                      # Identify if it's likely a Cloudflare block (HTML returned instead of XML)
                      if b"<!DOCTYPE html>" in response.content or b"Cloudflare" in response.content:
-                         logger.warning(
+                         logger.info(
                              f"RSS {source_name} likely blocked by Cloudflare (HTML returned). "
                              f"Trigerring cooldown."
                          )
@@ -414,7 +414,7 @@ class NewsScraper:
                     cooldown_minutes = self._CRYPTOPANIC_COOLDOWN_MINUTES
 
                 self._redis_set_rate_limit_cooldown(cooldown_minutes)
-                logger.warning(
+                logger.info(
                     f"CryptoPanic API blocked (HTTP {response.status_code}). "
                     f"Cooling down for {cooldown_minutes} min. "
                     f"Falling back to RSS."

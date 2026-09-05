@@ -16,6 +16,7 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - PYTHONUNBUFFERED=1
       - NUMBA_CACHE_DIR=/tmp
+      - PYTHONWARNINGS=ignore
     depends_on:
       - db
       - redis
@@ -42,6 +43,7 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - PYTHONWARNINGS=ignore
     restart: always
 
   # 2b. Celery Worker Heavy (Backtest & ML)
@@ -63,6 +65,7 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - PYTHONWARNINGS=ignore
     restart: always
 
   # 2b. Celery Beat (Scheduler) - NEW
@@ -82,6 +85,7 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - PYTHONWARNINGS=ignore
     restart: always
 
   # 2c. Telegram Master Bot Listener - NEW

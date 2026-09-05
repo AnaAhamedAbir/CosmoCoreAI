@@ -1264,12 +1264,11 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 needsUpdate = true;
             }
 
-            // Update from price tick
+            // DO NOT update candlestick OHLC from orderbook mid-price to prevent fake wicks!
+            // We only track it so we know if we need to re-render the current price line if implemented separately.
             if (latestPrice && latestPrice > 0 && !isNaN(latestPrice) && latestPrice !== lastProcessedPriceRef.current) {
-                newClose = latestPrice;
-                newHigh = Math.max(newHigh, latestPrice);
-                newLow = Math.min(newLow, latestPrice);
                 lastProcessedPriceRef.current = latestPrice;
+                // We still trigger a small update to allow the price line to move, but do NOT modify candle OHLC
                 needsUpdate = true;
             }
 

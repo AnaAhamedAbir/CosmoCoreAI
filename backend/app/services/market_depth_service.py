@@ -508,10 +508,6 @@ class MarketDepthService:
                         # Advance `since` past the last candle to avoid re-fetching
                         since_ms = chunk[-1][0] + tf_ms
 
-                        # Exchange has no more historical data for this range
-                        if len(chunk) < batch:
-                            break
-
                         # ── Rate-limit safety delay between paginated requests ──
                         # CCXT's enableRateLimit handles per-request throttling, but
                         # we add an extra 500ms buffer to avoid soft IP bans on

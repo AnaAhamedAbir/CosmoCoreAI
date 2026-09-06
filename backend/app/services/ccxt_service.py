@@ -16,6 +16,10 @@ class CcxtService:
         'binance', 'kraken', 'coinbase', 'kucoin', 'bybit', 'okx', 'bitstamp', 
         'gateio', 'htx', 'mexc', 'bitget', 'gemini'
     ]
+    
+    # In-memory cache for full markets data to make bot startup instant
+    _market_cache = {}
+    _market_cache_timestamp = {}
 
     def __init__(self):
         pass
@@ -86,6 +90,49 @@ class CcxtService:
         except Exception as e:
             logger.error(f"Error fetching pairs for {exchange_id}: {e}")
             raise e
+        finally:
+            if api:
+                await api.close()
+
+    async def get_full_markets(self, exchange_id: str, default_type: str = 'spot') -> Dict[str, Any]:
+        """
+        Returns full CCXT markets dictionary, heavily cached in memory to allow 0ms bot startups.
+        """
+        import time
+        exchange_id = exchange_id.lower()
+        cache_key = f"{exchange_id}_{default_type}"
+        
+        # Cache for 1 hour
+        if cache_key in self._market_cache:
+            if time.time() - self._market_cache_timestamp.get(cache_key, 0) < 3600:
+                return self._market_cache[cache_key]
+                
+        if exchange_id not in ccxt.exchanges:
+            raise ValueError(f"Exchange '{exchange_id}' not found in CCXT.")
+
+        api = None
+        try:
+            exchange_class = getattr(ccxt, exchange_id)
+            api = exchange_class({
+                'enableRateLimit': True,
+                'options': {
+                    'defaultType': default_type,
+                    'adjustForTimeDifference': True,
+                    'recvWindow': 60000 if exchange_id == 'mexc' else 10000
+                }
+            })
+            
+            markets = await api.load_markets()
+            
+            # Save to memory cache
+            self._market_cache[cache_key] = markets
+            self._market_cache_timestamp[cache_key] = time.time()
+            logger.info(f"Successfully cached {len(markets)} markets for {cache_key} in memory.")
+            
+            return markets
+        except Exception as e:
+            logger.error(f"Error fetching full markets for {cache_key}: {e}")
+            return {}
         finally:
             if api:
                 await api.close()

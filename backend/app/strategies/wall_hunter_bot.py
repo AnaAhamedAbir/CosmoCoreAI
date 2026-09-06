@@ -98,6 +98,9 @@ class WallHunterBot:
         self.is_paper_trading = config.get("is_paper_trading", True)
         self.logger = WallHunterLogger(self.bot_id)
         
+        self.is_ready = False
+        self._init_task = None
+        
         from app.db.session import SessionLocal
         from app.models.bot import Bot
         db = db_session if db_session else SessionLocal()
@@ -1303,6 +1306,12 @@ class WallHunterBot:
 
     async def start(self, api_key_record=None):
         self.running = True
+        self.logger.info(f"⚡ [WallHunter {self.bot_id}] Fast boot initiated. Initialization moved to background.")
+        self._init_task = asyncio.create_task(self._initialize_async(api_key_record))
+        return True
+
+    async def _initialize_async(self, api_key_record=None):
+        self.running = True
         # Dynamic Exchange Initialization
         exchange_class = getattr(ccxt, self.exchange_id)
         exchange_params = {
@@ -1362,7 +1371,14 @@ class WallHunterBot:
         self.engine = OrderBlockExecutionEngine(self.config, exchange=self.exchange, logger=self.logger, bot_id=self.bot_id)
         
         try:
-            await self.public_exchange.load_markets()
+            from app.services.ccxt_service import ccxt_service
+            cached_markets = await ccxt_service.get_full_markets(self.exchange_id, 'spot')
+            if cached_markets:
+                self.public_exchange.markets = cached_markets
+                self.public_exchange.symbols = list(cached_markets.keys())
+            else:
+                await self.public_exchange.load_markets()
+                
             # If public load succeeds, we can share the markets with the private exchange
             # to avoid MEXC hitting the failing /api/v3/capital/config/getall endpoint
             if self.exchange:
@@ -1381,7 +1397,12 @@ class WallHunterBot:
             # Load markets for proxy exchange if it exists and is different
             if getattr(self, 'proxy_public_exchange', None) and self.proxy_public_exchange != self.public_exchange:
                 try:
-                    await self.proxy_public_exchange.load_markets()
+                    proxy_markets = await ccxt_service.get_full_markets(self.proxy_exchange, 'spot')
+                    if proxy_markets:
+                        self.proxy_public_exchange.markets = proxy_markets
+                        self.proxy_public_exchange.symbols = list(proxy_markets.keys())
+                    else:
+                        await self.proxy_public_exchange.load_markets()
                     self.logger.info(f"✅ [WallHunter {self.bot_id}] Connected to Proxy Exchange: {self.proxy_exchange.upper()}")
                 except Exception as e:
                     self.logger.warning(f"Could not load markets for proxy exchange {self.proxy_exchange}: {e}")
@@ -1664,17 +1685,17 @@ class WallHunterBot:
             if risk_summary_str:
                 self.logger.info(f"🛡️ Advanced Risk Management Active:\n{risk_summary_str}")
         
+        mode = "Live Trading" if not self.is_paper_trading else "Paper Trading"
         startup_msg = (
-            f"\U0001f7e2 WallHunter Bot [ID: {self.bot_id}] Started!\n"
+            f"🟢 WallHunter Bot [ID: {self.bot_id}] Started!\n"
             f"Pair: {self.symbol}\n"
             f"Mode: {mode}\n"
-            f"{session_str}"
             f"Buy Order: {self.buy_order_type.upper()}\n"
             f"Limit Buffer: {self.limit_buffer}%\n"
-            f"{trigger_str}"
+            f"Strategy: {'SHORT' if getattr(self, 'strategy_mode', 'long') == 'short' else 'LONG'}\n"
         )
-
-        self.logger.info(f"\U0001f680 [WallHunter {self.bot_id}] Booting up with config:\n"
+        
+        self.logger.info(f"🚀 [WallHunter {self.bot_id}] Booting up with config:\n"
                     f"- Symbol: {self.symbol}\n"
                     f"- Buy Type: {self.buy_order_type}\n"
                     f"- Limit Buffer: {self.limit_buffer}%\n"
@@ -1692,7 +1713,7 @@ class WallHunterBot:
         if hasattr(self, 'ml_predictor') and self.ml_predictor:
             await self.ml_predictor.stop_background_engine()
         # --- FIX: Task Memory Leak / CPU Spike Prevention ---
-        for task_attr in ['_main_task', '_heartbeat_task', '_vpvr_task', '_atr_task', '_liq_task', '_trades_task', '_btc_task', '_utbot_task', '_ut_standalone_task', '_supertrend_task', '_supertrend_standalone_task', '_dual_engine_task', '_dual_engine_standalone_task', '_native_price_task', '_wick_sr_task', '_vwap_sd_task', '_ml_standalone_task']:
+        for task_attr in ['_init_task', '_main_task', '_heartbeat_task', '_vpvr_task', '_atr_task', '_liq_task', '_trades_task', '_btc_task', '_utbot_task', '_ut_standalone_task', '_supertrend_task', '_supertrend_standalone_task', '_dual_engine_task', '_dual_engine_standalone_task', '_native_price_task', '_wick_sr_task', '_vwap_sd_task', '_ml_standalone_task']:
             task = getattr(self, task_attr, None)
             if task and not task.done():
                 try:
@@ -3998,7 +4019,7 @@ class WallHunterBot:
         self.logger.info(f"🛑 [WallHunter {self.bot_id}] Stopping...")
         
         # --- FIX: Task Memory Leak / CPU Spike Prevention ---
-        for task_attr in ['_main_task', '_heartbeat_task', '_vpvr_task', '_atr_task', '_liq_task', '_trades_task', '_btc_task', '_utbot_task', '_ut_standalone_task', '_dual_engine_task', '_dual_engine_standalone_task']:
+        for task_attr in ['_init_task', '_main_task', '_heartbeat_task', '_vpvr_task', '_atr_task', '_liq_task', '_trades_task', '_btc_task', '_utbot_task', '_ut_standalone_task', '_dual_engine_task', '_dual_engine_standalone_task']:
             task = getattr(self, task_attr, None)
             if task and not task.done():
                 try:

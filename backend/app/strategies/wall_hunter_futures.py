@@ -94,6 +94,9 @@ class WallHunterFuturesStrategy:
         self.exchange_service = ccxt_service
         self.config = bot_record.config or {}
         
+        self.is_ready = False
+        self._init_task = None
+        
         # ফিউচার কনফিগারেশন
         self.leverage = self.config.get('leverage', 10)
         self.margin_mode = self.config.get('margin_mode', 'cross')
@@ -460,6 +463,12 @@ class WallHunterFuturesStrategy:
         return bid_vol / total_vol
 
     async def start(self, api_key_record=None):
+        self.running = True
+        logger.info(f"⚡ [FuturesHunter {self.bot_id}] Fast boot initiated. Initialization moved to background.")
+        self._init_task = asyncio.create_task(self._initialize_async(api_key_record))
+        return True
+
+    async def _initialize_async(self, api_key_record=None):
         """বট স্টার্ট করার মেইন এন্ট্রি পয়েন্ট"""
         self.running = True
         logger.info(f"🚀 [FuturesHunter {self.bot_id}] Starting on {self.symbol}")
@@ -506,12 +515,23 @@ class WallHunterFuturesStrategy:
             }
             
             try:
-                await self.public_exchange.load_markets()
+                from app.services.ccxt_service import ccxt_service
+                cached_markets = await ccxt_service.get_full_markets(self.exchange_id, 'swap')
+                if cached_markets:
+                    self.public_exchange.markets = cached_markets
+                    self.public_exchange.symbols = list(cached_markets.keys())
+                else:
+                    await self.public_exchange.load_markets()
                 
                 # Load markets for proxy exchange if it exists and is different
                 if getattr(self, 'proxy_public_exchange', None) and self.proxy_public_exchange != self.public_exchange:
                     try:
-                        await self.proxy_public_exchange.load_markets()
+                        proxy_markets = await ccxt_service.get_full_markets(self.proxy_exchange, 'swap')
+                        if proxy_markets:
+                            self.proxy_public_exchange.markets = proxy_markets
+                            self.proxy_public_exchange.symbols = list(proxy_markets.keys())
+                        else:
+                            await self.proxy_public_exchange.load_markets()
                         self.logger.info(f"✅ Connected to Proxy Exchange: {self.proxy_exchange.upper()}")
                     except Exception as e:
                         self.logger.warning(f"Could not load markets for proxy exchange {self.proxy_exchange}: {e}")
@@ -530,7 +550,13 @@ class WallHunterFuturesStrategy:
             self.private_exchange = exchange_class(exchange_params)
             
             try:
-                await self.private_exchange.load_markets()
+                from app.services.ccxt_service import ccxt_service
+                cached_markets = await ccxt_service.get_full_markets(self.exchange_id, 'swap')
+                if cached_markets:
+                    self.private_exchange.markets = cached_markets
+                    self.private_exchange.symbols = list(cached_markets.keys())
+                else:
+                    await self.private_exchange.load_markets()
             except Exception as e:
                 logger.warning(f"Could not load private markets: {e}")
 
@@ -828,7 +854,8 @@ class WallHunterFuturesStrategy:
             )
 
             await self._send_telegram(startup_msg)
-            logger.info(f"\u2705 [FuturesHunter {self.bot_id}] Initialization Complete")
+            self.is_ready = True
+            logger.info(f"\u2705 [FuturesHunter {self.bot_id}] Initialization Complete. Ready to trade.")
 
 
             
@@ -849,7 +876,7 @@ class WallHunterFuturesStrategy:
 
         
         # --- FIX: Task Memory Leak / CPU Spike Prevention ---
-        for task_attr in ['_main_task', '_heartbeat_task', '_vpvr_task', '_atr_task', '_liq_task', '_trades_task', '_btc_task', '_utbot_task', '_ut_standalone_task', '_supertrend_task', '_supertrend_standalone_task', '_dual_engine_task', '_dual_engine_standalone_task', '_native_price_task', '_wick_sr_task', '_vwap_sd_task', '_ml_standalone_task']:
+        for task_attr in ['_init_task', '_main_task', '_heartbeat_task', '_vpvr_task', '_atr_task', '_liq_task', '_trades_task', '_btc_task', '_utbot_task', '_ut_standalone_task', '_supertrend_task', '_supertrend_standalone_task', '_dual_engine_task', '_dual_engine_standalone_task', '_native_price_task', '_wick_sr_task', '_vwap_sd_task', '_ml_standalone_task']:
             task = getattr(self, task_attr, None)
             if task and not task.done():
                 try:
@@ -3228,7 +3255,7 @@ class WallHunterFuturesStrategy:
         logger.info(f"🛑 [FuturesHunter {self.bot_id}] Stopping...")
         
         # --- FIX: Task Memory Leak / CPU Spike Prevention ---
-        for task_attr in ['_main_task', '_heartbeat_task', '_vpvr_task', '_atr_task', '_liq_task', '_trades_task', '_btc_task', '_wick_sr_task']:
+        for task_attr in ['_init_task', '_main_task', '_heartbeat_task', '_vpvr_task', '_atr_task', '_liq_task', '_trades_task', '_btc_task', '_wick_sr_task']:
             task = getattr(self, task_attr, None)
             if task and not task.done():
                 try:

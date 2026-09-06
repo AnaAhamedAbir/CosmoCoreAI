@@ -571,6 +571,22 @@ async def startup_event():
     bot_manager.start_service()
     app.state.bot_manager = bot_manager
     
+    # Task Pre-Warming: Pre-cache Binance markets to ensure instant bot startup (Uses ~15MB RAM)
+    async def prewarm_markets():
+        from app.services.ccxt_service import ccxt_service
+        try:
+            logger.info("🔥 Pre-warming Binance spot markets into memory cache...")
+            await ccxt_service.get_full_markets('binance', 'spot')
+            logger.info("🔥 Pre-warming Binance futures markets into memory cache...")
+            await ccxt_service.get_full_markets('binance', 'swap')
+            logger.info("✅ Pre-warming complete! First bot start will now take 0ms.")
+        except Exception as e:
+            logger.error(f"Pre-warming failed: {e}")
+            
+    prewarm_task = asyncio.create_task(prewarm_markets())
+    running_tasks.add(prewarm_task)
+    prewarm_task.add_done_callback(running_tasks.discard)
+    
     # Task A: Market Data
     market_task = asyncio.create_task(fetch_market_data_background())
     running_tasks.add(market_task)

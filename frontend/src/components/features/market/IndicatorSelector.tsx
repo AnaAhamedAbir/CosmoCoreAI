@@ -28,6 +28,7 @@ export interface IndicatorSettings {
     quantumVolatilityFilter: boolean;
     quantumVolThreshold: number;
     showLiquidationHeatmap: boolean;
+    liquidationShowTrueCVD: boolean;
     emaPeriod: number;
     bbPeriod: number;
     bbStdDev: number;
@@ -1343,6 +1344,12 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ settings, 
                                         <label className="flex items-center justify-between cursor-pointer group">
                                             <span className="text-gray-400 font-bold group-hover:text-gray-200">Show Live Signal Arrow</span>
                                             <input type="checkbox" checked={settings.liquidationShowSignalArrow !== false} onChange={() => onSettingsChange({ ...settings, liquidationShowSignalArrow: settings.liquidationShowSignalArrow === false ? true : false })} className="w-3 h-3 rounded" />
+                                        </label>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5 mt-2">
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <span className="text-purple-400 font-bold group-hover:text-purple-300">Show True CVD & Iceberg 🛡️</span>
+                                            <input type="checkbox" checked={settings.liquidationShowTrueCVD as boolean} onChange={() => onSettingsChange({ ...settings, liquidationShowTrueCVD: !settings.liquidationShowTrueCVD })} className="w-3 h-3 rounded text-purple-500 focus:ring-purple-500" />
                                         </label>
                                     </div>
                                     <div className="flex flex-col gap-1.5 mt-2">

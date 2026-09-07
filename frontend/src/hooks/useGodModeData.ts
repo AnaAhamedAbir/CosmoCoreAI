@@ -20,6 +20,8 @@ export interface GodModeState {
     };
     ai_trajectory?: { target_price: number, strength: number, direction: 'UP' | 'DOWN' | 'NEUTRAL' };
     current_price: number;
+    true_cvd?: number;
+    iceberg_events?: any[];
 }
 
 export const useGodModeData = (symbol: string) => {

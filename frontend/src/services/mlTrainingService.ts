@@ -107,6 +107,7 @@ export interface TrainingConfig {
         custom_features?: any[];
         asmc_htf?: string;
         asmc_ltf?: string;
+        god_mode_features?: string[];
     };
 }
 

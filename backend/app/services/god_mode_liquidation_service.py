@@ -7,6 +7,8 @@ from typing import Dict, Any, Callable, Awaitable, List
 import ccxt.pro as ccxtpro
 from ccxt.base.errors import NetworkError
 
+from app.services.true_cvd_service import true_cvd_service
+
 logger = logging.getLogger(__name__)
 
 class GodModeService:
@@ -41,7 +43,9 @@ class GodModeService:
                 "short_intensity": 0
             },
             "ai_trajectory": {"target_price": 0, "strength": 0, "direction": "NEUTRAL"},
-            "current_price": 0.0
+            "current_price": 0.0,
+            "true_cvd": 0,
+            "iceberg_events": []
         }
         
         # Internal states for calculations
@@ -61,6 +65,23 @@ class GodModeService:
     def remove_callback(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]):
         if callback in self._callbacks:
             self._callbacks.remove(callback)
+
+    async def _handle_true_cvd_event(self, payload: Dict[str, Any]):
+        """Receives updates from the modular True CVD service"""
+        self.state["true_cvd"] = payload.get("true_cvd", 0)
+        
+        iceberg_event = payload.get("iceberg_event")
+        if iceberg_event:
+            # Keep only the last 10 iceberg events in state
+            self.state["iceberg_events"].insert(0, iceberg_event)
+            if len(self.state["iceberg_events"]) > 10:
+                self.state["iceberg_events"].pop()
+                
+            # If a massive iceberg is detected, override cvd_spoof proxy state to give absolute certainty
+            if "BEARISH" in iceberg_event["type"]:
+                self.state["cvd_spoof"] = "DETECTED: HIGH RISK"
+            elif "BULLISH" in iceberg_event["type"]:
+                self.state["cvd_spoof"] = "DETECTED: HIGH RISK"
 
     async def _broadcast_loop(self):
         """Continuously broadcasts the aggregated state to all connected websockets at roughly 10Hz"""
@@ -451,6 +472,10 @@ class GodModeService:
         
         # Start real orderbook heatmap engine
         self._active_tasks.append(asyncio.create_task(self._watch_orderbook_loop('binance', symbol)))
+        
+        # Integrate Modular True CVD Service
+        true_cvd_service.register_callback(self._handle_true_cvd_event)
+        self._active_tasks.append(asyncio.create_task(true_cvd_service.start(symbol)))
 
     async def stop(self):
         """Cleanup resources"""
@@ -461,6 +486,12 @@ class GodModeService:
         for name, ex in self.exchanges.items():
             await ex.close()
             
+        await true_cvd_service.stop()
+        try:
+            true_cvd_service.remove_callback(self._handle_true_cvd_event)
+        except Exception:
+            pass
+            
         self._active_tasks.clear()
         self.exchanges.clear()
         
@@ -469,6 +500,7 @@ class GodModeService:
         self._smart_vol = 0
         self._dumb_vol = 0
         self.state["whale_feed"] = []
+        self.state["iceberg_events"] = []
         logger.info("GodMode Pipeline stopped.")
 
 # Global Singleton

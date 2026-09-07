@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { GodModeState } from '../../../hooks/useGodModeData';
 
@@ -9,14 +9,18 @@ interface LiquidationRendererProps {
     showBubbles: boolean;
     intensityScale: number; // 10-100
     useTrailingLiquidity?: boolean;
+    showTrueCVD?: boolean;
 }
 
-export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity }) => {
+export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity, showTrueCVD }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
     
     // Track persisting bubbles
     const bubblesRef = useRef<any[]>([]);
+    
+    // Track persisting icebergs
+    const icebergsRef = useRef<any[]>([]);
     
     // Crosshair state for tooltips
     const crosshairRef = useRef<{ price: number, x: number, y: number, visible: boolean }>({ price: 0, x: 0, y: 0, visible: false });
@@ -287,6 +291,58 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
             });
         }
         
+        // 2.5 Draw True CVD & Iceberg Events
+        if (showTrueCVD && data.iceberg_events) {
+            const now = Date.now();
+            
+            data.iceberg_events.forEach(ev => {
+                if (ev.price && ev.timestamp) {
+                    const existing = icebergsRef.current.find(b => b.timestamp === ev.timestamp && b.price === ev.price);
+                    if (!existing) {
+                        icebergsRef.current.push({ ...ev, createdAt: now });
+                    }
+                }
+            });
+
+            // Clean old icebergs (> 15 seconds)
+            icebergsRef.current = icebergsRef.current.filter(b => now - b.createdAt < 15000);
+
+            icebergsRef.current.forEach(iceberg => {
+                const x = timeScale.timeToCoordinate((iceberg.timestamp / 1000) as any);
+                const y = series.priceToCoordinate(iceberg.price);
+                
+                if (x !== null && y !== null) {
+                    const isBullish = iceberg.type === 'BULLISH_ABSORPTION';
+                    const glowColor = '168, 85, 247'; // Purple glow as requested
+                    const textColor = isBullish ? '#22c55e' : '#ef4444'; // Green or Red text
+                    
+                    const age = now - iceberg.createdAt;
+                    const alpha = Math.max(0, 1 - (age / 15000));
+                    
+                    // Purple Glow Base
+                    ctx.beginPath();
+                    ctx.fillStyle = `rgba(${glowColor}, ${alpha * 0.4})`;
+                    ctx.arc(x, y, 25, 0, 2 * Math.PI);
+                    ctx.fill();
+                    
+                    // Shield Icon
+                    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                    ctx.font = '16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('🛡️', x, y);
+                    
+                    // Absorption Text
+                    ctx.fillStyle = textColor;
+                    ctx.font = 'bold 10px Inter';
+                    const volK = iceberg.absorbed_volume >= 1000000 
+                        ? (iceberg.absorbed_volume / 1000000).toFixed(1) + 'M' 
+                        : (iceberg.absorbed_volume / 1000).toFixed(0) + 'k';
+                    ctx.fillText(`${volK} Absorbed`, x, y - 20);
+                }
+            });
+        }
+
         // 3. Draw Interactive Tooltip for hovered zone
         if (crosshairRef.current.visible) {
             const hoveredZone = allZones.find(z => Math.abs(z.price - crosshairRef.current.price) < (currentPrice * 0.003));
@@ -382,7 +438,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
             }
         }
 
-    }, [chart, series, data, showBubbles, intensityScale]);
+    }, [chart, series, data, showBubbles, intensityScale, showTrueCVD]);
 
     useEffect(() => {
         if (!chart || !series) return;
@@ -407,10 +463,12 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
         };
         chart.subscribeCrosshairMove(crosshairHandler);
 
-        // Continuous animation loop for bubbles
+        // Continuous animation loop for bubbles and icebergs
         let animationFrameId: number;
         const animate = () => {
-            if (showBubbles && bubblesRef.current.length > 0) {
+            const hasBubbles = showBubbles && bubblesRef.current.length > 0;
+            const hasIcebergs = showTrueCVD && icebergsRef.current.length > 0;
+            if (hasBubbles || hasIcebergs) {
                 requestDraw();
             }
             animationFrameId = requestAnimationFrame(animate);
@@ -431,10 +489,159 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
     }, [data, requestDraw]);
 
     return (
-        <canvas
-            ref={canvasRef}
-            className="absolute top-0 left-0 pointer-events-none"
-            style={{ zIndex: 5 }}
-        />
+        <>
+            <canvas
+                ref={canvasRef}
+                className="absolute top-0 left-0 pointer-events-none"
+                style={{ zIndex: 5 }}
+            />
+            {showTrueCVD && data && data.true_cvd !== undefined && (
+                <TrueCVDDraggableHUD data={data} icebergsCount={icebergsRef.current.length} />
+            )}
+        </>
+    );
+};
+
+interface TrueCVDDraggableHUDProps {
+    data: GodModeState;
+    icebergsCount?: number;
+}
+
+export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, icebergsCount = 0 }) => {
+    const [position, setPosition] = useState<{ x: number; y: number }>(() => {
+        try {
+            const saved = localStorage.getItem('true_cvd_hud_pos');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+                    return parsed;
+                }
+            }
+        } catch (e) {}
+        return { x: 0, y: 0 };
+    });
+
+    const [isDragging, setIsDragging] = useState(false);
+    const dragRef = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null);
+
+    const onPointerDown = (e: React.PointerEvent) => {
+        if (e.button !== 0) return; // Left click only
+        setIsDragging(true);
+        dragRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            initX: position.x,
+            initY: position.y,
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
+    };
+
+    const onPointerMove = (e: React.PointerEvent) => {
+        if (!isDragging || !dragRef.current) return;
+        const dx = e.clientX - dragRef.current.startX;
+        const dy = e.clientY - dragRef.current.startY;
+        setPosition({
+            x: dragRef.current.initX + dx,
+            y: dragRef.current.initY + dy,
+        });
+    };
+
+    const onPointerUp = (e: React.PointerEvent) => {
+        if (isDragging && dragRef.current) {
+            const dx = e.clientX - dragRef.current.startX;
+            const dy = e.clientY - dragRef.current.startY;
+            const finalPos = {
+                x: dragRef.current.initX + dx,
+                y: dragRef.current.initY + dy,
+            };
+            try {
+                localStorage.setItem('true_cvd_hud_pos', JSON.stringify(finalPos));
+            } catch (err) {}
+        }
+        setIsDragging(false);
+        dragRef.current = null;
+        try {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+        } catch (err) {}
+    };
+
+    const resetPosition = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setPosition({ x: 0, y: 0 });
+        try {
+            localStorage.removeItem('true_cvd_hud_pos');
+        } catch (err) {}
+    };
+
+    const cvd = data.true_cvd ?? 0;
+    const cvdColor = cvd > 0 ? 'text-emerald-400' : cvd < 0 ? 'text-rose-400' : 'text-slate-200';
+    const cvdVal = Math.abs(cvd) > 1000000
+        ? (cvd / 1000000).toFixed(2) + 'M'
+        : (cvd / 1000).toFixed(0) + 'k';
+    const activeWalls = icebergsCount || data.iceberg_events?.length || 0;
+
+    return (
+        <div
+            className={`absolute z-[25] pointer-events-auto select-none transition-all ${
+                isDragging
+                    ? 'cursor-grabbing scale-105 shadow-[0_0_25px_rgba(168,85,247,0.5)]'
+                    : 'cursor-grab hover:shadow-[0_0_15px_rgba(168,85,247,0.25)]'
+            }`}
+            style={{
+                left: '16px',
+                bottom: '20px',
+                transform: `translate(${position.x}px, ${position.y}px)`,
+                touchAction: 'none',
+            }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onDoubleClick={resetPosition}
+            title="Drag with mouse to reposition anywhere • Double-click to reset to bottom-left"
+        >
+            <div className="flex items-center gap-2.5 bg-slate-950/90 backdrop-blur-md border border-purple-500/40 hover:border-purple-400/80 rounded-lg px-3 py-2 shadow-2xl transition-colors">
+                {/* 6-dot drag grip handle */}
+                <div className="flex flex-col gap-0.5 opacity-40 hover:opacity-80 transition-opacity">
+                    <div className="flex gap-0.5">
+                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
+                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
+                    </div>
+                    <div className="flex gap-0.5">
+                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
+                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
+                    </div>
+                    <div className="flex gap-0.5">
+                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
+                        <span className="w-1 h-1 bg-purple-400 rounded-full" />
+                    </div>
+                </div>
+
+                {/* Info block */}
+                <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-xs leading-none">🛡️</span>
+                        <span className="text-[10px] font-bold tracking-wider text-purple-300 uppercase font-mono leading-none">
+                            TRUE CVD (60s)
+                        </span>
+                    </div>
+                    <div className="flex items-baseline gap-2 mt-1">
+                        <span className={`text-sm font-black font-mono tracking-tight leading-none ${cvdColor}`}>
+                            {cvd > 0 ? '+' : ''}{cvdVal}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Active Icebergs badge */}
+                {activeWalls > 0 && (
+                    <div className="flex items-center gap-1 bg-purple-500/20 border border-purple-500/40 rounded px-1.5 py-0.5 ml-1 animate-pulse">
+                        <span className="text-[10px] leading-none">🧊</span>
+                        <span className="text-[9px] font-bold text-purple-300 font-mono whitespace-nowrap leading-none">
+                            {activeWalls} Wall
+                        </span>
+                    </div>
+                )}
+            </div>
+        </div>
     );
 };

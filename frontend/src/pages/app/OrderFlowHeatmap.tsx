@@ -2121,6 +2121,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                             showBubbles={indicatorSettings.liquidationShowBubbles}
                             intensityScale={indicatorSettings.liquidationHeatmapIntensity}
                             useTrailingLiquidity={indicatorSettings.liquidationShowTrailingCloud}
+                            showTrueCVD={indicatorSettings.liquidationShowTrueCVD}
                         />
                     )}
                     {indicatorSettings.showSessions && (

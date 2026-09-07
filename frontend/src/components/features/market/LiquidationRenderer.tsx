@@ -8,11 +8,12 @@ interface LiquidationRendererProps {
     data: GodModeState | null;
     showBubbles: boolean;
     intensityScale: number; // 10-100
-    useTrailingLiquidity?: boolean;
-    showTrueCVD?: boolean;
+    useTrailingLiquidity: boolean;
+    showTrueCVD: boolean;
+    spoofingThreshold?: number;
 }
 
-export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity, showTrueCVD }) => {
+export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity, showTrueCVD, spoofingThreshold = 500000 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
     
@@ -339,6 +340,40 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                         ? (iceberg.absorbed_volume / 1000000).toFixed(1) + 'M' 
                         : (iceberg.absorbed_volume / 1000).toFixed(0) + 'k';
                     ctx.fillText(`${volK} Absorbed`, x, y - 20);
+                }
+            });
+        }
+
+        // 2.5 Draw Spoofed Zones (Ghost Orders)
+        if (data.spoofed_zones) {
+            const nowTime = Date.now();
+            data.spoofed_zones.forEach(zone => {
+                if (zone.volume >= spoofingThreshold) {
+                    const age = nowTime - (zone.timestamp * 1000); // sec to ms
+                    if (age < 120000) { // max 2 mins
+                        const y = series.priceToCoordinate(zone.price);
+                        if (y !== null) {
+                            const alpha = Math.max(0, 1 - (age / 120000));
+                            
+                            // Glitch effect: randomly offset Y slightly
+                            const glitchY = y + (Math.random() > 0.8 ? (Math.random() * 4 - 2) : 0);
+                            
+                            ctx.beginPath();
+                            ctx.strokeStyle = `rgba(156, 163, 175, ${alpha * 0.8})`; // Gray-400
+                            ctx.setLineDash([10, 5, 2, 5]); 
+                            ctx.lineWidth = 1.5;
+                            ctx.moveTo(0, glitchY);
+                            ctx.lineTo(timeWidth, glitchY);
+                            ctx.stroke();
+                            ctx.setLineDash([]);
+                            
+                            ctx.fillStyle = `rgba(156, 163, 175, ${alpha})`;
+                            ctx.font = 'italic bold 10px Inter';
+                            ctx.textAlign = 'right';
+                            const volM = zone.volume >= 1000000 ? (zone.volume / 1000000).toFixed(1) + 'M' : (zone.volume / 1000).toFixed(0) + 'k';
+                            ctx.fillText(`👻 SPOOFED $${volM}`, timeWidth - 6, glitchY - 6);
+                        }
+                    }
                 }
             });
         }

@@ -175,6 +175,7 @@ export interface IndicatorSettings {
     liquidationShowBubbles: boolean;
     liquidationShowSignalArrow: boolean;
     liquidationShowTrailingCloud: boolean;
+    liquidationSpoofingThreshold: number;
     // MSB-OB Settings
     showMsbOb: boolean;
     msbObZigzagLen: number;
@@ -1361,8 +1362,26 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ settings, 
                                     <div className="flex flex-col gap-1.5 mt-2">
                                         <label className="flex items-center justify-between cursor-pointer group">
                                             <span className="text-brand-primary font-bold group-hover:text-brand-primary/80">Anti-Spoofing & DTLC Mode</span>
-                                            <input type="checkbox" checked={settings.liquidationShowTrailingCloud as boolean} onChange={() => onSettingsChange({ ...settings, liquidationShowTrailingCloud: true })} className="w-3 h-3 rounded text-brand-primary focus:ring-brand-primary" />
+                                            <input type="checkbox" checked={settings.liquidationShowTrailingCloud as boolean} onChange={() => onSettingsChange({ ...settings, liquidationShowTrailingCloud: !settings.liquidationShowTrailingCloud })} className="w-3 h-3 rounded text-brand-primary focus:ring-brand-primary" />
                                         </label>
+                                        
+                                        {settings.liquidationShowTrailingCloud && (
+                                            <div className="flex flex-col gap-1.5 mt-2 ml-2 p-2 bg-gray-50 dark:bg-white/5 rounded-lg border border-brand-primary/20">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] text-gray-400 font-bold uppercase">Spoofing Threshold</span>
+                                                    <span className="text-[10px] text-brand-primary font-bold">${((settings.liquidationSpoofingThreshold || 500000) / 1000).toFixed(0)}k</span>
+                                                </div>
+                                                <input 
+                                                    type="range" 
+                                                    min="100000" 
+                                                    max="2000000" 
+                                                    step="100000"
+                                                    value={settings.liquidationSpoofingThreshold || 500000} 
+                                                    onChange={(e) => updateSetting('liquidationSpoofingThreshold', Number(e.target.value))}
+                                                    className="w-full accent-brand-primary h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex flex-col gap-1.5 mt-1 border-t dark:border-white/10 pt-2">
                                         <div className="flex justify-between items-center">

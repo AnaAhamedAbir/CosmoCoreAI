@@ -25,29 +25,26 @@ class GodModeService:
         
         # Centralized State Object that will be broadcasted every second
         self.state = {
-            "symbol": "",
-            "vulnerability": [], 
-            "arbitrage": [],
-            "pain_threshold": {"level": 0, "status": "NORMAL", "value": 0}, 
+            "symbol": "BTC/USDT",
+            "vulnerability": [],
+            "pain_threshold": {"level": 0, "status": "NORMAL", "value": 0},
             "smart_money": 50,
             "dumb_money": 50,
-            "cvd_spoof": "NEGATIVE",
+            "cvd_spoof": "NEUTRAL",
             "whale_feed": [],
             "magnet_zones": [],
             "smoothed_zones": [],
+            "spoofed_zones": [],
             "cascade_probs": [],
-            "trailing_liquidity": {
-                "long_level": 0.0,
-                "short_level": 0.0,
-                "long_intensity": 0,
-                "short_intensity": 0
-            },
+            "trailing_liquidity": {"long_level": 0, "short_level": 0, "long_intensity": 0, "short_intensity": 0},
             "ai_trajectory": {"target_price": 0, "strength": 0, "direction": "NEUTRAL"},
-            "current_price": 0.0,
+            "current_price": 0,
             "true_cvd": 0,
-            "iceberg_events": []
+            "iceberg_events": [],
+            "arbitrage": []
         }
-        
+        self._last_prices = {}
+        self._max_volumes = {}    
         # Internal states for calculations
         self._smoothed_zones_dict = {}
         self._trailing_long = 0.0
@@ -349,6 +346,45 @@ class GodModeService:
                             "long_intensity": min(100, max(20, int((bid_weight / 500000) * 100))),
                             "short_intensity": min(100, max(20, int((ask_weight / 500000) * 100)))
                         }
+                            
+                        # --- Spoofing / Order Pulling Detection ---
+                        now_ts = time.time()
+                        
+                        raw_volumes = {}
+                        for b in bids_within_range: raw_volumes[float(b[0])] = float(b[1])
+                        for a in asks_within_range: raw_volumes[float(a[0])] = float(a[1])
+                        
+                        for p, v in raw_volumes.items():
+                            usd_vol = v * cp
+                            if usd_vol > 100000: # Track only orders > $100k
+                                if p in self._max_volumes:
+                                    self._max_volumes[p] = max(self._max_volumes[p], usd_vol)
+                                else:
+                                    self._max_volumes[p] = usd_vol
+
+                        for p in list(self._max_volumes.keys()):
+                            # Only evaluate if still within the 5% window
+                            if cp * 0.95 <= p <= cp * 1.05:
+                                current_usd_vol = raw_volumes.get(p, 0) * cp
+                                max_usd_vol = self._max_volumes[p]
+                                
+                                # If volume dropped by >80% without price getting near it
+                                if current_usd_vol < max_usd_vol * 0.2:
+                                    dist = abs(p - cp) / cp
+                                    if dist > 0.002: # 0.2% away, wasn't executed
+                                        self.state["spoofed_zones"].append({
+                                            "price": p,
+                                            "volume": max_usd_vol,
+                                            "timestamp": now_ts,
+                                            "type": "SPOOF"
+                                        })
+                                    del self._max_volumes[p]
+                            else:
+                                # Price moved out of the 5% window, stop tracking
+                                del self._max_volumes[p]
+
+                        # Clean up old spoofed zones (keep for 120s max)
+                        self.state["spoofed_zones"] = [z for z in self.state["spoofed_zones"] if now_ts - z["timestamp"] < 120]
                             
                         self.state["magnet_zones"] = magnet_zones
                         self.state["smoothed_zones"] = smoothed_zones

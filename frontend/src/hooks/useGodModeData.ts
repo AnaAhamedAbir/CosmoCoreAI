@@ -11,6 +11,7 @@ export interface GodModeState {
     whale_feed: any[];
     magnet_zones: { price: number, intensity: number, volume?: number }[];
     smoothed_zones?: { price: number, intensity: number, volume?: number }[];
+    spoofed_zones?: { price: number, volume: number, timestamp: number, type: string }[];
     cascade_probs: { price: number, prob: number, volume?: number }[];
     trailing_liquidity?: {
         long_level: number;

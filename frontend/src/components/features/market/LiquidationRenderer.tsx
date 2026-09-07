@@ -215,7 +215,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                     
                     // Bubble core color based on exchange
                     const ex = bubble.exchange?.toLowerCase();
-                    const coreColor = ex === 'binance' ? '250, 204, 21' : ex === 'bybit' ? '59, 130, 246' : '168, 85, 247'; // Yellow, Blue, Purple
+                    const coreColor = ex === 'binance' ? '250, 204, 21' : ex === 'bybit' ? '59, 130, 246' : ex === 'okx' ? '255, 255, 255' : ex === 'bitget' ? '6, 182, 212' : '168, 85, 247'; // Yellow, Blue, White, Cyan, Purple
                     // Stroke color based on Long/Short
                     const strokeColor = isLongRekt ? '239, 68, 68' : '34, 197, 94';
 

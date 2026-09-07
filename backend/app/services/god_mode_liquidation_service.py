@@ -56,7 +56,7 @@ class GodModeService:
         self._smart_vol = 0.0
         self._dumb_vol = 0.0
         self._active_tasks = []
-        self._last_prices = {"binance": 0.0, "bybit": 0.0}
+        self._last_prices = {"binance": 0.0, "bybit": 0.0, "okx": 0.0, "bitget": 0.0}
 
     def register_callback(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]):
         if callback not in self._callbacks:
@@ -97,7 +97,7 @@ class GodModeService:
     async def _init_exchange(self, ex_id: str) -> ccxtpro.Exchange:
         if ex_id not in self.exchanges:
             options = {}
-            if ex_id == 'binance':
+            if ex_id in ['binance', 'okx', 'bitget']:
                 options['defaultType'] = 'swap'
             elif ex_id == 'bybit':
                 options['defaultType'] = 'linear'
@@ -405,16 +405,20 @@ class GodModeService:
                     self.state["smart_money"] = 50
                     self.state["dumb_money"] = 50
 
-                # --- B. Cross-Exchange Arbitrage (Binance vs Bybit) ---
-                bin_price = self._last_prices.get('binance', 0)
-                byb_price = self._last_prices.get('bybit', 0)
+                # --- B. Cross-Exchange Arbitrage (Multi-Exchange) ---
+                valid_prices = {ex: p for ex, p in self._last_prices.items() if p > 0}
                 
-                if bin_price > 0 and byb_price > 0:
-                    diff_usd = abs(bin_price - byb_price)
-                    diff_pct = (diff_usd / bin_price) * 100
+                if len(valid_prices) >= 2:
+                    min_ex = min(valid_prices, key=valid_prices.get)
+                    max_ex = max(valid_prices, key=valid_prices.get)
+                    min_price = valid_prices[min_ex]
+                    max_price = valid_prices[max_ex]
+                    
+                    diff_usd = max_price - min_price
+                    diff_pct = (diff_usd / min_price) * 100
                     
                     if diff_pct > 0.05: # Significant diff
-                        target_str = "Bybit -> Binance" if bin_price > byb_price else "Binance -> Bybit"
+                        target_str = f"{max_ex.capitalize()} -> {min_ex.capitalize()}"
                         
                         # Add a synthetic arb record
                         arb_event = {
@@ -466,9 +470,13 @@ class GodModeService:
         # Start multi-exchange hooks
         self._active_tasks.append(asyncio.create_task(self._watch_liquidations('binance', symbol)))
         self._active_tasks.append(asyncio.create_task(self._watch_liquidations('bybit', symbol)))
+        self._active_tasks.append(asyncio.create_task(self._watch_liquidations('okx', symbol)))
+        self._active_tasks.append(asyncio.create_task(self._watch_liquidations('bitget', symbol)))
         
         self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('binance', symbol)))
         self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('bybit', symbol)))
+        self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('okx', symbol)))
+        self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('bitget', symbol)))
         
         # Start real orderbook heatmap engine
         self._active_tasks.append(asyncio.create_task(self._watch_orderbook_loop('binance', symbol)))

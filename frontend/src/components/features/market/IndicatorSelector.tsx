@@ -177,6 +177,8 @@ export interface IndicatorSettings {
     liquidationShowTrailingCloud: boolean;
     liquidationShowSpoofing: boolean;
     liquidationShowGEX: boolean;
+    liquidationShowBookmap: boolean;
+    liquidationBookmapIntensity: number;
     liquidationSpoofingThreshold: number;
     // MSB-OB Settings
     showMsbOb: boolean;
@@ -1396,6 +1398,29 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ settings, 
                                             <span className="text-blue-400 font-bold group-hover:text-blue-300">GEX & Options Walls 🧲</span>
                                             <input type="checkbox" checked={settings.liquidationShowGEX ?? true} onChange={() => onSettingsChange({ ...settings, liquidationShowGEX: !(settings.liquidationShowGEX ?? true) })} className="w-3 h-3 rounded text-blue-500 focus:ring-blue-500" />
                                         </label>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5 mt-2 border-t dark:border-white/10 pt-2">
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <span className="text-orange-400 font-bold group-hover:text-orange-300">Bookmap Heatmap 🗺️</span>
+                                            <input type="checkbox" checked={settings.liquidationShowBookmap ?? true} onChange={() => onSettingsChange({ ...settings, liquidationShowBookmap: !(settings.liquidationShowBookmap ?? true) })} className="w-3 h-3 rounded text-orange-500 focus:ring-orange-500" />
+                                        </label>
+                                        
+                                        {(settings.liquidationShowBookmap ?? true) && (
+                                            <div className="flex flex-col gap-1.5 mt-2 ml-2 p-2 bg-gray-50 dark:bg-white/5 rounded-lg border border-orange-500/20">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] text-gray-400 font-bold uppercase">Heatmap Intensity</span>
+                                                    <span className="text-[10px] text-orange-400 font-bold">{settings.liquidationBookmapIntensity || 50}%</span>
+                                                </div>
+                                                <input 
+                                                    type="range" 
+                                                    min="10" 
+                                                    max="100" 
+                                                    value={settings.liquidationBookmapIntensity || 50} 
+                                                    onChange={(e) => updateSetting('liquidationBookmapIntensity', Number(e.target.value))}
+                                                    className="w-full accent-orange-500 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex flex-col gap-1.5 mt-1 border-t dark:border-white/10 pt-2">
                                         <div className="flex justify-between items-center">

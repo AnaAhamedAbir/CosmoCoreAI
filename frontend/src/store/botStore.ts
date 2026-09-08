@@ -183,6 +183,8 @@ export const useBotStore = create<BotState>()(
         liquidationShowTrueCVD: false,
         liquidationShowSpoofing: true,
         liquidationShowGEX: true,
+        liquidationShowBookmap: true,
+        liquidationBookmapIntensity: 50,
         liquidationSpoofingThreshold: 500000,
         // Supertrend Defaults
         showSupertrend: true,

@@ -12,10 +12,12 @@ interface LiquidationRendererProps {
     showTrueCVD: boolean;
     showSpoofing?: boolean;
     showGEX?: boolean;
+    showBookmap?: boolean;
+    bookmapIntensity?: number;
     spoofingThreshold?: number;
 }
 
-export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity, showTrueCVD, showSpoofing = true, showGEX = true, spoofingThreshold = 500000 }) => {
+export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity, showTrueCVD, showSpoofing = true, showGEX = true, showBookmap = true, bookmapIntensity = 50, spoofingThreshold = 500000 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
     
@@ -188,6 +190,43 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                     ctx.fillText('TRAILING RESISTANCE CLOUD', timeWidth / 2, yS + 12);
                 }
             }
+        }
+
+        // 1.5 Draw Bookmap Style Multi-Level Heatmap Depth
+        if (showBookmap && data.orderbook_depth && data.orderbook_depth.length > 0) {
+            // Find max volume to normalize intensity
+            const maxVol = Math.max(...data.orderbook_depth.map(d => d.volume));
+            const intensityMultiplier = (bookmapIntensity / 50); // 50 is default (1x)
+            
+            // To ensure the heatmap covers the entire chart width
+            const bandWidth = timeWidth;
+            
+            data.orderbook_depth.forEach(level => {
+                const y = series.priceToCoordinate(level.price);
+                if (y !== null) {
+                    // Normalize volume relative to max volume in current view
+                    const normalizedIntensity = Math.min(1.0, (level.volume / maxVol) * intensityMultiplier);
+                    
+                    if (normalizedIntensity > 0.05) { // Skip very low intensity to save canvas performance
+                        // Use a hot colormap (blue -> yellow -> orange -> red)
+                        let color = '';
+                        if (normalizedIntensity > 0.8) {
+                            color = `rgba(239, 68, 68, ${normalizedIntensity * 0.8})`; // Red
+                        } else if (normalizedIntensity > 0.5) {
+                            color = `rgba(249, 115, 22, ${normalizedIntensity * 0.7})`; // Orange
+                        } else if (normalizedIntensity > 0.2) {
+                            color = `rgba(234, 179, 8, ${normalizedIntensity * 0.6})`; // Yellow
+                        } else {
+                            // Cold/Deep levels
+                            color = `rgba(59, 130, 246, ${normalizedIntensity * 0.4})`; // Blue
+                        }
+                        
+                        ctx.beginPath();
+                        ctx.fillStyle = color;
+                        ctx.fillRect(0, y - 1, bandWidth, 3);
+                    }
+                }
+            });
         }
 
         // 2. Draw Live Liquidation Bubbles

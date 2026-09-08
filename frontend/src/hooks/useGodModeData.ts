@@ -18,6 +18,7 @@ export interface GodModeState {
     whale_feed: any[];
     magnet_zones: { price: number, intensity: number, volume?: number }[];
     smoothed_zones?: { price: number, intensity: number, volume?: number }[];
+    orderbook_depth?: { price: number, volume: number, type: 'bid' | 'ask' }[];
     spoofed_zones?: { price: number, volume: number, timestamp: number, type: string }[];
     cascade_probs: { price: number, prob: number, volume?: number }[];
     trailing_liquidity?: {

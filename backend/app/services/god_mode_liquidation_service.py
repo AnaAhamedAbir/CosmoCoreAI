@@ -9,6 +9,7 @@ from ccxt.base.errors import NetworkError
 
 from app.services.true_cvd_service import true_cvd_service
 from app.services.gex_options_service import gex_options_service
+from app.services.bookmap_heatmap_service import bookmap_heatmap_service
 
 logger = logging.getLogger(__name__)
 
@@ -399,10 +400,14 @@ class GodModeService:
                         # Clean up old spoofed zones (keep for 120s max)
                         self.state["spoofed_zones"] = [z for z in self.state["spoofed_zones"] if now_ts - z["timestamp"] < 120]
                             
+                        # --- Bookmap Heatmap Depth ---
+                        orderbook_depth = bookmap_heatmap_service.process_orderbook(bids, asks, cp)
+                        
                         self.state["magnet_zones"] = magnet_zones
                         self.state["smoothed_zones"] = smoothed_zones
                         self.state["cascade_probs"] = cascade_probs
                         self.state["ai_trajectory"] = trajectory
+                        self.state["orderbook_depth"] = orderbook_depth
                         
             except NetworkError:
                 await asyncio.sleep(5)
@@ -570,6 +575,7 @@ class GodModeService:
         self.state["iceberg_events"] = []
         self.state["spoofed_zones"] = []
         self.state["gex_data"] = None
+        self.state["orderbook_depth"] = []
         self._max_volumes = {}
         logger.info("GodMode Pipeline stopped.")
 

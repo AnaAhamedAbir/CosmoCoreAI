@@ -99,6 +99,7 @@ class GEXOptionsService:
                                 "put_oi": put_oi_by_strike[put_wall_strike]
                             }
                         }
+                        logger.info(f"GEX Data updated: Call Wall ${call_wall_strike} ({call_oi_by_strike[call_wall_strike]:.1f} BTC), Put Wall ${put_wall_strike} ({put_oi_by_strike[put_wall_strike]:.1f} BTC)")
                     
                     if gex_payload and self._callbacks:
                         for cb in self._callbacks:

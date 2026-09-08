@@ -2123,6 +2123,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                             useTrailingLiquidity={indicatorSettings.liquidationShowTrailingCloud}
                             showTrueCVD={indicatorSettings.liquidationShowTrueCVD}
                             showSpoofing={indicatorSettings.liquidationShowSpoofing}
+                            showGEX={indicatorSettings.liquidationShowGEX}
                             spoofingThreshold={indicatorSettings.liquidationSpoofingThreshold}
                         />
                     )}

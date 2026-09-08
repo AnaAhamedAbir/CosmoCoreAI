@@ -8,6 +8,7 @@ import ccxt.pro as ccxtpro
 from ccxt.base.errors import NetworkError
 
 from app.services.true_cvd_service import true_cvd_service
+from app.services.gex_options_service import gex_options_service
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,12 @@ class GodModeService:
                 self.state["cvd_spoof"] = "DETECTED: HIGH RISK"
             elif "BULLISH" in iceberg_event["type"]:
                 self.state["cvd_spoof"] = "DETECTED: HIGH RISK"
+
+    async def _handle_gex_event(self, payload: Dict[str, Any]):
+        """Receives updates from the modular GEX Options service"""
+        gex_data = payload.get("gex_data")
+        if gex_data:
+            self.state["gex_data"] = gex_data
 
     async def _broadcast_loop(self):
         """Continuously broadcasts the aggregated state to all connected websockets at roughly 10Hz"""
@@ -526,6 +533,10 @@ class GodModeService:
         # Integrate Modular True CVD Service
         true_cvd_service.register_callback(self._handle_true_cvd_event)
         self._active_tasks.append(asyncio.create_task(true_cvd_service.start(symbol)))
+        
+        # Integrate Modular GEX Options Service
+        gex_options_service.register_callback(self._handle_gex_event)
+        self._active_tasks.append(asyncio.create_task(gex_options_service.start(symbol)))
 
     async def stop(self):
         """Cleanup resources"""
@@ -542,6 +553,12 @@ class GodModeService:
         except Exception:
             pass
             
+        await gex_options_service.stop()
+        try:
+            gex_options_service.remove_callback(self._handle_gex_event)
+        except Exception:
+            pass
+            
         self._active_tasks.clear()
         self.exchanges.clear()
         
@@ -552,6 +569,7 @@ class GodModeService:
         self.state["whale_feed"] = []
         self.state["iceberg_events"] = []
         self.state["spoofed_zones"] = []
+        self.state["gex_data"] = None
         self._max_volumes = {}
         logger.info("GodMode Pipeline stopped.")
 

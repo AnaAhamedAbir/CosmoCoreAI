@@ -11,10 +11,11 @@ interface LiquidationRendererProps {
     useTrailingLiquidity: boolean;
     showTrueCVD: boolean;
     showSpoofing?: boolean;
+    showGEX?: boolean;
     spoofingThreshold?: number;
 }
 
-export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity, showTrueCVD, showSpoofing = true, spoofingThreshold = 500000 }) => {
+export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity, showTrueCVD, showSpoofing = true, showGEX = true, spoofingThreshold = 500000 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
     
@@ -291,6 +292,43 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                     ctx.fillText(valK, x, y - radius - 8);
                 }
             });
+        }
+
+        // 2.6 Draw Options GEX Walls
+        if (showGEX && data.gex_data) {
+            const { call_wall, put_wall } = data.gex_data;
+            
+            // Draw Call Wall
+            const callY = series.priceToCoordinate(call_wall);
+            if (callY !== null) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)'; // red-500
+                ctx.lineWidth = 2;
+                ctx.moveTo(0, callY);
+                ctx.lineTo(timeWidth, callY);
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+                ctx.font = 'bold 11px Inter';
+                ctx.textAlign = 'right';
+                ctx.fillText(`🔥 Call Wall: $${call_wall}`, timeWidth - 6, callY - 6);
+            }
+
+            // Draw Put Wall
+            const putY = series.priceToCoordinate(put_wall);
+            if (putY !== null) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)'; // emerald-500
+                ctx.lineWidth = 2;
+                ctx.moveTo(0, putY);
+                ctx.lineTo(timeWidth, putY);
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
+                ctx.font = 'bold 11px Inter';
+                ctx.textAlign = 'right';
+                ctx.fillText(`🛡️ Put Wall: $${put_wall}`, timeWidth - 6, putY + 14);
+            }
         }
         
         // 2.5 Draw True CVD & Iceberg Events

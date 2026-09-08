@@ -278,7 +278,7 @@ const GodModeLiquidationView: React.FC = () => {
 
                              <div className="flex-1 relative bg-black/50">
                                   <div ref={chartContainerRef} className="absolute inset-0"></div>
-                                  <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} showBubbles={true} intensityScale={100} useTrailingLiquidity={trailingLiquidityEnabled} showTrueCVD={true} showSpoofing={true} spoofingThreshold={500000} />
+                                  <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} showBubbles={true} intensityScale={100} useTrailingLiquidity={trailingLiquidityEnabled} showTrueCVD={true} showSpoofing={true} showGEX={true} spoofingThreshold={500000} />
                              </div>
                              
                              {/* Algo Predicted Cascade Overlay (Right Edge) */}

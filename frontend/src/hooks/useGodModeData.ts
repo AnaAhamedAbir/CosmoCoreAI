@@ -7,7 +7,14 @@ export interface GodModeState {
     pain_threshold: { level: number, status: string, value: number };
     smart_money: number;
     dumb_money: number;
-    cvd_spoof: string;
+    cvd_spoof?: string;
+    true_cvd?: number;
+    gex_data?: {
+        call_wall: number;
+        call_oi: number;
+        put_wall: number;
+        put_oi: number;
+    };
     whale_feed: any[];
     magnet_zones: { price: number, intensity: number, volume?: number }[];
     smoothed_zones?: { price: number, intensity: number, volume?: number }[];

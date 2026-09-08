@@ -1391,6 +1391,12 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ settings, 
                                             </div>
                                         )}
                                     </div>
+                                    <div className="flex flex-col gap-1.5 mt-2 border-t dark:border-white/10 pt-2">
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <span className="text-blue-400 font-bold group-hover:text-blue-300">GEX & Options Walls 🧲</span>
+                                            <input type="checkbox" checked={settings.liquidationShowGEX ?? true} onChange={() => onSettingsChange({ ...settings, liquidationShowGEX: !(settings.liquidationShowGEX ?? true) })} className="w-3 h-3 rounded text-blue-500 focus:ring-blue-500" />
+                                        </label>
+                                    </div>
                                     <div className="flex flex-col gap-1.5 mt-1 border-t dark:border-white/10 pt-2">
                                         <div className="flex justify-between items-center">
                                             <span className="text-gray-400 font-bold">Heatmap Intensity</span>

@@ -21,6 +21,9 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
     
+    // History for Bookmap time-series heatmap
+    const bookmapHistoryRef = useRef<{time: number, depth: {price: number, volume: number}[]}[]>([]);
+
     // Track persisting bubbles
     const bubblesRef = useRef<any[]>([]);
     
@@ -192,40 +195,84 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
             }
         }
 
-        // 1.5 Draw Bookmap Style Multi-Level Heatmap Depth
+        // 1.5 Draw True Bookmap Style Multi-Level Heatmap Depth (Time-Series)
         if (showBookmap && data.orderbook_depth && data.orderbook_depth.length > 0) {
-            // Find max volume to normalize intensity
-            const maxVol = Math.max(...data.orderbook_depth.map(d => d.volume));
+            const now = Date.now();
+            
+            // We need the logical time of the latest candle to plot X properly
+            // Let's use the local timestamp for the X coordinate 
+            // In Lightweight charts, mapping pure JS timestamp to X is tricky if it's not exactly on a candle.
+            // But we can just use the latest rightmost coordinate minus a small offset, 
+            // or store the actual pixel history. 
+            // A better way: store data with `time: now` and prune history > 10 minutes.
+            
+            // Add current depth to history
+            bookmapHistoryRef.current.push({
+                time: now,
+                depth: data.orderbook_depth.map(d => ({ price: d.price, volume: d.volume }))
+            });
+            
+            // Prune old history (keep last 5 minutes to prevent memory leak)
+            bookmapHistoryRef.current = bookmapHistoryRef.current.filter(h => now - h.time < 300000);
+            
+            // Find global max volume for normalization
+            let maxVol = 1;
+            bookmapHistoryRef.current.forEach(h => {
+                h.depth.forEach(d => {
+                    if (d.volume > maxVol) maxVol = d.volume;
+                });
+            });
+            
             const intensityMultiplier = (bookmapIntensity / 50); // 50 is default (1x)
             
-            // To ensure the heatmap covers the entire chart width
-            const bandWidth = timeWidth;
+            // Determine X coordinate for each historical snapshot
+            // Assuming timeWidth represents the visible width, and 1 pixel per second approx
+            // We will draw from the right edge.
+            // But a more robust way is to draw a continuous band from the right edge for the current snapshot.
             
-            data.orderbook_depth.forEach(level => {
-                const y = series.priceToCoordinate(level.price);
-                if (y !== null) {
-                    // Normalize volume relative to max volume in current view
-                    const normalizedIntensity = Math.min(1.0, (level.volume / maxVol) * intensityMultiplier);
-                    
-                    if (normalizedIntensity > 0.05) { // Skip very low intensity to save canvas performance
-                        // Use a hot colormap (blue -> yellow -> orange -> red)
-                        let color = '';
-                        if (normalizedIntensity > 0.8) {
-                            color = `rgba(239, 68, 68, ${normalizedIntensity * 0.8})`; // Red
-                        } else if (normalizedIntensity > 0.5) {
-                            color = `rgba(249, 115, 22, ${normalizedIntensity * 0.7})`; // Orange
-                        } else if (normalizedIntensity > 0.2) {
-                            color = `rgba(234, 179, 8, ${normalizedIntensity * 0.6})`; // Yellow
-                        } else {
-                            // Cold/Deep levels
-                            color = `rgba(59, 130, 246, ${normalizedIntensity * 0.4})`; // Blue
-                        }
+            // Actually, for a lightweight overlay, drawing historical pixels is very heavy.
+            // Let's just draw the horizontal bands, but fade them out to the left?
+            // No, Bookmap is literally historical columns.
+            // Since we don't have exact Candlestick time-to-X mapping for arbitrary timestamps, 
+            // we can approximate: Right edge is `timeWidth`.
+            // We shift historical columns left by roughly 1 pixel per 500ms.
+            
+            bookmapHistoryRef.current.forEach((snapshot) => {
+                const ageMs = now - snapshot.time;
+                // e.g. 1 pixel every 250ms -> 4 pixels per second
+                // Depending on zoom, this might not match the chart.
+                // But it's an overlay so it gives the bookmap "flow" effect.
+                const speed = 20; // milliseconds per pixel
+                const xPos = timeWidth - (ageMs / speed);
+                
+                if (xPos < 0) return; // Off screen
+                
+                // Draw this column
+                const colWidth = 2; // 2px width
+                
+                snapshot.depth.forEach(level => {
+                    const y = series.priceToCoordinate(level.price);
+                    if (y !== null) {
+                        const normalizedIntensity = Math.min(1.0, (level.volume / maxVol) * intensityMultiplier);
                         
-                        ctx.beginPath();
-                        ctx.fillStyle = color;
-                        ctx.fillRect(0, y - 1, bandWidth, 3);
+                        if (normalizedIntensity > 0.05) {
+                            let color = '';
+                            if (normalizedIntensity > 0.8) {
+                                color = `rgba(239, 68, 68, ${normalizedIntensity * 0.8})`; // Red
+                            } else if (normalizedIntensity > 0.5) {
+                                color = `rgba(249, 115, 22, ${normalizedIntensity * 0.7})`; // Orange
+                            } else if (normalizedIntensity > 0.2) {
+                                color = `rgba(234, 179, 8, ${normalizedIntensity * 0.6})`; // Yellow
+                            } else {
+                                color = `rgba(59, 130, 246, ${normalizedIntensity * 0.4})`; // Blue
+                            }
+                            
+                            ctx.beginPath();
+                            ctx.fillStyle = color;
+                            ctx.fillRect(xPos, y - 1, colWidth, 3);
+                        }
                     }
-                }
+                });
             });
         }
 

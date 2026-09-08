@@ -200,24 +200,26 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
             const now = Date.now();
             
             // We need the logical time of the latest candle to plot X properly
-            // Let's use the local timestamp for the X coordinate 
-            // In Lightweight charts, mapping pure JS timestamp to X is tricky if it's not exactly on a candle.
-            // But we can just use the latest rightmost coordinate minus a small offset, 
-            // or store the actual pixel history. 
-            // A better way: store data with `time: now` and prune history > 10 minutes.
-            
-            // Add current depth to history
-            bookmapHistoryRef.current.push({
-                time: now,
-                depth: data.orderbook_depth.map(d => ({ price: d.price, volume: d.volume }))
-            });
-            
-            // Prune old history (keep last 5 minutes to prevent memory leak)
-            bookmapHistoryRef.current = bookmapHistoryRef.current.filter(h => now - h.time < 300000);
+            // To prevent browser lag and flickering (calling push 60 times a second on hover),
+            // we will only add a new snapshot every 250ms.
+            const lastSnapshot = bookmapHistoryRef.current[bookmapHistoryRef.current.length - 1];
+            if (!lastSnapshot || now - lastSnapshot.time >= 250) {
+                bookmapHistoryRef.current.push({
+                    time: now,
+                    depth: data.orderbook_depth.map(d => ({ price: d.price, volume: d.volume }))
+                });
+                
+                // Prune old history (keep last 2 minutes to save memory, 120000ms)
+                if (bookmapHistoryRef.current.length > 500) {
+                    bookmapHistoryRef.current = bookmapHistoryRef.current.slice(-480);
+                }
+            }
             
             // Find global max volume for normalization
             let maxVol = 1;
-            bookmapHistoryRef.current.forEach(h => {
+            // To save CPU, just sample the last 10 snapshots for max volume instead of all history
+            const recentSnapshots = bookmapHistoryRef.current.slice(-10);
+            recentSnapshots.forEach(h => {
                 h.depth.forEach(d => {
                     if (d.volume > maxVol) maxVol = d.volume;
                 });
@@ -239,37 +241,37 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
             
             bookmapHistoryRef.current.forEach((snapshot) => {
                 const ageMs = now - snapshot.time;
-                // e.g. 1 pixel every 250ms -> 4 pixels per second
-                // Depending on zoom, this might not match the chart.
-                // But it's an overlay so it gives the bookmap "flow" effect.
-                const speed = 20; // milliseconds per pixel
+                // speed controls how fast it scrolls left. 50ms per pixel = 20 pixels per second.
+                const speed = 50; 
                 const xPos = timeWidth - (ageMs / speed);
                 
-                if (xPos < 0) return; // Off screen
+                if (xPos < -10) return; // Off screen
                 
                 // Draw this column
-                const colWidth = 2; // 2px width
+                // colWidth must be wide enough to touch the next column to avoid gaps
+                // If we take snapshots every 250ms, and speed is 50ms/px, the distance between cols is 250/50 = 5px.
+                const colWidth = 6; // 6px width gives slight overlap for smooth look
                 
                 snapshot.depth.forEach(level => {
                     const y = series.priceToCoordinate(level.price);
-                    if (y !== null) {
+                    if (y !== null && y >= 0 && y <= chart.height()) {
                         const normalizedIntensity = Math.min(1.0, (level.volume / maxVol) * intensityMultiplier);
                         
-                        if (normalizedIntensity > 0.05) {
+                        if (normalizedIntensity > 0.08) { // Increased threshold slightly to reduce CPU usage
                             let color = '';
                             if (normalizedIntensity > 0.8) {
-                                color = `rgba(239, 68, 68, ${normalizedIntensity * 0.8})`; // Red
+                                color = `rgba(239, 68, 68, ${normalizedIntensity * 0.9})`; // Red
                             } else if (normalizedIntensity > 0.5) {
-                                color = `rgba(249, 115, 22, ${normalizedIntensity * 0.7})`; // Orange
+                                color = `rgba(249, 115, 22, ${normalizedIntensity * 0.8})`; // Orange
                             } else if (normalizedIntensity > 0.2) {
-                                color = `rgba(234, 179, 8, ${normalizedIntensity * 0.6})`; // Yellow
+                                color = `rgba(234, 179, 8, ${normalizedIntensity * 0.7})`; // Yellow
                             } else {
-                                color = `rgba(59, 130, 246, ${normalizedIntensity * 0.4})`; // Blue
+                                color = `rgba(59, 130, 246, ${normalizedIntensity * 0.5})`; // Blue
                             }
                             
                             ctx.beginPath();
                             ctx.fillStyle = color;
-                            ctx.fillRect(xPos, y - 1, colWidth, 3);
+                            ctx.fillRect(xPos, y - 2, colWidth, 5); // Thicker blocks for better visibility
                         }
                     }
                 });

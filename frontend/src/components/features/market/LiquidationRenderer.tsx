@@ -623,12 +623,13 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
         };
         chart.subscribeCrosshairMove(crosshairHandler);
 
-        // Continuous animation loop for bubbles and icebergs
+        // Continuous animation loop for bubbles, icebergs, and Bookmap time-series flow
         let animationFrameId: number;
         const animate = () => {
             const hasBubbles = showBubbles && bubblesRef.current.length > 0;
             const hasIcebergs = showTrueCVD && icebergsRef.current.length > 0;
-            if (hasBubbles || hasIcebergs) {
+            const hasBookmap = showBookmap && bookmapHistoryRef.current.length > 0;
+            if (hasBubbles || hasIcebergs || hasBookmap) {
                 requestDraw();
             }
             animationFrameId = requestAnimationFrame(animate);

@@ -1369,10 +1369,10 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ settings, 
                                     <div className="flex flex-col gap-1.5 mt-2 border-t dark:border-white/10 pt-2">
                                         <label className="flex items-center justify-between cursor-pointer group">
                                             <span className="text-purple-400 font-bold group-hover:text-purple-300">Anti-Spoofing Visualizer 👻</span>
-                                            <input type="checkbox" checked={settings.liquidationShowSpoofing as boolean} onChange={() => onSettingsChange({ ...settings, liquidationShowSpoofing: !settings.liquidationShowSpoofing })} className="w-3 h-3 rounded text-purple-500 focus:ring-purple-500" />
+                                            <input type="checkbox" checked={settings.liquidationShowSpoofing ?? true} onChange={() => onSettingsChange({ ...settings, liquidationShowSpoofing: !(settings.liquidationShowSpoofing ?? true) })} className="w-3 h-3 rounded text-purple-500 focus:ring-purple-500" />
                                         </label>
                                         
-                                        {settings.liquidationShowSpoofing && (
+                                        {(settings.liquidationShowSpoofing ?? true) && (
                                             <div className="flex flex-col gap-1.5 mt-2 ml-2 p-2 bg-gray-50 dark:bg-white/5 rounded-lg border border-purple-500/20">
                                                 <div className="flex justify-between items-center">
                                                     <span className="text-[10px] text-gray-400 font-bold uppercase">Volume Threshold</span>

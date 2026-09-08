@@ -551,6 +551,8 @@ class GodModeService:
         self._dumb_vol = 0
         self.state["whale_feed"] = []
         self.state["iceberg_events"] = []
+        self.state["spoofed_zones"] = []
+        self._max_volumes = {}
         logger.info("GodMode Pipeline stopped.")
 
 # Global Singleton

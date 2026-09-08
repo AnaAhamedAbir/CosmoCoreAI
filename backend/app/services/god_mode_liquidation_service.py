@@ -372,12 +372,18 @@ class GodModeService:
                                 if current_usd_vol < max_usd_vol * 0.2:
                                     dist = abs(p - cp) / cp
                                     if dist > 0.002: # 0.2% away, wasn't executed
-                                        self.state["spoofed_zones"].append({
-                                            "price": p,
-                                            "volume": max_usd_vol,
-                                            "timestamp": now_ts,
-                                            "type": "SPOOF"
-                                        })
+                                        # Check if already exists to prevent spam
+                                        existing = next((z for z in self.state["spoofed_zones"] if abs(z["price"] - p) < cp * 0.0005), None)
+                                        if existing:
+                                            existing["volume"] = max(existing["volume"], max_usd_vol)
+                                            existing["timestamp"] = now_ts
+                                        else:
+                                            self.state["spoofed_zones"].append({
+                                                "price": p,
+                                                "volume": max_usd_vol,
+                                                "timestamp": now_ts,
+                                                "type": "SPOOF"
+                                            })
                                     del self._max_volumes[p]
                             else:
                                 # Price moved out of the 5% window, stop tracking

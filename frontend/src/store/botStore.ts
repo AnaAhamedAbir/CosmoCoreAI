@@ -181,6 +181,7 @@ export const useBotStore = create<BotState>()(
         liquidationShowSignalArrow: true,
         liquidationShowTrailingCloud: true,
         liquidationShowTrueCVD: false,
+        liquidationShowSpoofing: true,
         liquidationSpoofingThreshold: 500000,
         // Supertrend Defaults
         showSupertrend: true,

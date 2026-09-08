@@ -175,6 +175,7 @@ export interface IndicatorSettings {
     liquidationShowBubbles: boolean;
     liquidationShowSignalArrow: boolean;
     liquidationShowTrailingCloud: boolean;
+    liquidationShowSpoofing: boolean;
     liquidationSpoofingThreshold: number;
     // MSB-OB Settings
     showMsbOb: boolean;
@@ -1361,15 +1362,21 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ settings, 
                                     </div>
                                     <div className="flex flex-col gap-1.5 mt-2">
                                         <label className="flex items-center justify-between cursor-pointer group">
-                                            <span className="text-brand-primary font-bold group-hover:text-brand-primary/80">Anti-Spoofing & DTLC Mode</span>
+                                            <span className="text-brand-primary font-bold group-hover:text-brand-primary/80">Dynamic Trailing Clouds (DTLC)</span>
                                             <input type="checkbox" checked={settings.liquidationShowTrailingCloud as boolean} onChange={() => onSettingsChange({ ...settings, liquidationShowTrailingCloud: !settings.liquidationShowTrailingCloud })} className="w-3 h-3 rounded text-brand-primary focus:ring-brand-primary" />
                                         </label>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5 mt-2 border-t dark:border-white/10 pt-2">
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <span className="text-purple-400 font-bold group-hover:text-purple-300">Anti-Spoofing Visualizer 👻</span>
+                                            <input type="checkbox" checked={settings.liquidationShowSpoofing as boolean} onChange={() => onSettingsChange({ ...settings, liquidationShowSpoofing: !settings.liquidationShowSpoofing })} className="w-3 h-3 rounded text-purple-500 focus:ring-purple-500" />
+                                        </label>
                                         
-                                        {settings.liquidationShowTrailingCloud && (
-                                            <div className="flex flex-col gap-1.5 mt-2 ml-2 p-2 bg-gray-50 dark:bg-white/5 rounded-lg border border-brand-primary/20">
+                                        {settings.liquidationShowSpoofing && (
+                                            <div className="flex flex-col gap-1.5 mt-2 ml-2 p-2 bg-gray-50 dark:bg-white/5 rounded-lg border border-purple-500/20">
                                                 <div className="flex justify-between items-center">
-                                                    <span className="text-[10px] text-gray-400 font-bold uppercase">Spoofing Threshold</span>
-                                                    <span className="text-[10px] text-brand-primary font-bold">${((settings.liquidationSpoofingThreshold || 500000) / 1000).toFixed(0)}k</span>
+                                                    <span className="text-[10px] text-gray-400 font-bold uppercase">Volume Threshold</span>
+                                                    <span className="text-[10px] text-purple-400 font-bold">${((settings.liquidationSpoofingThreshold || 500000) / 1000).toFixed(0)}k</span>
                                                 </div>
                                                 <input 
                                                     type="range" 
@@ -1378,7 +1385,7 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ settings, 
                                                     step="100000"
                                                     value={settings.liquidationSpoofingThreshold || 500000} 
                                                     onChange={(e) => updateSetting('liquidationSpoofingThreshold', Number(e.target.value))}
-                                                    className="w-full accent-brand-primary h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                                    className="w-full accent-purple-500 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                                                 />
                                             </div>
                                         )}

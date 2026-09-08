@@ -254,7 +254,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                 
                 snapshot.depth.forEach(level => {
                     const y = series.priceToCoordinate(level.price);
-                    if (y !== null && y >= 0 && y <= chart.height()) {
+                    if (y !== null && y >= 0 && y <= ctx.canvas.height) {
                         const normalizedIntensity = Math.min(1.0, (level.volume / maxVol) * intensityMultiplier);
                         
                         if (normalizedIntensity > 0.08) { // Increased threshold slightly to reduce CPU usage

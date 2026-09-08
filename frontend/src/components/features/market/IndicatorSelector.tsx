@@ -176,6 +176,7 @@ export interface IndicatorSettings {
     liquidationShowSignalArrow: boolean;
     liquidationShowTrailingCloud: boolean;
     liquidationShowSpoofing: boolean;
+    liquidationShowGEX: boolean;
     liquidationSpoofingThreshold: number;
     // MSB-OB Settings
     showMsbOb: boolean;

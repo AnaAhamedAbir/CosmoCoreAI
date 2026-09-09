@@ -40,6 +40,13 @@ const LINE_COLOR: Record<LogLine['level'], string> = {
   INFO:     'text-emerald-400/80',
 };
 
+const LIGHT_LINE_COLOR: Record<LogLine['level'], string> = {
+  CRITICAL: 'text-red-700',
+  ERROR:    'text-orange-700',
+  WARNING:  'text-yellow-800',
+  INFO:     'text-gray-800',
+};
+
 const CONTAINER_INFO: Record<string, { short: string; color: string; neon: string }> = {
   cosmoquant_backend:  { short: 'API',    color: 'text-sky-300',    neon: '#38bdf8' },
   cosmo_celery_worker: { short: 'CLR',    color: 'text-violet-300', neon: '#a78bfa' },
@@ -325,7 +332,7 @@ const LogTerminal: React.FC<{
                     {info.short}
                   </span>
                 )}
-                <span className={`break-all leading-relaxed ${LINE_COLOR[level]}`}>{line}</span>
+                <span className={`break-all leading-relaxed ${isDark ? LINE_COLOR[level] : LIGHT_LINE_COLOR[level]}`}>{line}</span>
               </div>
             );
           })

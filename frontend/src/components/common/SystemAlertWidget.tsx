@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useSystemAlerts, type SystemAlert, type AlertSeverity } from '@/hooks/useSystemAlerts';
+import { useTheme } from '@/context/ThemeContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,8 @@ const CriticalToast: React.FC<{ alert: SystemAlert; onClose: () => void }> = ({ 
 
 const AlertDetailModal: React.FC<{ alert: SystemAlert; onClose: () => void }> = ({ alert, onClose }) => {
   const cfg = SEVERITY_CFG[alert.severity];
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const date = new Date(alert.timestamp);
   const dateStr = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -106,18 +109,18 @@ const AlertDetailModal: React.FC<{ alert: SystemAlert; onClose: () => void }> = 
   return (
     <div
       className="fixed inset-0 z-[99999] flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.80)', backdropFilter: 'blur(8px)' }}
+      style={{ background: isDark ? 'rgba(0,0,0,0.80)' : 'rgba(0,0,0,0.50)', backdropFilter: 'blur(8px)' }}
       onClick={handleBackdrop}
     >
       <div
         className="relative w-full max-w-lg rounded-2xl p-px animate-in"
         style={{
           background: `linear-gradient(135deg, ${cfg.neon}50, rgba(255,255,255,0.08), ${cfg.neon}30)`,
-          boxShadow: `0 0 60px ${cfg.neon}30, 0 30px 80px rgba(0,0,0,0.9)`,
+          boxShadow: `0 0 60px ${cfg.neon}30, 0 30px 80px ${isDark ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0.3)'}`,
           animation: 'modalIn 0.2s ease-out',
         }}
       >
-        <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(8,8,18,0.98)' }}>
+        <div className="rounded-2xl overflow-hidden" style={{ background: isDark ? 'rgba(8,8,18,0.98)' : 'rgba(248,250,252,0.98)' }}>
 
           {/* Header */}
           <div className="relative px-5 py-4 border-b" style={{ borderColor: `${cfg.neon}20`, background: `${cfg.neon}08` }}>
@@ -129,14 +132,14 @@ const AlertDetailModal: React.FC<{ alert: SystemAlert; onClose: () => void }> = 
                 <div className="flex items-center gap-2 mb-1">
                   <span className={`text-[10px] font-black tracking-[0.2em] uppercase ${cfg.color}`}
                     style={{ textShadow: `0 0 10px ${cfg.neon}` }}>{cfg.label}</span>
-                  <span className="text-gray-700 text-[9px]">•</span>
-                  <span className="text-gray-400 font-mono text-[10px]">{alert.display_name}</span>
+                  <span className={`${isDark ? 'text-gray-700' : 'text-gray-400'} text-[9px]`}>•</span>
+                  <span className={`${isDark ? 'text-gray-400' : 'text-gray-600'} font-mono text-[10px]`}>{alert.display_name}</span>
                 </div>
-                <p className="text-gray-600 font-mono text-[9px] tracking-wider">{dateStr} · {timeStr}</p>
+                <p className={`${isDark ? 'text-gray-600' : 'text-gray-400'} font-mono text-[9px] tracking-wider`}>{dateStr} · {timeStr}</p>
               </div>
               <button
                 onClick={onClose}
-                className="w-7 h-7 rounded-lg border border-white/10 flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 transition-all flex-shrink-0"
+                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${isDark ? 'border border-white/10 text-gray-500 hover:text-white hover:bg-white/10' : 'border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
@@ -150,10 +153,10 @@ const AlertDetailModal: React.FC<{ alert: SystemAlert; onClose: () => void }> = 
               <div>
                 <p className="text-[9px] font-black tracking-[0.2em] uppercase mb-2" style={{ color: `${cfg.neon}80` }}>Log Output</p>
                 <div className="rounded-xl p-3 font-mono text-[10px] leading-relaxed space-y-1"
-                  style={{ background: 'rgba(0,0,0,0.5)', border: `1px solid ${cfg.neon}15` }}>
+                  style={{ background: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.04)', border: `1px solid ${cfg.neon}15` }}>
                   {alert.snippet.map((l, i) => (
-                    <p key={i} className="text-gray-300 break-all">
-                      <span className="text-gray-700 mr-2 select-none">{String(i + 1).padStart(2, '0')}</span>{l}
+                    <p key={i} className={`${isDark ? 'text-gray-300' : 'text-gray-700'} break-all`}>
+                      <span className={`${isDark ? 'text-gray-700' : 'text-gray-400'} mr-2 select-none`}>{String(i + 1).padStart(2, '0')}</span>{l}
                     </p>
                   ))}
                 </div>
@@ -164,8 +167,8 @@ const AlertDetailModal: React.FC<{ alert: SystemAlert; onClose: () => void }> = 
             {alert.message && (
               <div>
                 <p className="text-[9px] font-black tracking-[0.2em] uppercase mb-2" style={{ color: `${cfg.neon}80` }}>Full Alert Message</p>
-                <div className="rounded-xl p-3 font-mono text-[10px] leading-relaxed whitespace-pre-wrap text-gray-400"
-                  style={{ background: 'rgba(0,0,0,0.5)', border: `1px solid ${cfg.neon}15`, maxHeight: '200px', overflowY: 'auto' }}>
+                <div className={`rounded-xl p-3 font-mono text-[10px] leading-relaxed whitespace-pre-wrap ${isDark ? 'text-gray-400' : 'text-gray-600'}`}
+                  style={{ background: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.04)', border: `1px solid ${cfg.neon}15`, maxHeight: '200px', overflowY: 'auto' }}>
                   {alert.message}
                 </div>
               </div>
@@ -183,7 +186,7 @@ const AlertDetailModal: React.FC<{ alert: SystemAlert; onClose: () => void }> = 
           </div>
 
           {/* Footer */}
-          <div className="px-5 py-3 border-t flex justify-end" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+          <div className="px-5 py-3 border-t flex justify-end" style={{ borderColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.08)' }}>
             <button
               onClick={onClose}
               className="px-4 py-1.5 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all border"
@@ -273,14 +276,17 @@ const LogTerminal: React.FC<{
 
   const containers = Array.from(batches.keys());
 
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+
   return (
     <div className="flex flex-col h-full">
       {/* Container filter pills */}
-      <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 border-b flex-wrap" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+      <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 border-b flex-wrap" style={{ borderColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.08)' }}>
         <button onClick={() => onFilter(null)}
           className={`px-2.5 py-0.5 rounded-full text-[9.5px] font-bold tracking-wider border transition-all uppercase ${filter === null
-            ? 'text-white border-white/30 bg-white/10'
-            : 'text-gray-600 border-transparent hover:text-gray-400'}`}>
+            ? isDark ? 'text-white border-white/30 bg-white/10' : 'text-gray-800 border-gray-400 bg-gray-100'
+            : isDark ? 'text-gray-600 border-transparent hover:text-gray-400' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>
           ALL
         </button>
         {containers.map(c => {
@@ -297,7 +303,7 @@ const LogTerminal: React.FC<{
 
       {/* Terminal body */}
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-px font-mono text-[20px] scrollbar-thin"
-        style={{ background: 'rgba(0,0,0,0.4)' }}>
+        style={{ background: isDark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.03)' }}>
         {lines.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <div className="relative">
@@ -306,7 +312,7 @@ const LogTerminal: React.FC<{
                 <span className="text-emerald-400 animate-pulse text-lg">⬡</span>
               </div>
             </div>
-            <p className="text-gray-600 text-xs">Streaming logs · updates every 2s</p>
+            <p className={`${isDark ? 'text-gray-600' : 'text-gray-400'} text-xs`}>Streaming logs · updates every 2s</p>
           </div>
         ) : (
           lines.map(({ key, container, display, line, level }) => {
@@ -545,7 +551,7 @@ const SystemAlertWidget: React.FC = () => {
         >
           <div className="rounded-2xl overflow-hidden flex flex-col" style={{
             height: '530px',
-            background: 'rgba(8,8,18,0.40)',
+            background: document.documentElement.classList.contains('dark') ? 'rgba(8,8,18,0.85)' : 'rgba(248,250,252,0.92)',
             backdropFilter: 'blur(60px)',
           }}>
             {/* Scanline overlay */}
@@ -574,11 +580,11 @@ const SystemAlertWidget: React.FC = () => {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-white text-[11px] font-black tracking-[0.15em] uppercase leading-none"
+                  <p className="text-gray-900 dark:text-white text-[11px] font-black tracking-[0.15em] uppercase leading-none"
                     style={{ textShadow: '0 0 12px rgba(124,58,237,0.8)' }}>
                     Sys Monitor
                   </p>
-                  <p className="text-gray-600 text-[9px] mt-0.5 tracking-widest uppercase">Live Infrastructure Feed</p>
+                  <p className="text-gray-400 dark:text-gray-600 text-[9px] mt-0.5 tracking-widest uppercase">Live Infrastructure Feed</p>
                 </div>
               </div>
 
@@ -592,7 +598,7 @@ const SystemAlertWidget: React.FC = () => {
               <button
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => setOpen(false)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-600 hover:text-white transition-all border border-transparent hover:border-white/10 hover:bg-white/10"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-600 hover:text-gray-900 dark:hover:text-white transition-all border border-transparent hover:border-gray-200 dark:hover:border-white/10 hover:bg-gray-100 dark:hover:bg-white/10"
                 style={{ backdropFilter: 'blur(4px)' }}
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -601,7 +607,7 @@ const SystemAlertWidget: React.FC = () => {
 
             {/* ── Stats Bar ── */}
             {tab === 'alerts' && (
-              <div className="flex-shrink-0 grid grid-cols-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(0,0,0,0.3)' }}>
+              <div className="flex-shrink-0 grid grid-cols-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.04)', background: document.documentElement.classList.contains('dark') ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.03)' }}>
                 {[
                   { label: 'CRITICAL', val: critical, neon: '#f87171', color: 'text-red-400' },
                   { label: 'ERROR',    val: error,    neon: '#fb923c', color: 'text-orange-400' },
@@ -622,10 +628,10 @@ const SystemAlertWidget: React.FC = () => {
             )}
 
             {/* ── Tab Bar ── */}
-            <div className="flex-shrink-0 flex border-b" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+            <div className="flex-shrink-0 flex border-b" style={{ borderColor: document.documentElement.classList.contains('dark') ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.08)' }}>
               {(['alerts', 'logs'] as const).map(t => (
                 <button key={t} onClick={() => setTab(t)}
-                  className={`flex-1 py-2.5 text-[10px] font-black tracking-[0.2em] uppercase transition-all relative overflow-hidden ${tab === t ? 'text-white' : 'text-gray-700 hover:text-gray-400'}`}
+                  className={`flex-1 py-2.5 text-[10px] font-black tracking-[0.2em] uppercase transition-all relative overflow-hidden ${tab === t ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-700 hover:text-gray-600 dark:hover:text-gray-400'}`}
                 >
                   {tab === t && (
                     <>
@@ -644,11 +650,11 @@ const SystemAlertWidget: React.FC = () => {
             <div className="flex-1 overflow-hidden flex flex-col">
               {tab === 'alerts' ? (
                 <>
-                  <div className="flex-shrink-0 flex items-center justify-between px-4 py-1.5 border-b" style={{ borderColor: 'rgba(255,255,255,0.03)' }}>
-                    <p className="text-gray-700 text-[9px] font-mono tracking-wider">{alerts.length} EVENTS STORED</p>
+                  <div className="flex-shrink-0 flex items-center justify-between px-4 py-1.5 border-b" style={{ borderColor: document.documentElement.classList.contains('dark') ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.06)' }}>
+                    <p className="text-gray-500 dark:text-gray-700 text-[9px] font-mono tracking-wider">{alerts.length} EVENTS STORED</p>
                     {alerts.length > 0 && (
                       <button onClick={clearAlerts}
-                        className="text-[9.5px] font-bold tracking-wider text-gray-600 hover:text-red-400 transition-colors uppercase">
+                        className="text-[9.5px] font-bold tracking-wider text-gray-400 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 transition-colors uppercase">
                         Clear
                       </button>
                     )}
@@ -669,7 +675,7 @@ const SystemAlertWidget: React.FC = () => {
                         <div className="text-center">
                           <p className="text-emerald-400 text-sm font-black tracking-wider uppercase"
                             style={{ textShadow: '0 0 12px #34d399' }}>All Systems Nominal</p>
-                          <p className="text-gray-700 text-xs mt-1 font-mono">No anomalies detected</p>
+                          <p className="text-gray-500 dark:text-gray-700 text-xs mt-1 font-mono">No anomalies detected</p>
                         </div>
                       </div>
                     ) : (
@@ -683,7 +689,7 @@ const SystemAlertWidget: React.FC = () => {
             </div>
 
             {/* ── Footer ── */}
-            <div className="flex-shrink-0 px-4 py-2 flex items-center justify-between border-t" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(0,0,0,0.3)' }}>
+            <div className="flex-shrink-0 px-4 py-2 flex items-center justify-between border-t" style={{ borderColor: document.documentElement.classList.contains('dark') ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.08)', background: document.documentElement.classList.contains('dark') ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.02)' }}>
               <div className="flex items-center gap-1.5">
                 {['API', 'CLR', 'RDS', 'DB'].map((s, i) => {
                   const colors = ['#38bdf8', '#a78bfa', '#fb7185', '#34d399'];
@@ -694,7 +700,7 @@ const SystemAlertWidget: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" style={{ boxShadow: '0 0 4px #10b981' }} />
-                <p className="text-gray-700 text-[9px] font-mono tracking-wider">STREAM · 2s</p>
+                <p className="text-gray-500 dark:text-gray-700 text-[9px] font-mono tracking-wider">STREAM · 2s</p>
               </div>
             </div>
           </div>

@@ -302,7 +302,7 @@ const LogTerminal: React.FC<{
       </div>
 
       {/* Terminal body */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-px font-mono text-[20px] scrollbar-thin"
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-px font-mono text-[10px] scrollbar-thin"
         style={{ background: isDark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.03)' }}>
         {lines.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3">
@@ -320,7 +320,7 @@ const LogTerminal: React.FC<{
             return (
               <div key={key} className="flex items-start gap-2 leading-relaxed py-px px-1 rounded hover:bg-white/3 group transition-colors">
                 {!filter && info && (
-                  <span className={`flex-shrink-0 text-[17px] font-black tracking-wider mt-px ${info.color}`}
+                  <span className={`flex-shrink-0 text-[8.5px] font-black tracking-wider mt-px ${info.color}`}
                     style={{ textShadow: `0 0 4px ${info.neon}` }}>
                     {info.short}
                   </span>

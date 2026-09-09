@@ -140,23 +140,23 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({ isOpen, onClose, bo
     if (!isOpen || !bot) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70 backdrop-blur-sm">
-            <div className="bg-gray-800 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-2xl">
 
                 {/* Header */}
-                <div className="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <div className="flex justify-between items-center mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         ⚙️ Configure {bot.name}
                     </h2>
-                    <button onClick={onClose} className="text-gray-400 hover:text-white">✕</button>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-700 dark:hover:text-white">✕</button>
                 </div>
 
                 {/* Scrollable Body */}
                 <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
 
                     {/* 1. General Trade Settings */}
-                    <div className="bg-gray-700/50 p-4 rounded-lg border border-gray-600/50">
-                        <h3 className="text-sm font-semibold text-blue-400 mb-3">💰 Trade Settings</h3>
+                    <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-200 dark:border-gray-600/50">
+                        <h3 className="text-sm font-semibold text-blue-500 dark:text-blue-400 mb-3">💰 Trade Settings</h3>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">
@@ -166,7 +166,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({ isOpen, onClose, bo
                                     type="number"
                                     value={generalConfig.trade_value}
                                     onChange={(e) => setGeneralConfig({ ...generalConfig, trade_value: Number(e.target.value) })}
-                                    className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-blue-500 outline-none"
+                                    className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-gray-900 dark:text-white focus:border-blue-500 outline-none"
                                 />
                             </div>
                             <div>
@@ -188,8 +188,8 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({ isOpen, onClose, bo
                     </div>
 
                     {/* 2. Risk Management */}
-                    <div className="bg-gray-700/50 p-4 rounded-lg border border-gray-600/50">
-                        <h3 className="text-sm font-semibold text-red-400 mb-3">🛡️ Risk Management</h3>
+                    <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-200 dark:border-gray-600/50">
+                        <h3 className="text-sm font-semibold text-red-500 dark:text-red-400 mb-3">🛡️ Risk Management</h3>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">Stop Loss (%)</label>
@@ -197,32 +197,32 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({ isOpen, onClose, bo
                                     type="number"
                                     value={generalConfig.stop_loss}
                                     onChange={(e) => setGeneralConfig({ ...generalConfig, stop_loss: Number(e.target.value) })}
-                                    className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-red-500 outline-none"
+                                    className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-gray-900 dark:text-white focus:border-red-500 outline-none"
                                 />
                             </div>
                             <div>
-                                <label className="text-xs text-gray-400 block mb-1">Take Profit (%)</label>
+                                <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">Take Profit (%)</label>
                                 <input
                                     type="number"
                                     value={generalConfig.take_profit}
                                     onChange={(e) => setGeneralConfig({ ...generalConfig, take_profit: Number(e.target.value) })}
-                                    className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-green-500 outline-none"
+                                    className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-gray-900 dark:text-white focus:border-green-500 outline-none"
                                 />
                             </div>
                         </div>
                     </div>
 
                     {/* 3. Strategy Configuration (Dynamic) */}
-                    <div className="bg-gray-700/50 p-4 rounded-lg border border-gray-600/50">
-                        <h3 className="text-sm font-semibold text-purple-400 mb-3">🧠 Strategy Parameters</h3>
+                    <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg border border-gray-200 dark:border-gray-600/50">
+                        <h3 className="text-sm font-semibold text-purple-500 dark:text-purple-400 mb-3">🧠 Strategy Parameters</h3>
 
                         {/* Strategy Selector */}
                         <div className="mb-4">
-                            <label className="text-xs text-gray-400 block mb-1">Active Strategy</label>
+                            <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">Active Strategy</label>
                             <select
                                 value={generalConfig.strategy_name}
                                 onChange={handleStrategyChange}
-                                className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-purple-500 outline-none"
+                                className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-gray-900 dark:text-white focus:border-purple-500 outline-none"
                             >
                                 <option value="RSI Strategy">RSI Strategy</option>
                                 <option value="MACD Strategy">MACD Strategy</option>
@@ -240,10 +240,10 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({ isOpen, onClose, bo
                 </div>
 
                 {/* Footer */}
-                <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-gray-700">
+                <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 rounded bg-gray-700 text-gray-300 hover:bg-gray-600 transition"
+                        className="px-4 py-2 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition"
                     >
                         Cancel
                     </button>

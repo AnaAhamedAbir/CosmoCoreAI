@@ -11,6 +11,13 @@ html {
 .dark body {
   background-image: radial-gradient(circle at 1px 1px, rgba(203, 213, 225, 0.1) 1px, transparent 0);
   background-size: 2rem 2rem;
+  background-color: #050505;
+}
+
+.light body {
+  background-image: radial-gradient(circle at 1px 1px, rgba(100, 116, 139, 0.12) 1px, transparent 0);
+  background-size: 2rem 2rem;
+  background-color: #F8FAFC;
 }
 
 .token-comment {

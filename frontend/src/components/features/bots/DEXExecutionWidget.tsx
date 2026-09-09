@@ -44,18 +44,18 @@ const DEXExecutionWidget: React.FC = () => {
     };
 
     return (
-        <div className="bg-[#050505]/50 border border-white/10 rounded-2xl p-6 backdrop-blur-md relative overflow-hidden">
+        <div className="bg-white dark:bg-[#050505]/50 border border-gray-200 dark:border-white/10 rounded-2xl p-6 backdrop-blur-md relative overflow-hidden shadow-sm dark:shadow-none">
             <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
                 <Zap size={120} />
             </div>
 
             <div className="flex justify-between items-start mb-6 align-top">
                 <div>
-                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         <RefreshCw size={20} className="text-cyan-400" />
                         DeFi Execution Protocol
                     </h3>
-                    <p className="text-xs text-gray-400">Direct Router Interaction</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Direct Router Interaction</p>
                 </div>
                 {!isConnected ? (
                     <Button
@@ -79,11 +79,11 @@ const DEXExecutionWidget: React.FC = () => {
 
                 {/* Protocol Selection */}
                 <div>
-                    <label className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1 block">Protocol</label>
+                    <label className="text-xs text-gray-500 dark:text-gray-500 uppercase font-bold tracking-wider mb-1 block">Protocol</label>
                     <select
                         value={protocol}
                         onChange={(e) => setProtocol(e.target.value)}
-                        className="w-full bg-[#0A0A0A] border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50 text-sm"
+                        className="w-full bg-gray-100 dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2 text-gray-900 dark:text-white focus:outline-none focus:border-cyan-500/50 text-sm"
                     >
                         {PROTOCOLS.map(p => (
                             <option key={p.id} value={p.id}>{p.name}</option>
@@ -92,7 +92,7 @@ const DEXExecutionWidget: React.FC = () => {
                 </div>
 
                 {/* Swap Form */}
-                <div className="p-4 bg-black/20 rounded-xl border border-white/5 space-y-2">
+                <div className="p-4 bg-gray-50 dark:bg-black/20 rounded-xl border border-gray-200 dark:border-white/5 space-y-2">
                     <div className="flex gap-2">
                         <div className="flex-1">
                             <label className="text-[10px] text-gray-400 mb-1 block">Token In (Address)</label>
@@ -101,7 +101,7 @@ const DEXExecutionWidget: React.FC = () => {
                                 placeholder="0x..."
                                 value={tokenIn}
                                 onChange={(e) => setTokenIn(e.target.value)}
-                                className="w-full bg-transparent border-b border-white/10 focus:border-cyan-500 text-sm py-1 text-white outline-none"
+                                className="w-full bg-transparent border-b border-gray-300 dark:border-white/10 focus:border-cyan-500 text-sm py-1 text-gray-900 dark:text-white outline-none"
                             />
                         </div>
                         <div className="w-1/3">
@@ -111,13 +111,13 @@ const DEXExecutionWidget: React.FC = () => {
                                 placeholder="0.0"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value)}
-                                className="w-full bg-transparent border-b border-white/10 focus:border-cyan-500 text-sm py-1 text-white outline-none text-right font-mono"
+                                className="w-full bg-transparent border-b border-gray-300 dark:border-white/10 focus:border-cyan-500 text-sm py-1 text-gray-900 dark:text-white outline-none text-right font-mono"
                             />
                         </div>
                     </div>
 
                     <div className="flex justify-center py-1">
-                        <div className="bg-[#0A0A0A] p-1.5 rounded-full border border-white/10">
+                        <div className="bg-gray-200 dark:bg-[#0A0A0A] p-1.5 rounded-full border border-gray-300 dark:border-white/10">
                             <ArrowDown size={14} className="text-gray-400" />
                         </div>
                     </div>
@@ -130,12 +130,12 @@ const DEXExecutionWidget: React.FC = () => {
                                 placeholder="0x..."
                                 value={tokenOut}
                                 onChange={(e) => setTokenOut(e.target.value)}
-                                className="w-full bg-transparent border-b border-white/10 focus:border-cyan-500 text-sm py-1 text-white outline-none"
+                                className="w-full bg-transparent border-b border-gray-300 dark:border-white/10 focus:border-cyan-500 text-sm py-1 text-gray-900 dark:text-white outline-none"
                             />
                         </div>
                         <div className="w-1/3">
                             <label className="text-[10px] text-gray-400 mb-1 block">Estimated Out</label>
-                            <div className="text-right text-sm py-1 font-mono text-cyan-400 min-h-[24px]">
+                            <div className="text-right text-sm py-1 font-mono text-cyan-500 dark:text-cyan-400 min-h-[24px]">
                                 {isQuoting ? <span className="animate-pulse">Loading...</span> : estimatedOut || '-'}
                             </div>
                         </div>
@@ -147,7 +147,7 @@ const DEXExecutionWidget: React.FC = () => {
                         variant="outline"
                         size="sm"
                         onClick={handleGetQuote}
-                        className="flex-1 border-white/10 text-gray-300 hover:text-white"
+                        className="flex-1 border-gray-300 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
                         disabled={!isConnected || !tokenIn || !tokenOut || !amount}
                     >
                         Check Rates

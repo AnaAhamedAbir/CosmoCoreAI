@@ -235,17 +235,17 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
         }
     };
 
-    const inputClasses = "w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all outline-none placeholder-gray-600";
-    const labelClasses = "block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2";
+    const inputClasses = "w-full bg-gray-100 dark:bg-black/40 border border-gray-200 dark:border-white/10 rounded-xl p-3 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all outline-none placeholder-gray-400 dark:placeholder-gray-600";
+    const labelClasses = "block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2";
 
     return (
         <Dialog open={isOpen} onClose={onClose} className="relative z-[60]">
-            <div className="fixed inset-0 bg-[#050505]/80 backdrop-blur-md" aria-hidden="true" />
+            <div className="fixed inset-0 bg-black/60 dark:bg-[#050505]/80 backdrop-blur-md" aria-hidden="true" />
 
             <div className="fixed inset-0 flex items-center justify-center p-4">
-                <Dialog.Panel className="w-full max-w-3xl rounded-3xl bg-[#050505] border border-white/10 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden relative animate-in fade-in zoom-in-95 duration-200">
+                <Dialog.Panel className="w-full max-w-3xl rounded-3xl bg-white dark:bg-[#050505] border border-gray-200 dark:border-white/10 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden relative animate-in fade-in zoom-in-95 duration-200">
                     {/* Header */}
-                    <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
+                    <div className="p-6 border-b border-gray-200 dark:border-white/10 flex justify-between items-center bg-gray-50 dark:bg-white/5">
                         <div className="flex items-center gap-4">
                             <Dialog.Title className="text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-tight">Deploy New Protocol</Dialog.Title>
                             <button
@@ -255,14 +255,14 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                 <Zap size={14} className="fill-current" /> Ask AI
                             </button>
                         </div>
-                        <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors"><X /></button>
+                        <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors"><X /></button>
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
                         <form onSubmit={handleSubmit} className="space-y-8">
                             {/* ✅ Toggle Paper Trading / Real Trading */}
                             <div className="flex justify-center mb-4">
-                                <div className="bg-gray-800 p-1 rounded-lg flex items-center">
+                                <div className="bg-gray-100 dark:bg-gray-800 p-1 rounded-lg flex items-center">
                                     <button
                                         type="button"
                                         onClick={() => setIsPaperTrading(true)}
@@ -341,13 +341,13 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                             <div className="space-y-4">
                                 <label className={labelClasses}>Operational Mode</label>
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div onClick={() => setBotMode('standard')} className={`cursor-pointer border-2 rounded-2xl p-4 flex flex-col items-center justify-center transition-all ${botMode === 'standard' ? 'border-cyan-500 bg-cyan-500/10' : 'border-white/5 bg-white/5 hover:border-white/20'}`}>
-                                        <BarChart2 className={botMode === 'standard' ? "text-cyan-400" : "text-gray-500"} size={32} />
-                                        <span className="font-bold text-white mt-2">Standard Strategy</span>
+                                    <div onClick={() => setBotMode('standard')} className={`cursor-pointer border-2 rounded-2xl p-4 flex flex-col items-center justify-center transition-all ${botMode === 'standard' ? 'border-cyan-500 bg-cyan-500/10' : 'border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-white/5 hover:border-gray-300 dark:hover:border-white/20'}`}>
+                                        <BarChart2 className={botMode === 'standard' ? "text-cyan-400" : "text-gray-400"} size={32} />
+                                        <span className="font-bold text-gray-800 dark:text-white mt-2">Standard Strategy</span>
                                     </div>
-                                    <div onClick={() => setBotMode('scalp')} className={`cursor-pointer border-2 rounded-2xl p-4 flex flex-col items-center justify-center transition-all ${botMode === 'scalp' ? 'border-violet-500 bg-violet-500/10' : 'border-white/5 bg-white/5 hover:border-white/20'}`}>
-                                        <Zap className={botMode === 'scalp' ? "text-violet-400" : "text-gray-500"} size={32} />
-                                        <span className="font-bold text-white mt-2">HFT Scalper</span>
+                                    <div onClick={() => setBotMode('scalp')} className={`cursor-pointer border-2 rounded-2xl p-4 flex flex-col items-center justify-center transition-all ${botMode === 'scalp' ? 'border-violet-500 bg-violet-500/10' : 'border-gray-200 dark:border-white/5 bg-gray-50 dark:bg-white/5 hover:border-gray-300 dark:hover:border-white/20'}`}>
+                                        <Zap className={botMode === 'scalp' ? "text-violet-400" : "text-gray-400"} size={32} />
+                                        <span className="font-bold text-gray-800 dark:text-white mt-2">HFT Scalper</span>
                                     </div>
                                 </div>
                             </div>
@@ -743,7 +743,7 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
 
 
 
-                            <div className="pt-6 border-t border-white/10 flex justify-end gap-3">
+                            <div className="pt-6 border-t border-gray-200 dark:border-white/10 flex justify-end gap-3">
                                 <Button variant="secondary" onClick={onClose} className="bg-transparent border border-white/10 text-white hover:bg-white/5">Abort</Button>
                                 <Button type="submit" disabled={loading} className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border-0 shadow-lg shadow-cyan-500/30">
                                     {loading ? 'Deploying...' : 'Deploy Protocol'}

@@ -219,11 +219,11 @@ const BotLab: React.FC = () => {
     const [isDeFiOpen, setIsDeFiOpen] = useState(false);
 
     return (
-        <div className="h-screen flex flex-col animate-fade-in relative overflow-hidden">
+        <div className="h-screen flex flex-col animate-fade-in relative overflow-hidden bg-slate-50 dark:bg-transparent">
             {/* Background Decor */}
             <div className="fixed inset-0 z-[-1] pointer-events-none">
-                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-cyan-900/10 blur-[120px]"></div>
-                <div className="absolute bottom-[0%] right-[0%] w-[40%] h-[40%] rounded-full bg-violet-900/10 blur-[120px]"></div>
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full dark:bg-cyan-900/10 bg-cyan-200/30 blur-[120px]"></div>
+                <div className="absolute bottom-[0%] right-[0%] w-[40%] h-[40%] rounded-full dark:bg-violet-900/10 bg-violet-200/30 blur-[120px]"></div>
             </div>
 
             {isCreating && <BotLabModal isOpen={isCreating} onClose={() => setIsCreating(false)} onSuccess={() => { loadBots(); setIsCreating(false); }} />}
@@ -258,17 +258,17 @@ const BotLab: React.FC = () => {
             <div className="flex-none p-4 md:p-8 pb-0 space-y-8">
                 <div className="flex flex-col md:flex-row justify-between items-end gap-4 staggered-fade-in">
                     <div>
-                        <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400">Bot Laboratory</h2>
-                        <p className="text-sm text-gray-400 mt-2 font-light">
-                            Advanced Algorithm Management Interface <span className="text-cyan-500 font-mono text-xs px-2 py-0.5 bg-cyan-950/30 rounded border border-cyan-500/20">v2.4.0</span>
+                        <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r dark:from-white dark:to-gray-400 from-gray-900 to-gray-600">Bot Laboratory</h2>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 font-light">
+                            Advanced Algorithm Management Interface <span className="text-cyan-600 dark:text-cyan-500 font-mono text-xs px-2 py-0.5 bg-cyan-100/80 dark:bg-cyan-950/30 rounded border border-cyan-400/30 dark:border-cyan-500/20">v2.4.0</span>
                         </p>
                     </div>
                     <div className="flex gap-3">
-                        <Button variant="outline" onClick={() => setIsDeFiOpen(true)} className="flex items-center gap-2 border-white/10 hover:border-orange-500 hover:text-orange-400 hover:bg-orange-950/20">
+                        <Button variant="outline" onClick={() => setIsDeFiOpen(true)} className="flex items-center gap-2 border-gray-200 dark:border-white/10 hover:border-orange-500 hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/20 text-gray-600 dark:text-gray-300">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4Z" /></svg>
                             DeFi Direct
                         </Button>
-                        <Button variant="outline" onClick={() => setIsVisualBuilderOpen(true)} className="flex items-center gap-2 border-white/10 hover:border-violet-500 hover:text-violet-400 hover:bg-violet-950/20">
+                        <Button variant="outline" onClick={() => setIsVisualBuilderOpen(true)} className="flex items-center gap-2 border-gray-200 dark:border-white/10 hover:border-violet-500 hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/20 text-gray-600 dark:text-gray-300">
                             <Hammer size={16} /> Visual Builder
                         </Button>
                         <Button variant="primary" onClick={() => setIsCreating(true)} className="flex items-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 border-none shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)]">
@@ -298,13 +298,13 @@ const BotLab: React.FC = () => {
                 {!hasMore && (
                     <button
                         onClick={() => setIsCreating(true)}
-                        className="group relative h-full min-h-[320px] border border-dashed border-white/10 hover:border-cyan-500/50 rounded-3xl flex flex-col items-center justify-center text-center hover:bg-cyan-500/5 transition-all duration-300"
+                        className="group relative h-full min-h-[320px] border border-dashed border-gray-200 dark:border-white/10 hover:border-cyan-500/50 rounded-3xl flex flex-col items-center justify-center text-center hover:bg-cyan-500/5 dark:hover:bg-cyan-500/5 bg-white/50 dark:bg-transparent transition-all duration-300"
                     >
-                        <div className="w-16 h-16 rounded-full bg-[#0A0A0A] flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 shadow-xl group-hover:bg-cyan-500 group-hover:text-black text-gray-500">
+                        <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-[#0A0A0A] flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 shadow-xl group-hover:bg-cyan-500 group-hover:text-black text-gray-400 dark:text-gray-500">
                             <Plus size={32} />
                         </div>
-                        <h3 className="text-lg font-bold text-gray-500 group-hover:text-cyan-400 transition-colors">Initialize New Unit</h3>
-                        <p className="text-xs text-gray-600 group-hover:text-cyan-500/70 mt-2 max-w-[200px]">Access global market strategies</p>
+                        <h3 className="text-lg font-bold text-gray-400 dark:text-gray-500 group-hover:text-cyan-400 transition-colors">Initialize New Unit</h3>
+                        <p className="text-xs text-gray-400 dark:text-gray-600 group-hover:text-cyan-500/70 mt-2 max-w-[200px]">Access global market strategies</p>
                     </button>
                 )}
             </div>
@@ -314,7 +314,7 @@ const BotLab: React.FC = () => {
                     <Button
                         variant="secondary"
                         onClick={() => loadBots(true)}
-                        className="bg-[#0A0A0A]/50 hover:bg-[#0A0A0A]/50 border-white/10 text-gray-400 hover:text-white px-8 py-3 rounded-full flex items-center gap-2 transition-all shadow-lg hover:shadow-cyan-500/10"
+                        className="bg-white dark:bg-[#0A0A0A]/50 hover:bg-gray-50 dark:hover:bg-[#0A0A0A]/50 border-gray-200 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white px-8 py-3 rounded-full flex items-center gap-2 transition-all shadow-lg hover:shadow-cyan-500/10"
                     >
                         Load More Bots <ChevronDown size={16} />
                     </Button>

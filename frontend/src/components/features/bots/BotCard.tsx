@@ -87,7 +87,7 @@ const BotCard: React.FC<{
 
     return (
         <div
-            className="group relative bg-[#050505]/40 backdrop-blur-md border border-white/5 rounded-3xl overflow-hidden hover:border-cyan-500/50 hover:shadow-[0_0_30px_rgba(6,182,212,0.15)] transition-all duration-500 transform hover:-translate-y-1 flex flex-col"
+            className="group relative bg-white/80 dark:bg-[#050505]/40 backdrop-blur-md border border-gray-200 dark:border-white/5 rounded-3xl overflow-hidden hover:border-cyan-500/50 hover:shadow-[0_0_30px_rgba(6,182,212,0.15)] transition-all duration-500 transform hover:-translate-y-1 flex flex-col shadow-sm dark:shadow-none"
             style={{ animation: `fadeInUp 0.6s ease-out ${index * 0.1}s backwards` }}
         >
             {/* Top Gradient Line */}
@@ -98,13 +98,13 @@ const BotCard: React.FC<{
                 <div className="flex justify-between items-start mb-6">
                     <div>
                         <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-xl ${bot.status === 'active' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-[#0A0A0A] text-slate-500'}`}>
+                            <div className={`p-2 rounded-xl ${bot.status === 'active' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-gray-100 dark:bg-[#0A0A0A] text-slate-500'}`}>
                                 <Cpu size={20} />
                             </div>
                             <div>
-                                <h3 className="font-bold text-lg text-white group-hover:text-cyan-400 transition-colors">{bot.name}</h3>
+                                <h3 className="font-bold text-lg text-gray-900 dark:text-white group-hover:text-cyan-400 transition-colors">{bot.name}</h3>
                                 <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-[10px] uppercase tracking-wider font-bold bg-white/5 px-2 py-0.5 rounded text-gray-400 border border-white/5">{bot.market}</span>
+                                    <span className="text-[10px] uppercase tracking-wider font-bold bg-gray-100 dark:bg-white/5 px-2 py-0.5 rounded text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-white/5">{bot.market}</span>
                                     {bot.isRegimeAware && <span className="text-[10px] text-purple-400 flex items-center gap-1"><Zap size={10} /> SMART</span>}
                                 </div>
                             </div>
@@ -113,23 +113,23 @@ const BotCard: React.FC<{
 
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleStatus(bot.id, bot.status); }}
-                        className={`relative w-10 h-6 rounded-full transition-colors duration-300 ${bot.status === 'active' ? 'bg-cyan-500/20' : 'bg-[#0A0A0A]/50'}`}
+                        className={`relative w-10 h-6 rounded-full transition-colors duration-300 ${bot.status === 'active' ? 'bg-cyan-500/20' : 'bg-gray-200 dark:bg-[#0A0A0A]/50'}`}
                     >
-                        <div className={`absolute top-1 left-1 w-4 h-4 rounded-full transition-all duration-300 shadow-lg ${bot.status === 'active' ? 'translate-x-4 bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.8)]' : 'bg-slate-500'}`} />
+                        <div className={`absolute top-1 left-1 w-4 h-4 rounded-full transition-all duration-300 shadow-lg ${bot.status === 'active' ? 'translate-x-4 bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.8)]' : 'bg-slate-400 dark:bg-slate-500'}`} />
                     </button>
                 </div>
 
                 {/* Metrics */}
                 <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div className="bg-[#0A0A0A]/30 rounded-xl p-3 border border-white/5">
-                        <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1">Net PnL</p>
-                        <div className={`text-xl font-bold font-mono ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <div className="bg-gray-50 dark:bg-[#0A0A0A]/30 rounded-xl p-3 border border-gray-200 dark:border-white/5">
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold mb-1">Net PnL</p>
+                        <div className={`text-xl font-bold font-mono ${isPositive ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
                             {isPositive ? '+' : '-'}<AnimatedNumber value={Math.abs(bot.pnl)} prefix="$" />
                         </div>
                     </div>
-                    <div className="bg-[#0A0A0A]/30 rounded-xl p-3 border border-white/5 text-right">
-                        <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1">ROI</p>
-                        <div className={`text-lg font-bold font-mono ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <div className="bg-gray-50 dark:bg-[#0A0A0A]/30 rounded-xl p-3 border border-gray-200 dark:border-white/5 text-right">
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold mb-1">ROI</p>
+                        <div className={`text-lg font-bold font-mono ${isPositive ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
                             {Math.abs(bot.pnlPercent).toFixed(2)}%
                         </div>
                     </div>
@@ -139,25 +139,25 @@ const BotCard: React.FC<{
                 <div className="flex-grow min-h-[40px]"></div>
 
                 {/* Actions */}
-                <div className="flex justify-between items-center mt-auto pt-4 border-t border-white/5 relative z-20">
+                <div className="flex justify-between items-center mt-auto pt-4 border-t border-gray-200 dark:border-white/5 relative z-20">
                     <div className="flex gap-1">
                         <button
                             onClick={(e) => { e.stopPropagation(); onSettings(bot); }}
-                            className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors"
                             title="Settings"
                         >
                             <Settings size={16} />
                         </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); onDetails(bot); }}
-                            className="p-2 rounded-lg hover:bg-blue-500/20 text-gray-400 hover:text-blue-400 transition-colors"
+                            className="p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-500/20 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
                             title="Details"
                         >
                             <Activity size={16} />
                         </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); onDelete(bot.id); }}
-                            className="p-2 rounded-lg hover:bg-rose-500/20 text-gray-400 hover:text-rose-400 transition-colors"
+                            className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/20 text-gray-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
                             title="Delete"
                         >
                             <Trash2 size={16} />

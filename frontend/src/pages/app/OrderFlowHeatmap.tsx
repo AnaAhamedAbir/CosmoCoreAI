@@ -38,6 +38,7 @@ import { ICTKillzonesRenderer } from '../../components/features/market/ICTKillzo
 import { calculateLuxIctConcepts, LuxIctResult } from '../../utils/luxIctConcepts';
 import { LuxIctRenderer } from '../../components/features/market/LuxIctRenderer';
 import { BollingerBandsRenderer } from '../../components/features/market/BollingerBandsRenderer';
+import { ICTPO3Renderer, ICTPO3Data } from '../../components/features/market/ICTPO3Renderer';
 import { SessionsDashboard, SessionStatus } from '../../components/features/market/SessionsDashboard';
 import { HeatmapSubNav } from '../../components/features/market/HeatmapSubNav';
 import { BotSettingsTab } from '../../components/features/market/BotSettingsTab';
@@ -141,6 +142,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     const [sessionStatuses, setSessionStatuses] = useState<SessionStatus[]>([]);
     const [smcData, setSmcData] = useState<SMCResult | null>(null);
     const [ictData, setIctData] = useState<ICTResult | null>(null);
+    const [ictPO3Data, setIctPO3Data] = useState<ICTPO3Data | null>(null);
     const [luxIctData, setLuxIctData] = useState<LuxIctResult | null>(null);
     const [quantumAiData, setQuantumAiData] = useState<QuantumAiResult[]>([]);
     const [supertrendData, setSupertrendData] = useState<SupertrendDataPoint[]>([]);
@@ -870,7 +872,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             showKillzones: indicatorSettings.luxShowKillzones,
         };
 
-        const runLuxCalc = () => {
+        const runLux = () => {
             const candles = allCandlesRef.current;
             if (candles.length < 10) return;
             try {
@@ -882,11 +884,30 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             }
         };
 
-        setTimeout(runLuxCalc, 0);
-        const intervalId = setInterval(runLuxCalc, 1000);
-
-        return () => clearInterval(intervalId);
+        const timer = setTimeout(runLux, 400);
+        return () => clearTimeout(timer);
     }, [indicatorSettings]);
+
+    // Fetch ICT PO3 Data from Backend API
+    useEffect(() => {
+        if (!symbol || !indicatorSettings.showICTPO3) return;
+        const fetchPO3 = async () => {
+            try {
+                const formattedSymbol = symbol.replace('/', '-');
+                // Adjust base URL as needed for your env. Assuming proxy or relative route is working.
+                const response = await fetch(`/api/v1/indicators/po3/${formattedSymbol}?timeframe=${interval}`);
+                const resData = await response.json();
+                if (resData.status === 'success') {
+                    setIctPO3Data(resData.data);
+                }
+            } catch (err) {
+                console.warn('Error fetching PO3 data:', err);
+            }
+        };
+        fetchPO3();
+        const intervalId = setInterval(fetchPO3, 60000); // refresh every minute
+        return () => clearInterval(intervalId);
+    }, [symbol, interval, indicatorSettings.showICTPO3]);
 
     // Supertrend Calculation Effect (Throttled)
     useEffect(() => {
@@ -2179,6 +2200,12 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                             settings={indicatorSettings}
                         />
                     )}
+                    <ICTPO3Renderer
+                        chart={chartRef.current}
+                        series={candlestickSeriesRef.current}
+                        data={ictPO3Data}
+                        visible={indicatorSettings.showICTPO3}
+                    />
                     <LuxIctRenderer
                         chart={chartRef.current}
                         series={candlestickSeriesRef.current}

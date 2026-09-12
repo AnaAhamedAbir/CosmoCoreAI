@@ -32,6 +32,13 @@ class GEXOptionsService:
         # Parse base currency (e.g., BTC/USDT -> BTC)
         self._base_currency = symbol.split("/")[0] if "/" in symbol else "BTC"
         
+        # Deribit mainly supports BTC, ETH, and SOL for options
+        supported_currencies = ["BTC", "ETH", "SOL"]
+        if self._base_currency not in supported_currencies:
+            logger.info(f"GEX Options Service: {self._base_currency} is not supported by Deribit options. Skipping fetch.")
+            self._running = False
+            return
+            
         logger.info(f"GEX Options Service initializing for {self._base_currency}")
         self._task = asyncio.create_task(self._fetch_loop())
 

@@ -217,11 +217,13 @@ const PublicWebsite: React.FC<PublicWebsiteProps> = ({ onLogin, onSignUp }) => {
     return (
         <div className="flex flex-col min-h-screen bg-transparent text-white selection:bg-cyan-500/30">
             <CosmicStarBackground />
-            <PublicHeader onLogin={onLogin} onSignUp={onSignUp} currentView={currentView} setCurrentView={setCurrentView} />
-            <main className="flex-grow pt-20 relative z-10">
-                {renderContent()}
-            </main>
-            {currentView === 'Home' && <PublicFooter />}
+            <div className="flex flex-col flex-grow animate-warp-in origin-top">
+                <PublicHeader onLogin={onLogin} onSignUp={onSignUp} currentView={currentView} setCurrentView={setCurrentView} />
+                <main className="flex-grow pt-20 relative z-10">
+                    {renderContent()}
+                </main>
+                {currentView === 'Home' && <PublicFooter />}
+            </div>
         </div>
     );
 };

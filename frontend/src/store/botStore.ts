@@ -140,6 +140,7 @@ export const useBotStore = create<BotState>()(
         ictShowGaps: false,
         ictShowVolatility: false,
         ictShowEquilibrium: false,
+        showICTPO3: false,
 
         luxShowIndicator: false,
         luxMode: 'Present',

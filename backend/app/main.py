@@ -274,8 +274,14 @@ async def fetch_market_data_background():
                         await asyncio.sleep(5)
                 else:
                     await asyncio.sleep(5)
+            except (asyncio.TimeoutError, TimeoutError):
+                # Timeout is normal if no updates happen within 60s
+                pass
             except Exception as e:
-                print(f"⚠️ Watch Tickers Error or Timeout: {e}")
+                if str(e):
+                    print(f"⚠️ Watch Tickers Error: {e}")
+                else:
+                    print(f"⚠️ Watch Tickers Error: Unknown Exception {type(e)}")
                 await asyncio.sleep(60)  # Increased backoff to prevent fast ban loops
 
     asyncio.create_task(_keep_tickers_updated())

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app import schemas, models
 from app.crud import indicator as crud_indicator
 from app.api import deps
+from app.strategies.helpers.ict_po3_tracker import ICTPowerOfThree
 
 router = APIRouter()
 
@@ -23,6 +24,30 @@ def create_indicator(
     """
     indicator = crud_indicator.create_indicator(db=db, indicator=indicator_in, user_id=current_user.id)
     return indicator
+
+@router.get("/po3/{symbol}", response_model=Dict[str, Any])
+def get_po3_history(
+    symbol: str,
+    timeframe: str = "1h",
+) -> Any:
+    """
+    Get historical ICT PO3 zones for charting.
+    """
+    try:
+        import ccxt
+        exchange = ccxt.binance({'enableRateLimit': True})
+        formatted_symbol = symbol.replace("-", "/").upper()
+        ohlcv = exchange.fetch_ohlcv(formatted_symbol, timeframe=timeframe, limit=500)
+        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+        
+        po3_tracker = ICTPowerOfThree()
+        result = po3_tracker.calculate(df)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/", response_model=List[schemas.IndicatorResponse])
 def read_indicators(
@@ -245,6 +270,28 @@ async def websocket_indicator_stream(websocket: WebSocket, symbol_param: str):
             {"id": "vix", "value": f"N/A", "signal": "NEUTRAL"},
             {"id": "mcg", "value": f"N/A", "signal": "NEUTRAL"},
         ]
+        
+        # Calculate ICT PO3
+        try:
+            po3_tracker = ICTPowerOfThree(
+                algorithm_mode="Small Manipulation",
+                breakout_method="Wick",
+                tpsl_method="Dynamic",
+                risk_amount="Normal"
+            )
+            po3_result = po3_tracker.calculate(df)
+            po3_val = po3_result.get("state", "NEUTRAL")
+            if po3_val == "Entry Taken":
+                po3_val = f"Entry ({po3_result.get('signal')})"
+            results.append({
+                "id": "ict_po3", 
+                "value": po3_val, 
+                "signal": po3_result.get("signal", "NEUTRAL"), 
+                "zones": po3_result.get("zones", [])
+            })
+        except Exception as e:
+            print(f"Error calculating PO3: {e}")
+            results.append({"id": "ict_po3", "value": "Error", "signal": "NEUTRAL"})
         
         # Confluence check logic (Idea 3)
         confluence_alerts = []

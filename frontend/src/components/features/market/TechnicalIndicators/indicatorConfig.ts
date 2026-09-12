@@ -75,4 +75,5 @@ export const TECHNICAL_INDICATORS: IndicatorConfig[] = [
   { id: 'sqz', name: 'Squeeze Momentum', shortName: 'Squeeze', category: 'Other', defaultParams: '20, 2, 1.5', weight: 3 },
   { id: 'vix', name: 'Volatility Index Proxy', shortName: 'VIX Proxy', category: 'Other', defaultParams: '14', weight: 3 },
   { id: 'mcg', name: 'McGinley Dynamic', shortName: 'McGinley', category: 'Other', defaultParams: '14', weight: 2 },
+  { id: 'ict_po3', name: 'ICT Power of Three (PO3)', shortName: 'ICT PO3', category: 'Other', defaultParams: 'Small Manipulation, Wick', weight: 4 },
 ];

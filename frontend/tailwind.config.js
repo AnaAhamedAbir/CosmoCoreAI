@@ -57,6 +57,7 @@ export default {
                 'modal-content-slide-down': 'slideDown 0.3s ease-out',
                 'striped-flow': 'stripe-move 1s linear infinite',
                 'bar-glow': 'bar-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                'warp-in': 'warpIn 1.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards',
             },
             keyframes: {
                 marquee: {
@@ -86,6 +87,10 @@ export default {
                 'bar-pulse': {
                     '0%, 100%': { opacity: 1, boxShadow: '0 0 10px rgba(var(--brand-primary-rgb), 0.5)' },
                     '50%': { opacity: 0.9, boxShadow: '0 0 20px rgba(var(--brand-primary-rgb), 0.8)' },
+                },
+                warpIn: {
+                    '0%': { opacity: '0', transform: 'scale(0.95)' },
+                    '100%': { opacity: '1', transform: 'scale(1)' },
                 }
             },
             gridTemplateColumns: {

@@ -44,6 +44,7 @@ import { HeatmapSubNav } from '../../components/features/market/HeatmapSubNav';
 import { BotSettingsTab } from '../../components/features/market/BotSettingsTab';
 import { BotLogsTab } from '../../components/features/market/BotLogsTab';
 import { WallHunterModal } from '../../components/features/market/WallHunterModal';
+import { ForexWallHunterModal } from '../../components/features/market/ForexWallHunterModal';
 import { TechnicalIndicatorModal } from '../../components/features/market/TechnicalIndicators/TechnicalIndicatorModal';
 import { ManualTradeModal } from '../../components/features/market/ManualTradeModal';
 import { FloatingTVChartButton } from '../../components/features/market/FloatingTVChartButton';
@@ -2892,6 +2893,7 @@ const OrderFlowChartPanel: React.FC<{
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isTradingViewMode, setIsTradingViewMode] = useState(false);
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
+    const [isForexWallHunterOpen, setIsForexWallHunterOpen] = useState(false);
     const activeWallHunterId = useBotStore(state => state.activeWallHunterId);
     const setActiveWallHunterId = useBotStore(state => state.setActiveWallHunterId);
     const setBotForChart = useBotStore(state => state.setBotForChart);
@@ -2959,14 +2961,24 @@ const OrderFlowChartPanel: React.FC<{
                             Stop Bot
                         </button>
                     ) : (
-                        <button 
-                            onClick={() => setIsWallHunterOpen(true)}
-                            className="px-2 py-1 text-[10px] font-bold rounded-md bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500/20 border border-yellow-500/20 flex items-center gap-1 ml-2 transition-colors"
-                            title="Deploy WallHunter for this pair"
-                        >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                            Deploy Bot
-                        </button>
+                        <div className="flex gap-1">
+                            <button 
+                                onClick={() => setIsWallHunterOpen(true)}
+                                className="px-2 py-1 text-[10px] font-bold rounded-md bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500/20 border border-yellow-500/20 flex items-center gap-1 ml-2 transition-colors"
+                                title="Deploy WallHunter for this pair"
+                            >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                Deploy Bot
+                            </button>
+                            <button 
+                                onClick={() => setIsForexWallHunterOpen(true)}
+                                className="px-2 py-1 text-[10px] font-bold rounded-md bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center gap-1 ml-1 transition-colors"
+                                title="Deploy Forex WallHunter for this pair"
+                            >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
+                                Forex Bot
+                            </button>
+                        </div>
                     )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -3022,6 +3034,7 @@ const OrderFlowHeatmap: React.FC = () => {
     const advancedMetricsData = useAdvancedMetrics(symbol, exchange, interval, advancedMetrics);
 
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
+    const [isForexWallHunterOpen, setIsForexWallHunterOpen] = useState(false);
     const [isEmergencySelling, setIsEmergencySelling] = useState(false); // NEW STATE
     
     const [additionalCharts, setAdditionalCharts] = useState<ChartConfig[]>([]);
@@ -3572,18 +3585,32 @@ const OrderFlowHeatmap: React.FC = () => {
                             </button>
                         </div>
                     ) : (
-                        <button
-                            onClick={() => setIsWallHunterOpen(true)}
-                            className="relative w-16 h-16 shrink-0 group opacity-100 transition-opacity duration-300"
-                            title="Deploy WallHunter"
-                        >
-                            <div className="absolute inset-0 bg-yellow-500 rounded-full blur-xl opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                            <div className="relative w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center border-4 border-white/20 shadow-2xl group-hover:scale-110 transition-transform cursor-pointer">
-                                <svg className="w-8 h-8 text-white group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                </svg>
-                            </div>
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setIsWallHunterOpen(true)}
+                                className="relative w-16 h-16 shrink-0 group opacity-100 transition-opacity duration-300"
+                                title="Deploy WallHunter"
+                            >
+                                <div className="absolute inset-0 bg-yellow-500 rounded-full blur-xl opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                <div className="relative w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center border-4 border-white/20 shadow-2xl group-hover:scale-110 transition-transform cursor-pointer">
+                                    <svg className="w-8 h-8 text-white group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                </div>
+                            </button>
+                            <button
+                                onClick={() => setIsForexWallHunterOpen(true)}
+                                className="relative w-16 h-16 shrink-0 group opacity-100 transition-opacity duration-300"
+                                title="Deploy Forex WallHunter"
+                            >
+                                <div className="absolute inset-0 bg-emerald-500 rounded-full blur-xl opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                <div className="relative w-16 h-16 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full flex items-center justify-center border-4 border-white/20 shadow-2xl group-hover:scale-110 transition-transform cursor-pointer">
+                                    <svg className="w-8 h-8 text-white group-hover:-rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                    </svg>
+                                </div>
+                            </button>
+                        </div>
                     )
                 }
 
@@ -3701,6 +3728,16 @@ const OrderFlowHeatmap: React.FC = () => {
                     setActiveWallHunterId(Number(botId));
                     setBotForChart('main', Number(botId));
                     setIsWallHunterOpen(false);
+                }}
+            />
+
+            <ForexWallHunterModal
+                isOpen={isForexWallHunterOpen}
+                onClose={() => setIsForexWallHunterOpen(false)}
+                onDeploySuccess={(botId) => {
+                    setActiveWallHunterId(Number(botId));
+                    setBotForChart('main', Number(botId));
+                    setIsForexWallHunterOpen(false);
                 }}
             />
 

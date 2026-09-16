@@ -45,6 +45,14 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
     if (!visible || !data || !mounted) return null;
 
     // Formatting helpers
+    const formatPrice = (p?: number) => {
+        if (p === undefined) return '0.00';
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 8
+        }).format(p);
+    };
+
     const formatForce = (force?: number) => {
         if (force === undefined) return '0.00M';
         return (force / 1_000_000).toFixed(2) + 'M';
@@ -153,7 +161,7 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                                     <div>
                                         <div className="text-gray-500 text-xs uppercase font-semibold tracking-wider">AI Target</div>
                                         <div className={`text-3xl font-black ${dirColor} drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] mt-1`}>
-                                            ${data.target_price.toFixed(2)}
+                                            ${formatPrice(data.target_price)}
                                         </div>
                                     </div>
                                     <div className="text-right">
@@ -280,7 +288,7 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                                                 const dist = Math.abs(((mag.price - currentPrice) / currentPrice) * 100);
                                                 return (
                                                     <div key={i} className="flex justify-between items-center text-xs bg-gradient-to-r from-black/60 to-black/30 p-2 rounded-md border-l-4 hover:bg-white/5 transition-colors" style={{ borderLeftColor: mag.price > currentPrice ? '#10B981' : '#F43F5E' }}>
-                                                        <span className="text-gray-200 font-black tracking-wider">${mag.price}</span>
+                                                        <span className="text-gray-200 font-black tracking-wider">${formatPrice(mag.price)}</span>
                                                         <span className="text-gray-400 font-mono text-[10px] bg-black/40 px-1.5 py-0.5 rounded">{dist.toFixed(2)}% AWAY</span>
                                                     </div>
                                                 );
@@ -304,7 +312,7 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                                                     <span className="text-gray-200 font-mono">
                                                         <span className="font-bold">{(ev.volume || 0).toFixed(1)}</span> 
                                                         <span className="text-gray-600 mx-1">@</span> 
-                                                        <span className="text-gray-400">${ev.price}</span>
+                                                        <span className="text-gray-400">${formatPrice(ev.price)}</span>
                                                     </span>
                                                 </div>
                                             ))}

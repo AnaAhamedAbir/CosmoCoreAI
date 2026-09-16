@@ -283,7 +283,7 @@ const GodModeLiquidationView: React.FC = () => {
                                   <div ref={chartContainerRef} className="absolute inset-0"></div>
                                   <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} showBubbles={indicatorSettings.liquidationShowBubbles} intensityScale={100} useTrailingLiquidity={trailingLiquidityEnabled} showTrueCVD={true} showSpoofing={true} showGEX={true} showBookmap={true} bookmapIntensity={50} spoofingThreshold={500000} smartMoneyBias={indicatorSettings.liquidationSmartMoneyBias} />
                                   {indicatorSettings.liquidationShowSmartMoneyHUD !== false && state.smart_trajectory && (
-                                      <SmartMoneyHUD data={state.smart_trajectory as any} visible={true} />
+                                      <SmartMoneyHUD data={state.smart_trajectory as any} currentPrice={state.current_price} icebergEvents={state.iceberg_events} magnetZones={state.magnet_zones} visible={true} />
                                   )}
                              </div>
                              

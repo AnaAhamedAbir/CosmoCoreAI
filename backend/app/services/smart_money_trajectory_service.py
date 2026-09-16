@@ -39,7 +39,7 @@ class SmartMoneyTrajectoryService:
         bid_bins = {}
         for b in filtered_bids:
             price = float(b[0])
-            vol = float(b[1])
+            vol = float(b[1]) * price # Convert base volume to quote volume (USD)
             # Round down to nearest bin
             bin_price = math.floor(price / bin_size) * bin_size
             bid_bins[bin_price] = bid_bins.get(bin_price, 0) + vol
@@ -47,7 +47,7 @@ class SmartMoneyTrajectoryService:
         ask_bins = {}
         for a in filtered_asks:
             price = float(a[0])
-            vol = float(a[1])
+            vol = float(a[1]) * price # Convert base volume to quote volume (USD)
             # Round up to nearest bin
             bin_price = math.ceil(price / bin_size) * bin_size
             ask_bins[bin_price] = ask_bins.get(bin_price, 0) + vol

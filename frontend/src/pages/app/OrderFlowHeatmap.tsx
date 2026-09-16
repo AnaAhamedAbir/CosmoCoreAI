@@ -2154,7 +2154,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         />
                     )}
                     {indicatorSettings.showLiquidationHeatmap && indicatorSettings.liquidationShowSmartMoneyHUD && godModeData?.smart_trajectory && (
-                        <SmartMoneyHUD data={godModeData.smart_trajectory as any} visible={true} />
+                        <SmartMoneyHUD data={godModeData.smart_trajectory as any} currentPrice={godModeData.current_price} icebergEvents={godModeData.iceberg_events} magnetZones={godModeData.magnet_zones} visible={true} />
                     )}
                     {indicatorSettings.showSessions && (
                         <SessionsRenderer

@@ -139,7 +139,7 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                             exit={{ height: 0 }}
                             className="overflow-hidden"
                         >
-                            <div className="p-5 space-y-5">
+                            <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto custom-scrollbar">
                                 
                                 {/* Divergence Alert */}
                                 <AnimatePresence>

@@ -28,6 +28,7 @@ export interface GodModeState {
         short_intensity: number;
     };
     ai_trajectory?: { target_price: number, strength: number, direction: 'UP' | 'DOWN' | 'NEUTRAL' };
+    smart_trajectory?: { target_price: number, strength: number, direction: 'UP' | 'DOWN' | 'NEUTRAL' };
     current_price: number;
     iceberg_events?: any[];
 }

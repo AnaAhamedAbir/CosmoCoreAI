@@ -15,9 +15,10 @@ interface LiquidationRendererProps {
     showBookmap?: boolean;
     bookmapIntensity?: number;
     spoofingThreshold?: number;
+    smartMoneyBias?: boolean;
 }
 
-export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity, showTrueCVD, showSpoofing = true, showGEX = true, showBookmap = true, bookmapIntensity = 50, spoofingThreshold = 500000 }) => {
+export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity, showTrueCVD, showSpoofing = true, showGEX = true, showBookmap = true, bookmapIntensity = 50, spoofingThreshold = 500000, smartMoneyBias = false }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
     
@@ -547,12 +548,13 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
         }
 
         // 4. Draw AI Trajectory Arrow
-        if (data.ai_trajectory && data.ai_trajectory.direction !== 'NEUTRAL') {
+        const activeTrajectory = smartMoneyBias ? data.smart_trajectory : data.ai_trajectory;
+        if (activeTrajectory && activeTrajectory.direction !== 'NEUTRAL') {
             const currentY = series.priceToCoordinate(currentPrice);
-            const targetY = series.priceToCoordinate(data.ai_trajectory.target_price);
+            const targetY = series.priceToCoordinate(activeTrajectory.target_price);
             
             if (currentY !== null && targetY !== null) {
-                const isUp = data.ai_trajectory.direction === 'UP';
+                const isUp = activeTrajectory.direction === 'UP';
                 const color = isUp ? '34, 197, 94' : '239, 68, 68'; // green : red
                 
                 // Calculate arrow start and end points
@@ -564,7 +566,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                 ctx.strokeStyle = `rgba(${color}, 0.8)`;
                 ctx.shadowColor = `rgba(${color}, 1)`;
                 ctx.shadowBlur = 10;
-                ctx.lineWidth = 2 + (data.ai_trajectory.strength / 25); // thicker based on strength
+                ctx.lineWidth = 2 + (activeTrajectory.strength / 25); // thicker based on strength
                 
                 // Draw a dashed path
                 ctx.setLineDash([5, 5]);

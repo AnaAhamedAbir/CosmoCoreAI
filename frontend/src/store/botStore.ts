@@ -180,6 +180,7 @@ export const useBotStore = create<BotState>()(
         liquidationHeatmapIntensity: 1.0,
         liquidationShowBubbles: true,
         liquidationShowSignalArrow: true,
+        liquidationSmartMoneyBias: true,
         liquidationShowTrailingCloud: true,
         liquidationShowTrueCVD: false,
         liquidationShowSpoofing: true,

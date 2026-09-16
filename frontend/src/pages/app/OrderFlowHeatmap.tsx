@@ -2149,6 +2149,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                             showBookmap={indicatorSettings.liquidationShowBookmap}
                             bookmapIntensity={indicatorSettings.liquidationBookmapIntensity}
                             spoofingThreshold={indicatorSettings.liquidationSpoofingThreshold}
+                            smartMoneyBias={indicatorSettings.liquidationSmartMoneyBias}
                         />
                     )}
                     {indicatorSettings.showSessions && (

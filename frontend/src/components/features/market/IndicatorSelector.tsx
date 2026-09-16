@@ -29,6 +29,7 @@ export interface IndicatorSettings {
     quantumVolThreshold: number;
     showLiquidationHeatmap: boolean;
     liquidationShowTrueCVD: boolean;
+    liquidationSmartMoneyBias?: boolean;
     emaPeriod: number;
     bbPeriod: number;
     bbStdDev: number;
@@ -1352,6 +1353,12 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ settings, 
                                         <label className="flex items-center justify-between cursor-pointer group">
                                             <span className="text-gray-400 font-bold group-hover:text-gray-200">Show Live Signal Arrow</span>
                                             <input type="checkbox" checked={settings.liquidationShowSignalArrow !== false} onChange={() => onSettingsChange({ ...settings, liquidationShowSignalArrow: settings.liquidationShowSignalArrow === false ? true : false })} className="w-3 h-3 rounded" />
+                                        </label>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5 mt-2">
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <span className="text-blue-400 font-bold group-hover:text-blue-300">Enable Smart Money AI Bias 🧠</span>
+                                            <input type="checkbox" checked={settings.liquidationSmartMoneyBias !== false} onChange={() => onSettingsChange({ ...settings, liquidationSmartMoneyBias: settings.liquidationSmartMoneyBias === false ? true : false })} className="w-3 h-3 rounded text-blue-500 focus:ring-blue-500" />
                                         </label>
                                     </div>
                                     <div className="flex flex-col gap-1.5 mt-2">

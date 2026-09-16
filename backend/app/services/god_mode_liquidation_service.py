@@ -10,6 +10,8 @@ from ccxt.base.errors import NetworkError
 from app.services.true_cvd_service import true_cvd_service
 from app.services.gex_options_service import gex_options_service
 from app.services.bookmap_heatmap_service import bookmap_heatmap_service
+from app.services.derivatives_service import derivatives_service
+from app.services.smart_money_trajectory_service import smart_money_trajectory_service
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,7 @@ class GodModeService:
             "cascade_probs": [],
             "trailing_liquidity": {"long_level": 0, "short_level": 0, "long_intensity": 0, "short_intensity": 0},
             "ai_trajectory": {"target_price": 0, "strength": 0, "direction": "NEUTRAL"},
+            "smart_trajectory": {"target_price": 0, "strength": 0, "direction": "NEUTRAL"},
             "current_price": 0,
             "true_cvd": 0,
             "iceberg_events": [],
@@ -54,6 +57,7 @@ class GodModeService:
         self._liq_history_1m = []
         self._smart_vol = 0.0
         self._dumb_vol = 0.0
+        self._funding_rate = 0.0
         self._active_tasks = []
         self._last_prices = {"binance": 0.0, "bybit": 0.0, "okx": 0.0, "bitget": 0.0}
 
@@ -114,6 +118,16 @@ class GodModeService:
                 'options': options
             })
         return self.exchanges[ex_id]
+
+    async def _fetch_funding_loop(self, symbol: str):
+        """Fetches live funding rate periodically to act as retail sentiment bias."""
+        while self._running:
+            try:
+                fr_data = await derivatives_service.get_funding_rate(symbol)
+                self._funding_rate = fr_data.get("funding_rate", 0.0)
+            except Exception as e:
+                logger.debug(f"GodMode funding err: {e}")
+            await asyncio.sleep(60)
 
     async def _watch_liquidations(self, ex_id: str, symbol: str):
         exchange = await self._init_exchange(ex_id)
@@ -316,7 +330,7 @@ class GodModeService:
                                 smoothed_zones.append({"price": p, "intensity": intensity, "volume": v})
                                
                                 
-                        # Calculate Magnetic Liquidity Pull Vector (AI Trajectory)
+                        # Calculate Magnetic Liquidity Pull Vector (AI Trajectory) - RAW
                         ask_weight = sum(z["volume"] for z in magnet_zones if z["price"] > cp)
                         bid_weight = sum(z["volume"] for z in magnet_zones if z["price"] < cp)
                         
@@ -331,6 +345,11 @@ class GodModeService:
                             trajectory["strength"] = min(100, int((bid_weight / (ask_weight + 1)) * 30))
                             target = max((z for z in magnet_zones if z["price"] < cp), key=lambda x: x["volume"], default=None)
                             if target: trajectory["target_price"] = target["price"]
+                            
+                        # --- Calculate SMART Money Trajectory (Advanced L2 Filter, EMA, Bias) ---
+                        smart_trajectory = smart_money_trajectory_service.calculate_smart_trajectory(
+                            bids, asks, cp, self._funding_rate
+                        )
                             
                         # --- Dynamic Trailing Liquidity Cloud (DTLC) ---
                         # Trail up for longs (support below price)
@@ -407,6 +426,7 @@ class GodModeService:
                         self.state["smoothed_zones"] = smoothed_zones
                         self.state["cascade_probs"] = cascade_probs
                         self.state["ai_trajectory"] = trajectory
+                        self.state["smart_trajectory"] = smart_trajectory
                         self.state["orderbook_depth"] = orderbook_depth
                         
             except NetworkError:
@@ -520,6 +540,7 @@ class GodModeService:
         self._active_tasks.append(asyncio.create_task(self._broadcast_loop()))
         self._active_tasks.append(asyncio.create_task(self._calculate_heuristics_loop(symbol)))
         self._active_tasks.append(asyncio.create_task(self._scan_global_vulnerabilities()))
+        self._active_tasks.append(asyncio.create_task(self._fetch_funding_loop(symbol)))
         
         # Start multi-exchange hooks
         self._active_tasks.append(asyncio.create_task(self._watch_liquidations('binance', symbol)))
@@ -577,6 +598,7 @@ class GodModeService:
         self.state["gex_data"] = None
         self.state["orderbook_depth"] = []
         self._max_volumes = {}
+        smart_money_trajectory_service.reset()
         logger.info("GodMode Pipeline stopped.")
 
 # Global Singleton

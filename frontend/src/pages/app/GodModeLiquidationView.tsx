@@ -4,13 +4,16 @@ import { useGodModeWebsocket } from '../../hooks/useGodModeWebsocket';
 import { useCCXTMarkets } from '../../hooks/useCCXTMarkets';
 import { createChart, IChartApi, ISeriesApi, CandlestickSeries, createSeriesMarkers } from 'lightweight-charts';
 import { LiquidationRenderer } from '../../components/features/market/LiquidationRenderer';
+import { SmartMoneyHUD } from '../../components/features/market/SmartMoneyHUD';
 import { marketDepthService } from '../../services/marketDepthService';
 import { calculateGodModeSignal } from '../../utils/godModeSignal';
+import { useBotStore } from '../../store/botStore';
 
 const GodModeLiquidationView: React.FC = () => {
     const { selectedPair } = useCCXTMarkets();
     const activePair = selectedPair || 'BTC/USDT';
     const [trailingLiquidityEnabled, setTrailingLiquidityEnabled] = useState(false);
+    const { indicatorSettings } = useBotStore();
     
     // Connect to live backend stream
     const { state, isConnected } = useGodModeWebsocket(activePair);
@@ -278,7 +281,10 @@ const GodModeLiquidationView: React.FC = () => {
 
                              <div className="flex-1 relative bg-black/50">
                                   <div ref={chartContainerRef} className="absolute inset-0"></div>
-                                  <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} showBubbles={true} intensityScale={100} useTrailingLiquidity={trailingLiquidityEnabled} showTrueCVD={true} showSpoofing={true} showGEX={true} showBookmap={true} bookmapIntensity={50} spoofingThreshold={500000} smartMoneyBias={true} />
+                                  <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} showBubbles={indicatorSettings.liquidationShowBubbles} intensityScale={100} useTrailingLiquidity={trailingLiquidityEnabled} showTrueCVD={true} showSpoofing={true} showGEX={true} showBookmap={true} bookmapIntensity={50} spoofingThreshold={500000} smartMoneyBias={indicatorSettings.liquidationSmartMoneyBias} />
+                                  {indicatorSettings.liquidationShowSmartMoneyHUD !== false && state.smart_trajectory && (
+                                      <SmartMoneyHUD data={state.smart_trajectory as any} visible={true} />
+                                  )}
                              </div>
                              
                              {/* Algo Predicted Cascade Overlay (Right Edge) */}

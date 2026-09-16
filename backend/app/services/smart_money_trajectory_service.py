@@ -56,6 +56,9 @@ class SmartMoneyTrajectoryService:
         top_bid_clusters = sorted([{"price": p, "volume": v} for p, v in bid_bins.items()], key=lambda x: x["volume"], reverse=True)[:5]
         top_ask_clusters = sorted([{"price": p, "volume": v} for p, v in ask_bins.items()], key=lambda x: x["volume"], reverse=True)[:5]
         
+        total_bids_liquidity = sum(c["volume"] for c in top_bid_clusters)
+        total_asks_liquidity = sum(c["volume"] for c in top_ask_clusters)
+        
         max_bid_vol = top_bid_clusters[0]["volume"] if top_bid_clusters else 1
         max_ask_vol = top_ask_clusters[0]["volume"] if top_ask_clusters else 1
         
@@ -112,7 +115,15 @@ class SmartMoneyTrajectoryService:
         total_force = self._smoothed_ask_force + self._smoothed_bid_force
         if total_force == 0:
             self._current_direction = "NEUTRAL"
-            return {"target_price": cp, "strength": 0, "direction": "NEUTRAL"}
+            return {
+                "target_price": cp, "strength": 0, "direction": "NEUTRAL",
+                "raw_bid_force": raw_bid_force, "raw_ask_force": raw_ask_force,
+                "smoothed_bid_force": self._smoothed_bid_force, "smoothed_ask_force": self._smoothed_ask_force,
+                "bid_dominance": 0.5, "ask_dominance": 0.5,
+                "funding_rate": funding_rate,
+                "total_bids_liquidity": total_bids_liquidity,
+                "total_asks_liquidity": total_asks_liquidity
+            }
             
         ask_dominance = self._smoothed_ask_force / total_force
         bid_dominance = self._smoothed_bid_force / total_force
@@ -138,7 +149,15 @@ class SmartMoneyTrajectoryService:
                 self._current_direction = "NEUTRAL"
                 
         # 6. Final Target Selection
-        trajectory = {"target_price": cp, "strength": 0, "direction": self._current_direction}
+        trajectory = {
+            "target_price": cp, "strength": 0, "direction": self._current_direction,
+            "raw_bid_force": raw_bid_force, "raw_ask_force": raw_ask_force,
+            "smoothed_bid_force": self._smoothed_bid_force, "smoothed_ask_force": self._smoothed_ask_force,
+            "bid_dominance": bid_dominance, "ask_dominance": ask_dominance,
+            "funding_rate": funding_rate,
+            "total_bids_liquidity": total_bids_liquidity,
+            "total_asks_liquidity": total_asks_liquidity
+        }
         
         if self._current_direction == "UP":
             strength_val = min(100, int((ask_dominance - 0.5) * 200)) if ask_dominance > 0.5 else 10

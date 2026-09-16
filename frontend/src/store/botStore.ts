@@ -181,6 +181,7 @@ export const useBotStore = create<BotState>()(
         liquidationShowBubbles: true,
         liquidationShowSignalArrow: true,
         liquidationSmartMoneyBias: true,
+        liquidationShowSmartMoneyHUD: true,
         liquidationShowTrailingCloud: true,
         liquidationShowTrueCVD: false,
         liquidationShowSpoofing: true,

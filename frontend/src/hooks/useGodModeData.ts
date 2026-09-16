@@ -28,7 +28,14 @@ export interface GodModeState {
         short_intensity: number;
     };
     ai_trajectory?: { target_price: number, strength: number, direction: 'UP' | 'DOWN' | 'NEUTRAL' };
-    smart_trajectory?: { target_price: number, strength: number, direction: 'UP' | 'DOWN' | 'NEUTRAL' };
+    smart_trajectory?: { 
+        target_price: number, strength: number, direction: 'UP' | 'DOWN' | 'NEUTRAL',
+        raw_bid_force?: number, raw_ask_force?: number,
+        smoothed_bid_force?: number, smoothed_ask_force?: number,
+        bid_dominance?: number, ask_dominance?: number,
+        funding_rate?: number,
+        total_bids_liquidity?: number, total_asks_liquidity?: number
+    };
     current_price: number;
     iceberg_events?: any[];
 }

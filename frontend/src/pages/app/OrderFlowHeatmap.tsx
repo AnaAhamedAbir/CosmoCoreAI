@@ -19,6 +19,7 @@ import { FootprintRenderer, FootprintCandleData, FootprintDataTick } from '../..
 import { GodModeHUD } from '../../components/features/market/GodModeHUD';
 import { LiquidationHeatmapGodModeRenderer } from '../../components/features/market/LiquidationHeatmapGodModeRenderer';
 import { LiquidationRenderer } from '../../components/features/market/LiquidationRenderer';
+import { SmartMoneyHUD } from '../../components/features/market/SmartMoneyHUD';
 import { useGodModeData } from '../../hooks/useGodModeData';
 import { FibonacciCloudRenderer, FibonacciData } from '../../components/features/market/FibonacciCloudRenderer';
 import { IchimokuRenderer } from '../../components/features/market/IchimokuRenderer';
@@ -2151,6 +2152,9 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                             spoofingThreshold={indicatorSettings.liquidationSpoofingThreshold}
                             smartMoneyBias={indicatorSettings.liquidationSmartMoneyBias}
                         />
+                    )}
+                    {indicatorSettings.showLiquidationHeatmap && indicatorSettings.liquidationShowSmartMoneyHUD && godModeData?.smart_trajectory && (
+                        <SmartMoneyHUD data={godModeData.smart_trajectory as any} visible={true} />
                     )}
                     {indicatorSettings.showSessions && (
                         <SessionsRenderer

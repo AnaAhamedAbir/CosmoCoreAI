@@ -16,6 +16,14 @@ export interface GodModeState {
     cascade_probs: any[];
     true_cvd?: number;
     iceberg_events?: any[];
+    smart_trajectory?: { 
+        target_price: number, strength: number, direction: 'UP' | 'DOWN' | 'NEUTRAL',
+        raw_bid_force?: number, raw_ask_force?: number,
+        smoothed_bid_force?: number, smoothed_ask_force?: number,
+        bid_dominance?: number, ask_dominance?: number,
+        funding_rate?: number,
+        total_bids_liquidity?: number, total_asks_liquidity?: number
+    };
 }
 
 export const useGodModeWebsocket = (symbol: string = 'BTC/USDT') => {

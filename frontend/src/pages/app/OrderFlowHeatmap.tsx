@@ -305,12 +305,33 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         chartRef.current = chart;
         candlestickSeriesRef.current = candlestickSeries;
         
-        // Remove click listener, we'll use the plus button click instead.
-        // But keep it for drawing the line if they click generally? The user said "zeta click korle e just modal ti oi price a open hobe" (clicking the plus icon).
-        // Let's remove subscribeClick so it doesn't conflict with dragging.
+        // Add click listener to allow clicking anywhere on the chart to set the limit price
+        chart.subscribeClick((param) => {
+            if (param.point && param.point.y !== undefined && candlestickSeriesRef.current && onChartClickPrice) {
+                const price = candlestickSeriesRef.current.coordinateToPrice(param.point.y as any);
+                if (price !== null) {
+                    onChartClickPrice(price);
+                    
+                    if (aiClickPriceLineRef.current && candlestickSeriesRef.current) {
+                        candlestickSeriesRef.current.removePriceLine(aiClickPriceLineRef.current);
+                    }
+                    if (candlestickSeriesRef.current) {
+                        aiClickPriceLineRef.current = candlestickSeriesRef.current.createPriceLine({
+                            price: price as number,
+                            color: '#c084fc',
+                            lineWidth: 2,
+                            lineStyle: 3,
+                            axisLabelVisible: true,
+                            title: '🤖 Algo Target',
+                        });
+                    }
+                }
+            }
+        });
         
         chart.subscribeCrosshairMove((param) => {
             if (crosshairBtnRef.current && crosshairBtnRef.current.matches(':hover')) {
+
                 // If the user is hovering the button, freeze its position so they can click it
                 return;
             }
@@ -3621,7 +3642,7 @@ const OrderFlowHeatmap: React.FC = () => {
 
                 {/* MANUAL TRADE MODAL */}
                 <div className="w-16 h-16 relative shrink-0">
-                    <ManualTradeModal symbol={symbol} currentPrice={currentPrice} onApiKeyChange={setSelectedApiKeyId} clickedPrice={externalAIPrice} />
+                    <ManualTradeModal symbol={symbol} currentPrice={currentPrice} onApiKeyChange={setSelectedApiKeyId} clickedPrice={externalAIPrice} openTrigger={externalAIOpenTrigger} />
                 </div>
 
                 {/* FLOATING ORDER FLOW CHART BUTTON */}

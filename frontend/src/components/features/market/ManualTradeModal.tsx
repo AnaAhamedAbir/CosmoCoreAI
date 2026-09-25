@@ -12,9 +12,10 @@ interface ManualTradeModalProps {
   currentPrice: number;
   onApiKeyChange?: (apiKeyId: string) => void;
   clickedPrice?: number | null;
+  openTrigger?: number;
 }
 
-export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, currentPrice, onApiKeyChange, clickedPrice }) => {
+export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, currentPrice, onApiKeyChange, clickedPrice, openTrigger }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Market');
   const [size, setSize] = useState<string>('');
@@ -124,7 +125,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
          setIsOpen(true); // Auto-open modal if closed
       }
     }
-  }, [clickedPrice]);
+  }, [clickedPrice, openTrigger]);
 
   // Update limit price placeholder when currentPrice changes if user hasn't typed
   React.useEffect(() => {

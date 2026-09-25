@@ -259,12 +259,43 @@ class ManualTradeService:
                     except Exception as lev_e:
                         logger.warning(f"Leverage set skipped (may already be set): {lev_e}")
 
-            # Execute Trade
-            if order_req.type.lower() == 'market':
-                response = await exchange.create_market_order(
-                    order_req.symbol, order_req.side, order_req.amount, ex_params
-                )
-            elif order_req.type.lower() == 'limit':
+            # --- Pre-flight Margin Check ---
+            try:
+                bal = await exchange.fetch_balance()
+                parts = order_req.symbol.split('/')
+                base_part = parts[0] if len(parts) > 1 else order_req.symbol
+                quote_part = parts[1].split(':')[0] if len(parts) > 1 else "USDT"
+
+                req_amount = order_req.amount
+                req_price = getattr(order_req, 'price', 0)
+                if not req_price or req_price <= 0:
+                     ticker = await exchange.fetch_ticker(order_req.symbol)
+                     req_price = ticker.get('last', 0)
+
+                if req_price and req_price > 0:
+                    notional_value = req_amount * req_price
+                    required_margin = notional_value
+                    
+                    if is_futures:
+                         lev = params.get('leverage') or 1
+                         required_margin = notional_value / float(lev)
+                    
+                    if order_req.side.lower() == 'buy' or is_futures:
+                         free_quote = float(bal.get(quote_part, {}).get('free', 0.0))
+                         if required_margin > free_quote and not params.get('reduceOnly'):
+                              if required_margin <= (free_quote * 1.05): # If they hit 100% button
+                                   logger.info(f"🛠️ Pre-flight Margin: Auto-adjusting size (Req: {required_margin}, Free: {free_quote})")
+                                   order_req.amount = order_req.amount * (free_quote / required_margin) * 0.99
+                    elif order_req.side.lower() == 'sell' and not is_futures: # Spot Sell
+                         free_base = float(bal.get(base_part, {}).get('free', 0.0))
+                         if req_amount > free_base:
+                              if req_amount <= (free_base * 1.05):
+                                   order_req.amount = free_base * 0.999 # Leave dust for fees
+            except Exception as margin_e:
+                logger.debug(f"Pre-flight margin check skipped: {margin_e}")
+
+            # Prepare Limit Order parameters if needed
+            if order_req.type.lower() == 'limit':
                 if params.get('autoBestLimit'):
                     try:
                         ob = await exchange.fetch_order_book(order_req.symbol, limit=5)
@@ -279,7 +310,6 @@ class ManualTradeService:
                         logger.error(f"Failed to auto-detect best limit price: {e}")
                         raise HTTPException(status_code=500, detail=f"Failed to auto-fetch best limit price: {e}")
 
-                # PostOnly/timeInForce support — for all limit orders, not just autoBestLimit
                 time_in_force = params.get('timeInForce', '')
                 if time_in_force.lower() in ('postonly', 'post_only', 'post-only'):
                     ex_params['postOnly'] = True
@@ -287,12 +317,36 @@ class ManualTradeService:
 
                 if not getattr(order_req, 'price', None) or order_req.price <= 0:
                     raise HTTPException(status_code=400, detail="Price is required for limit orders")
-                
-                response = await exchange.create_limit_order(
-                    order_req.symbol, order_req.side, order_req.amount, order_req.price, ex_params
-                )
-            else:
-                raise HTTPException(status_code=400, detail="Invalid order type. Use 'market' or 'limit'.")
+
+            # Execute Trade (Try WebSocket First, Fallback to REST)
+            response = None
+            is_ws_success = False
+
+            if hasattr(exchange, 'create_order_ws'):
+                try:
+                    logger.info(f"⚡ Attempting WebSocket order execution for {order_req.symbol}...")
+                    order_type = order_req.type.lower()
+                    price = order_req.price if order_type == 'limit' else None
+                    response = await exchange.create_order_ws(
+                        order_req.symbol, order_type, order_req.side, order_req.amount, price, ex_params
+                    )
+                    is_ws_success = True
+                    logger.info("✅ WebSocket Order execution successful!")
+                except Exception as ws_e:
+                    logger.warning(f"⚠️ WebSocket Order Failed ({ws_e}). Falling back to REST API.")
+
+            if not is_ws_success:
+                logger.info(f"🌐 Using REST API order execution for {order_req.symbol}...")
+                if order_req.type.lower() == 'market':
+                    response = await exchange.create_market_order(
+                        order_req.symbol, order_req.side, order_req.amount, ex_params
+                    )
+                elif order_req.type.lower() == 'limit':
+                    response = await exchange.create_limit_order(
+                        order_req.symbol, order_req.side, order_req.amount, order_req.price, ex_params
+                    )
+                else:
+                    raise HTTPException(status_code=400, detail="Invalid order type. Use 'market' or 'limit'.")
 
             # Calculate Latency (using backend perf_counter to eliminate PC-Server clock drift)
             latency_ms = 0
@@ -375,22 +429,72 @@ class ManualTradeService:
         try:
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
             
+            # Fetch original order to preserve its type and parameters
+            original_order = None
+            try:
+                original_order = await exchange.fetch_order(order_id, symbol)
+            except Exception as e:
+                logger.warning(f"Could not fetch original order {order_id} during edit: {e}")
+            
             # Use cancel + create pattern as it is more universally supported across exchanges than native editOrder
             # 1. Cancel existing order
             try:
-                await exchange.cancel_order(id=order_id, symbol=symbol)
+                if hasattr(exchange, 'cancel_order_ws'):
+                    await exchange.cancel_order_ws(id=order_id, symbol=symbol)
+                else:
+                    await exchange.cancel_order(id=order_id, symbol=symbol)
             except Exception as cancel_e:
                 logger.warning(f"Error canceling order {order_id} during edit: {cancel_e}")
-                # We don't fail completely yet, the order might already be canceled/filled, 
-                # but usually if we are dragging it, it's open.
             
             # Small buffer to ensure exchange processes the cancel before replacing, preventing margin errors
             await asyncio.sleep(0.1)
 
-            # 2. Create new Limit Order at new_price
-            response = await exchange.create_limit_order(
-                symbol, side, amount, new_price, {'postOnly': True} # Using postOnly to match typical wallhunter behavior, optional
-            )
+            # 2. Re-create Order at new_price
+            response = None
+            is_ws_success = False
+            ex_params = {}
+            order_type = 'limit'
+            price_arg = new_price
+
+            if original_order:
+                orig_type = original_order.get('type', 'limit').lower()
+                order_type = orig_type
+                
+                # If it's a stop order, the new price is the trigger price
+                if 'stop' in orig_type or 'take_profit' in orig_type:
+                    ex_params['stopPrice'] = new_price
+                    price_arg = None # Market stops have no execution price
+                    
+                    if orig_type in ('stop_limit', 'take_profit_limit'):
+                        # If it was a stop limit, we need both trigger and exec price. 
+                        # We'll just shift the limit price by the same delta if possible.
+                        orig_trigger = original_order.get('stopPrice') or original_order.get('triggerPrice') or new_price
+                        orig_limit = original_order.get('price') or orig_trigger
+                        delta = new_price - orig_trigger
+                        price_arg = orig_limit + delta
+                
+                if original_order.get('postOnly'):
+                    ex_params['postOnly'] = True
+                if original_order.get('reduceOnly'):
+                    ex_params['reduceOnly'] = True
+            else:
+                # Fallback if fetch failed
+                ex_params['postOnly'] = True
+
+            if hasattr(exchange, 'create_order_ws'):
+                try:
+                    logger.info(f"⚡ Attempting WebSocket order edit (create) for {symbol} ({order_type})...")
+                    response = await exchange.create_order_ws(
+                        symbol, order_type, side, amount, price_arg, ex_params
+                    )
+                    is_ws_success = True
+                except Exception as ws_e:
+                    logger.warning(f"⚠️ WebSocket Order Edit Failed ({ws_e}). Falling back to REST API.")
+            
+            if not is_ws_success:
+                response = await exchange.create_order(
+                    symbol, order_type, side, amount, price_arg, ex_params
+                )
             
             # Send Notification
             try:

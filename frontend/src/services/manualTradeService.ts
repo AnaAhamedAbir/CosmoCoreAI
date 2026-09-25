@@ -21,6 +21,13 @@ export interface OrderPayload {
     order_type: 'Limit' | 'Market';
     timeout_mins: number;
   };
+  attached_sl?: {
+    enabled: boolean;
+    type: 'fixed' | 'trailing';
+    mode: 'percentage' | 'price';
+    value: number;
+    timeout_mins: number;
+  };
 }
 
 export interface ApiKey {

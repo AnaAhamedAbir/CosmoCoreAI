@@ -22,6 +22,7 @@ class AttachedTPConfig(BaseModel):
 
 class AttachedSLConfig(BaseModel):
     enabled: bool
+    type: Optional[str] = 'fixed' # 'fixed' or 'trailing'
     mode: str  # 'percentage' or 'price'
     value: float
 

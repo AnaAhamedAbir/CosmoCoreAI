@@ -348,7 +348,7 @@ class GodModeService:
                             
                         # --- Calculate SMART Money Trajectory (Advanced L2 Filter, EMA, Bias) ---
                         smart_trajectory = smart_money_trajectory_service.calculate_smart_trajectory(
-                            bids, asks, cp, self._funding_rate
+                            bids_within_range, asks_within_range, cp, self._funding_rate
                         )
                             
                         # --- Dynamic Trailing Liquidity Cloud (DTLC) ---

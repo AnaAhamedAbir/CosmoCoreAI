@@ -11,9 +11,10 @@ interface ManualTradeModalProps {
   symbol: string;
   currentPrice: number;
   onApiKeyChange?: (apiKeyId: string) => void;
+  clickedPrice?: number | null;
 }
 
-export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, currentPrice, onApiKeyChange }) => {
+export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, currentPrice, onApiKeyChange, clickedPrice }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Market');
   const [size, setSize] = useState<string>('');
@@ -38,6 +39,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
   });
   const [slConfig, setSlConfig] = useState({
     enabled: false,
+    type: 'fixed' as 'fixed' | 'trailing',
     mode: 'percentage' as 'percentage' | 'price',
     value: '',
     timeoutMins: 5
@@ -111,6 +113,18 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
 
   // For Limit orders
   const [limitPrice, setLimitPrice] = useState<string>(currentPrice ? currentPrice.toString() : '');
+
+  // Update limit price when clickedPrice from chart changes
+  React.useEffect(() => {
+    if (clickedPrice && clickedPrice > 0) {
+      setOrderType('Limit');
+      setIsAutoLimit(false); // Disable auto best limit since user manually picked a price
+      setLimitPrice(clickedPrice.toString());
+      if (!isOpen) {
+         setIsOpen(true); // Auto-open modal if closed
+      }
+    }
+  }, [clickedPrice]);
 
   // Update limit price placeholder when currentPrice changes if user hasn't typed
   React.useEffect(() => {
@@ -190,6 +204,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
       if (slConfig.enabled && slConfig.value && Number(slConfig.value) > 0) {
         payload.attached_sl = {
           enabled: true,
+          type: slConfig.type,
           mode: slConfig.mode,
           value: Number(slConfig.value),
           timeout_mins: slConfig.timeoutMins
@@ -618,29 +633,53 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                             exit={{ height: 0, opacity: 0 }}
                             className="space-y-3 overflow-hidden pt-2 border-t border-white/5"
                         >
-                            {/* Gap Mode */}
-                            <div className="space-y-1">
-                                <label className="text-[10px] text-gray-400 font-medium">Gap Mode</label>
-                                <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
-                                    <button
-                                        onClick={() => setSlConfig({...slConfig, mode: 'percentage'})}
-                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                    >
-                                        %
-                                    </button>
-                                    <button
-                                        onClick={() => setSlConfig({...slConfig, mode: 'price'})}
-                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                    >
-                                        $
-                                    </button>
+                            {/* Layout Grid */}
+                            <div className="grid grid-cols-2 gap-2">
+                                {/* SL Type */}
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-gray-400 font-medium">SL Type</label>
+                                    <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                        <button
+                                            onClick={() => setSlConfig({...slConfig, type: 'fixed'})}
+                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                            Fixed
+                                        </button>
+                                        <button
+                                            onClick={() => setSlConfig({...slConfig, type: 'trailing'})}
+                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                            Trailing
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Gap Mode */}
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-gray-400 font-medium">Gap Mode</label>
+                                    <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                        <button
+                                            onClick={() => setSlConfig({...slConfig, mode: 'percentage'})}
+                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                            %
+                                        </button>
+                                        <button
+                                            onClick={() => setSlConfig({...slConfig, mode: 'price'})}
+                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                            $
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             
                             {/* Target Gap & Timeout */}
                             <div className="grid grid-cols-2 gap-2">
                                 <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">Stop Gap</label>
+                                    <label className="text-[10px] text-gray-400 font-medium">
+                                        {slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap'}
+                                    </label>
                                     <div className="relative">
                                         <input 
                                             type="number"

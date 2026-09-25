@@ -3621,7 +3621,7 @@ const OrderFlowHeatmap: React.FC = () => {
 
                 {/* MANUAL TRADE MODAL */}
                 <div className="w-16 h-16 relative shrink-0">
-                    <ManualTradeModal symbol={symbol} currentPrice={currentPrice} onApiKeyChange={setSelectedApiKeyId} />
+                    <ManualTradeModal symbol={symbol} currentPrice={currentPrice} onApiKeyChange={setSelectedApiKeyId} clickedPrice={externalAIPrice} />
                 </div>
 
                 {/* FLOATING ORDER FLOW CHART BUTTON */}

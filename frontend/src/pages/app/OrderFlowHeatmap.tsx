@@ -95,7 +95,7 @@ const parseIntervalToMs = (interval: string): number => {
 };
 
 // Chart Component
-const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onChartClickPrice?: (price: number) => void }> = ({ exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onChartClickPrice }) => {
+const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void }> = ({ exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<any>(null);
     const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -307,10 +307,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         
         // Add click listener to allow clicking anywhere on the chart to set the limit price
         chart.subscribeClick((param) => {
-            if (param.point && param.point.y !== undefined && candlestickSeriesRef.current && onChartClickPrice) {
+            if (param.point && param.point.y !== undefined && candlestickSeriesRef.current && onChartBackgroundClick) {
                 const price = candlestickSeriesRef.current.coordinateToPrice(param.point.y as any);
                 if (price !== null) {
-                    onChartClickPrice(price);
+                    onChartBackgroundClick(price);
                     
                     if (aiClickPriceLineRef.current && candlestickSeriesRef.current) {
                         candlestickSeriesRef.current.removePriceLine(aiClickPriceLineRef.current);
@@ -2088,8 +2088,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     ref={crosshairBtnRef}
                     onClick={(e) => {
                         e.stopPropagation();
-                        if (crosshairPriceRef.current !== null && onChartClickPrice) {
-                            onChartClickPrice(crosshairPriceRef.current);
+                        if (crosshairPriceRef.current !== null && onAIPredictClick) {
+                            onAIPredictClick(crosshairPriceRef.current);
                             if (aiClickPriceLineRef.current && candlestickSeriesRef.current) {
                                 candlestickSeriesRef.current.removePriceLine(aiClickPriceLineRef.current);
                             }
@@ -2913,9 +2913,11 @@ const OrderFlowChartPanel: React.FC<{
     activeMLModelId: string | null;
     setExternalAIPrice: (price: number) => void;
     setExternalAIOpenTrigger: (trigger: number) => void;
+    setManualTradePrice: (price: number) => void;
+    setManualTradeTrigger: (trigger: number) => void;
     volumeThreshold: number;
     volumeMode: string;
-}> = ({ config, isMain, onUpdate, onRemove, showFootprint, showCVD, showVPVR, indicatorSettings, advancedMetrics, selectedApiKeyId, predictionResult, activeMLModelId, setExternalAIPrice, setExternalAIOpenTrigger, volumeThreshold, volumeMode }) => {
+}> = ({ config, isMain, onUpdate, onRemove, showFootprint, showCVD, showVPVR, indicatorSettings, advancedMetrics, selectedApiKeyId, predictionResult, activeMLModelId, setExternalAIPrice, setExternalAIOpenTrigger, setManualTradePrice, setManualTradeTrigger, volumeThreshold, volumeMode }) => {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isTradingViewMode, setIsTradingViewMode] = useState(false);
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
@@ -3024,9 +3026,13 @@ const OrderFlowChartPanel: React.FC<{
                 ) : (
                     <OrderFlowChart 
                         exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId}
-                        onChartClickPrice={(price) => {
+                        onAIPredictClick={(price) => {
                             setExternalAIPrice(price);
                             setExternalAIOpenTrigger(Date.now());
+                        }}
+                        onChartBackgroundClick={(price) => {
+                            setManualTradePrice(price);
+                            setManualTradeTrigger(Date.now());
                         }}
                     />
                 )}
@@ -3117,6 +3123,8 @@ const OrderFlowHeatmap: React.FC = () => {
     }, [symbol, exchange]);
     const [externalAIPrice, setExternalAIPrice] = useState<number | null>(null);
     const [externalAIOpenTrigger, setExternalAIOpenTrigger] = useState<number>(0);
+    const [manualTradePrice, setManualTradePrice] = useState<number | null>(null);
+    const [manualTradeTrigger, setManualTradeTrigger] = useState<number>(0);
     const [isTopTokensModalOpen, setIsTopTokensModalOpen] = useState(false);
 
     // ── Draggable HUD state ────────────────────────────────────────────────────
@@ -3388,6 +3396,8 @@ const OrderFlowHeatmap: React.FC = () => {
                             activeMLModelId={c.isMain ? activeMLModelId : null} 
                             setExternalAIPrice={c.isMain ? setExternalAIPrice : () => {}} 
                             setExternalAIOpenTrigger={c.isMain ? setExternalAIOpenTrigger : () => {}} 
+                            setManualTradePrice={c.isMain ? setManualTradePrice : () => {}}
+                            setManualTradeTrigger={c.isMain ? setManualTradeTrigger : () => {}}
                             volumeThreshold={volumeThreshold} 
                             volumeMode={volumeMode} 
                         />
@@ -3642,7 +3652,7 @@ const OrderFlowHeatmap: React.FC = () => {
 
                 {/* MANUAL TRADE MODAL */}
                 <div className="w-16 h-16 relative shrink-0">
-                    <ManualTradeModal symbol={symbol} currentPrice={currentPrice} onApiKeyChange={setSelectedApiKeyId} clickedPrice={externalAIPrice} openTrigger={externalAIOpenTrigger} />
+                    <ManualTradeModal symbol={symbol} currentPrice={currentPrice} onApiKeyChange={setSelectedApiKeyId} clickedPrice={manualTradePrice} openTrigger={manualTradeTrigger} />
                 </div>
 
                 {/* FLOATING ORDER FLOW CHART BUTTON */}

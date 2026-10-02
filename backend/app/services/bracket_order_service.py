@@ -259,7 +259,7 @@ class BracketOrderService:
                             )
                         else:
                             tp_res = await exchange.create_market_order(
-                                symbol, opposite_side, final_amount, ex_params
+                                symbol, opposite_side, final_amount, params=ex_params
                             )
     
                     logger.info(f"✅ Bracket Monitor: TP placed! ID: {tp_res.get('id')}")
@@ -495,7 +495,7 @@ class BracketOrderService:
                     logger.warning(f"Trailing SL exit WS failed ({ws_e}). Fallback to REST.")
             
             if not is_ws_success:
-                sl_res = await exchange.create_market_order(symbol, opposite_side, amount, params)
+                sl_res = await exchange.create_market_order(symbol, opposite_side, amount, params=params)
 
             logger.info(f"✅ Trailing SL Executed! ID: {sl_res.get('id')}")
 

@@ -447,7 +447,7 @@ class ManualTradeService:
                 logger.info(f"🌐 Using REST API order execution for {order_req.symbol}...")
                 if order_req.type.lower() == 'market':
                     response = await exchange.create_market_order(
-                        order_req.symbol, order_req.side, order_req.amount, ex_params
+                        order_req.symbol, order_req.side, order_req.amount, params=ex_params
                     )
                 elif order_req.type.lower() == 'limit':
                     response = await exchange.create_limit_order(

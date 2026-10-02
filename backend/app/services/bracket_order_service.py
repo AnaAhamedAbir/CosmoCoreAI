@@ -134,6 +134,84 @@ class BracketOrderService:
             )
             opposite_side = 'sell' if side.lower() == 'buy' else 'buy'
 
+            # --- Binance Spot OCO handling ---
+            sl_type = sl_config.get('type', 'fixed') if sl_config else None
+            if exchange.id == 'binance' and not is_futures and tp_config and sl_config and sl_type == 'fixed':
+                logger.info(f"⚡ Bracket Monitor: Using Native Binance OCO for {symbol} (Market Entry Fallback)")
+                
+                # Calculate TP Price
+                tp_mode = tp_config.get('mode', 'percentage')
+                tp_val = float(tp_config.get('value', 0))
+                if tp_mode == 'percentage':
+                    pct = tp_val / 100.0
+                    tp_price = average_price * (1 + pct) if opposite_side == 'sell' else average_price * (1 - pct)
+                elif tp_mode == 'absolute':
+                    tp_price = tp_val
+                else:
+                    tp_price = average_price + tp_val if opposite_side == 'sell' else average_price - tp_val
+                
+                # Calculate SL Price
+                sl_mode = sl_config.get('mode', 'percentage')
+                sl_val = float(sl_config.get('value', 0))
+                if sl_mode == 'percentage':
+                    pct = sl_val / 100.0
+                    sl_price = average_price * (1 - pct) if opposite_side == 'sell' else average_price * (1 + pct)
+                elif sl_mode == 'absolute':
+                    sl_price = sl_val
+                else:
+                    sl_price = average_price - sl_val if opposite_side == 'sell' else average_price + sl_val
+                
+                market = exchange.market(symbol)
+                native_symbol = market['id']
+                
+                payload = {
+                    "symbol": native_symbol,
+                    "side": opposite_side.upper(),
+                    "quantity": exchange.amount_to_precision(symbol, final_amount),
+                }
+                
+                if opposite_side == 'sell': # We bought, now we sell
+                    payload['aboveType'] = 'LIMIT_MAKER'
+                    payload['abovePrice'] = exchange.price_to_precision(symbol, tp_price)
+                    payload['belowType'] = 'STOP_LOSS_LIMIT'
+                    payload['belowTimeInForce'] = 'GTC'
+                    payload['belowStopPrice'] = exchange.price_to_precision(symbol, sl_price)
+                    payload['belowPrice'] = exchange.price_to_precision(symbol, sl_price * 0.999)
+                else: # We sold, now we buy
+                    payload['aboveType'] = 'STOP_LOSS_LIMIT'
+                    payload['aboveTimeInForce'] = 'GTC'
+                    payload['aboveStopPrice'] = exchange.price_to_precision(symbol, sl_price)
+                    payload['abovePrice'] = exchange.price_to_precision(symbol, sl_price * 1.001)
+                    payload['belowType'] = 'LIMIT_MAKER'
+                    payload['belowPrice'] = exchange.price_to_precision(symbol, tp_price)
+                    
+                try:
+                    raw_res = await exchange.private_post_orderlist_oco(payload)
+                    logger.info(f"✅ Native Binance OCO placed successfully! ID: {raw_res.get('orderListId')}")
+                    
+                    if user_id:
+                        try:
+                            from app.db.session import SessionLocal
+                            db = SessionLocal()
+                            try:
+                                msg = (
+                                    f"✅ *Native OCO Executed (Market)*\n"
+                                    f"Exchange: Binance Spot\n"
+                                    f"Pair: `{symbol}`\n"
+                                    f"Amount: `{final_amount}`\n"
+                                    f"TP Price: `{exchange.price_to_precision(symbol, tp_price)}`\n"
+                                    f"SL Price: `{exchange.price_to_precision(symbol, sl_price)}`"
+                                )
+                                await NotificationService.send_message(db, user_id, msg)
+                            finally:
+                                db.close()
+                        except Exception as notify_err:
+                            pass
+                    return # Exit since we placed both successfully!
+                except Exception as e:
+                    logger.error(f"❌ Native OCO failed: {e}")
+                    raise
+
             # --- Execute TP ---
             if tp_config:
                 tp_order_type = tp_config.get('order_type', 'Limit').lower()

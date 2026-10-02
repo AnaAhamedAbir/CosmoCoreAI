@@ -372,10 +372,12 @@ class ManualTradeService:
                             payload['pendingAboveType'] = 'LIMIT_MAKER'
                             payload['pendingAbovePrice'] = exchange.price_to_precision(order_req.symbol, tp_price)
                             payload['pendingBelowType'] = 'STOP_LOSS_LIMIT'
+                            payload['pendingBelowTimeInForce'] = 'GTC'
                             payload['pendingBelowStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
                             payload['pendingBelowPrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 0.999)
                         else:
                             payload['pendingAboveType'] = 'STOP_LOSS_LIMIT'
+                            payload['pendingAboveTimeInForce'] = 'GTC'
                             payload['pendingAboveStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
                             payload['pendingAbovePrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 1.001)
                             payload['pendingBelowType'] = 'LIMIT_MAKER'
@@ -388,6 +390,7 @@ class ManualTradeService:
                                 payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, tp_price)
                             elif has_sl:
                                 payload['pendingType'] = 'STOP_LOSS_LIMIT'
+                                payload['pendingTimeInForce'] = 'GTC'
                                 payload['pendingStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
                                 payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 0.999)
                         else:
@@ -396,6 +399,7 @@ class ManualTradeService:
                                 payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, tp_price)
                             elif has_sl:
                                 payload['pendingType'] = 'STOP_LOSS_LIMIT'
+                                payload['pendingTimeInForce'] = 'GTC'
                                 payload['pendingStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
                                 payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 1.001)
                         raw_res = await exchange.private_post_orderlist_oto(payload)

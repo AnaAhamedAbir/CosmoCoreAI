@@ -360,16 +360,19 @@ class ManualTradeService:
                     else:
                         sl_price = entry_price - val if order_req.side.lower() == 'buy' else entry_price + val
                 
+                is_post_only = ex_params.get('postOnly', False)
                 payload = {
                     "symbol": native_symbol,
-                    "workingType": "LIMIT",
+                    "workingType": "LIMIT_MAKER" if is_post_only else "LIMIT",
                     "workingSide": order_req.side.upper(),
                     "workingPrice": exchange.price_to_precision(order_req.symbol, order_req.price),
                     "workingQuantity": exchange.amount_to_precision(order_req.symbol, order_req.amount),
-                    "workingTimeInForce": "GTC",
                     "pendingSide": "SELL" if order_req.side.lower() == "buy" else "BUY",
                     "pendingQuantity": exchange.amount_to_precision(order_req.symbol, order_req.amount),
                 }
+                
+                if not is_post_only:
+                    payload["workingTimeInForce"] = "GTC"
                 
                 try:
                     if has_tp and has_sl:

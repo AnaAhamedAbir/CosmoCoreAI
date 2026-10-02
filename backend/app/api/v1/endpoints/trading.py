@@ -38,6 +38,7 @@ class OrderRequest(BaseModel):
     client_timestamp: Optional[int] = None
     attached_tp: Optional[AttachedTPConfig] = None
     attached_sl: Optional[AttachedSLConfig] = None
+    use_native_tp_sl: Optional[bool] = False
 
 class ConnectionTestRequest(BaseModel):
     exchange_id: str

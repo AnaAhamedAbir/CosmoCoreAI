@@ -45,6 +45,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
     value: '',
     timeoutMins: 5
   });
+  const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(false);
 
   // Fetch API Keys
   React.useEffect(() => {
@@ -189,7 +190,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
         exchange_id: resolvedExchange,
         api_key_id: selectedApi ? Number(selectedApi) : undefined,
         params: Object.keys(paramsPayload).length > 0 ? paramsPayload : undefined,
-        client_timestamp: Date.now()
+        client_timestamp: Date.now(),
+        use_native_tp_sl: useNativeTpSl
       };
 
       if (tpConfig.enabled && tpConfig.value && Number(tpConfig.value) > 0) {
@@ -513,6 +515,23 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                   ))}
                 </div>
               </div>
+
+              {/* Native Binance TP/SL Toggle */}
+              {(tpConfig.enabled || slConfig.enabled) && !isFutures && (
+                <div className="flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30">
+                  <div className="flex flex-col">
+                      <span className="text-xs font-bold text-brand-primary">Use Native Binance OTO/OTOCO</span>
+                      <span className="text-[9px] text-brand-primary/80">Binance will natively handle TP/SL (Disables Trailing SL)</span>
+                  </div>
+                  <div className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${useNativeTpSl ? 'bg-brand-primary' : 'bg-gray-600'}`} onClick={() => setUseNativeTpSl(!useNativeTpSl)}>
+                      <MotionDiv 
+                          className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                          animate={{ x: useNativeTpSl ? 16 : 0 }}
+                          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      />
+                  </div>
+                </div>
+              )}
 
               {/* Bracket Order (Attached TP) Panel */}
               <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-brand-primary/10 transition-all">

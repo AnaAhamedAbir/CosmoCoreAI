@@ -322,6 +322,87 @@ class ManualTradeService:
             response = None
             is_ws_success = False
 
+            # --- NATIVE BINANCE OTOCO SUPPORT ---
+            use_native_otoco = getattr(order_req, 'use_native_tp_sl', False)
+            if use_native_otoco and exchange.id == 'binance' and order_req.type.lower() == 'limit' and (order_req.attached_tp or order_req.attached_sl):
+                logger.info(f"⚡ Using Binance Native Attached Orders (OTO/OTOCO) for {order_req.symbol}...")
+                
+                market = exchange.market(order_req.symbol)
+                native_symbol = market['id']
+                has_tp = bool(order_req.attached_tp and order_req.attached_tp.target_price)
+                has_sl = bool(order_req.attached_sl and order_req.attached_sl.trigger_price)
+                
+                payload = {
+                    "symbol": native_symbol,
+                    "workingType": "LIMIT",
+                    "workingSide": order_req.side.upper(),
+                    "workingPrice": exchange.price_to_precision(order_req.symbol, order_req.price),
+                    "workingQuantity": exchange.amount_to_precision(order_req.symbol, order_req.amount),
+                    "workingTimeInForce": "GTC",
+                    "pendingSide": "SELL" if order_req.side.lower() == "buy" else "BUY",
+                    "pendingQuantity": exchange.amount_to_precision(order_req.symbol, order_req.amount),
+                }
+                
+                try:
+                    if has_tp and has_sl:
+                        if order_req.side.lower() == 'buy':
+                            payload['pendingAboveType'] = 'LIMIT_MAKER'
+                            payload['pendingAbovePrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_tp.target_price)
+                            payload['pendingBelowType'] = 'STOP_LOSS_LIMIT'
+                            payload['pendingBelowStopPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price)
+                            payload['pendingBelowPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price * 0.999)
+                        else:
+                            payload['pendingAboveType'] = 'STOP_LOSS_LIMIT'
+                            payload['pendingAboveStopPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price)
+                            payload['pendingAbovePrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price * 1.001)
+                            payload['pendingBelowType'] = 'LIMIT_MAKER'
+                            payload['pendingBelowPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_tp.target_price)
+                        raw_res = await exchange.private_post_orderlist_otoco(payload)
+                    else: # OTO
+                        if order_req.side.lower() == 'buy':
+                            if has_tp:
+                                payload['pendingType'] = 'LIMIT_MAKER'
+                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_tp.target_price)
+                            elif has_sl:
+                                payload['pendingType'] = 'STOP_LOSS_LIMIT'
+                                payload['pendingStopPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price)
+                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price * 0.999)
+                        else:
+                            if has_tp:
+                                payload['pendingType'] = 'LIMIT_MAKER'
+                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_tp.target_price)
+                            elif has_sl:
+                                payload['pendingType'] = 'STOP_LOSS_LIMIT'
+                                payload['pendingStopPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price)
+                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price * 1.001)
+                        raw_res = await exchange.private_post_orderlist_oto(payload)
+
+                    order_list = raw_res.get('orderReports', [])
+                    working_order = next((o for o in order_list if o['type'] == 'LIMIT'), None)
+                    if not working_order and len(order_list) > 0:
+                        working_order = order_list[0]
+                    
+                    response = {
+                        'id': str(working_order.get('orderId')) if working_order else str(raw_res.get('orderListId', 'otoco')),
+                        'symbol': order_req.symbol,
+                        'type': 'limit',
+                        'side': order_req.side.lower(),
+                        'price': order_req.price,
+                        'amount': order_req.amount,
+                        'status': 'open',
+                        'info': raw_res
+                    }
+                    is_ws_success = True
+                    
+                    # Prevent Bracket Monitor from taking over since Binance handles it
+                    order_req.attached_tp = None
+                    order_req.attached_sl = None
+                    logger.info("✅ Native Binance OTO/OTOCO placed successfully.")
+                except Exception as e:
+                    logger.error(f"Native OTOCO failed: {e}")
+                    raise HTTPException(status_code=400, detail=f"Native TP/SL Failed: {str(e)}")
+            # ----------------------------------------
+
             if exchange.has.get('createOrderWs'):
                 try:
                     logger.info(f"⚡ Attempting WebSocket order execution for {order_req.symbol}...")

@@ -162,7 +162,7 @@ class BracketOrderService:
                     tp_res = None
                     is_ws_success = False
                     
-                    if hasattr(exchange, 'create_order_ws'):
+                    if exchange.has.get('createOrderWs'):
                         try:
                             tp_price_arg = final_tp_price if tp_order_type == 'limit' else None
                             tp_res = await exchange.create_order_ws(
@@ -223,7 +223,7 @@ class BracketOrderService:
                             sl_res = None
                             is_ws_success = False
                             
-                            if hasattr(exchange, 'create_order_ws'):
+                            if exchange.has.get('createOrderWs'):
                                 try:
                                     sl_res = await exchange.create_order_ws(
                                         symbol, 'TRAILING_STOP_MARKET', opposite_side, final_amount, None, sl_params
@@ -289,7 +289,7 @@ class BracketOrderService:
                         sl_res = None
                         is_ws_success = False
                         
-                        if hasattr(exchange, 'create_order_ws'):
+                        if exchange.has.get('createOrderWs'):
                             try:
                                 sl_res = await exchange.create_order_ws(
                                     symbol, order_type, opposite_side, final_amount, None, sl_params
@@ -403,7 +403,7 @@ class BracketOrderService:
             sl_res = None
             is_ws_success = False
             
-            if hasattr(exchange, 'create_order_ws'):
+            if exchange.has.get('createOrderWs'):
                 try:
                     sl_res = await exchange.create_order_ws(
                         symbol, 'market', opposite_side, amount, None, params

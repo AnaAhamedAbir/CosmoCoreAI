@@ -216,7 +216,6 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
 
       await manualTradeService.placeOrder(payload);
       toast.success(`✅ ${side} ${orderType} order placed for ${symbol}`);
-      setIsOpen(false);
     } catch (error: any) {
       // BUG-02 fix: Read FastAPI detail message if available
       const errMsg = error?.response?.data?.detail || error?.message || 'Unknown error occurred';

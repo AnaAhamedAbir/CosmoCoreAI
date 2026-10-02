@@ -329,8 +329,31 @@ class ManualTradeService:
                 
                 market = exchange.market(order_req.symbol)
                 native_symbol = market['id']
-                has_tp = bool(order_req.attached_tp and order_req.attached_tp.target_price)
-                has_sl = bool(order_req.attached_sl and order_req.attached_sl.trigger_price)
+                has_tp = bool(order_req.attached_tp and order_req.attached_tp.enabled)
+                has_sl = bool(order_req.attached_sl and order_req.attached_sl.enabled)
+                
+                # Calculate absolute prices based on mode and value
+                entry_price = order_req.price
+                tp_price = 0.0
+                sl_price = 0.0
+                
+                if has_tp:
+                    mode = order_req.attached_tp.mode
+                    val = order_req.attached_tp.value
+                    if mode == 'percentage':
+                        pct = val / 100.0
+                        tp_price = entry_price * (1 + pct) if order_req.side.lower() == 'buy' else entry_price * (1 - pct)
+                    else:
+                        tp_price = entry_price + val if order_req.side.lower() == 'buy' else entry_price - val
+                        
+                if has_sl:
+                    mode = order_req.attached_sl.mode
+                    val = order_req.attached_sl.value
+                    if mode == 'percentage':
+                        pct = val / 100.0
+                        sl_price = entry_price * (1 - pct) if order_req.side.lower() == 'buy' else entry_price * (1 + pct)
+                    else:
+                        sl_price = entry_price - val if order_req.side.lower() == 'buy' else entry_price + val
                 
                 payload = {
                     "symbol": native_symbol,
@@ -347,34 +370,34 @@ class ManualTradeService:
                     if has_tp and has_sl:
                         if order_req.side.lower() == 'buy':
                             payload['pendingAboveType'] = 'LIMIT_MAKER'
-                            payload['pendingAbovePrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_tp.target_price)
+                            payload['pendingAbovePrice'] = exchange.price_to_precision(order_req.symbol, tp_price)
                             payload['pendingBelowType'] = 'STOP_LOSS_LIMIT'
-                            payload['pendingBelowStopPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price)
-                            payload['pendingBelowPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price * 0.999)
+                            payload['pendingBelowStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
+                            payload['pendingBelowPrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 0.999)
                         else:
                             payload['pendingAboveType'] = 'STOP_LOSS_LIMIT'
-                            payload['pendingAboveStopPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price)
-                            payload['pendingAbovePrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price * 1.001)
+                            payload['pendingAboveStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
+                            payload['pendingAbovePrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 1.001)
                             payload['pendingBelowType'] = 'LIMIT_MAKER'
-                            payload['pendingBelowPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_tp.target_price)
+                            payload['pendingBelowPrice'] = exchange.price_to_precision(order_req.symbol, tp_price)
                         raw_res = await exchange.private_post_orderlist_otoco(payload)
                     else: # OTO
                         if order_req.side.lower() == 'buy':
                             if has_tp:
                                 payload['pendingType'] = 'LIMIT_MAKER'
-                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_tp.target_price)
+                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, tp_price)
                             elif has_sl:
                                 payload['pendingType'] = 'STOP_LOSS_LIMIT'
-                                payload['pendingStopPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price)
-                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price * 0.999)
+                                payload['pendingStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
+                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 0.999)
                         else:
                             if has_tp:
                                 payload['pendingType'] = 'LIMIT_MAKER'
-                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_tp.target_price)
+                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, tp_price)
                             elif has_sl:
                                 payload['pendingType'] = 'STOP_LOSS_LIMIT'
-                                payload['pendingStopPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price)
-                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, order_req.attached_sl.trigger_price * 1.001)
+                                payload['pendingStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
+                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 1.001)
                         raw_res = await exchange.private_post_orderlist_oto(payload)
 
                     order_list = raw_res.get('orderReports', [])

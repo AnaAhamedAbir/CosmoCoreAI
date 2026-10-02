@@ -33,7 +33,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
   const [isLoadingPosition, setIsLoadingPosition] = useState(false);
   const [tpConfig, setTpConfig] = useState({
     enabled: false,
-    mode: 'percentage' as 'percentage' | 'price',
+    mode: 'percentage' as 'percentage' | 'price' | 'absolute',
     value: '',
     orderType: 'Limit' as 'Limit' | 'Market',
     timeoutMins: 5
@@ -41,7 +41,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
   const [slConfig, setSlConfig] = useState({
     enabled: false,
     type: 'fixed' as 'fixed' | 'trailing',
-    mode: 'percentage' as 'percentage' | 'price',
+    mode: 'percentage' as 'percentage' | 'price' | 'absolute',
     value: '',
     timeoutMins: 5
   });
@@ -577,7 +577,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
 
                                 {/* Gap Mode */}
                                 <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">Gap Mode</label>
+                                    <label className="text-[10px] text-gray-400 font-medium">Mode</label>
                                     <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
                                         <button
                                             onClick={() => setTpConfig({...tpConfig, mode: 'percentage'})}
@@ -591,6 +591,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                                         >
                                             $
                                         </button>
+                                        <button
+                                            onClick={() => setTpConfig({...tpConfig, mode: 'absolute'})}
+                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'absolute' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                            🎯
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -598,16 +604,16 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                             {/* Target Gap & Timeout */}
                             <div className="grid grid-cols-2 gap-2">
                                 <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">Target Gap</label>
+                                    <label className="text-[10px] text-gray-400 font-medium">{tpConfig.mode === 'absolute' ? 'Exact Price' : 'Target Gap'}</label>
                                     <div className="relative">
                                         <input 
                                             type="number"
                                             value={tpConfig.value}
                                             onChange={(e) => setTpConfig({...tpConfig, value: e.target.value})}
-                                            placeholder={tpConfig.mode === 'percentage' ? "e.g. 1.5" : "e.g. 0.005"}
+                                            placeholder={tpConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 1.050" : "e.g. 0.950") : (tpConfig.mode === 'percentage' ? "e.g. 1.5" : "e.g. 0.005")}
                                             className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-xs focus:outline-none focus:border-brand-primary/50"
                                         />
-                                        <span className="absolute right-2 top-1.5 text-[10px] text-brand-primary font-bold">{tpConfig.mode === 'percentage' ? '%' : '$'}</span>
+                                        <span className="absolute right-2 top-1.5 text-[10px] text-brand-primary font-bold">{tpConfig.mode === 'percentage' ? '%' : (tpConfig.mode === 'absolute' ? '🎯' : '$')}</span>
                                     </div>
                                 </div>
                                 <div className="space-y-1">
@@ -666,7 +672,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                                             Fixed
                                         </button>
                                         <button
-                                            onClick={() => setSlConfig({...slConfig, type: 'trailing'})}
+                                            onClick={() => setSlConfig({...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode})}
                                             className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             Trailing
@@ -676,7 +682,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
 
                                 {/* Gap Mode */}
                                 <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">Gap Mode</label>
+                                    <label className="text-[10px] text-gray-400 font-medium">Mode</label>
                                     <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
                                         <button
                                             onClick={() => setSlConfig({...slConfig, mode: 'percentage'})}
@@ -690,6 +696,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                                         >
                                             $
                                         </button>
+                                        <button
+                                            onClick={() => setSlConfig({...slConfig, mode: 'absolute', type: 'fixed'})}
+                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                            🎯
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -698,17 +710,17 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                             <div className="grid grid-cols-2 gap-2">
                                 <div className="space-y-1">
                                     <label className="text-[10px] text-gray-400 font-medium">
-                                        {slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap'}
+                                        {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap')}
                                     </label>
                                     <div className="relative">
                                         <input 
                                             type="number"
                                             value={slConfig.value}
                                             onChange={(e) => setSlConfig({...slConfig, value: e.target.value})}
-                                            placeholder={slConfig.mode === 'percentage' ? "e.g. 1.0" : "e.g. 0.003"}
+                                            placeholder={slConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 0.950" : "e.g. 1.050") : (slConfig.mode === 'percentage' ? "e.g. 1.0" : "e.g. 0.003")}
                                             className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-xs focus:outline-none focus:border-red-500/50"
                                         />
-                                        <span className="absolute right-2 top-1.5 text-[10px] text-red-500 font-bold">{slConfig.mode === 'percentage' ? '%' : '$'}</span>
+                                        <span className="absolute right-2 top-1.5 text-[10px] text-red-500 font-bold">{slConfig.mode === 'percentage' ? '%' : (slConfig.mode === 'absolute' ? '🎯' : '$')}</span>
                                     </div>
                                 </div>
                                 <div className="space-y-1">

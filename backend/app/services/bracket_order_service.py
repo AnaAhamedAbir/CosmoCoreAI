@@ -144,7 +144,9 @@ class BracketOrderService:
                 if mode == 'percentage':
                     pct = val / 100.0
                     tp_price = average_price * (1 + pct) if opposite_side == 'sell' else average_price * (1 - pct)
-                elif mode == 'price':
+                elif mode == 'absolute':
+                    tp_price = val
+                else:
                     tp_price = average_price + val if opposite_side == 'sell' else average_price - val
     
                 final_tp_price = (
@@ -272,7 +274,9 @@ class BracketOrderService:
                     if sl_mode == 'percentage':
                         pct = sl_val / 100.0
                         sl_price = average_price * (1 - pct) if opposite_side == 'sell' else average_price * (1 + pct)
-                    elif sl_mode == 'price':
+                    elif sl_mode == 'absolute':
+                        sl_price = sl_val
+                    else:
                         sl_price = average_price - sl_val if opposite_side == 'sell' else average_price + sl_val
     
                     final_sl_price = (

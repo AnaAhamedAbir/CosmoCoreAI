@@ -322,7 +322,7 @@ class ManualTradeService:
             response = None
             is_ws_success = False
 
-            if hasattr(exchange, 'create_order_ws'):
+            if exchange.has.get('createOrderWs'):
                 try:
                     logger.info(f"⚡ Attempting WebSocket order execution for {order_req.symbol}...")
                     order_type = order_req.type.lower()
@@ -439,8 +439,12 @@ class ManualTradeService:
             # Use cancel + create pattern as it is more universally supported across exchanges than native editOrder
             # 1. Cancel existing order
             try:
-                if hasattr(exchange, 'cancel_order_ws'):
-                    await exchange.cancel_order_ws(id=order_id, symbol=symbol)
+                if exchange.has.get('cancelOrderWs'):
+                    try:
+                        await exchange.cancel_order_ws(id=order_id, symbol=symbol)
+                    except Exception as ws_e:
+                        logger.warning(f"WebSocket cancel failed ({ws_e}), falling back to REST.")
+                        await exchange.cancel_order(id=order_id, symbol=symbol)
                 else:
                     await exchange.cancel_order(id=order_id, symbol=symbol)
             except Exception as cancel_e:
@@ -481,7 +485,7 @@ class ManualTradeService:
                 # Fallback if fetch failed
                 ex_params['postOnly'] = True
 
-            if hasattr(exchange, 'create_order_ws'):
+            if exchange.has.get('createOrderWs'):
                 try:
                     logger.info(f"⚡ Attempting WebSocket order edit (create) for {symbol} ({order_type})...")
                     response = await exchange.create_order_ws(

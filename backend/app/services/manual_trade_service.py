@@ -259,6 +259,30 @@ class ManualTradeService:
                     except Exception as lev_e:
                         logger.warning(f"Leverage set skipped (may already be set): {lev_e}")
 
+            # Prepare Limit Order parameters if needed (Moved before margin check)
+            if order_req.type.lower() == 'limit':
+                if params.get('autoBestLimit'):
+                    try:
+                        ob = await exchange.fetch_order_book(order_req.symbol, limit=5)
+                        if order_req.side.lower() == 'buy':
+                            if not ob.get('bids'): raise ValueError("No bids found in orderbook.")
+                            order_req.price = ob['bids'][0][0]
+                        else:
+                            if not ob.get('asks'): raise ValueError("No asks found in orderbook.")
+                            order_req.price = ob['asks'][0][0]
+                        ex_params['postOnly'] = True
+                    except Exception as e:
+                        logger.error(f"Failed to auto-detect best limit price: {e}")
+                        raise HTTPException(status_code=500, detail=f"Failed to auto-fetch best limit price: {e}")
+
+                time_in_force = params.get('timeInForce', '')
+                if time_in_force.lower() in ('postonly', 'post_only', 'post-only'):
+                    ex_params['postOnly'] = True
+                    logger.info(f"PostOnly flag set for {order_req.symbol} {order_req.side} limit order")
+
+                if not getattr(order_req, 'price', None) or order_req.price <= 0:
+                    raise HTTPException(status_code=400, detail="Price is required for limit orders")
+
             # --- Pre-flight Margin Check ---
             try:
                 bal = await exchange.fetch_balance()
@@ -282,41 +306,18 @@ class ManualTradeService:
                     
                     if order_req.side.lower() == 'buy' or is_futures:
                          free_quote = float(bal.get(quote_part, {}).get('free', 0.0))
-                         if required_margin > free_quote and not params.get('reduceOnly'):
+                         if required_margin >= (free_quote * 0.99) and not params.get('reduceOnly'):
                               if required_margin <= (free_quote * 1.05): # If they hit 100% button
                                    logger.info(f"🛠️ Pre-flight Margin: Auto-adjusting size (Req: {required_margin}, Free: {free_quote})")
                                    order_req.amount = order_req.amount * (free_quote / required_margin) * 0.99
                     elif order_req.side.lower() == 'sell' and not is_futures: # Spot Sell
                          free_base = float(bal.get(base_part, {}).get('free', 0.0))
-                         if req_amount > free_base:
+                         if req_amount >= (free_base * 0.99):
                               if req_amount <= (free_base * 1.05):
                                    order_req.amount = free_base * 0.999 # Leave dust for fees
             except Exception as margin_e:
                 logger.debug(f"Pre-flight margin check skipped: {margin_e}")
 
-            # Prepare Limit Order parameters if needed
-            if order_req.type.lower() == 'limit':
-                if params.get('autoBestLimit'):
-                    try:
-                        ob = await exchange.fetch_order_book(order_req.symbol, limit=5)
-                        if order_req.side.lower() == 'buy':
-                            if not ob.get('bids'): raise ValueError("No bids found in orderbook.")
-                            order_req.price = ob['bids'][0][0]
-                        else:
-                            if not ob.get('asks'): raise ValueError("No asks found in orderbook.")
-                            order_req.price = ob['asks'][0][0]
-                        ex_params['postOnly'] = True
-                    except Exception as e:
-                        logger.error(f"Failed to auto-detect best limit price: {e}")
-                        raise HTTPException(status_code=500, detail=f"Failed to auto-fetch best limit price: {e}")
-
-                time_in_force = params.get('timeInForce', '')
-                if time_in_force.lower() in ('postonly', 'post_only', 'post-only'):
-                    ex_params['postOnly'] = True
-                    logger.info(f"PostOnly flag set for {order_req.symbol} {order_req.side} limit order")
-
-                if not getattr(order_req, 'price', None) or order_req.price <= 0:
-                    raise HTTPException(status_code=400, detail="Price is required for limit orders")
 
             # Execute Trade (Try WebSocket First, Fallback to REST)
             response = None

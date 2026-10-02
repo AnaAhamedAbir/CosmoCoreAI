@@ -343,6 +343,8 @@ class ManualTradeService:
                     if mode == 'percentage':
                         pct = val / 100.0
                         tp_price = entry_price * (1 + pct) if order_req.side.lower() == 'buy' else entry_price * (1 - pct)
+                    elif mode == 'absolute':
+                        tp_price = val
                     else:
                         tp_price = entry_price + val if order_req.side.lower() == 'buy' else entry_price - val
                         
@@ -352,6 +354,8 @@ class ManualTradeService:
                     if mode == 'percentage':
                         pct = val / 100.0
                         sl_price = entry_price * (1 - pct) if order_req.side.lower() == 'buy' else entry_price * (1 + pct)
+                    elif mode == 'absolute':
+                        sl_price = val
                     else:
                         sl_price = entry_price - val if order_req.side.lower() == 'buy' else entry_price + val
                 

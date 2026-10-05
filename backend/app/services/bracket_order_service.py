@@ -502,21 +502,25 @@ class BracketOrderService:
                     import pandas as pd
                     
                     now = time.time()
-                    # Refresh ATR every 60 seconds to avoid spamming API
-                    if now - last_atr_fetch_time > 60:
+                    # Refresh ATR every 10 seconds to closely track the indicator
+                    if now - last_atr_fetch_time > 10:
                         try:
-                            # Fetch enough candles to calculate SMA for ATR
-                            ohlcv = await exchange.fetch_ohlcv(symbol, timeframe=atr_timeframe, limit=atr_period + 5)
+                            # Fetch 250 candles to get a stable RMA (TradingView default smoothing)
+                            ohlcv = await exchange.fetch_ohlcv(symbol, timeframe=atr_timeframe, limit=250)
                             if ohlcv and len(ohlcv) > atr_period:
                                 df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                                 df['prev_close'] = df['close'].shift(1)
                                 df['tr'] = df[['high', 'prev_close']].max(axis=1) - df[['low', 'prev_close']].min(axis=1)
-                                df['atr'] = df['tr'].rolling(window=atr_period).mean()
-                                latest_atr = df['atr'].iloc[-1]
+                                
+                                # RMA Calculation (matches Pine Script's ta.rma used in UT Bot)
+                                alpha = 1.0 / atr_period
+                                rma = df['tr'].ewm(alpha=alpha, adjust=False).mean()
+                                
+                                latest_atr = rma.iloc[-1]
                                 if pd.notna(latest_atr):
                                     current_atr = float(latest_atr)
                                     last_atr_fetch_time = now
-                                    logger.debug(f"Calculated ATR for {symbol}: {current_atr}")
+                                    logger.debug(f"Calculated RMA ATR for {symbol}: {current_atr}")
                         except Exception as atr_e:
                             logger.warning(f"Failed to fetch ATR: {atr_e}")
                             
@@ -528,11 +532,15 @@ class BracketOrderService:
                 if opposite_side == 'sell': # We are Long, so we want to sell
                     highest_price = max(highest_price, current_price)
                     if mode == 'percentage':
-                        trigger_price = highest_price * (1 - (val / 100.0))
+                        new_trigger = highest_price * (1 - (val / 100.0))
+                        trigger_price = max(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                     elif mode == 'atr':
-                        trigger_price = highest_price - (current_atr * atr_multiplier)
+                        # UT Bot ratcheting logic
+                        new_trigger = current_price - (current_atr * atr_multiplier)
+                        trigger_price = max(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                     else:
-                        trigger_price = highest_price - val
+                        new_trigger = highest_price - val
+                        trigger_price = max(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                         
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['trigger_price'] = trigger_price
 
@@ -542,11 +550,15 @@ class BracketOrderService:
                 else: # We are Short, so we want to buy
                     lowest_price = min(lowest_price, current_price)
                     if mode == 'percentage':
-                        trigger_price = lowest_price * (1 + (val / 100.0))
+                        new_trigger = lowest_price * (1 + (val / 100.0))
+                        trigger_price = min(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                     elif mode == 'atr':
-                        trigger_price = lowest_price + (current_atr * atr_multiplier)
+                        # UT Bot ratcheting logic
+                        new_trigger = current_price + (current_atr * atr_multiplier)
+                        trigger_price = min(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                     else:
-                        trigger_price = lowest_price + val
+                        new_trigger = lowest_price + val
+                        trigger_price = min(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                         
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['trigger_price'] = trigger_price
 

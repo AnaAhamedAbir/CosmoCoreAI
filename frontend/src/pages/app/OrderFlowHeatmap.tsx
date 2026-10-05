@@ -1763,7 +1763,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             let width = 1;
 
             if (order.isSoftwareSL) {
-                color = '#eab308'; // Yellow for trailing stops
+                color = '#ef4444'; // Red for trailing stops
                 label = `🏃 SL (${order.mode ? order.mode.toUpperCase() : 'Trailing'})`;
                 style = 2; // Dashed
                 width = 2;

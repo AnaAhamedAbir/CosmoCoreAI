@@ -33,7 +33,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
   const [isLoadingPosition, setIsLoadingPosition] = useState(false);
   const [tpConfig, setTpConfig] = useState({
     enabled: false,
-    mode: 'percentage' as 'percentage' | 'price' | 'absolute',
+    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
     value: '',
     orderType: 'Limit' as 'Limit' | 'Market',
     timeoutMins: 5
@@ -41,7 +41,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
   const [slConfig, setSlConfig] = useState({
     enabled: false,
     type: 'fixed' as 'fixed' | 'trailing',
-    mode: 'percentage' as 'percentage' | 'price' | 'absolute',
+    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
     value: '',
     timeoutMins: 5
   });
@@ -151,9 +151,15 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
       return;
     }
 
-    if (slConfig.enabled && (!slConfig.value || isNaN(Number(slConfig.value)) || Number(slConfig.value) <= 0)) {
-      toast.error('Please enter a valid gap for the Attached Stop-Loss.');
-      return;
+    if (slConfig.enabled) {
+      if (slConfig.mode !== 'atr' && (!slConfig.value || isNaN(Number(slConfig.value)) || Number(slConfig.value) <= 0)) {
+        toast.error('Please enter a valid gap for the Attached Stop-Loss.');
+        return;
+      }
+      if (slConfig.mode === 'atr' && (slConfig.atrPeriod <= 0 || slConfig.atrMultiplier <= 0)) {
+        toast.error('Please enter a valid ATR Period and Multiplier.');
+        return;
+      }
     }
 
     // Convert quote amount → base amount if needed
@@ -204,14 +210,19 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
         };
       }
 
-      if (slConfig.enabled && slConfig.value && Number(slConfig.value) > 0) {
-        payload.attached_sl = {
-          enabled: true,
-          type: slConfig.type,
-          mode: slConfig.mode,
-          value: Number(slConfig.value),
-          timeout_mins: slConfig.timeoutMins
-        };
+      if (slConfig.enabled) {
+        if (slConfig.mode === 'atr' || (slConfig.value && Number(slConfig.value) > 0)) {
+          payload.attached_sl = {
+            enabled: true,
+            type: slConfig.type,
+            mode: slConfig.mode,
+            value: Number(slConfig.value || 0),
+            atr_period: slConfig.atrPeriod,
+            atr_multiplier: slConfig.atrMultiplier,
+            atr_timeframe: slConfig.atrTimeframe,
+            timeout_mins: slConfig.timeoutMins
+          };
+        }
       }
 
       await manualTradeService.placeOrder(payload);
@@ -701,27 +712,72 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                                         >
                                             🎯
                                         </button>
+                                        <button
+                                            onClick={() => setSlConfig({...slConfig, mode: 'atr', type: 'trailing'})}
+                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'atr' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                            ATR
+                                        </button>
                                     </div>
                                 </div>
                             </div>
                             
                             {/* Target Gap & Timeout */}
                             <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">
-                                        {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap')}
-                                    </label>
-                                    <div className="relative">
-                                        <input 
-                                            type="number"
-                                            value={slConfig.value}
-                                            onChange={(e) => setSlConfig({...slConfig, value: e.target.value})}
-                                            placeholder={slConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 0.950" : "e.g. 1.050") : (slConfig.mode === 'percentage' ? "e.g. 1.0" : "e.g. 0.003")}
-                                            className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-xs focus:outline-none focus:border-red-500/50"
-                                        />
-                                        <span className="absolute right-2 top-1.5 text-[10px] text-red-500 font-bold">{slConfig.mode === 'percentage' ? '%' : (slConfig.mode === 'absolute' ? '🎯' : '$')}</span>
+                                {slConfig.mode === 'atr' ? (
+                                    <div className="grid grid-cols-3 gap-1">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] text-gray-400 font-medium">TF</label>
+                                            <select 
+                                                value={slConfig.atrTimeframe}
+                                                onChange={(e) => setSlConfig({...slConfig, atrTimeframe: e.target.value})}
+                                                className="w-full bg-black/30 border border-white/10 rounded py-1 px-1 text-white text-[10px] focus:outline-none"
+                                            >
+                                                <option value="1m">1m</option>
+                                                <option value="5m">5m</option>
+                                                <option value="15m">15m</option>
+                                                <option value="1h">1h</option>
+                                                <option value="4h">4h</option>
+                                                <option value="1d">1d</option>
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] text-gray-400 font-medium">Period</label>
+                                            <input 
+                                                type="number"
+                                                value={slConfig.atrPeriod}
+                                                onChange={(e) => setSlConfig({...slConfig, atrPeriod: Number(e.target.value)})}
+                                                className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[10px] focus:outline-none"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] text-gray-400 font-medium">Mult.</label>
+                                            <input 
+                                                type="number"
+                                                step="0.1"
+                                                value={slConfig.atrMultiplier}
+                                                onChange={(e) => setSlConfig({...slConfig, atrMultiplier: Number(e.target.value)})}
+                                                className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[10px] focus:outline-none"
+                                            />
+                                        </div>
                                     </div>
-                                </div>
+                                ) : (
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-gray-400 font-medium">
+                                            {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap')}
+                                        </label>
+                                        <div className="relative">
+                                            <input 
+                                                type="number"
+                                                value={slConfig.value}
+                                                onChange={(e) => setSlConfig({...slConfig, value: e.target.value})}
+                                                placeholder={slConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 0.950" : "e.g. 1.050") : (slConfig.mode === 'percentage' ? "e.g. 1.0" : "e.g. 0.003")}
+                                                className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-xs focus:outline-none focus:border-red-500/50"
+                                            />
+                                            <span className="absolute right-2 top-1.5 text-[10px] text-red-500 font-bold">{slConfig.mode === 'percentage' ? '%' : (slConfig.mode === 'absolute' ? '🎯' : '$')}</span>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="space-y-1">
                                     <label className="text-[10px] text-gray-400 font-medium">Monitor Limit (Mins)</label>
                                     <div className="flex items-center space-x-2">

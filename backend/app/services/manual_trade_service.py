@@ -325,6 +325,8 @@ class ManualTradeService:
 
             # --- NATIVE BINANCE OTOCO SUPPORT ---
             use_native_otoco = getattr(order_req, 'use_native_tp_sl', False)
+            if use_native_otoco and order_req.attached_sl and order_req.attached_sl.type == 'trailing':
+                use_native_otoco = False # Disable native for trailing/ATR SL
             if use_native_otoco and exchange.id == 'binance' and order_req.type.lower() == 'limit' and (order_req.attached_tp or order_req.attached_sl):
                 logger.info(f"⚡ Using Binance Native Attached Orders (OTO/OTOCO) for {order_req.symbol}...")
                 

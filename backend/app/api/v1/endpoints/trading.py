@@ -23,8 +23,11 @@ class AttachedTPConfig(BaseModel):
 class AttachedSLConfig(BaseModel):
     enabled: bool
     type: Optional[str] = 'fixed' # 'fixed' or 'trailing'
-    mode: str  # 'percentage' or 'price'
+    mode: str  # 'percentage' or 'price' or 'atr'
     value: float
+    atr_period: Optional[int] = 10
+    atr_multiplier: Optional[float] = 2.0
+    atr_timeframe: Optional[str] = '15m'
 
 class OrderRequest(BaseModel):
     symbol: str

@@ -292,6 +292,10 @@ class BracketOrderService:
                 sl_type = sl_config.get('type', 'fixed')
                 sl_mode = sl_config.get('mode', 'percentage')
                 sl_val  = float(sl_config.get('value', 0))
+                
+                atr_period = int(sl_config.get('atr_period', 10))
+                atr_multiplier = float(sl_config.get('atr_multiplier', 2.0))
+                atr_timeframe = sl_config.get('atr_timeframe', '15m')
 
                 if sl_type == 'trailing':
                     placed_native = False
@@ -342,10 +346,7 @@ class BracketOrderService:
                     if not placed_native:
                         logger.info(f"🚀 Bracket Monitor: Starting Software Trailing Stop for {symbol}")
                         asyncio.create_task(
-                            BracketOrderService._software_trailing_stop_loop(
-                                exchange, symbol, opposite_side, final_amount,
-                                average_price, sl_mode, sl_val, is_futures, user_id, api_key_record
-                            )
+                            BracketOrderService._software_trailing_stop_loop(exchange, symbol, opposite_side, final_amount, average_price, sl_mode, sl_val, is_futures, user_id, api_key_record, atr_period, atr_multiplier, atr_timeframe)
                         )
                 else:
                     sl_price = average_price
@@ -418,12 +419,17 @@ class BracketOrderService:
     async def _software_trailing_stop_loop(
         exchange, symbol: str, opposite_side: str, amount: float,
         entry_price: float, mode: str, val: float, is_futures: bool,
-        user_id: int, api_key_record
+        user_id: int, api_key_record,
+        atr_period: int = 10, atr_multiplier: float = 2.0, atr_timeframe: str = '15m'
     ):
         highest_price = entry_price
         lowest_price = entry_price
         
         logger.info(f"🏁 Trailing SL loop started for {symbol} | Entry: {entry_price}")
+
+        # ATR Calculation Setup
+        last_atr_fetch_time = 0
+        current_atr = 0.0
 
         while True:
             await asyncio.sleep(2)  # poll interval
@@ -454,11 +460,41 @@ class BracketOrderService:
                 if not current_price:
                     continue
                 
+                # Fetch ATR periodically if mode is ATR
+                if mode == 'atr':
+                    import time
+                    import pandas as pd
+                    
+                    now = time.time()
+                    # Refresh ATR every 60 seconds to avoid spamming API
+                    if now - last_atr_fetch_time > 60:
+                        try:
+                            # Fetch enough candles to calculate SMA for ATR
+                            ohlcv = await exchange.fetch_ohlcv(symbol, timeframe=atr_timeframe, limit=atr_period + 5)
+                            if ohlcv and len(ohlcv) > atr_period:
+                                df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                                df['prev_close'] = df['close'].shift(1)
+                                df['tr'] = df[['high', 'prev_close']].max(axis=1) - df[['low', 'prev_close']].min(axis=1)
+                                df['atr'] = df['tr'].rolling(window=atr_period).mean()
+                                latest_atr = df['atr'].iloc[-1]
+                                if pd.notna(latest_atr):
+                                    current_atr = float(latest_atr)
+                                    last_atr_fetch_time = now
+                                    logger.debug(f"Calculated ATR for {symbol}: {current_atr}")
+                        except Exception as atr_e:
+                            logger.warning(f"Failed to fetch ATR: {atr_e}")
+                            
+                    # If we don't have ATR yet, skip this tick
+                    if current_atr <= 0:
+                        continue
+                        
                 trigger_price = 0.0
                 if opposite_side == 'sell': # We are Long, so we want to sell
                     highest_price = max(highest_price, current_price)
                     if mode == 'percentage':
                         trigger_price = highest_price * (1 - (val / 100.0))
+                    elif mode == 'atr':
+                        trigger_price = highest_price - (current_atr * atr_multiplier)
                     else:
                         trigger_price = highest_price - val
                         
@@ -469,6 +505,8 @@ class BracketOrderService:
                     lowest_price = min(lowest_price, current_price)
                     if mode == 'percentage':
                         trigger_price = lowest_price * (1 + (val / 100.0))
+                    elif mode == 'atr':
+                        trigger_price = lowest_price + (current_atr * atr_multiplier)
                     else:
                         trigger_price = lowest_price + val
                         

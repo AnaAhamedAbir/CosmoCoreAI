@@ -43,6 +43,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
     type: 'fixed' as 'fixed' | 'trailing',
     mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
     value: '',
+    atrPeriod: 10,
+    atrMultiplier: 2.0,
+    atrTimeframe: '15m',
     timeoutMins: 5
   });
   const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(false);

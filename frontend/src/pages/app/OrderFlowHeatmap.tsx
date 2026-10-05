@@ -1757,21 +1757,30 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             orderKeys.add(key);
 
             const isBuy = order.side === 'buy';
-            const color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-            const label = `${isBuy ? '▲ BUY' : '▼ SELL'} ${order.remaining > 0 ? order.remaining.toFixed(4) : order.amount.toFixed(4)}`;
+            let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
+            let label = `${isBuy ? '▲ BUY' : '▼ SELL'} ${order.remaining > 0 ? order.remaining.toFixed(4) : order.amount.toFixed(4)}`;
+            let style = 2; // Dashed
+            let width = 1;
+
+            if (order.isSoftwareSL) {
+                color = '#eab308'; // Yellow for trailing stops
+                label = `🏃 SL (${order.mode ? order.mode.toUpperCase() : 'Trailing'})`;
+                style = 2; // Dashed
+                width = 2;
+            }
 
             if (!wallLinesRef.current.has(key)) {
                 const line = candlestickSeriesRef.current?.createPriceLine({
                     price: order.price,
                     color,
-                    lineWidth: 1,
-                    lineStyle: 2, // Dashed
+                    lineWidth: width as any,
+                    lineStyle: style as any,
                     axisLabelVisible: true,
                     title: label,
                 });
                 if (line) wallLinesRef.current.set(key, line);
             } else {
-                wallLinesRef.current.get(key)?.applyOptions({ price: order.price, title: label, color });
+                wallLinesRef.current.get(key)?.applyOptions({ price: order.price, title: label, color, lineWidth: width as any, lineStyle: style as any });
             }
         });
 

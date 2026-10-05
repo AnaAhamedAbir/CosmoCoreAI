@@ -16,10 +16,13 @@ from app.services.exchange_pool import get_or_create_exchange
 from app.core.security import decrypt_key
 from app.services.notification import NotificationService
 
+import uuid
+
 logger = logging.getLogger(__name__)
 
-
 class BracketOrderService:
+    ACTIVE_SOFTWARE_SL = {}  # { sl_id: { symbol, side, amount, trigger_price, mode } }
+    
     @staticmethod
     async def monitor_and_execute_bracket(
         api_key_record,
@@ -446,6 +449,18 @@ class BracketOrderService:
         highest_price = entry_price
         lowest_price = entry_price
         
+        sl_id = str(uuid.uuid4())
+        BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
+            'id': sl_id,
+            'symbol': symbol,
+            'side': opposite_side,
+            'amount': amount,
+            'type': 'trailing',
+            'mode': mode,
+            'trigger_price': entry_price,
+            'entry_price': entry_price
+        }
+
         logger.info(f"🏁 Trailing SL loop started for {symbol} | Entry: {entry_price}")
 
         # ATR Calculation Setup
@@ -519,6 +534,8 @@ class BracketOrderService:
                     else:
                         trigger_price = highest_price - val
                         
+                    BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['trigger_price'] = trigger_price
+
                     if current_price <= trigger_price:
                         logger.info(f"💥 Trailing SL triggered for Long. High: {highest_price}, Trigger: {trigger_price}, Current: {current_price}")
                         break
@@ -531,6 +548,8 @@ class BracketOrderService:
                     else:
                         trigger_price = lowest_price + val
                         
+                    BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['trigger_price'] = trigger_price
+
                     if current_price >= trigger_price:
                         logger.info(f"💥 Trailing SL triggered for Short. Low: {lowest_price}, Trigger: {trigger_price}, Current: {current_price}")
                         break
@@ -602,5 +621,8 @@ class BracketOrderService:
                     logger.warning(f"Trailing SL notification failed: {notify_err}")
         except Exception as e:
             logger.error(f"❌ Failed to execute Trailing SL: {e}")
+        finally:
+            if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
+                del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
 
 bracket_order_service = BracketOrderService()

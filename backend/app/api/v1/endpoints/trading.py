@@ -196,6 +196,28 @@ async def get_open_limit_orders(
         logger.error(f"Open orders fetch failed: {e}")
         raise HTTPException(status_code=500, detail=f"Open Orders Error: {str(e)}")
 
+@router.get("/active-software-brackets/{api_key_id}")
+async def get_active_software_brackets(
+    api_key_id: int,
+    symbol: str,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """Fetch all active software SL bracket orders for a specific symbol."""
+    try:
+        from app.services.bracket_order_service import BracketOrderService
+        
+        # We don't verify API key extensively here because ACTIVE_SOFTWARE_SL only contains basic trigger prices
+        active_brackets = []
+        for sl_id, data in BracketOrderService.ACTIVE_SOFTWARE_SL.items():
+            if data.get('symbol') == symbol:
+                active_brackets.append(data)
+                
+        return active_brackets
+    except Exception as e:
+        logger.error(f"Active software brackets fetch failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+
 @router.post("/sor/preview")
 async def preview_sor_order(
     request: SORRequest,

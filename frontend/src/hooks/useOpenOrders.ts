@@ -8,6 +8,8 @@ export interface OpenLimitOrder {
   amount: number;
   filled: number;
   remaining: number;
+  isSoftwareSL?: boolean;
+  mode?: string;
 }
 
 /**
@@ -36,12 +38,25 @@ export const useOpenOrders = (
     // BUG-05 fix: skip stale fetches after unmount or dependency change
     if (!apiKeyId || !symbol || !isVisibleRef.current || !isMountedRef.current) return;
     try {
-      const res = await api.get(
-        `/trading/open-limit-orders/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`
-      );
+      const [res, slRes] = await Promise.all([
+        api.get(`/trading/open-limit-orders/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`).catch(() => ({ data: { orders: [] } })),
+        api.get(`/trading/active-software-brackets/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`).catch(() => ({ data: [] }))
+      ]);
+      
       // Guard again after await — component may have unmounted during the request
       if (isMountedRef.current) {
-        setOrders(res.data?.orders ?? []);
+        const limitOrders = res.data?.orders ?? [];
+        const softwareSLs = (slRes.data || []).map((sl: any) => ({
+          id: sl.id,
+          side: sl.side,
+          price: sl.trigger_price,
+          amount: sl.amount,
+          filled: 0,
+          remaining: sl.amount,
+          isSoftwareSL: true,
+          mode: sl.mode
+        }));
+        setOrders([...limitOrders, ...softwareSLs]);
       }
     } catch (err) {
       // BUG-11 fix: dev-only logging, silent in production

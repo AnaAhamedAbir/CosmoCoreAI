@@ -212,6 +212,7 @@ class BracketOrderService:
                     logger.error(f"❌ Native OCO failed: {e}")
                     raise
 
+            tp_order_id = None
             # --- Execute TP ---
             if tp_config:
                 tp_order_type = tp_config.get('order_type', 'Limit').lower()
@@ -262,6 +263,9 @@ class BracketOrderService:
                                 symbol, opposite_side, final_amount, params=ex_params
                             )
     
+                    if tp_res:
+                        tp_order_id = tp_res.get('id')
+
                     logger.info(f"✅ Bracket Monitor: TP placed! ID: {tp_res.get('id')}")
     
                     if user_id:
@@ -346,7 +350,7 @@ class BracketOrderService:
                     if not placed_native:
                         logger.info(f"🚀 Bracket Monitor: Starting Software Trailing Stop for {symbol}")
                         asyncio.create_task(
-                            BracketOrderService._software_trailing_stop_loop(exchange, symbol, opposite_side, final_amount, average_price, sl_mode, sl_val, is_futures, user_id, api_key_record, atr_period, atr_multiplier, atr_timeframe)
+                            BracketOrderService._software_trailing_stop_loop(exchange, symbol, opposite_side, final_amount, average_price, sl_mode, sl_val, is_futures, user_id, api_key_record, atr_period, atr_multiplier, atr_timeframe, tp_order_id)
                         )
                 else:
                     sl_price = average_price
@@ -420,7 +424,8 @@ class BracketOrderService:
         exchange, symbol: str, opposite_side: str, amount: float,
         entry_price: float, mode: str, val: float, is_futures: bool,
         user_id: int, api_key_record,
-        atr_period: int = 10, atr_multiplier: float = 2.0, atr_timeframe: str = '15m'
+        atr_period: int = 10, atr_multiplier: float = 2.0, atr_timeframe: str = '15m',
+        tp_order_id: str = None
     ):
         highest_price = entry_price
         lowest_price = entry_price
@@ -519,6 +524,28 @@ class BracketOrderService:
                 
         # Close the position!
         try:
+            if tp_order_id:
+                try:
+                    await exchange.cancel_order(tp_order_id, symbol)
+                    logger.info(f"Cancelled TP order {tp_order_id} before executing SL.")
+                except Exception as c_e:
+                    logger.debug(f"Failed to cancel TP order: {c_e}")
+
+            final_amount = amount
+            if not is_futures and opposite_side.lower() == 'sell':
+                try:
+                    base_currency = symbol.split('/')[0]
+                    balance = await exchange.fetch_balance()
+                    available = balance.get(base_currency, {}).get('free', 0.0)
+                    if 0 < available < amount:
+                        final_amount = float(exchange.amount_to_precision(symbol, available))
+                        logger.info(f"Adjusted SL sell amount to available balance: {final_amount}")
+                    elif available == 0:
+                        logger.warning("No balance available to execute Trailing SL (maybe already closed by TP).")
+                        return
+                except Exception as bal_e:
+                    logger.warning(f"Failed to fetch balance before SL: {bal_e}")
+
             params = {'reduceOnly': True} if is_futures else {}
             sl_res = None
             is_ws_success = False
@@ -526,14 +553,14 @@ class BracketOrderService:
             if exchange.has.get('createOrderWs'):
                 try:
                     sl_res = await exchange.create_order_ws(
-                        symbol, 'market', opposite_side, amount, None, params
+                        symbol, 'market', opposite_side, final_amount, None, params
                     )
                     is_ws_success = True
                 except Exception as ws_e:
                     logger.warning(f"Trailing SL exit WS failed ({ws_e}). Fallback to REST.")
             
             if not is_ws_success:
-                sl_res = await exchange.create_market_order(symbol, opposite_side, amount, params=params)
+                sl_res = await exchange.create_market_order(symbol, opposite_side, final_amount, params=params)
 
             logger.info(f"✅ Trailing SL Executed! ID: {sl_res.get('id')}")
 

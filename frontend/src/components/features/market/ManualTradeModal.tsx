@@ -634,12 +634,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                                     <div className="flex items-center space-x-2">
                                         <input 
                                             type="range"
-                                            min="1" max="15" step="1"
+                                            min="0" max="60" step="1"
                                             value={tpConfig.timeoutMins}
                                             onChange={(e) => setTpConfig({...tpConfig, timeoutMins: Number(e.target.value)})}
                                             className="w-full accent-brand-primary h-1 bg-black/50 rounded appearance-none"
                                         />
-                                        <span className="text-[10px] text-gray-300 w-4 text-right">{tpConfig.timeoutMins}</span>
+                                        <span className="text-[10px] text-gray-300 w-4 text-right">{tpConfig.timeoutMins === 0 ? '∞' : tpConfig.timeoutMins}</span>
                                     </div>
                                 </div>
                             </div>
@@ -786,12 +786,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                                     <div className="flex items-center space-x-2">
                                         <input 
                                             type="range"
-                                            min="1" max="15" step="1"
+                                            min="0" max="60" step="1"
                                             value={slConfig.timeoutMins}
                                             onChange={(e) => setSlConfig({...slConfig, timeoutMins: Number(e.target.value)})}
                                             className="w-full accent-red-500 h-1 bg-black/50 rounded appearance-none"
                                         />
-                                        <span className="text-[10px] text-gray-300 w-4 text-right">{slConfig.timeoutMins}</span>
+                                        <span className="text-[10px] text-gray-300 w-4 text-right">{slConfig.timeoutMins === 0 ? '∞' : slConfig.timeoutMins}</span>
                                     </div>
                                 </div>
                             </div>

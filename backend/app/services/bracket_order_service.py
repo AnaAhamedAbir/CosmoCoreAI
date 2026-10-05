@@ -57,25 +57,41 @@ class BracketOrderService:
             )
 
             max_timeout_mins = 5
-            if tp_config and tp_config.get('timeout_mins'):
+            if tp_config and tp_config.get('timeout_mins') is not None:
                 max_timeout_mins = max(max_timeout_mins, tp_config.get('timeout_mins'))
-            if sl_config and sl_config.get('timeout_mins'):
+            if sl_config and sl_config.get('timeout_mins') is not None:
                 max_timeout_mins = max(max_timeout_mins, sl_config.get('timeout_mins'))
 
-            timeout_iters = int((max_timeout_mins * 60) / 2)  # poll every 2s
+            # Check if user requested unlimited (0)
+            is_unlimited = False
+            if (tp_config and tp_config.get('timeout_mins') == 0) or (sl_config and sl_config.get('timeout_mins') == 0):
+                is_unlimited = True
 
             logger.info(
                 f"🛡️ Bracket Monitor started | Order: {entry_order_id} | "
-                f"Symbol: {symbol} | Timeout: {max_timeout_mins} min"
+                f"Symbol: {symbol} | Timeout: {'Unlimited' if is_unlimited else f'{max_timeout_mins} min'}"
             )
 
             processed_amount = 0.0
             average_price = initial_entry_price
             order_closed = False
+            elapsed_seconds = 0
 
             # ── Polling Loop ───────────────────────────────────────────
-            for _ in range(timeout_iters):
-                await asyncio.sleep(2)
+            while True:
+                if not is_unlimited and elapsed_seconds >= max_timeout_mins * 60:
+                    break
+                
+                # Adaptive Polling to prevent rate limit bans on unlimited orders
+                if elapsed_seconds < 300: # First 5 mins
+                    sleep_time = 2
+                elif elapsed_seconds < 3600: # Next 1 hour
+                    sleep_time = 10
+                else: # After 1 hour
+                    sleep_time = 30
+                    
+                await asyncio.sleep(sleep_time)
+                elapsed_seconds += sleep_time
 
                 try:
                     order_status = await exchange.fetch_order(entry_order_id, symbol)

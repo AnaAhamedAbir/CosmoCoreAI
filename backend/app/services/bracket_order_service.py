@@ -466,6 +466,13 @@ class BracketOrderService:
         # ATR Calculation Setup
         last_atr_fetch_time = 0
         current_atr = 0.0
+        current_price = entry_price  # Fix: Initialize current_price before loop
+        
+        ut_bot = None
+        if mode == 'atr':
+            from app.strategies.helpers.ut_bot_tracker import UTBotTracker
+            # We assume use_heikin_ashi=False for now since manual trade doesn't specify
+            ut_bot = UTBotTracker(exchange.id, symbol, sensitivity=atr_multiplier, atr_period=atr_period, use_heikin_ashi=False, timeframe=atr_timeframe)
 
         while True:
             await asyncio.sleep(2)  # poll interval
@@ -497,10 +504,8 @@ class BracketOrderService:
                     continue
                 
                 # Fetch ATR periodically if mode is ATR
-                if mode == 'atr':
+                if mode == 'atr' and ut_bot:
                     import time
-                    import pandas as pd
-                    
                     now = time.time()
                     # Refresh ATR every 10 seconds to closely track the indicator
                     if now - last_atr_fetch_time > 10:
@@ -508,21 +513,13 @@ class BracketOrderService:
                             # Fetch 250 candles to get a stable RMA (TradingView default smoothing)
                             ohlcv = await exchange.fetch_ohlcv(symbol, timeframe=atr_timeframe, limit=250)
                             if ohlcv and len(ohlcv) > atr_period:
-                                df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                                df['prev_close'] = df['close'].shift(1)
-                                df['tr'] = df[['high', 'prev_close']].max(axis=1) - df[['low', 'prev_close']].min(axis=1)
-                                
-                                # RMA Calculation (matches Pine Script's ta.rma used in UT Bot)
-                                alpha = 1.0 / atr_period
-                                rma = df['tr'].ewm(alpha=alpha, adjust=False).mean()
-                                
-                                latest_atr = rma.iloc[-1]
-                                if pd.notna(latest_atr):
-                                    current_atr = float(latest_atr)
-                                    last_atr_fetch_time = now
-                                    logger.debug(f"Calculated RMA ATR for {symbol}: {current_atr}")
+                                data = [{'time': o[0], 'open': o[1], 'high': o[2], 'low': o[3], 'close': o[4]} for o in ohlcv]
+                                ut_bot._calculate_ut_bot(data)
+                                current_atr = ut_bot.latest_trailing_stop
+                                last_atr_fetch_time = now
+                                logger.debug(f"Calculated UT Bot Trailing Stop for {symbol}: {current_atr}")
                         except Exception as atr_e:
-                            logger.warning(f"Failed to fetch ATR: {atr_e}")
+                            logger.warning(f"Failed to fetch UT Bot Trailing Stop: {atr_e}")
                             
                     # If we don't have ATR yet, skip this tick
                     if current_atr <= 0:
@@ -535,8 +532,8 @@ class BracketOrderService:
                         new_trigger = highest_price * (1 - (val / 100.0))
                         trigger_price = max(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                     elif mode == 'atr':
-                        # UT Bot ratcheting logic
-                        new_trigger = current_price - (current_atr * atr_multiplier)
+                        # current_atr is the exact UT Bot Trailing Stop Price
+                        new_trigger = current_atr
                         trigger_price = max(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                     else:
                         new_trigger = highest_price - val
@@ -553,8 +550,8 @@ class BracketOrderService:
                         new_trigger = lowest_price * (1 + (val / 100.0))
                         trigger_price = min(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                     elif mode == 'atr':
-                        # UT Bot ratcheting logic
-                        new_trigger = current_price + (current_atr * atr_multiplier)
+                        # current_atr is the exact UT Bot Trailing Stop Price
+                        new_trigger = current_atr
                         trigger_price = min(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                     else:
                         new_trigger = lowest_price + val

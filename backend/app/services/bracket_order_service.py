@@ -542,6 +542,7 @@ class BracketOrderService:
                     from app.db.session import SessionLocal
                     db = SessionLocal()
                     try:
+                        mode_str = f"ATR (TF: {atr_timeframe}, Period: {atr_period}, Mult: {atr_multiplier})" if mode == 'atr' else f"{mode} ({val}{'%' if mode == 'percentage' else '$'})"
                         msg = (
                             f"🏃‍♂️💨 *Trailing SL Executed!*\n"
                             f"Exchange: {api_key_record.exchange.capitalize()}\n"
@@ -549,7 +550,7 @@ class BracketOrderService:
                             f"Side: {opposite_side.upper()}\n"
                             f"Amount: `{amount}`\n"
                             f"Exit Price: ~{current_price}\n"
-                            f"Mode: {mode} ({val}{'%' if mode == 'percentage' else '$'})"
+                            f"Mode: {mode_str}"
                         )
                         await NotificationService.send_message(db, user_id, msg)
                     finally:

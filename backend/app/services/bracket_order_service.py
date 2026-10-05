@@ -467,6 +467,7 @@ class BracketOrderService:
         last_atr_fetch_time = 0
         current_atr = 0.0
         current_price = entry_price  # Fix: Initialize current_price before loop
+        sl_triggered = False
         
         ut_bot = None
         if mode == 'atr':
@@ -488,8 +489,8 @@ class BracketOrderService:
                     else:
                         base_coin = symbol.split('/')[0]
                         bal = await exchange.fetch_balance()
-                        free = float(bal.get(base_coin, {}).get('free', 0.0))
-                        if opposite_side == 'sell' and free < amount:
+                        total = float(bal.get(base_coin, {}).get('total', 0.0))
+                        if opposite_side == 'sell' and total < amount * 0.99: # 1% margin for rounding
                             is_open = False
                 except Exception as pos_e:
                     logger.debug(f"Could not check position for trailing SL (non-fatal): {pos_e}")
@@ -543,6 +544,7 @@ class BracketOrderService:
 
                     if current_price <= trigger_price:
                         logger.info(f"💥 Trailing SL triggered for Long. High: {highest_price}, Trigger: {trigger_price}, Current: {current_price}")
+                        sl_triggered = True
                         break
                 else: # We are Short, so we want to buy
                     lowest_price = min(lowest_price, current_price)
@@ -561,12 +563,16 @@ class BracketOrderService:
 
                     if current_price >= trigger_price:
                         logger.info(f"💥 Trailing SL triggered for Short. Low: {lowest_price}, Trigger: {trigger_price}, Current: {current_price}")
+                        sl_triggered = True
                         break
 
             except Exception as e:
                 logger.debug(f"Trailing SL tick error: {e}")
                 
         # Close the position!
+        if not sl_triggered:
+            return
+
         try:
             if tp_order_id:
                 try:

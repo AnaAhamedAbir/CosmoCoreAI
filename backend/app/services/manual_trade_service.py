@@ -189,14 +189,32 @@ class ManualTradeService:
 
             orders = []
             for o in raw_orders:
-                if o.get('type', '').lower() == 'limit' and o.get('status', '').lower() == 'open':
+                status = o.get('status', '').lower()
+                if status != 'open':
+                    continue
+
+                raw_type = o.get('type', '').lower()
+                is_stop = 'stop' in raw_type or 'take_profit' in raw_type
+                is_limit = 'limit' in raw_type or is_stop
+
+                if not is_limit:
+                    continue
+
+                # Fetch price: stop orders may have 0 for price and the trigger in stopPrice/triggerPrice
+                price = float(o.get('price') or 0.0)
+                if price <= 0:
+                    price = float(o.get('stopPrice') or o.get('triggerPrice') or 0.0)
+
+                if price > 0:
                     orders.append({
-                        'id': o.get('id'),
+                        'id': str(o.get('id')),
                         'side': o.get('side', '').lower(),  # 'buy' or 'sell'
-                        'price': float(o.get('price') or 0.0),
+                        'price': price,
                         'amount': float(o.get('amount') or 0.0),
                         'filled': float(o.get('filled') or 0.0),
-                        'remaining': float(o.get('remaining') or 0.0),
+                        'remaining': float(o.get('remaining') or o.get('amount') or 0.0),
+                        'isSoftwareSL': is_stop,
+                        'mode': 'STOP' if is_stop else 'LIMIT'
                     })
 
             return {"orders": orders, "symbol": symbol, "exchange": api_key_record.exchange}

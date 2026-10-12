@@ -18,6 +18,7 @@ class StrategyConfig(BaseModel):
     sell_order_type: Optional[str] = "limit"
     sl_order_type: Optional[str] = "smart_chase"
     smart_chase_deviation_pct: Optional[float] = 1.0
+    use_native_binance_otoco: Optional[bool] = False
     smart_chase_delay_ms: Optional[int] = 1500
     smart_chase_max_attempts: Optional[int] = 15
     min_wall_lifetime: Optional[float] = 3.0

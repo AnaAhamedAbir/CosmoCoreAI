@@ -126,6 +126,7 @@ class WallHunterBot:
         self.smart_chase_max_attempts = config.get("smart_chase_max_attempts", 15)
         self.trading_mode = config.get("trading_mode", "spot").lower()
         self.strategy_mode = config.get("strategy_mode", "long").lower()
+        self.use_native_binance_otoco = config.get("use_native_binance_otoco", False)
         
         # --- NEW FEATURES: Partial TP & Break-Even SL ---
         self.partial_tp_pct = config.get("partial_tp_pct", 50.0) # TP1 এ কত পার্সেন্ট সেল করবে
@@ -480,6 +481,10 @@ class WallHunterBot:
         if "strategy_mode" in new_config and new_config["strategy_mode"].lower() != getattr(self, "strategy_mode", "long"):
             updates.append(f"Strategy Mode: {getattr(self, 'strategy_mode', 'long').upper()} -> {new_config['strategy_mode'].upper()}")
             self.strategy_mode = new_config["strategy_mode"].lower()
+            
+        if "use_native_binance_otoco" in new_config and new_config["use_native_binance_otoco"] != getattr(self, "use_native_binance_otoco", False):
+            self.use_native_binance_otoco = bool(new_config["use_native_binance_otoco"])
+            updates.append(f"Native OTOCO: {'ON' if self.use_native_binance_otoco else 'OFF'}")
             
         # --- NEW: God Mode ML Trigger Live Update ---
         if "enable_god_mode_entry_trigger" in new_config and new_config["enable_god_mode_entry_trigger"] != self.enable_god_mode_entry_trigger:
@@ -2663,69 +2668,157 @@ class WallHunterBot:
              snipe_order_type = "market"
              
         order_params = {"postOnly": True} if snipe_order_type == "limit" else {}
-             
-        res = await self.engine.execute_trade(side, base_amount, execution_price, order_type=snipe_order_type, params=order_params)
+
+        # Pre-calculate TP and SL targets using execution_price
+        if self.enable_micro_scalp:
+            tick_profit_pct = self.micro_scalp_profit_ticks * 0.0001
+            tp_price = execution_price * (1 - tick_profit_pct) if self._is_active_short(side) else execution_price * (1 + tick_profit_pct)
+            sl_price = execution_price * (1 + (self.initial_risk_pct / 100)) if self.initial_risk_pct > 0 else (float('inf') if self._is_active_short(side) else 0.0)
+        else:
+            dynamic_tp_price = None
+            if getattr(self, 'enable_wick_sr', False) and getattr(self, 'enable_dynamic_wick_tp', False) and hasattr(self, 'wick_sr_tracker'):
+                dynamic_tp_price = self.wick_sr_tracker.get_dynamic_tp(
+                    side=side, 
+                    entry_price=execution_price, 
+                    frontrun_pct=getattr(self, 'dynamic_tp_frontrun_pct', 0.0)
+                )
+
+            # AUTO FIBO MAX TP EXTENSION
+            if not dynamic_tp_price and getattr(self, 'enable_auto_fibo_tp', False) and not override_tp_price:
+                try:
+                    fibo_tf = getattr(self, 'auto_fibo_timeframe', '5m')
+                    fibo_level = getattr(self, 'auto_fibo_target_level', 1.618)
+                    fibo_lookback = getattr(self, 'auto_fibo_lookback', 30)
+                    
+                    ohlcv = await self.public_exchange.fetch_ohlcv(self.symbol, timeframe=fibo_tf, limit=fibo_lookback)
+                    if ohlcv:
+                        calculated_tp = calculate_fibo_extension_tp(ohlcv, execution_price, side, float(fibo_level))
+                        if calculated_tp:
+                            dynamic_tp_price = calculated_tp
+                            self.logger.info(f"🎯 [AUTO-FIBO] Computed Maximum Dynamic TP: {dynamic_tp_price:.6f} at {fibo_level}x Extension!")
+                except Exception as e:
+                    self.logger.error(f"Failed to compute Auto-Fibo TP! Falling back to spread. Err: {e}")
+
+            if self._is_active_short(side):
+                sl_price = override_sl_price if override_sl_price else (execution_price * (1 + (self.initial_risk_pct / 100)) if self.initial_risk_pct > 0 else float('inf'))
+                if override_tp_price:
+                    tp_price = override_tp_price
+                    self.logger.info(f"🎯 [Advanced ML Setup] TP Set to {tp_price:.6f} dynamically!")
+                elif dynamic_tp_price and dynamic_tp_price < execution_price:
+                    tp_price = dynamic_tp_price
+                    self.logger.info(f"🎯 [Dynamic TP] Set to {tp_price:.6f} dynamically!")
+                else:
+                    tp_price = execution_price - self.target_spread
+                    if getattr(self, 'enable_dynamic_wick_tp', False) or getattr(self, 'enable_auto_fibo_tp', False):
+                        self.logger.info(f"⚠️ [Dynamic TP] Fallback Spread TP activated: {tp_price:.6f}")
+            else:
+                sl_price = override_sl_price if override_sl_price else (execution_price * (1 - (self.initial_risk_pct / 100)) if self.initial_risk_pct > 0 else 0.0)
+                if override_tp_price:
+                    tp_price = override_tp_price
+                    self.logger.info(f"🎯 [Advanced ML Setup] TP Set to {tp_price:.6f} dynamically!")
+                elif dynamic_tp_price and dynamic_tp_price > execution_price:
+                    tp_price = dynamic_tp_price
+                    self.logger.info(f"🎯 [Dynamic TP] Set to {tp_price:.6f} dynamically!")
+                else:
+                    tp_price = execution_price + self.target_spread
+                    if getattr(self, 'enable_dynamic_wick_tp', False) or getattr(self, 'enable_auto_fibo_tp', False):
+                        self.logger.info(f"⚠️ [Dynamic TP] Fallback Spread TP activated: {tp_price:.6f}")
+
+        # --- NATIVE BINANCE OTO/OTOCO PLACEMENT ---
+        is_otoco_eligible = (
+            getattr(self, 'use_native_binance_otoco', False)
+            and not self.is_paper_trading
+            and self.exchange_id == 'binance'
+            and getattr(self, 'trading_mode', 'spot') == 'spot'
+            and snipe_order_type == "limit"
+            and not getattr(self, 'enable_tsl', False)
+            and not getattr(self, 'atr_sl_enabled', False)
+            and not getattr(self, 'enable_ut_trailing_sl', False)
+            and not getattr(self, 'enable_supertrend_trailing_sl', False)
+        )
+        
+        res = None
+        if is_otoco_eligible and hasattr(self, 'engine') and self.engine and hasattr(self.engine, 'exchange') and self.engine.exchange:
+            try:
+                native_market = self.engine.exchange.market(self.symbol)
+                native_symbol = native_market['id']
+                has_tp = bool(tp_price and tp_price > 0)
+                has_sl = bool(sl_price and sl_price > 0 and sl_price != float('inf'))
+                is_post_only = (order_params.get("postOnly", False))
+                
+                otoco_payload = {
+                    "symbol": native_symbol,
+                    "workingType": "LIMIT_MAKER" if is_post_only else "LIMIT",
+                    "workingSide": side.upper(),
+                    "workingPrice": self.engine.exchange.price_to_precision(self.symbol, execution_price),
+                    "workingQuantity": self.engine.exchange.amount_to_precision(self.symbol, base_amount),
+                    "pendingSide": "SELL" if side.lower() == "buy" else "BUY",
+                    "pendingQuantity": self.engine.exchange.amount_to_precision(self.symbol, base_amount),
+                }
+                if not is_post_only:
+                    otoco_payload["workingTimeInForce"] = "GTC"
+                    
+                if has_tp and has_sl:
+                    if side.lower() == 'buy':
+                        otoco_payload['pendingAboveType'] = 'LIMIT_MAKER'
+                        otoco_payload['pendingAbovePrice'] = self.engine.exchange.price_to_precision(self.symbol, tp_price)
+                        otoco_payload['pendingBelowType'] = 'STOP_LOSS_LIMIT'
+                        otoco_payload['pendingBelowTimeInForce'] = 'GTC'
+                        otoco_payload['pendingBelowStopPrice'] = self.engine.exchange.price_to_precision(self.symbol, sl_price)
+                        otoco_payload['pendingBelowPrice'] = self.engine.exchange.price_to_precision(self.symbol, sl_price * 0.999)
+                    else:
+                        otoco_payload['pendingAboveType'] = 'STOP_LOSS_LIMIT'
+                        otoco_payload['pendingAboveTimeInForce'] = 'GTC'
+                        otoco_payload['pendingAboveStopPrice'] = self.engine.exchange.price_to_precision(self.symbol, sl_price)
+                        otoco_payload['pendingAbovePrice'] = self.engine.exchange.price_to_precision(self.symbol, sl_price * 1.001)
+                        otoco_payload['pendingBelowType'] = 'LIMIT_MAKER'
+                        otoco_payload['pendingBelowPrice'] = self.engine.exchange.price_to_precision(self.symbol, tp_price)
+                        
+                    self.logger.info(f"⚡ [Native OTOCO] Placing Binance atomic OTOCO for {self.symbol} (Entry: {execution_price}, TP: {tp_price}, SL: {sl_price})...")
+                    raw_res = await self.engine.exchange.private_post_orderlist_otoco(otoco_payload)
+                elif has_tp:
+                    otoco_payload['pendingType'] = 'LIMIT_MAKER'
+                    otoco_payload['pendingPrice'] = self.engine.exchange.price_to_precision(self.symbol, tp_price)
+                    self.logger.info(f"⚡ [Native OTO] Placing Binance atomic OTO (TP only) for {self.symbol}...")
+                    raw_res = await self.engine.exchange.private_post_orderlist_oto(otoco_payload)
+                elif has_sl:
+                    otoco_payload['pendingType'] = 'STOP_LOSS_LIMIT'
+                    otoco_payload['pendingTimeInForce'] = 'GTC'
+                    otoco_payload['pendingStopPrice'] = self.engine.exchange.price_to_precision(self.symbol, sl_price)
+                    otoco_payload['pendingPrice'] = self.engine.exchange.price_to_precision(self.symbol, sl_price * (0.999 if side.lower() == 'buy' else 1.001))
+                    self.logger.info(f"⚡ [Native OTO] Placing Binance atomic OTO (SL only) for {self.symbol}...")
+                    raw_res = await self.engine.exchange.private_post_orderlist_oto(otoco_payload)
+                else:
+                    raw_res = None
+                    
+                if raw_res:
+                    order_list = raw_res.get('orderReports', [])
+                    working_order = next((o for o in order_list if o.get('type') in ['LIMIT', 'LIMIT_MAKER']), None)
+                    if not working_order and len(order_list) > 0:
+                        working_order = order_list[0]
+                    working_order_id = str(working_order.get('orderId')) if working_order else str(raw_res.get('orderListId'))
+                    res = {
+                        'id': working_order_id,
+                        'orderListId': str(raw_res.get('orderListId', '')),
+                        'price': execution_price,
+                        'amount': base_amount,
+                        'is_native_otoco': True,
+                        'info': raw_res
+                    }
+                    self.logger.info(f"✅ [Native OTOCO] Placed successfully! OrderListId: {res['orderListId']}, WorkingOrderId: {res['id']}")
+            except Exception as otoco_err:
+                self.logger.warning(f"⚠️ [Native OTOCO] Failed: {otoco_err}. Falling back to standard entry...")
+                res = None
+
+        if not res:
+            res = await self.engine.execute_trade(side, base_amount, execution_price, order_type=snipe_order_type, params=order_params)
+
         if res:
             self.logger.info(f"✅ [WallHunter {self.bot_id}] Trade executed successfully. Order ID: {res.get('id')}")
             
             # --- Robustness: Initial Position State Save (Immediate) ---
-            # Save state right now so even a crash during the verification loop can be recovered
             initial_entry = res.get('average') or res.get('price') or execution_price
-            
-            # Pre-calculate targets for immediate state save
-            if self.enable_micro_scalp:
-                tick_profit_pct = self.micro_scalp_profit_ticks * 0.0001
-                tp_price = initial_entry * (1 - tick_profit_pct) if self._is_active_short(side) else initial_entry * (1 + tick_profit_pct)
-                sl_price = initial_entry * (1 + (self.initial_risk_pct / 100)) if self.initial_risk_pct > 0 else (float('inf') if self._is_active_short(side) else 0.0)
-            else:
-                dynamic_tp_price = None
-                if getattr(self, 'enable_wick_sr', False) and getattr(self, 'enable_dynamic_wick_tp', False) and hasattr(self, 'wick_sr_tracker'):
-                    dynamic_tp_price = self.wick_sr_tracker.get_dynamic_tp(
-                        side=side, 
-                        entry_price=initial_entry, 
-                        frontrun_pct=getattr(self, 'dynamic_tp_frontrun_pct', 0.0)
-                    )
-
-                # --- NEW: AUTO FIBO MAX TP EXTENSION ---
-                if not dynamic_tp_price and getattr(self, 'enable_auto_fibo_tp', False) and not override_tp_price:
-                    try:
-                        fibo_tf = getattr(self, 'auto_fibo_timeframe', '5m')
-                        fibo_level = getattr(self, 'auto_fibo_target_level', 1.618)
-                        fibo_lookback = getattr(self, 'auto_fibo_lookback', 30)
-                        
-                        ohlcv = await self.public_exchange.fetch_ohlcv(self.symbol, timeframe=fibo_tf, limit=fibo_lookback)
-                        if ohlcv:
-                            calculated_tp = calculate_fibo_extension_tp(ohlcv, initial_entry, side, float(fibo_level))
-                            if calculated_tp:
-                                dynamic_tp_price = calculated_tp
-                                self.logger.info(f"🎯 [AUTO-FIBO] Computed Maximum Dynamic TP: {dynamic_tp_price:.6f} at {fibo_level}x Extension!")
-                    except Exception as e:
-                        self.logger.error(f"Failed to compute Auto-Fibo TP! Falling back to spread. Err: {e}")
-
-                if self._is_active_short(side):
-                    sl_price = override_sl_price if override_sl_price else (initial_entry * (1 + (self.initial_risk_pct / 100)) if self.initial_risk_pct > 0 else float('inf'))
-                    if override_tp_price:
-                        tp_price = override_tp_price
-                        self.logger.info(f"🎯 [Advanced ML Setup] TP Set to {tp_price:.6f} dynamically!")
-                    elif dynamic_tp_price and dynamic_tp_price < initial_entry:
-                        tp_price = dynamic_tp_price
-                        self.logger.info(f"🎯 [Dynamic TP] Set to {tp_price:.6f} dynamically!")
-                    else:
-                        tp_price = initial_entry - self.target_spread
-                        if getattr(self, 'enable_dynamic_wick_tp', False) or getattr(self, 'enable_auto_fibo_tp', False):
-                            self.logger.info(f"⚠️ [Dynamic TP] Fallback Spread TP activated: {tp_price:.6f}")
-                else:
-                    sl_price = override_sl_price if override_sl_price else (initial_entry * (1 - (self.initial_risk_pct / 100)) if self.initial_risk_pct > 0 else 0.0)
-                    if override_tp_price:
-                        tp_price = override_tp_price
-                        self.logger.info(f"🎯 [Advanced ML Setup] TP Set to {tp_price:.6f} dynamically!")
-                    elif dynamic_tp_price and dynamic_tp_price > initial_entry:
-                        tp_price = dynamic_tp_price
-                        self.logger.info(f"🎯 [Dynamic TP] Set to {tp_price:.6f} dynamically!")
-                    else:
-                        tp_price = initial_entry + self.target_spread
-                        if getattr(self, 'enable_dynamic_wick_tp', False) or getattr(self, 'enable_auto_fibo_tp', False):
-                            self.logger.info(f"⚠️ [Dynamic TP] Fallback Spread TP activated: {tp_price:.6f}")
+            is_native = res.get('is_native_otoco', False)
 
             self.active_pos = {
                 "side": side,
@@ -2738,6 +2831,8 @@ class WallHunterBot:
                 "breakeven_hit": False,
                 "tsl_activated": False,
                 "entry_order_id": res.get('id'),
+                "order_list_id": res.get('orderListId'),
+                "is_native_otoco": is_native,
                 "limit_order_id": None,
                 "micro_scalp": self.enable_micro_scalp
             }
@@ -2858,6 +2953,9 @@ class WallHunterBot:
                     "tp1_hit": True, # Ignore partial TP
                     "breakeven_hit": False,
                     "tsl_activated": False,
+                    "entry_order_id": self.active_pos.get('entry_order_id'),
+                    "order_list_id": self.active_pos.get('order_list_id'),
+                    "is_native_otoco": self.active_pos.get('is_native_otoco', False),
                     "limit_order_id": None,
                     "micro_scalp": True
                 }
@@ -2867,10 +2965,11 @@ class WallHunterBot:
                 close_side = "buy" if getattr(self, 'strategy_mode', 'long') == "short" else "sell"
                 close_amount = base_amount
                 
-                limit_res = await self.engine.execute_trade(close_side, close_amount, tp_price, order_type="limit", params={"postOnly": True})
-                if limit_res and 'id' in limit_res:
-                    self.active_pos['limit_order_id'] = limit_res['id']
-                    self.logger.info(f"⚡ Micro-Scalp: Placed Limit TP Order {limit_res['id']} at {tp_price}")
+                if not self.active_pos.get('is_native_otoco'):
+                    limit_res = await self.engine.execute_trade(close_side, close_amount, tp_price, order_type="limit", params={"postOnly": True})
+                    if limit_res and 'id' in limit_res:
+                        self.active_pos['limit_order_id'] = limit_res['id']
+                        self.logger.info(f"⚡ Micro-Scalp: Placed Limit TP Order {limit_res['id']} at {tp_price}")
                     
                 self._save_state()
                 self.active_pos['entry_time'] = time.time()
@@ -2931,6 +3030,9 @@ class WallHunterBot:
                     "tp1_hit": False,
                     "breakeven_hit": False,
                     "tsl_activated": False,
+                    "entry_order_id": self.active_pos.get('entry_order_id'),
+                    "order_list_id": self.active_pos.get('order_list_id'),
+                    "is_native_otoco": self.active_pos.get('is_native_otoco', False),
                     "limit_order_id": None,
                     "micro_scalp": False
                 }
@@ -2939,7 +3041,7 @@ class WallHunterBot:
                 
                 # Place Limit Order immediately if configured
                 exit_order_type = self.buy_order_type if getattr(self, 'strategy_mode', 'long') == "short" else self.sell_order_type
-                if exit_order_type == 'limit':
+                if exit_order_type == 'limit' and not self.active_pos.get('is_native_otoco'):
                     close_side = "buy" if getattr(self, 'strategy_mode', 'long') == "short" else "sell"
                     close_amount = base_amount
                     limit_res = await self.engine.execute_trade(close_side, close_amount, self.active_pos['tp'], order_type="limit", params={"postOnly": True})
@@ -3263,8 +3365,74 @@ class WallHunterBot:
             return
         # ---------------------------------------------------------
 
+        # --- Native Binance OTO/OTOCO Monitoring ---
+        if self.active_pos.get('is_native_otoco') and self.active_pos.get('order_list_id') and not self.is_paper_trading:
+            now = time.time()
+            last_otoco_check = getattr(self, '_last_otoco_check_time', 0.0)
+            if now - last_otoco_check >= 1.5:
+                self._last_otoco_check_time = now
+                try:
+                    list_id = int(self.active_pos['order_list_id'])
+                    order_list_info = await self.engine.exchange.private_get_orderlist({'orderListId': list_id})
+                    if order_list_info:
+                        list_status = order_list_info.get('listOrderStatus')
+                        if list_status == 'ALL_DONE':
+                            orders = order_list_info.get('orders', [])
+                            filled_order = None
+                            is_tp = False
+                            for ord_summary in orders:
+                                ord_id = ord_summary.get('orderId')
+                                try:
+                                    det = await self.engine.exchange.fetch_order(ord_id, self.symbol)
+                                    if det and det.get('status') == 'closed' and (det.get('filled', 0) or 0) > 0:
+                                        filled_order = det
+                                        ord_type = det.get('type', '').upper()
+                                        if 'LIMIT' in ord_type and 'STOP' not in ord_type:
+                                            is_tp = True
+                                        else:
+                                            is_tp = False
+                                        break
+                                except Exception:
+                                    pass
+
+                            filled_price = (filled_order.get('average') or filled_order.get('price')) if filled_order else (self.active_pos.get('tp') if is_tp else self.active_pos.get('sl'))
+                            if not filled_price or filled_price <= 0:
+                                filled_price = current_price
+                            sell_amount = (filled_order.get('filled') if filled_order else None) or self.active_pos.get('amount')
+
+                            if getattr(self, 'strategy_mode', 'long') == "short":
+                                gross = (self.active_pos['entry'] - filled_price) * sell_amount
+                            else:
+                                gross = (filled_price - self.active_pos['entry']) * sell_amount
+
+                            is_maker = is_tp
+                            pnl_val, fee_paid = self._calculate_net_pnl(gross, self.active_pos['entry'], filled_price, sell_amount, is_maker=is_maker)
+                            self.total_realized_pnl += pnl_val
+                            self.total_executed_orders += 1
+                            if pnl_val > 0:
+                                self.total_wins += 1
+                            else:
+                                self.total_losses += 1
+
+                            tag = "🎯 WallHunter EXIT - Native OTOCO TP Filled!" if is_tp else "🛑 WallHunter EXIT - Native OTOCO SL Triggered!"
+                            await self._send_exit_telegram(tag, filled_price, pnl_val)
+                            self.logger.info(f"✅ Native OTOCO closed! {'TP' if is_tp else 'SL'} executed at {filled_price:.6f}, Net PnL: {pnl_val:.4f}")
+                            await self._clear_state()
+                            self.active_pos = None
+                            return
+                        elif list_status == 'REJECT':
+                            self.logger.warning(f"⚠️ Native OTOCO {list_id} was REJECTED by Binance. Reverting to software monitoring...")
+                            self.active_pos['is_native_otoco'] = False
+                            self._save_state()
+                except Exception as e:
+                    self.logger.warning(f"Error checking Native OTOCO status: {e}")
+
+            # When native OTOCO is active on Binance, bracket is managed directly on exchange.
+            # Return early so software trailing / duplicate market exits don't collide with live exchange orders.
+            return
+
         # 0. Self-Healing: If limit TP order is missing but required (e.g. after restart), place it.
-        if (exit_order_type == 'limit' or self.active_pos.get('micro_scalp')) and not self.active_pos.get('limit_order_id') and not self.is_paper_trading:
+        if (exit_order_type == 'limit' or self.active_pos.get('micro_scalp')) and not self.active_pos.get('limit_order_id') and not self.is_paper_trading and not self.active_pos.get('is_native_otoco'):
             self.logger.info("🛠️ [Self-Healing] Missing Limit TP order detected. Placing now...")
             try:
                 close_side = "buy" if getattr(self, 'strategy_mode', 'long') == "short" else "sell"
@@ -3279,7 +3447,7 @@ class WallHunterBot:
                 # We don't return here so it can still potentially trigger a market exit via SL/TP if price hits levels
 
         # 1. Check if the limit TP order has already been filled by the exchange
-        if (exit_order_type == 'limit' or self.active_pos.get('micro_scalp')) and self.active_pos.get('limit_order_id') and not self.is_paper_trading:
+        if (exit_order_type == 'limit' or self.active_pos.get('micro_scalp')) and self.active_pos.get('limit_order_id') and not self.is_paper_trading and not self.active_pos.get('is_native_otoco'):
             try:
                 order_status = await self.engine.exchange.fetch_order(self.active_pos['limit_order_id'], self.symbol)
                 if order_status and order_status.get('status') == 'closed':
@@ -3899,7 +4067,18 @@ class WallHunterBot:
         if not self.active_pos or self.is_paper_trading: return
         
         try:
-            # 1. Cancel existing limit TP order if it exists
+            # 1. Cancel existing limit TP order or Native Order List if exists
+            if self.active_pos.get('order_list_id'):
+                try:
+                    native_symbol = self.symbol.replace('/', '')
+                    await self.engine.exchange.private_delete_orderlist({
+                        'symbol': native_symbol,
+                        'orderListId': int(self.active_pos['order_list_id'])
+                    })
+                    self.logger.info(f"🗑️ Cancelled Native Binance Order List {self.active_pos['order_list_id']} for Dual-Exit.")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not cancel Native Order List: {e}")
+
             limit_id = self.active_pos.get('limit_order_id')
             if limit_id:
                 try:
@@ -4076,6 +4255,18 @@ class WallHunterBot:
         if current_price <= 0:
             raise Exception("Invalid market price fetched.")
             
+        # Cancel any open Native Binance Order List first
+        if self.active_pos.get('order_list_id') and not self.is_paper_trading:
+            try:
+                native_symbol = self.symbol.replace('/', '')
+                await self.engine.exchange.private_delete_orderlist({
+                    'symbol': native_symbol,
+                    'orderListId': int(self.active_pos['order_list_id'])
+                })
+                self.logger.info(f"Cancelled Native Binance Order List {self.active_pos['order_list_id']} for emergency sell.")
+            except Exception as e:
+                self.logger.warning(f"Failed to cancel order list during emergency sell: {e}")
+
         # Cancel any open limit orders first
         if self.active_pos.get('limit_order_id'):
             try:

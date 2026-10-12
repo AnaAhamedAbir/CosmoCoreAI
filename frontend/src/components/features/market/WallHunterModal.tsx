@@ -38,6 +38,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         apiKeyId: '',
         vol: 500000,
         spread: 0.0002,
+        useNativeOtoco: false,
         enableRiskSl: false,
         risk: 0.5,
         enableTsl: false,
@@ -342,6 +343,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             apiKeyId: activeWallHunter.api_key_id || '',
                             vol: c.vol_threshold || 500000,
                             spread: c.target_spread || 0.0002,
+                            useNativeOtoco: c.use_native_binance_otoco !== undefined ? c.use_native_binance_otoco : false,
                             enableRiskSl: c.risk_pct !== undefined ? c.risk_pct > 0 : false,
                             risk: c.risk_pct && c.risk_pct > 0 ? c.risk_pct : 0.5,
                             enableTsl: c.trailing_stop !== undefined ? c.trailing_stop > 0 : false,
@@ -742,6 +744,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     tsl_activation_pct: form.tslActivationPct,
                     vol_threshold: form.vol,
                     risk_pct: form.enableRiskSl ? form.risk : 0.0,
+                    use_native_binance_otoco: (tradingMode === 'spot' && (form.exchange === 'binance' || exchange === 'binance') && !form.enableTsl && !form.atrEnabled && !form.enableUtTrailingSl && !form.enableSupertrendTrailingSl) ? Boolean(form.useNativeOtoco) : false,
                     sell_order_type: form.sellOrderType,
                     sl_order_type: form.slOrderType,
                     smart_chase_deviation_pct: form.slOrderType === 'smart_chase' ? form.smartChaseDeviationPct : 0.0,
@@ -1022,6 +1025,21 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 dualEngineCandleFilter: true,
                 dualEngineMacdFilter: true,
                 dualEngineSqueezeFilter: true
+            }));
+            return;
+        }
+        if ((field === 'enableTsl' || field === 'atrEnabled' || field === 'enableUtTrailingSl' || field === 'enableSupertrendTrailingSl') && value === true) {
+            setForm(prev => ({ ...prev, [field]: true, useNativeOtoco: false }));
+            return;
+        }
+        if (field === 'useNativeOtoco' && value === true) {
+            setForm(prev => ({
+                ...prev,
+                useNativeOtoco: true,
+                enableTsl: false,
+                atrEnabled: false,
+                enableUtTrailingSl: false,
+                enableSupertrendTrailingSl: false,
             }));
             return;
         }
@@ -2763,6 +2781,44 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                         </div>
                                         <input type="range" min="1.0" max="20.0" step="0.5" className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-orange-500 bg-white/10" value={form.liquidationSafetyPct} onChange={(e) => handleFormChange('liquidationSafetyPct', parseFloat(e.target.value))} />
                                         <p className="text-[9px] text-gray-500 mt-1.5">Bot will not enter if liquidation price is closer than this percentage.</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* --- NATIVE BINANCE OTO/OTOCO TOGGLE (SPOT ONLY) --- */}
+                            {tradingMode === 'spot' && (form.exchange === 'binance' || exchange === 'binance') && (
+                                <div className={`flex justify-between items-center bg-brand-primary/10 p-3 rounded-xl border border-brand-primary/30 transition-all mb-3 ${
+                                    (form.enableTsl || form.atrEnabled || form.enableUtTrailingSl || form.enableSupertrendTrailingSl)
+                                        ? 'opacity-40 pointer-events-none'
+                                        : ''
+                                }`}>
+                                    <div className="flex flex-col pr-3">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-xs font-bold text-brand-primary flex items-center gap-1">
+                                                ⚡ Use Native Binance OTO/OTOCO (Spot)
+                                            </span>
+                                            {form.useNativeOtoco && !(form.enableTsl || form.atrEnabled || form.enableUtTrailingSl || form.enableSupertrendTrailingSl) && (
+                                                <span className="text-[9px] font-mono px-1.5 py-0.2 bg-brand-primary/20 text-brand-primary rounded border border-brand-primary/40">
+                                                    EXCHANGE ATOMIC
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span className="text-[10px] text-gray-400 mt-0.5">
+                                            {(form.enableTsl || form.atrEnabled || form.enableUtTrailingSl || form.enableSupertrendTrailingSl)
+                                                ? '⚠️ Auto-disabled: Trailing SL / ATR SL is active (Binance requires fixed TP/SL targets)'
+                                                : 'Places atomic bracket directly on Binance matching engine. 100% server-crash proof.'}
+                                        </span>
+                                    </div>
+                                    <div
+                                        className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer flex-shrink-0 ${form.useNativeOtoco && !(form.enableTsl || form.atrEnabled || form.enableUtTrailingSl || form.enableSupertrendTrailingSl) ? 'bg-brand-primary' : 'bg-gray-700'}`}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleFormChange('useNativeOtoco', !form.useNativeOtoco);
+                                        }}
+                                    >
+                                        <div
+                                            className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${form.useNativeOtoco && !(form.enableTsl || form.atrEnabled || form.enableUtTrailingSl || form.enableSupertrendTrailingSl) ? 'translate-x-4' : 'translate-x-0'}`}
+                                        />
                                     </div>
                                 </div>
                             )}

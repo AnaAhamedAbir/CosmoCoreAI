@@ -112,6 +112,14 @@ IGNORE_PATTERNS = [
     # ── Benign Exchange Errors (Race conditions during exit) ──────────────────
     re.compile(r'ReduceOnly Order is rejected', re.IGNORECASE),
     re.compile(r'SL Limit Maker order rejected', re.IGNORECASE),
+    # ── Benign Exchange Maker Rejections & OTOCO Fallbacks (Self-healing) ────
+    re.compile(r'Order would immediately match and take', re.IGNORECASE),
+    re.compile(r'spread crossed / -5022', re.IGNORECASE),
+    re.compile(r'postOnly.*rejected.*spread crossed', re.IGNORECASE),
+    re.compile(r'Maker retry:', re.IGNORECASE),
+    re.compile(r'\[Native OTOCO\].*Falling back to standard entry', re.IGNORECASE),
+    re.compile(r'\[Native OTOCO\].*Failed', re.IGNORECASE),
+    re.compile(r'\[Native OTOCO\].*Fallback', re.IGNORECASE),
     re.compile(r'GET /api/v1/health', re.IGNORECASE),
     re.compile(r'200 OK'),
     re.compile(r'INFO:'),
@@ -231,6 +239,10 @@ WARNING_OVERRIDE_PATTERNS = [
     re.compile(r'Order execution failed', re.IGNORECASE),
     re.compile(r'Margin is insufficient', re.IGNORECASE),
     re.compile(r'Futures Hunter Loop Error.*NoneType', re.IGNORECASE),
+    re.compile(r'Order would immediately match and take', re.IGNORECASE),
+    re.compile(r'spread crossed', re.IGNORECASE),
+    re.compile(r'Native OTOCO.*Falling back', re.IGNORECASE),
+    re.compile(r'Native OTOCO.*Failed', re.IGNORECASE),
 
     re.compile(r'Streamer failed to load markets', re.IGNORECASE),
     re.compile(r'Failed to load markets for.*during initialization', re.IGNORECASE),

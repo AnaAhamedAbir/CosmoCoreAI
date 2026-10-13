@@ -2807,7 +2807,7 @@ class WallHunterBot:
                     }
                     self.logger.info(f"✅ [Native OTOCO] Placed successfully! OrderListId: {res['orderListId']}, WorkingOrderId: {res['id']}")
             except Exception as otoco_err:
-                self.logger.warning(f"⚠️ [Native OTOCO] Failed: {otoco_err}. Falling back to standard entry...")
+                self.logger.info(f"ℹ️ [Native OTOCO] Maker notice ({otoco_err}). Falling back to standard entry...")
                 res = None
 
         if not res:

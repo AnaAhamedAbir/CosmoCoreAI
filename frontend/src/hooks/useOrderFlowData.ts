@@ -96,14 +96,16 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
                         else if (c.close < 10) tickStep = 0.01;
                         else if (c.close < 100) tickStep = 0.1;
                         
-                        // Roughly 5-10 ticks per candle
-                        const roughTicks = Math.max(2, Math.floor(range / tickStep));
+                        // Roughly 5-15 ticks per candle (clamped to prevent runaway loops)
+                        const roughTicks = Math.min(15, Math.max(2, Math.floor(range / tickStep) || 2));
                         const tStep = range / roughTicks;
+                        const seenPrices = new Set<number>();
                         
                         let currentPrice = c.low;
                         while(currentPrice <= c.high) {
                             const bPrice = Math.floor(currentPrice / tickStep) * tickStep;
-                            if(!ticks.find(t => t.price === bPrice)) {
+                            if(!seenPrices.has(bPrice)) {
+                                seenPrices.add(bPrice);
                                 ticks.push({
                                     price: bPrice,
                                     bidVolume: sellVol / roughTicks,
@@ -116,7 +118,7 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
                                 });
                             }
                             currentPrice += tStep;
-                            if (tStep === 0) break;
+                            if (tStep <= 0) break;
                         }
                         
                         // Post-process historic ticks

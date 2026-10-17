@@ -103,10 +103,8 @@ export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ 
         requestDraw();
         const timeScale = chart.timeScale();
         timeScale.subscribeVisibleTimeRangeChange(requestDraw);
-        chart.subscribeCrosshairMove(requestDraw);
         return () => {
             timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
-            chart.unsubscribeCrosshairMove(requestDraw);
         };
     }, [chart, series, requestDraw]);
 

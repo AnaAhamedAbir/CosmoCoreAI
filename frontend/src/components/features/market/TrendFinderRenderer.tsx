@@ -312,10 +312,8 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart,
         requestDraw();
         const timeScale = chart.timeScale();
         timeScale.subscribeVisibleTimeRangeChange(requestDraw);
-        chart.subscribeCrosshairMove(requestDraw);
         return () => {
             timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
-            chart.unsubscribeCrosshairMove(requestDraw);
         };
     }, [chart, series, requestDraw, visible]);
 

@@ -77,6 +77,7 @@ export const DualEngineDashboard: React.FC<DualEngineDashboardProps> = ({ settin
 
     // Compute live state for both Hybrid & Legacy
     const engineState = useMemo(() => {
+        if (!settings.showDualEngine) return null;
         if (!candles || candles.length < 50) return null;
 
         const closePrices = candles.map(c => ({ 

@@ -219,10 +219,8 @@ export const SupertrendRenderer: React.FC<SupertrendRendererProps> = ({
         requestDraw();
         const timeScale = chart.timeScale();
         timeScale.subscribeVisibleTimeRangeChange(requestDraw);
-        chart.subscribeCrosshairMove(requestDraw);
         return () => {
             timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
-            chart.unsubscribeCrosshairMove(requestDraw);
         };
     }, [chart, series, requestDraw]);
 

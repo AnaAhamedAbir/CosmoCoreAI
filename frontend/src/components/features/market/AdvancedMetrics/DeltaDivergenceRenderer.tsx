@@ -51,12 +51,10 @@ export const DeltaDivergenceRenderer: React.FC<DeltaDivergenceRendererProps> = (
 
         chart.timeScale().subscribeVisibleTimeRangeChange(updatePositions);
         chart.timeScale().subscribeVisibleLogicalRangeChange(updatePositions);
-        chart.subscribeCrosshairMove(updatePositions);
 
         return () => {
             chart.timeScale().unsubscribeVisibleTimeRangeChange(updatePositions);
             chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePositions);
-            chart.unsubscribeCrosshairMove(updatePositions);
         };
     }, [chart, series, data, visible]);
 

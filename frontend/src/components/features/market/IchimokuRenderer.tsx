@@ -164,10 +164,8 @@ export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, serie
         requestDraw();
         const timeScale = chart.timeScale();
         timeScale.subscribeVisibleTimeRangeChange(requestDraw);
-        chart.subscribeCrosshairMove(requestDraw);
         return () => {
             timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
-            chart.unsubscribeCrosshairMove(requestDraw);
         };
     }, [chart, series, requestDraw]);
 

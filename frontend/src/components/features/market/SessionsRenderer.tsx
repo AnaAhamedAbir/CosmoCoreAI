@@ -225,12 +225,10 @@ export const SessionsRenderer: React.FC<SessionsRendererProps> = ({ chart, serie
         const timeScale = chart.timeScale();
         timeScale.subscribeVisibleTimeRangeChange(requestDraw);
         timeScale.subscribeSizeChange(requestDraw);
-        chart.subscribeCrosshairMove(requestDraw);
         
         return () => {
             timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
             timeScale.unsubscribeSizeChange(requestDraw);
-            chart.unsubscribeCrosshairMove(requestDraw);
         };
     }, [chart, series, requestDraw]);
 

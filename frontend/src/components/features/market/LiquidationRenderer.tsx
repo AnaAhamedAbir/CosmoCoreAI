@@ -626,17 +626,21 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
         chart.subscribeCrosshairMove(crosshairHandler);
 
         // Continuous animation loop for bubbles, icebergs, and Bookmap time-series flow
+        // Throttled to 20 FPS to prevent mobile/tablet GPU thermal runaway
         let animationFrameId: number;
-        const animate = () => {
+        let lastFrameTime = 0;
+        const FPS_INTERVAL = 50; // ~20 FPS (every 50ms)
+        const animate = (timestamp: number) => {
             const hasBubbles = showBubbles && bubblesRef.current.length > 0;
             const hasIcebergs = showTrueCVD && icebergsRef.current.length > 0;
             const hasBookmap = showBookmap && bookmapHistoryRef.current.length > 0;
-            if (hasBubbles || hasIcebergs || hasBookmap) {
+            if ((hasBubbles || hasIcebergs || hasBookmap) && (timestamp - lastFrameTime >= FPS_INTERVAL)) {
+                lastFrameTime = timestamp;
                 requestDraw();
             }
             animationFrameId = requestAnimationFrame(animate);
         };
-        animate();
+        animationFrameId = requestAnimationFrame(animate);
 
         return () => {
             timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);

@@ -45,16 +45,10 @@ export const VolumeProfileWidget: React.FC<VolumeProfileWidgetProps> = ({ chart,
         // Subscribe to relevant chart events to update coordinates
         chart.timeScale().subscribeVisibleTimeRangeChange(updatePositions);
         chart.timeScale().subscribeVisibleLogicalRangeChange(updatePositions);
-        chart.subscribeCrosshairMove(updatePositions);
-
-        // Periodically poll to catch price scale animations
-        const interval = setInterval(updatePositions, 100);
 
         return () => {
             chart.timeScale().unsubscribeVisibleTimeRangeChange(updatePositions);
             chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePositions);
-            chart.unsubscribeCrosshairMove(updatePositions);
-            clearInterval(interval);
         };
     }, [chart, series, data]);
 

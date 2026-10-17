@@ -956,7 +956,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runSupertrendCalc, 0);
-        const intervalId = setInterval(runSupertrendCalc, 1000);
+        const intervalId = setInterval(runSupertrendCalc, 5000);
 
         return () => clearInterval(intervalId);
     }, [indicatorSettings]);
@@ -985,7 +985,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runMsbObCalc, 0);
-        const intervalId = setInterval(runMsbObCalc, 1000);
+        const intervalId = setInterval(runMsbObCalc, 5000);
 
         return () => clearInterval(intervalId);
     }, [indicatorSettings]);
@@ -1060,7 +1060,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runQuantumCalc, 0);
-        const intervalId = setInterval(runQuantumCalc, 2000);
+        const intervalId = setInterval(runQuantumCalc, 5000);
 
         return () => clearInterval(intervalId);
     }, [indicatorSettings]);
@@ -1091,8 +1091,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runVwapSDCalc, 0);
-        // Refresh every second for live VWAP tracking
-        const intervalId = setInterval(runVwapSDCalc, 1000);
+        // Refresh every 5s for VWAP tracking without CPU thrashing
+        const intervalId = setInterval(runVwapSDCalc, 5000);
 
         return () => clearInterval(intervalId);
     }, [indicatorSettings]);
@@ -1254,7 +1254,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runPatternExtraction, 0);
-        const pid = setInterval(runPatternExtraction, 2000);
+        const pid = setInterval(runPatternExtraction, 5000);
         return () => clearInterval(pid);
     }, [indicatorSettings.showCandlestickPatterns]);
 
@@ -2121,17 +2121,19 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 </button>
                 <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden" style={{ right: 60, bottom: 26 }}>
                     <GodModeHUD data={godModeData} visible={indicatorSettings.showLiquidationHeatmap} />
-                    <DualEngineDashboard settings={indicatorSettings} candles={allCandlesRef.current} currentPrice={currentPrice} />
-                    <WatchlistScanner settings={indicatorSettings} exchange={exchange} interval={interval} />
+                    {indicatorSettings.showDualEngine && <DualEngineDashboard settings={indicatorSettings} candles={allCandlesRef.current} currentPrice={currentPrice} />}
+                    {indicatorSettings.showWatchlistScanner && <WatchlistScanner settings={indicatorSettings} exchange={exchange} interval={interval} />}
                     {/* ── Advanced Metrics ── */}
-                    <MLPredictionCloudRenderer
-                        chart={chartRef.current}
-                        series={candlestickSeriesRef.current}
-                        modelId={activeMLModelId}
-                        exchange={exchange}
-                        symbol={symbol}
-                        currentPrice={currentPrice}
-                    />
+                    {activeMLModelId && (
+                        <MLPredictionCloudRenderer
+                            chart={chartRef.current}
+                            series={candlestickSeriesRef.current}
+                            modelId={activeMLModelId}
+                            exchange={exchange}
+                            symbol={symbol}
+                            currentPrice={currentPrice}
+                        />
+                    )}
                     {advancedMetrics.showDeltaProfile && <DeltaProfileRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showDeltaProfile} data={advancedMetricsData?.deltaProfile} />}
                     {advancedMetrics.showFootprintImbalance && <FootprintImbalanceRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showFootprintImbalance} data={advancedMetricsData?.footprintData} />}
                     {advancedMetrics.showTradeBubbles && <TradeBubbleChartRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showTradeBubbles} data={advancedMetricsData?.tradeBubbles} />}
@@ -2323,23 +2325,27 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         />
                     )}
                     {/* Wick Rejection Support & Resistance */}
-                    <WickSRRenderer
-                        chart={chartRef.current}
-                        series={candlestickSeriesRef.current}
-                        data={wickSRData}
-                        showZones={indicatorSettings.wickSRShowZones}
-                        showLabels={indicatorSettings.wickSRShowLabels}
-                        visible={indicatorSettings.showWickSR}
-                    />
+                    {indicatorSettings.showWickSR && (
+                        <WickSRRenderer
+                            chart={chartRef.current}
+                            series={candlestickSeriesRef.current}
+                            data={wickSRData}
+                            showZones={indicatorSettings.wickSRShowZones}
+                            showLabels={indicatorSettings.wickSRShowLabels}
+                            visible={indicatorSettings.showWickSR}
+                        />
+                    )}
 
                     {/* VWAP Standard Deviation Bands */}
-                    <VWAPSDRenderer
-                        chart={chartRef.current}
-                        visible={indicatorSettings.showVWAPSD}
-                        data={vwapSDData}
-                    />
+                    {indicatorSettings.showVWAPSD && (
+                        <VWAPSDRenderer
+                            chart={chartRef.current}
+                            visible={indicatorSettings.showVWAPSD}
+                            data={vwapSDData}
+                        />
+                    )}
                 </div>
-                <SessionsDashboard settings={indicatorSettings} statuses={sessionStatuses} />
+                {indicatorSettings.showSessions && <SessionsDashboard settings={indicatorSettings} statuses={sessionStatuses} />}
                 {showVPVR && <VolumeProfileWidget chart={chartRef.current} series={candlestickSeriesRef.current} data={vpvrData} />}
 
                 {/* ── Quantum AI v8 Dashboard HUD ── */}

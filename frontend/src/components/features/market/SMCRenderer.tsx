@@ -414,7 +414,7 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
 
     // Re-render on scroll/zoom
     useEffect(() => {
-        if (!chart) return;
+        if (!chart || !visible) return;
 
         const scheduleRender = () => {
             cancelAnimationFrame(animFrameRef.current);
@@ -431,14 +431,17 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
             chart.timeScale().unsubscribeVisibleTimeRangeChange(scheduleRender);
             chart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleRender);
         };
-    }, [chart, render]);
+    }, [chart, render, visible]);
 
     // Re-render when data changes
     useEffect(() => {
+        if (!visible) return;
         cancelAnimationFrame(animFrameRef.current);
         animFrameRef.current = requestAnimationFrame(render);
         return () => cancelAnimationFrame(animFrameRef.current);
-    }, [render]);
+    }, [render, visible]);
+
+    if (!visible) return null;
 
     return (
         <div

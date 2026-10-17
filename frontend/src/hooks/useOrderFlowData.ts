@@ -216,6 +216,44 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
         
         // WebSocket Connection for Order Flow (Real-Time CVD & Footprints)
         let ws: WebSocket | null = null;
+        let pendingCvdDelta = 0;
+        let pendingCandleTime: number | null = null;
+        let hasPendingFootprint = false;
+        let orderFlowThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const flushOrderFlow = () => {
+            if (!isMounted) return;
+            if (pendingCvdDelta !== 0 && pendingCandleTime !== null) {
+                const delta = pendingCvdDelta;
+                const cTime = pendingCandleTime;
+                pendingCvdDelta = 0;
+                setCvdData(prev => {
+                    if (prev.length === 0) {
+                        return [{ time: cTime as any, value: delta }];
+                    }
+                    const lastPoint = prev[prev.length - 1];
+                    if (lastPoint.time === cTime) {
+                        const newPrev = [...prev];
+                        newPrev[newPrev.length - 1] = { time: cTime as any, value: lastPoint.value + delta };
+                        return newPrev;
+                    } else {
+                        return [...prev.slice(-2000), { time: cTime as any, value: lastPoint.value + delta }];
+                    }
+                });
+            }
+            if (hasPendingFootprint) {
+                hasPendingFootprint = false;
+                setFootprintData([...activeFootprints.slice(-2000)]);
+            }
+            orderFlowThrottleTimer = null;
+        };
+
+        const scheduleOrderFlowFlush = () => {
+            if (!orderFlowThrottleTimer) {
+                orderFlowThrottleTimer = setTimeout(flushOrderFlow, 250);
+            }
+        };
+
         if (symbol) {
              const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
              // Vite proxy forwards paths starting with /ws to backend
@@ -359,25 +397,12 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
                               }
                           }
                           
-                          // Update State Batch
+                          // Queue update for throttled batching
                           if (isMounted) {
-                              setCvdData(prev => {
-                                  if (prev.length === 0) {
-                                      return [{ time: currentCandleTime as any, value: cvdDelta }];
-                                  }
-                                  
-                                  const lastPoint = prev[prev.length - 1];
-                                  if (lastPoint.time === currentCandleTime) {
-                                      // Update current candle's CVD
-                                      const newPrev = [...prev];
-                                      newPrev[newPrev.length - 1] = { time: currentCandleTime as any, value: lastPoint.value + cvdDelta };
-                                      return newPrev;
-                                  } else {
-                                      // Start new candle's CVD
-                                      return [...prev.slice(-2000), { time: currentCandleTime as any, value: lastPoint.value + cvdDelta }];
-                                  }
-                              });
-                              setFootprintData([...activeFootprints.slice(-2000)]);
+                              pendingCvdDelta += cvdDelta;
+                              pendingCandleTime = currentCandleTime;
+                              hasPendingFootprint = true;
+                              scheduleOrderFlowFlush();
                           }
                      }
                  } catch (e) {
@@ -388,6 +413,9 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
 
         return () => {
             isMounted = false;
+            if (orderFlowThrottleTimer) {
+                clearTimeout(orderFlowThrottleTimer);
+            }
             if (ws) {
                 if (ws.readyState === WebSocket.CONNECTING) {
                     ws.onopen = () => ws?.close();

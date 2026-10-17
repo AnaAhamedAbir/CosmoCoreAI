@@ -791,8 +791,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         // Run instantly immediately via setTimeout 0 to render visuals without blocking UI toggle switch
         setTimeout(runCalc, 0);
 
-        // Throttle updates to exactly once per second, ignoring rapid sub-second WebSocket ticks
-        const intervalId = setInterval(runCalc, 1000);
+        // Throttle updates to 4 seconds, avoiding rapid CPU-heavy recalculation loops
+        const intervalId = setInterval(runCalc, 4000);
 
         return () => {
             isCancelled = true;
@@ -852,7 +852,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runIctCalc, 0);
-        const intervalId = setInterval(runIctCalc, 1000);
+        const intervalId = setInterval(runIctCalc, 4000);
 
         return () => clearInterval(intervalId);
     }, [indicatorSettings]);
@@ -1518,7 +1518,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             levels
         });
 
-    }, [indicatorSettings.showAutoFibo, indicatorSettings.autoFiboLookback, allCandlesRef.current.length, currentPrice]);
+    }, [indicatorSettings.showAutoFibo, indicatorSettings.autoFiboLookback, allCandlesRef.current.length]);
 
     // Ichimoku Cloud Calculation
     useEffect(() => {
@@ -1542,8 +1542,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         indicatorSettings.kijunPeriod,
         indicatorSettings.senkouBPeriod,
         indicatorSettings.displacement,
-        allCandlesRef.current.length,
-        currentPrice
+        allCandlesRef.current.length
     ]);
 
     // Adaptive Trend Finder Calculation
@@ -1566,8 +1565,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         indicatorSettings.showTrendFinder,
         indicatorSettings.trendFinderLookback,
         indicatorSettings.trendFinderDev,
-        allCandlesRef.current.length,
-        currentPrice
+        allCandlesRef.current.length
     ]);
 
     // Update horizontal price lines for walls intelligently without blindly clearing
@@ -2134,37 +2132,41 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         symbol={symbol}
                         currentPrice={currentPrice}
                     />
-                    <DeltaProfileRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showDeltaProfile} data={advancedMetricsData?.deltaProfile} />
-                    <FootprintImbalanceRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showFootprintImbalance} data={advancedMetricsData?.footprintData} />
-                    <TradeBubbleChartRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showTradeBubbles} data={advancedMetricsData?.tradeBubbles} />
-                    <SpoofingDetectionRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showSpoofingDetection} data={advancedMetricsData?.spoofingData} />
-                    <AnchoredVWAPRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showAnchoredVWAP} data={advancedMetricsData?.vwapData} />
-                    <OIBOscillatorRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showOIBOscillator} data={advancedMetricsData?.oibData} />
-                    <TPOProfileRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showTPOProfile} data={advancedMetricsData?.tpoData} />
-                    <DeltaDivergenceRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showDeltaDivergence} data={advancedMetricsData?.divergenceData} />
-                    <AetherFlowRenderer chart={chartRef.current} series={candlestickSeriesRef.current!} data={aetherFlowData} settings={indicatorSettings} />
+                    {advancedMetrics.showDeltaProfile && <DeltaProfileRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showDeltaProfile} data={advancedMetricsData?.deltaProfile} />}
+                    {advancedMetrics.showFootprintImbalance && <FootprintImbalanceRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showFootprintImbalance} data={advancedMetricsData?.footprintData} />}
+                    {advancedMetrics.showTradeBubbles && <TradeBubbleChartRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showTradeBubbles} data={advancedMetricsData?.tradeBubbles} />}
+                    {advancedMetrics.showSpoofingDetection && <SpoofingDetectionRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showSpoofingDetection} data={advancedMetricsData?.spoofingData} />}
+                    {advancedMetrics.showAnchoredVWAP && <AnchoredVWAPRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showAnchoredVWAP} data={advancedMetricsData?.vwapData} />}
+                    {advancedMetrics.showOIBOscillator && <OIBOscillatorRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showOIBOscillator} data={advancedMetricsData?.oibData} />}
+                    {advancedMetrics.showTPOProfile && <TPOProfileRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showTPOProfile} data={advancedMetricsData?.tpoData} />}
+                    {advancedMetrics.showDeltaDivergence && <DeltaDivergenceRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showDeltaDivergence} data={advancedMetricsData?.divergenceData} />}
+                    {indicatorSettings.showAetherFlow && <AetherFlowRenderer chart={chartRef.current} series={candlestickSeriesRef.current!} data={aetherFlowData} settings={indicatorSettings} />}
 
                     <LiquidityHeatmapRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={realHeatmapData} />
-                    <LiquidationHeatmapGodModeRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={godModeData} visible={indicatorSettings.showLiquidationHeatmap} />
-                    <FibonacciCloudRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={fiboData} />
-                    <BollingerBandsRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={bbData} visible={indicatorSettings.showBB} />
-                    <MACDRenderer
-                        chart={chartRef.current}
-                        data={allCandlesRef.current}
-                        visible={indicatorSettings.showMACD}
-                        fast={indicatorSettings.macdFast}
-                        slow={indicatorSettings.macdSlow}
-                        signal={indicatorSettings.macdSignal}
-                    />
-                    <IchimokuRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={ichimokuData} displacement={indicatorSettings.displacement} />
-                    <TrendFinderRenderer
-                        chart={chartRef.current}
-                        series={candlestickSeriesRef.current}
-                        data={trendFinderData}
-                        visible={indicatorSettings.showTrendFinder}
-                        threshold={indicatorSettings.trendFinderThreshold}
-                        hideLowConfidenceTrend={indicatorSettings.hideLowConfidenceTrend}
-                    />
+                    {indicatorSettings.showLiquidationHeatmap && <LiquidationHeatmapGodModeRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={godModeData} visible={indicatorSettings.showLiquidationHeatmap} />}
+                    {indicatorSettings.showAutoFibo && <FibonacciCloudRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={fiboData} />}
+                    {indicatorSettings.showBB && <BollingerBandsRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={bbData} visible={indicatorSettings.showBB} />}
+                    {indicatorSettings.showMACD && (
+                        <MACDRenderer
+                            chart={chartRef.current}
+                            data={allCandlesRef.current}
+                            visible={indicatorSettings.showMACD}
+                            fast={indicatorSettings.macdFast}
+                            slow={indicatorSettings.macdSlow}
+                            signal={indicatorSettings.macdSignal}
+                        />
+                    )}
+                    {indicatorSettings.showIchimoku && <IchimokuRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={ichimokuData} displacement={indicatorSettings.displacement} />}
+                    {indicatorSettings.showTrendFinder && (
+                        <TrendFinderRenderer
+                            chart={chartRef.current}
+                            series={candlestickSeriesRef.current}
+                            data={trendFinderData}
+                            visible={indicatorSettings.showTrendFinder}
+                            threshold={indicatorSettings.trendFinderThreshold}
+                            hideLowConfidenceTrend={indicatorSettings.hideLowConfidenceTrend}
+                        />
+                    )}
                     {showFootprint && <FootprintRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={footprintData} visible={showFootprint} />}
                     {indicatorSettings.showLiquidationHeatmap && (
                         <LiquidationRenderer
@@ -2926,7 +2928,8 @@ const OrderFlowChartPanel: React.FC<{
     setManualTradeTrigger: (trigger: number) => void;
     volumeThreshold: number;
     volumeMode: string;
-}> = ({ config, isMain, onUpdate, onRemove, showFootprint, showCVD, showVPVR, indicatorSettings, advancedMetrics, selectedApiKeyId, predictionResult, activeMLModelId, setExternalAIPrice, setExternalAIOpenTrigger, setManualTradePrice, setManualTradeTrigger, volumeThreshold, volumeMode }) => {
+    parentL2Data?: any;
+}> = ({ config, isMain, onUpdate, onRemove, showFootprint, showCVD, showVPVR, indicatorSettings, advancedMetrics, selectedApiKeyId, predictionResult, activeMLModelId, setExternalAIPrice, setExternalAIOpenTrigger, setManualTradePrice, setManualTradeTrigger, volumeThreshold, volumeMode, parentL2Data }) => {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isTradingViewMode, setIsTradingViewMode] = useState(false);
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
@@ -2940,7 +2943,9 @@ const OrderFlowChartPanel: React.FC<{
     const chartBotId = activeBotsByChartId[config.id] || null;
     const { statusData: botStatus } = useWallHunterStatus(chartBotId);
     
-    const { bids, asks, walls, currentPrice, tradeEvent } = useLevel2MarketData(config.symbol, config.exchange);
+    const isShared = isMain && !!parentL2Data;
+    const fallbackL2 = useLevel2MarketData(isShared ? '' : config.symbol, isShared ? '' : config.exchange);
+    const { bids, asks, walls, currentPrice, tradeEvent } = isShared ? parentL2Data : fallbackL2;
     const advancedMetricsData = useAdvancedMetrics(config.symbol, config.exchange, config.interval, advancedMetrics);
     const openOrders = useOpenOrders(selectedApiKeyId, config.symbol, 5000);
 
@@ -3409,6 +3414,7 @@ const OrderFlowHeatmap: React.FC = () => {
                             setManualTradeTrigger={c.isMain ? setManualTradeTrigger : () => {}}
                             volumeThreshold={volumeThreshold} 
                             volumeMode={volumeMode} 
+                            parentL2Data={c.isMain ? { bids, asks, walls, currentPrice, tradeEvent } : undefined}
                         />
                     ))}
                 </div>

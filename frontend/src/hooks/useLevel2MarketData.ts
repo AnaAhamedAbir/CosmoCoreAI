@@ -18,10 +18,13 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
     const [data, setData] = useState<MarketDepthData>({ bids: [], asks: [], walls: [], currentPrice: 0, tradeEvent: null });
 
     useEffect(() => {
+        if (!symbol) return;
         let ws: WebSocket | null = null;
         let isSubscribed = true;
         let worker: Worker | null = null;
         let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+        let pendingData: Partial<MarketDepthData> | null = null;
+        let throttleTimer: ReturnType<typeof setTimeout> | null = null;
 
         const connectToBackend = () => {
             if (!isSubscribed) return;
@@ -39,19 +42,39 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
                     worker = new Worker(new URL('../workers/marketDataWorker.ts', import.meta.url), { type: 'module' });
                 }
 
+                const flushUpdate = () => {
+                    if (pendingData && isSubscribed) {
+                        setData(prev => ({
+                            ...prev,
+                            ...pendingData,
+                            tradeEvent: pendingData?.tradeEvent !== undefined ? pendingData.tradeEvent : prev.tradeEvent
+                        }));
+                        pendingData = null;
+                    }
+                    throttleTimer = null;
+                };
+
+                const scheduleFlush = () => {
+                    if (!throttleTimer) {
+                        throttleTimer = setTimeout(flushUpdate, 200);
+                    }
+                };
+
                 worker.onmessage = (e) => {
                     if (!isSubscribed) return;
                     if (e.data.type === 'DATA_READY') {
-                        setData(prev => ({
-                            ...e.data.data,
-                            tradeEvent: prev.tradeEvent // preserve recent trade events
-                        }));
+                        pendingData = {
+                            ...(pendingData || {}),
+                            ...e.data.data
+                        };
+                        scheduleFlush();
                     } else if (e.data.type === 'TRADE_READY') {
-                        setData(prev => ({
-                            ...prev,
+                        pendingData = {
+                            ...(pendingData || {}),
                             currentPrice: e.data.data.price,
                             tradeEvent: e.data.data
-                        }));
+                        };
+                        scheduleFlush();
                     }
                 };
 
@@ -95,6 +118,9 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
 
         return () => {
             isSubscribed = false;
+            if (throttleTimer) {
+                clearTimeout(throttleTimer);
+            }
             if (reconnectTimeout) {
                 clearTimeout(reconnectTimeout);
             }

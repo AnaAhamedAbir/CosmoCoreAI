@@ -11,27 +11,23 @@ interface LiquidationHeatmapGodModeRendererProps {
 export const LiquidationHeatmapGodModeRenderer: React.FC<LiquidationHeatmapGodModeRendererProps> = ({ chart, series, data, visible }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const animFrameRef = useRef<number>(0);
-    const [renderTick, setRenderTick] = useState(0);
-
     // Subscribe to chart coordinate changes
     useEffect(() => {
         if (!chart || !series) return;
         const handler = () => {
             if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
             animFrameRef.current = requestAnimationFrame(() => {
-                setRenderTick(prev => prev + 1);
+                renderHeatmap();
             });
         };
         chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
-        series.subscribeDataChanged(handler);
         chart.timeScale().subscribeSizeChange(handler);
         return () => {
             chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
-            series.unsubscribeDataChanged(handler);
             chart.timeScale().unsubscribeSizeChange(handler);
             if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
         };
-    }, [chart, series]);
+    }, [chart, series, data, visible]);
 
     const renderHeatmap = useCallback(() => {
         if (!containerRef.current || !chart || !series || !data || !visible) {
@@ -108,7 +104,7 @@ export const LiquidationHeatmapGodModeRenderer: React.FC<LiquidationHeatmapGodMo
             }
         });
         
-    }, [chart, series, data, visible, renderTick]);
+    }, [chart, series, data, visible]);
 
     useEffect(() => {
         renderHeatmap();

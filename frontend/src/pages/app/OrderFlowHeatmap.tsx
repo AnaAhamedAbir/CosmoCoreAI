@@ -97,7 +97,7 @@ const parseIntervalToMs = (interval: string): number => {
 };
 
 // Chart Component
-const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean }> = ({ exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = true }) => {
+const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean }> = ({ exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<any>(null);
     const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -2948,7 +2948,7 @@ const OrderFlowChartPanel: React.FC<{
     volumeMode: string;
     parentL2Data?: any;
     showCrosshairAIPredict?: boolean;
-}> = ({ config, isMain, onUpdate, onRemove, showFootprint, showCVD, showVPVR, indicatorSettings, advancedMetrics, selectedApiKeyId, predictionResult, activeMLModelId, setExternalAIPrice, setExternalAIOpenTrigger, setManualTradePrice, setManualTradeTrigger, volumeThreshold, volumeMode, parentL2Data, showCrosshairAIPredict = true }) => {
+}> = ({ config, isMain, onUpdate, onRemove, showFootprint, showCVD, showVPVR, indicatorSettings, advancedMetrics, selectedApiKeyId, predictionResult, activeMLModelId, setExternalAIPrice, setExternalAIOpenTrigger, setManualTradePrice, setManualTradeTrigger, volumeThreshold, volumeMode, parentL2Data, showCrosshairAIPredict = false }) => {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isTradingViewMode, setIsTradingViewMode] = useState(false);
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
@@ -3105,9 +3105,9 @@ const OrderFlowHeatmap: React.FC = () => {
     const [showCrosshairAIPredict, setShowCrosshairAIPredict] = useState<boolean>(() => {
         try {
             const saved = localStorage.getItem('orderflow_show_crosshair_ai_predict');
-            return saved !== null ? JSON.parse(saved) : true;
+            return saved !== null ? JSON.parse(saved) : false;
         } catch {
-            return true;
+            return false;
         }
     });
 

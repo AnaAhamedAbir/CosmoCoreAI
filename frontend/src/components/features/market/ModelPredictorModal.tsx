@@ -37,7 +37,7 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({
     externalPrice, 
     externalOpenTrigger, 
     size = 'md',
-    showCrosshairAIPredict = true,
+    showCrosshairAIPredict = false,
     onToggleCrosshairAIPredict
 }) => {
     const [isOpen, setIsOpen] = useState(false);

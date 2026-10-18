@@ -59,9 +59,12 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]); // Intentionally omitting currentPrice to avoid overwriting user input and API spam on every tick
 
+    const prevTriggerRef = useRef<number>(externalOpenTrigger || 0);
+
     // Handle external triggers
     useEffect(() => {
-        if (externalOpenTrigger && externalOpenTrigger > 0) {
+        if (externalOpenTrigger && externalOpenTrigger > 0 && externalOpenTrigger !== prevTriggerRef.current) {
+            prevTriggerRef.current = externalOpenTrigger;
             setIsOpen(true);
             if (externalPrice) {
                 setPricePoint(externalPrice.toString());

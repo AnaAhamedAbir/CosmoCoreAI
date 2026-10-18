@@ -3630,7 +3630,14 @@ const OrderFlowHeatmap: React.FC = () => {
             </div>
 
             {/* FLOATING ACTION BUTTONS CONTAINER */}
-            <div className="fixed bottom-8 right-8 z-[999] flex flex-row items-center gap-2.5">
+            <div 
+                className="fixed bottom-8 right-8 z-[999] flex flex-row items-center gap-2.5"
+                onMouseDown={(e) => e.stopPropagation()}
+                onMouseUp={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onPointerUp={(e) => e.stopPropagation()}
+            >
                 {/* COLLAPSIBLE BUTTONS DRAWER (Smooth animated slide from right to left) */}
                 <AnimatePresence>
                     {isFloatingToolbarOpen && (
@@ -3641,6 +3648,11 @@ const OrderFlowHeatmap: React.FC = () => {
                             exit={{ opacity: 0, x: 50, scale: 0.95 }}
                             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
                             className="flex flex-row-reverse items-center gap-2.5"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onMouseUp={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onPointerUp={(e) => e.stopPropagation()}
                         >
                             {/* WALLHUNTER FLOATING ACTION BUTTON */}
                             {selectedHudBotId ? (
@@ -3786,7 +3798,15 @@ const OrderFlowHeatmap: React.FC = () => {
 
                 {/* MAIN COLLAPSIBLE TOGGLE BUTTON WITH ARROW */}
                 <button
-                    onClick={() => setIsFloatingToolbarOpen(prev => !prev)}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setIsFloatingToolbarOpen(prev => !prev);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onMouseUp={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onPointerUp={(e) => e.stopPropagation()}
                     className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-[#121624] to-[#0b0e17] hover:from-[#1b2236] hover:to-[#121624] border border-cyan-500/40 text-cyan-400 hover:text-white shadow-[0_0_15px_rgba(6,182,212,0.35)] z-[1000] transition-all duration-300 hover:scale-110 active:scale-95 group cursor-pointer"
                     title={isFloatingToolbarOpen ? "Hide Tools" : "Show Floating Tools"}
                 >

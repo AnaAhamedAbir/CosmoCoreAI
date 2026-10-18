@@ -120,14 +120,18 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
   // For Limit orders
   const [limitPrice, setLimitPrice] = useState<string>(currentPrice ? currentPrice.toString() : '');
 
-  // Update limit price when clickedPrice from chart changes
+  const lastTriggerRef = React.useRef<number>(openTrigger || 0);
+
+  // Update limit price when clickedPrice from chart changes via an explicit trigger
   React.useEffect(() => {
-    if (clickedPrice && clickedPrice > 0) {
-      setOrderType('Limit');
-      setIsAutoLimit(false); // Disable auto best limit since user manually picked a price
-      setLimitPrice(clickedPrice.toString());
-      if (!isOpen) {
-         setIsOpen(true); // Auto-open modal if closed
+    // Only auto-open if a new valid trigger has been dispatched after mounting
+    if (openTrigger && openTrigger > 0 && openTrigger !== lastTriggerRef.current) {
+      lastTriggerRef.current = openTrigger;
+      if (clickedPrice && clickedPrice > 0) {
+        setOrderType('Limit');
+        setIsAutoLimit(false); // Disable auto best limit since user manually picked a price
+        setLimitPrice(clickedPrice.toString());
+        setIsOpen(true); // Auto-open modal if closed
       }
     }
   }, [clickedPrice, openTrigger]);

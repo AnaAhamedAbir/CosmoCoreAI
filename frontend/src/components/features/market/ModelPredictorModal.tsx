@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, BrainCircuit, Target, ShieldAlert, TrendingUp, Crosshair } from 'lucide-react';
 import { toast } from 'react-hot-toast';

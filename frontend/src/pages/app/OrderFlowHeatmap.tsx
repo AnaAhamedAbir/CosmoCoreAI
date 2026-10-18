@@ -500,8 +500,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             
             // If mouse is outside chart vertically, remove line
             if (coordinate < 0 || coordinate > rect.height) {
-                if (quickTradeGhostLineRef.current) {
-                    candlestickSeriesRef.current.removePriceLine(quickTradeGhostLineRef.current);
+                if (quickTradeGhostLineRef.current && candlestickSeriesRef.current) {
+                    try { candlestickSeriesRef.current.removePriceLine(quickTradeGhostLineRef.current); } catch {}
                     quickTradeGhostLineRef.current = null;
                 }
                 return;
@@ -527,7 +527,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
         const handleQuickTradeDragEnd = async (side: 'Buy' | 'Sell', y: number, size: string, apiId: string) => {
             if (quickTradeGhostLineRef.current && candlestickSeriesRef.current) {
-                candlestickSeriesRef.current.removePriceLine(quickTradeGhostLineRef.current);
+                try { candlestickSeriesRef.current.removePriceLine(quickTradeGhostLineRef.current); } catch {}
                 quickTradeGhostLineRef.current = null;
             }
 
@@ -646,7 +646,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             }
             crosshairPriceRef.current = null;
             if (aiClickPriceLineRef.current && candlestickSeriesRef.current) {
-                candlestickSeriesRef.current.removePriceLine(aiClickPriceLineRef.current);
+                try { candlestickSeriesRef.current.removePriceLine(aiClickPriceLineRef.current); } catch {}
                 aiClickPriceLineRef.current = null;
             }
         }
@@ -1701,8 +1701,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         title: `🤖 AI SL (${mlSetup.confidence * 100}%)`
                     });
                 }
-            } else if (mlSlLineRef.current) {
-                candlestickSeriesRef.current.removePriceLine(mlSlLineRef.current);
+            } else if (mlSlLineRef.current && candlestickSeriesRef.current) {
+                try { candlestickSeriesRef.current.removePriceLine(mlSlLineRef.current); } catch {}
                 mlSlLineRef.current = null;
             }
 
@@ -1723,18 +1723,18 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         title: `🤖 AI TP (RR: ${mlSetup.rr_ratio})`
                     });
                 }
-            } else if (mlTpLineRef.current) {
-                candlestickSeriesRef.current.removePriceLine(mlTpLineRef.current);
+            } else if (mlTpLineRef.current && candlestickSeriesRef.current) {
+                try { candlestickSeriesRef.current.removePriceLine(mlTpLineRef.current); } catch {}
                 mlTpLineRef.current = null;
             }
         } else {
             // Remove lines if mlSetup is null
-            if (mlSlLineRef.current) {
-                candlestickSeriesRef.current.removePriceLine(mlSlLineRef.current);
+            if (mlSlLineRef.current && candlestickSeriesRef.current) {
+                try { candlestickSeriesRef.current.removePriceLine(mlSlLineRef.current); } catch {}
                 mlSlLineRef.current = null;
             }
-            if (mlTpLineRef.current) {
-                candlestickSeriesRef.current.removePriceLine(mlTpLineRef.current);
+            if (mlTpLineRef.current && candlestickSeriesRef.current) {
+                try { candlestickSeriesRef.current.removePriceLine(mlTpLineRef.current); } catch {}
                 mlTpLineRef.current = null;
             }
         }
@@ -2096,7 +2096,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                             if (crosshairPriceRef.current !== null && onAIPredictClick) {
                                 onAIPredictClick(crosshairPriceRef.current);
                                 if (aiClickPriceLineRef.current && candlestickSeriesRef.current) {
-                                    candlestickSeriesRef.current.removePriceLine(aiClickPriceLineRef.current);
+                                    try { candlestickSeriesRef.current.removePriceLine(aiClickPriceLineRef.current); } catch {}
+                                    aiClickPriceLineRef.current = null;
                                 }
                                 if (candlestickSeriesRef.current) {
                                     aiClickPriceLineRef.current = candlestickSeriesRef.current.createPriceLine({

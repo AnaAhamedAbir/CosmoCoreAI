@@ -13,9 +13,10 @@ interface ManualTradeModalProps {
   onApiKeyChange?: (apiKeyId: string) => void;
   clickedPrice?: number | null;
   openTrigger?: number;
+  buttonSize?: 'sm' | 'md';
 }
 
-export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, currentPrice, onApiKeyChange, clickedPrice, openTrigger }) => {
+export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, currentPrice, onApiKeyChange, clickedPrice, openTrigger, buttonSize = 'md' }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Market');
   const [size, setSize] = useState<string>('');
@@ -250,10 +251,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
             onClick={() => setIsOpen(true)}
-            className="absolute inset-0 w-full h-full rounded-full flex items-center justify-center bg-brand-primary hover:bg-blue-600 border border-blue-400/30 text-white shadow-[0_0_20px_rgba(59,130,246,0.4)] backdrop-blur-md z-[999] transition-colors focus:outline-none group"
+            className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center bg-brand-primary hover:bg-blue-600 border border-blue-400/30 text-white ${buttonSize === 'sm' ? 'shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'shadow-[0_0_20px_rgba(59,130,246,0.4)]'} backdrop-blur-md z-[999] transition-colors focus:outline-none group`}
             title="Manual Trade"
           >
-            <DollarSign className="w-8 h-8 group-hover:scale-110 transition-transform" />
+            <DollarSign className={`${buttonSize === 'sm' ? 'w-4 h-4' : 'w-8 h-8'} group-hover:scale-110 transition-transform`} />
           </MotionButton>
         )}
       </AnimatePresence>

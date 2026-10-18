@@ -80,6 +80,8 @@ import { useAdvancedMetrics } from '../../hooks/useAdvancedMetrics';
 import { TradingViewWidget } from '../../components/features/market/TradingViewWidget';
 import { TopTokensModal } from '../../components/TopTokensModal';
 import { CandlestickTooltip, TooltipCandleData } from '../../components/features/market/CandlestickTooltip';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronLeft } from 'lucide-react';
 // Helper to convert interval string to ms
 const parseIntervalToMs = (interval: string): number => {
     const value = parseInt(interval) || 1;
@@ -3088,6 +3090,7 @@ const OrderFlowHeatmap: React.FC = () => {
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
     const [isForexWallHunterOpen, setIsForexWallHunterOpen] = useState(false);
     const [isEmergencySelling, setIsEmergencySelling] = useState(false); // NEW STATE
+    const [isFloatingToolbarOpen, setIsFloatingToolbarOpen] = useState(false);
     
     const [additionalCharts, setAdditionalCharts] = useState<ChartConfig[]>([]);
 
@@ -3600,143 +3603,165 @@ const OrderFlowHeatmap: React.FC = () => {
             </div>
 
             {/* FLOATING ACTION BUTTONS CONTAINER */}
-            <div className="fixed bottom-8 right-8 z-[999] flex flex-row-reverse gap-4 items-center">
-                {/* WALLHUNTER FLOATING ACTION BUTTON */}
-                {
-                    selectedHudBotId ? (
-                        <div className="flex flex-row gap-4 items-center opacity-100 transition-opacity duration-300">
-                            <button
-                                onClick={() => setIsWallHunterOpen(true)}
-                                className="group relative w-12 h-12 shrink-0"
-                                title="Update WallHunter Config"
-                            >
-                                <div className="absolute inset-0 bg-indigo-500 rounded-full blur-xl opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                <div className="relative w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center border-2 border-white/20 shadow-[0_0_30px_rgba(99,102,241,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
-                                    <svg className="w-5 h-5 text-white group-hover:rotate-90 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                    </svg>
+            <div className="fixed bottom-8 right-8 z-[999] flex flex-row items-center gap-2">
+                {/* COLLAPSIBLE BUTTONS DRAWER (Smooth animated slide from right to left) */}
+                <AnimatePresence>
+                    {isFloatingToolbarOpen && (
+                        <motion.div
+                            key="floating-action-tools-drawer"
+                            initial={{ opacity: 0, x: 50, scale: 0.95 }}
+                            animate={{ opacity: 1, x: 0, scale: 1 }}
+                            exit={{ opacity: 0, x: 50, scale: 0.95 }}
+                            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                            className="flex flex-row-reverse items-center gap-2"
+                        >
+                            {/* WALLHUNTER FLOATING ACTION BUTTON */}
+                            {selectedHudBotId ? (
+                                <div className="flex flex-row gap-2 items-center opacity-100 transition-opacity duration-300">
+                                    <button
+                                        onClick={() => setIsWallHunterOpen(true)}
+                                        className="group relative w-8 h-8 shrink-0"
+                                        title="Update WallHunter Config"
+                                    >
+                                        <div className="absolute inset-0 bg-indigo-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                        <div className="relative w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center border border-white/20 shadow-[0_0_12px_rgba(99,102,241,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
+                                            <svg className="w-3.5 h-3.5 text-white group-hover:rotate-90 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                            </svg>
+                                        </div>
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                await botService.controlBot(selectedHudBotId, 'stop');
+                                                const chartsWithBot = Object.entries(activeBotsByChartId).filter(([cId, bId]) => bId === selectedHudBotId).map(([cId]) => cId);
+                                                chartsWithBot.forEach(cId => removeBotForChart(cId));
+                                                if (activeWallHunterId === selectedHudBotId) {
+                                                    setActiveWallHunterId(null);
+                                                }
+                                            } catch (err) {
+                                                console.error("Failed to stop WallHunter bot", err);
+                                            }
+                                        }}
+                                        className="group relative w-8 h-8 shrink-0"
+                                        title="Abort WallHunter"
+                                    >
+                                        <div className="absolute inset-0 bg-red-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                        <div className="relative w-8 h-8 bg-gradient-to-br from-red-500 to-red-700 rounded-full flex items-center justify-center border-2 border-white/20 shadow-[0_0_12px_rgba(239,68,68,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
+                                            <svg className="w-4 h-4 text-white group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </div>
+                                    </button>
                                 </div>
-                            </button>
-                            <button
-                                onClick={async () => {
-                                    try {
-                                        await botService.controlBot(selectedHudBotId, 'stop');
-                                        const chartsWithBot = Object.entries(activeBotsByChartId).filter(([cId, bId]) => bId === selectedHudBotId).map(([cId]) => cId);
-                                        chartsWithBot.forEach(cId => removeBotForChart(cId));
-                                        if (activeWallHunterId === selectedHudBotId) {
-                                            setActiveWallHunterId(null);
-                                        }
-                                    } catch (err) {
-                                        console.error("Failed to stop WallHunter bot", err);
-                                    }
-                                }}
-                                className="group relative w-16 h-16 shrink-0"
-                                title="Abort WallHunter"
-                            >
-                                <div className="absolute inset-0 bg-red-500 rounded-full blur-xl opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                <div className="relative w-16 h-16 bg-gradient-to-br from-red-500 to-red-700 rounded-full flex items-center justify-center border-4 border-white/20 shadow-[0_0_30px_rgba(239,68,68,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
-                                    <svg className="w-8 h-8 text-white group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setIsWallHunterOpen(true)}
+                                        className="relative w-8 h-8 shrink-0 group opacity-100 transition-opacity duration-300"
+                                        title="Deploy WallHunter"
+                                    >
+                                        <div className="absolute inset-0 bg-yellow-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                        <div className="relative w-8 h-8 bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center border-2 border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
+                                            <svg className="w-4 h-4 text-white group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                            </svg>
+                                        </div>
+                                    </button>
+                                    <button
+                                        onClick={() => setIsForexWallHunterOpen(true)}
+                                        className="relative w-8 h-8 shrink-0 group opacity-100 transition-opacity duration-300"
+                                        title="Deploy Forex WallHunter"
+                                    >
+                                        <div className="absolute inset-0 bg-emerald-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                        <div className="relative w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full flex items-center justify-center border-2 border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
+                                            <svg className="w-4 h-4 text-white group-hover:-rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                            </svg>
+                                        </div>
+                                    </button>
                                 </div>
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="flex gap-2">
+                            )}
+
+                            {/* MANUAL TRADE MODAL */}
+                            <div className="w-8 h-8 relative shrink-0">
+                                <ManualTradeModal buttonSize="sm" symbol={symbol} currentPrice={currentPrice} onApiKeyChange={setSelectedApiKeyId} clickedPrice={manualTradePrice} openTrigger={manualTradeTrigger} />
+                            </div>
+
+                            {/* FLOATING ORDER FLOW CHART BUTTON */}
+                            <div className="w-8 h-8 relative shrink-0">
+                                <FloatingTVChartButton size="sm" symbol={symbol} exchange={exchange} />
+                            </div>
+
+                            {/* ALGO PREDICTOR MODAL */}
+                            <ModelPredictorModal 
+                                size="sm"
+                                currentPrice={currentPrice} 
+                                onPrediction={setPredictionResult}
+                                externalPrice={externalAIPrice}
+                                externalOpenTrigger={externalAIOpenTrigger}
+                            />
+
+                            {/* FLOATING LEVEL 2 ORDER BOOK BUTTON */}
                             <button
-                                onClick={() => setIsWallHunterOpen(true)}
-                                className="relative w-16 h-16 shrink-0 group opacity-100 transition-opacity duration-300"
-                                title="Deploy WallHunter"
+                                onClick={() => setIsOrderBookModalOpen(true)}
+                                className="relative shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border border-blue-400/30 text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                title="Level 2 Order Book"
                             >
-                                <div className="absolute inset-0 bg-yellow-500 rounded-full blur-xl opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                <div className="relative w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center border-4 border-white/20 shadow-2xl group-hover:scale-110 transition-transform cursor-pointer">
-                                    <svg className="w-8 h-8 text-white group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                    </svg>
-                                </div>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:scale-110 transition-transform"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
                             </button>
+
+                            {/* FLOATING AI DEPLOYMENT BUTTON */}
                             <button
-                                onClick={() => setIsForexWallHunterOpen(true)}
-                                className="relative w-16 h-16 shrink-0 group opacity-100 transition-opacity duration-300"
-                                title="Deploy Forex WallHunter"
+                                onClick={() => setIsAIDeploymentModalOpen(true)}
+                                className="relative shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 border border-purple-400/30 text-white shadow-[0_0_12px_rgba(168,85,247,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                title="Deploy AI Trading Model"
                             >
-                                <div className="absolute inset-0 bg-emerald-500 rounded-full blur-xl opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                <div className="relative w-16 h-16 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full flex items-center justify-center border-4 border-white/20 shadow-2xl group-hover:scale-110 transition-transform cursor-pointer">
-                                    <svg className="w-8 h-8 text-white group-hover:-rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                                    </svg>
-                                </div>
+                                <svg className="w-4 h-4 group-hover:scale-110 transition-transform bg-transparent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+                                    <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
+                                    <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>
+                                    <path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/>
+                                    <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/>
+                                    <path d="M3.477 10.896a4 4 0 0 1 .585-.396"/>
+                                    <path d="M19.938 10.5a4 4 0 0 1 .585.396"/>
+                                    <path d="M6 18a4 4 0 0 1-1.967-.516"/>
+                                    <path d="M19.967 17.484A4 4 0 0 1 18 18"/>
+                                </svg>
                             </button>
-                        </div>
-                    )
-                }
 
-                {/* MANUAL TRADE MODAL */}
-                <div className="w-16 h-16 relative shrink-0">
-                    <ManualTradeModal symbol={symbol} currentPrice={currentPrice} onApiKeyChange={setSelectedApiKeyId} clickedPrice={manualTradePrice} openTrigger={manualTradeTrigger} />
-                </div>
+                            {/* FLOATING TOP TOKENS DASHBOARD BUTTON */}
+                            <button
+                                onClick={() => setIsTopTokensModalOpen(true)}
+                                className="relative shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-400 hover:to-red-500 border border-orange-400/30 text-white shadow-[0_0_12px_rgba(249,115,22,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                title="Top Tokens Dashboard"
+                            >
+                                <svg className="w-4 h-4 group-hover:scale-110 transition-transform bg-transparent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+                                </svg>
+                            </button>
 
-                {/* FLOATING ORDER FLOW CHART BUTTON */}
-                <div className="w-16 h-16 relative shrink-0">
-                    <FloatingTVChartButton symbol={symbol} exchange={exchange} />
-                </div>
+                            {/* FLOATING TECHNICAL INDICATORS BUTTON */}
+                            <button
+                                onClick={() => setIsIndicatorModalOpen(true)}
+                                className="relative shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 border border-teal-400/30 text-white shadow-[0_0_12px_rgba(20,184,166,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                title="Technical Analysis Indicators"
+                            >
+                                <svg className="w-4 h-4 group-hover:scale-110 transition-transform bg-transparent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
-                {/* ALGO PREDICTOR MODAL */}
-                <ModelPredictorModal 
-                    currentPrice={currentPrice} 
-                    onPrediction={setPredictionResult}
-                    externalPrice={externalAIPrice}
-                    externalOpenTrigger={externalAIOpenTrigger}
-                />
-
-                {/* FLOATING LEVEL 2 ORDER BOOK BUTTON */}
+                {/* MAIN COLLAPSIBLE TOGGLE BUTTON WITH ARROW */}
                 <button
-                    onClick={() => setIsOrderBookModalOpen(true)}
-                    className="relative shrink-0 w-16 h-16 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border border-blue-400/30 text-white shadow-[0_0_24px_rgba(59,130,246,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
-                    title="Level 2 Order Book"
+                    onClick={() => setIsFloatingToolbarOpen(prev => !prev)}
+                    className="relative shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-[#121624] to-[#0b0e17] hover:from-[#1b2236] hover:to-[#121624] border border-cyan-500/40 text-cyan-400 hover:text-white shadow-[0_0_15px_rgba(6,182,212,0.35)] z-[1000] transition-all duration-300 hover:scale-110 active:scale-95 group cursor-pointer"
+                    title={isFloatingToolbarOpen ? "Hide Tools" : "Show Floating Tools"}
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:scale-110 transition-transform"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
-                </button>
-
-                {/* FLOATING AI DEPLOYMENT BUTTON */}
-                <button
-                    onClick={() => setIsAIDeploymentModalOpen(true)}
-                    className="relative shrink-0 w-16 h-16 rounded-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 border border-purple-400/30 text-white shadow-[0_0_24px_rgba(168,85,247,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
-                    title="Deploy AI Trading Model"
-                >
-                    <svg className="absolute w-8 h-8 group-hover:scale-110 transition-transform bg-transparent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
-                        <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
-                        <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>
-                        <path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/>
-                        <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/>
-                        <path d="M3.477 10.896a4 4 0 0 1 .585-.396"/>
-                        <path d="M19.938 10.5a4 4 0 0 1 .585.396"/>
-                        <path d="M6 18a4 4 0 0 1-1.967-.516"/>
-                        <path d="M19.967 17.484A4 4 0 0 1 18 18"/>
-                    </svg>
-                </button>
-
-                {/* FLOATING TOP TOKENS DASHBOARD BUTTON */}
-                <button
-                    onClick={() => setIsTopTokensModalOpen(true)}
-                    className="relative shrink-0 w-16 h-16 rounded-full flex items-center justify-center bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-400 hover:to-red-500 border border-orange-400/30 text-white shadow-[0_0_24px_rgba(249,115,22,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
-                    title="Top Tokens Dashboard"
-                >
-                    <svg className="w-8 h-8 group-hover:scale-110 transition-transform bg-transparent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
-                    </svg>
-                </button>
-
-                {/* FLOATING TECHNICAL INDICATORS BUTTON */}
-                <button
-                    onClick={() => setIsIndicatorModalOpen(true)}
-                    className="relative shrink-0 w-16 h-16 rounded-full flex items-center justify-center bg-gradient-to-br from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 border border-teal-400/30 text-white shadow-[0_0_24px_rgba(20,184,166,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
-                    title="Technical Analysis Indicators"
-                >
-                    <svg className="w-8 h-8 group-hover:scale-110 transition-transform bg-transparent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
+                    <ChevronLeft className={`w-4 h-4 transition-transform duration-300 ${isFloatingToolbarOpen ? 'rotate-180' : ''}`} />
                 </button>
             </div>
 

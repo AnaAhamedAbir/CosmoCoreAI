@@ -26,9 +26,10 @@ interface ModelPredictorModalProps {
     currentPrice: number;
     externalPrice?: number | null;
     externalOpenTrigger?: number;
+    size?: 'sm' | 'md';
 }
 
-export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({ onPrediction, currentPrice, externalPrice, externalOpenTrigger }) => {
+export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({ onPrediction, currentPrice, externalPrice, externalOpenTrigger, size = 'md' }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [models, setModels] = useState<any[]>([]);
     const [selectedModel, setSelectedModel] = useState<string>('');
@@ -102,10 +103,10 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({ onPred
             {/* Floating Button */}
             <button
                 onClick={() => setIsOpen(true)}
-                className="relative shrink-0 w-16 h-16 rounded-full flex items-center justify-center bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 border border-indigo-400/30 text-white shadow-[0_0_24px_rgba(99,102,241,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                className={`relative shrink-0 ${size === 'sm' ? 'w-8 h-8 shadow-[0_0_12px_rgba(99,102,241,0.5)]' : 'w-16 h-16 shadow-[0_0_24px_rgba(99,102,241,0.5)]'} rounded-full flex items-center justify-center bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 border border-indigo-400/30 text-white z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group`}
                 title="Algo Predictor"
             >
-                <BrainCircuit className="w-8 h-8 group-hover:scale-110 transition-transform bg-transparent" />
+                <BrainCircuit className={`${size === 'sm' ? 'w-4 h-4' : 'w-8 h-8'} group-hover:scale-110 transition-transform bg-transparent`} />
             </button>
 
             {/* Modal Overlay */}

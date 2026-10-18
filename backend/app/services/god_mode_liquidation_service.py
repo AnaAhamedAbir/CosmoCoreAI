@@ -96,11 +96,15 @@ class GodModeService:
         """Continuously broadcasts the aggregated state to all connected websockets at roughly 10Hz"""
         while self._running:
             if self._callbacks:
-                for cb in self._callbacks:
+                dead_callbacks = []
+                for cb in list(self._callbacks):
                     try:
                         await cb(self.state)
                     except Exception as e:
-                        logger.error(f"God Mode Callback err: {e}")
+                        dead_callbacks.append(cb)
+                        logger.debug(f"God Mode callback client disconnected: {e}")
+                for cb in dead_callbacks:
+                    self.remove_callback(cb)
             await asyncio.sleep(0.5)
 
     async def _init_exchange(self, ex_id: str) -> ccxtpro.Exchange:

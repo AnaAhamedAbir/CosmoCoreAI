@@ -24,9 +24,12 @@ async def websocket_god_mode_stream(websocket: WebSocket, symbol: str = "BTC/USD
         try:
             if data.get("symbol") == target_symbol:
                 await websocket.send_json(data)
+        except (WebSocketDisconnect, RuntimeError) as e:
+            logger.debug(f"Client disconnected during God Mode send: {e}")
+            god_mode_service.remove_callback(send_to_client)
         except Exception as e:
-            logger.error(f"Error sending to client in God Mode: {e}")
-            raise e
+            logger.debug(f"God Mode send_to_client suppressed: {e}")
+            god_mode_service.remove_callback(send_to_client)
             
     god_mode_service.register_callback(send_to_client)
     
@@ -36,7 +39,7 @@ async def websocket_god_mode_stream(websocket: WebSocket, symbol: str = "BTC/USD
             await websocket.receive_text()
     except WebSocketDisconnect:
         logger.info(f"Client disconnected from God Mode Stream")
-        god_mode_service.remove_callback(send_to_client)
     except Exception as e:
-        logger.error(f"God Mode WebSocket Error: {e}")
+        logger.debug(f"God Mode WebSocket closed: {e}")
+    finally:
         god_mode_service.remove_callback(send_to_client)

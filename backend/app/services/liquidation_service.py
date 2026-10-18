@@ -33,17 +33,29 @@ class LiquidationService:
         """
         Register a callback function to receive liquidation data.
         """
-        self._callbacks.append(callback)
+        if callback not in self._callbacks:
+            self._callbacks.append(callback)
+
+    def remove_callback(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]):
+        """
+        Remove a registered callback function.
+        """
+        if callback in self._callbacks:
+            self._callbacks.remove(callback)
 
     async def _broadcast(self, data: Dict[str, Any]):
         """
         Broadcast the liquidation data to registered callbacks.
         """
-        for callback in self._callbacks:
+        dead_callbacks = []
+        for callback in list(self._callbacks):
             try:
                 await callback(data)
             except Exception as e:
-                logger.error(f"Error in callback: {e}")
+                dead_callbacks.append(callback)
+                logger.debug(f"Liquidation callback client disconnected: {e}")
+        for callback in dead_callbacks:
+            self.remove_callback(callback)
 
     async def _get_exchange(self, exchange_id: str) -> ccxtpro.Exchange:
         """

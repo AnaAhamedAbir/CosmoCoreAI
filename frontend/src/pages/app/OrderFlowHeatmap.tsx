@@ -42,7 +42,6 @@ import { BollingerBandsRenderer } from '../../components/features/market/Bolling
 import { ICTPO3Renderer, ICTPO3Data } from '../../components/features/market/ICTPO3Renderer';
 import { SessionsDashboard, SessionStatus } from '../../components/features/market/SessionsDashboard';
 import { HeatmapSubNav } from '../../components/features/market/HeatmapSubNav';
-import { BotSettingsTab } from '../../components/features/market/BotSettingsTab';
 import { BotLogsTab } from '../../components/features/market/BotLogsTab';
 import { WallHunterModal } from '../../components/features/market/WallHunterModal';
 import { ForexWallHunterModal } from '../../components/features/market/ForexWallHunterModal';
@@ -3281,28 +3280,16 @@ const OrderFlowHeatmap: React.FC = () => {
                     <TimeframeSelector interval={interval} onIntervalChange={setInterval} />
                     <IndicatorSelector settings={indicatorSettings} onSettingsChange={setIndicatorSettings} />
 
-                    <div className="flex bg-gray-100 dark:bg-black/30 p-1 rounded-lg border border-gray-200 dark:border-white/10">
-                        <button
-                            onClick={() => setActiveTab('bot_settings')}
-                            className={`flex items-center space-x-2 px-3 py-1.5 text-xs font-bold rounded-md transition-all ${activeTab === 'bot_settings'
-                                ? 'bg-green-600/10 text-green-500 border border-green-500/20 shadow-sm'
-                                : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-black/10'
-                                }`}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-settings"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
-                            <span>OrderBlockBot</span>
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('bot_logs')}
-                            className={`flex items-center space-x-2 px-3 py-1.5 text-xs font-bold rounded-md transition-all ${activeTab === 'bot_logs'
-                                ? 'bg-purple-600/10 text-purple-400 border border-purple-500/20 shadow-sm'
-                                : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-black/10'
-                                }`}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-align-left"><line x1="21" y1="6" x2="3" y2="6" /><line x1="15" y1="12" x2="3" y2="12" /><line x1="17" y1="18" x2="3" y2="18" /></svg>
-                            <span>Bot Logs</span>
-                        </button>
-                    </div>
+                    <button
+                        onClick={() => setActiveTab(activeTab === 'bot_logs' ? 'heatmap' : 'bot_logs')}
+                        className={`flex items-center space-x-2 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${activeTab === 'bot_logs'
+                            ? 'bg-purple-600/10 text-purple-400 border-purple-500/20 shadow-sm'
+                            : 'bg-gray-100 dark:bg-black/30 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-black/10'
+                            }`}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-align-left"><line x1="21" y1="6" x2="3" y2="6" /><line x1="15" y1="12" x2="3" y2="12" /><line x1="17" y1="18" x2="3" y2="18" /></svg>
+                        <span>Bot Logs</span>
+                    </button>
 
                     <span className="text-lg font-mono font-bold text-gray-800 dark:text-white">
                         {formatDisplayPrice(currentPrice)}
@@ -3576,32 +3563,12 @@ const OrderFlowHeatmap: React.FC = () => {
                     </div>
                 )}
 
-                {/* BOT SETTINGS MODAL */}
-                {activeTab === 'bot_settings' && (
-                    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                        <div className="relative w-[90%] md:w-[70%] lg:w-[60%] max-w-4xl max-h-[90vh] bg-white dark:bg-[#000000] rounded-xl shadow-2xl border border-gray-200 dark:border-white/10 overflow-hidden flex flex-col transform transition-all scale-100">
-                            <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-white/10 shrink-0">
-                                <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-primary to-purple-500">OrderBlockBot Configuration</h2>
-                                <button
-                                    onClick={() => setActiveTab('heatmap')}
-                                    className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                </button>
-                            </div>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar relative">
-                                <BotSettingsTab />
-                            </div>
-                        </div>
-                    </div>
-                )}
-
                 {/* BOT LOGS MODAL */}
                 {activeTab === 'bot_logs' && (
                     <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
                         <div className="relative w-[90%] md:w-[70%] lg:w-[60%] max-w-4xl max-h-[90vh] bg-white dark:bg-[#000000] rounded-xl shadow-2xl border border-gray-200 dark:border-white/10 overflow-hidden flex flex-col transform transition-all scale-100">
                             <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-white/10 shrink-0">
-                                <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-primary to-purple-500">OrderBlockBot Terminal Logs</h2>
+                                <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-primary to-purple-500">WallHunter Bot Terminal Logs</h2>
                                 <button
                                     onClick={() => setActiveTab('heatmap')}
                                     className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"

@@ -913,6 +913,10 @@ async def websocket_godmode(websocket: WebSocket, symbol: str):
         while True: 
             await websocket.receive_text()
     except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
         manager.disconnect(websocket, channel_id)
         god_mode_service.remove_callback(state_callback)
 

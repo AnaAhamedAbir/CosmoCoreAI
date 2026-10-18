@@ -222,6 +222,15 @@ IGNORE_PATTERNS = [
     re.compile(r'recv\(\) failed \(104', re.IGNORECASE),                        # Nginx ECONNRESET code (WebSocket drop)
     re.compile(r'Connection reset by peer.*proxying upgraded connection', re.IGNORECASE), # WebSocket proxy drop
     re.compile(r'\[error\].*recv\(\) failed', re.IGNORECASE),                  # Nginx [error] level prefix for recv
+    # ── Client WebSocket Disconnection / Broadcast Drop Noise ───────────────
+    # These fire when a user closes a browser tab, refreshes a page, or navigates
+    # away while real-time WebSocket streams (God Mode, Liquidation Stream, etc.)
+    # are pushing data. This is completely standard client disconnect behavior.
+    re.compile(r'God Mode Callback err', re.IGNORECASE),
+    re.compile(r'Error sending to client in God Mode', re.IGNORECASE),
+    re.compile(r'Error sending to client', re.IGNORECASE),
+    re.compile(r'Cannot call ["\']send["\'] once a close message has been sent', re.IGNORECASE),
+    re.compile(r'God Mode WebSocket (?:Error|connection closed)', re.IGNORECASE),
 ]
 
 # Patterns that look like errors but should be downgraded to WARNING

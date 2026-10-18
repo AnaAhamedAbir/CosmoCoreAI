@@ -479,10 +479,10 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
           <MotionButton
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} whileHover={{ scale: 1.05 }}
             onClick={() => setIsOpen(true)}
-            className={`relative ${size === 'sm' ? 'w-8 h-8 shadow-[0_0_12px_rgba(139,92,246,0.5)]' : 'w-16 h-16 shadow-[0_0_24px_rgba(139,92,246,0.5)]'} rounded-full flex items-center justify-center bg-gradient-to-br from-violet-600 to-indigo-600 border border-violet-400/30 text-white transition-all focus:outline-none group`}
+            className={`relative ${size === 'sm' ? 'w-[42px] h-[42px] shadow-[0_0_12px_rgba(139,92,246,0.5)]' : 'w-16 h-16 shadow-[0_0_24px_rgba(139,92,246,0.5)]'} rounded-full flex items-center justify-center bg-gradient-to-br from-violet-600 to-indigo-600 border border-violet-400/30 text-white transition-all focus:outline-none group`}
             title="TVChart"
           >
-            <BarChart2 className={`${size === 'sm' ? 'w-4 h-4' : 'w-7 h-7'} transition-transform`} />
+            <BarChart2 className={`${size === 'sm' ? 'w-5 h-5' : 'w-7 h-7'} transition-transform`} />
           </MotionButton>
         )}
       </AnimatePresence>

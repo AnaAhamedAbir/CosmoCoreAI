@@ -254,7 +254,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
             className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center bg-brand-primary hover:bg-blue-600 border border-blue-400/30 text-white ${buttonSize === 'sm' ? 'shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'shadow-[0_0_20px_rgba(59,130,246,0.4)]'} backdrop-blur-md z-[999] transition-colors focus:outline-none group`}
             title="Manual Trade"
           >
-            <DollarSign className={`${buttonSize === 'sm' ? 'w-4 h-4' : 'w-8 h-8'} group-hover:scale-110 transition-transform`} />
+            <DollarSign className={`${buttonSize === 'sm' ? 'w-5 h-5' : 'w-8 h-8'} group-hover:scale-110 transition-transform`} />
           </MotionButton>
         )}
       </AnimatePresence>

@@ -27,9 +27,19 @@ interface ModelPredictorModalProps {
     externalPrice?: number | null;
     externalOpenTrigger?: number;
     size?: 'sm' | 'md';
+    showCrosshairAIPredict?: boolean;
+    onToggleCrosshairAIPredict?: (enabled: boolean) => void;
 }
 
-export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({ onPrediction, currentPrice, externalPrice, externalOpenTrigger, size = 'md' }) => {
+export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({ 
+    onPrediction, 
+    currentPrice, 
+    externalPrice, 
+    externalOpenTrigger, 
+    size = 'md',
+    showCrosshairAIPredict = true,
+    onToggleCrosshairAIPredict
+}) => {
     const [isOpen, setIsOpen] = useState(false);
     const [models, setModels] = useState<any[]>([]);
     const [selectedModel, setSelectedModel] = useState<string>('');
@@ -103,10 +113,10 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({ onPred
             {/* Floating Button */}
             <button
                 onClick={() => setIsOpen(true)}
-                className={`relative shrink-0 ${size === 'sm' ? 'w-8 h-8 shadow-[0_0_12px_rgba(99,102,241,0.5)]' : 'w-16 h-16 shadow-[0_0_24px_rgba(99,102,241,0.5)]'} rounded-full flex items-center justify-center bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 border border-indigo-400/30 text-white z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group`}
+                className={`relative shrink-0 ${size === 'sm' ? 'w-[42px] h-[42px] shadow-[0_0_12px_rgba(99,102,241,0.5)]' : 'w-16 h-16 shadow-[0_0_24px_rgba(99,102,241,0.5)]'} rounded-full flex items-center justify-center bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 border border-indigo-400/30 text-white z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group`}
                 title="Algo Predictor"
             >
-                <BrainCircuit className={`${size === 'sm' ? 'w-4 h-4' : 'w-8 h-8'} group-hover:scale-110 transition-transform bg-transparent`} />
+                <BrainCircuit className={`${size === 'sm' ? 'w-5 h-5' : 'w-8 h-8'} group-hover:scale-110 transition-transform bg-transparent`} />
             </button>
 
             {/* Modal Overlay */}
@@ -141,6 +151,34 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({ onPred
 
                             {/* Body */}
                             <div className="p-5 space-y-5">
+                                {/* Crosshair AI Predict Button Toggle */}
+                                <div className="flex items-center justify-between p-3.5 bg-black/30 backdrop-blur-sm border border-white/10 rounded-xl hover:bg-black/40 transition-colors">
+                                    <div className="flex flex-col gap-0.5">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-semibold text-white">Chart Hover AI Predict</span>
+                                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase ${showCrosshairAIPredict ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-gray-800 text-gray-500 border border-gray-700'}`}>
+                                                {showCrosshairAIPredict ? 'ENABLED' : 'DISABLED'}
+                                            </span>
+                                        </div>
+                                        <span className="text-[11px] text-slate-400">
+                                            Show "+ AI Predict" button tracking crosshair on candle hover
+                                        </span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => onToggleCrosshairAIPredict?.(!showCrosshairAIPredict)}
+                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                            showCrosshairAIPredict ? 'bg-indigo-600' : 'bg-gray-700'
+                                        }`}
+                                    >
+                                        <span
+                                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                                                showCrosshairAIPredict ? 'translate-x-5' : 'translate-x-0'
+                                            }`}
+                                        />
+                                    </button>
+                                </div>
+
                                 {/* Model Selection */}
                                 <div className="space-y-2">
                                     <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Select Model</label>

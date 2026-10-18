@@ -123,6 +123,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     const mlSlLineRef = useRef<any>(null);
     const mlTpLineRef = useRef<any>(null);
     const aiClickPriceLineRef = useRef<any>(null);
+    const showCrosshairAIPredictRef = useRef<boolean>(showCrosshairAIPredict);
     const crosshairBtnRef = useRef<HTMLButtonElement>(null);
     const crosshairPriceRef = useRef<number | null>(null);
     const lastCandleRef = useRef<CandlestickData | null>(null);
@@ -307,34 +308,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         chartRef.current = chart;
         candlestickSeriesRef.current = candlestickSeries;
         
-        // Add click listener to allow clicking anywhere on the chart to set the limit price
-        chart.subscribeClick((param) => {
-            if (param.point && param.point.y !== undefined && candlestickSeriesRef.current && onChartBackgroundClick) {
-                const price = candlestickSeriesRef.current.coordinateToPrice(param.point.y as any);
-                if (price !== null) {
-                    onChartBackgroundClick(price);
-                    
-                    if (aiClickPriceLineRef.current && candlestickSeriesRef.current) {
-                        candlestickSeriesRef.current.removePriceLine(aiClickPriceLineRef.current);
-                    }
-                    if (candlestickSeriesRef.current) {
-                        aiClickPriceLineRef.current = candlestickSeriesRef.current.createPriceLine({
-                            price: price as number,
-                            color: '#c084fc',
-                            lineWidth: 2,
-                            lineStyle: 3,
-                            axisLabelVisible: true,
-                            title: '🤖 Algo Target',
-                        });
-                    }
-                }
-            }
-        });
-        
         chart.subscribeCrosshairMove((param) => {
             if (crosshairBtnRef.current && crosshairBtnRef.current.matches(':hover')) {
-
                 // If the user is hovering the button, freeze its position so they can click it
+                if (!showCrosshairAIPredictRef.current) {
+                    crosshairBtnRef.current.style.display = 'none';
+                    crosshairPriceRef.current = null;
+                }
                 return;
             }
             
@@ -387,8 +367,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 }
             }
 
-            // Quick Trade Ghost Line Logic
-            if (showCrosshairAIPredict && param.point && param.point.y !== undefined && candlestickSeriesRef.current && crosshairBtnRef.current) {
+            // Quick Trade / AI Predict Button Logic
+            if (showCrosshairAIPredictRef.current && param.point && param.point.y !== undefined && candlestickSeriesRef.current && crosshairBtnRef.current) {
                 const price = candlestickSeriesRef.current.coordinateToPrice(param.point.y as any);
                 if (price !== null) {
                     crosshairPriceRef.current = price as number;
@@ -657,11 +637,18 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
     }, [symbol, interval, exchange]);
 
-    // Hide crosshair button immediately when toggled off
+    // Keep showCrosshairAIPredictRef in sync and cleanup crosshair button / line when toggled off
     useEffect(() => {
-        if (!showCrosshairAIPredict && crosshairBtnRef.current) {
-            crosshairBtnRef.current.style.display = 'none';
+        showCrosshairAIPredictRef.current = showCrosshairAIPredict;
+        if (!showCrosshairAIPredict) {
+            if (crosshairBtnRef.current) {
+                crosshairBtnRef.current.style.display = 'none';
+            }
             crosshairPriceRef.current = null;
+            if (aiClickPriceLineRef.current && candlestickSeriesRef.current) {
+                candlestickSeriesRef.current.removePriceLine(aiClickPriceLineRef.current);
+                aiClickPriceLineRef.current = null;
+            }
         }
     }, [showCrosshairAIPredict]);
 
@@ -3724,7 +3711,18 @@ const OrderFlowHeatmap: React.FC = () => {
 
                             {/* MANUAL TRADE MODAL */}
                             <div className="w-[42px] h-[42px] relative shrink-0">
-                                <ManualTradeModal buttonSize="sm" symbol={symbol} currentPrice={currentPrice} onApiKeyChange={setSelectedApiKeyId} clickedPrice={manualTradePrice} openTrigger={manualTradeTrigger} />
+                                <ManualTradeModal 
+                                    buttonSize="sm" 
+                                    symbol={symbol} 
+                                    currentPrice={currentPrice} 
+                                    onApiKeyChange={setSelectedApiKeyId} 
+                                    clickedPrice={manualTradePrice} 
+                                    openTrigger={manualTradeTrigger}
+                                    onClose={() => {
+                                        setManualTradePrice(null);
+                                        setManualTradeTrigger(0);
+                                    }}
+                                />
                             </div>
 
                             {/* FLOATING ORDER FLOW CHART BUTTON */}

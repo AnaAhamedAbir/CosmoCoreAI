@@ -14,9 +14,10 @@ interface ManualTradeModalProps {
   clickedPrice?: number | null;
   openTrigger?: number;
   buttonSize?: 'sm' | 'md';
+  onClose?: () => void;
 }
 
-export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, currentPrice, onApiKeyChange, clickedPrice, openTrigger, buttonSize = 'md' }) => {
+export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, currentPrice, onApiKeyChange, clickedPrice, openTrigger, buttonSize = 'md', onClose }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Market');
   const [size, setSize] = useState<string>('');
@@ -133,6 +134,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
         setLimitPrice(clickedPrice.toString());
         setIsOpen(true); // Auto-open modal if closed
       }
+    } else if (!openTrigger || openTrigger === 0) {
+      lastTriggerRef.current = 0;
     }
   }, [clickedPrice, openTrigger]);
 
@@ -283,7 +286,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                 <span className="text-[10px] uppercase tracking-wider text-brand-primary">Quick Trade • {isFutures ? 'Futures' : 'Spot'}</span>
               </div>
               <button 
-                onClick={(e) => { e.stopPropagation(); setIsOpen(false); }}
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  setIsOpen(false); 
+                  onClose?.();
+                }}
                 onPointerDown={(e) => e.stopPropagation()}
                 className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
               >

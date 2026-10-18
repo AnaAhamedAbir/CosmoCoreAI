@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
@@ -18,6 +19,7 @@ interface ManualTradeModalProps {
 }
 
 export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, currentPrice, onApiKeyChange, clickedPrice, openTrigger, buttonSize = 'md', onClose }) => {
+  const dragControls = useDragControls();
   const [isOpen, setIsOpen] = useState(false);
   const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Market');
   const [size, setSize] = useState<string>('');
@@ -267,42 +269,48 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
       </AnimatePresence>
 
       {/* Glassmorphism Modal */}
-      <AnimatePresence>
-        {isOpen && (
-          <MotionDiv
-            drag
-            dragMomentum={false}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed bottom-[104px] right-8 w-80 rounded-2xl bg-[#000000]/80 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-[999] overflow-hidden"
-          >
-            {/* Header (Drag area) */}
-            <div 
-              className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/5 cursor-move active:cursor-grabbing"
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isOpen && (
+            <MotionDiv
+              drag
+              dragControls={dragControls}
+              dragListener={false}
+              dragMomentum={false}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              style={{ touchAction: 'none' }}
+              className="fixed bottom-[104px] right-8 w-80 rounded-2xl bg-[#000000]/80 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-[99999] overflow-hidden"
             >
-              <div className="flex flex-col pointer-events-none text-left">
-                <span className="font-bold text-white text-lg tracking-wide leading-tight">{symbol}</span>
-                <span className="text-[10px] uppercase tracking-wider text-brand-primary">Quick Trade • {isFutures ? 'Futures' : 'Spot'}</span>
-              </div>
-              <button 
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  setIsOpen(false); 
-                  onClose?.();
+              {/* Header (Drag area) */}
+              <div 
+                onPointerDown={(e: React.PointerEvent) => {
+                  dragControls.start(e);
                 }}
-                onPointerDown={(e) => e.stopPropagation()}
-                className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/5 cursor-grab active:cursor-grabbing select-none"
               >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+                <div className="flex flex-col pointer-events-none text-left">
+                  <span className="font-bold text-white text-lg tracking-wide leading-tight">{symbol}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-brand-primary">Quick Trade • {isFutures ? 'Futures' : 'Spot'}</span>
+                </div>
+                <button 
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    setIsOpen(false); 
+                    onClose?.();
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-            {/* Body */}
-            <div 
-              className="p-4 flex flex-col cursor-default"
-              onPointerDown={(e) => e.stopPropagation()}
-            >
+              {/* Body */}
+              <div 
+                className="p-4 flex flex-col cursor-default"
+              >
               {/* Scrollable Content */}
               <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 pb-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/20">
               {/* Buy / Sell Tabs */}
@@ -890,7 +898,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
             </div>
           </MotionDiv>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body
+    )}
     </>
   );
 };

@@ -63,8 +63,8 @@ const PanicButton = () => {
                 disabled={loading}
                 className={`group flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold transition-all duration-300 shadow-sm border
                     ${isOpen
-                        ? 'bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 border-red-300 dark:border-red-500/40 ring-2 ring-red-100 dark:ring-red-900/30'
-                        : 'bg-white dark:bg-[#0A0A0A] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30'
+                        ? 'bg-red-50 dark:bg-red-950/50 text-slate-900 dark:text-white border-red-300 dark:border-red-500/40 ring-2 ring-red-100 dark:ring-red-900/30'
+                        : 'bg-white dark:bg-[#0A0A0A] text-slate-700 dark:text-white border-slate-200 dark:border-white/10 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-slate-900 dark:hover:text-white hover:border-red-200 dark:hover:border-red-500/30'
                     } ${loading ? 'opacity-70 cursor-wait' : ''}`}
                 title="Emergency Controls"
             >
@@ -72,11 +72,11 @@ const PanicButton = () => {
                     {loading ? <AlertOctagon size={18} /> : <ShieldAlert size={18} className="text-red-500" />}
                 </span>
 
-                <span className="hidden md:block text-xs uppercase tracking-wider text-red-600 dark:text-red-400 font-extrabold">
+                <span className="hidden md:block text-xs uppercase tracking-wider text-slate-900 dark:text-white font-extrabold">
                     {loading ? 'Executing...' : 'PANIC PROTOCOL'}
                 </span>
 
-                <ChevronDown size={14} className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown size={14} className={`transition-transform duration-300 text-slate-500 dark:text-white/80 ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {/* Dropdown Menu */}

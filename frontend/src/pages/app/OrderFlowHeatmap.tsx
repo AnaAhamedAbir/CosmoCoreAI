@@ -279,7 +279,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             }
         });
 
-        const emaSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceScaleId: 'right', visible: indicatorSettings.showEMA });
+        const emaSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceScaleId: 'right', visible: indicatorSettings.showEMA });
         const bbUpperSeries = chart.addSeries(LineSeries, { color: '#22c55e', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
         const bbMiddleSeries = chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
         const bbLowerSeries = chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });

@@ -46,7 +46,7 @@ import { BotLogsTab } from '../../components/features/market/BotLogsTab';
 import { WallHunterModal } from '../../components/features/market/WallHunterModal';
 import { ForexWallHunterModal } from '../../components/features/market/ForexWallHunterModal';
 import { TechnicalIndicatorModal } from '../../components/features/market/TechnicalIndicators/TechnicalIndicatorModal';
-import { ManualTradeModal } from '../../components/features/market/ManualTradeModal';
+import { ManualTradeModal, AvailablePair } from '../../components/features/market/ManualTradeModal';
 import { FloatingTVChartButton } from '../../components/features/market/FloatingTVChartButton';
 import { QuickTradeToolbar } from '../../components/features/market/QuickTradeToolbar';
 import { AetherFlowRenderer } from '../../components/features/market/AetherFlowRenderer';
@@ -2917,6 +2917,10 @@ interface ChartConfig {
 const OrderFlowChartPanel: React.FC<{
     config: ChartConfig;
     isMain: boolean;
+    isActive?: boolean;
+    onSelectActive?: () => void;
+    onPriceChange?: (id: string, price: number) => void;
+    allChartsCount?: number;
     onUpdate: (id: string, updates: Partial<ChartConfig>) => void;
     onRemove: (id: string) => void;
     showFootprint: boolean;
@@ -2935,7 +2939,32 @@ const OrderFlowChartPanel: React.FC<{
     volumeMode: string;
     parentL2Data?: any;
     showCrosshairAIPredict?: boolean;
-}> = ({ config, isMain, onUpdate, onRemove, showFootprint, showCVD, showVPVR, indicatorSettings, advancedMetrics, selectedApiKeyId, predictionResult, activeMLModelId, setExternalAIPrice, setExternalAIOpenTrigger, setManualTradePrice, setManualTradeTrigger, volumeThreshold, volumeMode, parentL2Data, showCrosshairAIPredict = false }) => {
+}> = ({ 
+    config, 
+    isMain, 
+    isActive = false, 
+    onSelectActive, 
+    onPriceChange, 
+    allChartsCount = 1, 
+    onUpdate, 
+    onRemove, 
+    showFootprint, 
+    showCVD, 
+    showVPVR, 
+    indicatorSettings, 
+    advancedMetrics, 
+    selectedApiKeyId, 
+    predictionResult, 
+    activeMLModelId, 
+    setExternalAIPrice, 
+    setExternalAIOpenTrigger, 
+    setManualTradePrice, 
+    setManualTradeTrigger, 
+    volumeThreshold, 
+    volumeMode, 
+    parentL2Data, 
+    showCrosshairAIPredict = false 
+}) => {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isTradingViewMode, setIsTradingViewMode] = useState(false);
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
@@ -2954,6 +2983,13 @@ const OrderFlowChartPanel: React.FC<{
     const { bids, asks, walls, currentPrice, tradeEvent } = isShared ? parentL2Data : fallbackL2;
     const advancedMetricsData = useAdvancedMetrics(config.symbol, config.exchange, config.interval, advancedMetrics);
     const openOrders = useOpenOrders(selectedApiKeyId, config.symbol, 5000);
+
+    // Report live currentPrice back up to parent
+    useEffect(() => {
+        if (currentPrice && currentPrice > 0 && onPriceChange) {
+            onPriceChange(config.id, currentPrice);
+        }
+    }, [config.id, currentPrice, onPriceChange]);
 
     const filteredWalls = useMemo(() => {
         if (volumeThreshold <= 0) return walls;
@@ -2974,9 +3010,37 @@ const OrderFlowChartPanel: React.FC<{
     }, [walls, bids, asks, volumeThreshold, volumeMode]);
 
     return (
-        <div className={isFullscreen ? 'fixed inset-0 z-[200] flex flex-col bg-gray-50 dark:bg-[#000000] p-4 overflow-y-auto hide-scrollbar' : 'h-full w-full bg-white dark:bg-[#000000] rounded-xl border border-gray-200 dark:border-white/5 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col min-h-[400px]'}>
+        <div 
+            onClick={onSelectActive}
+            className={isFullscreen 
+                ? 'fixed inset-0 z-[200] flex flex-col bg-gray-50 dark:bg-[#000000] p-4 overflow-y-auto hide-scrollbar' 
+                : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border transition-all duration-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col min-h-[400px] cursor-pointer ${
+                    isActive && allChartsCount > 1 
+                        ? 'border-brand-primary/80 ring-2 ring-brand-primary/20 shadow-[0_0_25px_rgba(59,130,246,0.2)]' 
+                        : 'border-gray-200 dark:border-white/5'
+                }`
+            }
+        >
             <div className="p-2 border-b border-gray-200 dark:border-white/5 flex justify-between items-center">
                 <div className="flex items-center gap-2">
+                    {allChartsCount > 1 && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectActive?.();
+                            }}
+                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                                isActive 
+                                    ? 'bg-brand-primary text-white shadow-[0_0_10px_rgba(59,130,246,0.4)] border border-blue-400/50' 
+                                    : 'bg-gray-100 dark:bg-white/5 text-gray-500 hover:text-gray-300 border border-gray-200 dark:border-white/5'
+                            }`}
+                            title={isActive ? 'Active Trading Chart' : 'Click to select as Active Trading Chart'}
+                        >
+                            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-white animate-pulse' : 'bg-gray-400'}`} />
+                            <span>{isActive ? 'Active' : 'Select'}</span>
+                        </button>
+                    )}
                     {!isMain && (
                         <>
                             <HeatmapSymbolSelector symbol={config.symbol} exchange={config.exchange} onSymbolChange={(s) => onUpdate(config.id, { symbol: s })} onExchangeChange={(e) => onUpdate(config.id, { exchange: e })} />
@@ -3051,6 +3115,7 @@ const OrderFlowChartPanel: React.FC<{
                             setExternalAIOpenTrigger(Date.now());
                         }}
                         onChartBackgroundClick={(price) => {
+                            onSelectActive?.();
                             setManualTradePrice(price);
                             setManualTradeTrigger(Date.now());
                         }}
@@ -3106,6 +3171,16 @@ const OrderFlowHeatmap: React.FC = () => {
     };
     
     const [additionalCharts, setAdditionalCharts] = useState<ChartConfig[]>([]);
+    const [activeChartId, setActiveChartId] = useState<string>('main');
+    const [chartPrices, setChartPrices] = useState<Record<string, number>>({});
+    const [manualTradeSymbol, setManualTradeSymbol] = useState<string>(symbol);
+
+    const handleChartPriceChange = useCallback((id: string, price: number) => {
+        setChartPrices(prev => {
+            if (prev[id] === price) return prev;
+            return { ...prev, [id]: price };
+        });
+    }, []);
 
     const activeBotIds = useMemo(() => Array.from(new Set(Object.values(activeBotsByChartId))), [activeBotsByChartId]);
     const [selectedHudBotId, setSelectedHudBotId] = useState<number | null>(null);
@@ -3120,17 +3195,22 @@ const OrderFlowHeatmap: React.FC = () => {
 
     const addChart = () => {
         if (additionalCharts.length < 3) {
+            const newId = Date.now().toString();
             setAdditionalCharts([...additionalCharts, {
-                id: Date.now().toString(),
+                id: newId,
                 symbol: symbol,
                 exchange: exchange,
                 interval: interval
             }]);
+            setActiveChartId(newId);
         }
     };
 
     const removeChart = (id: string) => {
         setAdditionalCharts(additionalCharts.filter(c => c.id !== id));
+        if (activeChartId === id) {
+            setActiveChartId('main');
+        }
     };
 
     const updateChart = (id: string, updates: Partial<ChartConfig>) => {
@@ -3209,6 +3289,35 @@ const OrderFlowHeatmap: React.FC = () => {
     const { statusData: botStatus, isConnected: botWsConnected } = useWallHunterStatus(selectedHudBotId);
     const [selectedApiKeyId, setSelectedApiKeyId] = useState<string | null>(null);
     const openOrders = useOpenOrders(selectedApiKeyId, symbol, 5000);
+
+    // Keep 'main' chart price synced in chartPrices
+    useEffect(() => {
+        if (currentPrice) {
+            setChartPrices(prev => (prev['main'] === currentPrice ? prev : { ...prev, main: currentPrice }));
+        }
+    }, [currentPrice]);
+
+    const activeChart = useMemo(() => {
+        return allCharts.find(c => c.id === activeChartId) || allCharts[0];
+    }, [allCharts, activeChartId]);
+
+    // Keep manualTradeSymbol in sync when active chart changes
+    useEffect(() => {
+        if (activeChart) {
+            setManualTradeSymbol(activeChart.symbol);
+        }
+    }, [activeChart?.id, activeChart?.symbol]);
+
+    // Available pairs list with prices for Manual Trade and floating tools
+    const availablePairs: AvailablePair[] = useMemo(() => {
+        return allCharts.map(c => ({
+            id: c.id,
+            symbol: c.symbol,
+            exchange: c.exchange,
+            isMain: c.isMain,
+            price: chartPrices[c.id] || (c.isMain ? currentPrice : undefined)
+        }));
+    }, [allCharts, chartPrices, currentPrice]);
 
 
     const filteredWalls = useMemo(() => {
@@ -3408,6 +3517,10 @@ const OrderFlowHeatmap: React.FC = () => {
                             key={c.id} 
                             config={c} 
                             isMain={c.isMain} 
+                            isActive={activeChartId === c.id}
+                            onSelectActive={() => setActiveChartId(c.id)}
+                            onPriceChange={handleChartPriceChange}
+                            allChartsCount={allCharts.length}
                             onUpdate={updateChart} 
                             onRemove={removeChart} 
                             showFootprint={showFootprint} 
@@ -3420,8 +3533,12 @@ const OrderFlowHeatmap: React.FC = () => {
                             activeMLModelId={c.isMain ? activeMLModelId : null} 
                             setExternalAIPrice={c.isMain ? setExternalAIPrice : () => {}} 
                             setExternalAIOpenTrigger={c.isMain ? setExternalAIOpenTrigger : () => {}} 
-                            setManualTradePrice={c.isMain ? setManualTradePrice : () => {}}
-                            setManualTradeTrigger={c.isMain ? setManualTradeTrigger : () => {}}
+                            setManualTradePrice={(price) => {
+                                setActiveChartId(c.id);
+                                setManualTradeSymbol(c.symbol);
+                                setManualTradePrice(price);
+                            }}
+                            setManualTradeTrigger={setManualTradeTrigger}
                             volumeThreshold={volumeThreshold} 
                             volumeMode={volumeMode} 
                             parentL2Data={c.isMain ? { bids, asks, walls, currentPrice, tradeEvent } : undefined}
@@ -3675,8 +3792,13 @@ const OrderFlowHeatmap: React.FC = () => {
                             <div className="w-[42px] h-[42px] relative shrink-0">
                                 <ManualTradeModal 
                                     buttonSize="sm" 
-                                    symbol={symbol} 
-                                    currentPrice={currentPrice} 
+                                    symbol={manualTradeSymbol || activeChart?.symbol || symbol} 
+                                    currentPrice={chartPrices[activeChart?.id || 'main'] || (activeChart?.isMain ? currentPrice : (chartPrices[activeChart?.id || ''] || currentPrice))} 
+                                    availablePairs={availablePairs}
+                                    onSelectPair={(pair) => {
+                                        setActiveChartId(pair.id);
+                                        setManualTradeSymbol(pair.symbol);
+                                    }}
                                     onApiKeyChange={setSelectedApiKeyId} 
                                     clickedPrice={manualTradePrice} 
                                     openTrigger={manualTradeTrigger}
@@ -3689,7 +3811,7 @@ const OrderFlowHeatmap: React.FC = () => {
 
                             {/* FLOATING ORDER FLOW CHART BUTTON */}
                             <div className="w-[42px] h-[42px] relative shrink-0">
-                                <FloatingTVChartButton size="sm" symbol={symbol} exchange={exchange} />
+                                <FloatingTVChartButton size="sm" symbol={activeChart?.symbol || symbol} exchange={activeChart?.exchange || exchange} />
                             </div>
 
                             {/* ALGO PREDICTOR MODAL */}

@@ -259,13 +259,24 @@ async def fetch_market_data_background():
                             sym.startswith("status_") or sym.startswith("godmode_") or "_" in sym):
                             continue
                         # Normalize symbol (BTCUSDT -> BTC/USDT)
-                        target = sym
-                        if "/" not in sym and local_exchange_client.markets:
-                             for m_symbol, m_info in local_exchange_client.markets.items():
-                                if m_info.get('id') == sym:
+                        # Strip futures contract suffix if present (e.g. 'HMSTR/USDT:USDT' -> 'HMSTR/USDT')
+                        clean_sym = sym.split(':')[0]
+                        target = clean_sym
+                        if "/" not in clean_sym and local_exchange_client.markets:
+                            for m_symbol, m_info in local_exchange_client.markets.items():
+                                if m_info.get('id') == clean_sym and m_info.get('spot', False):
                                     target = m_symbol
                                     break
-                        crypto_symbols.append(target)
+                                    
+                        # Ensure symbol is a valid spot market for local_exchange_client (prevents mixed subType error)
+                        if local_exchange_client.markets:
+                            m_info = local_exchange_client.markets.get(target)
+                            if m_info and m_info.get('spot', False) and m_info.get('active', True):
+                                crypto_symbols.append(target)
+                        elif ":" not in target and "/" in target:
+                            crypto_symbols.append(target)
+
+                    crypto_symbols = list(dict.fromkeys(crypto_symbols))
 
                     if crypto_symbols:
                         # Only watch what the users are currently looking at!
@@ -339,10 +350,11 @@ async def fetch_market_data_background():
                         continue
 
                     # Normalize symbol (BTCUSDT -> BTC/USDT)
-                    target_symbol = symbol
-                    if "/" not in symbol and local_exchange_client.markets:
+                    clean_symbol = symbol.split(':')[0]
+                    target_symbol = clean_symbol
+                    if "/" not in clean_symbol and local_exchange_client.markets:
                          for m_symbol, m_info in local_exchange_client.markets.items():
-                            if m_info.get('id') == symbol:
+                            if m_info.get('id') == clean_symbol and m_info.get('spot', False):
                                 target_symbol = m_symbol
                                 break
                     

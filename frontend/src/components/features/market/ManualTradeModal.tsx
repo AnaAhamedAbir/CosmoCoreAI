@@ -8,9 +8,19 @@ import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse }
 const MotionButton = motion.button as any;
 const MotionDiv = motion.div as any;
 
+export interface AvailablePair {
+  id: string;
+  symbol: string;
+  exchange: string;
+  isMain?: boolean;
+  price?: number;
+}
+
 interface ManualTradeModalProps {
   symbol: string;
   currentPrice: number;
+  availablePairs?: AvailablePair[];
+  onSelectPair?: (pair: AvailablePair) => void;
   onApiKeyChange?: (apiKeyId: string) => void;
   clickedPrice?: number | null;
   openTrigger?: number;
@@ -18,9 +28,49 @@ interface ManualTradeModalProps {
   onClose?: () => void;
 }
 
-export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, currentPrice, onApiKeyChange, clickedPrice, openTrigger, buttonSize = 'md', onClose }) => {
+export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ 
+  symbol, 
+  currentPrice, 
+  availablePairs,
+  onSelectPair,
+  onApiKeyChange, 
+  clickedPrice, 
+  openTrigger, 
+  buttonSize = 'md', 
+  onClose 
+}) => {
   const dragControls = useDragControls();
   const [isOpen, setIsOpen] = useState(false);
+  const [activeSymbol, setActiveSymbol] = useState<string>(symbol);
+
+  // Sync internal activeSymbol whenever parent symbol prop updates
+  React.useEffect(() => {
+    if (symbol) {
+      setActiveSymbol(symbol);
+    }
+  }, [symbol]);
+
+  const activePair = availablePairs?.find(p => p.symbol === activeSymbol);
+  const effectiveCurrentPrice = (activePair?.price && activePair.price > 0)
+    ? activePair.price
+    : (activeSymbol === symbol ? currentPrice : (activePair?.price || currentPrice || 0));
+
+  const handleSelectPair = (pair: AvailablePair) => {
+    setActiveSymbol(pair.symbol);
+    if (pair.price && pair.price > 0) {
+      setLimitPrice(pair.price.toString());
+    }
+    onSelectPair?.(pair);
+  };
+
+  const formatDisplayPrice = (val: number | undefined | null) => {
+    if (!val || val <= 0) return '';
+    if (val >= 1000) return val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (val >= 1) return val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    if (val >= 0.0001) return val.toFixed(4);
+    return val.toFixed(6);
+  };
+
   const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Market');
   const [size, setSize] = useState<string>('');
   const [leverage, setLeverage] = useState<number>(10);
@@ -76,7 +126,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
   React.useEffect(() => {
     setSize('');
     setSizeMode('base');
-  }, [symbol]);
+  }, [activeSymbol]);
 
   // Fetch balance when selected API or symbol changes
   React.useEffect(() => {
@@ -85,7 +135,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
       setIsLoadingBalance(true);
       setIsLoadingPosition(true);
       try {
-        const data = await manualTradeService.getFastBalance(Number(selectedApi), symbol);
+        const data = await manualTradeService.getFastBalance(Number(selectedApi), activeSymbol);
         setBalanceData(data);
       } catch (e) {
         setBalanceData(null);
@@ -94,9 +144,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
       }
 
       // Automatically try to fetch active position if it's a futures pair
-      if (symbol.includes(':')) {
+      if (activeSymbol.includes(':')) {
          try {
-            const pos = await manualTradeService.getActivePosition(Number(selectedApi), symbol);
+            const pos = await manualTradeService.getActivePosition(Number(selectedApi), activeSymbol);
             setPositionData(pos);
          } catch(e) {
             setPositionData(null);
@@ -108,20 +158,20 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
       }
     };
     fetchBalance();
-  }, [selectedApi, symbol, isOpen]);
+  }, [selectedApi, activeSymbol, isOpen]);
 
   // Size mode: 'base' = in token (DOGE), 'quote' = in USD (USDC/USDT)
   const [sizeMode, setSizeMode] = useState<'base' | 'quote'>('base');
 
   // Derive base and quote currency from symbol (e.g. DOGE/USDC or DOGE/USDT:USDT)
-  const baseCurrency = symbol.split('/')[0] || 'BASE';
-  const quoteCurrency = (symbol.split('/')[1] || 'QUOTE').split(':')[0];
+  const baseCurrency = activeSymbol.split('/')[0] || 'BASE';
+  const quoteCurrency = (activeSymbol.split('/')[1] || 'QUOTE').split(':')[0];
 
   // Determine if it is a futures pair (CCXT futures symbols usually contain a colon, e.g. BTC/USDT:USDT)
-  const isFutures = symbol.includes(':');
+  const isFutures = activeSymbol.includes(':');
 
   // For Limit orders
-  const [limitPrice, setLimitPrice] = useState<string>(currentPrice ? currentPrice.toString() : '');
+  const [limitPrice, setLimitPrice] = useState<string>(effectiveCurrentPrice ? effectiveCurrentPrice.toString() : '');
 
   const lastTriggerRef = React.useRef<number>(openTrigger || 0);
 
@@ -143,10 +193,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
 
   // Update limit price placeholder when currentPrice changes if user hasn't typed
   React.useEffect(() => {
-    if (orderType === 'Limit' && !limitPrice && currentPrice) {
-      setLimitPrice(currentPrice.toString());
+    if (orderType === 'Limit' && !limitPrice && effectiveCurrentPrice) {
+      setLimitPrice(effectiveCurrentPrice.toString());
     }
-  }, [currentPrice, orderType, limitPrice]);
+  }, [effectiveCurrentPrice, orderType, limitPrice]);
 
   const handleTrade = async (side: 'Buy' | 'Sell') => {
     if (!selectedApi) {
@@ -178,11 +228,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
     // Convert quote amount → base amount if needed
     let baseAmount = Number(size);
     if (sizeMode === 'quote') {
-      if (!currentPrice || currentPrice <= 0) {
+      if (!effectiveCurrentPrice || effectiveCurrentPrice <= 0) {
         toast.error('Cannot convert: current price is unavailable.');
         return;
       }
-      baseAmount = Number(size) / currentPrice;
+      baseAmount = Number(size) / effectiveCurrentPrice;
     }
     
     setIsSubmitting(true);
@@ -201,7 +251,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
       const resolvedExchange = apiKeys.find(k => k.id.toString() === selectedApi)?.exchange || 'binance';
 
       const payload: any = {
-        symbol,
+        symbol: activeSymbol,
         side,
         type: orderType,
         amount: baseAmount,
@@ -239,7 +289,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
       }
 
       await manualTradeService.placeOrder(payload);
-      toast.success(`✅ ${side} ${orderType} order placed for ${symbol}`);
+      toast.success(`✅ ${side} ${orderType} order placed for ${activeSymbol}`);
     } catch (error: any) {
       // BUG-02 fix: Read FastAPI detail message if available
       const errMsg = error?.response?.data?.detail || error?.message || 'Unknown error occurred';
@@ -291,8 +341,15 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                 className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/5 cursor-grab active:cursor-grabbing select-none"
               >
                 <div className="flex flex-col pointer-events-none text-left">
-                  <span className="font-bold text-white text-lg tracking-wide leading-tight">{symbol}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-brand-primary">Quick Trade • {isFutures ? 'Futures' : 'Spot'}</span>
+                  <span className="font-bold text-white text-lg tracking-wide leading-tight">{activeSymbol}</span>
+                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand-primary">
+                    <span>Quick Trade • {isFutures ? 'Futures' : 'Spot'}</span>
+                    {effectiveCurrentPrice > 0 && (
+                      <span className="text-gray-400 font-mono normal-case">
+                        (${formatDisplayPrice(effectiveCurrentPrice)})
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <button 
                   onClick={(e) => { 
@@ -306,6 +363,42 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                   <X className="w-5 h-5" />
                 </button>
               </div>
+
+              {/* Multi-Chart Pair Selector Dropdown */}
+              {availablePairs && availablePairs.length > 1 && (
+                <div className="px-4 py-2.5 bg-black/60 border-b border-white/10 space-y-1">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-pulse" />
+                      Select Chart Pair ({availablePairs.length} Open)
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <select
+                      value={activeSymbol}
+                      onChange={(e) => {
+                        const targetSymbol = e.target.value;
+                        const selected = availablePairs.find(p => p.symbol === targetSymbol);
+                        if (selected) {
+                          handleSelectPair(selected);
+                        }
+                      }}
+                      className="w-full bg-[#0a0d16] border border-brand-primary/40 hover:border-brand-primary rounded-xl py-2 pl-3 pr-8 text-white font-bold text-xs focus:outline-none focus:ring-1 focus:ring-brand-primary/50 transition-all appearance-none cursor-pointer shadow-[0_0_12px_rgba(59,130,246,0.15)]"
+                    >
+                      {availablePairs.map((p) => {
+                        const pPrice = formatDisplayPrice(p.price);
+                        const label = `${p.symbol}${pPrice ? ` • $${pPrice}` : ''}${p.isMain ? ' (Main)' : ''}`;
+                        return (
+                          <option key={p.id} value={p.symbol} className="bg-[#0b0e17] text-white py-1">
+                            {label}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-[10px] w-4 h-4 text-brand-primary pointer-events-none" />
+                  </div>
+                </div>
+              )}
 
               {/* Body */}
               <div 
@@ -488,16 +581,16 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                 </div>
 
                 {/* Live conversion estimate */}
-                {size && Number(size) > 0 && currentPrice > 0 && (
+                {size && Number(size) > 0 && effectiveCurrentPrice > 0 && (
                   <div className="flex items-center gap-1 px-1 pt-0.5">
                     <span className="text-[10px] text-gray-600">≈</span>
                     {sizeMode === 'quote' ? (
                       <span className="text-[10px] text-yellow-400 font-semibold">
-                        {(Number(size) / currentPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} {baseCurrency}
+                        {(Number(size) / effectiveCurrentPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} {baseCurrency}
                       </span>
                     ) : (
                       <span className="text-[10px] text-yellow-400 font-semibold">
-                        ${(Number(size) * currentPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
+                        ${(Number(size) * effectiveCurrentPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
                       </span>
                     )}
                   </div>
@@ -510,7 +603,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                       key={pct}
                       className="flex-1 py-1 text-[10px] font-bold rounded border border-white/10 text-gray-400 hover:bg-white/10 hover:text-white transition-colors"
                       onClick={() => {
-                        if (!balanceData || currentPrice <= 0) return;
+                        if (!balanceData || effectiveCurrentPrice <= 0) return;
                         const percentage = Number(pct.replace('%', '')) / 100;
 
                         let maxValue = 0;
@@ -521,7 +614,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                           } else if (tradeSide === 'Buy') {
                             maxValue = balanceData.quote_free || 0;
                           } else {
-                            maxValue = (balanceData.base_free || 0) * currentPrice;
+                            maxValue = (balanceData.base_free || 0) * effectiveCurrentPrice;
                           }
                         } else {
                           // Base mode → set the token amount
@@ -529,10 +622,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ symbol, curr
                             if (reduceOnly && positionData && positionData.amount > 0) {
                               maxValue = positionData.amount;
                             } else {
-                              maxValue = ((balanceData.quote_free || 0) * leverage) / currentPrice;
+                              maxValue = ((balanceData.quote_free || 0) * leverage) / effectiveCurrentPrice;
                             }
                           } else if (tradeSide === 'Buy') {
-                            maxValue = (balanceData.quote_free || 0) / currentPrice;
+                            maxValue = (balanceData.quote_free || 0) / effectiveCurrentPrice;
                           } else {
                             maxValue = balanceData.base_free || 0;
                           }

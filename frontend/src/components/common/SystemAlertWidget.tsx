@@ -372,21 +372,7 @@ const SystemAlertWidget: React.FC = () => {
   const [logBatches, setLogBatches] = useState<Map<string, ContainerLogBatch>>(new Map());
   const [logFilter, setLogFilter]   = useState<string | null>(null);
   const [logConn, setLogConn]       = useState(false);
-  const [tick, setTick]             = useState(0); // for scanline animation
 
-  const [position, setPosition]     = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragRef = useRef({ startX: 0, startY: 0, curX: 0, curY: 0 });
-
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const logWsRef   = useRef<WebSocket | null>(null);
-  const prevLen    = useRef(0);
-
-  // Scanline ticker
-  useEffect(() => {
-    const t = setInterval(() => setTick(p => (p + 1) % 100), 50);
-    return () => clearInterval(t);
-  }, []);
 
   // CRITICAL toast
   useEffect(() => {
@@ -433,41 +419,93 @@ const SystemAlertWidget: React.FC = () => {
     };
   }, []);
 
-  // Initial position - Center of screen
+  const [position, setPosition]     = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef({ startX: 0, startY: 0, curX: 0, curY: 0 });
+
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const logWsRef   = useRef<WebSocket | null>(null);
+  const prevLen    = useRef(0);
+
+  // Initial position - Center of screen (responsive for desktop & tablets like Redmi Pad)
   useEffect(() => {
     if (open) {
-      const w = 530;
-      const h = 530;
+      const modalWidth = Math.min(530, window.innerWidth - 20);
+      const modalHeight = Math.min(530, window.innerHeight - 20);
       setPosition({ 
-        x: Math.max(0, (window.innerWidth - w) / 2), 
-        y: Math.max(0, (window.innerHeight - h) / 2) 
+        x: Math.max(10, (window.innerWidth - modalWidth) / 2), 
+        y: Math.max(10, (window.innerHeight - modalHeight) / 2) 
       });
     }
   }, [open]);
 
-  // Drag
+  // Unified Drag System (Mouse, Touch, Stylus — Zero Lag)
   useEffect(() => {
     if (!isDragging) return;
-    const onMove = (e: MouseEvent) => {
+
+    const onPointerMove = (e: PointerEvent) => {
+      e.preventDefault();
       const dx = e.clientX - dragRef.current.startX;
       const dy = e.clientY - dragRef.current.startY;
+
+      const modalWidth = Math.min(530, window.innerWidth - 20);
+      const modalHeight = Math.min(530, window.innerHeight - 20);
+
+      const maxX = Math.max(0, window.innerWidth - modalWidth);
+      const maxY = Math.max(0, window.innerHeight - modalHeight);
+
       setPosition({
-        x: Math.max(0, Math.min(window.innerWidth - 530, dragRef.current.curX + dx)),
-        y: Math.max(0, Math.min(window.innerHeight - 540, dragRef.current.curY + dy)),
+        x: Math.max(0, Math.min(maxX, dragRef.current.curX + dx)),
+        y: Math.max(0, Math.min(maxY, dragRef.current.curY + dy)),
       });
     };
-    const onUp = () => setIsDragging(false);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+
+    const onPointerUp = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
     };
   }, [isDragging]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // Ignore non-primary mouse buttons
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    
+    // Ignore interactive elements inside title bar (e.g. close button)
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, select, textarea')) {
+      return;
+    }
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+
     setIsDragging(true);
     dragRef.current = { startX: e.clientX, startY: e.clientY, curX: position.x, curY: position.y };
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (isDragging) {
+      setIsDragging(false);
+      try {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch {
+        // ignore
+      }
+    }
   };
 
   const handleOpen = () => {
@@ -537,14 +575,19 @@ const SystemAlertWidget: React.FC = () => {
       {/* ─── Floating Window ─── */}
       {createPortal(
         <div
-          className={`fixed z-[9999] transition-all duration-300 ${open ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 pointer-events-none scale-95'}`}
-        style={{
-          top: `${position.y}px`,
-          left: `${position.x}px`,
-          width: '530px',
-          transformOrigin: 'top left',
-        }}
-      >
+          className={`fixed z-[9999] ${
+            isDragging ? '' : 'transition-[opacity,transform] duration-200'
+          } ${open ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 pointer-events-none scale-95'}`}
+          style={{
+            top: `${position.y}px`,
+            left: `${position.x}px`,
+            width: '530px',
+            maxWidth: 'calc(100vw - 20px)',
+            transformOrigin: 'top left',
+            willChange: isDragging ? 'top, left' : 'auto',
+            touchAction: 'none',
+          }}
+        >
         {/* Outer glow border */}
         <div className="rounded-2xl p-px"
           style={{
@@ -557,9 +600,10 @@ const SystemAlertWidget: React.FC = () => {
           }}
         >
           <div className="rounded-2xl overflow-hidden flex flex-col" style={{
-            height: '530px',
+            height: 'min(530px, calc(100vh - 30px))',
             background: document.documentElement.classList.contains('dark') ? 'rgba(8,8,18,0.85)' : 'rgba(248,250,252,0.92)',
-            backdropFilter: 'blur(60px)',
+            backdropFilter: 'blur(30px)',
+            WebkitBackdropFilter: 'blur(30px)',
           }}>
             {/* Scanline overlay */}
             <div className="absolute inset-0 pointer-events-none rounded-2xl overflow-hidden z-10 opacity-[0.025]"
@@ -570,16 +614,23 @@ const SystemAlertWidget: React.FC = () => {
 
             {/* ── Title Bar ── */}
             <div
-              onMouseDown={handleMouseDown}
-              className={`relative flex-shrink-0 flex items-center justify-between px-4 py-3 cursor-grab select-none ${isDragging ? 'cursor-grabbing' : ''}`}
-              style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(6,182,212,0.06))' }}
+              onPointerDown={handlePointerDown}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              className={`relative flex-shrink-0 flex items-center justify-between px-4 py-3 cursor-grab select-none touch-none ${isDragging ? 'cursor-grabbing' : ''}`}
+              style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(6,182,212,0.06))',
+                touchAction: 'none',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+              }}
             >
               {/* Neon bottom line */}
               <div className="absolute bottom-0 left-0 right-0 h-px"
                 style={{ background: 'linear-gradient(90deg, transparent, #7c3aed60, #06b6d440, transparent)' }} />
 
               {/* Left: logo + title */}
-              <div className="flex items-center gap-3 pointer-events-none">
+              <div className="flex items-center gap-3 pointer-events-none select-none">
                 <div className="relative w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
                   style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.4), rgba(6,182,212,0.3))', border: '1px solid rgba(124,58,237,0.4)', boxShadow: '0 0 16px rgba(124,58,237,0.3)' }}>
                   <svg className="w-4 h-4 text-violet-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -596,16 +647,17 @@ const SystemAlertWidget: React.FC = () => {
               </div>
 
               {/* Center: status nodes */}
-              <div className="flex items-center gap-4 pointer-events-none">
+              <div className="flex items-center gap-4 pointer-events-none select-none">
                 <StatusNode active={connected} color="text-emerald-400" neon="#34d399" label="Alerts" />
                 <StatusNode active={logConn} color="text-sky-400" neon="#38bdf8" label="Logs" />
               </div>
 
               {/* Right: close */}
               <button
+                onPointerDown={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => setOpen(false)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-600 hover:text-gray-900 dark:hover:text-white transition-all border border-transparent hover:border-gray-200 dark:hover:border-white/10 hover:bg-gray-100 dark:hover:bg-white/10"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-all border border-transparent hover:border-gray-200 dark:hover:border-white/10 hover:bg-gray-100 dark:hover:bg-white/10 cursor-pointer"
                 style={{ backdropFilter: 'blur(4px)' }}
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>

@@ -3278,8 +3278,31 @@ const OrderFlowHeatmap: React.FC = () => {
     // imperatively so dropdowns (Indicators, SymbolSelector, AdvancedMetrics) are
     // never clipped by the collapsing animation container.
     const toolbarRef = useRef<HTMLDivElement>(null);
-    const [showCVD, setShowCVD] = useState(false); // NEW STATE
-    const [showVPVR, setShowVPVR] = useState(false); // NEW STATE
+    const [showCVD, setShowCVD] = useState(() => indicatorSettings.showCVD ?? false);
+    const [showVPVR, setShowVPVR] = useState(() => indicatorSettings.showHeatmap ?? false);
+
+    const handleToggleHeatmap = useCallback(() => {
+        setShowVPVR(prev => {
+            const next = !prev;
+            setIndicatorSettings({ ...indicatorSettings, showHeatmap: next });
+            return next;
+        });
+    }, [indicatorSettings, setIndicatorSettings]);
+
+    const handleToggleCVD = useCallback(() => {
+        setShowCVD(prev => {
+            const next = !prev;
+            setIndicatorSettings({ ...indicatorSettings, showCVD: next });
+            return next;
+        });
+    }, [indicatorSettings, setIndicatorSettings]);
+
+    const handleToggleFootprint = useCallback(() => {
+        const next = !showFootprint;
+        setShowFootprint(next);
+        setIndicatorSettings({ ...indicatorSettings, showFootprint: next });
+    }, [showFootprint, setShowFootprint, indicatorSettings, setIndicatorSettings]);
+
     const [isOrderBookModalOpen, setIsOrderBookModalOpen] = useState(false);
     const [isIndicatorModalOpen, setIsIndicatorModalOpen] = useState(false);
     const [isAIDeploymentModalOpen, setIsAIDeploymentModalOpen] = useState(false);
@@ -3387,7 +3410,16 @@ const OrderFlowHeatmap: React.FC = () => {
                 <div className="flex items-center gap-4">
                     <HeatmapSymbolSelector symbol={symbol} exchange={exchange} onSymbolChange={setSymbol} onExchangeChange={setExchange} />
                     <TimeframeSelector interval={interval} onIntervalChange={setInterval} />
-                    <IndicatorSelector settings={indicatorSettings} onSettingsChange={setIndicatorSettings} />
+                    <IndicatorSelector
+                        settings={indicatorSettings}
+                        onSettingsChange={setIndicatorSettings}
+                        showHeatmap={showVPVR}
+                        onToggleHeatmap={handleToggleHeatmap}
+                        showCVD={showCVD}
+                        onToggleCVD={handleToggleCVD}
+                        showFootprint={showFootprint}
+                        onToggleFootprint={handleToggleFootprint}
+                    />
 
                     <button
                         onClick={() => setActiveTab(activeTab === 'bot_logs' ? 'heatmap' : 'bot_logs')}
@@ -3416,30 +3448,6 @@ const OrderFlowHeatmap: React.FC = () => {
                         <span className={`w-2 h-2 rounded-full animate-pulse ${botWsConnected ? 'bg-indigo-500' : 'bg-green-500'}`}></span>
                         {botWsConnected ? `Bot ${mainChartBotId} Connected` : 'Live Data Socket'}
                     </span>
-                    <button
-                        onClick={() => setShowVPVR(!showVPVR)}
-                        className={`text-xs font-semibold px-4 py-2 rounded-lg border transition-all ${showVPVR
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.3)]'
-                            : 'bg-white dark:bg-black/20 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5'}`}
-                    >
-                        {showVPVR ? 'Hide Heatmap' : 'Show Heatmap'}
-                    </button>
-                    <button
-                        onClick={() => setShowCVD(!showCVD)}
-                        className={`text-xs font-semibold px-4 py-2 rounded-lg border transition-all ${showCVD
-                            ? 'bg-purple-600 text-white border-purple-600 shadow-[0_0_15px_rgba(147,51,234,0.3)]'
-                            : 'bg-white dark:bg-black/20 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5'}`}
-                    >
-                        {showCVD ? 'Hide CVD' : 'Show CVD'}
-                    </button>
-                    <button
-                        onClick={() => setShowFootprint(!showFootprint)}
-                        className={`text-xs font-semibold px-4 py-2 rounded-lg border transition-all ${showFootprint
-                            ? 'bg-brand-primary text-white border-brand-primary shadow-[0_0_15px_rgba(59,130,246,0.3)]'
-                            : 'bg-white dark:bg-black/20 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5'}`}
-                    >
-                        {showFootprint ? 'Hide Footprint' : 'Show Footprint'}
-                    </button>
                 </div>
             </header>
 

@@ -101,6 +101,10 @@ export const useBotStore = create<BotState>()(
         smcMicroFVG: true,
         smcSweepDetection: true,
         smcShowSwingPatterns: true,
+        // ── Order Flow Visual Overlays ──
+        showHeatmap: false,
+        showCVD: false,
+        showFootprint: false,
         // Dual Engine Defaults
         showDualEngine: false,
         dualEngineEmaPeriod: 50,

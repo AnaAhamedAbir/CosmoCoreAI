@@ -93,6 +93,10 @@ export interface IndicatorSettings {
     smcMicroFVG: boolean;
     smcSweepDetection: boolean;
     smcShowSwingPatterns: boolean;
+    // ── Order Flow Visual Overlays ──
+    showHeatmap?: boolean;
+    showCVD?: boolean;
+    showFootprint?: boolean;
     // ── Dual Engine Command Center ──
     // ── Dual Engine Command Center ──
     showDualEngine: boolean;
@@ -223,12 +227,64 @@ export interface IndicatorSettings {
 interface IndicatorSelectorProps {
     settings: IndicatorSettings;
     onSettingsChange: (settings: IndicatorSettings) => void;
+    showHeatmap?: boolean;
+    onToggleHeatmap?: () => void;
+    showCVD?: boolean;
+    onToggleCVD?: () => void;
+    showFootprint?: boolean;
+    onToggleFootprint?: () => void;
 }
 
-export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ settings, onSettingsChange }) => {
+export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
+    settings,
+    onSettingsChange,
+    showHeatmap,
+    onToggleHeatmap,
+    showCVD,
+    onToggleCVD,
+    showFootprint,
+    onToggleFootprint,
+}) => {
     const [isOpen, setIsOpen] = useState(false);
     const [multiplierLocal, setMultiplierLocal] = useState(settings.trendFinderVolumeMultiplier?.toString() || '1.5');
     const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const isHeatmapActive = showHeatmap !== undefined ? showHeatmap : !!settings.showHeatmap;
+    const isCVDActive = showCVD !== undefined ? showCVD : !!settings.showCVD;
+    const isFootprintActive = showFootprint !== undefined ? showFootprint : !!settings.showFootprint;
+
+    const handleToggleHeatmap = () => {
+        if (onToggleHeatmap) {
+            onToggleHeatmap();
+        } else {
+            onSettingsChange({
+                ...settings,
+                showHeatmap: !isHeatmapActive,
+            });
+        }
+    };
+
+    const handleToggleCVD = () => {
+        if (onToggleCVD) {
+            onToggleCVD();
+        } else {
+            onSettingsChange({
+                ...settings,
+                showCVD: !isCVDActive,
+            });
+        }
+    };
+
+    const handleToggleFootprint = () => {
+        if (onToggleFootprint) {
+            onToggleFootprint();
+        } else {
+            onSettingsChange({
+                ...settings,
+                showFootprint: !isFootprintActive,
+            });
+        }
+    };
 
     useEffect(() => {
         setMultiplierLocal(settings.trendFinderVolumeMultiplier?.toString() || '1.5');
@@ -1889,6 +1945,84 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ settings, 
                                     
                                 </div>
                             )}
+                         </div>
+
+                         {/* ── Order Flow Overlays (Show Heatmap, Show CVD, Show Footprint) ── */}
+                         <div className="flex flex-col gap-1.5 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg transition-colors border-t border-gray-100 dark:border-white/5 mt-1 pt-3">
+                            <div className="flex items-center justify-between pb-0.5">
+                                <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    Order Flow Overlays
+                                </span>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-brand-primary/10 text-brand-primary font-mono font-medium">
+                                    Live L2
+                                </span>
+                            </div>
+
+                            {/* Show Heatmap */}
+                            <div className="flex items-center justify-between py-1 group/item">
+                                <label className="flex items-center cursor-pointer flex-1 select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={isHeatmapActive}
+                                        onChange={handleToggleHeatmap}
+                                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 accent-blue-600"
+                                    />
+                                    <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-200 group-hover/item:text-blue-400 transition-colors">
+                                        Show Heatmap
+                                    </span>
+                                </label>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold transition-all ${
+                                    isHeatmapActive
+                                        ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40 shadow-[0_0_8px_rgba(59,130,246,0.25)]'
+                                        : 'bg-gray-100 dark:bg-white/5 text-gray-500 border border-transparent'
+                                }`}>
+                                    VPVR
+                                </span>
+                            </div>
+
+                            {/* Show CVD */}
+                            <div className="flex items-center justify-between py-1 group/item">
+                                <label className="flex items-center cursor-pointer flex-1 select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={isCVDActive}
+                                        onChange={handleToggleCVD}
+                                        className="w-4 h-4 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 accent-purple-600"
+                                    />
+                                    <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-200 group-hover/item:text-purple-400 transition-colors">
+                                        Show CVD
+                                    </span>
+                                </label>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold transition-all ${
+                                    isCVDActive
+                                        ? 'bg-purple-500/20 text-purple-400 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.25)]'
+                                        : 'bg-gray-100 dark:bg-white/5 text-gray-500 border border-transparent'
+                                }`}>
+                                    Delta
+                                </span>
+                            </div>
+
+                            {/* Show Footprint */}
+                            <div className="flex items-center justify-between py-1 group/item">
+                                <label className="flex items-center cursor-pointer flex-1 select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={isFootprintActive}
+                                        onChange={handleToggleFootprint}
+                                        className="w-4 h-4 text-teal-600 bg-gray-100 border-gray-300 rounded focus:ring-teal-500 dark:focus:ring-teal-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 accent-teal-600"
+                                    />
+                                    <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-200 group-hover/item:text-teal-400 transition-colors">
+                                        Show Footprint
+                                    </span>
+                                </label>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold transition-all ${
+                                    isFootprintActive
+                                        ? 'bg-teal-500/20 text-teal-400 border border-teal-500/40 shadow-[0_0_8px_rgba(20,184,166,0.25)]'
+                                        : 'bg-gray-100 dark:bg-white/5 text-gray-500 border border-transparent'
+                                }`}>
+                                    Footprint
+                                </span>
+                            </div>
                          </div>
 
                     </div>

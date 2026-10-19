@@ -571,7 +571,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                         onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
                     />
                     <div className="flex-1 flex flex-col overflow-hidden relative z-0">
-                        <header className="flex-shrink-0 bg-white/80 dark:bg-[#000000]/80 backdrop-blur-md border-b border-gray-200 dark:border-[#1A1A1A]/50 z-10">
+                        <header className="relative z-50 flex-shrink-0 bg-white/80 dark:bg-[#000000]/80 backdrop-blur-md border-b border-gray-200 dark:border-[#1A1A1A]/50">
                             <div className="grid grid-cols-3 items-center px-8 laptop:px-4 h-16 laptop:h-12">
                                 {/* Left — Page Title */}
                                 <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
@@ -588,7 +588,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                 <div className="flex items-center gap-4 justify-end">
                                     {showWalletConnect && (
                                         <div>
-                                            {walletAddress ? (
+                                             {walletAddress ? (
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-xs font-mono bg-gray-100 dark:bg-[#0A0A0A]/50 px-2 py-1 rounded text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
                                                         {`${walletAddress.substring(0, 6)}...${walletAddress.substring(walletAddress.length - 4)}`}
@@ -610,7 +610,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                             </div>
                             {viewToRender === AppView.MARKET && <div className="border-t border-gray-100 dark:border-gray-800"><MarketTicker /></div>}
                         </header>
-                        <main className="flex-1 overflow-y-auto p-8 laptop:p-4 laptop-h:p-3 relative">
+                        <main className="flex-1 overflow-y-auto p-8 laptop:p-4 laptop-h:p-3 relative z-0">
                             {renderContent()}
                         </main>
                     </div>

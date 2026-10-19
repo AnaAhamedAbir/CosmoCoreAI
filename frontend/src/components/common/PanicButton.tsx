@@ -57,22 +57,22 @@ const PanicButton = () => {
     };
 
     return (
-        <div className="relative" ref={menuRef}>
+        <div className="relative z-50" ref={menuRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 disabled={loading}
                 className={`group flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold transition-all duration-300 shadow-sm border
                     ${isOpen
-                        ? 'bg-red-50 text-red-600 border-red-200 ring-2 ring-red-100'
-                        : 'bg-white dark:bg-[#0A0A0A]/50 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-[#1F1F1F] hover:bg-red-50 hover:text-red-500 hover:border-red-200'
+                        ? 'bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 border-red-300 dark:border-red-500/40 ring-2 ring-red-100 dark:ring-red-900/30'
+                        : 'bg-white dark:bg-[#0A0A0A] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30'
                     } ${loading ? 'opacity-70 cursor-wait' : ''}`}
                 title="Emergency Controls"
             >
                 <span className={`relative flex items-center justify-center ${loading ? 'animate-spin' : ''}`}>
-                    {loading ? <AlertOctagon size={18} /> : <ShieldAlert size={18} />}
+                    {loading ? <AlertOctagon size={18} /> : <ShieldAlert size={18} className="text-red-500" />}
                 </span>
 
-                <span className="hidden md:block text-xs uppercase tracking-wider">
+                <span className="hidden md:block text-xs uppercase tracking-wider text-red-600 dark:text-red-400 font-extrabold">
                     {loading ? 'Executing...' : 'PANIC PROTOCOL'}
                 </span>
 
@@ -81,14 +81,15 @@ const PanicButton = () => {
 
             {/* Dropdown Menu */}
             {isOpen && (
-                <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-brand-surface border border-slate-200 dark:border-[#1F1F1F] rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 p-1">
-                    <div className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-[#1F1F1F]/50 mb-1">
-                        Select Action
+                <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-[#0A0A0A] border border-slate-200 dark:border-white/15 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 p-1.5 backdrop-blur-xl">
+                    <div className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-white/10 mb-1 flex items-center justify-between">
+                        <span>Select Action</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
                     </div>
                     
-                    <div className="px-3 py-2 border-b border-slate-100 dark:border-[#1F1F1F]/50 mb-1 bg-slate-50 dark:bg-[#1A1A1A]">
+                    <div className="px-3 py-2 border border-slate-100 dark:border-white/5 rounded-lg mb-1.5 bg-slate-50 dark:bg-white/5">
                         <label className="flex items-center justify-between cursor-pointer group">
-                            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
                                 Market Sell Positions
                             </span>
                             <div className="relative">
@@ -98,11 +99,11 @@ const PanicButton = () => {
                                     checked={liquidatePositions}
                                     onChange={() => setLiquidatePositions(!liquidatePositions)}
                                 />
-                                <div className={`block w-8 h-5 rounded-full transition-colors ${liquidatePositions ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
+                                <div className={`block w-8 h-5 rounded-full transition-colors ${liquidatePositions ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-700'}`}></div>
                                 <div className={`absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition-transform ${liquidatePositions ? 'transform translate-x-3' : ''}`}></div>
                             </div>
                         </label>
-                        <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-tight">
                             If enabled, bots will market sell active holdings to USDT before shutting down.
                         </p>
                     </div>
@@ -111,44 +112,44 @@ const PanicButton = () => {
                         {/* Option 1: Losing Bots */}
                         <button
                             onClick={() => handlePanicAction('losing')}
-                            className="flex items-center gap-3 w-full px-3 py-3 text-left hover:bg-orange-50 dark:hover:bg-orange-900/10 rounded-lg group transition-colors"
+                            className="flex items-center gap-3 w-full px-3 py-2.5 text-left hover:bg-orange-50 dark:hover:bg-orange-500/10 rounded-lg group transition-colors"
                         >
-                            <div className="p-2 bg-orange-100 dark:bg-orange-900/30 text-orange-600 rounded-lg group-hover:bg-orange-200 transition-colors">
+                            <div className="p-2 bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 rounded-lg group-hover:bg-orange-200 dark:group-hover:bg-orange-500/30 transition-colors">
                                 <TrendingDown size={18} />
                             </div>
                             <div>
-                                <div className="font-bold text-slate-700 dark:text-slate-200 text-sm">Stop Losing Bots</div>
-                                <div className="text-xs text-slate-500">Halt all bots with negative PnL</div>
+                                <div className="font-bold text-slate-800 dark:text-slate-100 text-sm">Stop Losing Bots</div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400">Halt all bots with negative PnL</div>
                             </div>
                         </button>
 
                         {/* Option 2: Grid Bots */}
                         <button
-                            onClick={() => handlePanicAction('strategy_type', 'grid_trading')} // Assuming 'grid_trading' is key, or generic 'grid'? Using 'grid' as example but plan said 'grid_trading'. I'll stick to 'grid_trading' or what DB likely has. Let's use generic 'Grid Trading' matching earlier analysis or just send 'grid' if partial match was impl? Backend does EXACT match. I should probably ensure Strategy Name consistency. Assuming "Grid Trading" or similar. I'll use "Grid Trading" if that's standard, or purely "grid" if backend handles it. Backend does `func.lower() == value.lower()`. So "Grid Trading" works.
-                            className="flex items-center gap-3 w-full px-3 py-3 text-left hover:bg-yellow-50 dark:hover:bg-yellow-900/10 rounded-lg group transition-colors"
+                            onClick={() => handlePanicAction('strategy_type', 'grid_trading')}
+                            className="flex items-center gap-3 w-full px-3 py-2.5 text-left hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-lg group transition-colors"
                         >
-                            <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 rounded-lg group-hover:bg-yellow-200 transition-colors">
+                            <div className="p-2 bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg group-hover:bg-amber-200 dark:group-hover:bg-amber-500/30 transition-colors">
                                 <LayoutGrid size={18} />
                             </div>
                             <div>
-                                <div className="font-bold text-slate-700 dark:text-slate-200 text-sm">Stop Grid Bots</div>
-                                <div className="text-xs text-slate-500">Halt only grid strategy bots</div>
+                                <div className="font-bold text-slate-800 dark:text-slate-100 text-sm">Stop Grid Bots</div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400">Halt only grid strategy bots</div>
                             </div>
                         </button>
 
-                        <div className="my-1 border-b border-slate-100 dark:border-[#1F1F1F]/50"></div>
+                        <div className="my-1 border-b border-slate-100 dark:border-white/10"></div>
 
                         {/* Option 3: STOP ALL */}
                         <button
                             onClick={() => handlePanicAction('all', undefined, "⚠️ FINAL WARNING: This will stop ALL running bots immediately. Are you sure?")}
-                            className="flex items-center gap-3 w-full px-3 py-3 text-left hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg group transition-colors"
+                            className="flex items-center gap-3 w-full px-3 py-2.5 text-left hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg group transition-colors border border-transparent hover:border-red-200 dark:hover:border-red-500/30"
                         >
-                            <div className="p-2 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-lg group-hover:bg-red-200 transition-colors">
+                            <div className="p-2 bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 rounded-lg group-hover:bg-red-200 dark:group-hover:bg-red-500/30 transition-colors">
                                 <AlertOctagon size={18} />
                             </div>
                             <div>
-                                <div className="font-bold text-red-600 text-sm">EMERGENCY STOP ALL</div>
-                                <div className="text-xs text-red-500/80">Immediately halt all trading</div>
+                                <div className="font-bold text-red-600 dark:text-red-400 text-sm">EMERGENCY STOP ALL</div>
+                                <div className="text-xs text-red-500/80 dark:text-red-400/80">Immediately halt all trading</div>
                             </div>
                         </button>
                     </div>

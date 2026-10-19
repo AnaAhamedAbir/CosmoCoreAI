@@ -3398,7 +3398,7 @@ const OrderFlowHeatmap: React.FC = () => {
                 }}
                 style={{
                     position: 'relative',
-                    zIndex: 50,          // sit above the chart so dropdowns render on top
+                    zIndex: 30,          // sit above the chart so dropdowns render on top
                     overflow: 'hidden',  // will be flipped to 'visible' via onTransitionEnd when open
                     maxHeight: showSubNav ? '160px' : '0px',
                     opacity: showSubNav ? 1 : 0,
@@ -3406,7 +3406,7 @@ const OrderFlowHeatmap: React.FC = () => {
                     willChange: 'max-height, opacity',
                 }}
             >
-                <header className="relative z-40 flex-shrink-0 p-4 border-b border-gray-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-[#000000]">
+                <header className="relative z-20 flex-shrink-0 p-4 border-b border-gray-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-[#000000]">
                 <div className="flex items-center gap-4">
                     <HeatmapSymbolSelector symbol={symbol} exchange={exchange} onSymbolChange={setSymbol} onExchangeChange={setExchange} />
                     <TimeframeSelector interval={interval} onIntervalChange={setInterval} />
@@ -3432,18 +3432,17 @@ const OrderFlowHeatmap: React.FC = () => {
                         <span>Bot Logs</span>
                     </button>
 
-                    <span className="text-lg font-mono font-bold text-gray-800 dark:text-white">
-                        {formatDisplayPrice(currentPrice)}
-                    </span>
+                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10">
+                        <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Live Price:
+                        </span>
+                        <span className="text-base font-mono font-bold text-gray-800 dark:text-white">
+                            {formatDisplayPrice(currentPrice)}
+                        </span>
+                    </div>
                 </div>
-                <div className="flex gap-2">
-                    <button
-                        onClick={addChart}
-                        disabled={additionalCharts.length >= 3}
-                        className="text-xs font-semibold px-4 py-2 rounded-lg border transition-all bg-white dark:bg-black/20 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        + Add Chart
-                    </button>
+                <div className="flex items-center gap-2">
                     <span className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${botWsConnected ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>
                         <span className={`w-2 h-2 rounded-full animate-pulse ${botWsConnected ? 'bg-indigo-500' : 'bg-green-500'}`}></span>
                         {botWsConnected ? `Bot ${mainChartBotId} Connected` : 'Live Data Socket'}
@@ -3463,6 +3462,8 @@ const OrderFlowHeatmap: React.FC = () => {
                     activeMLModelId={activeMLModelId}
                     setActiveMLModelId={setActiveMLModelId}
                     symbol={symbol}
+                    onAddChart={addChart}
+                    isAddChartDisabled={additionalCharts.length >= 3}
                 />
             </div>
 

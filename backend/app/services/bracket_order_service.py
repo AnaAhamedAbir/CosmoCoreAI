@@ -399,6 +399,17 @@ class BracketOrderService:
                                 if hasattr(exchange, 'price_to_precision') else disaster_price
                             )
                             disaster_params = {'reduceOnly': True, 'stopPrice': disaster_price_prec}
+                            if getattr(api_key_record, 'exchange', '').lower().startswith('binance'):
+                                for method_name in ['fapiPrivateGetPositionSideDual', 'fapiprivateGetPositionsideDual', 'fapiprivate_get_positionside_dual']:
+                                    method = getattr(exchange, method_name, None)
+                                    if method and callable(method):
+                                        try:
+                                            res = await method()
+                                            if res.get('dualSidePosition', False):
+                                                disaster_params['positionSide'] = 'LONG' if opposite_side == 'sell' else 'SHORT'
+                                            break
+                                        except Exception:
+                                            pass
                             d_res = await exchange.create_order(symbol, 'STOP_MARKET', opposite_side, final_amount, None, disaster_params)
                             disaster_sl_order_id = d_res.get('id')
                             logger.info(f"🛡️ Bracket Monitor: Native Disaster SL placed at {disaster_price_prec} (ID: {disaster_sl_order_id})")

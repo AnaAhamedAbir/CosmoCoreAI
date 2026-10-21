@@ -371,6 +371,59 @@ class BracketOrderService:
                         asyncio.create_task(
                             BracketOrderService._software_trailing_stop_loop(exchange, symbol, opposite_side, final_amount, average_price, sl_mode, sl_val, is_futures, user_id, api_key_record, atr_period, atr_multiplier, atr_timeframe, tp_order_id)
                         )
+                elif sl_type == 'smart_chase':
+                    sl_price = average_price
+                    if sl_mode == 'percentage':
+                        pct = sl_val / 100.0
+                        sl_price = average_price * (1 - pct) if opposite_side == 'sell' else average_price * (1 + pct)
+                    elif sl_mode == 'absolute':
+                        sl_price = sl_val
+                    else:
+                        sl_price = average_price - sl_val if opposite_side == 'sell' else average_price + sl_val
+
+                    final_sl_price = (
+                        float(exchange.price_to_precision(symbol, sl_price))
+                        if hasattr(exchange, 'price_to_precision') else sl_price
+                    )
+
+                    max_dev = float(sl_config.get('smart_chase_deviation_pct') or 1.0)
+                    chase_delay = int(sl_config.get('smart_chase_delay_ms') or 1500)
+                    max_attempts = int(sl_config.get('smart_chase_max_attempts') or 15)
+
+                    disaster_sl_order_id = None
+                    if is_futures:
+                        try:
+                            disaster_price = final_sl_price * (1 - (max_dev / 100.0)) if opposite_side == 'sell' else final_sl_price * (1 + (max_dev / 100.0))
+                            disaster_price_prec = (
+                                float(exchange.price_to_precision(symbol, disaster_price))
+                                if hasattr(exchange, 'price_to_precision') else disaster_price
+                            )
+                            disaster_params = {'reduceOnly': True, 'stopPrice': disaster_price_prec}
+                            d_res = await exchange.create_order(symbol, 'STOP_MARKET', opposite_side, final_amount, None, disaster_params)
+                            disaster_sl_order_id = d_res.get('id')
+                            logger.info(f"🛡️ Bracket Monitor: Native Disaster SL placed at {disaster_price_prec} (ID: {disaster_sl_order_id})")
+                        except Exception as d_err:
+                            logger.warning(f"⚠️ Failed to place native disaster SL: {d_err}")
+
+                    logger.info(f"🚀 Bracket Monitor: Starting Smart Chase Limit SL for {symbol} | Trigger: {final_sl_price}")
+                    asyncio.create_task(
+                        BracketOrderService._smart_chase_monitor_loop(
+                            exchange=exchange,
+                            symbol=symbol,
+                            opposite_side=opposite_side,
+                            amount=final_amount,
+                            entry_price=average_price,
+                            sl_price=final_sl_price,
+                            max_deviation_pct=max_dev,
+                            chase_delay_ms=chase_delay,
+                            max_attempts=max_attempts,
+                            is_futures=is_futures,
+                            user_id=user_id,
+                            api_key_record=api_key_record,
+                            tp_order_id=tp_order_id,
+                            disaster_sl_order_id=disaster_sl_order_id
+                        )
+                    )
                 else:
                     sl_price = average_price
                     if sl_mode == 'percentage':
@@ -483,8 +536,13 @@ class BracketOrderService:
                 try:
                     if is_futures:
                         positions = await exchange.fetch_positions([symbol])
-                        pos = positions[0] if positions else None
-                        if not pos or float(pos.get('info', {}).get('positionAmt', 0)) == 0:
+                        pos = None
+                        for p in positions:
+                            if p.get('symbol') == symbol:
+                                pos = p
+                                break
+                        raw_contracts = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
+                        if abs(raw_contracts) == 0:
                             is_open = False
                     else:
                         base_coin = symbol.split('/')[0]
@@ -636,6 +694,111 @@ class BracketOrderService:
                     logger.warning(f"Trailing SL notification failed: {notify_err}")
         except Exception as e:
             logger.error(f"❌ Failed to execute Trailing SL: {e}")
+        finally:
+            if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
+                del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
+
+    @staticmethod
+    async def _smart_chase_monitor_loop(
+        exchange, symbol: str, opposite_side: str, amount: float,
+        entry_price: float, sl_price: float, max_deviation_pct: float,
+        chase_delay_ms: int, max_attempts: int, is_futures: bool,
+        user_id: int, api_key_record,
+        tp_order_id: str = None, disaster_sl_order_id: str = None
+    ):
+        sl_id = str(uuid.uuid4())
+        BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
+            'id': sl_id,
+            'symbol': symbol,
+            'side': opposite_side,
+            'amount': amount,
+            'type': 'smart_chase',
+            'mode': 'SMART_CHASE',
+            'trigger_price': sl_price,
+            'entry_price': entry_price
+        }
+
+        logger.info(f"🏁 Smart Chase Monitor started for {symbol} | Trigger: {sl_price} | Entry: {entry_price}")
+        sl_triggered = False
+
+        while True:
+            await asyncio.sleep(1.5)
+            try:
+                # Security Check: Ensure position is still open (e.g. if TP closed it, abort)
+                is_open = True
+                try:
+                    if is_futures:
+                        positions = await exchange.fetch_positions([symbol])
+                        pos = None
+                        for p in positions:
+                            if p.get('symbol') == symbol:
+                                pos = p
+                                break
+                        raw_amt = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
+                        if abs(raw_amt) == 0:
+                            is_open = False
+                    else:
+                        base_coin = symbol.split('/')[0]
+                        bal = await exchange.fetch_balance()
+                        total = float(bal.get(base_coin, {}).get('total', 0.0))
+                        if opposite_side == 'sell' and total < amount * 0.99:
+                            is_open = False
+                except Exception as pos_e:
+                    logger.debug(f"Position check non-fatal error: {pos_e}")
+
+                if not is_open:
+                    logger.info(f"🚫 Position closed externally. Canceling Smart Chase monitor for {symbol}.")
+                    if disaster_sl_order_id:
+                        try:
+                            await exchange.cancel_order(disaster_sl_order_id, symbol)
+                        except Exception:
+                            pass
+                    break
+
+                ticker = await exchange.fetch_ticker(symbol)
+                current_price = ticker.get('last')
+                if not current_price:
+                    continue
+
+                if opposite_side == 'sell': # Long position, sell when price drops to or below sl_price
+                    if current_price <= sl_price:
+                        logger.info(f"💥 Smart Chase SL Triggered for Long! Price {current_price} <= {sl_price}")
+                        sl_triggered = True
+                        break
+                else: # Short position, buy when price rises to or above sl_price
+                    if current_price >= sl_price:
+                        logger.info(f"💥 Smart Chase SL Triggered for Short! Price {current_price} >= {sl_price}")
+                        sl_triggered = True
+                        break
+
+            except Exception as e:
+                logger.debug(f"Smart Chase monitor tick error: {e}")
+
+        if not sl_triggered:
+            if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
+                del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
+            return
+
+        try:
+            from app.services.manual_smart_chase_executor import execute_manual_smart_chase
+            await execute_manual_smart_chase(
+                exchange=exchange,
+                symbol=symbol,
+                exit_side=opposite_side,
+                sell_amount_raw=amount,
+                entry_price=entry_price,
+                original_sl=sl_price,
+                max_deviation_pct=max_deviation_pct,
+                chase_delay_ms=chase_delay_ms,
+                max_attempts=max_attempts,
+                is_futures=is_futures,
+                user_id=user_id,
+                api_key_record=api_key_record,
+                tp_order_id=tp_order_id,
+                disaster_sl_order_id=disaster_sl_order_id
+            )
+        except Exception as exec_err:
+            logger.error(f"❌ Error invoking execute_manual_smart_chase: {exec_err}")
         finally:
             if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
                 del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]

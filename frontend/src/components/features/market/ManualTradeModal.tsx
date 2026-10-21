@@ -96,13 +96,16 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   });
   const [slConfig, setSlConfig] = useState({
     enabled: true,
-    type: 'fixed' as 'fixed' | 'trailing',
+    type: 'fixed' as 'fixed' | 'trailing' | 'smart_chase',
     mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
     value: '0.0001',
     atrPeriod: 10,
     atrMultiplier: 2.0,
     atrTimeframe: '15m',
-    timeoutMins: 60
+    timeoutMins: 60,
+    smartChaseDeviationPct: 1.0,
+    smartChaseDelayMs: 1500,
+    smartChaseMaxAttempts: 15
   });
   const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(true);
 
@@ -335,6 +338,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         toast.error('Please enter a valid ATR Period and Multiplier.');
         return;
       }
+      if (slConfig.type === 'smart_chase' && (!slConfig.smartChaseDeviationPct || slConfig.smartChaseDeviationPct <= 0)) {
+        toast.error('Please enter a valid Max Deviation (%) for Smart Chase.');
+        return;
+      }
     }
 
     // Convert quote amount → base amount if needed
@@ -372,7 +379,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         api_key_id: selectedApi ? Number(selectedApi) : undefined,
         params: Object.keys(paramsPayload).length > 0 ? paramsPayload : undefined,
         client_timestamp: Date.now(),
-        use_native_tp_sl: (!isFutures && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.mode === 'atr'))) ? Boolean(useNativeTpSl) : false
+        use_native_tp_sl: (!isFutures && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))) ? Boolean(useNativeTpSl) : false
       };
 
       if (tpConfig.enabled && tpConfig.value && Number(tpConfig.value) > 0) {
@@ -395,7 +402,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             atr_period: slConfig.atrPeriod,
             atr_multiplier: slConfig.atrMultiplier,
             atr_timeframe: slConfig.atrTimeframe,
-            timeout_mins: slConfig.timeoutMins
+            timeout_mins: slConfig.timeoutMins,
+            smart_chase_deviation_pct: slConfig.smartChaseDeviationPct,
+            smart_chase_delay_ms: slConfig.smartChaseDelayMs,
+            smart_chase_max_attempts: slConfig.smartChaseMaxAttempts
           };
         }
       }
@@ -800,19 +810,19 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
               {/* Native Binance TP/SL Toggle */}
               {(tpConfig.enabled || slConfig.enabled) && !isFutures && (
-                <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.mode === 'atr')) ? 'opacity-30 pointer-events-none' : ''}`}>
+                <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr')) ? 'opacity-30 pointer-events-none' : ''}`}>
                   <div className="flex flex-col">
                       <span className="text-xs font-bold text-brand-primary">Use Native Binance OTO/OTOCO</span>
-                      <span className="text-[9px] text-brand-primary/80">{(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.mode === 'atr')) ? '⚠️ Auto-disabled: Trailing/ATR SL is active' : 'Exchange atomic bracket (100% crash proof)'}</span>
+                      <span className="text-[9px] text-brand-primary/80">{(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr')) ? '⚠️ Auto-disabled: Trailing/Smart Chase/ATR SL is active' : 'Exchange atomic bracket (100% crash proof)'}</span>
                   </div>
-                  <div className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${useNativeTpSl && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.mode === 'atr')) ? 'bg-brand-primary' : 'bg-gray-600'}`} onClick={() => {
-                      if (!(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.mode === 'atr'))) {
+                  <div className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${useNativeTpSl && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr')) ? 'bg-brand-primary' : 'bg-gray-600'}`} onClick={() => {
+                      if (!(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))) {
                           setUseNativeTpSl(!useNativeTpSl);
                       }
                   }}>
                       <MotionDiv 
                           className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                          animate={{ x: (useNativeTpSl && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.mode === 'atr'))) ? 16 : 0 }}
+                          animate={{ x: (useNativeTpSl && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))) ? 16 : 0 }}
                           transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                       />
                   </div>
@@ -952,16 +962,23 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                     <label className="text-[10px] text-gray-400 font-medium">SL Type</label>
                                     <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
                                         <button
-                                            onClick={() => setSlConfig({...slConfig, type: 'fixed'})}
-                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            onClick={() => setSlConfig({...slConfig, type: 'fixed', mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode})}
+                                            className={`flex-1 text-[9px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             Fixed
                                         </button>
                                         <button
                                             onClick={() => setSlConfig({...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode})}
-                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            className={`flex-1 text-[9px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             Trailing
+                                        </button>
+                                        <button
+                                            onClick={() => setSlConfig({...slConfig, type: 'smart_chase', mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode})}
+                                            className={`flex-1 text-[9px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-bold shadow-sm' : 'text-gray-500 hover:text-white'}`}
+                                            title="Smart Chase Limit (Maker Post-Only Exit with Circuit Breaker)"
+                                        >
+                                            Smart Chase
                                         </button>
                                     </div>
                                 </div>
@@ -983,17 +1000,19 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                             $
                                         </button>
                                         <button
-                                            onClick={() => setSlConfig({...slConfig, mode: 'absolute', type: 'fixed'})}
+                                            onClick={() => setSlConfig({...slConfig, mode: 'absolute', type: slConfig.type === 'trailing' ? 'fixed' : slConfig.type})}
                                             className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             🎯
                                         </button>
-                                        <button
-                                            onClick={() => setSlConfig({...slConfig, mode: 'atr', type: 'trailing'})}
-                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'atr' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                        >
-                                            ATR
-                                        </button>
+                                        {slConfig.type !== 'smart_chase' && (
+                                            <button
+                                                onClick={() => setSlConfig({...slConfig, mode: 'atr', type: 'trailing'})}
+                                                className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'atr' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            >
+                                                ATR
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1040,7 +1059,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                 ) : (
                                     <div className="space-y-1">
                                         <label className="text-[10px] text-gray-400 font-medium">
-                                            {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap')}
+                                            {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'smart_chase' ? 'Chase Trigger Gap' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap'))}
                                         </label>
                                         <div className="relative">
                                             <input 
@@ -1068,6 +1087,67 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Smart Chase Detailed Controls */}
+                            {slConfig.type === 'smart_chase' && (
+                                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 space-y-2 mt-1 animate-fadeIn">
+                                    <div className="flex items-center justify-between text-[10px]">
+                                        <span className="font-bold text-red-400 flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                            Smart Chase Settings (Maker Post-Only)
+                                        </span>
+                                        <span className="text-[9px] text-amber-400 font-mono font-bold">Circuit: {slConfig.smartChaseDeviationPct}%</span>
+                                    </div>
+
+                                    {/* Max Chase Deviation Slider */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between items-center text-[9px] text-gray-400">
+                                            <span>Max Deviation (Circuit Breaker)</span>
+                                            <span className="text-amber-400 font-bold font-mono">{slConfig.smartChaseDeviationPct}%</span>
+                                        </div>
+                                        <input 
+                                            type="range"
+                                            min="0.1" max="5.0" step="0.1"
+                                            value={slConfig.smartChaseDeviationPct}
+                                            onChange={(e) => setSlConfig({...slConfig, smartChaseDeviationPct: parseFloat(e.target.value)})}
+                                            className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                        />
+                                        <p className="text-[8px] text-gray-500">Breach triggers emergency Market Sweep.</p>
+                                    </div>
+
+                                    {/* Retries and Delay Grid */}
+                                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
+                                        <div className="space-y-1">
+                                            <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                                <span>Retries</span>
+                                                <span className="text-[8px] text-gray-500">0 = ∞</span>
+                                            </label>
+                                            <input 
+                                                type="number"
+                                                min="0" max="999" step="1"
+                                                value={slConfig.smartChaseMaxAttempts}
+                                                onChange={(e) => setSlConfig({...slConfig, smartChaseMaxAttempts: parseInt(e.target.value) || 0})}
+                                                placeholder="15"
+                                                className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-red-500/50"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                                <span>Delay (ms)</span>
+                                                <span className="text-[8px] text-gray-500">Throttle</span>
+                                            </label>
+                                            <input 
+                                                type="number"
+                                                min="200" max="2000" step="100"
+                                                value={slConfig.smartChaseDelayMs}
+                                                onChange={(e) => setSlConfig({...slConfig, smartChaseDelayMs: parseInt(e.target.value) || 1500})}
+                                                placeholder="1500"
+                                                className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-red-500/50"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </MotionDiv>
                      )}
                   </AnimatePresence>

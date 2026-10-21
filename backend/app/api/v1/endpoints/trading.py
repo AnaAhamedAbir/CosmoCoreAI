@@ -22,12 +22,16 @@ class AttachedTPConfig(BaseModel):
 
 class AttachedSLConfig(BaseModel):
     enabled: bool
-    type: Optional[str] = 'fixed' # 'fixed' or 'trailing'
-    mode: str  # 'percentage' or 'price' or 'atr'
+    type: Optional[str] = 'fixed' # 'fixed', 'trailing', or 'smart_chase'
+    mode: str  # 'percentage' or 'price' or 'absolute' or 'atr'
     value: float
     atr_period: Optional[int] = 10
     atr_multiplier: Optional[float] = 2.0
     atr_timeframe: Optional[str] = '15m'
+    smart_chase_deviation_pct: Optional[float] = 1.0
+    smart_chase_delay_ms: Optional[int] = 1500
+    smart_chase_max_attempts: Optional[int] = 15
+    timeout_mins: Optional[float] = 60
 
 class OrderRequest(BaseModel):
     symbol: str

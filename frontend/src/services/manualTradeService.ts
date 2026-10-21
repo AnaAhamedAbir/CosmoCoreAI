@@ -23,10 +23,16 @@ export interface OrderPayload {
   };
   attached_sl?: {
     enabled: boolean;
-    type: 'fixed' | 'trailing';
-    mode: 'percentage' | 'price';
+    type: 'fixed' | 'trailing' | 'smart_chase';
+    mode: 'percentage' | 'price' | 'absolute' | 'atr';
     value: number;
     timeout_mins: number;
+    atr_period?: number;
+    atr_multiplier?: number;
+    atr_timeframe?: string;
+    smart_chase_deviation_pct?: number;
+    smart_chase_delay_ms?: number;
+    smart_chase_max_attempts?: number;
   };
 }
 

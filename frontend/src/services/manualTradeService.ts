@@ -42,8 +42,12 @@ export interface ApiKey {
 export interface FastBalanceResponse {
   base: string;
   base_free: number;
+  base_used?: number;
+  base_total?: number;
   quote: string;
   quote_free: number;
+  quote_used?: number;
+  quote_total?: number;
   is_futures: boolean;
 }
 

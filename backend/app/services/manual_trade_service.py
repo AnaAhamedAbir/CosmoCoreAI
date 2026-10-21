@@ -87,14 +87,26 @@ class ManualTradeService:
                 base_part = symbol
                 quote_part = "USDT"
 
-            base_free = balance.get(base_part, {}).get('free') or 0.0
-            quote_free = balance.get(quote_part, {}).get('free') or 0.0
+            base_info = balance.get(base_part, {}) if isinstance(balance.get(base_part), dict) else {}
+            quote_info = balance.get(quote_part, {}) if isinstance(balance.get(quote_part), dict) else {}
+
+            base_free = base_info.get('free') or (balance.get('free', {}).get(base_part) if isinstance(balance.get('free'), dict) else 0.0) or 0.0
+            base_used = base_info.get('used') or (balance.get('used', {}).get(base_part) if isinstance(balance.get('used'), dict) else 0.0) or 0.0
+            base_total = base_info.get('total') or (balance.get('total', {}).get(base_part) if isinstance(balance.get('total'), dict) else 0.0) or (float(base_free) + float(base_used))
+
+            quote_free = quote_info.get('free') or (balance.get('free', {}).get(quote_part) if isinstance(balance.get('free'), dict) else 0.0) or 0.0
+            quote_used = quote_info.get('used') or (balance.get('used', {}).get(quote_part) if isinstance(balance.get('used'), dict) else 0.0) or 0.0
+            quote_total = quote_info.get('total') or (balance.get('total', {}).get(quote_part) if isinstance(balance.get('total'), dict) else 0.0) or (float(quote_free) + float(quote_used))
 
             return {
                 "base": base_part,
                 "base_free": float(base_free),
+                "base_used": float(base_used),
+                "base_total": float(base_total),
                 "quote": quote_part,
                 "quote_free": float(quote_free),
+                "quote_used": float(quote_used),
+                "quote_total": float(quote_total),
                 "is_futures": is_futures
             }
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
 
@@ -71,14 +71,16 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     return val.toFixed(6);
   };
 
-  const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Market');
+  const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Limit');
   const [size, setSize] = useState<string>('');
+  const [selectedPercent, setSelectedPercent] = useState<string | null>('100%');
   const [leverage, setLeverage] = useState<number>(10);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedApi, setSelectedApi] = useState<string>('');
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [balanceData, setBalanceData] = useState<FastBalanceResponse | null>(null);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [tradeSide, setTradeSide] = useState<'Buy' | 'Sell'>('Buy');
   const [marginMode, setMarginMode] = useState<'cross' | 'isolated'>('isolated');
   const [reduceOnly, setReduceOnly] = useState<boolean>(false);
@@ -86,23 +88,23 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [positionData, setPositionData] = useState<FastPositionResponse | null>(null);
   const [isLoadingPosition, setIsLoadingPosition] = useState(false);
   const [tpConfig, setTpConfig] = useState({
-    enabled: false,
-    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
-    value: '',
+    enabled: true,
+    mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
+    value: '0.0003',
     orderType: 'Limit' as 'Limit' | 'Market',
-    timeoutMins: 5
+    timeoutMins: 60
   });
   const [slConfig, setSlConfig] = useState({
-    enabled: false,
+    enabled: true,
     type: 'fixed' as 'fixed' | 'trailing',
-    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
-    value: '',
+    mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
+    value: '0.0001',
     atrPeriod: 10,
     atrMultiplier: 2.0,
     atrTimeframe: '15m',
-    timeoutMins: 5
+    timeoutMins: 60
   });
-  const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(false);
+  const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(true);
 
   // Fetch API Keys
   React.useEffect(() => {
@@ -126,39 +128,74 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   React.useEffect(() => {
     setSize('');
     setSizeMode('base');
+    setBalanceData(null);
   }, [activeSymbol]);
 
-  // Fetch balance when selected API or symbol changes
-  React.useEffect(() => {
-    const fetchBalance = async () => {
-      if (!selectedApi || !isOpen) return;
+  const isFetchingBalanceRef = React.useRef(false);
+
+  // Fetch balance and position (supports silent background polling and explicit refresh)
+  const fetchBalance = React.useCallback(async (isSilent = false) => {
+    if (!selectedApi || !isOpen) return;
+    if (isFetchingBalanceRef.current) return; // Prevent concurrent/overlapping requests
+    isFetchingBalanceRef.current = true;
+
+    if (!isSilent) {
       setIsLoadingBalance(true);
       setIsLoadingPosition(true);
-      try {
-        const data = await manualTradeService.getFastBalance(Number(selectedApi), activeSymbol);
-        setBalanceData(data);
-      } catch (e) {
-        setBalanceData(null);
-      } finally {
-        setIsLoadingBalance(false);
-      }
+    }
+    setIsRefreshing(true);
+    try {
+      const balancePromise = manualTradeService.getFastBalance(Number(selectedApi), activeSymbol);
+      const positionPromise = activeSymbol.includes(':')
+        ? manualTradeService.getActivePosition(Number(selectedApi), activeSymbol).catch(() => null)
+        : Promise.resolve(null);
 
-      // Automatically try to fetch active position if it's a futures pair
+      const [data, pos] = await Promise.all([balancePromise, positionPromise]);
+      setBalanceData(data);
       if (activeSymbol.includes(':')) {
-         try {
-            const pos = await manualTradeService.getActivePosition(Number(selectedApi), activeSymbol);
-            setPositionData(pos);
-         } catch(e) {
-            setPositionData(null);
-         } finally {
-            setIsLoadingPosition(false);
-         }
-      } else {
-         setIsLoadingPosition(false);
+        setPositionData(pos);
+      }
+    } catch (e) {
+      if (!isSilent) {
+        setBalanceData(null);
+        setPositionData(null);
+      }
+    } finally {
+      isFetchingBalanceRef.current = false;
+      setIsLoadingBalance(false);
+      setIsLoadingPosition(false);
+      setIsRefreshing(false);
+    }
+  }, [selectedApi, activeSymbol, isOpen]);
+
+  // Live background auto-refresh every 5.5 seconds while modal is open (safe from Binance rate limits)
+  React.useEffect(() => {
+    if (!isOpen || !selectedApi) return;
+
+    // Immediate initial fetch
+    fetchBalance(false);
+
+    // Periodic live sync (every 5.5s — consumes ~10 req/min, <15% of Binance 1200 weight/min limit)
+    const intervalId = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchBalance(true);
+      }
+    }, 5500);
+
+    // Immediate refresh on tab focus / visibility restore
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchBalance(true);
       }
     };
-    fetchBalance();
-  }, [selectedApi, activeSymbol, isOpen]);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isOpen, selectedApi, activeSymbol, fetchBalance]);
 
   // Size mode: 'base' = in token (DOGE), 'quote' = in USD (USDC/USDT)
   const [sizeMode, setSizeMode] = useState<'base' | 'quote'>('base');
@@ -172,6 +209,81 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
   // For Limit orders
   const [limitPrice, setLimitPrice] = useState<string>(effectiveCurrentPrice ? effectiveCurrentPrice.toString() : '');
+
+  const calculateSize = React.useCallback((
+    pctStr: string,
+    balance: FastBalanceResponse | null,
+    price: number,
+    mode: 'base' | 'quote',
+    side: 'Buy' | 'Sell',
+    futures: boolean,
+    lev: number,
+    redOnly: boolean,
+    pos: FastPositionResponse | null
+  ) => {
+    if (!balance || price <= 0) return '';
+    const percentage = Number(pctStr.replace('%', '')) / 100;
+    if (isNaN(percentage) || percentage <= 0) return '';
+
+    let maxValue = 0;
+    if (mode === 'quote') {
+      if (futures) {
+        maxValue = (balance.quote_free || 0) * lev;
+      } else if (side === 'Buy') {
+        maxValue = balance.quote_free || 0;
+      } else {
+        maxValue = (balance.base_free || 0) * price;
+      }
+    } else {
+      if (futures) {
+        if (redOnly && pos && pos.amount > 0) {
+          maxValue = pos.amount;
+        } else {
+          maxValue = ((balance.quote_free || 0) * lev) / price;
+        }
+      } else if (side === 'Buy') {
+        maxValue = (balance.quote_free || 0) / price;
+      } else {
+        maxValue = balance.base_free || 0;
+      }
+    }
+
+    const val = maxValue * percentage;
+    const decimals = mode === 'quote' ? 2 : 6;
+    const rounded = Math.floor(val * Math.pow(10, decimals)) / Math.pow(10, decimals);
+    return rounded > 0 ? rounded.toString() : '';
+  }, []);
+
+  // Automatically recalculate size when selectedPercent is active and balance/price/settings change
+  React.useEffect(() => {
+    if (selectedPercent && balanceData && effectiveCurrentPrice > 0) {
+      const calculated = calculateSize(
+        selectedPercent,
+        balanceData,
+        effectiveCurrentPrice,
+        sizeMode,
+        tradeSide,
+        isFutures,
+        leverage,
+        reduceOnly,
+        positionData
+      );
+      if (calculated) {
+        setSize(calculated);
+      }
+    }
+  }, [
+    selectedPercent,
+    balanceData,
+    effectiveCurrentPrice,
+    sizeMode,
+    tradeSide,
+    isFutures,
+    leverage,
+    reduceOnly,
+    positionData,
+    calculateSize
+  ]);
 
   const lastTriggerRef = React.useRef<number>(openTrigger || 0);
 
@@ -290,6 +402,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
       await manualTradeService.placeOrder(payload);
       toast.success(`✅ ${side} ${orderType} order placed for ${activeSymbol}`);
+
+      // Auto-refresh balance immediately after order placement, followed by staggered syncs
+      fetchBalance(true);
+      setTimeout(() => fetchBalance(true), 1200);
+      setTimeout(() => fetchBalance(true), 2500);
     } catch (error: any) {
       // BUG-02 fix: Read FastAPI detail message if available
       const errMsg = error?.response?.data?.detail || error?.message || 'Unknown error occurred';
@@ -351,17 +468,31 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                     )}
                   </div>
                 </div>
-                <button 
-                  onClick={(e) => { 
-                    e.stopPropagation(); 
-                    setIsOpen(false); 
-                    onClose?.();
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fetchBalance(false);
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className={`p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-cyan-400 transition-colors cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''}`}
+                    title="Refresh Balance & Position"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  </button>
+                  <button 
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      setIsOpen(false); 
+                      onClose?.();
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Multi-Chart Pair Selector Dropdown */}
@@ -524,7 +655,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                     {/* Base / Quote toggle */}
                     <div className="flex items-center gap-1 bg-black/40 rounded-full p-0.5 border border-white/10">
                       <button
-                        onClick={() => { setSizeMode('base'); setSize(''); }}
+                        onClick={() => {
+                          setSizeMode('base');
+                          if (!selectedPercent) setSize('');
+                        }}
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${
                           sizeMode === 'base'
                             ? 'bg-brand-primary text-white shadow'
@@ -534,7 +668,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                         {baseCurrency}
                       </button>
                       <button
-                        onClick={() => { setSizeMode('quote'); setSize(''); }}
+                        onClick={() => {
+                          setSizeMode('quote');
+                          if (!selectedPercent) setSize('');
+                        }}
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${
                           sizeMode === 'quote'
                             ? 'bg-yellow-500 text-black shadow'
@@ -545,24 +682,47 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                       </button>
                     </div>
                   </div>
-                  <span className="text-[10px] text-gray-500 text-right">
-                    Balance: <span className="text-gray-300">
-                      {isLoadingBalance ? "..." : balanceData ? (
-                        sizeMode === 'quote'
-                          ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                          : isFutures
+                  <div className="text-[10px] text-gray-500 text-right flex flex-col items-end">
+                    <div className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="Live Auto-Sync Active (5.5s)" />
+                      <span>Balance:</span>
+                      <span className="text-gray-200 font-semibold font-mono">
+                        {isLoadingBalance ? "..." : balanceData ? (
+                          sizeMode === 'quote'
                             ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                            : tradeSide === 'Buy'
+                            : isFutures
                               ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                              : `${(balanceData.base_free || 0).toFixed(4)} ${baseCurrency}`
-                      ) : "N/A"}
-                    </span>
+                              : tradeSide === 'Buy'
+                                ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
+                                : `${(balanceData.base_free || 0).toFixed(4)} ${baseCurrency}`
+                        ) : "N/A"}
+                      </span>
+                    </div>
+
+                    {/* Show Locked / In-Orders Balance if any */}
+                    {balanceData && (
+                      (() => {
+                        const isQuoteTarget = sizeMode === 'quote' || (isFutures ? true : tradeSide === 'Buy');
+                        const lockedAmount = isQuoteTarget ? (balanceData.quote_used || 0) : (balanceData.base_used || 0);
+                        const curr = isQuoteTarget ? quoteCurrency : baseCurrency;
+                        if (lockedAmount > 0) {
+                          return (
+                            <div className="text-[9px] text-amber-400 font-mono flex items-center gap-1">
+                              <span>Locked:</span>
+                              <span>{isQuoteTarget ? lockedAmount.toFixed(2) : lockedAmount.toFixed(4)} {curr}</span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()
+                    )}
+
                     {isFutures && reduceOnly && (
-                      <div className="text-[10px] text-brand-primary">
+                      <div className="text-[10px] text-brand-primary font-mono">
                         Pos: {isLoadingPosition ? "..." : (positionData && positionData.amount > 0 ? `${positionData.amount} (${positionData.side.toUpperCase()})` : "0")}
                       </div>
                     )}
-                  </span>
+                  </div>
                 </div>
 
                 {/* Input field */}
@@ -570,7 +730,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                   <input
                     type="number"
                     value={size}
-                    onChange={(e) => setSize(e.target.value)}
+                    onChange={(e) => {
+                      setSize(e.target.value);
+                      setSelectedPercent(null);
+                    }}
                     placeholder="0.00"
                     className="w-full bg-black/30 border border-white/10 rounded-lg py-2 px-3 pl-8 text-white text-sm focus:outline-none focus:border-brand-primary/50 transition-colors"
                   />
@@ -598,47 +761,40 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
                 {/* % quick-fill buttons */}
                 <div className="flex justify-between mt-2 gap-2">
-                  {['25%', '50%', '75%', '100%'].map(pct => (
-                    <button
-                      key={pct}
-                      className="flex-1 py-1 text-[10px] font-bold rounded border border-white/10 text-gray-400 hover:bg-white/10 hover:text-white transition-colors"
-                      onClick={() => {
-                        if (!balanceData || effectiveCurrentPrice <= 0) return;
-                        const percentage = Number(pct.replace('%', '')) / 100;
-
-                        let maxValue = 0;
-                        if (sizeMode === 'quote') {
-                          // Quote mode → set the $ amount
-                          if (isFutures) {
-                            maxValue = (balanceData.quote_free || 0) * leverage;
-                          } else if (tradeSide === 'Buy') {
-                            maxValue = balanceData.quote_free || 0;
-                          } else {
-                            maxValue = (balanceData.base_free || 0) * effectiveCurrentPrice;
-                          }
-                        } else {
-                          // Base mode → set the token amount
-                          if (isFutures) {
-                            if (reduceOnly && positionData && positionData.amount > 0) {
-                              maxValue = positionData.amount;
-                            } else {
-                              maxValue = ((balanceData.quote_free || 0) * leverage) / effectiveCurrentPrice;
+                  {['25%', '50%', '75%', '100%'].map(pct => {
+                    const isSelected = selectedPercent === pct;
+                    return (
+                      <button
+                        key={pct}
+                        className={`flex-1 py-1 text-[10px] font-bold rounded border transition-colors ${
+                          isSelected
+                            ? 'bg-brand-primary text-white border-brand-primary shadow-[0_0_8px_rgba(59,130,246,0.4)]'
+                            : 'border-white/10 text-gray-400 hover:bg-white/10 hover:text-white'
+                        }`}
+                        onClick={() => {
+                          setSelectedPercent(pct);
+                          if (balanceData && effectiveCurrentPrice > 0) {
+                            const newSize = calculateSize(
+                              pct,
+                              balanceData,
+                              effectiveCurrentPrice,
+                              sizeMode,
+                              tradeSide,
+                              isFutures,
+                              leverage,
+                              reduceOnly,
+                              positionData
+                            );
+                            if (newSize) {
+                              setSize(newSize);
                             }
-                          } else if (tradeSide === 'Buy') {
-                            maxValue = (balanceData.quote_free || 0) / effectiveCurrentPrice;
-                          } else {
-                            maxValue = balanceData.base_free || 0;
                           }
-                        }
-
-                        const val = maxValue * percentage;
-                        const decimals = sizeMode === 'quote' ? 2 : 6;
-                        setSize((Math.floor(val * Math.pow(10, decimals)) / Math.pow(10, decimals)).toString());
-                      }}
-                    >
-                      {pct}
-                    </button>
-                  ))}
+                        }}
+                      >
+                        {pct}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

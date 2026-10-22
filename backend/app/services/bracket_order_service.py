@@ -751,9 +751,9 @@ class BracketOrderService:
 
         logger.info(f"🏁 Smart Chase Monitor started for {symbol} | Trigger: {sl_price} | Entry: {entry_price}")
         sl_triggered = False
+        loop_tick = 0
 
         while True:
-            await asyncio.sleep(1.5)
             # Check if monitor was cancelled by user
             sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
             if not sl_meta or sl_meta.get('cancelled'):
@@ -768,62 +768,67 @@ class BracketOrderService:
                 return
 
             try:
-                # Security Check: Ensure position is still open (e.g. if TP closed it, abort)
-                is_open = True
-                try:
-                    # Check if TP already filled on exchange
-                    if tp_order_id:
-                        try:
-                            tp_chk = await exchange.fetch_order(tp_order_id, symbol)
-                            if tp_chk.get('status', '').lower() in ['closed', 'filled']:
-                                logger.info(f"🎯 TP order {tp_order_id} filled! Closing Smart Chase monitor for {symbol}.")
-                                is_open = False
-                        except Exception:
-                            pass
-
-                    if is_open and is_futures:
-                        try:
-                            positions = await exchange.fetch_positions([symbol])
-                            pos = None
-                            for p in positions:
-                                if p.get('symbol') == symbol:
-                                    pos = p
-                                    break
-                            raw_amt = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
-                            if abs(raw_amt) == 0:
-                                is_open = False
-                        except Exception as pos_e:
-                            logger.debug(f"Position check non-fatal error: {pos_e}")
-                except Exception as pos_e:
-                    logger.debug(f"Position check non-fatal error: {pos_e}")
-
-                if not is_open:
-                    logger.info(f"🚫 Position closed externally. Canceling Smart Chase monitor for {symbol}.")
-                    if disaster_sl_order_id:
-                        try:
-                            await exchange.cancel_order(disaster_sl_order_id, symbol)
-                        except Exception:
-                            pass
-                    break
-
+                # ── PRIORITY 1: FETCH TICKER FIRST FOR ULTRA-FAST SL DETECTION ──
                 ticker = await exchange.fetch_ticker(symbol)
                 current_price = ticker.get('last')
-                if not current_price:
-                    continue
+                if current_price:
+                    if opposite_side == 'sell': # Long position, sell when price drops to or below sl_price
+                        if current_price <= sl_price:
+                            logger.info(f"💥 Smart Chase SL Triggered for Long! Price {current_price} <= {sl_price}")
+                            sl_triggered = True
+                            break
+                    else: # Short position, buy when price rises to or above sl_price
+                        if current_price >= sl_price:
+                            logger.info(f"💥 Smart Chase SL Triggered for Short! Price {current_price} >= {sl_price}")
+                            sl_triggered = True
+                            break
 
-                if opposite_side == 'sell': # Long position, sell when price drops to or below sl_price
-                    if current_price <= sl_price:
-                        logger.info(f"💥 Smart Chase SL Triggered for Long! Price {current_price} <= {sl_price}")
-                        sl_triggered = True
-                        break
-                else: # Short position, buy when price rises to or above sl_price
-                    if current_price >= sl_price:
-                        logger.info(f"💥 Smart Chase SL Triggered for Short! Price {current_price} >= {sl_price}")
-                        sl_triggered = True
+                # ── PRIORITY 2: PERIODIC POSITION / TP INTEGRITY CHECK (every 6 ticks ≈ 3s) ──
+                # Throttling this background check avoids wasting 300ms on every tick while still safely detecting if TP filled
+                loop_tick += 1
+                if loop_tick % 6 == 0:
+                    is_open = True
+                    try:
+                        # Check if TP already filled on exchange
+                        if tp_order_id:
+                            try:
+                                tp_chk = await exchange.fetch_order(tp_order_id, symbol)
+                                if tp_chk.get('status', '').lower() in ['closed', 'filled']:
+                                    logger.info(f"🎯 TP order {tp_order_id} filled! Closing Smart Chase monitor for {symbol}.")
+                                    is_open = False
+                            except Exception:
+                                pass
+
+                        if is_open and is_futures:
+                            try:
+                                positions = await exchange.fetch_positions([symbol])
+                                pos = None
+                                for p in positions:
+                                    if p.get('symbol') == symbol:
+                                        pos = p
+                                        break
+                                raw_amt = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
+                                if abs(raw_amt) == 0:
+                                    is_open = False
+                            except Exception as pos_e:
+                                logger.debug(f"Position check non-fatal error: {pos_e}")
+                    except Exception as pos_e:
+                        logger.debug(f"Position check non-fatal error: {pos_e}")
+
+                    if not is_open:
+                        logger.info(f"🚫 Position closed externally. Canceling Smart Chase monitor for {symbol}.")
+                        if disaster_sl_order_id:
+                            try:
+                                await exchange.cancel_order(disaster_sl_order_id, symbol)
+                            except Exception:
+                                pass
                         break
 
             except Exception as e:
                 logger.debug(f"Smart Chase monitor tick error: {e}")
+
+            # Ultra-responsive 500ms sleep (safe from Binance 1200 weight/min limit)
+            await asyncio.sleep(0.5)
 
         # ── IMMEDIATELY REMOVE FROM ACTIVE_SOFTWARE_SL ──
         # Whether triggered or position closed, the trigger monitor is DONE.

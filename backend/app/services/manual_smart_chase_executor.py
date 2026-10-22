@@ -167,23 +167,27 @@ async def execute_manual_smart_chase(
                 except Exception:
                     pass
 
-    # Cancel TP and Disaster SL helper
+    # Cancel TP and Disaster SL helper (concurrent execution)
     async def _cleanup_other_orders():
         nonlocal tp_order_id, disaster_sl_order_id
+        cancel_tasks = []
+        labels = []
         if tp_order_id:
-            try:
-                await exchange.cancel_order(tp_order_id, symbol)
-                logger.info(f"🛡️ [Manual Smart Chase] Cancelled TP order {tp_order_id} to release locked balance")
-            except Exception as e:
-                logger.debug(f"Failed to cancel TP order {tp_order_id}: {e}")
-            tp_order_id = None
+            cancel_tasks.append(exchange.cancel_order(tp_order_id, symbol))
+            labels.append(('TP', tp_order_id))
         if disaster_sl_order_id:
-            try:
-                await exchange.cancel_order(disaster_sl_order_id, symbol)
-                logger.info(f"🛡️ [Manual Smart Chase] Cancelled Disaster SL order {disaster_sl_order_id}")
-            except Exception as e:
-                logger.debug(f"Failed to cancel Disaster SL order {disaster_sl_order_id}: {e}")
-            disaster_sl_order_id = None
+            cancel_tasks.append(exchange.cancel_order(disaster_sl_order_id, symbol))
+            labels.append(('Disaster SL', disaster_sl_order_id))
+
+        if cancel_tasks:
+            results = await asyncio.gather(*cancel_tasks, return_exceptions=True)
+            for (lbl, oid), res in zip(labels, results):
+                if isinstance(res, Exception):
+                    logger.debug(f"Failed to cancel {lbl} order {oid}: {res}")
+                else:
+                    logger.info(f"🛡️ [Manual Smart Chase] Cancelled {lbl} order {oid} to release locked balance")
+        tp_order_id = None
+        disaster_sl_order_id = None
 
     # Send Notification helper
     async def _send_notify(msg: str):
@@ -197,9 +201,8 @@ async def execute_manual_smart_chase(
             except Exception as notify_err:
                 logger.warning(f"Telegram notification failed (non-fatal): {notify_err}")
 
-    # ── STEP 1: IMMEDIATELY CANCEL TP & DISASTER SL TO RELEASE LOCKED FUNDS ──
+    # ── STEP 1: IMMEDIATELY CANCEL TP & DISASTER SL CONCURRENTLY ──
     await _cleanup_other_orders()
-    await asyncio.sleep(0.3)  # Brief wait for Binance ledger to unlock funds
 
     # Format initial amount
     remaining_amount = sell_amount_raw
@@ -210,7 +213,7 @@ async def execute_manual_smart_chase(
             pass
 
     # Balance sync helper to avoid "insufficient balance" rejections
-    async def _sync_and_clamp_amount(price: float) -> float:
+    async def _sync_and_clamp_amount(price: float, cached_bal: Optional[dict] = None) -> float:
         nonlocal remaining_amount
         if is_futures:
             return remaining_amount
@@ -221,7 +224,7 @@ async def execute_manual_smart_chase(
                 base_asset = parts[0]
                 quote_asset = parts[1].split(':')[0]
 
-                bal = await exchange.fetch_balance()
+                bal = cached_bal if cached_bal is not None else await exchange.fetch_balance()
                 if exit_side == "sell":
                     # Exiting Long: We are selling base_asset (e.g. DOGE)
                     free_base = float(bal.get(base_asset, {}).get('free', 0.0))
@@ -258,8 +261,29 @@ async def execute_manual_smart_chase(
 
         return remaining_amount
 
-    # Initial clamp
-    remaining_amount = await _sync_and_clamp_amount(original_sl)
+    # ── STEP 2: CONCURRENT BALANCE SYNC & L2 ORDERBOOK FETCH ──
+    # Concurrently fetching balance and initial L2 book saves ~250-350ms of network latency!
+    cached_initial_ob = None
+    initial_bal = None
+    if not is_futures:
+        await asyncio.sleep(0.1)  # Minimal 100ms buffer for Binance ledger release
+        bal_res, ob_res = await asyncio.gather(
+            exchange.fetch_balance(),
+            exchange.fetch_order_book(symbol, limit=5),
+            return_exceptions=True
+        )
+        if not isinstance(ob_res, Exception) and isinstance(ob_res, dict):
+            cached_initial_ob = ob_res
+        if not isinstance(bal_res, Exception) and isinstance(bal_res, dict):
+            initial_bal = bal_res
+    else:
+        try:
+            cached_initial_ob = await exchange.fetch_order_book(symbol, limit=5)
+        except Exception:
+            cached_initial_ob = None
+
+    # Initial clamp (instant, using pre-fetched balance)
+    remaining_amount = await _sync_and_clamp_amount(original_sl, cached_bal=initial_bal)
     initial_notional = remaining_amount * original_sl
     if remaining_amount <= 0 or initial_notional < min_notional:
         logger.info(
@@ -310,15 +334,23 @@ async def execute_manual_smart_chase(
 
         attempts += 1
 
-        # 1. Fetch live orderbook
+        # 1. Fetch live orderbook (reuse pre-fetched cached_initial_ob on Attempt 1 for zero-wait execution!)
         current_price = original_sl
-        try:
-            ob = await exchange.fetch_order_book(symbol, limit=5)
-            best_bid = float(ob['bids'][0][0]) if ob.get('bids') and len(ob['bids']) > 0 else current_price
-            best_ask = float(ob['asks'][0][0]) if ob.get('asks') and len(ob['asks']) > 0 else current_price
+        ob = None
+        if attempts == 1 and cached_initial_ob is not None:
+            ob = cached_initial_ob
+            cached_initial_ob = None
+        else:
+            try:
+                ob = await exchange.fetch_order_book(symbol, limit=5)
+            except Exception as ob_e:
+                logger.warning(f"⚠️ [Manual Smart Chase] Could not fetch orderbook, falling back to ticker: {ob_e}")
+
+        if ob and ob.get('bids') and ob.get('asks') and len(ob['bids']) > 0 and len(ob['asks']) > 0:
+            best_bid = float(ob['bids'][0][0])
+            best_ask = float(ob['asks'][0][0])
             current_price = best_bid if exit_side == "sell" else best_ask
-        except Exception as ob_e:
-            logger.warning(f"⚠️ [Manual Smart Chase] Could not fetch orderbook, falling back to ticker: {ob_e}")
+        else:
             try:
                 ticker = await exchange.fetch_ticker(symbol)
                 current_price = float(ticker.get('last') or original_sl)

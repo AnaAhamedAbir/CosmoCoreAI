@@ -46,18 +46,20 @@ export const useOpenOrders = (
       // Guard again after await — component may have unmounted during the request
       if (isMountedRef.current) {
         const limitOrders = res.data?.orders ?? [];
-        const softwareSLs = (slRes.data || [])
+        const rawSLs = Array.isArray(slRes.data) ? slRes.data : [];
+        const softwareSLs = rawSLs
           .filter((sl: any) => sl.status !== 'chasing')
           .map((sl: any) => ({
-            id: sl.id,
+            id: String(sl.id),
             side: sl.side,
-            price: sl.trigger_price,
-            amount: sl.amount,
+            price: Number(sl.trigger_price ?? sl.price ?? 0),
+            amount: Number(sl.amount ?? 0),
             filled: 0,
-            remaining: sl.amount,
+            remaining: Number(sl.amount ?? 0),
             isSoftwareSL: true,
             mode: sl.mode
-          }));
+          }))
+          .filter((sl: any) => sl.price > 0);
         setOrders([...limitOrders, ...softwareSLs]);
       }
     } catch (err) {

@@ -225,6 +225,9 @@ async def get_active_software_brackets(
             if key_match and sym_match and not data.get('cancelled'):
                 item = dict(data)
                 item['status'] = item.get('status', 'monitoring')
+                price_val = item.get('trigger_price') if item.get('trigger_price') is not None else item.get('price', 0.0)
+                item['price'] = float(price_val)
+                item['trigger_price'] = float(price_val)
                 active_brackets.append(item)
 
         # 2. Actively executing Smart Chases (chasing maker fills)
@@ -232,6 +235,7 @@ async def get_active_software_brackets(
             key_match = (cdata.get('api_key_id') is None or int(cdata.get('api_key_id')) == int(api_key_id))
             sym_match = str(cdata.get('symbol', '')).split(':')[0].upper() == str(symbol).split(':')[0].upper()
             if key_match and sym_match:
+                price_val = cdata.get('current_maker_price') or cdata.get('original_sl', 0.0)
                 active_brackets.append({
                     'id': chase_id,
                     'api_key_id': cdata.get('api_key_id'),
@@ -239,11 +243,13 @@ async def get_active_software_brackets(
                     'side': cdata.get('side'),
                     'amount': cdata.get('amount'),
                     'type': 'smart_chase',
+                    'mode': 'SMART_CHASE',
                     'status': 'chasing',
+                    'price': float(price_val),
+                    'trigger_price': float(price_val),
                     'current_attempt': cdata.get('current_attempt', 0),
                     'max_attempts': cdata.get('max_attempts', 0),
                     'current_maker_price': cdata.get('current_maker_price', 0.0),
-                    'trigger_price': cdata.get('original_sl', 0.0),
                     'started_at': cdata.get('started_at')
                 })
                 

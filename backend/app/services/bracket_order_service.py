@@ -522,6 +522,7 @@ class BracketOrderService:
             'amount': amount,
             'type': 'trailing',
             'mode': mode,
+            'price': entry_price,
             'trigger_price': entry_price,
             'entry_price': entry_price
         }
@@ -563,8 +564,8 @@ class BracketOrderService:
                         except Exception:
                             pass
 
-                    if is_open:
-                        if is_futures:
+                    if is_open and is_futures:
+                        try:
                             positions = await exchange.fetch_positions([symbol])
                             pos = None
                             for p in positions:
@@ -574,18 +575,10 @@ class BracketOrderService:
                             raw_contracts = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
                             if abs(raw_contracts) == 0:
                                 is_open = False
-                        else:
-                            base_coin = symbol.split('/')[0]
-                            bal = await exchange.fetch_balance()
-                            total = float(bal.get(base_coin, {}).get('total', 0.0))
-                            if opposite_side == 'sell':
-                                if total < amount * 0.99:
-                                    is_open = False
-                            else:
-                                if total >= amount * 0.99:
-                                    is_open = False
+                        except Exception as pos_e:
+                            logger.debug(f"Could not check position for trailing SL (non-fatal): {pos_e}")
                 except Exception as pos_e:
-                    logger.debug(f"Could not check position for trailing SL (non-fatal): {pos_e}")
+                    logger.debug(f"Position check non-fatal error: {pos_e}")
                 
                 if not is_open:
                     logger.info(f"🚫 Position closed externally. Canceling software trailing stop for {symbol}.")
@@ -633,6 +626,7 @@ class BracketOrderService:
                         trigger_price = max(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                         
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['trigger_price'] = trigger_price
+                    BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['price'] = trigger_price
 
                     if current_price <= trigger_price:
                         logger.info(f"💥 Trailing SL triggered for Long. High: {highest_price}, Trigger: {trigger_price}, Current: {current_price}")
@@ -652,6 +646,7 @@ class BracketOrderService:
                         trigger_price = min(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                         
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['trigger_price'] = trigger_price
+                    BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['price'] = trigger_price
 
                     if current_price >= trigger_price:
                         logger.info(f"💥 Trailing SL triggered for Short. Low: {lowest_price}, Trigger: {trigger_price}, Current: {current_price}")
@@ -749,6 +744,7 @@ class BracketOrderService:
             'amount': amount,
             'type': 'smart_chase',
             'mode': 'SMART_CHASE',
+            'price': sl_price,
             'trigger_price': sl_price,
             'entry_price': entry_price
         }
@@ -785,8 +781,8 @@ class BracketOrderService:
                         except Exception:
                             pass
 
-                    if is_open:
-                        if is_futures:
+                    if is_open and is_futures:
+                        try:
                             positions = await exchange.fetch_positions([symbol])
                             pos = None
                             for p in positions:
@@ -796,18 +792,8 @@ class BracketOrderService:
                             raw_amt = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
                             if abs(raw_amt) == 0:
                                 is_open = False
-                        else:
-                            base_coin = symbol.split('/')[0]
-                            bal = await exchange.fetch_balance()
-                            total = float(bal.get(base_coin, {}).get('total', 0.0))
-                            if opposite_side == 'sell':
-                                # Long position: if base_coin is gone, position was closed
-                                if total < amount * 0.99:
-                                    is_open = False
-                            else:
-                                # Short position: if base_coin balance is restored, position was closed/bought back
-                                if total >= amount * 0.99:
-                                    is_open = False
+                        except Exception as pos_e:
+                            logger.debug(f"Position check non-fatal error: {pos_e}")
                 except Exception as pos_e:
                     logger.debug(f"Position check non-fatal error: {pos_e}")
 

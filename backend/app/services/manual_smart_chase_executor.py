@@ -72,13 +72,18 @@ async def stop_smart_chase(
     """
     stopped_count = 0
     for cid, cdata in list(ACTIVE_SMART_CHASES.items()):
-        if chase_id and cid != chase_id:
+        if chase_id:
+            if cid != chase_id:
+                continue
+        else:
+            c_sym = str(cdata.get('symbol', '')).split(':')[0].upper()
+            target_sym = str(symbol or '').split(':')[0].upper()
+            if target_sym and c_sym != target_sym:
+                continue
+
+        if api_key_id is not None and cdata.get('api_key_id') is not None and int(cdata.get('api_key_id')) != int(api_key_id):
             continue
-        if cdata.get('symbol') != symbol:
-            continue
-        if api_key_id is not None and cdata.get('api_key_id') is not None and cdata.get('api_key_id') != api_key_id:
-            continue
-        if user_id is not None and cdata.get('user_id') is not None and cdata.get('user_id') != user_id:
+        if user_id is not None and cdata.get('user_id') is not None and int(cdata.get('user_id')) != int(user_id):
             continue
 
         logger.info(f"🛑 [Manual Smart Chase] Aborting active chase {cid} for {symbol}...")

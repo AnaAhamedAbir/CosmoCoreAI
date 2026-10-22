@@ -220,16 +220,18 @@ async def get_active_software_brackets(
         active_brackets = []
         # 1. Monitoring brackets (waiting for trigger)
         for sl_id, data in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
-            key_match = (data.get('api_key_id') is None or data.get('api_key_id') == api_key_id)
-            if key_match and data.get('symbol') == symbol and not data.get('cancelled'):
+            key_match = (data.get('api_key_id') is None or int(data.get('api_key_id')) == int(api_key_id))
+            sym_match = str(data.get('symbol', '')).split(':')[0].upper() == str(symbol).split(':')[0].upper()
+            if key_match and sym_match and not data.get('cancelled'):
                 item = dict(data)
                 item['status'] = item.get('status', 'monitoring')
                 active_brackets.append(item)
 
         # 2. Actively executing Smart Chases (chasing maker fills)
         for chase_id, cdata in list(ACTIVE_SMART_CHASES.items()):
-            key_match = (cdata.get('api_key_id') is None or cdata.get('api_key_id') == api_key_id)
-            if key_match and cdata.get('symbol') == symbol:
+            key_match = (cdata.get('api_key_id') is None or int(cdata.get('api_key_id')) == int(api_key_id))
+            sym_match = str(cdata.get('symbol', '')).split(':')[0].upper() == str(symbol).split(':')[0].upper()
+            if key_match and sym_match:
                 active_brackets.append({
                     'id': chase_id,
                     'api_key_id': cdata.get('api_key_id'),
@@ -271,8 +273,8 @@ async def stop_smart_chase_endpoint(
         
         cancelled_monitors = 0
         for sl_id, data in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
-            key_match = (req.api_key_id is None or data.get('api_key_id') is None or data.get('api_key_id') == req.api_key_id)
-            sym_match = (data.get('symbol') == req.symbol)
+            key_match = (req.api_key_id is None or data.get('api_key_id') is None or int(data.get('api_key_id')) == int(req.api_key_id))
+            sym_match = str(data.get('symbol', '')).split(':')[0].upper() == str(req.symbol).split(':')[0].upper()
             id_match = (req.sl_id is None or sl_id == req.sl_id)
             if key_match and sym_match and id_match:
                 data['cancelled'] = True

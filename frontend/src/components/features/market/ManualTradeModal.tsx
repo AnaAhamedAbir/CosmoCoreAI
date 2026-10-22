@@ -113,21 +113,21 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
   // Poll active software brackets and actively running smart chases
   const fetchActiveBrackets = React.useCallback(async () => {
-    if (!selectedApi || !isOpen) return;
+    if (!selectedApi) return;
     try {
       const data = await manualTradeService.getActiveSoftwareBrackets(Number(selectedApi), activeSymbol);
       setActiveBrackets(data || []);
     } catch (err) {
       // silent background check
     }
-  }, [selectedApi, activeSymbol, isOpen]);
+  }, [selectedApi, activeSymbol]);
 
   React.useEffect(() => {
-    if (!isOpen || !selectedApi) return;
+    if (!selectedApi) return;
     fetchActiveBrackets();
     const interval = setInterval(fetchActiveBrackets, 1500);
     return () => clearInterval(interval);
-  }, [isOpen, selectedApi, activeSymbol, fetchActiveBrackets]);
+  }, [selectedApi, activeSymbol, fetchActiveBrackets]);
 
   const handleStopSmartChase = async (targetChase?: any) => {
     if (!selectedApi) return;
@@ -148,7 +148,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     }
   };
 
-  // Fetch API Keys
+  // Fetch API Keys on component mount
   React.useEffect(() => {
     const fetchKeys = async () => {
       try {
@@ -163,8 +163,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         console.error("Failed to load APIs", e);
       }
     };
-    if (isOpen) fetchKeys();
-  }, [isOpen, onApiKeyChange]); // BUG-04 fixed: onApiKeyChange added to deps
+    fetchKeys();
+  }, [onApiKeyChange]);
 
   // BUG-12 fix: Reset size and mode when symbol changes to avoid stale amounts on wrong pair
   React.useEffect(() => {
@@ -476,13 +476,67 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
             onClick={() => setIsOpen(true)}
-            className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center bg-brand-primary hover:bg-blue-600 border border-blue-400/30 text-white ${buttonSize === 'sm' ? 'shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'shadow-[0_0_20px_rgba(59,130,246,0.4)]'} backdrop-blur-md z-[999] transition-colors focus:outline-none group`}
-            title="Manual Trade"
+            className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center border text-white backdrop-blur-md z-[999] transition-all focus:outline-none group ${
+              activeBrackets.some(b => b.status === 'chasing')
+                ? 'bg-gradient-to-r from-red-600 to-amber-600 border-red-400 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.7)]'
+                : `bg-brand-primary hover:bg-blue-600 border-blue-400/30 ${buttonSize === 'sm' ? 'shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'shadow-[0_0_20px_rgba(59,130,246,0.4)]'}`
+            }`}
+            title={activeBrackets.some(b => b.status === 'chasing') ? "⚡ Smart Chase SL Chasing! Click to manage" : "Manual Trade"}
           >
-            <DollarSign className={`${buttonSize === 'sm' ? 'w-5 h-5' : 'w-8 h-8'} group-hover:scale-110 transition-transform`} />
+            {activeBrackets.some(b => b.status === 'chasing') ? (
+              <Zap className={`${buttonSize === 'sm' ? 'w-5 h-5' : 'w-7 h-7'} text-amber-300 fill-amber-300 animate-bounce-subtle`} />
+            ) : (
+              <DollarSign className={`${buttonSize === 'sm' ? 'w-5 h-5' : 'w-8 h-8'} group-hover:scale-110 transition-transform`} />
+            )}
+            {activeBrackets.some(b => b.status === 'chasing') && (
+              <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border border-white"></span>
+              </span>
+            )}
           </MotionButton>
         )}
       </AnimatePresence>
+
+      {/* Floating Emergency Stop Banner when modal is closed */}
+      {typeof document !== 'undefined' && !isOpen && activeBrackets.some(b => b.status === 'chasing') && createPortal(
+        <div className="fixed bottom-[104px] right-24 z-[99998] flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-[#0c0204]/95 border border-red-500/70 shadow-[0_0_25px_rgba(239,68,68,0.4)] backdrop-blur-xl animate-fade-in select-none">
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+          </span>
+          <div className="flex flex-col text-left">
+            <span className="text-[11px] font-black text-red-200 uppercase tracking-wide flex items-center gap-1">
+              <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
+              SL Chasing • {activeSymbol}
+            </span>
+            <span className="text-[10px] text-amber-300 font-mono">
+              Attempt {activeBrackets.find(b => b.status === 'chasing')?.current_attempt || 1}/{activeBrackets.find(b => b.status === 'chasing')?.max_attempts || 15}
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={isStoppingChase}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleStopSmartChase(activeBrackets.find(b => b.status === 'chasing'));
+            }}
+            className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 text-white font-black text-[11px] uppercase tracking-wider shadow-md transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            title="Stop Smart Chase Immediately"
+          >
+            <Square className="w-3 h-3 fill-white" />
+            {isStoppingChase ? 'Stopping...' : 'Stop SL'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsOpen(true)}
+            className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white text-[10px] font-bold uppercase transition-all cursor-pointer"
+          >
+            Open
+          </button>
+        </div>,
+        document.body
+      )}
 
       {/* Glassmorphism Modal */}
       {typeof document !== 'undefined' && createPortal(

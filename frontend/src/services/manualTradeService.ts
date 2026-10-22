@@ -34,6 +34,8 @@ export interface OrderPayload {
     smart_chase_delay_ms?: number;
     smart_chase_max_attempts?: number;
   };
+  use_native_tp_sl?: boolean;
+  iceberg_qty?: number;
 }
 
 export interface ApiKey {

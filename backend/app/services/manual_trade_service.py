@@ -353,6 +353,23 @@ class ManualTradeService:
             response = None
             is_ws_success = False
 
+            # --- BINANCE SPOT NATIVE ICEBERG VALIDATION ---
+            raw_iceberg = getattr(order_req, 'iceberg_qty', None)
+            if not raw_iceberg and isinstance(order_req.params, dict):
+                raw_iceberg = order_req.params.get('icebergQty') or order_req.params.get('iceberg_qty')
+
+            valid_iceberg = None
+            if raw_iceberg and not is_futures and order_req.type.lower() == 'limit':
+                try:
+                    f_iceberg = float(raw_iceberg)
+                    if 0 < f_iceberg < float(order_req.amount):
+                        valid_iceberg = float(exchange.amount_to_precision(order_req.symbol, f_iceberg))
+                        logger.info(f"🧊 Native Iceberg detected: visible slice {valid_iceberg} of total {order_req.amount}")
+                    else:
+                        logger.warning(f"⚠️ Invalid iceberg_qty {f_iceberg} (must be > 0 and < {order_req.amount}). Ignoring.")
+                except Exception as ice_err:
+                    logger.warning(f"Failed to process iceberg_qty: {ice_err}")
+
             # --- NATIVE BINANCE OTOCO SUPPORT ---
             use_native_otoco = getattr(order_req, 'use_native_tp_sl', False)
             if use_native_otoco and order_req.attached_sl and order_req.attached_sl.type in ('trailing', 'smart_chase'):
@@ -405,6 +422,10 @@ class ManualTradeService:
                 
                 if not is_post_only:
                     payload["workingTimeInForce"] = "GTC"
+                
+                if valid_iceberg is not None:
+                    payload["workingIcebergQty"] = exchange.amount_to_precision(order_req.symbol, valid_iceberg)
+                    logger.info(f"🧊 Attaching workingIcebergQty={payload['workingIcebergQty']} to Native Binance OTO/OTOCO")
                 
                 try:
                     if has_tp and has_sl:
@@ -470,7 +491,14 @@ class ManualTradeService:
                     raise HTTPException(status_code=400, detail=f"Native TP/SL Failed: {str(e)}")
             # ----------------------------------------
 
-            if exchange.has.get('createOrderWs'):
+            # If not executed via OTOCO and iceberg is requested for spot limit order
+            if not is_ws_success and valid_iceberg is not None:
+                ex_params['icebergQty'] = exchange.amount_to_precision(order_req.symbol, valid_iceberg)
+                if 'timeInForce' not in ex_params and not ex_params.get('postOnly'):
+                    ex_params['timeInForce'] = 'GTC'
+                logger.info(f"🧊 Configured icebergQty={ex_params['icebergQty']} on Spot limit order")
+
+            if not is_ws_success and exchange.has.get('createOrderWs'):
                 try:
                     logger.info(f"⚡ Attempting WebSocket order execution for {order_req.symbol}...")
                     order_type = order_req.type.lower()

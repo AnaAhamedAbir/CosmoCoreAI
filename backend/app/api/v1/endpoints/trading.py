@@ -46,6 +46,7 @@ class OrderRequest(BaseModel):
     attached_tp: Optional[AttachedTPConfig] = None
     attached_sl: Optional[AttachedSLConfig] = None
     use_native_tp_sl: Optional[bool] = False
+    iceberg_qty: Optional[float] = None
 
 class ConnectionTestRequest(BaseModel):
     exchange_id: str

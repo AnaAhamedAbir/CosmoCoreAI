@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
 
@@ -110,6 +110,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(true);
   const [activeBrackets, setActiveBrackets] = useState<any[]>([]);
   const [isStoppingChase, setIsStoppingChase] = useState(false);
+
+  // Binance Native Iceberg state (Spot Limit only)
+  const [isIceberg, setIsIceberg] = useState<boolean>(false);
+  const [icebergMode, setIcebergMode] = useState<'percent' | 'qty'>('percent');
+  const [icebergPercent, setIcebergPercent] = useState<string>('20');
+  const [icebergCustomQty, setIcebergCustomQty] = useState<string>('');
 
   // Poll active software brackets and actively running smart chases
   const fetchActiveBrackets = React.useCallback(async () => {
@@ -251,6 +257,29 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
   // For Limit orders
   const [limitPrice, setLimitPrice] = useState<string>(effectiveCurrentPrice ? effectiveCurrentPrice.toString() : '');
+
+  // Derived total base amount currently configured
+  const currentBaseAmount = React.useMemo(() => {
+    const raw = parseFloat(size);
+    if (isNaN(raw) || raw <= 0) return 0;
+    if (sizeMode === 'quote') {
+      const p = effectiveCurrentPrice || Number(limitPrice) || 0;
+      return p > 0 ? raw / p : 0;
+    }
+    return raw;
+  }, [size, sizeMode, effectiveCurrentPrice, limitPrice]);
+
+  // Derived effective iceberg visible quantity in base asset
+  const effectiveIcebergQty = React.useMemo(() => {
+    if (!isIceberg || currentBaseAmount <= 0) return 0;
+    if (icebergMode === 'percent') {
+      const pct = parseFloat(icebergPercent);
+      return !isNaN(pct) && pct > 0 && pct < 100 ? (currentBaseAmount * pct) / 100 : 0;
+    } else {
+      const qty = parseFloat(icebergCustomQty);
+      return !isNaN(qty) && qty > 0 ? qty : 0;
+    }
+  }, [isIceberg, icebergMode, icebergPercent, icebergCustomQty, currentBaseAmount]);
 
   const calculateSize = React.useCallback((
     pctStr: string,
@@ -400,6 +429,24 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         return; // finally block handles setIsSubmitting(false)
       }
 
+      // Validate Iceberg (Spot Limit only)
+      if (orderType === 'Limit' && !isFutures && isIceberg) {
+        if (effectiveIcebergQty <= 0) {
+          toast.error('Please enter a valid visible Iceberg slice quantity.');
+          return;
+        }
+        if (effectiveIcebergQty >= baseAmount) {
+          toast.error('Iceberg visible slice must be smaller than total order quantity.');
+          return;
+        }
+        const refPrice = Number(limitPrice) || effectiveCurrentPrice || 0;
+        const sliceNotional = effectiveIcebergQty * refPrice;
+        if (sliceNotional < 5.0) {
+          toast.error(`Iceberg slice value (~$${sliceNotional.toFixed(2)}) is below Binance minimum $5 notional.`);
+          return;
+        }
+      }
+
       const paramsPayload: any = isFutures ? { leverage, marginMode, reduceOnly } : {};
       if (orderType === 'Limit' && isAutoLimit) {
         paramsPayload.autoBestLimit = true;
@@ -418,7 +465,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         api_key_id: selectedApi ? Number(selectedApi) : undefined,
         params: Object.keys(paramsPayload).length > 0 ? paramsPayload : undefined,
         client_timestamp: Date.now(),
-        use_native_tp_sl: (!isFutures && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))) ? Boolean(useNativeTpSl) : false
+        use_native_tp_sl: (!isFutures && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))) ? Boolean(useNativeTpSl) : false,
+        iceberg_qty: (orderType === 'Limit' && !isFutures && isIceberg && effectiveIcebergQty > 0) ? effectiveIcebergQty : undefined
       };
 
       if (tpConfig.enabled && tpConfig.value && Number(tpConfig.value) > 0) {
@@ -980,6 +1028,127 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                   })}
                 </div>
               </div>
+
+              {/* Binance Native Iceberg Order Panel (Spot Limit Only) */}
+              {orderType === 'Limit' && !isFutures && (
+                <div className="space-y-2.5 bg-cyan-950/20 p-2.5 rounded-lg border border-cyan-500/20 transition-all">
+                  <div 
+                    className="flex justify-between items-center cursor-pointer select-none"
+                    onClick={() => setIsIceberg(!isIceberg)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="p-1 rounded bg-cyan-500/10 text-cyan-400">
+                        <Layers className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex flex-col text-left">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-cyan-300">Binance Native Iceberg</span>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold uppercase">Spot GTC</span>
+                        </div>
+                        <span className="text-[10px] text-gray-400">
+                          Splits limit order into smaller visible book slices
+                        </span>
+                      </div>
+                    </div>
+                    <div className={`relative w-8 h-4 rounded-full transition-colors ${isIceberg ? 'bg-cyan-500' : 'bg-gray-600'}`}>
+                      <MotionDiv 
+                        className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                        animate={{ x: isIceberg ? 16 : 0 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      />
+                    </div>
+                  </div>
+
+                  <AnimatePresence>
+                    {isIceberg && (
+                      <MotionDiv
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="space-y-2.5 overflow-hidden pt-2 border-t border-cyan-500/20"
+                      >
+                        {/* Slice Mode Selector */}
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[10px] text-gray-400 font-medium">Visible Slice Size</label>
+                          <div className="flex bg-black/40 rounded border border-white/10 p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setIcebergMode('percent')}
+                              className={`px-2 py-0.5 text-[10px] rounded transition-colors ${
+                                icebergMode === 'percent' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              % of Total
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIcebergMode('qty')}
+                              className={`px-2 py-0.5 text-[10px] rounded transition-colors ${
+                                icebergMode === 'qty' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              {baseCurrency}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Percent Quick Buttons */}
+                        {icebergMode === 'percent' && (
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {['10', '20', '25', '50'].map((pct) => (
+                              <button
+                                key={pct}
+                                type="button"
+                                onClick={() => setIcebergPercent(pct)}
+                                className={`py-1 text-[10px] font-mono rounded border transition-all ${
+                                  icebergPercent === pct
+                                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
+                                    : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
+                                }`}
+                              >
+                                {pct}%
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Input Field */}
+                        <div className="relative">
+                          <input 
+                            type="number"
+                            step="any"
+                            value={icebergMode === 'percent' ? icebergPercent : icebergCustomQty}
+                            onChange={(e) => {
+                              if (icebergMode === 'percent') {
+                                setIcebergPercent(e.target.value);
+                              } else {
+                                setIcebergCustomQty(e.target.value);
+                              }
+                            }}
+                            placeholder={icebergMode === 'percent' ? 'e.g. 20' : `e.g. 100 ${baseCurrency}`}
+                            className="w-full bg-black/40 border border-cyan-500/30 rounded py-1.5 px-3 pr-14 text-white text-xs font-mono focus:outline-none focus:border-cyan-400 transition-colors"
+                          />
+                          <span className="absolute right-3 top-1.5 text-[10px] text-cyan-400 font-bold font-mono">
+                            {icebergMode === 'percent' ? '% SLICE' : baseCurrency}
+                          </span>
+                        </div>
+
+                        {/* Calculation preview pill */}
+                        {effectiveIcebergQty > 0 && currentBaseAmount > 0 && (
+                          <div className="p-2 rounded bg-black/40 border border-cyan-500/20 flex items-center justify-between text-[10px] font-mono">
+                            <span className="text-gray-300">
+                              Order Book Shows: <strong className="text-cyan-300">{effectiveIcebergQty.toFixed(4)} {baseCurrency}</strong>
+                            </span>
+                            <span className="text-cyan-400/80">
+                              ≈ {Math.max(1, Math.ceil(currentBaseAmount / effectiveIcebergQty))} Slices Total
+                            </span>
+                          </div>
+                        )}
+                      </MotionDiv>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
 
               {/* Native Binance TP/SL Toggle */}
               {(tpConfig.enabled || slConfig.enabled) && !isFutures && (

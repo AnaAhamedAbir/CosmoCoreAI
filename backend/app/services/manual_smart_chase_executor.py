@@ -322,10 +322,10 @@ async def execute_manual_smart_chase(
 
         attempts += 1
 
-        # 1. Fetch live orderbook (reuse pre-fetched cached_initial_ob on Attempt 1 for zero-wait execution!)
+        # 1. Fetch live orderbook (reuse pre-fetched cached_initial_ob for zero-wait execution on initial run and re-pegs!)
         current_price = original_sl
         ob = None
-        if attempts == 1 and cached_initial_ob is not None:
+        if cached_initial_ob is not None:
             ob = cached_initial_ob
             cached_initial_ob = None
         else:
@@ -545,6 +545,8 @@ async def execute_manual_smart_chase(
                 peg_poll_interval = 0.25  # 250ms
                 max_peg_watch_time = max(3.0, chase_delay_sec)
                 start_watch_time = asyncio.get_event_loop().time()
+                latest_order_chk = None
+                poll_count = 0
 
                 while True:
                     if cancel_event.is_set():
@@ -552,6 +554,18 @@ async def execute_manual_smart_chase(
                         break
 
                     await asyncio.sleep(peg_poll_interval)
+                    poll_count += 1
+
+                    # Fast fill detection: check order status every ~1.0s (4 polls) to detect fills immediately even if price level didn't shift
+                    if poll_count % 4 == 0:
+                        try:
+                            chk_in_loop = await exchange.fetch_order(order_id, symbol)
+                            if chk_in_loop.get('status', '').lower() in ['closed', 'filled']:
+                                logger.info(f"✅ [Dynamic BBO Peg] Order #{order_id} filled detected during BBO shadow watch!")
+                                latest_order_chk = chk_in_loop
+                                break
+                        except Exception as poll_chk_e:
+                            logger.debug(f"Order poll check notice: {poll_chk_e}")
 
                     # Maximum time holding a static price level before periodic status sync
                     elapsed = asyncio.get_event_loop().time() - start_watch_time
@@ -619,7 +633,7 @@ async def execute_manual_smart_chase(
 
             # Check if order was filled on exchange
             try:
-                chk = await exchange.fetch_order(order_id, symbol)
+                chk = latest_order_chk if (latest_order_chk and latest_order_chk.get('status', '').lower() in ['closed', 'filled']) else await exchange.fetch_order(order_id, symbol)
                 status = chk.get('status', '').lower()
 
                 if status in ['closed', 'filled']:
@@ -639,16 +653,19 @@ async def execute_manual_smart_chase(
                     break
                 else:
                     # Cancel order to chase closer / re-peg
+                    cancel_res = None
                     try:
-                        await exchange.cancel_order(order_id, symbol)
+                        cancel_res = await exchange.cancel_order(order_id, symbol)
                     except Exception as cancel_e:
                         logger.debug(f"Cancel chase order error: {cancel_e}")
                     await asyncio.sleep(0.05)  # Tiny 50ms buffer
 
-                    # Check partial fill
+                    # Check partial fill (use cancel_res if filled is populated, else fetch_order)
                     try:
-                        cancel_chk = await exchange.fetch_order(order_id, symbol)
-                        filled = float(cancel_chk.get('filled') or 0.0)
+                        filled = float(cancel_res.get('filled') or 0.0) if isinstance(cancel_res, dict) and cancel_res.get('filled') is not None else 0.0
+                        if filled <= 0:
+                            cancel_chk = await exchange.fetch_order(order_id, symbol)
+                            filled = float(cancel_chk.get('filled') or 0.0)
                         if filled > 0:
                             logger.info(f"🔄 Partial fill detected: {filled}")
                             remaining_amount = max(0.0, remaining_amount - filled)
@@ -662,7 +679,7 @@ async def execute_manual_smart_chase(
                                 logger.info(
                                     f"✅ [Manual Smart Chase] Fully closed or remaining value ${rem_val:.2f} < Min Notional ${min_notional:.2f}. Dust prevented."
                                 )
-                                final_res = cancel_chk
+                                final_res = cancel_res or {'status': 'closed', 'id': order_id, 'filled': filled}
                                 break
                     except Exception as chk_e:
                         logger.debug(f"Partial check failed: {chk_e}")

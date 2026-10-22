@@ -230,6 +230,7 @@ async def get_active_software_brackets(
                 price_val = item.get('trigger_price') if item.get('trigger_price') is not None else item.get('price', 0.0)
                 item['price'] = float(price_val)
                 item['trigger_price'] = float(price_val)
+                item['chase_mode'] = data.get('chase_mode', 'dynamic_bbo')
                 active_brackets.append(item)
 
         # 2. Actively executing Smart Chases (chasing maker fills)
@@ -247,8 +248,9 @@ async def get_active_software_brackets(
                     'type': 'smart_chase',
                     'mode': 'SMART_CHASE',
                     'status': 'chasing',
+                    'chase_mode': cdata.get('chase_mode', 'dynamic_bbo'),
                     'price': float(price_val),
-                    'trigger_price': float(price_val),
+                    'trigger_price': float(cdata.get('original_sl') or price_val),
                     'current_attempt': cdata.get('current_attempt', 0),
                     'max_attempts': cdata.get('max_attempts', 0),
                     'current_maker_price': cdata.get('current_maker_price', 0.0),

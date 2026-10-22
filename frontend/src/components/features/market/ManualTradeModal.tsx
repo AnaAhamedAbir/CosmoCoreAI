@@ -591,7 +591,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
               SL Chasing • {activeSymbol}
             </span>
             <span className="text-[10px] text-amber-300 font-mono">
-              Attempt {activeBrackets.find(b => b.status === 'chasing')?.current_attempt || 1}/{activeBrackets.find(b => b.status === 'chasing')?.max_attempts || 15}
+              Attempt {activeBrackets.find(b => b.status === 'chasing')?.current_attempt || 1}/{activeBrackets.find(b => b.status === 'chasing')?.max_attempts ? activeBrackets.find(b => b.status === 'chasing')?.max_attempts : '∞'}
             </span>
           </div>
           <button

@@ -98,5 +98,20 @@ export const manualTradeService = {
     };
     const response = await api.put(`/trading/order/${apiKeyId}/${orderId}`, formattedPayload);
     return response.data;
+  },
+
+  getActiveSoftwareBrackets: async (apiKeyId: number, symbol: string) => {
+    const response = await api.get(`/trading/active-software-brackets/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`);
+    return response.data;
+  },
+
+  stopSmartChase: async (payload: { apiKeyId?: number; symbol: string; slId?: string }) => {
+    const response = await api.post('/trading/stop-smart-chase', {
+      api_key_id: payload.apiKeyId,
+      symbol: payload.symbol,
+      sl_id: payload.slId
+    });
+    return response.data;
   }
 };
+

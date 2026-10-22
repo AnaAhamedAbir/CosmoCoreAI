@@ -61,6 +61,11 @@ class SORRequest(BaseModel):
     exchange_id: str = "binance"
     params: Optional[dict] = {}
 
+class StopSmartChaseRequest(BaseModel):
+    api_key_id: Optional[int] = None
+    symbol: str
+    sl_id: Optional[str] = None
+
 # --- Endpoints ---
 
 @router.get("/news")
@@ -207,20 +212,88 @@ async def get_active_software_brackets(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user)
 ):
-    """Fetch all active software SL bracket orders for a specific symbol."""
+    """Fetch all active software SL bracket orders and actively executing smart chases for a specific symbol."""
     try:
         from app.services.bracket_order_service import BracketOrderService
+        from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
         
         active_brackets = []
+        # 1. Monitoring brackets (waiting for trigger)
         for sl_id, data in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
             key_match = (data.get('api_key_id') is None or data.get('api_key_id') == api_key_id)
-            if key_match and data.get('symbol') == symbol:
-                active_brackets.append(data)
+            if key_match and data.get('symbol') == symbol and not data.get('cancelled'):
+                item = dict(data)
+                item['status'] = item.get('status', 'monitoring')
+                active_brackets.append(item)
+
+        # 2. Actively executing Smart Chases (chasing maker fills)
+        for chase_id, cdata in list(ACTIVE_SMART_CHASES.items()):
+            key_match = (cdata.get('api_key_id') is None or cdata.get('api_key_id') == api_key_id)
+            if key_match and cdata.get('symbol') == symbol:
+                active_brackets.append({
+                    'id': chase_id,
+                    'api_key_id': cdata.get('api_key_id'),
+                    'symbol': cdata.get('symbol'),
+                    'side': cdata.get('side'),
+                    'amount': cdata.get('amount'),
+                    'type': 'smart_chase',
+                    'status': 'chasing',
+                    'current_attempt': cdata.get('current_attempt', 0),
+                    'max_attempts': cdata.get('max_attempts', 0),
+                    'current_maker_price': cdata.get('current_maker_price', 0.0),
+                    'trigger_price': cdata.get('original_sl', 0.0),
+                    'started_at': cdata.get('started_at')
+                })
                 
         return active_brackets
     except Exception as e:
         logger.error(f"Active software brackets fetch failed: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+
+@router.post("/stop-smart-chase")
+async def stop_smart_chase_endpoint(
+    req: StopSmartChaseRequest,
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """
+    Manually stop/cancel an active Smart Chase SL (either executing or monitoring) for a symbol.
+    """
+    try:
+        from app.services.manual_smart_chase_executor import stop_smart_chase
+        from app.services.bracket_order_service import BracketOrderService
+        
+        stopped_chases = await stop_smart_chase(
+            symbol=req.symbol,
+            api_key_id=req.api_key_id,
+            user_id=current_user.id,
+            chase_id=req.sl_id
+        )
+        
+        cancelled_monitors = 0
+        for sl_id, data in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+            key_match = (req.api_key_id is None or data.get('api_key_id') is None or data.get('api_key_id') == req.api_key_id)
+            sym_match = (data.get('symbol') == req.symbol)
+            id_match = (req.sl_id is None or sl_id == req.sl_id)
+            if key_match and sym_match and id_match:
+                data['cancelled'] = True
+                cancelled_monitors += 1
+                logger.info(f"🛑 Marked software SL {sl_id} for {req.symbol} as cancelled.")
+
+        if stopped_chases > 0 or cancelled_monitors > 0:
+            return {
+                "status": "success",
+                "stopped_chases": stopped_chases,
+                "cancelled_monitors": cancelled_monitors,
+                "message": f"Successfully stopped {stopped_chases} active chase(s) and cancelled {cancelled_monitors} pending monitor(s)."
+            }
+        else:
+            return {
+                "status": "not_found",
+                "message": "No active Smart Chase SL found for this symbol/account."
+            }
+    except Exception as e:
+        logger.error(f"Stop Smart Chase failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to stop Smart Chase: {str(e)}")
 
 @router.post("/sor/preview")
 async def preview_sor_order(

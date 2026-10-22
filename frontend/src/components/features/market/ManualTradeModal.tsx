@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
 
@@ -108,6 +108,45 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     smartChaseMaxAttempts: 15
   });
   const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(true);
+  const [activeBrackets, setActiveBrackets] = useState<any[]>([]);
+  const [isStoppingChase, setIsStoppingChase] = useState(false);
+
+  // Poll active software brackets and actively running smart chases
+  const fetchActiveBrackets = React.useCallback(async () => {
+    if (!selectedApi || !isOpen) return;
+    try {
+      const data = await manualTradeService.getActiveSoftwareBrackets(Number(selectedApi), activeSymbol);
+      setActiveBrackets(data || []);
+    } catch (err) {
+      // silent background check
+    }
+  }, [selectedApi, activeSymbol, isOpen]);
+
+  React.useEffect(() => {
+    if (!isOpen || !selectedApi) return;
+    fetchActiveBrackets();
+    const interval = setInterval(fetchActiveBrackets, 1500);
+    return () => clearInterval(interval);
+  }, [isOpen, selectedApi, activeSymbol, fetchActiveBrackets]);
+
+  const handleStopSmartChase = async (targetChase?: any) => {
+    if (!selectedApi) return;
+    setIsStoppingChase(true);
+    try {
+      const res = await manualTradeService.stopSmartChase({
+        apiKeyId: Number(selectedApi),
+        symbol: activeSymbol,
+        slId: targetChase?.id
+      });
+      toast.success(res.message || '🛑 Smart Chase SL stopped.');
+      fetchActiveBrackets();
+      fetchBalance(true);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || err?.message || 'Failed to stop Smart Chase');
+    } finally {
+      setIsStoppingChase(false);
+    }
+  };
 
   // Fetch API Keys
   React.useEffect(() => {
@@ -547,6 +586,86 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
               >
               {/* Scrollable Content */}
               <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 pb-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/20">
+
+              {/* ACTIVE SMART CHASE / SOFTWARE SL LIVE STATUS & CANCEL BUTTON */}
+              {(() => {
+                const activeChase = activeBrackets.find(b => b.status === 'chasing');
+                const activeSoftwareSl = activeBrackets.find(b => b.status === 'monitoring' && b.type === 'smart_chase');
+
+                if (activeChase) {
+                  return (
+                    <div className="p-3 rounded-xl bg-gradient-to-br from-red-950/90 via-amber-950/70 to-black border border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.25)] flex flex-col gap-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                          </span>
+                          <span className="text-xs font-black tracking-wide text-red-200 uppercase flex items-center gap-1">
+                            <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                            Smart Chase SL Chasing
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                          Attempt {activeChase.current_attempt || 1}/{activeChase.max_attempts || 15}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
+                        <div className="text-left">
+                          <span className="text-gray-400 block text-[9px] uppercase">SL Trigger</span>
+                          <span className="text-white font-bold">{activeChase.trigger_price || '—'}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-gray-400 block text-[9px] uppercase">Maker Price</span>
+                          <span className="text-amber-300 font-bold">{activeChase.current_maker_price || 'Active'}</span>
+                        </div>
+                        <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
+                          <span className="text-gray-400">Position Remaining:</span>
+                          <span className="text-gray-200 font-semibold">{activeChase.amount} ({activeChase.side?.toUpperCase()})</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={isStoppingChase}
+                        onClick={() => handleStopSmartChase(activeChase)}
+                        className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        <Square className="w-3.5 h-3.5 fill-white" />
+                        {isStoppingChase ? 'Stopping Chase...' : 'Stop Smart Chase SL'}
+                      </button>
+                    </div>
+                  );
+                }
+
+                if (activeSoftwareSl) {
+                  return (
+                    <div className="p-2.5 rounded-xl bg-blue-950/60 border border-blue-500/40 shadow-sm flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0" />
+                        <div className="flex flex-col text-left">
+                          <span className="text-[11px] font-bold text-cyan-300 uppercase leading-tight">Smart Chase Armed</span>
+                          <span className="text-[10px] text-gray-300 font-mono">
+                            SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isStoppingChase}
+                        onClick={() => handleStopSmartChase(activeSoftwareSl)}
+                        className="py-1 px-2.5 rounded-md bg-white/5 hover:bg-red-950/80 hover:text-red-300 hover:border-red-500/50 border border-white/10 text-gray-300 text-[10px] font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        {isStoppingChase ? 'Cancelling...' : 'Cancel SL'}
+                      </button>
+                    </div>
+                  );
+                }
+
+                return null;
+              })()}
+
               {/* Buy / Sell Tabs */}
               <div className="flex p-1 rounded-lg bg-black/40 border border-white/5 mb-2">
                 <button

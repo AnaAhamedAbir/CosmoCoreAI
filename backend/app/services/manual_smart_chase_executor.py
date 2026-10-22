@@ -53,6 +53,54 @@ def _get_min_notional(exchange, symbol: str) -> float:
     return 5.0  # Binance Spot standard min notional is $5.00
 
 
+from datetime import datetime
+
+# Global registry of active Smart Chase executions: { chase_id: { ... } }
+ACTIVE_SMART_CHASES: Dict[str, Dict[str, Any]] = {}
+
+
+async def stop_smart_chase(
+    symbol: str,
+    api_key_id: Optional[int] = None,
+    user_id: Optional[int] = None,
+    chase_id: Optional[str] = None
+) -> int:
+    """
+    Signals any matching active smart chase execution(s) to abort immediately
+    and cancel their resting maker order on the exchange.
+    Returns the number of stopped chase tasks.
+    """
+    stopped_count = 0
+    for cid, cdata in list(ACTIVE_SMART_CHASES.items()):
+        if chase_id and cid != chase_id:
+            continue
+        if cdata.get('symbol') != symbol:
+            continue
+        if api_key_id is not None and cdata.get('api_key_id') is not None and cdata.get('api_key_id') != api_key_id:
+            continue
+        if user_id is not None and cdata.get('user_id') is not None and cdata.get('user_id') != user_id:
+            continue
+
+        logger.info(f"🛑 [Manual Smart Chase] Aborting active chase {cid} for {symbol}...")
+        cancel_evt = cdata.get('cancel_event')
+        if cancel_evt and not cancel_evt.is_set():
+            cancel_evt.set()
+
+        # Proactively cancel resting maker limit order on exchange if present
+        curr_order_id = cdata.get('current_order_id')
+        ex = cdata.get('exchange')
+        if curr_order_id and ex:
+            try:
+                await ex.cancel_order(curr_order_id, symbol)
+                logger.info(f"🛑 Proactively cancelled resting limit order {curr_order_id} on exchange.")
+            except Exception as ce:
+                logger.debug(f"Order cancel notice on stop: {ce}")
+
+        stopped_count += 1
+
+    return stopped_count
+
+
 async def execute_manual_smart_chase(
     exchange,
     symbol: str,
@@ -67,7 +115,8 @@ async def execute_manual_smart_chase(
     user_id: int = 0,
     api_key_record = None,
     tp_order_id: Optional[str] = None,
-    disaster_sl_order_id: Optional[str] = None
+    disaster_sl_order_id: Optional[str] = None,
+    chase_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Executes Smart Chase Limit exit for manual trade positions.
@@ -220,11 +269,37 @@ async def execute_manual_smart_chase(
         else original_sl * (1 + (max_deviation_pct / 100.0))
     )
 
+    cid = chase_id or f"chase_{getattr(api_key_record, 'id', user_id)}_{symbol}_{int(datetime.utcnow().timestamp())}"
+    cancel_event = asyncio.Event()
+
+    ACTIVE_SMART_CHASES[cid] = {
+        'chase_id': cid,
+        'symbol': symbol,
+        'api_key_id': getattr(api_key_record, 'id', None),
+        'user_id': user_id,
+        'exchange': exchange,
+        'side': exit_side,
+        'original_sl': original_sl,
+        'amount': remaining_amount,
+        'status': 'chasing',
+        'current_attempt': 0,
+        'max_attempts': max_attempts,
+        'current_maker_price': original_sl,
+        'current_order_id': None,
+        'cancel_event': cancel_event,
+        'started_at': datetime.utcnow().isoformat()
+    }
+
     chase_active = True
     attempts = 0
     final_res = None
 
     while chase_active:
+        if cancel_event.is_set():
+            logger.info(f"🛑 [Manual Smart Chase] Cancel signal detected before attempt {attempts + 1}. Aborting.")
+            final_res = {'status': 'cancelled', 'id': 'user_stopped'}
+            break
+
         if max_attempts > 0 and attempts >= max_attempts:
             break
 
@@ -285,6 +360,12 @@ async def execute_manual_smart_chase(
             )
             final_res = final_res or {'status': 'closed', 'id': 'dust_closed', 'filled': remaining_amount}
             break
+
+        # Update live registry state for frontend tracking
+        if cid in ACTIVE_SMART_CHASES:
+            ACTIVE_SMART_CHASES[cid]['current_attempt'] = attempts
+            ACTIVE_SMART_CHASES[cid]['current_maker_price'] = target_maker_price
+            ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
 
         # 3. Check Circuit Breaker
         circuit_breaker_hit = False
@@ -423,10 +504,31 @@ async def execute_manual_smart_chase(
 
         if chase_res and chase_res.get('id'):
             order_id = chase_res['id']
+            if cid in ACTIVE_SMART_CHASES:
+                ACTIVE_SMART_CHASES[cid]['current_order_id'] = order_id
             logger.info(f"✅ [Manual Smart Chase] Order #{order_id} ACTIVE on exchange book at {target_maker_price}")
 
-            # Wait for fill
-            await asyncio.sleep(chase_delay_sec)
+            # Wait for fill with immediate cancel event wake-up
+            try:
+                await asyncio.wait_for(cancel_event.wait(), timeout=chase_delay_sec)
+                # If we get here, user cancelled during the attempt!
+                logger.info(f"🛑 [Manual Smart Chase] User cancelled Smart Chase during attempt {attempts}!")
+                try:
+                    await exchange.cancel_order(order_id, symbol)
+                    logger.info(f"🛑 Cancelled active maker limit order #{order_id} on exchange.")
+                except Exception as ce:
+                    logger.debug(f"Cancel order on stop: {ce}")
+                final_res = {'status': 'cancelled', 'id': 'user_stopped'}
+                msg = (
+                    f"🛑 *Smart Chase Stopped Manually!*\n"
+                    f"Exchange: {exchange_name}\n"
+                    f"Pair: `{symbol}`\n"
+                    f"Action: Stopped by user. Limit order #{order_id} cancelled."
+                )
+                await _send_notify(msg)
+                break
+            except asyncio.TimeoutError:
+                pass
 
             try:
                 chk = await exchange.fetch_order(order_id, symbol)
@@ -479,6 +581,15 @@ async def execute_manual_smart_chase(
             except Exception as chk_err:
                 logger.error(f"Error checking order status: {chk_err}")
                 await asyncio.sleep(chase_delay_sec)
+            finally:
+                if cid in ACTIVE_SMART_CHASES:
+                    ACTIVE_SMART_CHASES[cid]['current_order_id'] = None
+
+    # Check if cancelled by user
+    if final_res and final_res.get('status') == 'cancelled':
+        logger.info(f"🛑 [Manual Smart Chase] Cancelled by user. Skipping final fallback market sweep.")
+        ACTIVE_SMART_CHASES.pop(cid, None)
+        return final_res
 
     # 5. Fallback if max attempts reached without full fill
     if final_res is None and remaining_amount > 0:
@@ -535,4 +646,5 @@ async def execute_manual_smart_chase(
             )
             final_res = {'status': 'closed', 'id': 'dust_sweep_skipped', 'filled': remaining_amount}
 
+    ACTIVE_SMART_CHASES.pop(cid, None)
     return final_res

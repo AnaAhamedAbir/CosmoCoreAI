@@ -542,6 +542,14 @@ class BracketOrderService:
 
         while True:
             await asyncio.sleep(2)  # poll interval
+            # Check if monitor was cancelled by user
+            sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
+            if not sl_meta or sl_meta.get('cancelled'):
+                logger.info(f"🛑 Trailing SL monitor cancelled by user for {symbol}.")
+                if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
+                    del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
+                return
+
             try:
                 # Security Check: Ensure position is still open to prevent accidental reverse trades
                 is_open = True
@@ -750,6 +758,19 @@ class BracketOrderService:
 
         while True:
             await asyncio.sleep(1.5)
+            # Check if monitor was cancelled by user
+            sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
+            if not sl_meta or sl_meta.get('cancelled'):
+                logger.info(f"🛑 Smart Chase monitor cancelled by user for {symbol}.")
+                if disaster_sl_order_id:
+                    try:
+                        await exchange.cancel_order(disaster_sl_order_id, symbol)
+                    except Exception:
+                        pass
+                if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
+                    del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
+                return
+
             try:
                 # Security Check: Ensure position is still open (e.g. if TP closed it, abort)
                 is_open = True
@@ -843,7 +864,8 @@ class BracketOrderService:
                 user_id=user_id,
                 api_key_record=api_key_record,
                 tp_order_id=tp_order_id,
-                disaster_sl_order_id=disaster_sl_order_id
+                disaster_sl_order_id=disaster_sl_order_id,
+                chase_id=sl_id
             )
         except Exception as exec_err:
             logger.error(f"❌ Error invoking execute_manual_smart_chase: {exec_err}")

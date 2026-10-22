@@ -121,28 +121,15 @@ async def execute_manual_smart_chase(
     api_key_record = None,
     tp_order_id: Optional[str] = None,
     disaster_sl_order_id: Optional[str] = None,
-    chase_id: Optional[str] = None
+    chase_id: Optional[str] = None,
+    chase_mode: str = 'dynamic_bbo'  # 'dynamic_bbo' for real-time orderbook shadowing, 'interval' for timer
 ) -> Optional[Dict[str, Any]]:
-    """
-    Executes Smart Chase Limit exit for manual trade positions.
-    1. Immediately cancels TP and Disaster SL to unlock held balances.
-    2. Syncs and clamps amount against live wallet balance (prevents -2010 insufficient balance).
-    3. Checks exchange Min Notional filter (prevents -1013 NOTIONAL dust rejection).
-    4. Checks Circuit Breaker: original_sl +/- max_deviation_pct.
-    5. Fetches L2 orderbook and targets best maker price (Best Ask for Sell, Best Bid for Buy).
-    6. Uses Maker-Price Guard to guarantee orders rest in book and avoid post-only rejections.
-    7. Places Post-Only Maker limit order.
-    8. Waits for chase_delay_ms.
-    9. If filled: Notifies user, finishes.
-    10. If unfilled: Cancels order, accounts for partial fill, recalculates and chases.
-    11. If Circuit Breaker breached or max_attempts exceeded: Forces Market Sweep with balance clamping and notional guard.
-    """
     chase_delay_sec = max(0.2, chase_delay_ms / 1000.0)
     exchange_name = getattr(api_key_record, 'exchange', 'exchange').capitalize() if api_key_record else 'Exchange'
     min_notional = _get_min_notional(exchange, symbol)
 
     logger.info(
-        f"🛡️ [Manual Smart Chase] Starting for {symbol} ({exit_side.upper()}) | "
+        f"🛡️ [Manual Smart Chase] Starting for {symbol} ({exit_side.upper()}) | Mode: {chase_mode.upper()} | "
         f"Amount: {sell_amount_raw} | SL Trigger: {original_sl} | Max Dev: {max_deviation_pct}% | Delay: {chase_delay_ms}ms | MinNotional: ${min_notional:.2f}"
     )
 
@@ -315,6 +302,7 @@ async def execute_manual_smart_chase(
         'max_attempts': max_attempts,
         'current_maker_price': original_sl,
         'current_order_id': None,
+        'chase_mode': chase_mode,
         'cancel_event': cancel_event,
         'started_at': datetime.utcnow().isoformat()
     }
@@ -543,12 +531,76 @@ async def execute_manual_smart_chase(
             order_id = chase_res['id']
             if cid in ACTIVE_SMART_CHASES:
                 ACTIVE_SMART_CHASES[cid]['current_order_id'] = order_id
-            logger.info(f"✅ [Manual Smart Chase] Order #{order_id} ACTIVE on exchange book at {target_maker_price}")
+            logger.info(f"✅ [Manual Smart Chase] Order #{order_id} ACTIVE on exchange book at {target_maker_price} (Mode: {chase_mode.upper()})")
 
-            # Wait for fill with immediate cancel event wake-up
-            try:
-                await asyncio.wait_for(cancel_event.wait(), timeout=chase_delay_sec)
-                # If we get here, user cancelled during the attempt!
+            user_cancelled = False
+            repeg_triggered = False
+
+            if chase_mode == 'dynamic_bbo':
+                # ── DYNAMIC BBO PEGGING ENGINE (Order Book Shadowing) ──
+                # Actively monitors the orderbook top.
+                # If our order remains the Best Maker price, it stays resting to maintain time-priority in queue.
+                # The moment another participant outbids or spread shifts, immediately cancel and re-peg!
+                # 250ms polling loop gives instant response while using <25% of Binance 100 orders/10s limit.
+                peg_poll_interval = 0.25  # 250ms
+                max_peg_watch_time = max(3.0, chase_delay_sec)
+                start_watch_time = asyncio.get_event_loop().time()
+
+                while True:
+                    if cancel_event.is_set():
+                        user_cancelled = True
+                        break
+
+                    await asyncio.sleep(peg_poll_interval)
+
+                    # Maximum time holding a static price level before periodic status sync
+                    elapsed = asyncio.get_event_loop().time() - start_watch_time
+                    if elapsed >= max_peg_watch_time:
+                        break
+
+                    try:
+                        latest_ob = await exchange.fetch_order_book(symbol, limit=5)
+                        if latest_ob and latest_ob.get('bids') and latest_ob.get('asks') and len(latest_ob['bids']) > 0 and len(latest_ob['asks']) > 0:
+                            l_best_bid = float(latest_ob['bids'][0][0])
+                            l_best_ask = float(latest_ob['asks'][0][0])
+                            l_tick = _get_market_tick(exchange, symbol, l_best_bid)
+
+                            if exit_side == "sell":
+                                new_maker_price = l_best_ask
+                                if new_maker_price <= l_best_bid:
+                                    new_maker_price = l_best_bid + l_tick
+                            else:
+                                new_maker_price = l_best_bid
+                                if new_maker_price >= l_best_ask:
+                                    new_maker_price = l_best_ask - l_tick
+
+                            if hasattr(exchange, 'price_to_precision'):
+                                try:
+                                    new_maker_price = float(exchange.price_to_precision(symbol, new_maker_price))
+                                except Exception:
+                                    pass
+
+                            # Re-peg condition: If BBO shifted, immediately re-peg!
+                            if new_maker_price != target_maker_price:
+                                logger.info(
+                                    f"⚡ [Dynamic BBO Peg] BBO shifted: {target_maker_price} ➜ {new_maker_price} "
+                                    f"(Bid={l_best_bid}, Ask={l_best_ask}). Re-pegging immediately!"
+                                )
+                                repeg_triggered = True
+                                cached_initial_ob = latest_ob  # Pre-cache for next attempt!
+                                break
+                    except Exception as ob_poll_e:
+                        logger.debug(f"BBO poll non-fatal error: {ob_poll_e}")
+            else:
+                # Interval Timer Mode: Wait for full chase_delay_sec
+                try:
+                    await asyncio.wait_for(cancel_event.wait(), timeout=chase_delay_sec)
+                    user_cancelled = True
+                except asyncio.TimeoutError:
+                    pass
+
+            # Handle user cancellation
+            if user_cancelled:
                 logger.info(f"🛑 [Manual Smart Chase] User cancelled Smart Chase during attempt {attempts}!")
                 try:
                     await exchange.cancel_order(order_id, symbol)
@@ -564,9 +616,8 @@ async def execute_manual_smart_chase(
                 )
                 await _send_notify(msg)
                 break
-            except asyncio.TimeoutError:
-                pass
 
+            # Check if order was filled on exchange
             try:
                 chk = await exchange.fetch_order(order_id, symbol)
                 status = chk.get('status', '').lower()
@@ -581,17 +632,18 @@ async def execute_manual_smart_chase(
                         f"Side: {exit_side.upper()}\n"
                         f"Amount: `{remaining_amount}`\n"
                         f"Executed Price: `{target_maker_price}` (Maker Fee Saved ⚡)\n"
-                        f"Attempts: {attempts}"
+                        f"Attempts: {attempts}\n"
+                        f"Mode: {'⚡ Dynamic BBO Peg' if chase_mode == 'dynamic_bbo' else '⏱️ Interval Chase'}"
                     )
                     await _send_notify(msg)
                     break
                 else:
-                    # Cancel order to chase closer
+                    # Cancel order to chase closer / re-peg
                     try:
                         await exchange.cancel_order(order_id, symbol)
                     except Exception as cancel_e:
                         logger.debug(f"Cancel chase order error: {cancel_e}")
-                    await asyncio.sleep(0.2)
+                    await asyncio.sleep(0.05)  # Tiny 50ms buffer
 
                     # Check partial fill
                     try:
@@ -617,7 +669,7 @@ async def execute_manual_smart_chase(
 
             except Exception as chk_err:
                 logger.error(f"Error checking order status: {chk_err}")
-                await asyncio.sleep(chase_delay_sec)
+                await asyncio.sleep(0.25)
             finally:
                 if cid in ACTIVE_SMART_CHASES:
                     ACTIVE_SMART_CHASES[cid]['current_order_id'] = None

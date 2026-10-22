@@ -389,6 +389,7 @@ class BracketOrderService:
                     max_dev = float(sl_config.get('smart_chase_deviation_pct') or 1.0)
                     chase_delay = int(sl_config.get('smart_chase_delay_ms') or 1500)
                     max_attempts = int(sl_config.get('smart_chase_max_attempts') or 15)
+                    chase_mode = str(sl_config.get('smart_chase_mode') or 'dynamic_bbo').lower()
 
                     disaster_sl_order_id = None
                     if is_futures:
@@ -404,19 +405,19 @@ class BracketOrderService:
                                     method = getattr(exchange, method_name, None)
                                     if method and callable(method):
                                         try:
-                                            res = await method()
-                                            if res.get('dualSidePosition', False):
-                                                disaster_params['positionSide'] = 'LONG' if opposite_side == 'sell' else 'SHORT'
-                                            break
+                                             res = await method()
+                                             if res.get('dualSidePosition', False):
+                                                 disaster_params['positionSide'] = 'LONG' if opposite_side == 'sell' else 'SHORT'
+                                             break
                                         except Exception:
-                                            pass
+                                             pass
                             d_res = await exchange.create_order(symbol, 'STOP_MARKET', opposite_side, final_amount, None, disaster_params)
                             disaster_sl_order_id = d_res.get('id')
                             logger.info(f"🛡️ Bracket Monitor: Native Disaster SL placed at {disaster_price_prec} (ID: {disaster_sl_order_id})")
                         except Exception as d_err:
                             logger.warning(f"⚠️ Failed to place native disaster SL: {d_err}")
 
-                    logger.info(f"🚀 Bracket Monitor: Starting Smart Chase Limit SL for {symbol} | Trigger: {final_sl_price}")
+                    logger.info(f"🚀 Bracket Monitor: Starting Smart Chase Limit SL for {symbol} | Trigger: {final_sl_price} | Mode: {chase_mode.upper()}")
                     asyncio.create_task(
                         BracketOrderService._smart_chase_monitor_loop(
                             exchange=exchange,
@@ -432,7 +433,8 @@ class BracketOrderService:
                             user_id=user_id,
                             api_key_record=api_key_record,
                             tp_order_id=tp_order_id,
-                            disaster_sl_order_id=disaster_sl_order_id
+                            disaster_sl_order_id=disaster_sl_order_id,
+                            chase_mode=chase_mode
                         )
                     )
                 else:
@@ -733,7 +735,8 @@ class BracketOrderService:
         entry_price: float, sl_price: float, max_deviation_pct: float,
         chase_delay_ms: int, max_attempts: int, is_futures: bool,
         user_id: int, api_key_record,
-        tp_order_id: str = None, disaster_sl_order_id: str = None
+        tp_order_id: str = None, disaster_sl_order_id: str = None,
+        chase_mode: str = 'dynamic_bbo'
     ):
         sl_id = str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
@@ -744,6 +747,7 @@ class BracketOrderService:
             'amount': amount,
             'type': 'smart_chase',
             'mode': 'SMART_CHASE',
+            'chase_mode': chase_mode,
             'price': sl_price,
             'trigger_price': sl_price,
             'entry_price': entry_price
@@ -856,7 +860,8 @@ class BracketOrderService:
                 api_key_record=api_key_record,
                 tp_order_id=tp_order_id,
                 disaster_sl_order_id=disaster_sl_order_id,
-                chase_id=sl_id
+                chase_id=sl_id,
+                chase_mode=chase_mode
             )
         except Exception as exec_err:
             logger.error(f"❌ Error invoking execute_manual_smart_chase: {exec_err}")

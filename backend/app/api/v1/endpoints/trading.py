@@ -31,6 +31,7 @@ class AttachedSLConfig(BaseModel):
     smart_chase_deviation_pct: Optional[float] = 1.0
     smart_chase_delay_ms: Optional[int] = 1500
     smart_chase_max_attempts: Optional[int] = 15
+    smart_chase_mode: Optional[str] = 'dynamic_bbo'  # 'dynamic_bbo' or 'interval'
     timeout_mins: Optional[float] = 60
 
 class OrderRequest(BaseModel):

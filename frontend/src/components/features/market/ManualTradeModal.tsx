@@ -105,7 +105,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     timeoutMins: 60,
     smartChaseDeviationPct: 1.0,
     smartChaseDelayMs: 1500,
-    smartChaseMaxAttempts: 15
+    smartChaseMaxAttempts: 0,
+    smartChaseMode: 'dynamic_bbo' as 'dynamic_bbo' | 'interval'
   });
   const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(true);
   const [activeBrackets, setActiveBrackets] = useState<any[]>([]);
@@ -522,7 +523,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             timeout_mins: slConfig.timeoutMins,
             smart_chase_deviation_pct: slConfig.smartChaseDeviationPct,
             smart_chase_delay_ms: slConfig.smartChaseDelayMs,
-            smart_chase_max_attempts: slConfig.smartChaseMaxAttempts
+            smart_chase_max_attempts: slConfig.smartChaseMaxAttempts,
+            smart_chase_mode: slConfig.smartChaseMode
           };
         }
       }
@@ -735,11 +737,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           </span>
                           <span className="text-xs font-black tracking-wide text-red-200 uppercase flex items-center gap-1">
                             <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                            Smart Chase SL Chasing
+                            {activeChase.chase_mode === 'dynamic_bbo' ? 'Dynamic BBO Peg Chasing' : 'Smart Chase SL Chasing'}
                           </span>
                         </div>
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
-                          Attempt {activeChase.current_attempt || 1}/{activeChase.max_attempts || 15}
+                          Attempt {activeChase.current_attempt || 1}/{activeChase.max_attempts ? activeChase.max_attempts : '∞'}
                         </span>
                       </div>
 
@@ -1513,6 +1515,51 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                         <span className="text-[9px] text-amber-400 font-mono font-bold">Circuit: {slConfig.smartChaseDeviationPct}%</span>
                                     </div>
 
+                                    {/* Chase Mode Selector: Dynamic BBO Peg vs Interval Timer */}
+                                    <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[9px] font-semibold">
+                                        <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, smartChaseMode: 'dynamic_bbo' })}
+                                            className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                                slConfig.smartChaseMode === 'dynamic_bbo'
+                                                    ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white font-bold shadow-md'
+                                                    : 'text-gray-400 hover:text-white'
+                                            }`}
+                                            title="Real-time Order Book Shadowing: Automatically tracks Best Bid/Ask in real time without waiting"
+                                        >
+                                            <Zap className="w-2.5 h-2.5 text-amber-300 fill-amber-300" />
+                                            ⚡ Dynamic BBO Peg
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, smartChaseMode: 'interval' })}
+                                            className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                                slConfig.smartChaseMode === 'interval'
+                                                    ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white font-bold shadow-md'
+                                                    : 'text-gray-400 hover:text-white'
+                                            }`}
+                                            title="Interval Timer: Waits for a fixed delay time before checking and retrying"
+                                        >
+                                            ⏱️ Interval Chase
+                                        </button>
+                                    </div>
+
+                                    {slConfig.smartChaseMode === 'dynamic_bbo' ? (
+                                        <div className="p-2 rounded bg-amber-950/30 border border-amber-500/30 text-[9px] text-amber-300/90 space-y-0.5">
+                                            <div className="font-bold flex items-center gap-1 text-amber-300">
+                                                <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
+                                                <span>Real-Time Order Book Shadowing Active</span>
+                                            </div>
+                                            <p className="text-[8.5px] text-gray-400 leading-tight">
+                                                Stays resting at Top-of-Book to preserve queue priority. Instantly cancels and re-pegs when another participant outbids you!
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="p-1.5 rounded bg-black/40 border border-white/5 text-[9px] text-gray-400">
+                                            <span>Waits for configured delay interval between chase attempts.</span>
+                                        </div>
+                                    )}
+
                                     {/* Max Chase Deviation Slider */}
                                     <div className="space-y-1">
                                         <div className="flex justify-between items-center text-[9px] text-gray-400">
@@ -1530,35 +1577,37 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                     </div>
 
                                     {/* Retries and Delay Grid */}
-                                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
+                                    <div className={`grid ${slConfig.smartChaseMode === 'dynamic_bbo' ? 'grid-cols-1' : 'grid-cols-2'} gap-2 pt-1 border-t border-white/5`}>
                                         <div className="space-y-1">
                                             <label className="text-[9px] text-gray-400 font-medium flex justify-between">
-                                                <span>Retries</span>
-                                                <span className="text-[8px] text-gray-500">0 = ∞</span>
+                                                <span>Max Re-pegs / Retries</span>
+                                                <span className="text-[8px] text-amber-400 font-bold">0 = ∞ (Continuous)</span>
                                             </label>
                                             <input 
                                                 type="number"
                                                 min="0" max="999" step="1"
                                                 value={slConfig.smartChaseMaxAttempts}
                                                 onChange={(e) => setSlConfig({...slConfig, smartChaseMaxAttempts: parseInt(e.target.value) || 0})}
-                                                placeholder="15"
+                                                placeholder="0 (Unlimited)"
                                                 className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-red-500/50"
                                             />
                                         </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[9px] text-gray-400 font-medium flex justify-between">
-                                                <span>Delay (ms)</span>
-                                                <span className="text-[8px] text-gray-500">Throttle</span>
-                                            </label>
-                                            <input 
-                                                type="number"
-                                                min="200" max="2000" step="100"
-                                                value={slConfig.smartChaseDelayMs}
-                                                onChange={(e) => setSlConfig({...slConfig, smartChaseDelayMs: parseInt(e.target.value) || 1500})}
-                                                placeholder="1500"
-                                                className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-red-500/50"
-                                            />
-                                        </div>
+                                        {slConfig.smartChaseMode === 'interval' && (
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                                    <span>Delay (ms)</span>
+                                                    <span className="text-[8px] text-gray-500">Throttle</span>
+                                                </label>
+                                                <input 
+                                                    type="number"
+                                                    min="200" max="5000" step="100"
+                                                    value={slConfig.smartChaseDelayMs}
+                                                    onChange={(e) => setSlConfig({...slConfig, smartChaseDelayMs: parseInt(e.target.value) || 1500})}
+                                                    placeholder="1500"
+                                                    className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-red-500/50"
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}

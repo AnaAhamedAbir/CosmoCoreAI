@@ -33,6 +33,7 @@ export interface OrderPayload {
     smart_chase_deviation_pct?: number;
     smart_chase_delay_ms?: number;
     smart_chase_max_attempts?: number;
+    smart_chase_mode?: 'dynamic_bbo' | 'interval';
   };
   use_native_tp_sl?: boolean;
   iceberg_qty?: number;

@@ -246,6 +246,34 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     };
   }, [isOpen, selectedApi, activeSymbol, fetchBalance]);
 
+  // Dynamic left position so modal opens cleanly docked to the left of the workspace (clearing sidebar)
+  const [modalLeft, setModalLeft] = useState<number>(() => {
+    if (typeof document !== 'undefined') {
+      const aside = document.querySelector('aside');
+      if (aside) {
+        return Math.max(20, Math.round(aside.getBoundingClientRect().right) + 20);
+      }
+    }
+    return 100;
+  });
+
+  // Re-calculate left docking position whenever modal opens or window resizes
+  React.useEffect(() => {
+    if (!isOpen || typeof document === 'undefined') return;
+    const updatePosition = () => {
+      const aside = document.querySelector('aside');
+      if (aside) {
+        const rightEdge = Math.round(aside.getBoundingClientRect().right);
+        setModalLeft(Math.max(20, rightEdge + 20));
+      } else {
+        setModalLeft(20);
+      }
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    return () => window.removeEventListener('resize', updatePosition);
+  }, [isOpen]);
+
   // Size mode: 'base' = in token (DOGE), 'quote' = in USD (USDC/USDT)
   const [sizeMode, setSizeMode] = useState<'base' | 'quote'>('base');
 
@@ -600,8 +628,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              style={{ touchAction: 'none' }}
-              className="fixed bottom-[104px] right-8 w-80 rounded-2xl bg-[#000000]/80 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-[99999] overflow-hidden"
+              style={{ left: `${modalLeft}px`, touchAction: 'none' }}
+              className="fixed bottom-[104px] w-80 rounded-2xl bg-[#000000]/80 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-[99999] overflow-hidden"
             >
               {/* Header (Drag area) */}
               <div 

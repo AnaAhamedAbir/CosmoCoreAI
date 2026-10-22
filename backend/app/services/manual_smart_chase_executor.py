@@ -53,14 +53,16 @@ async def execute_manual_smart_chase(
 ) -> Optional[Dict[str, Any]]:
     """
     Executes Smart Chase Limit exit for manual trade positions.
-    1. Checks Circuit Breaker: original_sl +/- max_deviation_pct.
-    2. Fetches L2 orderbook and targets best maker price (Best Ask for Sell, Best Bid for Buy).
-    3. Uses Maker-Price Guard to guarantee orders rest in book and avoid post-only rejections.
-    4. Places Post-Only Maker limit order.
-    5. Waits for chase_delay_ms.
-    6. If filled: Cancels TP / Disaster SL, notifies user, finishes.
-    7. If unfilled: Cancels order, accounts for partial fill, recalculates and chases.
-    8. If Circuit Breaker breached or max_attempts exceeded: Forces Market Sweep.
+    1. Immediately cancels TP and Disaster SL to unlock held balances.
+    2. Syncs and clamps amount against live wallet balance (prevents -2010 insufficient balance).
+    3. Checks Circuit Breaker: original_sl +/- max_deviation_pct.
+    4. Fetches L2 orderbook and targets best maker price (Best Ask for Sell, Best Bid for Buy).
+    5. Uses Maker-Price Guard to guarantee orders rest in book and avoid post-only rejections.
+    6. Places Post-Only Maker limit order.
+    7. Waits for chase_delay_ms.
+    8. If filled: Notifies user, finishes.
+    9. If unfilled: Cancels order, accounts for partial fill, recalculates and chases.
+    10. If Circuit Breaker breached or max_attempts exceeded: Forces Market Sweep with balance clamping.
     """
     chase_delay_sec = max(0.2, chase_delay_ms / 1000.0)
     exchange_name = getattr(api_key_record, 'exchange', 'exchange').capitalize() if api_key_record else 'Exchange'
@@ -93,18 +95,21 @@ async def execute_manual_smart_chase(
 
     # Cancel TP and Disaster SL helper
     async def _cleanup_other_orders():
+        nonlocal tp_order_id, disaster_sl_order_id
         if tp_order_id:
             try:
                 await exchange.cancel_order(tp_order_id, symbol)
-                logger.info(f"🛡️ [Manual Smart Chase] Cancelled TP order {tp_order_id}")
+                logger.info(f"🛡️ [Manual Smart Chase] Cancelled TP order {tp_order_id} to release locked balance")
             except Exception as e:
-                logger.debug(f"Failed to cancel TP order: {e}")
+                logger.debug(f"Failed to cancel TP order {tp_order_id}: {e}")
+            tp_order_id = None
         if disaster_sl_order_id:
             try:
                 await exchange.cancel_order(disaster_sl_order_id, symbol)
                 logger.info(f"🛡️ [Manual Smart Chase] Cancelled Disaster SL order {disaster_sl_order_id}")
             except Exception as e:
-                logger.debug(f"Failed to cancel Disaster SL order: {e}")
+                logger.debug(f"Failed to cancel Disaster SL order {disaster_sl_order_id}: {e}")
+            disaster_sl_order_id = None
 
     # Send Notification helper
     async def _send_notify(msg: str):
@@ -118,7 +123,12 @@ async def execute_manual_smart_chase(
             except Exception as notify_err:
                 logger.warning(f"Telegram notification failed (non-fatal): {notify_err}")
 
-    # Format amount
+    # ── STEP 1: IMMEDIATELY CANCEL TP & DISASTER SL TO RELEASE LOCKED FUNDS ──
+    # When SL triggers, TP must be cancelled FIRST so the exchange unlocks held quote/base coins.
+    await _cleanup_other_orders()
+    await asyncio.sleep(0.3)  # Brief wait for Binance ledger to unlock funds
+
+    # Format initial amount
     remaining_amount = sell_amount_raw
     if hasattr(exchange, 'amount_to_precision'):
         try:
@@ -126,9 +136,59 @@ async def execute_manual_smart_chase(
         except Exception:
             pass
 
+    # Balance sync helper to avoid "insufficient balance" rejections
+    async def _sync_and_clamp_amount(price: float) -> float:
+        nonlocal remaining_amount
+        if is_futures:
+            return remaining_amount
+
+        try:
+            parts = symbol.split('/')
+            if len(parts) >= 2:
+                base_asset = parts[0]
+                quote_asset = parts[1].split(':')[0]
+
+                bal = await exchange.fetch_balance()
+                if exit_side == "sell":
+                    # Exiting Long: We are selling base_asset (e.g. DOGE)
+                    free_base = float(bal.get(base_asset, {}).get('free', 0.0))
+                    if free_base <= 0:
+                        logger.warning(f"⚠️ [Manual Smart Chase] No free {base_asset} available to sell!")
+                        return 0.0
+                    if free_base < remaining_amount:
+                        adjusted = float(exchange.amount_to_precision(symbol, free_base))
+                        if adjusted != remaining_amount:
+                            logger.info(
+                                f"🔄 [Manual Smart Chase] Clamped sell amount from {remaining_amount} to available {base_asset} balance: {adjusted}"
+                            )
+                            remaining_amount = adjusted
+                else:
+                    # Exiting Short: We are buying base_asset using quote_asset (e.g. FDUSD)
+                    free_quote = float(bal.get(quote_asset, {}).get('free', 0.0))
+                    if free_quote <= 0:
+                        logger.warning(f"⚠️ [Manual Smart Chase] No free {quote_asset} available to buy {base_asset}!")
+                        return 0.0
+
+                    # Reserve 0.2% for maker fee buffer so Binance never rejects for insufficient quote balance
+                    usable_quote = free_quote * 0.998
+                    max_affordable_base = usable_quote / price if price > 0 else 0.0
+
+                    if max_affordable_base < remaining_amount:
+                        adjusted = float(exchange.amount_to_precision(symbol, max_affordable_base))
+                        if adjusted != remaining_amount:
+                            logger.info(
+                                f"🔄 [Manual Smart Chase] Clamped buy amount from {remaining_amount} to affordable {base_asset} ({usable_quote:.4f} {quote_asset} free): {adjusted}"
+                            )
+                            remaining_amount = adjusted
+        except Exception as sync_e:
+            logger.warning(f"⚠️ [Manual Smart Chase] Balance sync warning (non-fatal): {sync_e}")
+
+        return remaining_amount
+
+    # Initial clamp
+    remaining_amount = await _sync_and_clamp_amount(original_sl)
     if remaining_amount <= 0:
-        logger.info(f"✅ [Manual Smart Chase] Aborted: remaining amount {sell_amount_raw} is dust.")
-        await _cleanup_other_orders()
+        logger.info(f"✅ [Manual Smart Chase] Aborted: available amount is dust or zero.")
         return {'status': 'closed', 'id': 'dust_prevented', 'filled': sell_amount_raw}
 
     # Circuit Breaker Price Boundary
@@ -193,6 +253,12 @@ async def execute_manual_smart_chase(
         elif exit_side == "buy" and target_maker_price >= best_ask:
             target_maker_price = float(exchange.price_to_precision(symbol, best_ask - tick)) if hasattr(exchange, 'price_to_precision') else (best_ask - tick)
 
+        # Synchronize and clamp amount with live wallet balance before placing
+        remaining_amount = await _sync_and_clamp_amount(target_maker_price)
+        if remaining_amount <= 0:
+            logger.warning("⚠️ [Manual Smart Chase] No available balance to place order. Aborting.")
+            break
+
         # 3. Check Circuit Breaker
         circuit_breaker_hit = False
         if exit_side == "sell" and target_maker_price < max_chase_price:
@@ -204,30 +270,48 @@ async def execute_manual_smart_chase(
             logger.warning(
                 f"🚨 [Manual Smart Chase] Circuit Breaker hit! Target {target_maker_price} breached limit {max_chase_price}. Sweeping Market!"
             )
-            await _cleanup_other_orders()
             params = {'reduceOnly': True} if is_futures else {}
             if is_futures and is_hedge_mode:
                 params['positionSide'] = 'LONG' if exit_side == 'sell' else 'SHORT'
-            try:
-                final_res = await exchange.create_market_order(symbol, exit_side, remaining_amount, params=params)
-                msg = (
-                    f"🚨 *Smart Chase Circuit Breaker Triggered!*\n"
-                    f"Exchange: {exchange_name}\n"
-                    f"Pair: `{symbol}`\n"
-                    f"Action: Emergency Market Sweep ({exit_side.upper()})\n"
-                    f"Amount: `{remaining_amount}`\n"
-                    f"Breached Price: `{target_maker_price}`\n"
-                    f"Original SL: `{original_sl}` (Max Dev: {max_deviation_pct}%)"
-                )
-                await _send_notify(msg)
-            except Exception as sweep_e:
-                logger.error(f"❌ Market Sweep failed: {sweep_e}")
+
+            sweep_amt = remaining_amount
+            if not is_futures:
+                try:
+                    bal = await exchange.fetch_balance()
+                    parts = symbol.split('/')
+                    base_asset = parts[0]
+                    quote_asset = parts[1].split(':')[0]
+                    if exit_side == 'sell':
+                        free_b = float(bal.get(base_asset, {}).get('free', 0.0))
+                        sweep_amt = float(exchange.amount_to_precision(symbol, free_b))
+                    else:
+                        free_q = float(bal.get(quote_asset, {}).get('free', 0.0))
+                        usable_q = free_q * 0.985
+                        sweep_amt = float(exchange.amount_to_precision(symbol, usable_q / target_maker_price))
+                except Exception as b_err:
+                    logger.debug(f"Sweep balance check non-fatal error: {b_err}")
+
+            if sweep_amt > 0:
+                try:
+                    final_res = await exchange.create_market_order(symbol, exit_side, sweep_amt, params=params)
+                    msg = (
+                        f"🚨 *Smart Chase Circuit Breaker Triggered!*\n"
+                        f"Exchange: {exchange_name}\n"
+                        f"Pair: `{symbol}`\n"
+                        f"Action: Emergency Market Sweep ({exit_side.upper()})\n"
+                        f"Amount: `{sweep_amt}`\n"
+                        f"Breached Price: `{target_maker_price}`\n"
+                        f"Original SL: `{original_sl}` (Max Dev: {max_deviation_pct}%)"
+                    )
+                    await _send_notify(msg)
+                except Exception as sweep_e:
+                    logger.error(f"❌ Market Sweep failed: {sweep_e}")
             break
 
         # 4. Prepare params & Place Post-Only Maker Order
         logger.info(
             f"⚡ [Manual Smart Chase] Attempt {attempts}/{max_attempts}: Sending Post-Only {exit_side.upper()} "
-            f"at {target_maker_price} (Orderbook: Bid={best_bid}, Ask={best_ask})"
+            f"for {remaining_amount} at {target_maker_price} (Orderbook: Bid={best_bid}, Ask={best_ask})"
         )
         ex_params = {'postOnly': True}
         if is_futures:
@@ -260,7 +344,7 @@ async def execute_manual_smart_chase(
                     fresh_ob = await exchange.fetch_order_book(symbol, limit=5)
                     f_bid = float(fresh_ob['bids'][0][0]) if fresh_ob.get('bids') else best_bid
                     f_ask = float(fresh_ob['asks'][0][0]) if fresh_ob.get('asks') else best_ask
-                    
+
                     if exit_side == "sell":
                         adj_price = f_ask + tick
                     else:
@@ -268,6 +352,9 @@ async def execute_manual_smart_chase(
 
                     if hasattr(exchange, 'price_to_precision'):
                         adj_price = float(exchange.price_to_precision(symbol, adj_price))
+
+                    # Re-sync amount for adjusted price
+                    remaining_amount = await _sync_and_clamp_amount(adj_price)
 
                     # Ensure not breaching circuit breaker
                     if (exit_side == "sell" and adj_price >= max_chase_price) or (exit_side == "buy" and adj_price <= max_chase_price):
@@ -294,7 +381,6 @@ async def execute_manual_smart_chase(
                                 break
                         if not pos or float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) == 0:
                             logger.info("✅ Position already closed natively. Aborting Smart Chase.")
-                            await _cleanup_other_orders()
                             break
                     except Exception:
                         pass
@@ -315,7 +401,6 @@ async def execute_manual_smart_chase(
                 if status in ['closed', 'filled']:
                     logger.info("✅ [Manual Smart Chase] Maker Limit Order filled successfully!")
                     final_res = chk
-                    await _cleanup_other_orders()
                     msg = (
                         f"🎯 *Smart Chase Limit SL Filled!*\n"
                         f"Exchange: {exchange_name}\n"
@@ -350,7 +435,6 @@ async def execute_manual_smart_chase(
                             if remaining_amount <= 0:
                                 logger.info("✅ Fully closed via partial fills.")
                                 final_res = cancel_chk
-                                await _cleanup_other_orders()
                                 break
                     except Exception as chk_e:
                         logger.debug(f"Partial check failed: {chk_e}")
@@ -364,22 +448,45 @@ async def execute_manual_smart_chase(
         logger.warning(
             f"⚠️ [Manual Smart Chase] Max attempts ({max_attempts}) reached without full fill. Forcing Market Sweep!"
         )
-        await _cleanup_other_orders()
         params = {'reduceOnly': True} if is_futures else {}
         if is_futures and is_hedge_mode:
             params['positionSide'] = 'LONG' if exit_side == 'sell' else 'SHORT'
-        try:
-            final_res = await exchange.create_market_order(symbol, exit_side, remaining_amount, params=params)
-            msg = (
-                f"⚠️ *Smart Chase Reached Max Attempts!*\n"
-                f"Exchange: {exchange_name}\n"
-                f"Pair: `{symbol}`\n"
-                f"Action: Final Market Sweep ({exit_side.upper()})\n"
-                f"Amount: `{remaining_amount}`\n"
-                f"Attempts: {attempts}/{max_attempts}"
-            )
-            await _send_notify(msg)
-        except Exception as sweep_err:
-            logger.error(f"❌ Final fallback market sweep failed: {sweep_err}")
+
+        sweep_amt = remaining_amount
+        if not is_futures:
+            try:
+                bal = await exchange.fetch_balance()
+                parts = symbol.split('/')
+                base_asset = parts[0]
+                quote_asset = parts[1].split(':')[0]
+                if exit_side == 'sell':
+                    free_b = float(bal.get(base_asset, {}).get('free', 0.0))
+                    sweep_amt = float(exchange.amount_to_precision(symbol, free_b))
+                else:
+                    free_q = float(bal.get(quote_asset, {}).get('free', 0.0))
+                    try:
+                        t = await exchange.fetch_ticker(symbol)
+                        mkt_price = float(t.get('ask') or t.get('last') or original_sl)
+                    except Exception:
+                        mkt_price = original_sl
+                    usable_q = free_q * 0.985
+                    sweep_amt = float(exchange.amount_to_precision(symbol, usable_q / mkt_price))
+            except Exception as b_err:
+                logger.debug(f"Sweep balance check non-fatal error: {b_err}")
+
+        if sweep_amt > 0:
+            try:
+                final_res = await exchange.create_market_order(symbol, exit_side, sweep_amt, params=params)
+                msg = (
+                    f"⚠️ *Smart Chase Reached Max Attempts!*\n"
+                    f"Exchange: {exchange_name}\n"
+                    f"Pair: `{symbol}`\n"
+                    f"Action: Final Market Sweep ({exit_side.upper()})\n"
+                    f"Amount: `{sweep_amt}`\n"
+                    f"Attempts: {attempts}/{max_attempts}"
+                )
+                await _send_notify(msg)
+            except Exception as sweep_err:
+                logger.error(f"❌ Final fallback market sweep failed: {sweep_err}")
 
     return final_res

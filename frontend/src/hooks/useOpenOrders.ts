@@ -10,6 +10,8 @@ export interface OpenLimitOrder {
   remaining: number;
   isSoftwareSL?: boolean;
   mode?: string;
+  isIceberg?: boolean;
+  icebergQty?: number;
 }
 
 /**
@@ -45,7 +47,11 @@ export const useOpenOrders = (
       
       // Guard again after await — component may have unmounted during the request
       if (isMountedRef.current) {
-        const limitOrders = res.data?.orders ?? [];
+        const limitOrders = (res.data?.orders ?? []).map((o: any) => ({
+          ...o,
+          isIceberg: Boolean(o.isIceberg),
+          icebergQty: o.icebergQty ? Number(o.icebergQty) : undefined
+        }));
         const rawSLs = Array.isArray(slRes.data) ? slRes.data : [];
         const softwareSLs = rawSLs
           .filter((sl: any) => sl.status !== 'chasing')

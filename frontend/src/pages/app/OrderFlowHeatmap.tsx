@@ -1761,6 +1761,12 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 label = `🏃 SL (${order.mode ? order.mode.toUpperCase() : 'Trailing'})`;
                 style = 2; // Dashed
                 width = 2;
+            } else if (order.isIceberg) {
+                color = isBuy ? '#06b6d4' : '#f43f5e'; // Cyan for buy iceberg, Rose for sell iceberg
+                const sliceText = order.icebergQty ? `${order.icebergQty.toFixed(2)}/` : '';
+                label = `🧊 ${isBuy ? '▲ BUY' : '▼ SELL'} [ICEBERG: ${sliceText}${order.amount.toFixed(2)}]`;
+                style = 2; // Dashed
+                width = 2;
             }
 
             if (!wallLinesRef.current.has(key)) {

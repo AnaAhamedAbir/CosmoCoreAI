@@ -218,6 +218,7 @@ class ManualTradeService:
                     price = float(o.get('stopPrice') or o.get('triggerPrice') or 0.0)
 
                 if price > 0:
+                    raw_iceberg_qty = float(o.get('info', {}).get('icebergQty') or 0.0)
                     orders.append({
                         'id': str(o.get('id')),
                         'side': o.get('side', '').lower(),  # 'buy' or 'sell'
@@ -226,7 +227,9 @@ class ManualTradeService:
                         'filled': float(o.get('filled') or 0.0),
                         'remaining': float(o.get('remaining') or o.get('amount') or 0.0),
                         'isSoftwareSL': is_stop,
-                        'mode': 'STOP' if is_stop else 'LIMIT'
+                        'mode': 'STOP' if is_stop else 'LIMIT',
+                        'isIceberg': raw_iceberg_qty > 0,
+                        'icebergQty': raw_iceberg_qty if raw_iceberg_qty > 0 else None
                     })
 
             return {"orders": orders, "symbol": symbol, "exchange": api_key_record.exchange}
@@ -493,6 +496,7 @@ class ManualTradeService:
 
             # If not executed via OTOCO and iceberg is requested for spot limit order
             if not is_ws_success and valid_iceberg is not None:
+                ex_params['icebergAmount'] = valid_iceberg
                 ex_params['icebergQty'] = exchange.amount_to_precision(order_req.symbol, valid_iceberg)
                 if 'timeInForce' not in ex_params and not ex_params.get('postOnly'):
                     ex_params['timeInForce'] = 'GTC'
@@ -658,6 +662,13 @@ class ManualTradeService:
                     ex_params['postOnly'] = True
                 if original_order.get('reduceOnly'):
                     ex_params['reduceOnly'] = True
+                orig_iceberg = original_order.get('info', {}).get('icebergQty')
+                if orig_iceberg and float(orig_iceberg) > 0:
+                    ex_params['icebergAmount'] = float(orig_iceberg)
+                    ex_params['icebergQty'] = orig_iceberg
+                    if 'timeInForce' not in ex_params and not ex_params.get('postOnly'):
+                        ex_params['timeInForce'] = 'GTC'
+                    logger.info(f"🧊 Preserved Iceberg slice {orig_iceberg} during order edit")
             else:
                 # Fallback if fetch failed
                 ex_params['postOnly'] = True

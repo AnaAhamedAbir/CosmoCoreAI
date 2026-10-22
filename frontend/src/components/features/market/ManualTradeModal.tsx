@@ -177,6 +177,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     setSize('');
     setSizeMode('base');
     setBalanceData(null);
+    setIcebergCustomQty('');
   }, [activeSymbol]);
 
   const isFetchingBalanceRef = React.useRef(false);

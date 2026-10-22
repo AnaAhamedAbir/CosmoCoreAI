@@ -35,6 +35,24 @@ def _get_market_tick(exchange, symbol: str, ref_price: float) -> float:
     return tick
 
 
+def _get_min_notional(exchange, symbol: str) -> float:
+    """Extracts minimum notional cost from exchange market limits or returns safe default."""
+    try:
+        mkt = exchange.markets.get(symbol, {}) if hasattr(exchange, 'markets') else {}
+        cost_min = mkt.get('limits', {}).get('cost', {}).get('min')
+        if cost_min and float(cost_min) > 0:
+            return float(cost_min)
+        info_filters = mkt.get('info', {}).get('filters', [])
+        for f in info_filters:
+            if f.get('filterType') in ['NOTIONAL', 'MIN_NOTIONAL']:
+                min_n = f.get('minNotional') or f.get('notional')
+                if min_n and float(min_n) > 0:
+                    return float(min_n)
+    except Exception:
+        pass
+    return 5.0  # Binance Spot standard min notional is $5.00
+
+
 async def execute_manual_smart_chase(
     exchange,
     symbol: str,
@@ -55,21 +73,23 @@ async def execute_manual_smart_chase(
     Executes Smart Chase Limit exit for manual trade positions.
     1. Immediately cancels TP and Disaster SL to unlock held balances.
     2. Syncs and clamps amount against live wallet balance (prevents -2010 insufficient balance).
-    3. Checks Circuit Breaker: original_sl +/- max_deviation_pct.
-    4. Fetches L2 orderbook and targets best maker price (Best Ask for Sell, Best Bid for Buy).
-    5. Uses Maker-Price Guard to guarantee orders rest in book and avoid post-only rejections.
-    6. Places Post-Only Maker limit order.
-    7. Waits for chase_delay_ms.
-    8. If filled: Notifies user, finishes.
-    9. If unfilled: Cancels order, accounts for partial fill, recalculates and chases.
-    10. If Circuit Breaker breached or max_attempts exceeded: Forces Market Sweep with balance clamping.
+    3. Checks exchange Min Notional filter (prevents -1013 NOTIONAL dust rejection).
+    4. Checks Circuit Breaker: original_sl +/- max_deviation_pct.
+    5. Fetches L2 orderbook and targets best maker price (Best Ask for Sell, Best Bid for Buy).
+    6. Uses Maker-Price Guard to guarantee orders rest in book and avoid post-only rejections.
+    7. Places Post-Only Maker limit order.
+    8. Waits for chase_delay_ms.
+    9. If filled: Notifies user, finishes.
+    10. If unfilled: Cancels order, accounts for partial fill, recalculates and chases.
+    11. If Circuit Breaker breached or max_attempts exceeded: Forces Market Sweep with balance clamping and notional guard.
     """
     chase_delay_sec = max(0.2, chase_delay_ms / 1000.0)
     exchange_name = getattr(api_key_record, 'exchange', 'exchange').capitalize() if api_key_record else 'Exchange'
+    min_notional = _get_min_notional(exchange, symbol)
 
     logger.info(
         f"🛡️ [Manual Smart Chase] Starting for {symbol} ({exit_side.upper()}) | "
-        f"Amount: {sell_amount_raw} | SL Trigger: {original_sl} | Max Dev: {max_deviation_pct}% | Delay: {chase_delay_ms}ms"
+        f"Amount: {sell_amount_raw} | SL Trigger: {original_sl} | Max Dev: {max_deviation_pct}% | Delay: {chase_delay_ms}ms | MinNotional: ${min_notional:.2f}"
     )
 
     # Detect Binance Hedge Mode on Futures to avoid -4061 rejection
@@ -124,7 +144,6 @@ async def execute_manual_smart_chase(
                 logger.warning(f"Telegram notification failed (non-fatal): {notify_err}")
 
     # ── STEP 1: IMMEDIATELY CANCEL TP & DISASTER SL TO RELEASE LOCKED FUNDS ──
-    # When SL triggers, TP must be cancelled FIRST so the exchange unlocks held quote/base coins.
     await _cleanup_other_orders()
     await asyncio.sleep(0.3)  # Brief wait for Binance ledger to unlock funds
 
@@ -187,8 +206,11 @@ async def execute_manual_smart_chase(
 
     # Initial clamp
     remaining_amount = await _sync_and_clamp_amount(original_sl)
-    if remaining_amount <= 0:
-        logger.info(f"✅ [Manual Smart Chase] Aborted: available amount is dust or zero.")
+    initial_notional = remaining_amount * original_sl
+    if remaining_amount <= 0 or initial_notional < min_notional:
+        logger.info(
+            f"✅ [Manual Smart Chase] Aborted: initial amount {remaining_amount} (~${initial_notional:.2f}) is dust or below Min Notional ${min_notional:.2f}."
+        )
         return {'status': 'closed', 'id': 'dust_prevented', 'filled': sell_amount_raw}
 
     # Circuit Breaker Price Boundary
@@ -255,8 +277,13 @@ async def execute_manual_smart_chase(
 
         # Synchronize and clamp amount with live wallet balance before placing
         remaining_amount = await _sync_and_clamp_amount(target_maker_price)
-        if remaining_amount <= 0:
-            logger.warning("⚠️ [Manual Smart Chase] No available balance to place order. Aborting.")
+        order_notional = remaining_amount * target_maker_price
+        if remaining_amount <= 0 or order_notional < min_notional:
+            logger.info(
+                f"✅ [Manual Smart Chase] Remaining order value ${order_notional:.2f} < Min Notional ${min_notional:.2f}. "
+                f"Position is effectively closed (dust prevented)."
+            )
+            final_res = final_res or {'status': 'closed', 'id': 'dust_closed', 'filled': remaining_amount}
             break
 
         # 3. Check Circuit Breaker
@@ -291,7 +318,8 @@ async def execute_manual_smart_chase(
                 except Exception as b_err:
                     logger.debug(f"Sweep balance check non-fatal error: {b_err}")
 
-            if sweep_amt > 0:
+            sweep_notional = sweep_amt * target_maker_price
+            if sweep_amt > 0 and sweep_notional >= min_notional:
                 try:
                     final_res = await exchange.create_market_order(symbol, exit_side, sweep_amt, params=params)
                     msg = (
@@ -306,6 +334,12 @@ async def execute_manual_smart_chase(
                     await _send_notify(msg)
                 except Exception as sweep_e:
                     logger.error(f"❌ Market Sweep failed: {sweep_e}")
+            elif sweep_amt > 0:
+                logger.info(
+                    f"ℹ️ [Manual Smart Chase] Circuit Breaker sweep value ${sweep_notional:.2f} < Min Notional ${min_notional:.2f}. "
+                    f"Skipping market order (dust prevented)."
+                )
+                final_res = {'status': 'closed', 'id': 'dust_sweep_skipped', 'filled': sweep_amt}
             break
 
         # 4. Prepare params & Place Post-Only Maker Order
@@ -355,9 +389,9 @@ async def execute_manual_smart_chase(
 
                     # Re-sync amount for adjusted price
                     remaining_amount = await _sync_and_clamp_amount(adj_price)
+                    adj_notional = remaining_amount * adj_price
 
-                    # Ensure not breaching circuit breaker
-                    if (exit_side == "sell" and adj_price >= max_chase_price) or (exit_side == "buy" and adj_price <= max_chase_price):
+                    if adj_notional >= min_notional and ((exit_side == "sell" and adj_price >= max_chase_price) or (exit_side == "buy" and adj_price <= max_chase_price)):
                         logger.info(f"🔄 Retrying with adjusted maker price {adj_price}...")
                         chase_res = await exchange.create_limit_order(
                             symbol, exit_side, remaining_amount, adj_price, ex_params
@@ -432,8 +466,11 @@ async def execute_manual_smart_chase(
                                     remaining_amount = float(exchange.amount_to_precision(symbol, remaining_amount))
                                 except Exception:
                                     pass
-                            if remaining_amount <= 0:
-                                logger.info("✅ Fully closed via partial fills.")
+                            rem_val = remaining_amount * target_maker_price
+                            if remaining_amount <= 0 or rem_val < min_notional:
+                                logger.info(
+                                    f"✅ [Manual Smart Chase] Fully closed or remaining value ${rem_val:.2f} < Min Notional ${min_notional:.2f}. Dust prevented."
+                                )
                                 final_res = cancel_chk
                                 break
                     except Exception as chk_e:
@@ -453,28 +490,31 @@ async def execute_manual_smart_chase(
             params['positionSide'] = 'LONG' if exit_side == 'sell' else 'SHORT'
 
         sweep_amt = remaining_amount
+        mkt_price = original_sl
         if not is_futures:
             try:
                 bal = await exchange.fetch_balance()
                 parts = symbol.split('/')
                 base_asset = parts[0]
                 quote_asset = parts[1].split(':')[0]
+                try:
+                    t = await exchange.fetch_ticker(symbol)
+                    mkt_price = float(t.get('ask') or t.get('last') or original_sl)
+                except Exception:
+                    mkt_price = original_sl
+
                 if exit_side == 'sell':
                     free_b = float(bal.get(base_asset, {}).get('free', 0.0))
                     sweep_amt = float(exchange.amount_to_precision(symbol, free_b))
                 else:
                     free_q = float(bal.get(quote_asset, {}).get('free', 0.0))
-                    try:
-                        t = await exchange.fetch_ticker(symbol)
-                        mkt_price = float(t.get('ask') or t.get('last') or original_sl)
-                    except Exception:
-                        mkt_price = original_sl
                     usable_q = free_q * 0.985
                     sweep_amt = float(exchange.amount_to_precision(symbol, usable_q / mkt_price))
             except Exception as b_err:
                 logger.debug(f"Sweep balance check non-fatal error: {b_err}")
 
-        if sweep_amt > 0:
+        sweep_notional = sweep_amt * mkt_price
+        if sweep_amt > 0 and sweep_notional >= min_notional:
             try:
                 final_res = await exchange.create_market_order(symbol, exit_side, sweep_amt, params=params)
                 msg = (
@@ -488,5 +528,11 @@ async def execute_manual_smart_chase(
                 await _send_notify(msg)
             except Exception as sweep_err:
                 logger.error(f"❌ Final fallback market sweep failed: {sweep_err}")
+        elif sweep_amt > 0:
+            logger.info(
+                f"ℹ️ [Manual Smart Chase] Final fallback sweep value ${sweep_notional:.2f} < Min Notional ${min_notional:.2f}. "
+                f"Dust prevented, skipping market sweep."
+            )
+            final_res = {'status': 'closed', 'id': 'dust_sweep_skipped', 'filled': remaining_amount}
 
     return final_res

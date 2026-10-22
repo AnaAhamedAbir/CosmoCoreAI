@@ -211,10 +211,10 @@ async def get_active_software_brackets(
     try:
         from app.services.bracket_order_service import BracketOrderService
         
-        # We don't verify API key extensively here because ACTIVE_SOFTWARE_SL only contains basic trigger prices
         active_brackets = []
-        for sl_id, data in BracketOrderService.ACTIVE_SOFTWARE_SL.items():
-            if data.get('symbol') == symbol:
+        for sl_id, data in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+            key_match = (data.get('api_key_id') is None or data.get('api_key_id') == api_key_id)
+            if key_match and data.get('symbol') == symbol:
                 active_brackets.append(data)
                 
         return active_brackets

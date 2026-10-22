@@ -2982,7 +2982,7 @@ const OrderFlowChartPanel: React.FC<{
     const fallbackL2 = useLevel2MarketData(isShared ? '' : config.symbol, isShared ? '' : config.exchange);
     const { bids, asks, walls, currentPrice, tradeEvent } = isShared ? parentL2Data : fallbackL2;
     const advancedMetricsData = useAdvancedMetrics(config.symbol, config.exchange, config.interval, advancedMetrics);
-    const openOrders = useOpenOrders(selectedApiKeyId, config.symbol, 5000);
+    const openOrders = useOpenOrders(selectedApiKeyId, config.symbol, 2000);
 
     // Report live currentPrice back up to parent
     useEffect(() => {
@@ -3311,7 +3311,7 @@ const OrderFlowHeatmap: React.FC = () => {
     const mainChartBotId = activeBotsByChartId['main'] || null;
     const { statusData: botStatus, isConnected: botWsConnected } = useWallHunterStatus(selectedHudBotId);
     const [selectedApiKeyId, setSelectedApiKeyId] = useState<string | null>(null);
-    const openOrders = useOpenOrders(selectedApiKeyId, symbol, 5000);
+    const openOrders = useOpenOrders(selectedApiKeyId, symbol, 2000);
 
     // Keep 'main' chart price synced in chartPrices
     useEffect(() => {

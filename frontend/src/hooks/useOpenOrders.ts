@@ -27,7 +27,7 @@ export interface OpenLimitOrder {
 export const useOpenOrders = (
   apiKeyId: string | number | null,
   symbol: string,
-  intervalMs = 5000
+  intervalMs = 2000
 ): OpenLimitOrder[] => {
   const [orders, setOrders] = useState<OpenLimitOrder[]>([]);
   const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);

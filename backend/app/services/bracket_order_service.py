@@ -516,6 +516,7 @@ class BracketOrderService:
         sl_id = str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
             'id': sl_id,
+            'api_key_id': getattr(api_key_record, 'id', None),
             'symbol': symbol,
             'side': opposite_side,
             'amount': amount,
@@ -545,22 +546,36 @@ class BracketOrderService:
                 # Security Check: Ensure position is still open to prevent accidental reverse trades
                 is_open = True
                 try:
-                    if is_futures:
-                        positions = await exchange.fetch_positions([symbol])
-                        pos = None
-                        for p in positions:
-                            if p.get('symbol') == symbol:
-                                pos = p
-                                break
-                        raw_contracts = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
-                        if abs(raw_contracts) == 0:
-                            is_open = False
-                    else:
-                        base_coin = symbol.split('/')[0]
-                        bal = await exchange.fetch_balance()
-                        total = float(bal.get(base_coin, {}).get('total', 0.0))
-                        if opposite_side == 'sell' and total < amount * 0.99: # 1% margin for rounding
-                            is_open = False
+                    if tp_order_id:
+                        try:
+                            tp_chk = await exchange.fetch_order(tp_order_id, symbol)
+                            if tp_chk.get('status', '').lower() in ['closed', 'filled']:
+                                logger.info(f"🎯 TP order {tp_order_id} filled! Closing trailing stop monitor for {symbol}.")
+                                is_open = False
+                        except Exception:
+                            pass
+
+                    if is_open:
+                        if is_futures:
+                            positions = await exchange.fetch_positions([symbol])
+                            pos = None
+                            for p in positions:
+                                if p.get('symbol') == symbol:
+                                    pos = p
+                                    break
+                            raw_contracts = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
+                            if abs(raw_contracts) == 0:
+                                is_open = False
+                        else:
+                            base_coin = symbol.split('/')[0]
+                            bal = await exchange.fetch_balance()
+                            total = float(bal.get(base_coin, {}).get('total', 0.0))
+                            if opposite_side == 'sell':
+                                if total < amount * 0.99:
+                                    is_open = False
+                            else:
+                                if total >= amount * 0.99:
+                                    is_open = False
                 except Exception as pos_e:
                     logger.debug(f"Could not check position for trailing SL (non-fatal): {pos_e}")
                 
@@ -720,6 +735,7 @@ class BracketOrderService:
         sl_id = str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
             'id': sl_id,
+            'api_key_id': getattr(api_key_record, 'id', None),
             'symbol': symbol,
             'side': opposite_side,
             'amount': amount,
@@ -738,22 +754,39 @@ class BracketOrderService:
                 # Security Check: Ensure position is still open (e.g. if TP closed it, abort)
                 is_open = True
                 try:
-                    if is_futures:
-                        positions = await exchange.fetch_positions([symbol])
-                        pos = None
-                        for p in positions:
-                            if p.get('symbol') == symbol:
-                                pos = p
-                                break
-                        raw_amt = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
-                        if abs(raw_amt) == 0:
-                            is_open = False
-                    else:
-                        base_coin = symbol.split('/')[0]
-                        bal = await exchange.fetch_balance()
-                        total = float(bal.get(base_coin, {}).get('total', 0.0))
-                        if opposite_side == 'sell' and total < amount * 0.99:
-                            is_open = False
+                    # Check if TP already filled on exchange
+                    if tp_order_id:
+                        try:
+                            tp_chk = await exchange.fetch_order(tp_order_id, symbol)
+                            if tp_chk.get('status', '').lower() in ['closed', 'filled']:
+                                logger.info(f"🎯 TP order {tp_order_id} filled! Closing Smart Chase monitor for {symbol}.")
+                                is_open = False
+                        except Exception:
+                            pass
+
+                    if is_open:
+                        if is_futures:
+                            positions = await exchange.fetch_positions([symbol])
+                            pos = None
+                            for p in positions:
+                                if p.get('symbol') == symbol:
+                                    pos = p
+                                    break
+                            raw_amt = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
+                            if abs(raw_amt) == 0:
+                                is_open = False
+                        else:
+                            base_coin = symbol.split('/')[0]
+                            bal = await exchange.fetch_balance()
+                            total = float(bal.get(base_coin, {}).get('total', 0.0))
+                            if opposite_side == 'sell':
+                                # Long position: if base_coin is gone, position was closed
+                                if total < amount * 0.99:
+                                    is_open = False
+                            else:
+                                # Short position: if base_coin balance is restored, position was closed/bought back
+                                if total >= amount * 0.99:
+                                    is_open = False
                 except Exception as pos_e:
                     logger.debug(f"Position check non-fatal error: {pos_e}")
 
@@ -785,9 +818,13 @@ class BracketOrderService:
             except Exception as e:
                 logger.debug(f"Smart Chase monitor tick error: {e}")
 
+        # ── IMMEDIATELY REMOVE FROM ACTIVE_SOFTWARE_SL ──
+        # Whether triggered or position closed, the trigger monitor is DONE.
+        # Removing now ensures the chart clears the trigger line instantly!
+        if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
+            del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
+
         if not sl_triggered:
-            if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
-                del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
             return
 
         try:

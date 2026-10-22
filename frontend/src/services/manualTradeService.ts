@@ -3,7 +3,7 @@ import api from './api';
 export interface OrderPayload {
   symbol: string;
   side: 'Buy' | 'Sell';
-  type: 'Market' | 'Limit';
+  type: 'Market' | 'Limit' | 'SmartPeg';
   amount: number;
   price?: number;
   exchange_id: string;
@@ -12,6 +12,7 @@ export interface OrderPayload {
     leverage?: number;
     marginMode?: 'cross' | 'isolated';
     reduceOnly?: boolean;
+    maxChaseDeviationPct?: number;
   };
   client_timestamp?: number;
   attached_tp?: {
@@ -86,7 +87,7 @@ export const manualTradeService = {
     const formattedOrder = {
       ...order,
       side: order.side.toLowerCase(),
-      type: order.type.toLowerCase(),
+      type: order.type === 'SmartPeg' ? 'smart_peg' : order.type.toLowerCase(),
     };
     
     const response = await api.post('/trading/order', formattedOrder);
@@ -113,6 +114,15 @@ export const manualTradeService = {
       api_key_id: payload.apiKeyId,
       symbol: payload.symbol,
       sl_id: payload.slId
+    });
+    return response.data;
+  },
+
+  stopSmartPeg: async (payload: { apiKeyId?: number; symbol: string; pegId?: string }) => {
+    const response = await api.post('/trading/stop-smart-peg', {
+      api_key_id: payload.apiKeyId,
+      symbol: payload.symbol,
+      sl_id: payload.pegId
     });
     return response.data;
   }

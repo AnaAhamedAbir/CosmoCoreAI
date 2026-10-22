@@ -71,7 +71,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     return val.toFixed(6);
   };
 
-  const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Limit');
+  const [orderType, setOrderType] = useState<'Market' | 'Limit' | 'SmartPeg'>('Limit');
+  const [smartPegMaxDev, setSmartPegMaxDev] = useState<number>(2.0);
   const [size, setSize] = useState<string>('');
   const [selectedPercent, setSelectedPercent] = useState<string | null>('100%');
   const [leverage, setLeverage] = useState<number>(10);
@@ -111,6 +112,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(true);
   const [activeBrackets, setActiveBrackets] = useState<any[]>([]);
   const [isStoppingChase, setIsStoppingChase] = useState(false);
+  const [isStoppingPeg, setIsStoppingPeg] = useState(false);
 
   // Binance Native Iceberg state (Spot Limit only)
   const [isIceberg, setIsIceberg] = useState<boolean>(false);
@@ -152,6 +154,25 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to stop Smart Chase');
     } finally {
       setIsStoppingChase(false);
+    }
+  };
+
+  const handleStopSmartPeg = async (targetPeg?: any) => {
+    if (!selectedApi) return;
+    setIsStoppingPeg(true);
+    try {
+      const res = await manualTradeService.stopSmartPeg({
+        apiKeyId: Number(selectedApi),
+        symbol: activeSymbol,
+        pegId: targetPeg?.id
+      });
+      toast.success(res.message || '🛑 Smart Peg Entry cancelled.');
+      fetchActiveBrackets();
+      fetchBalance(true);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || err?.message || 'Failed to stop Smart Peg Entry');
+    } finally {
+      setIsStoppingPeg(false);
     }
   };
 
@@ -482,6 +503,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       if (orderType === 'Limit' && isAutoLimit) {
         paramsPayload.autoBestLimit = true;
       }
+      if (orderType === 'SmartPeg') {
+        paramsPayload.maxChaseDeviationPct = smartPegMaxDev;
+      }
 
       // BUG-09 fix: Use the actual selected API key's exchange instead of hardcoded 'binance'
       const resolvedExchange = apiKeys.find(k => k.id.toString() === selectedApi)?.exchange || 'binance';
@@ -496,7 +520,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         api_key_id: selectedApi ? Number(selectedApi) : undefined,
         params: Object.keys(paramsPayload).length > 0 ? paramsPayload : undefined,
         client_timestamp: Date.now(),
-        use_native_tp_sl: (!isFutures && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))) ? Boolean(useNativeTpSl) : false,
+        use_native_tp_sl: (!isFutures && orderType !== 'SmartPeg' && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))) ? Boolean(useNativeTpSl) : false,
         iceberg_qty: (orderType === 'Limit' && !isFutures && isIceberg && effectiveIcebergQty > 0) ? effectiveIcebergQty : undefined
       };
 
@@ -530,7 +554,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       }
 
       await manualTradeService.placeOrder(payload);
-      toast.success(`✅ ${side} ${orderType} order placed for ${activeSymbol}`);
+      toast.success(orderType === 'SmartPeg' ? `⚡ ${side} Smart Peg Entry active for ${activeSymbol}` : `✅ ${side} ${orderType} order placed for ${activeSymbol}`);
 
       // Auto-refresh balance immediately after order placement, followed by staggered syncs
       fetchBalance(true);
@@ -557,21 +581,25 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             exit={{ scale: 0, opacity: 0 }}
             onClick={() => setIsOpen(true)}
             className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center border text-white backdrop-blur-md z-[999] transition-all focus:outline-none group ${
-              activeBrackets.some(b => b.status === 'chasing')
-                ? 'bg-gradient-to-r from-red-600 to-amber-600 border-red-400 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.7)]'
+              activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging')
+                ? 'bg-gradient-to-r from-red-600 via-amber-600 to-amber-500 border-amber-400 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.7)]'
                 : `bg-brand-primary hover:bg-blue-600 border-blue-400/30 ${buttonSize === 'sm' ? 'shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'shadow-[0_0_20px_rgba(59,130,246,0.4)]'}`
             }`}
-            title={activeBrackets.some(b => b.status === 'chasing') ? "⚡ Smart Chase SL Chasing! Click to manage" : "Manual Trade"}
+            title={
+              activeBrackets.some(b => b.status === 'pegging')
+                ? "⚡ Smart Peg Entry Active! Click to manage"
+                : (activeBrackets.some(b => b.status === 'chasing') ? "⚡ Smart Chase SL Chasing! Click to manage" : "Manual Trade")
+            }
           >
-            {activeBrackets.some(b => b.status === 'chasing') ? (
+            {activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging') ? (
               <Zap className={`${buttonSize === 'sm' ? 'w-5 h-5' : 'w-7 h-7'} text-amber-300 fill-amber-300 animate-bounce-subtle`} />
             ) : (
               <DollarSign className={`${buttonSize === 'sm' ? 'w-5 h-5' : 'w-8 h-8'} group-hover:scale-110 transition-transform`} />
             )}
-            {activeBrackets.some(b => b.status === 'chasing') && (
+            {activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging') && (
               <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border border-white"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500 border border-white"></span>
               </span>
             )}
           </MotionButton>
@@ -579,42 +607,67 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       </AnimatePresence>
 
       {/* Floating Emergency Stop Banner when modal is closed */}
-      {typeof document !== 'undefined' && !isOpen && activeBrackets.some(b => b.status === 'chasing') && createPortal(
-        <div className="fixed bottom-[104px] right-24 z-[99998] flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-[#0c0204]/95 border border-red-500/70 shadow-[0_0_25px_rgba(239,68,68,0.4)] backdrop-blur-xl animate-fade-in select-none">
-          <span className="relative flex h-2.5 w-2.5 shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-          </span>
-          <div className="flex flex-col text-left">
-            <span className="text-[11px] font-black text-red-200 uppercase tracking-wide flex items-center gap-1">
-              <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
-              SL Chasing • {activeSymbol}
-            </span>
-            <span className="text-[10px] text-amber-300 font-mono">
-              Attempt {activeBrackets.find(b => b.status === 'chasing')?.current_attempt || 1}/{activeBrackets.find(b => b.status === 'chasing')?.max_attempts ? activeBrackets.find(b => b.status === 'chasing')?.max_attempts : '∞'}
-            </span>
-          </div>
-          <button
-            type="button"
-            disabled={isStoppingChase}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleStopSmartChase(activeBrackets.find(b => b.status === 'chasing'));
-            }}
-            className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 text-white font-black text-[11px] uppercase tracking-wider shadow-md transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-            title="Stop Smart Chase Immediately"
-          >
-            <Square className="w-3 h-3 fill-white" />
-            {isStoppingChase ? 'Stopping...' : 'Stop SL'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsOpen(true)}
-            className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white text-[10px] font-bold uppercase transition-all cursor-pointer"
-          >
-            Open
-          </button>
-        </div>,
+      {typeof document !== 'undefined' && !isOpen && activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging') && createPortal(
+        (() => {
+          const activePeg = activeBrackets.find(b => b.status === 'pegging');
+          const activeChase = activeBrackets.find(b => b.status === 'chasing');
+          return (
+            <div className="fixed bottom-[104px] right-24 z-[99998] flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-[#0c0204]/95 border border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.35)] backdrop-blur-xl animate-fade-in select-none">
+              <span className="relative flex h-2.5 w-2.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+              </span>
+              <div className="flex flex-col text-left">
+                <span className="text-[11px] font-black text-amber-200 uppercase tracking-wide flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
+                  {activePeg ? `Entry Pegging • ${activeSymbol} (${activePeg.side?.toUpperCase()})` : `SL Chasing • ${activeSymbol}`}
+                </span>
+                <span className="text-[10px] text-amber-300 font-mono">
+                  {activePeg 
+                    ? `Attempt ${activePeg.current_attempt || 1}/${activePeg.max_attempts ? activePeg.max_attempts : '∞'} • Maker: ${activePeg.current_maker_price || 'Active'}`
+                    : `Attempt ${activeChase?.current_attempt || 1}/${activeChase?.max_attempts ? activeChase.max_attempts : '∞'}`
+                  }
+                </span>
+              </div>
+              {activePeg ? (
+                <button
+                  type="button"
+                  disabled={isStoppingPeg}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStopSmartPeg(activePeg);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 text-white font-black text-[11px] uppercase tracking-wider shadow-md transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Stop Smart Peg Entry Immediately"
+                >
+                  <Square className="w-3 h-3 fill-white" />
+                  {isStoppingPeg ? 'Stopping...' : 'Stop Peg'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isStoppingChase}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStopSmartChase(activeChase);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 text-white font-black text-[11px] uppercase tracking-wider shadow-md transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Stop Smart Chase Immediately"
+                >
+                  <Square className="w-3 h-3 fill-white" />
+                  {isStoppingChase ? 'Stopping...' : 'Stop SL'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsOpen(true)}
+                className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white text-[10px] font-bold uppercase transition-all cursor-pointer"
+              >
+                Open
+              </button>
+            </div>
+          );
+        })(),
         document.body
       )}
 
@@ -721,10 +774,60 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
               {/* Scrollable Content */}
               <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 pb-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/20">
 
-              {/* ACTIVE SMART CHASE / SOFTWARE SL LIVE STATUS & CANCEL BUTTON */}
+              {/* ACTIVE SMART CHASE / SOFTWARE SL / SMART PEG LIVE STATUS & CANCEL BUTTON */}
               {(() => {
+                const activePeg = activeBrackets.find(b => b.status === 'pegging');
                 const activeChase = activeBrackets.find(b => b.status === 'chasing');
                 const activeSoftwareSl = activeBrackets.find(b => b.status === 'monitoring' && b.type === 'smart_chase');
+
+                if (activePeg) {
+                  return (
+                    <div className="p-3 rounded-xl bg-gradient-to-br from-amber-950/90 via-black to-amber-950/40 border border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.25)] flex flex-col gap-2.5 animate-fadeIn">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                          </span>
+                          <span className="text-xs font-black tracking-wide text-amber-200 uppercase flex items-center gap-1">
+                            <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                            Smart Peg Entry Active
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                          Attempt {activePeg.current_attempt || 1}/{activePeg.max_attempts ? activePeg.max_attempts : '∞'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
+                        <div className="text-left">
+                          <span className="text-gray-400 block text-[9px] uppercase">Side</span>
+                          <span className={`font-bold ${activePeg.side?.toLowerCase() === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
+                            {activePeg.side?.toUpperCase()} (Maker)
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-gray-400 block text-[9px] uppercase">Best Maker Price</span>
+                          <span className="text-amber-300 font-bold">{activePeg.current_maker_price || 'Active'}</span>
+                        </div>
+                        <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
+                          <span className="text-gray-400">Target Size / Filled:</span>
+                          <span className="text-gray-200 font-semibold">{activePeg.filled_amount || 0} / {activePeg.amount}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={isStoppingPeg}
+                        onClick={() => handleStopSmartPeg(activePeg)}
+                        className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        <Square className="w-3.5 h-3.5 fill-white" />
+                        {isStoppingPeg ? 'Stopping Peg...' : 'Stop Smart Peg Entry'}
+                      </button>
+                    </div>
+                  );
+                }
 
                 if (activeChase) {
                   return (
@@ -847,22 +950,76 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                 </div>
               </div>
 
-              {/* Order Type Toggle */}
-              <div className="flex p-1 rounded-lg bg-black/40 border border-white/5">
-                {(['Market', 'Limit'] as const).map((type) => (
+              {/* Order Type Toggle: Market | Limit | ⚡ Smart Peg */}
+              <div className="flex p-1 rounded-lg bg-black/40 border border-white/5 gap-1">
+                {(['Market', 'Limit', 'SmartPeg'] as const).map((type) => (
                   <button
                     key={type}
                     onClick={() => setOrderType(type)}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all uppercase tracking-wider ${
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1 ${
                       orderType === type 
-                        ? 'bg-brand-primary text-white shadow-sm' 
-                        : 'text-gray-500 hover:text-white hover:bg-white/5'
+                        ? type === 'SmartPeg'
+                          ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white shadow-md'
+                          : 'bg-brand-primary text-white shadow-sm' 
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
-                    {type}
+                    {type === 'SmartPeg' ? (
+                      <>
+                        <Zap className="w-3 h-3 text-amber-300 fill-amber-300" />
+                        <span>Smart Peg</span>
+                      </>
+                    ) : (
+                      <span className="uppercase tracking-wider">{type}</span>
+                    )}
                   </button>
                 ))}
               </div>
+
+              {/* Smart Peg Entry Explanatory & Settings Panel */}
+              <AnimatePresence>
+                {orderType === 'SmartPeg' && (
+                  <MotionDiv
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="p-2.5 rounded-xl bg-gradient-to-r from-amber-950/40 via-red-950/20 to-black border border-amber-500/30 text-[10px] space-y-2 overflow-hidden shadow-[0_0_15px_rgba(245,158,11,0.15)]"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                        <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                        <span>⚡ Dynamic Maker Peg Entry Active</span>
+                      </div>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold">
+                        Post-Only Maker
+                      </span>
+                    </div>
+                    <p className="text-[9px] text-gray-400 leading-relaxed">
+                      Automatically shadows the top of the orderbook (Best Bid for Buy, Best Ask for Sell) at #1 Queue Priority until 100% filled.
+                    </p>
+                    <div className="space-y-1 pt-1 border-t border-white/5">
+                      <div className="flex justify-between items-center text-[9px] text-gray-400">
+                        <span>Max Chase Drift Guard</span>
+                        <span className="text-amber-400 font-bold font-mono">
+                          {smartPegMaxDev === 0 ? 'Unlimited (∞)' : `${smartPegMaxDev}%`}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="5.0"
+                        step="0.1"
+                        value={smartPegMaxDev}
+                        onChange={(e) => setSmartPegMaxDev(parseFloat(e.target.value))}
+                        className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                      />
+                      <p className="text-[8px] text-gray-500">
+                        {smartPegMaxDev === 0 ? 'Chases continuously until filled.' : 'Stops chasing if price drifts too far away from initial entry.'}
+                      </p>
+                    </div>
+                  </MotionDiv>
+                )}
+              </AnimatePresence>
 
               {/* Price (if limit) */}
               <AnimatePresence>
@@ -1668,14 +1825,26 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                   onClick={() => handleTrade(tradeSide)}
                   disabled={isSubmitting}
                   className={`flex-1 py-3 px-4 rounded-xl font-bold flex flex-col items-center justify-center transition-all disabled:opacity-50 group border ${
-                     tradeSide === 'Buy' 
-                       ? 'bg-green-500/20 hover:bg-green-500 text-green-400 hover:text-white border-green-500/50 hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]'
-                       : 'bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white border-red-500/50 hover:shadow-[0_0_15px_rgba(239,68,68,0.4)]'
+                     orderType === 'SmartPeg'
+                       ? tradeSide === 'Buy'
+                         ? 'bg-gradient-to-r from-amber-600/30 to-green-600/30 hover:from-amber-600 hover:to-green-600 text-amber-300 hover:text-white border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
+                         : 'bg-gradient-to-r from-amber-600/30 to-red-600/30 hover:from-amber-600 hover:to-red-600 text-amber-300 hover:text-white border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
+                       : tradeSide === 'Buy' 
+                         ? 'bg-green-500/20 hover:bg-green-500 text-green-400 hover:text-white border-green-500/50 hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]'
+                         : 'bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white border-red-500/50 hover:shadow-[0_0_15px_rgba(239,68,68,0.4)]'
                   }`}
                 >
                   <div className="flex items-center space-x-2">
-                    {tradeSide === 'Buy' ? <TrendingUp className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" /> : <TrendingDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />}
-                    <span className="text-sm uppercase tracking-wider">Execute {isFutures ? (tradeSide === 'Buy' ? 'Long' : 'Short') : tradeSide}</span>
+                    {orderType === 'SmartPeg' ? (
+                      <Zap className="w-5 h-5 text-amber-300 fill-amber-300 group-hover:scale-110 transition-transform animate-bounce-subtle" />
+                    ) : tradeSide === 'Buy' ? (
+                      <TrendingUp className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
+                    ) : (
+                      <TrendingDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
+                    )}
+                    <span className="text-sm uppercase tracking-wider">
+                      {orderType === 'SmartPeg' ? 'Smart Peg' : 'Execute'} {isFutures ? (tradeSide === 'Buy' ? 'Long' : 'Short') : tradeSide}
+                    </span>
                   </div>
                 </button>
               </div>

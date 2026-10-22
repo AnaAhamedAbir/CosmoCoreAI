@@ -351,6 +351,40 @@ class ManualTradeService:
             except Exception as margin_e:
                 logger.debug(f"Pre-flight margin check skipped: {margin_e}")
 
+            # --- SMART PEG ENTRY (DYNAMIC BBO ORDER BOOK SHADOWING) ---
+            if order_req.type.lower() in ('smart_peg', 'smartpeg'):
+                from app.services.smart_peg_entry_executor import execute_smart_peg_entry
+                peg_cid = f"peg_{getattr(api_key_record, 'id', user_id)}_{order_req.symbol}_{int(time.time())}"
+
+                max_dev = 2.0
+                if isinstance(order_req.params, dict) and order_req.params.get('maxChaseDeviationPct') is not None:
+                    max_dev = float(order_req.params.get('maxChaseDeviationPct'))
+
+                asyncio.create_task(
+                    execute_smart_peg_entry(
+                        exchange=exchange,
+                        symbol=order_req.symbol,
+                        side=order_req.side.lower(),
+                        amount=order_req.amount,
+                        is_futures=is_futures,
+                        user_id=user_id,
+                        api_key_record=api_key_record,
+                        tp_config=order_req.attached_tp.dict() if getattr(order_req, 'attached_tp', None) and order_req.attached_tp.enabled else None,
+                        sl_config=order_req.attached_sl.dict() if getattr(order_req, 'attached_sl', None) and order_req.attached_sl.enabled else None,
+                        max_chase_deviation_pct=max_dev,
+                        peg_id=peg_cid
+                    )
+                )
+
+                return {
+                    "id": peg_cid,
+                    "symbol": order_req.symbol,
+                    "status": "pegging",
+                    "side": order_req.side.lower(),
+                    "amount": order_req.amount,
+                    "type": "smart_peg",
+                    "message": f"⚡ Smart Peg Entry initiated for {order_req.symbol} ({order_req.side.upper()})"
+                }
 
             # Execute Trade (Try WebSocket First, Fallback to REST)
             response = None

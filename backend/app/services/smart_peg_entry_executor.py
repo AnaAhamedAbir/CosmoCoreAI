@@ -241,6 +241,15 @@ async def execute_smart_peg_entry(
     while remaining_amount > 0 and not cancel_event.is_set():
         if max_attempts > 0 and attempts >= max_attempts:
             logger.info(f"⚠️ [Smart Peg Entry] Reached max attempts ({max_attempts}). Stopping.")
+            msg = (
+                f"⚠️ *Smart Peg Entry Stopped: Max Attempts Reached*\n"
+                f"Exchange: {exchange_name}\n"
+                f"Pair: `{symbol}`\n"
+                f"Side: {side.upper()}\n"
+                f"Total Attempts: `{attempts}/{max_attempts}`\n"
+                f"Total Filled: `{total_filled}/{amount}`"
+            )
+            await _send_notify(msg)
             break
 
         attempts += 1
@@ -297,6 +306,16 @@ async def execute_smart_peg_entry(
                         f"🛑 [Smart Peg Entry] Price {target_maker_price} drifted beyond max cap {max_allowed_price:.6f} "
                         f"(+{max_chase_deviation_pct}% from initial {initial_benchmark_price}). Stopping peg to protect capital."
                     )
+                    msg = (
+                        f"🛑 *Smart Peg Entry Stopped: Price Drift Cap Hit!*\n"
+                        f"Exchange: {exchange_name}\n"
+                        f"Pair: `{symbol}`\n"
+                        f"Side: {side.upper()}\n"
+                        f"Maker Price `{target_maker_price}` drifted beyond cap `{max_allowed_price:.6f}` "
+                        f"(+{max_chase_deviation_pct}% drift from initial `{initial_benchmark_price}`).\n"
+                        f"Total Filled: `{total_filled}/{amount}`"
+                    )
+                    await _send_notify(msg)
                     break
             else:
                 min_allowed_price = initial_benchmark_price * (1 - (max_chase_deviation_pct / 100.0))
@@ -305,6 +324,16 @@ async def execute_smart_peg_entry(
                         f"🛑 [Smart Peg Entry] Price {target_maker_price} drifted below min cap {min_allowed_price:.6f} "
                         f"(-{max_chase_deviation_pct}% from initial {initial_benchmark_price}). Stopping peg to protect capital."
                     )
+                    msg = (
+                        f"🛑 *Smart Peg Entry Stopped: Price Drift Cap Hit!*\n"
+                        f"Exchange: {exchange_name}\n"
+                        f"Pair: `{symbol}`\n"
+                        f"Side: {side.upper()}\n"
+                        f"Maker Price `{target_maker_price}` drifted below min cap `{min_allowed_price:.6f}` "
+                        f"(-{max_chase_deviation_pct}% drift from initial `{initial_benchmark_price}`).\n"
+                        f"Total Filled: `{total_filled}/{amount}`"
+                    )
+                    await _send_notify(msg)
                     break
 
         # Re-clamp amount
@@ -429,17 +458,51 @@ async def execute_smart_peg_entry(
         # Handle user cancellation
         if user_cancelled:
             logger.info(f"🛑 [Smart Peg Entry] Cancelled by user during attempt {attempts}!")
+            cancel_res = None
             try:
-                await exchange.cancel_order(order_id, symbol)
+                cancel_res = await exchange.cancel_order(order_id, symbol)
                 logger.info(f"🛑 Cancelled active entry order #{order_id} on exchange.")
             except Exception as ce:
                 logger.debug(f"Cancel order notice: {ce}")
-            final_res = {'status': 'cancelled', 'id': 'user_stopped'}
+
+            # Check if there was any partial fill before cancellation took effect
+            try:
+                p_filled = float((cancel_res or {}).get('filled') or 0.0) if isinstance(cancel_res, dict) else 0.0
+                if p_filled <= 0:
+                    cancel_chk = await exchange.fetch_order(order_id, symbol)
+                    p_filled = float(cancel_chk.get('filled') or 0.0)
+                if p_filled > 0:
+                    total_filled += p_filled
+                    exec_p = float((cancel_res or {}).get('average') or (cancel_res or {}).get('price') or target_maker_price)
+                    logger.info(f"🔄 [Smart Peg Entry] Captured partial fill upon cancel: {p_filled} at {exec_p}")
+
+                    # Spawn bracket for this filled chunk if configured
+                    if tp_config or sl_config:
+                        from app.services.bracket_order_service import BracketOrderService
+                        asyncio.create_task(
+                            BracketOrderService._spawn_bracket_for_amount(
+                                exchange=exchange,
+                                symbol=symbol,
+                                side=side.lower(),
+                                filled_amount=p_filled,
+                                average_price=exec_p,
+                                is_futures=is_futures,
+                                tp_config=tp_config,
+                                sl_config=sl_config,
+                                user_id=user_id,
+                                api_key_record=api_key_record
+                            )
+                        )
+            except Exception as p_err:
+                logger.debug(f"User cancel partial fill check: {p_err}")
+
+            final_res = {'status': 'cancelled', 'id': 'user_stopped', 'filled': total_filled}
             msg = (
                 f"🛑 *Smart Peg Entry Stopped Manually!*\n"
                 f"Exchange: {exchange_name}\n"
                 f"Pair: `{symbol}`\n"
                 f"Action: Entry peg stopped by user. Limit order #{order_id} cancelled."
+                + (f"\nFilled before cancel: `{total_filled}/{amount}`" if total_filled > 0 else "")
             )
             await _send_notify(msg)
             break

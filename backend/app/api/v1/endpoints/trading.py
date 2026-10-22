@@ -375,9 +375,6 @@ async def stop_smart_peg_endpoint(
     except Exception as e:
         logger.error(f"Stop Smart Peg failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to stop Smart Peg Entry: {str(e)}")
-    except Exception as e:
-        logger.error(f"Stop Smart Chase failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to stop Smart Chase: {str(e)}")
 
 @router.post("/sor/preview")
 async def preview_sor_order(

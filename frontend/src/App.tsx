@@ -7,6 +7,7 @@ import LoginFormModal from '@/pages/public/LoginFormModal';
 import ForgotPasswordModal from '@/pages/public/ForgotPasswordModal';
 import ResetPasswordScreen from '@/pages/public/ResetPasswordScreen';
 import { AppView } from '@/types';
+import { Toaster } from 'react-hot-toast';
 
 // AppState Enum আপডেট
 enum AppState {
@@ -195,6 +196,13 @@ function App() {
 
   return (
     <div className="min-h-screen font-sans">
+      <Toaster 
+        position="top-right" 
+        toastOptions={{ 
+          className: '!bg-[#121212] !text-white !border !border-white/10 !shadow-2xl',
+          style: { zIndex: 999999 } 
+        }} 
+      />
       {renderContent()}
     </div>
   );

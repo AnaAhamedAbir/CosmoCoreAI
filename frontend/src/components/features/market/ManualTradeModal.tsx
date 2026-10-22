@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
 
@@ -437,13 +437,14 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
           return;
         }
         if (effectiveIcebergQty >= baseAmount) {
-          toast.error('Iceberg visible slice must be smaller than total order quantity.');
+          toast.error(`Iceberg slice (${effectiveIcebergQty.toFixed(2)}) must be smaller than total order quantity (${baseAmount.toFixed(2)} ${baseCurrency}).`);
           return;
         }
         const refPrice = Number(limitPrice) || effectiveCurrentPrice || 0;
         const sliceNotional = effectiveIcebergQty * refPrice;
         if (sliceNotional < 5.0) {
-          toast.error(`Iceberg slice value (~$${sliceNotional.toFixed(2)}) is below Binance minimum $5 notional.`);
+          const minQty = refPrice > 0 ? Math.ceil(5.05 / refPrice) : 65;
+          toast.error(`❌ Iceberg slice value (~$${sliceNotional.toFixed(2)}) is below Binance minimum $5 notional! Minimum slice is ~${minQty} ${baseCurrency}.`, { duration: 6000 });
           return;
         }
       }
@@ -1134,17 +1135,59 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           </span>
                         </div>
 
-                        {/* Calculation preview pill */}
-                        {effectiveIcebergQty > 0 && currentBaseAmount > 0 && (
-                          <div className="p-2 rounded bg-black/40 border border-cyan-500/20 flex items-center justify-between text-[10px] font-mono">
-                            <span className="text-gray-300">
-                              Order Book Shows: <strong className="text-cyan-300">{effectiveIcebergQty.toFixed(4)} {baseCurrency}</strong>
-                            </span>
-                            <span className="text-cyan-400/80">
-                              ≈ {Math.max(1, Math.ceil(currentBaseAmount / effectiveIcebergQty))} Slices Total
-                            </span>
-                          </div>
-                        )}
+                        {/* Live Slice Calculation & Warning Pill */}
+                        {(() => {
+                          if (effectiveIcebergQty <= 0 || currentBaseAmount <= 0) return null;
+                          const refPrice = Number(limitPrice) || effectiveCurrentPrice || 0;
+                          const sliceNotional = effectiveIcebergQty * refPrice;
+                          const minRequiredSlice = refPrice > 0 ? Math.ceil(5.05 / refPrice) : 65;
+
+                          if (effectiveIcebergQty >= currentBaseAmount) {
+                            return (
+                              <div className="p-2 rounded bg-amber-950/40 border border-amber-500/40 text-[10px] text-amber-300 flex items-center gap-1.5 font-mono">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                <span>Slice ({effectiveIcebergQty.toFixed(2)}) must be smaller than total order ({currentBaseAmount.toFixed(2)} {baseCurrency}).</span>
+                              </div>
+                            );
+                          }
+
+                          if (sliceNotional < 5.0) {
+                            return (
+                              <div className="p-2 rounded bg-red-950/50 border border-red-500/50 flex flex-col gap-1.5 text-[10px] animate-fadeIn">
+                                <div className="flex items-center justify-between text-red-300 font-bold">
+                                  <span className="flex items-center gap-1">
+                                    <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                                    Slice value (${sliceNotional.toFixed(2)}) is below Binance $5.00 Min Notional!
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-gray-300">
+                                  <span className="text-[9px]">Binance requires each slice ≥ $5.00 (~{minRequiredSlice} {baseCurrency})</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setIcebergMode('qty');
+                                      setIcebergCustomQty(minRequiredSlice.toString());
+                                    }}
+                                    className="px-2 py-0.5 rounded bg-red-600/30 hover:bg-red-600/60 text-red-200 border border-red-500/50 font-bold uppercase tracking-wider text-[9px] transition-colors cursor-pointer"
+                                  >
+                                    Auto-Set Min ({minRequiredSlice} {baseCurrency})
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="p-2 rounded bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-between text-[10px] font-mono">
+                              <span className="text-gray-300">
+                                Order Book Shows: <strong className="text-cyan-300">{effectiveIcebergQty.toFixed(4)} {baseCurrency}</strong> (~${sliceNotional.toFixed(2)})
+                              </span>
+                              <span className="text-cyan-400 font-bold">
+                                ≈ {Math.max(1, Math.ceil(currentBaseAmount / effectiveIcebergQty))} Slices Total ✓
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </MotionDiv>
                     )}
                   </AnimatePresence>

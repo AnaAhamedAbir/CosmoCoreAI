@@ -96,7 +96,7 @@ const parseIntervalToMs = (interval: string): number => {
 };
 
 // Chart Component
-const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean }> = ({ exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false }) => {
+const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean }> = ({ exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<any>(null);
     const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -118,6 +118,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     const botStatusIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const wallLinesRef = useRef<Map<string, any>>(new Map());
     const currentPriceLineRef = useRef<any>(null);
+    const bidLineRef = useRef<any>(null);
+    const askLineRef = useRef<any>(null);
     const mlEntryLineRef = useRef<any>(null);
     const mlSlLineRef = useRef<any>(null);
     const mlTpLineRef = useRef<any>(null);
@@ -620,6 +622,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             // Cleanup refs so they respawn on the newly created chart instance
             candlestickSeriesRef.current = null;
             currentPriceLineRef.current = null;
+            bidLineRef.current = null;
+            askLineRef.current = null;
             mlEntryLineRef.current = null;
             mlSlLineRef.current = null;
             mlTpLineRef.current = null;
@@ -2009,6 +2013,48 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
     }, [currentPrice]);
 
+    // Best Bid / Best Ask lines (light colored, toggleable)
+    useEffect(() => {
+        const series = candlestickSeriesRef.current;
+        if (!series) return;
+
+        const sync = (
+            ref: React.MutableRefObject<any>,
+            price: number,
+            color: string,
+            title: string
+        ) => {
+            try {
+                if (!showBidAsk || !price || price <= 0) {
+                    if (ref.current) {
+                        series.removePriceLine(ref.current);
+                        ref.current = null;
+                    }
+                    return;
+                }
+                if (!ref.current) {
+                    ref.current = series.createPriceLine({
+                        price,
+                        color,
+                        lineWidth: 1,
+                        lineStyle: 2, // Dashed
+                        axisLabelVisible: true,
+                        title,
+                        axisLabelColor: color,
+                        axisLabelTextColor: '#000000',
+                    });
+                } else {
+                    ref.current.applyOptions({ price });
+                }
+            } catch {
+                ref.current = null;
+            }
+        };
+
+        sync(bidLineRef, bestBid, 'rgba(74, 222, 128, 0.45)', 'BID');
+        sync(askLineRef, bestAsk, 'rgba(248, 113, 113, 0.45)', 'ASK');
+    }, [showBidAsk, bestBid, bestAsk, symbol, interval, currentPrice]);
+
     // Update Trade & Absorption Markers
     useEffect(() => {
         if (!botStatus || !candlestickSeriesRef.current || !lastCandleRef.current) return;
@@ -2961,6 +3007,7 @@ const OrderFlowChartPanel: React.FC<{
     volumeMode: string;
     parentL2Data?: any;
     showCrosshairAIPredict?: boolean;
+    showBidAsk?: boolean;
 }> = ({ 
     config, 
     isMain, 
@@ -2985,7 +3032,8 @@ const OrderFlowChartPanel: React.FC<{
     volumeThreshold, 
     volumeMode, 
     parentL2Data, 
-    showCrosshairAIPredict = false 
+    showCrosshairAIPredict = false,
+    showBidAsk = false
 }) => {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isTradingViewMode, setIsTradingViewMode] = useState(false);
@@ -3003,6 +3051,8 @@ const OrderFlowChartPanel: React.FC<{
     const isShared = isMain && !!parentL2Data;
     const fallbackL2 = useLevel2MarketData(isShared ? '' : config.symbol, isShared ? '' : config.exchange);
     const { bids, asks, walls, currentPrice, tradeEvent } = isShared ? parentL2Data : fallbackL2;
+    const bestBid = useMemo(() => (bids && bids.length ? Math.max(...bids.map((b: any) => b.price)) : 0), [bids]);
+    const bestAsk = useMemo(() => (asks && asks.length ? Math.min(...asks.map((a: any) => a.price)) : 0), [asks]);
     const advancedMetricsData = useAdvancedMetrics(config.symbol, config.exchange, config.interval, advancedMetrics);
     const openOrders = useOpenOrders(selectedApiKeyId, config.symbol, 2000);
 
@@ -3131,7 +3181,7 @@ const OrderFlowChartPanel: React.FC<{
                     <TradingViewWidget symbol={config.symbol} interval={config.interval} />
                 ) : (
                     <OrderFlowChart 
-                        exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict}
+                        exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showBidAsk={showBidAsk}
                         onAIPredictClick={(price) => {
                             setExternalAIPrice(price);
                             setExternalAIOpenTrigger(Date.now());
@@ -3190,6 +3240,23 @@ const OrderFlowHeatmap: React.FC = () => {
         try {
             localStorage.setItem('orderflow_show_crosshair_ai_predict', JSON.stringify(enabled));
         } catch {}
+    };
+
+    const [showBidAsk, setShowBidAsk] = useState<boolean>(() => {
+        try {
+            const saved = localStorage.getItem('orderflow_show_bid_ask');
+            return saved !== null ? JSON.parse(saved) : false;
+        } catch {
+            return false;
+        }
+    });
+
+    const handleToggleBidAsk = () => {
+        setShowBidAsk(prev => {
+            const next = !prev;
+            try { localStorage.setItem('orderflow_show_bid_ask', JSON.stringify(next)); } catch {}
+            return next;
+        });
     };
     
     const [additionalCharts, setAdditionalCharts] = useState<ChartConfig[]>([]);
@@ -3463,6 +3530,18 @@ const OrderFlowHeatmap: React.FC = () => {
                             {formatDisplayPrice(currentPrice)}
                         </span>
                     </div>
+
+                    <button
+                        onClick={handleToggleBidAsk}
+                        title={showBidAsk ? 'Hide Bid/Ask lines' : 'Show Bid/Ask lines'}
+                        className={`flex items-center space-x-2 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${showBidAsk
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-sm'
+                            : 'bg-gray-100 dark:bg-black/30 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-black/10'
+                            }`}
+                    >
+                        <span className={`w-1.5 h-1.5 rounded-full ${showBidAsk ? 'bg-emerald-400' : 'bg-gray-400'}`}></span>
+                        <span>Bid/Ask {showBidAsk ? 'ON' : 'OFF'}</span>
+                    </button>
                 </div>
                 <div className="flex items-center gap-2">
                     <span className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${botWsConnected ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>
@@ -3574,6 +3653,7 @@ const OrderFlowHeatmap: React.FC = () => {
                             volumeMode={volumeMode} 
                             parentL2Data={c.isMain ? { bids, asks, walls, currentPrice, tradeEvent } : undefined}
                             showCrosshairAIPredict={showCrosshairAIPredict}
+                            showBidAsk={showBidAsk}
                         />
                     ))}
                 </div>

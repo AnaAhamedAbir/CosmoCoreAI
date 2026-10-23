@@ -27,8 +27,10 @@ self.onmessage = (event: MessageEvent) => {
                     type: 'TRADE_READY',
                     data: {
                         price: parsed.currentPrice,
-                        volume: parsed.recentVolume,
-                        timestamp: Date.now()
+                        high: parsed.highPrice || parsed.currentPrice,
+                        low: parsed.lowPrice || parsed.currentPrice,
+                        volume: parsed.recentVolume || 0,
+                        timestamp: parsed.timestamp || Date.now()
                     }
                 });
                 return;

@@ -1264,117 +1264,132 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         safeSetMarkers();
     }, [patternData, indicatorSettings.showCandlestickPatterns]);
 
-    // Buffer market data updates
-    useEffect(() => {
-        if (!currentPrice && !tradeEvent) return;
-        marketDataBufferRef.current = {
-            price: currentPrice || (marketDataBufferRef.current?.price || 0),
-            trade: tradeEvent || (marketDataBufferRef.current?.trade || null)
-        };
-    }, [currentPrice, tradeEvent]);
+    // Refs to track last applied events to avoid redundant calculations
+    const lastAppliedTradeRef = useRef<any>(null);
+    const lastAppliedPriceRef = useRef<number>(0);
 
-    // Throttled Chart and Indicator Updates (every 300ms)
-    useEffect(() => {
-        const updateInterval = setInterval(() => {
-            const bufferedData = marketDataBufferRef.current;
-            if (!bufferedData || !candlestickSeriesRef.current || !lastCandleRef.current) return;
+    // Light-Speed Realtime Candle & Price Line Update (Synchronous 0ms execution)
+    const applyLivePriceTick = useCallback((
+        livePrice: number,
+        trade?: { price: number; high?: number; low?: number; volume?: number; timestamp?: number } | null
+    ) => {
+        if (!candlestickSeriesRef.current || !lastCandleRef.current || !livePrice || livePrice <= 0 || isNaN(livePrice)) return;
 
-            // Reset buffer after capturing
-            marketDataBufferRef.current = null;
+        const lastCandle = lastCandleRef.current as any;
+        const intervalMs = parseIntervalToMs(interval);
+        let candleTimeMs = Number(lastCandle.time);
+        const isSeconds = candleTimeMs < 10000000000;
+        if (isSeconds) candleTimeMs *= 1000;
 
-            const { price: latestPrice, trade: latestTrade } = bufferedData;
-            let needsUpdate = false;
-            let isNewCandle = false;
-            const lastCandle = lastCandleRef.current as any;
+        const tradeHigh = trade?.high !== undefined ? trade.high : livePrice;
+        const tradeLow = trade?.low !== undefined ? trade.low : livePrice;
+        const tradeVol = trade?.volume || 0;
+        const eventTimestamp = (trade && trade.timestamp) ? trade.timestamp : Date.now();
 
-            let newClose = lastCandle.close;
-            let newHigh = lastCandle.high;
-            let newLow = lastCandle.low;
-            let newVolume = lastCandle.volume || 0;
-            let eventTimestamp = Date.now();
+        let updatedCandle: any;
+        let isNewCandle = false;
 
-            // Update from trade event
-            if (latestTrade && latestTrade.price > 0 && !isNaN(latestTrade.price) && latestTrade !== lastTradeEventRef.current) {
-                newClose = latestTrade.price;
-                newHigh = Math.max(newHigh, latestTrade.price);
-                newLow = Math.min(newLow, latestTrade.price);
-                newVolume += (latestTrade.volume || 0);
-                eventTimestamp = latestTrade.timestamp || Date.now();
-                lastTradeEventRef.current = latestTrade;
-                needsUpdate = true;
-            }
+        if (eventTimestamp >= candleTimeMs + intervalMs) {
+            // Crossed timeframe boundary: cleanly spawn next candle
+            const nextCandleTimeMs = Math.floor(eventTimestamp / intervalMs) * intervalMs;
+            const nextCandleTime = isSeconds ? Math.floor(nextCandleTimeMs / 1000) : nextCandleTimeMs;
 
-            // DO NOT update candlestick OHLC from orderbook mid-price to prevent fake wicks!
-            // We only track it so we know if we need to re-render the current price line if implemented separately.
-            if (latestPrice && latestPrice > 0 && !isNaN(latestPrice) && latestPrice !== lastProcessedPriceRef.current) {
-                lastProcessedPriceRef.current = latestPrice;
-                // We still trigger a small update to allow the price line to move, but do NOT modify candle OHLC
-                needsUpdate = true;
-            }
-
-            if (!needsUpdate) return;
-
-            const intervalMs = parseIntervalToMs(interval);
-            let candleTimeMs = lastCandle.time as number;
-            const isSeconds = candleTimeMs < 10000000000;
-            if (isSeconds) candleTimeMs *= 1000;
-
-            let updatedCandle: any;
-
-            if (eventTimestamp >= candleTimeMs + intervalMs) {
-                // Crosses the timeframe boundary, create a new candle
-                const nextCandleTimeMs = Math.floor(eventTimestamp / intervalMs) * intervalMs;
-                const startPrice = newClose;
+            if (nextCandleTime > (isSeconds ? Math.floor(candleTimeMs / 1000) : candleTimeMs)) {
+                const startPrice = lastCandle.close;
                 updatedCandle = {
-                    time: isSeconds ? Math.floor(nextCandleTimeMs / 1000) : nextCandleTimeMs,
-                    open: lastCandle.close,
-                    high: startPrice,
-                    low: startPrice,
-                    close: startPrice,
-                    volume: (latestTrade && latestTrade.price > 0) ? latestTrade.volume : 0,
+                    time: nextCandleTime,
+                    open: startPrice,
+                    high: Math.max(startPrice, livePrice, tradeHigh),
+                    low: Math.min(startPrice, livePrice, tradeLow),
+                    close: livePrice,
+                    volume: tradeVol,
                 };
+                if (lastCandle.color) updatedCandle.color = lastCandle.color;
+                if (lastCandle.wickColor) updatedCandle.wickColor = lastCandle.wickColor;
                 isNewCandle = true;
-
-                // No need to track indicator state manually anymore
             } else {
                 updatedCandle = {
                     ...lastCandle,
-                    close: newClose,
-                    high: newHigh,
-                    low: newLow,
-                    volume: newVolume,
+                    close: livePrice,
+                    high: Math.max(lastCandle.high, livePrice, tradeHigh),
+                    low: Math.min(lastCandle.low, livePrice, tradeLow),
+                    volume: (lastCandle.volume || 0) + tradeVol,
                 };
             }
+        } else {
+            // Live candle tick: dynamically update body & wicks with exact live price
+            updatedCandle = {
+                ...lastCandle,
+                close: livePrice,
+                high: Math.max(lastCandle.high, livePrice, tradeHigh),
+                low: Math.min(lastCandle.low, livePrice, tradeLow),
+                volume: (lastCandle.volume || 0) + tradeVol,
+            };
+        }
+
+        try {
+            candlestickSeriesRef.current.update(updatedCandle);
+            lastCandleRef.current = updatedCandle;
+
+            if (volumeSeriesRef.current) {
+                volumeSeriesRef.current.update({
+                    time: updatedCandle.time,
+                    value: updatedCandle.volume,
+                    color: updatedCandle.close >= updatedCandle.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'
+                });
+            }
+
+            const len = allCandlesRef.current.length;
+            const MAX_CANDLES = 2000;
+
+            if (isNewCandle) {
+                allCandlesRef.current.push(updatedCandle);
+                if (allCandlesRef.current.length > MAX_CANDLES) {
+                    allCandlesRef.current = allCandlesRef.current.slice(-MAX_CANDLES);
+                }
+            } else if (len > 0 && allCandlesRef.current[len - 1].time === updatedCandle.time) {
+                allCandlesRef.current[len - 1] = updatedCandle;
+            }
+
+            // Sync horizontal live price line with exact candle close at zero lag
+            if (currentPriceLineRef.current) {
+                const lineColor = updatedCandle.close >= updatedCandle.open ? '#22c55e' : '#ef4444';
+                currentPriceLineRef.current.applyOptions({
+                    price: updatedCandle.close,
+                    color: lineColor
+                });
+            }
+        } catch {
+            // Safe guard against unmount
+        }
+    }, [interval]);
+
+    // Reset tracker refs when symbol or interval changes
+    useEffect(() => {
+        lastAppliedTradeRef.current = null;
+        lastAppliedPriceRef.current = 0;
+    }, [symbol, interval]);
+
+    // Instant Zero-Lag Reaction on Live Price & Trade Events
+    useEffect(() => {
+        if (tradeEvent && tradeEvent.price > 0 && !isNaN(tradeEvent.price) && tradeEvent !== lastAppliedTradeRef.current) {
+            lastAppliedTradeRef.current = tradeEvent;
+            lastAppliedPriceRef.current = tradeEvent.price;
+            applyLivePriceTick(tradeEvent.price, tradeEvent);
+        } else if (currentPrice && currentPrice > 0 && !isNaN(currentPrice) && currentPrice !== lastAppliedPriceRef.current) {
+            lastAppliedPriceRef.current = currentPrice;
+            applyLivePriceTick(currentPrice, null);
+        }
+    }, [tradeEvent, currentPrice, applyLivePriceTick]);
+
+    // Throttled Technical Indicator Engine (Runs smoothly every 200ms without freezing UI)
+    useEffect(() => {
+        const updateInterval = setInterval(() => {
+            if (!candlestickSeriesRef.current || !lastCandleRef.current || allCandlesRef.current.length === 0) return;
 
             try {
-                candlestickSeriesRef.current.update(updatedCandle);
-                lastCandleRef.current = updatedCandle;
-
-                if (volumeSeriesRef.current) {
-                    volumeSeriesRef.current.update({
-                        time: updatedCandle.time,
-                        value: updatedCandle.volume,
-                        color: updatedCandle.close >= updatedCandle.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'
-                    });
-                }
-
-                const len = allCandlesRef.current.length;
-                const MAX_CANDLES = 2000;
-
-                if (isNewCandle) {
-                    allCandlesRef.current.push(updatedCandle);
-                    // Prevent memory leak by limiting array size
-                    if (allCandlesRef.current.length > MAX_CANDLES) {
-                        allCandlesRef.current = allCandlesRef.current.slice(-MAX_CANDLES);
-                    }
-                } else if (len > 0 && allCandlesRef.current[len - 1].time === updatedCandle.time) {
-                    allCandlesRef.current[len - 1] = updatedCandle;
-                }
-
-                // --- ACCELERATED INDICATOR INJECTION ON NEW DATA ---
-                // Fetch the latest processed indicators and update the Canvas using O(1) point updates 
-                // Instead of completely destroying and remounting the entire visual line chart every 300ms.
                 const curData = allCandlesRef.current;
+                const lastCandle = lastCandleRef.current as any;
                 if (curData.length > 0) {
                     if (indicatorSettings.showEMA && emaSeriesRef.current) {
                         const emaData = calculateEMA(curData, indicatorSettings.emaPeriod);
@@ -1401,7 +1416,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
                             const candleColor = lastUT.color === 'green' ? '#22c55e' : lastUT.color === 'red' ? '#ef4444' : '#3b82f6';
                             allCandlesRef.current[allCandlesRef.current.length - 1] = {
-                                ...updatedCandle,
+                                ...lastCandle,
                                 color: candleColor,
                                 wickColor: candleColor
                             };
@@ -1446,12 +1461,12 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     }
                 }
             } catch (e) {
-                console.error("Failed to update realtime candle and indicators", e);
+                console.error("Failed to update indicators", e);
             }
-        }, 300);
+        }, 200);
 
         return () => clearInterval(updateInterval);
-    }, [interval, indicatorSettings]);
+    }, [indicatorSettings]);
 
     // Auto Fibonacci Indicator
     useEffect(() => {
@@ -1967,16 +1982,17 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
 
 
-    // Custom Current Price Line (Black Label)
+    // Custom Current Price Line (Black Label fallback sync)
     useEffect(() => {
         if (!candlestickSeriesRef.current || currentPrice <= 0) return;
 
         const lastCandle = lastCandleRef.current;
-        const lineColor = lastCandle && currentPrice >= lastCandle.open ? '#22c55e' : '#ef4444';
+        const targetPrice = (lastCandle && lastCandle.close > 0) ? lastCandle.close : currentPrice;
+        const lineColor = lastCandle && targetPrice >= lastCandle.open ? '#22c55e' : '#ef4444';
 
         if (!currentPriceLineRef.current) {
             currentPriceLineRef.current = candlestickSeriesRef.current.createPriceLine({
-                price: currentPrice,
+                price: targetPrice,
                 color: lineColor,
                 lineWidth: 1,
                 lineStyle: 1, // Dotted
@@ -1987,7 +2003,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             });
         } else {
             currentPriceLineRef.current.applyOptions({ 
-                price: currentPrice,
+                price: targetPrice,
                 color: lineColor
             });
         }

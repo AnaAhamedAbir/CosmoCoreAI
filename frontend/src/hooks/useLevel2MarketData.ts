@@ -11,7 +11,7 @@ export interface MarketDepthData {
     asks: OrderBookLevel[];
     walls: { price: number; type: 'buy' | 'sell'; size: number }[];
     currentPrice: number;
-    tradeEvent: { price: number; volume: number; timestamp: number } | null;
+    tradeEvent: { price: number; high?: number; low?: number; volume: number; timestamp: number } | null;
 }
 
 export const useLevel2MarketData = (symbol: string, exchange: string = 'binance') => {
@@ -56,7 +56,7 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
 
                 const scheduleFlush = () => {
                     if (!throttleTimer) {
-                        throttleTimer = setTimeout(flushUpdate, 200);
+                        throttleTimer = setTimeout(flushUpdate, 100);
                     }
                 };
 
@@ -69,12 +69,17 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
                         };
                         scheduleFlush();
                     } else if (e.data.type === 'TRADE_READY') {
+                        // Light-speed instant flush for trades
                         pendingData = {
                             ...(pendingData || {}),
                             currentPrice: e.data.data.price,
                             tradeEvent: e.data.data
                         };
-                        scheduleFlush();
+                        if (throttleTimer) {
+                            clearTimeout(throttleTimer);
+                            throttleTimer = null;
+                        }
+                        flushUpdate();
                     }
                 };
 

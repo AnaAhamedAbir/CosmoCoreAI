@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 import ccxt.pro as ccxtpro
 from typing import Dict, Set
 
@@ -28,6 +29,7 @@ class MarketDataStreamer:
         self._active_streams: Set[str] = set()
         self._exchange_instances: Dict[str, ccxtpro.Exchange] = {}
         self._tasks: Dict[str, asyncio.Task] = {}
+        self._last_traded_prices: Dict[str, float] = {}
         self._lock = asyncio.Lock()
         self._initialized = True
 
@@ -155,16 +157,22 @@ class MarketDataStreamer:
                     if bid["size"] >= wall_threshold:
                         walls.append({"price": bid["price"], "type": "buy", "size": bid["size"]})
                         
-                current_price = 0
+                mid_price = 0
                 if asks and bids:
-                    current_price = (asks[0]["price"] + bids[0]["price"]) / 2
+                    mid_price = (asks[0]["price"] + bids[0]["price"]) / 2
+                
+                # Use real last traded price if available; fallback to mid_price
+                current_price = self._last_traded_prices.get(stream_key)
+                if not current_price or current_price <= 0:
+                    current_price = mid_price
                 
                 payload = {
                     "type": "orderbook",
                     "bids": bids,
                     "asks": asks,
                     "walls": walls,
-                    "currentPrice": current_price
+                    "currentPrice": current_price,
+                    "midPrice": mid_price
                 }
                 
                 # Publish to Redis
@@ -209,11 +217,21 @@ class MarketDataStreamer:
                 if trades:
                     recent_volume = sum([float(t.get('amount', 0)) for t in trades])
                     last_price = float(trades[-1].get('price', 0))
+                    high_price = max([float(t.get('price', last_price)) for t in trades])
+                    low_price = min([float(t.get('price', last_price)) for t in trades])
+                    raw_ts = trades[-1].get('timestamp')
+                    trade_ts = int(raw_ts) if raw_ts else int(time.time() * 1000)
+
+                    if last_price > 0:
+                        self._last_traded_prices[stream_key] = last_price
                     
                     payload = {
                         "type": "trade",
                         "currentPrice": last_price,
-                        "recentVolume": recent_volume
+                        "highPrice": high_price,
+                        "lowPrice": low_price,
+                        "recentVolume": recent_volume,
+                        "timestamp": trade_ts
                     }
                     
                     if redis:

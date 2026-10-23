@@ -187,7 +187,7 @@ class OandaStreamer:
             }
             await manager.broadcast_market_data(symbol, "ticker", ticker_data)
 
-            # --- 3. Update Redis Cache ---
+            # --- 3. Update Redis Cache & Stream ---
             redis = redis_manager.get_redis()
             if redis:
                 # Update latest orderbook so /book and /heatmap endpoints get something instantly
@@ -196,6 +196,27 @@ class OandaStreamer:
                     "asks": [{"price": ask_price, "size": float(asks[0].get("liquidity", 1000000))}]
                 }
                 await redis.set(f"latest_orderbook:oanda:{symbol.upper()}", json.dumps(cache_ob))
+
+                # Publish to market depth stream for live candle rendering
+                channel = f"market_depth_stream:oanda:{symbol}"
+                ob_payload = {
+                    "type": "orderbook",
+                    "bids": [{"price": bid_price, "size": float(bids[0].get("liquidity", 1000000)), "total": float(bids[0].get("liquidity", 1000000))}],
+                    "asks": [{"price": ask_price, "size": float(asks[0].get("liquidity", 1000000)), "total": float(asks[0].get("liquidity", 1000000))}],
+                    "walls": [],
+                    "currentPrice": round(mid_price, 5),
+                    "midPrice": round(mid_price, 5)
+                }
+                trade_payload = {
+                    "type": "trade",
+                    "currentPrice": round(mid_price, 5),
+                    "highPrice": round(ask_price, 5),
+                    "lowPrice": round(bid_price, 5),
+                    "recentVolume": 1.0,
+                    "timestamp": int(dt.timestamp() * 1000)
+                }
+                await redis.publish(channel, json.dumps(ob_payload))
+                await redis.publish(channel, json.dumps(trade_payload))
 
         except Exception as e:
             logger.error(f"Error processing OANDA price: {e}")

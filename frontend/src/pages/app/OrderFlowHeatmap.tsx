@@ -237,6 +237,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             layout: {
                 background: { type: 'solid', color: 'transparent' } as any,
                 textColor: '#94a3b8',
+                fontSize: 14, // larger price-scale tags (live price tag etc.)
             },
             grid: {
                 vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
@@ -2032,19 +2033,18 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     }
                     return;
                 }
+                const label = `${title} ${formatDisplayPrice(price)}`;
                 if (!ref.current) {
                     ref.current = series.createPriceLine({
                         price,
                         color,
                         lineWidth: 1,
                         lineStyle: 2, // Dashed
-                        axisLabelVisible: true,
-                        title: '', // no title -> tag stays inside the price scale bar
-                        axisLabelColor: color,
-                        axisLabelTextColor: '#ffffff',
+                        axisLabelVisible: false, // keep the price scale bar clean
+                        title: label, // floating tag drawn on the line, outside the price bar
                     });
                 } else {
-                    ref.current.applyOptions({ price });
+                    ref.current.applyOptions({ price, title: label });
                 }
             } catch {
                 ref.current = null;
@@ -3521,12 +3521,12 @@ const OrderFlowHeatmap: React.FC = () => {
                         <span>Bot Logs</span>
                     </button>
 
-                    <div className="flex items-center gap-3 px-5 py-2.5 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 shadow-sm">
-                        <span className="flex items-center gap-2 text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10">
+                        <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                             Live Price:
                         </span>
-                        <span className="text-2xl font-mono font-bold text-gray-800 dark:text-white">
+                        <span className="text-base font-mono font-bold text-gray-800 dark:text-white">
                             {formatDisplayPrice(currentPrice)}
                         </span>
                     </div>

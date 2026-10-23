@@ -2033,18 +2033,19 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     }
                     return;
                 }
-                const label = `${title} ${formatDisplayPrice(price)}`;
                 if (!ref.current) {
                     ref.current = series.createPriceLine({
                         price,
                         color,
                         lineWidth: 1,
                         lineStyle: 2, // Dashed
-                        axisLabelVisible: false, // keep the price scale bar clean
-                        title: label, // floating tag drawn on the line, outside the price bar
+                        axisLabelVisible: true,
+                        title: '', // no title -> tag stays inside the price scale bar
+                        axisLabelColor: color,
+                        axisLabelTextColor: '#ffffff',
                     });
                 } else {
-                    ref.current.applyOptions({ price, title: label });
+                    ref.current.applyOptions({ price });
                 }
             } catch {
                 ref.current = null;

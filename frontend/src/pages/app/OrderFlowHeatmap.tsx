@@ -2058,12 +2058,12 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         lineWidth: 1,
                         lineStyle: 2, // Dashed
                         axisLabelVisible: true,
-                        title: '', // no title -> tag stays inside the price scale bar
+                        title, // Shows 'BID' or 'ASK'
                         axisLabelColor: color,
                         axisLabelTextColor: '#ffffff',
                     });
                 } else {
-                    ref.current.applyOptions({ price });
+                    ref.current.applyOptions({ price, title });
                 }
             } catch {
                 ref.current = null;

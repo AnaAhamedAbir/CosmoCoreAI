@@ -207,13 +207,18 @@ class OandaStreamer:
                     "currentPrice": round(mid_price, 5),
                     "midPrice": round(mid_price, 5)
                 }
+                prev_price = self._last_prices.get(symbol, mid_price)
+                side = "buy" if mid_price >= prev_price else "sell"
+                self._last_prices[symbol] = mid_price
+
                 trade_payload = {
                     "type": "trade",
                     "currentPrice": round(mid_price, 5),
                     "highPrice": round(ask_price, 5),
                     "lowPrice": round(bid_price, 5),
                     "recentVolume": 1.0,
-                    "timestamp": int(dt.timestamp() * 1000)
+                    "timestamp": int(dt.timestamp() * 1000),
+                    "side": side
                 }
                 await redis.publish(channel, json.dumps(ob_payload))
                 await redis.publish(channel, json.dumps(trade_payload))

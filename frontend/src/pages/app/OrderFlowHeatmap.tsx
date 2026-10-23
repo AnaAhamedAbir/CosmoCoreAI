@@ -1272,13 +1272,24 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     // Refs to track last applied events to avoid redundant calculations
     const lastAppliedTradeRef = useRef<any>(null);
     const lastAppliedPriceRef = useRef<number>(0);
+    // Aggressor side of the last trade ('buy' = green ▲, 'sell' = red ▼)
+    const lastTradeSideRef = useRef<'buy' | 'sell'>('buy');
+    const lastTickPriceRef = useRef<number>(0);
 
     // Light-Speed Realtime Candle & Price Line Update (Synchronous 0ms execution)
     const applyLivePriceTick = useCallback((
         livePrice: number,
-        trade?: { price: number; high?: number; low?: number; volume?: number; timestamp?: number } | null
+        trade?: { price: number; high?: number; low?: number; volume?: number; timestamp?: number; side?: 'buy' | 'sell' | null } | null
     ) => {
         if (!candlestickSeriesRef.current || !lastCandleRef.current || !livePrice || livePrice <= 0 || isNaN(livePrice)) return;
+
+        // Resolve last trade side: exchange-provided side first, else tick rule (uptick = buy, downtick = sell)
+        if (trade?.side === 'buy' || trade?.side === 'sell') {
+            lastTradeSideRef.current = trade.side;
+        } else if (lastTickPriceRef.current > 0 && livePrice !== lastTickPriceRef.current) {
+            lastTradeSideRef.current = livePrice > lastTickPriceRef.current ? 'buy' : 'sell';
+        }
+        lastTickPriceRef.current = livePrice;
 
         const lastCandle = lastCandleRef.current as any;
         const intervalMs = parseIntervalToMs(interval);
@@ -1358,10 +1369,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
             // Sync horizontal live price line with exact candle close at zero lag
             if (currentPriceLineRef.current) {
-                const lineColor = updatedCandle.close >= updatedCandle.open ? '#22c55e' : '#ef4444';
+                const isBuy = lastTradeSideRef.current === 'buy';
+                const sideColor = isBuy ? '#16a34a' : '#dc2626';
                 currentPriceLineRef.current.applyOptions({
                     price: updatedCandle.close,
-                    color: lineColor
+                    color: sideColor,
+                    axisLabelColor: sideColor,
+                    title: isBuy ? '▲' : '▼',
                 });
             }
         } catch {
@@ -1987,13 +2001,15 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
 
 
-    // Custom Current Price Line (Black Label fallback sync)
+    // Custom Current Price Line (side-colored label: green ▲ = last trade buy, red ▼ = last trade sell)
     useEffect(() => {
         if (!candlestickSeriesRef.current || currentPrice <= 0) return;
 
         const lastCandle = lastCandleRef.current;
         const targetPrice = (lastCandle && lastCandle.close > 0) ? lastCandle.close : currentPrice;
-        const lineColor = lastCandle && targetPrice >= lastCandle.open ? '#22c55e' : '#ef4444';
+        const isBuy = lastTradeSideRef.current === 'buy';
+        const lineColor = isBuy ? '#16a34a' : '#dc2626';
+        const arrow = isBuy ? '▲' : '▼';
 
         if (!currentPriceLineRef.current) {
             currentPriceLineRef.current = candlestickSeriesRef.current.createPriceLine({
@@ -2002,14 +2018,16 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 lineWidth: 1,
                 lineStyle: 1, // Dotted
                 axisLabelVisible: true,
-                title: '',
-                axisLabelColor: '#000000', // Black background
+                title: arrow,
+                axisLabelColor: lineColor,
                 axisLabelTextColor: '#ffffff', // White text
             });
         } else {
             currentPriceLineRef.current.applyOptions({ 
                 price: targetPrice,
-                color: lineColor
+                color: lineColor,
+                axisLabelColor: lineColor,
+                title: arrow
             });
         }
     }, [currentPrice]);
@@ -3404,11 +3422,20 @@ const OrderFlowHeatmap: React.FC = () => {
     const openOrders = useOpenOrders(selectedApiKeyId, symbol, 2000);
 
     // Keep 'main' chart price synced in chartPrices
+    const [lastPriceSide, setLastPriceSide] = useState<'buy' | 'sell'>('buy');
+    const prevHeaderPriceRef = useRef<number>(0);
+
     useEffect(() => {
+        if (tradeEvent?.side === 'buy' || tradeEvent?.side === 'sell') {
+            setLastPriceSide(tradeEvent.side);
+        } else if (currentPrice && prevHeaderPriceRef.current && currentPrice !== prevHeaderPriceRef.current) {
+            setLastPriceSide(currentPrice > prevHeaderPriceRef.current ? 'buy' : 'sell');
+        }
         if (currentPrice) {
+            prevHeaderPriceRef.current = currentPrice;
             setChartPrices(prev => (prev['main'] === currentPrice ? prev : { ...prev, main: currentPrice }));
         }
-    }, [currentPrice]);
+    }, [currentPrice, tradeEvent]);
 
     const activeChart = useMemo(() => {
         return allCharts.find(c => c.id === activeChartId) || allCharts[0];
@@ -3524,10 +3551,11 @@ const OrderFlowHeatmap: React.FC = () => {
 
                     <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10">
                         <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${lastPriceSide === 'buy' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
                             Live Price:
                         </span>
-                        <span className="text-base font-mono font-bold text-gray-800 dark:text-white">
+                        <span className={`text-base font-mono font-bold flex items-center gap-1 transition-colors duration-150 ${lastPriceSide === 'buy' ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
+                            <span className="text-xs">{lastPriceSide === 'buy' ? '▲' : '▼'}</span>
                             {formatDisplayPrice(currentPrice)}
                         </span>
                     </div>

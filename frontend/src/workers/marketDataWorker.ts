@@ -30,7 +30,8 @@ self.onmessage = (event: MessageEvent) => {
                         high: parsed.highPrice || parsed.currentPrice,
                         low: parsed.lowPrice || parsed.currentPrice,
                         volume: parsed.recentVolume || 0,
-                        timestamp: parsed.timestamp || Date.now()
+                        timestamp: parsed.timestamp || Date.now(),
+                        side: parsed.side === 'buy' || parsed.side === 'sell' ? parsed.side : null
                     }
                 });
                 return;

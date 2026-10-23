@@ -11,7 +11,7 @@ export interface MarketDepthData {
     asks: OrderBookLevel[];
     walls: { price: number; type: 'buy' | 'sell'; size: number }[];
     currentPrice: number;
-    tradeEvent: { price: number; high?: number; low?: number; volume: number; timestamp: number } | null;
+    tradeEvent: { price: number; high?: number; low?: number; volume: number; timestamp: number; side?: 'buy' | 'sell' | null } | null;
 }
 
 export const useLevel2MarketData = (symbol: string, exchange: string = 'binance') => {

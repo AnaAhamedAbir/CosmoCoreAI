@@ -231,7 +231,8 @@ class MarketDataStreamer:
                         "highPrice": high_price,
                         "lowPrice": low_price,
                         "recentVolume": recent_volume,
-                        "timestamp": trade_ts
+                        "timestamp": trade_ts,
+                        "side": trades[-1].get('side')  # 'buy' | 'sell' (taker side of last trade)
                     }
                     
                     if redis:

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Button from '@/components/common/Button';
 import { loginUser } from '@/services/auth';
+import apiClient from '@/services/client';
 import { Logo, GoogleLogo, GithubLogo } from '@/constants';
 
 interface LoginFormModalProps {
@@ -39,6 +40,7 @@ const LoginFormModal: React.FC<LoginFormModalProps> = ({ onClose, onLoginSuccess
             const storage = rememberMe ? localStorage : sessionStorage;
             storage.setItem('accessToken', data.access_token);
             storage.setItem('refreshToken', data.refresh_token);
+            apiClient.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`;
 
             console.log('Login Successful!', data);
             onLoginSuccess();

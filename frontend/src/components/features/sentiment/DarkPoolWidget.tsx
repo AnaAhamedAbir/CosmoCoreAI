@@ -74,7 +74,7 @@ export const DarkPoolWidget: React.FC<DarkPoolWidgetProps> = ({ symbol = 'BTC' }
     return (
         <Card className="w-full h-[380px] p-0 border border-[#1F1F1F]/50 bg-[#0B0F19] shadow-2xl overflow-hidden relative group">
             {/* Dynamic Background Mesh */}
-            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 mix-blend-overlay pointer-events-none"></div>
+            <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-5 mix-blend-overlay pointer-events-none"></div>
             <div className={`absolute -top-20 -right-20 w-64 h-64 rounded-full blur-[100px] opacity-20 transition-colors duration-1000 ${data?.sentiment_score && data.sentiment_score > 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
 
             {/* Header with Neon Border */}

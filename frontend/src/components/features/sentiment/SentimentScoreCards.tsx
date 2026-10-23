@@ -174,7 +174,7 @@ const FearGreedFlux = ({ score, classification }: any) => {
     return (
         <div className="flex flex-col items-center justify-center h-full relative overflow-hidden bg-slate-50 dark:bg-[#0A0A0A] p-4">
             {/* Background Noise */}
-            <div className="absolute inset-0 opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
+            <div className="absolute inset-0 opacity-20 bg-[url('/noise.svg')]"></div>
 
             {/* Header */}
             <div className="relative z-10 flex flex-col items-center mb-4 mt-4">
@@ -272,7 +272,7 @@ export const SentimentScoreCards: React.FC<SentimentScoreCardsProps> = ({ data }
     return (
         <div className="space-y-6">
             <Card className="h-[420px] !p-0 overflow-hidden relative">
-                <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10"></div>
+                <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-10"></div>
                 <SentimentOrb
                     score={data.currentSmartMoney}
                     momentum={data.currentMomentum}

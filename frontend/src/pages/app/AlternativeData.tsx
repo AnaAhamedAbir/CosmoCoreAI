@@ -87,7 +87,7 @@ const SatelliteView: React.FC = () => {
             {/* Visual Map Panel */}
             <div className="lg:col-span-2 relative bg-[#050505] rounded-2xl overflow-hidden border border-[#1A1A1A] shadow-2xl group">
                 {/* Simulated Satellite Map Background */}
-                <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-30"></div>
+                <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-30"></div>
                 <div className="absolute inset-0" style={{
                     backgroundImage: 'linear-gradient(rgba(51, 65, 85, 0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(51, 65, 85, 0.5) 1px, transparent 1px)',
                     backgroundSize: '40px 40px',

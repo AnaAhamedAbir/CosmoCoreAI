@@ -66,7 +66,7 @@ export const WhaleActivityWidget: React.FC = () => {
     return (
         <Card className="w-full h-[380px] p-0 border border-[#1F1F1F]/50 bg-[#0B0F19] shadow-2xl overflow-hidden relative group">
             {/* Dynamic Background Mesh */}
-            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 mix-blend-overlay pointer-events-none"></div>
+            <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-5 mix-blend-overlay pointer-events-none"></div>
             <div className="absolute -bottom-20 -left-20 w-64 h-64 rounded-full blur-[100px] opacity-10 bg-blue-600 transition-colors duration-1000" />
 
             {/* Header with Neon Border */}

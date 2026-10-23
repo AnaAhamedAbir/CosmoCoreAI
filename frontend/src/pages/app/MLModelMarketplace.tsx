@@ -55,7 +55,7 @@ const FeaturedModelHero: React.FC<{ model: MarketplaceModel; onSelect: () => voi
     <div className="relative w-full rounded-3xl overflow-hidden bg-[#050505] border border-[#141414] shadow-2xl mb-12 group cursor-pointer" onClick={onSelect}>
         {/* Dynamic Background */}
         <div className="absolute inset-0">
-             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-soft-light"></div>
+             <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-20 mix-blend-soft-light"></div>
              <div className="absolute -top-24 -right-24 w-96 h-96 bg-purple-500/30 rounded-full blur-[128px] animate-pulse"></div>
              <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-blue-500/20 rounded-full blur-[128px] animate-pulse" style={{ animationDelay: '2s' }}></div>
         </div>

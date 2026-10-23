@@ -47,7 +47,7 @@ const ModernHeatmapContent = (props: any) => {
             <div
                 className={`w-full h-full rounded-xl border ${borderColor} bg-gradient-to-br ${gradient} backdrop-blur-md flex flex-col items-center justify-center transition-all duration-300 hover:scale-[0.98] hover:brightness-110 overflow-hidden relative group`}
             >
-                <div className="absolute inset-0 opacity-10 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay"></div>
+                <div className="absolute inset-0 opacity-10 bg-[url('/noise.svg')] mix-blend-overlay"></div>
                 <div className="z-10 flex flex-col items-center text-center p-1">
                     {showMini && (
                         <span className={`font-black tracking-tighter ${width < 50 ? 'text-[10px]' : 'text-sm'} ${textColor} drop-shadow-md`}>

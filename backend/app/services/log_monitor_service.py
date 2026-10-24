@@ -120,6 +120,20 @@ IGNORE_PATTERNS = [
     re.compile(r'\[Native OTOCO\].*Falling back to standard entry', re.IGNORECASE),
     re.compile(r'\[Native OTOCO\].*Failed', re.IGNORECASE),
     re.compile(r'\[Native OTOCO\].*Fallback', re.IGNORECASE),
+    # ── Benign Exchange Order Placement Rejections (Manual Trade / CCXT) ────
+    re.compile(r'manual_trade_service\.py.*create_limit_order', re.IGNORECASE),
+    re.compile(r'manual_trade_service\.py.*create_market_order', re.IGNORECASE),
+    re.compile(r'manual_trade_service\.py.*place_manual_trade', re.IGNORECASE),
+    re.compile(r'Order placement failed:', re.IGNORECASE),
+    re.compile(r'Manual order rejected by exchange', re.IGNORECASE),
+    re.compile(r'Manual trade rejected by exchange', re.IGNORECASE),
+    re.compile(r'Order edit rejected by exchange', re.IGNORECASE),
+    re.compile(r'Due to the order could not be executed as maker', re.IGNORECASE),
+    re.compile(r'Account has insufficient balance', re.IGNORECASE),
+    re.compile(r'insufficient margin', re.IGNORECASE),
+    re.compile(r'Filter failure: MIN_NOTIONAL', re.IGNORECASE),
+    re.compile(r'Filter failure: LOT_SIZE', re.IGNORECASE),
+    re.compile(r'Filter failure: PRICE_FILTER', re.IGNORECASE),
     re.compile(r'GET /api/v1/health', re.IGNORECASE),
     re.compile(r'200 OK'),
     re.compile(r'INFO:'),
@@ -252,6 +266,11 @@ WARNING_OVERRIDE_PATTERNS = [
     re.compile(r'spread crossed', re.IGNORECASE),
     re.compile(r'Native OTOCO.*Falling back', re.IGNORECASE),
     re.compile(r'Native OTOCO.*Failed', re.IGNORECASE),
+    re.compile(r'Manual order rejected by exchange', re.IGNORECASE),
+    re.compile(r'Manual trade rejected by exchange', re.IGNORECASE),
+    re.compile(r'Order edit rejected by exchange', re.IGNORECASE),
+    re.compile(r'Order placement rejected', re.IGNORECASE),
+    re.compile(r'Order edit rejected', re.IGNORECASE),
 
     re.compile(r'Streamer failed to load markets', re.IGNORECASE),
     re.compile(r'Failed to load markets for.*during initialization', re.IGNORECASE),
@@ -554,6 +573,20 @@ async def scan_docker_logs_and_notify(active_users=None, wants_broadcast=None):
                             # Independent new error encountered — stop collecting here;
                             # the outer while-loop handles it in the next iteration.
                             break
+
+                    # Check if any line in collected context matches IGNORE_PATTERNS (e.g. benign manual trade rejections)
+                    is_context_ignored = False
+                    for ctx_line in context_lines:
+                        for pattern in IGNORE_PATTERNS:
+                            if pattern.search(ctx_line):
+                                is_context_ignored = True
+                                break
+                        if is_context_ignored:
+                            break
+
+                    if is_context_ignored:
+                        i += 1 + lines_consumed
+                        continue
 
                     # ----------------------------------------------------------
                     # Atomic deduplication — Bug #2 fix

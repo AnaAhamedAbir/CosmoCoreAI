@@ -121,8 +121,8 @@ async def place_order(
     except HTTPException as he:
         raise he
     except Exception as e:
-        logger.error(f"Order placement failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Exchange Error: {str(e)}")
+        logger.warning(f"⚠️ Order placement rejected: {e}")
+        raise HTTPException(status_code=400, detail=f"Exchange Error: {str(e)}")
 
 class EditOrderRequest(BaseModel):
     symbol: str
@@ -154,8 +154,8 @@ async def edit_order(
     except HTTPException as he:
         raise he
     except Exception as e:
-        logger.error(f"Order edit failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Exchange Error: {str(e)}")
+        logger.warning(f"⚠️ Order edit rejected: {e}")
+        raise HTTPException(status_code=400, detail=f"Exchange Error: {str(e)}")
 
 @router.get("/api-key-balance/{api_key_id}")
 async def get_api_key_balance(

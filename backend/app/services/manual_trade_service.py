@@ -15,6 +15,7 @@ from app.services.exchange_pool import get_or_create_exchange
 from app.services.notification import NotificationService
 from app.services.bracket_order_service import bracket_order_service
 from fastapi import HTTPException
+import ccxt.async_support as ccxt
 
 logger = logging.getLogger(__name__)
 
@@ -620,9 +621,24 @@ class ManualTradeService:
         except HTTPException:
             raise
         except Exception as e:
+            err_str = str(e)
+            is_exchange_rejection = (
+                isinstance(e, getattr(ccxt, 'BaseError', Exception)) or
+                any(kw in err_str.lower() for kw in [
+                    'immediately match', 'post-only', 'postonly', 'maker', '-5022',
+                    'insufficient balance', 'insufficient margin', '-2010', 'account has insufficient',
+                    'min_notional', 'filter failure', 'notional', '-1013',
+                    'precision', 'lot_size', 'price filter', 'reduceonly',
+                    'order does not exist', 'unknown order', 'exchange error'
+                ])
+            )
+            if is_exchange_rejection:
+                logger.warning(f"⚠️ Manual order rejected by exchange ({order_req.symbol}): {err_str}")
+                raise HTTPException(status_code=400, detail=f"Exchange Error: {err_str}")
+            
             import traceback
-            logger.error(f"Order placement failed: {e}\n{traceback.format_exc()}")
-            raise HTTPException(status_code=500, detail=f"Exchange Error: {str(e)}")
+            logger.error(f"Internal order placement failure: {e}\n{traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Internal Server Error: {err_str}")
 
     @staticmethod
     async def edit_manual_trade(db: Session, user_id: int, api_key_id: int, order_id: str, symbol: str, side: str, amount: float, new_price: float) -> dict:
@@ -749,7 +765,22 @@ class ManualTradeService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Order edit failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Order Edit Failed: {str(e)}")
+            err_str = str(e)
+            is_exchange_rejection = (
+                isinstance(e, getattr(ccxt, 'BaseError', Exception)) or
+                any(kw in err_str.lower() for kw in [
+                    'immediately match', 'post-only', 'postonly', 'maker', '-5022',
+                    'insufficient balance', 'insufficient margin', '-2010', 'account has insufficient',
+                    'min_notional', 'filter failure', 'notional', '-1013',
+                    'precision', 'lot_size', 'price filter', 'reduceonly',
+                    'order does not exist', 'unknown order', 'exchange error'
+                ])
+            )
+            if is_exchange_rejection:
+                logger.warning(f"⚠️ Order edit rejected by exchange ({symbol}): {err_str}")
+                raise HTTPException(status_code=400, detail=f"Order Edit Failed: {err_str}")
+
+            logger.error(f"Internal order edit error: {e}")
+            raise HTTPException(status_code=500, detail=f"Order Edit Failed: {err_str}")
 
 manual_trade_service = ManualTradeService()

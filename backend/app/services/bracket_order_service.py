@@ -59,20 +59,30 @@ class BracketOrderService:
                 passphrase=passphrase
             )
 
-            max_timeout_mins = 5
-            if tp_config and tp_config.get('timeout_mins') is not None:
-                max_timeout_mins = max(max_timeout_mins, tp_config.get('timeout_mins'))
-            if sl_config and sl_config.get('timeout_mins') is not None:
-                max_timeout_mins = max(max_timeout_mins, sl_config.get('timeout_mins'))
-
-            # Check if user requested unlimited (0)
+            # Determine if unlimited monitoring (0, None, <=0) is requested
             is_unlimited = False
-            if (tp_config and tp_config.get('timeout_mins') == 0) or (sl_config and sl_config.get('timeout_mins') == 0):
+            active_timeouts = []
+
+            for cfg in (tp_config, sl_config):
+                if cfg is not None and isinstance(cfg, dict) and cfg:
+                    t_val = cfg.get('timeout_mins')
+                    try:
+                        if t_val is None or float(t_val) <= 0:
+                            is_unlimited = True
+                        else:
+                            active_timeouts.append(float(t_val))
+                    except (ValueError, TypeError):
+                        is_unlimited = True
+
+            if is_unlimited or not active_timeouts:
                 is_unlimited = True
+                max_timeout_mins = 0
+            else:
+                max_timeout_mins = max(active_timeouts)
 
             logger.info(
                 f"🛡️ Bracket Monitor started | Order: {entry_order_id} | "
-                f"Symbol: {symbol} | Timeout: {'Unlimited' if is_unlimited else f'{max_timeout_mins} min'}"
+                f"Symbol: {symbol} | Timeout: {'Unlimited (Until Filled)' if is_unlimited else f'{max_timeout_mins} min'}"
             )
 
             processed_amount = 0.0
@@ -131,7 +141,7 @@ class BracketOrderService:
                 except Exception as poll_e:
                     logger.debug(f"Bracket Monitor poll error (non-fatal): {poll_e}")
 
-            if not order_closed and processed_amount < amount:
+            if not order_closed and processed_amount < amount and not is_unlimited:
                 logger.warning(
                     f"⏰ Bracket Monitor: Entry {entry_order_id} timed out "
                     f"after {max_timeout_mins} mins. Processed {processed_amount}/{amount}."

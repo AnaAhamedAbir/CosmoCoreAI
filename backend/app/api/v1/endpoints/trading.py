@@ -18,7 +18,7 @@ class AttachedTPConfig(BaseModel):
     mode: str  # 'percentage' or 'price'
     value: float
     order_type: str  # 'Limit' or 'Market'
-    timeout_mins: float  # Background threshold for limit order monitor
+    timeout_mins: Optional[float] = 0  # Background threshold for limit order monitor (0 = infinite / until filled)
 
 class AttachedSLConfig(BaseModel):
     enabled: bool
@@ -33,7 +33,7 @@ class AttachedSLConfig(BaseModel):
     smart_chase_max_attempts: Optional[int] = 15
     smart_chase_mode: Optional[str] = 'dynamic_bbo'  # 'dynamic_bbo' or 'interval'
     smart_chase_trigger_source: Optional[str] = 'last'  # 'last' or 'bid_ask'
-    timeout_mins: Optional[float] = 60
+    timeout_mins: Optional[float] = 0
 
 class OrderRequest(BaseModel):
     symbol: str

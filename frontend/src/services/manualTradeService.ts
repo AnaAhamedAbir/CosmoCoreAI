@@ -17,17 +17,17 @@ export interface OrderPayload {
   client_timestamp?: number;
   attached_tp?: {
     enabled: boolean;
-    mode: 'percentage' | 'price';
+    mode: 'percentage' | 'price' | 'absolute';
     value: number;
     order_type: 'Limit' | 'Market';
-    timeout_mins: number;
+    timeout_mins?: number | null;
   };
   attached_sl?: {
     enabled: boolean;
     type: 'fixed' | 'trailing' | 'smart_chase';
     mode: 'percentage' | 'price' | 'absolute' | 'atr';
     value: number;
-    timeout_mins: number;
+    timeout_mins?: number | null;
     atr_period?: number;
     atr_multiplier?: number;
     atr_timeframe?: string;
@@ -35,6 +35,7 @@ export interface OrderPayload {
     smart_chase_delay_ms?: number;
     smart_chase_max_attempts?: number;
     smart_chase_mode?: 'dynamic_bbo' | 'interval';
+    smart_chase_trigger_source?: 'last' | 'bid_ask';
   };
   use_native_tp_sl?: boolean;
   iceberg_qty?: number;

@@ -93,7 +93,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
     value: '0.0003',
     orderType: 'Limit' as 'Limit' | 'Market',
-    timeoutMins: 60
+    timeoutMins: 0
   });
   const [slConfig, setSlConfig] = useState({
     enabled: true,
@@ -103,7 +103,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     atrPeriod: 10,
     atrMultiplier: 2.0,
     atrTimeframe: '15m',
-    timeoutMins: 60,
+    timeoutMins: 0,
     smartChaseDeviationPct: 1.0,
     smartChaseDelayMs: 1500,
     smartChaseMaxAttempts: 0,
@@ -1503,16 +1503,50 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                     </div>
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">Monitor Limit (Mins)</label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
+                                            <span>Monitor Limit</span>
+                                            {tpConfig.timeoutMins === 0 && (
+                                                <span className="text-[8px] text-emerald-400/90 font-medium">● Infinite</span>
+                                            )}
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setTpConfig({ ...tpConfig, timeoutMins: tpConfig.timeoutMins === 0 ? 60 : 0 })}
+                                            className={`text-[9px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${
+                                                tpConfig.timeoutMins === 0
+                                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
+                                                    : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
+                                            }`}
+                                            title={tpConfig.timeoutMins === 0 ? "Infinite monitor active (watches until filled). Click to set minute limit." : "Click to disable timeout limit (Monitor Infinitely)"}
+                                        >
+                                            {tpConfig.timeoutMins === 0 ? (
+                                                <>
+                                                    <span className="text-xs font-bold leading-none">∞</span>
+                                                    <span>No Limit</span>
+                                                </>
+                                            ) : (
+                                                <span>Limit On</span>
+                                            )}
+                                        </button>
+                                    </div>
                                     <div className="flex items-center space-x-2">
                                         <input 
                                             type="range"
                                             min="0" max="60" step="1"
                                             value={tpConfig.timeoutMins}
                                             onChange={(e) => setTpConfig({...tpConfig, timeoutMins: Number(e.target.value)})}
-                                            className="w-full accent-brand-primary h-1 bg-black/50 rounded appearance-none"
+                                            className="w-full accent-brand-primary h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                            title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
                                         />
-                                        <span className="text-[10px] text-gray-300 w-4 text-right">{tpConfig.timeoutMins === 0 ? '∞' : tpConfig.timeoutMins}</span>
+                                        <span 
+                                            className={`text-[10px] font-mono min-w-[28px] text-right font-bold transition-colors ${
+                                                tpConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
+                                            }`}
+                                            title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
+                                        >
+                                            {tpConfig.timeoutMins === 0 ? '∞' : `${tpConfig.timeoutMins}m`}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -1664,16 +1698,50 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                     </div>
                                 )}
                                 <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">Monitor Limit (Mins)</label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
+                                            <span>Monitor Limit</span>
+                                            {slConfig.timeoutMins === 0 && (
+                                                <span className="text-[8px] text-emerald-400/90 font-medium">● Infinite</span>
+                                            )}
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, timeoutMins: slConfig.timeoutMins === 0 ? 60 : 0 })}
+                                            className={`text-[9px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${
+                                                slConfig.timeoutMins === 0
+                                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
+                                                    : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
+                                            }`}
+                                            title={slConfig.timeoutMins === 0 ? "Infinite monitor active (watches until filled). Click to set minute limit." : "Click to disable timeout limit (Monitor Infinitely)"}
+                                        >
+                                            {slConfig.timeoutMins === 0 ? (
+                                                <>
+                                                    <span className="text-xs font-bold leading-none">∞</span>
+                                                    <span>No Limit</span>
+                                                </>
+                                            ) : (
+                                                <span>Limit On</span>
+                                            )}
+                                        </button>
+                                    </div>
                                     <div className="flex items-center space-x-2">
                                         <input 
                                             type="range"
                                             min="0" max="60" step="1"
                                             value={slConfig.timeoutMins}
                                             onChange={(e) => setSlConfig({...slConfig, timeoutMins: Number(e.target.value)})}
-                                            className="w-full accent-red-500 h-1 bg-black/50 rounded appearance-none"
+                                            className="w-full accent-red-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                            title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
                                         />
-                                        <span className="text-[10px] text-gray-300 w-4 text-right">{slConfig.timeoutMins === 0 ? '∞' : slConfig.timeoutMins}</span>
+                                        <span 
+                                            className={`text-[10px] font-mono min-w-[28px] text-right font-bold transition-colors ${
+                                                slConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
+                                            }`}
+                                            title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
+                                        >
+                                            {slConfig.timeoutMins === 0 ? '∞' : `${slConfig.timeoutMins}m`}
+                                        </span>
                                     </div>
                                 </div>
                             </div>

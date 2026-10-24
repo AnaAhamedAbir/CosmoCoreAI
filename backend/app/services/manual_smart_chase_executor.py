@@ -539,13 +539,20 @@ async def execute_manual_smart_chase(
             repeg_triggered = False
 
             if chase_mode == 'dynamic_bbo':
-                # ── DYNAMIC BBO PEGGING ENGINE (Order Book Shadowing) ──
-                # Actively monitors the orderbook top.
-                # If our order remains the Best Maker price, it stays resting to maintain time-priority in queue.
-                # The moment another participant outbids or spread shifts, immediately cancel and re-peg!
-                # 250ms polling loop gives instant response while using <25% of Binance 100 orders/10s limit.
-                peg_poll_interval = 0.25  # 250ms
-                max_peg_watch_time = max(3.0, chase_delay_sec)
+                # ── DYNAMIC BBO PEGGING ENGINE (Order Book Shadowing with Queue Priority) ──
+                # Actively monitors the orderbook top with FIFO Queue Priority protection.
+                # Key rules:
+                # 1. Minimum Resting Time: Every order rests at least min_resting_sec (default 1.2s - 2.5s)
+                #    on the exchange book to gain FIFO queue priority before being cancelled.
+                # 2. Directional One-Way Chase (Never run away from incoming fills!):
+                #    - If BUY SL (Short Exit): When price drops towards our order (favorable), DO NOT CANCEL!
+                #      Let sellers fill our resting bid. Only chase UP if sellers move higher away from us.
+                #    - If SELL SL (Long Exit): When price rises towards our order (favorable), DO NOT CANCEL!
+                #      Let buyers fill our resting ask. Only chase DOWN if buyers drop lower away from us.
+                # 3. Fast Fill Detection: Checks order status frequently to capture fills immediately.
+                peg_poll_interval = 0.25  # 250ms orderbook sampling
+                min_resting_sec = max(1.2, min(chase_delay_sec, 2.5))  # Minimum 1.2s - 2.5s queue holding time
+                max_peg_watch_time = max(3.5, chase_delay_sec * 2.0)   # Max time at static price before re-evaluating
                 start_watch_time = asyncio.get_event_loop().time()
                 latest_order_chk = None
                 poll_count = 0
@@ -558,8 +565,8 @@ async def execute_manual_smart_chase(
                     await asyncio.sleep(peg_poll_interval)
                     poll_count += 1
 
-                    # Fast fill detection: check order status every ~1.0s (4 polls) to detect fills immediately even if price level didn't shift
-                    if poll_count % 4 == 0:
+                    # Fast fill detection: check order status every ~0.75s (3 polls) to detect fills immediately
+                    if poll_count % 3 == 0:
                         try:
                             chk_in_loop = await exchange.fetch_order(order_id, symbol)
                             if chk_in_loop.get('status', '').lower() in ['closed', 'filled']:
@@ -569,7 +576,6 @@ async def execute_manual_smart_chase(
                         except Exception as poll_chk_e:
                             logger.debug(f"Order poll check notice: {poll_chk_e}")
 
-                    # Maximum time holding a static price level before periodic status sync
                     elapsed = asyncio.get_event_loop().time() - start_watch_time
                     if elapsed >= max_peg_watch_time:
                         break
@@ -596,11 +602,28 @@ async def execute_manual_smart_chase(
                                 except Exception:
                                     pass
 
-                            # Re-peg condition: If BBO shifted, immediately re-peg!
-                            if new_maker_price != target_maker_price:
+                            # ── DIRECTIONAL CHASE RULE (Never run away from incoming fills!) ──
+                            # For BUY SL: We only chase if the market moved UP (higher than our bid), leaving us behind.
+                            # If market moved DOWN (lower than our bid), incoming market sellers will hit our bid! NEVER retreat!
+                            # For SELL SL: We only chase if the market moved DOWN (lower than our ask), leaving us behind.
+                            # If market moved UP (higher than our ask), incoming market buyers will hit our ask! NEVER retreat!
+                            is_running_away = False
+                            if exit_side == "buy":
+                                if new_maker_price > target_maker_price:
+                                    is_running_away = True
+                            else:
+                                if new_maker_price < target_maker_price:
+                                    is_running_away = True
+
+                            # If market moved away, only cancel after giving the order its minimum resting time (FIFO queue priority)
+                            # Urgent exception: If market drifted by 3 or more ticks, re-peg immediately so we don't get left too far behind
+                            drift_ticks = abs(new_maker_price - target_maker_price) / l_tick if l_tick > 0 else 1.0
+                            is_urgent_drift = is_running_away and (drift_ticks >= 3.0)
+
+                            if is_running_away and (elapsed >= min_resting_sec or is_urgent_drift):
                                 logger.info(
-                                    f"⚡ [Dynamic BBO Peg] BBO shifted: {target_maker_price} ➜ {new_maker_price} "
-                                    f"(Bid={l_best_bid}, Ask={l_best_ask}). Re-pegging immediately!"
+                                    f"⚡ [Dynamic BBO Peg] Market shifted away: {target_maker_price} ➜ {new_maker_price} "
+                                    f"(Bid={l_best_bid}, Ask={l_best_ask}) after {elapsed:.2f}s resting. Re-pegging to maintain maker priority!"
                                 )
                                 repeg_triggered = True
                                 cached_initial_ob = latest_ob  # Pre-cache for next attempt!

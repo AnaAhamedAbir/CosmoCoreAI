@@ -552,7 +552,7 @@ async def execute_manual_smart_chase(
                 # 3. Fast Fill Detection: Checks order status frequently to capture fills immediately.
                 peg_poll_interval = 0.25  # 250ms orderbook sampling
                 min_resting_sec = max(1.2, min(chase_delay_sec, 2.5))  # Minimum 1.2s - 2.5s queue holding time
-                max_peg_watch_time = max(3.5, chase_delay_sec * 2.0)   # Max time at static price before re-evaluating
+                max_peg_watch_time = max(15.0, chase_delay_sec * 5.0)  # Give resting order ample time (15s+) at Top-of-Book
                 start_watch_time = asyncio.get_event_loop().time()
                 latest_order_chk = None
                 poll_count = 0
@@ -578,6 +578,7 @@ async def execute_manual_smart_chase(
 
                     elapsed = asyncio.get_event_loop().time() - start_watch_time
                     if elapsed >= max_peg_watch_time:
+                        logger.info(f"⏱️ [Dynamic BBO Peg] Order #{order_id} rested for {elapsed:.1f}s at Top-of-Book. Synchronizing...")
                         break
 
                     try:
@@ -586,6 +587,14 @@ async def execute_manual_smart_chase(
                             l_best_bid = float(latest_ob['bids'][0][0])
                             l_best_ask = float(latest_ob['asks'][0][0])
                             l_tick = _get_market_tick(exchange, symbol, l_best_bid)
+
+                            # ── CIRCUIT BREAKER IN-LOOP CHECK ──
+                            if (exit_side == "sell" and l_best_bid < max_chase_price) or (exit_side == "buy" and l_best_ask > max_chase_price):
+                                logger.warning(
+                                    f"🚨 [Dynamic BBO Peg] Circuit Breaker breached during orderbook watch! "
+                                    f"Book: Bid={l_best_bid}, Ask={l_best_ask} vs Limit={max_chase_price}. Breaking to sweep immediately!"
+                                )
+                                break
 
                             if exit_side == "sell":
                                 new_maker_price = l_best_ask

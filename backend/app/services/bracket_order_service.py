@@ -390,6 +390,7 @@ class BracketOrderService:
                     chase_delay = int(sl_config.get('smart_chase_delay_ms') or 1500)
                     max_attempts = int(sl_config.get('smart_chase_max_attempts') or 15)
                     chase_mode = str(sl_config.get('smart_chase_mode') or 'dynamic_bbo').lower()
+                    trigger_source = str(sl_config.get('smart_chase_trigger_source') or 'last').lower()
 
                     disaster_sl_order_id = None
                     if is_futures:
@@ -417,7 +418,7 @@ class BracketOrderService:
                         except Exception as d_err:
                             logger.warning(f"⚠️ Failed to place native disaster SL: {d_err}")
 
-                    logger.info(f"🚀 Bracket Monitor: Starting Smart Chase Limit SL for {symbol} | Trigger: {final_sl_price} | Mode: {chase_mode.upper()}")
+                    logger.info(f"🚀 Bracket Monitor: Starting Smart Chase Limit SL for {symbol} | Trigger: {final_sl_price} | Mode: {chase_mode.upper()} | Source: {trigger_source.upper()}")
                     asyncio.create_task(
                         BracketOrderService._smart_chase_monitor_loop(
                             exchange=exchange,
@@ -434,7 +435,8 @@ class BracketOrderService:
                             api_key_record=api_key_record,
                             tp_order_id=tp_order_id,
                             disaster_sl_order_id=disaster_sl_order_id,
-                            chase_mode=chase_mode
+                            chase_mode=chase_mode,
+                            trigger_source=trigger_source
                         )
                     )
                 else:
@@ -736,7 +738,8 @@ class BracketOrderService:
         chase_delay_ms: int, max_attempts: int, is_futures: bool,
         user_id: int, api_key_record,
         tp_order_id: str = None, disaster_sl_order_id: str = None,
-        chase_mode: str = 'dynamic_bbo'
+        chase_mode: str = 'dynamic_bbo',
+        trigger_source: str = 'last'
     ):
         sl_id = str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
@@ -748,12 +751,13 @@ class BracketOrderService:
             'type': 'smart_chase',
             'mode': 'SMART_CHASE',
             'chase_mode': chase_mode,
+            'trigger_source': trigger_source,
             'price': sl_price,
             'trigger_price': sl_price,
             'entry_price': entry_price
         }
 
-        logger.info(f"🏁 Smart Chase Monitor started for {symbol} | Trigger: {sl_price} | Entry: {entry_price}")
+        logger.info(f"🏁 Smart Chase Monitor started for {symbol} | Trigger: {sl_price} | Source: {trigger_source.upper()} | Entry: {entry_price}")
         sl_triggered = False
         loop_tick = 0
 
@@ -774,16 +778,28 @@ class BracketOrderService:
             try:
                 # ── PRIORITY 1: FETCH TICKER FIRST FOR ULTRA-FAST SL DETECTION ──
                 ticker = await exchange.fetch_ticker(symbol)
-                current_price = ticker.get('last')
-                if current_price:
+                last_price = float(ticker.get('last') or 0.0)
+                best_bid = float(ticker.get('bid') or last_price)
+                best_ask = float(ticker.get('ask') or last_price)
+
+                if trigger_source in ['bid_ask', 'bbo']:
+                    # Long exit (sell): evaluate against Best Bid (the highest price buyers will pay right now)
+                    # Short exit (buy): evaluate against Best Ask (the lowest price sellers will accept right now)
+                    current_price = best_bid if opposite_side == 'sell' else best_ask
+                    source_label = f"Best {'Bid' if opposite_side == 'sell' else 'Ask'} ({current_price})"
+                else:
+                    current_price = last_price
+                    source_label = f"Last Price ({current_price})"
+
+                if current_price > 0:
                     if opposite_side == 'sell': # Long position, sell when price drops to or below sl_price
                         if current_price <= sl_price:
-                            logger.info(f"💥 Smart Chase SL Triggered for Long! Price {current_price} <= {sl_price}")
+                            logger.info(f"💥 Smart Chase SL Triggered for Long! {source_label} <= {sl_price} [Source: {trigger_source.upper()}]")
                             sl_triggered = True
                             break
                     else: # Short position, buy when price rises to or above sl_price
                         if current_price >= sl_price:
-                            logger.info(f"💥 Smart Chase SL Triggered for Short! Price {current_price} >= {sl_price}")
+                            logger.info(f"💥 Smart Chase SL Triggered for Short! {source_label} >= {sl_price} [Source: {trigger_source.upper()}]")
                             sl_triggered = True
                             break
 
@@ -861,7 +877,8 @@ class BracketOrderService:
                 tp_order_id=tp_order_id,
                 disaster_sl_order_id=disaster_sl_order_id,
                 chase_id=sl_id,
-                chase_mode=chase_mode
+                chase_mode=chase_mode,
+                trigger_source=trigger_source
             )
         except Exception as exec_err:
             logger.error(f"❌ Error invoking execute_manual_smart_chase: {exec_err}")

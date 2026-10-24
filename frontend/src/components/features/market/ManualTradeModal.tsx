@@ -107,7 +107,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     smartChaseDeviationPct: 1.0,
     smartChaseDelayMs: 1500,
     smartChaseMaxAttempts: 0,
-    smartChaseMode: 'dynamic_bbo' as 'dynamic_bbo' | 'interval'
+    smartChaseMode: 'dynamic_bbo' as 'dynamic_bbo' | 'interval',
+    smartChaseTriggerSource: 'last' as 'last' | 'bid_ask'
   });
   const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(true);
   const [activeBrackets, setActiveBrackets] = useState<any[]>([]);
@@ -548,7 +549,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             smart_chase_deviation_pct: slConfig.smartChaseDeviationPct,
             smart_chase_delay_ms: slConfig.smartChaseDelayMs,
             smart_chase_max_attempts: slConfig.smartChaseMaxAttempts,
-            smart_chase_mode: slConfig.smartChaseMode
+            smart_chase_mode: slConfig.smartChaseMode,
+            smart_chase_trigger_source: slConfig.smartChaseTriggerSource
           };
         }
       }
@@ -851,7 +853,14 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                       <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
                         <div className="text-left">
                           <span className="text-gray-400 block text-[9px] uppercase">SL Trigger</span>
-                          <span className="text-white font-bold">{activeChase.trigger_price || '—'}</span>
+                          <span className="text-white font-bold">
+                            {activeChase.trigger_price || '—'}
+                            {activeChase.trigger_source && (
+                              <span className="text-[8.5px] text-cyan-300 font-normal ml-1">
+                                ({activeChase.trigger_source === 'bid_ask' ? '⚡ Bid/Ask' : '📊 Last'})
+                              </span>
+                            )}
+                          </span>
                         </div>
                         <div className="text-right">
                           <span className="text-gray-400 block text-[9px] uppercase">Maker Price</span>
@@ -885,6 +894,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           <span className="text-[11px] font-bold text-cyan-300 uppercase leading-tight">Smart Chase Armed</span>
                           <span className="text-[10px] text-gray-300 font-mono">
                             SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
+                            {activeSoftwareSl.trigger_source === 'bid_ask' ? ' • ⚡ Bid/Ask' : ' • 📊 Last'}
                           </span>
                         </div>
                       </div>
@@ -1677,6 +1687,47 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                             Smart Chase Settings (Maker Post-Only)
                                         </span>
                                         <span className="text-[9px] text-amber-400 font-mono font-bold">Circuit: {slConfig.smartChaseDeviationPct}%</span>
+                                    </div>
+
+                                    {/* Chase Trigger Basis Toggle: Last Market Price vs Bid / Ask Price */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between items-center text-[9px] text-gray-400">
+                                            <span className="font-semibold text-gray-300">Trigger Condition Basis</span>
+                                            <span className="text-[8.5px] font-mono text-cyan-300 font-bold">
+                                                {slConfig.smartChaseTriggerSource === 'bid_ask' ? '⚡ Bid / Ask (BBO)' : '📊 Last Market Price'}
+                                            </span>
+                                        </div>
+                                        <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[9px] font-semibold">
+                                            <button
+                                                type="button"
+                                                onClick={() => setSlConfig({ ...slConfig, smartChaseTriggerSource: 'last' })}
+                                                className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                                    slConfig.smartChaseTriggerSource === 'last'
+                                                        ? 'bg-blue-600 text-white font-bold shadow-md'
+                                                        : 'text-gray-400 hover:text-white'
+                                                }`}
+                                                title="Last Traded Price: Standard market trigger. Immune to temporary spread widening or empty book spikes."
+                                            >
+                                                📊 Last Price
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSlConfig({ ...slConfig, smartChaseTriggerSource: 'bid_ask' })}
+                                                className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                                    slConfig.smartChaseTriggerSource === 'bid_ask'
+                                                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold shadow-md'
+                                                        : 'text-gray-400 hover:text-white'
+                                                }`}
+                                                title="Order Book Bid/Ask: Triggers instantly based on executable Top-of-Book (Bid for Long exit, Ask for Short exit). Eliminates lag on slow pairs."
+                                            >
+                                                ⚡ Bid / Ask
+                                            </button>
+                                        </div>
+                                        <p className="text-[8px] text-gray-400 leading-tight">
+                                            {slConfig.smartChaseTriggerSource === 'bid_ask'
+                                                ? 'Triggers immediately when Top Bid (Long exit) or Ask (Short exit) reaches SL.'
+                                                : 'Triggers when a matched trade on the exchange reaches or breaches SL.'}
+                                        </p>
                                     </div>
 
                                     {/* Chase Mode Selector: Dynamic BBO Peg vs Interval Timer */}

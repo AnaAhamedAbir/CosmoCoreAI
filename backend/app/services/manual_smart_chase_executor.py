@@ -122,7 +122,8 @@ async def execute_manual_smart_chase(
     tp_order_id: Optional[str] = None,
     disaster_sl_order_id: Optional[str] = None,
     chase_id: Optional[str] = None,
-    chase_mode: str = 'dynamic_bbo'  # 'dynamic_bbo' for real-time orderbook shadowing, 'interval' for timer
+    chase_mode: str = 'dynamic_bbo',  # 'dynamic_bbo' for real-time orderbook shadowing, 'interval' for timer
+    trigger_source: str = 'last'
 ) -> Optional[Dict[str, Any]]:
     chase_delay_sec = max(0.2, chase_delay_ms / 1000.0)
     exchange_name = getattr(api_key_record, 'exchange', 'exchange').capitalize() if api_key_record else 'Exchange'
@@ -303,6 +304,7 @@ async def execute_manual_smart_chase(
         'current_maker_price': original_sl,
         'current_order_id': None,
         'chase_mode': chase_mode,
+        'trigger_source': trigger_source,
         'cancel_event': cancel_event,
         'started_at': datetime.utcnow().isoformat()
     }

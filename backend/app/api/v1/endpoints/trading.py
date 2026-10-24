@@ -32,6 +32,7 @@ class AttachedSLConfig(BaseModel):
     smart_chase_delay_ms: Optional[int] = 1500
     smart_chase_max_attempts: Optional[int] = 15
     smart_chase_mode: Optional[str] = 'dynamic_bbo'  # 'dynamic_bbo' or 'interval'
+    smart_chase_trigger_source: Optional[str] = 'last'  # 'last' or 'bid_ask'
     timeout_mins: Optional[float] = 60
 
 class OrderRequest(BaseModel):
@@ -231,6 +232,7 @@ async def get_active_software_brackets(
                 item['price'] = float(price_val)
                 item['trigger_price'] = float(price_val)
                 item['chase_mode'] = data.get('chase_mode', 'dynamic_bbo')
+                item['trigger_source'] = data.get('trigger_source', 'last')
                 active_brackets.append(item)
 
         # 2. Actively executing Smart Chases (chasing maker fills)
@@ -249,6 +251,7 @@ async def get_active_software_brackets(
                     'mode': 'SMART_CHASE',
                     'status': 'chasing',
                     'chase_mode': cdata.get('chase_mode', 'dynamic_bbo'),
+                    'trigger_source': cdata.get('trigger_source', 'last'),
                     'price': float(price_val),
                     'trigger_price': float(cdata.get('original_sl') or price_val),
                     'current_attempt': cdata.get('current_attempt', 0),

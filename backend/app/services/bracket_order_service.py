@@ -71,8 +71,12 @@ class BracketOrderService:
                 except Exception as c_err:
                     logger.debug(f"Previous disaster SL cancel non-fatal error: {c_err}")
                 
-                # Re-place disaster stop at new price ± max_dev
-                disaster_price = prec_price * (1 - (max_dev / 100.0)) if side == 'sell' else prec_price * (1 + (max_dev / 100.0))
+                # Re-place disaster stop at new price (exact for pure stop, or ± max_dev for smart chase)
+                mode = sl_meta.get('mode', 'SMART_CHASE')
+                if mode in ['STOP', 'fixed', 'STOP_MARKET']:
+                    disaster_price = prec_price
+                else:
+                    disaster_price = prec_price * (1 - (max_dev / 100.0)) if side == 'sell' else prec_price * (1 + (max_dev / 100.0))
                 disaster_price_prec = (
                     float(exchange.price_to_precision(symbol, disaster_price))
                     if hasattr(exchange, 'price_to_precision') else disaster_price
@@ -426,7 +430,7 @@ class BracketOrderService:
 
                 if sl_type in ['trailing', 'trailing_chase']:
                     placed_native = False
-                    if not is_trailing_chase and is_futures and sl_mode == 'percentage':
+                    if not is_trailing_chase and not auto_breakeven_enabled and is_futures and sl_mode == 'percentage':
                         # Try Native Trailing Stop Market for Futures (Taker Exit)
                         try:
                             logger.info(f"🚀 Bracket Monitor: Placing Native Trailing Stop for {symbol} (Futures)")
@@ -616,7 +620,7 @@ class BracketOrderService:
                                 symbol, order_type, opposite_side, final_amount, None, sl_params
                             )
     
-                        logger.info(f"✅ Bracket Monitor: SL placed! ID: {sl_res.get('id')}")
+                        logger.info(f"✅ Bracket Monitor: SL placed! ID: {sl_res.get('id') if sl_res else 'Local'}")
     
                         if user_id:
                             try:
@@ -637,6 +641,28 @@ class BracketOrderService:
                                     db.close()
                             except Exception as notify_err:
                                 logger.warning(f"SL notification failed (non-fatal): {notify_err}")
+
+                        # If Auto-Breakeven is active, spawn background monitor loop to ratchet SL to Entry on profit
+                        if auto_breakeven_enabled:
+                            logger.info(f"🛡️ Spawning Auto-Breakeven monitor loop for Fixed SL on {symbol} (Target: +{auto_breakeven_trigger_pct}%)")
+                            asyncio.create_task(
+                                BracketOrderService._fixed_sl_auto_breakeven_loop(
+                                    exchange=exchange,
+                                    symbol=symbol,
+                                    opposite_side=opposite_side,
+                                    amount=final_amount,
+                                    entry_price=average_price,
+                                    initial_sl_price=final_sl_price,
+                                    is_futures=is_futures,
+                                    user_id=user_id,
+                                    api_key_record=api_key_record,
+                                    tp_order_id=tp_order_id,
+                                    disaster_sl_order_id=sl_res.get('id') if sl_res else None,
+                                    auto_breakeven_enabled=True,
+                                    auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
+                                    auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
+                                )
+                            )
     
                     except Exception as ex_e:
                         logger.error(f"❌ Bracket Monitor: Failed to place SL Order! {ex_e}")
@@ -976,6 +1002,165 @@ class BracketOrderService:
                     logger.warning(f"Trailing SL notification failed: {notify_err}")
         except Exception as e:
             logger.error(f"❌ Failed to execute Trailing SL: {e}")
+        finally:
+            if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
+                del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
+
+    @staticmethod
+    async def _fixed_sl_auto_breakeven_loop(
+        exchange, symbol: str, opposite_side: str, amount: float,
+        entry_price: float, initial_sl_price: float, is_futures: bool,
+        user_id: int, api_key_record,
+        tp_order_id: str = None,
+        disaster_sl_order_id: str = None,
+        auto_breakeven_enabled: bool = True,
+        auto_breakeven_trigger_pct: float = 1.0,
+        auto_breakeven_buffer_pct: float = 0.05
+    ):
+        sl_id = str(uuid.uuid4())
+        BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
+            'id': sl_id,
+            'api_key_id': getattr(api_key_record, 'id', None),
+            'api_key_record': api_key_record,
+            'symbol': symbol,
+            'side': opposite_side,
+            'amount': amount,
+            'type': 'fixed',
+            'mode': 'STOP',
+            'price': initial_sl_price,
+            'trigger_price': initial_sl_price,
+            'entry_price': entry_price,
+            'disaster_sl_order_id': disaster_sl_order_id,
+            'is_futures': is_futures,
+            'exchange': exchange,
+            'status': 'monitoring',
+            'auto_breakeven_enabled': auto_breakeven_enabled,
+            'breakeven_activated': False
+        }
+        logger.info(
+            f"🛡️ [Fixed SL Auto-Breakeven] Started for {symbol} | Initial SL: {initial_sl_price} | "
+            f"Trigger Target: +{auto_breakeven_trigger_pct}% (Buffer: +{auto_breakeven_buffer_pct}%)"
+        )
+
+        try:
+            while True:
+                await asyncio.sleep(1.5)
+                sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
+                if not sl_meta or sl_meta.get('cancelled'):
+                    logger.info(f"🛑 Fixed SL Auto-Breakeven monitor cancelled by user for {symbol}.")
+                    if disaster_sl_order_id:
+                        try:
+                            await exchange.cancel_order(disaster_sl_order_id, symbol)
+                        except Exception:
+                            pass
+                    return
+
+                # Check if position is still open or TP filled
+                is_open = True
+                if tp_order_id:
+                    try:
+                        tp_chk = await exchange.fetch_order(tp_order_id, symbol)
+                        if tp_chk.get('status', '').lower() in ['closed', 'filled']:
+                            logger.info(f"🎯 TP order {tp_order_id} filled! Closing Fixed SL monitor for {symbol}.")
+                            is_open = False
+                    except Exception:
+                        pass
+
+                if is_open and is_futures:
+                    try:
+                        positions = await exchange.fetch_positions([symbol])
+                        pos = next((p for p in positions if p.get('symbol') == symbol), None)
+                        raw_contracts = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
+                        if abs(raw_contracts) == 0:
+                            is_open = False
+                    except Exception as pos_e:
+                        logger.debug(f"Position check non-fatal error: {pos_e}")
+
+                if not is_open:
+                    if disaster_sl_order_id:
+                        try:
+                            await exchange.cancel_order(disaster_sl_order_id, symbol)
+                        except Exception:
+                            pass
+                    return
+
+                # Check if native SL order already filled on futures
+                if disaster_sl_order_id:
+                    try:
+                        sl_chk = await exchange.fetch_order(disaster_sl_order_id, symbol)
+                        if sl_chk.get('status', '').lower() in ['closed', 'filled']:
+                            logger.info(f"🛡️ Native Fixed SL order {disaster_sl_order_id} filled! Position stopped out.")
+                            if tp_order_id:
+                                try:
+                                    await exchange.cancel_order(tp_order_id, symbol)
+                                except Exception:
+                                    pass
+                            return
+                    except Exception:
+                        pass
+
+                ticker = await exchange.fetch_ticker(symbol)
+                current_price = float(ticker.get('last') or 0.0)
+                if current_price <= 0:
+                    continue
+
+                # Auto-Breakeven check
+                if auto_breakeven_enabled and not sl_meta.get('breakeven_activated', False) and entry_price > 0:
+                    profit_pct = (
+                        ((current_price - entry_price) / entry_price * 100.0)
+                        if opposite_side == 'sell'
+                        else ((entry_price - current_price) / entry_price * 100.0)
+                    )
+                    if profit_pct >= auto_breakeven_trigger_pct:
+                        be_buf = auto_breakeven_buffer_pct / 100.0
+                        target_be = entry_price * (1.0 + be_buf) if opposite_side == 'sell' else entry_price * (1.0 - be_buf)
+                        if exchange and hasattr(exchange, 'price_to_precision'):
+                            try:
+                                target_be = float(exchange.price_to_precision(symbol, target_be))
+                            except Exception:
+                                pass
+
+                        sl_meta['breakeven_activated'] = True
+                        logger.info(f"🛡️ [Auto-Breakeven] Activated for Fixed SL {symbol}! Profit: +{profit_pct:.2f}% >= +{auto_breakeven_trigger_pct}%. Moving SL to {target_be}")
+                        await BracketOrderService.update_software_bracket(sl_id, target_be, getattr(api_key_record, 'id', None), user_id)
+                        if user_id:
+                            try:
+                                from app.db.session import SessionLocal
+                                db_be = SessionLocal()
+                                try:
+                                    ex_lbl = getattr(api_key_record, 'exchange', 'Exchange').capitalize()
+                                    be_msg = (
+                                        f"🛡️ *Auto-Breakeven Activated!*\n"
+                                        f"Exchange: {ex_lbl}\n"
+                                        f"Pair: `{symbol}`\n"
+                                        f"Profit: `+{profit_pct:.2f}%`\n"
+                                        f"Protected SL: `{target_be}` (Entry: {entry_price})\n"
+                                        f"Trade is now 100% Risk-Free! 🎉"
+                                    )
+                                    asyncio.create_task(NotificationService.send_message(db_be, user_id, be_msg))
+                                finally:
+                                    db_be.close()
+                            except Exception as notify_be_err:
+                                logger.debug(f"Breakeven notification notice: {notify_be_err}")
+
+                # If Spot, check trigger condition for market exit
+                if not is_futures and current_price > 0:
+                    current_trig = float(sl_meta.get('trigger_price') or initial_sl_price)
+                    triggered = (current_price <= current_trig) if opposite_side == 'sell' else (current_price >= current_trig)
+                    if triggered:
+                        logger.info(f"💥 Fixed SL triggered on Spot! Current: {current_price}, Trigger: {current_trig}. Exiting market...")
+                        try:
+                            if tp_order_id:
+                                try:
+                                    await exchange.cancel_order(tp_order_id, symbol)
+                                except Exception:
+                                    pass
+                            await exchange.create_market_order(symbol, opposite_side, amount)
+                        except Exception as mkt_err:
+                            logger.error(f"Failed to market sell Spot on SL: {mkt_err}")
+                        return
+        except Exception as loop_err:
+            logger.error(f"Error in Fixed SL Auto-Breakeven loop: {loop_err}")
         finally:
             if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
                 del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]

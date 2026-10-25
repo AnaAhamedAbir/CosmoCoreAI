@@ -336,6 +336,8 @@ async def get_active_software_brackets(
                     'current_attempt': cdata.get('current_attempt', 0),
                     'max_attempts': cdata.get('max_attempts', 0),
                     'current_maker_price': cdata.get('current_maker_price', 0.0),
+                    'peg_strategy': cdata.get('peg_strategy', 'bbo'),
+                    'wall_multiplier': cdata.get('wall_multiplier', 2.5),
                     'started_at': cdata.get('started_at')
                 })
                 

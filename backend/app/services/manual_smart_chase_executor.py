@@ -163,8 +163,12 @@ def _calculate_target_maker_price(
     # Ensure precision rounding didn't cross the spread
     if exit_side == "sell" and target_price <= best_bid:
         target_price = float(exchange.price_to_precision(symbol, best_bid + tick)) if (exchange and hasattr(exchange, 'price_to_precision')) else (best_bid + tick)
+        if target_price <= best_bid:
+            target_price = best_ask
     elif exit_side == "buy" and target_price >= best_ask:
         target_price = float(exchange.price_to_precision(symbol, best_ask - tick)) if (exchange and hasattr(exchange, 'price_to_precision')) else (best_ask - tick)
+        if target_price >= best_ask:
+            target_price = best_bid
 
     return target_price
 

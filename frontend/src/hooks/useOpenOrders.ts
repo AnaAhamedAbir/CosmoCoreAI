@@ -10,6 +10,7 @@ export interface OpenLimitOrder {
   remaining: number;
   isSoftwareSL?: boolean;
   mode?: string;
+  type?: string;
   isIceberg?: boolean;
   icebergQty?: number;
 }
@@ -63,7 +64,8 @@ export const useOpenOrders = (
             filled: 0,
             remaining: Number(sl.amount ?? 0),
             isSoftwareSL: true,
-            mode: sl.mode
+            mode: sl.mode,
+            type: sl.type
           }))
           .filter((sl: any) => sl.price > 0);
         setOrders([...limitOrders, ...softwareSLs]);

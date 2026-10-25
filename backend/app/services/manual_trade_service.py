@@ -200,10 +200,31 @@ class ManualTradeService:
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
             raw_orders = await exchange.fetch_open_orders(symbol)
 
+            # Exclude internal disaster SL orders that belong to active software Smart Chases
+            # so the chart only displays the primary Smart Chase trigger line
+            active_disaster_ids = set()
+            try:
+                from app.services.bracket_order_service import BracketOrderService
+                for s_data in BracketOrderService.ACTIVE_SOFTWARE_SL.values():
+                    d_id = s_data.get('disaster_sl_order_id')
+                    if d_id:
+                        active_disaster_ids.add(str(d_id))
+                from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
+                for c_data in ACTIVE_SMART_CHASES.values():
+                    d_id = c_data.get('disaster_sl_order_id')
+                    if d_id:
+                        active_disaster_ids.add(str(d_id))
+            except Exception as d_chk_err:
+                logger.debug(f"Disaster ID exclusion check: {d_chk_err}")
+
             orders = []
             for o in raw_orders:
                 status = o.get('status', '').lower()
                 if status != 'open':
+                    continue
+
+                order_id_str = str(o.get('id'))
+                if order_id_str in active_disaster_ids:
                     continue
 
                 raw_type = o.get('type', '').lower()

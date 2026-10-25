@@ -1830,8 +1830,29 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
     }, [openOrders]);
 
-    // ── Drag & Drop Open Orders Logic ──
+    // ── Drag & Drop Open Orders Logic & Confirmation Modal ──
+    interface PendingOrderModification {
+        orderId: string;
+        targetOrder: OpenLimitOrder;
+        newPrice: number;
+        originalPrice: number;
+        livePrice: number;
+        symbol: string;
+        isSL: boolean;
+        modeName: string;
+        side: 'buy' | 'sell';
+        amount: number;
+    }
+
     const [isModifyingOrder, setIsModifyingOrder] = useState<boolean>(false);
+    const [pendingModification, setPendingModification] = useState<PendingOrderModification | null>(null);
+    const [dontAskDragConfirm, setDontAskDragConfirm] = useState<boolean>(() => {
+        try {
+            return localStorage.getItem('dontAskDragConfirm') === 'true';
+        } catch {
+            return false;
+        }
+    });
     const draggingOrderIdRef = useRef<string | null>(null);
     const ghostLineRef = useRef<any>(null);
     const openOrdersRef = useRef<OpenLimitOrder[]>([]);
@@ -1848,6 +1869,135 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         openOrdersRef.current = openOrders;
     }, [openOrders]);
 
+    const executeOrderModification = async (mod: PendingOrderModification) => {
+        if (!selectedApiKeyId) return;
+        setIsModifyingOrder(true);
+        isModifyingRef.current = true;
+        const key = `order-${mod.orderId}`;
+        const modifyingKey = `${key}-modifying`;
+
+        try {
+            if (mod.isSL) {
+                await manualTradeService.updateSoftwareSL(
+                    parseInt(selectedApiKeyId),
+                    mod.orderId,
+                    {
+                        symbol: mod.symbol,
+                        side: mod.targetOrder.side,
+                        new_price: mod.newPrice,
+                        amount: mod.targetOrder.amount
+                    }
+                );
+                toast.success(`🎯 ${mod.modeName} Stop-Loss updated to ${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)}`);
+            } else {
+                await manualTradeService.editOrder(
+                    parseInt(selectedApiKeyId),
+                    mod.orderId,
+                    {
+                        symbol: mod.symbol,
+                        side: mod.targetOrder.side,
+                        amount: mod.targetOrder.amount,
+                        new_price: mod.newPrice
+                    }
+                );
+                toast.success(`Order price updated to ${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)}`);
+            }
+
+            // Optimistically update order price in state ref
+            mod.targetOrder.price = mod.newPrice;
+
+            // Update line on chart to new price
+            if (wallLinesRef.current.has(modifyingKey)) {
+                const line = wallLinesRef.current.get(modifyingKey);
+                wallLinesRef.current.delete(modifyingKey);
+
+                const isBuy = mod.targetOrder.side === 'buy';
+                let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
+                let label = `${isBuy ? '▲ BUY' : '▼ SELL'} ${mod.targetOrder.remaining > 0 ? mod.targetOrder.remaining.toFixed(4) : mod.targetOrder.amount.toFixed(4)}`;
+                if (mod.targetOrder.isSoftwareSL) {
+                    color = '#ef4444';
+                    label = `🛑 ${mod.modeName} SL (${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)})`;
+                } else if (mod.targetOrder.isIceberg) {
+                    color = isBuy ? '#06b6d4' : '#f43f5e';
+                    const sliceText = mod.targetOrder.icebergQty ? `${mod.targetOrder.icebergQty.toFixed(2)}/` : '';
+                    label = `🧊 ${isBuy ? '▲ BUY' : '▼ SELL'} [ICEBERG: ${sliceText}${mod.targetOrder.amount.toFixed(2)}]`;
+                }
+                line?.applyOptions({
+                    price: mod.newPrice,
+                    title: label,
+                    color,
+                    lineWidth: 1,
+                    lineStyle: 2
+                });
+                if (line) wallLinesRef.current.set(key, line);
+            }
+        } catch (err: any) {
+            console.error('Edit order failed', err);
+            toast.error('Failed to update: ' + (err.response?.data?.detail || err.message));
+            // Revert modifying line on error
+            if (wallLinesRef.current.has(modifyingKey)) {
+                const line = wallLinesRef.current.get(modifyingKey);
+                wallLinesRef.current.delete(modifyingKey);
+                line?.applyOptions({ price: mod.originalPrice });
+                if (line) wallLinesRef.current.set(key, line);
+            }
+        } finally {
+            if (wallLinesRef.current.has(modifyingKey)) {
+                try { candlestickSeriesRef.current?.removePriceLine(wallLinesRef.current.get(modifyingKey)); } catch (e) {}
+                wallLinesRef.current.delete(modifyingKey);
+            }
+            setIsModifyingOrder(false);
+            isModifyingRef.current = false;
+            setPendingModification(null);
+        }
+    };
+
+    const cancelOrderModification = (mod: PendingOrderModification) => {
+        const key = `order-${mod.orderId}`;
+        const modifyingKey = `${key}-modifying`;
+        if (wallLinesRef.current.has(modifyingKey)) {
+            const line = wallLinesRef.current.get(modifyingKey);
+            wallLinesRef.current.delete(modifyingKey);
+
+            // Revert back to original price & style
+            const isBuy = mod.targetOrder.side === 'buy';
+            let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
+            let label = `${isBuy ? '▲ BUY' : '▼ SELL'} ${mod.targetOrder.remaining > 0 ? mod.targetOrder.remaining.toFixed(4) : mod.targetOrder.amount.toFixed(4)}`;
+            if (mod.targetOrder.isSoftwareSL) {
+                color = '#ef4444';
+                label = `🛑 ${mod.modeName} SL (${mod.originalPrice < 1 ? mod.originalPrice.toFixed(6) : mod.originalPrice.toFixed(4)})`;
+            } else if (mod.targetOrder.isIceberg) {
+                color = isBuy ? '#06b6d4' : '#f43f5e';
+                const sliceText = mod.targetOrder.icebergQty ? `${mod.targetOrder.icebergQty.toFixed(2)}/` : '';
+                label = `🧊 ${isBuy ? '▲ BUY' : '▼ SELL'} [ICEBERG: ${sliceText}${mod.targetOrder.amount.toFixed(2)}]`;
+            }
+            line?.applyOptions({
+                price: mod.originalPrice,
+                title: label,
+                color,
+                lineWidth: 1,
+                lineStyle: 2
+            });
+            if (line) wallLinesRef.current.set(key, line);
+        }
+        setPendingModification(null);
+        toast('Modification cancelled', { icon: '↩️' });
+    };
+
+    // Keyboard shortcuts for Confirmation Modal (Escape = Cancel, Enter = Confirm)
+    useEffect(() => {
+        if (!pendingModification) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                cancelOrderModification(pendingModification);
+            } else if (e.key === 'Enter' && !isModifyingOrder) {
+                executeOrderModification(pendingModification);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [pendingModification, isModifyingOrder]);
+
     useEffect(() => {
         const container = chartContainerRef.current;
         if (!container || !chartRef.current || !candlestickSeriesRef.current) return;
@@ -1855,7 +2005,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         let isDown = false;
         
         const handleMouseDown = (e: MouseEvent) => {
-            if (isModifyingRef.current) return;
+            if (isModifyingRef.current || pendingModification) return;
             const chartRect = container.getBoundingClientRect();
             const y = e.clientY - chartRect.top;
             
@@ -1917,7 +2067,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 const priceDiff = Math.abs((thresholdPrice1 || 0) - (thresholdPrice2 || 0));
                 
                 const hoverOrder = openOrdersRef.current.find(o => Math.abs(o.price - mousePrice) < priceDiff);
-                if (hoverOrder && !isModifyingRef.current && selectedApiKeyId) {
+                if (hoverOrder && !isModifyingRef.current && !pendingModification && selectedApiKeyId) {
                     container.style.cursor = 'ns-resize';
                 } else {
                     container.style.cursor = 'crosshair';
@@ -1980,6 +2130,20 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             
             // Skip if moved less than a fraction
             if (Math.abs(targetOrder.price - newPrice) < (targetOrder.price * 0.0001)) return;
+
+            const modeName = targetOrder.mode ? targetOrder.mode.toUpperCase() : (targetOrder.isSoftwareSL ? 'SL' : 'LIMIT');
+            const modData: PendingOrderModification = {
+                orderId,
+                targetOrder,
+                newPrice,
+                originalPrice: targetOrder.price,
+                livePrice,
+                symbol,
+                isSL: Boolean(targetOrder.isSoftwareSL),
+                modeName,
+                side: targetOrder.side,
+                amount: targetOrder.amount
+            };
             
             const key = `order-${orderId}`;
             if (wallLinesRef.current.has(key)) {
@@ -1987,7 +2151,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 const line = wallLinesRef.current.get(key);
                 line?.applyOptions({ 
                     price: newPrice, 
-                    title: `Updating to ${newPrice < 1 ? newPrice.toFixed(6) : newPrice.toFixed(4)}...`,
+                    title: `Pending Confirmation (${newPrice < 1 ? newPrice.toFixed(6) : newPrice.toFixed(4)})...`,
                     color: '#f59e0b', // Amber/Orange
                     lineWidth: 1,
                     lineStyle: 1
@@ -1996,51 +2160,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 wallLinesRef.current.delete(key);
             }
             
-            setIsModifyingOrder(true);
-            isModifyingRef.current = true;
-            
-            try {
-                if (targetOrder.isSoftwareSL) {
-                    await manualTradeService.updateSoftwareSL(
-                        parseInt(selectedApiKeyId),
-                        orderId,
-                        {
-                            symbol,
-                            side: targetOrder.side,
-                            new_price: newPrice,
-                            amount: targetOrder.amount
-                        }
-                    );
-                    const modeName = targetOrder.mode ? targetOrder.mode.toUpperCase() : 'SL';
-                    toast.success(`🎯 ${modeName} Stop-Loss updated to ${newPrice < 1 ? newPrice.toFixed(6) : newPrice.toFixed(4)}`);
-                } else {
-                    await manualTradeService.editOrder(
-                        parseInt(selectedApiKeyId),
-                        orderId,
-                        {
-                            symbol,
-                            side: targetOrder.side,
-                            amount: targetOrder.amount, // Using original amount
-                            new_price: newPrice
-                        }
-                    );
-                    toast.success(`Order price updated to ${newPrice < 1 ? newPrice.toFixed(6) : newPrice.toFixed(4)}`);
-                }
-
-                // Optimistically update openOrdersRef immediately for snappy UX
-                targetOrder.price = newPrice;
-            } catch (err: any) {
-                console.error('Edit order failed', err);
-                toast.error('Failed to update: ' + (err.response?.data?.detail || err.message));
-            } finally {
-                // Always remove the optimistic modifying line after the API call completes
-                const modifyingKey = `${key}-modifying`;
-                if (wallLinesRef.current.has(modifyingKey)) {
-                    try { candlestickSeriesRef.current?.removePriceLine(wallLinesRef.current.get(modifyingKey)); } catch (e) {}
-                    wallLinesRef.current.delete(modifyingKey);
-                }
-                setIsModifyingOrder(false);
-                isModifyingRef.current = false;
+            if (dontAskDragConfirm) {
+                executeOrderModification(modData);
+            } else {
+                setPendingModification(modData);
             }
         };
 
@@ -2657,6 +2780,152 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     <CVDChart mainChart={chartRef.current} data={cvdData} />
                 </div>
             )}
+            {/* ── DRAG & DROP ORDER CONFIRMATION MODAL ── */}
+            <AnimatePresence>
+                {pendingModification && (
+                    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0, y: 10 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.95, opacity: 0, y: 10 }}
+                            transition={{ duration: 0.15 }}
+                            className="relative w-full max-w-md bg-gradient-to-b from-[#131b2e] via-[#0f1524] to-[#0a0e18] border border-cyan-500/30 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.85)] p-6 overflow-hidden text-white"
+                        >
+                            {/* Glowing top line */}
+                            <div className={`absolute top-0 left-0 right-0 h-[2px] ${pendingModification.isSL ? 'bg-gradient-to-r from-red-500 via-amber-500 to-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.6)]' : 'bg-gradient-to-r from-cyan-500 via-blue-500 to-emerald-500 shadow-[0_0_12px_rgba(6,182,212,0.6)]'}`} />
+
+                            {/* Modal Header */}
+                            <div className="flex items-center justify-between pb-4 border-b border-white/10">
+                                <div className="flex items-center gap-2.5">
+                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg ${pendingModification.isSL ? 'bg-red-500/15 text-red-400 border border-red-500/30' : 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30'}`}>
+                                        {pendingModification.isSL ? '🛡️' : '🔄'}
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-base tracking-wide text-white">
+                                            {pendingModification.isSL ? 'Confirm Stop-Loss Adjustment' : 'Confirm Order Adjustment'}
+                                        </h3>
+                                        <p className="text-xs text-gray-400">
+                                            Verify price change before updating
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => cancelOrderModification(pendingModification)}
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                                    title="Cancel"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                </button>
+                            </div>
+
+                            {/* Order Details Body */}
+                            <div className="py-5 space-y-4">
+                                {/* Badge & Symbol */}
+                                <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-white/[0.03] border border-white/5">
+                                    <div className="flex items-center gap-2">
+                                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${pendingModification.side === 'buy' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}`}>
+                                            {pendingModification.side}
+                                        </span>
+                                        <span className="font-mono font-bold text-sm text-gray-200">
+                                            {pendingModification.symbol}
+                                        </span>
+                                    </div>
+                                    <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                                        {pendingModification.isSL ? `${pendingModification.modeName} SL` : 'LIMIT'}
+                                    </span>
+                                </div>
+
+                                {/* Price Comparison Grid */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    {/* Original Price */}
+                                    <div className="p-3 rounded-xl bg-black/40 border border-white/5 flex flex-col justify-center">
+                                        <span className="text-[11px] text-gray-400 uppercase tracking-wider">Previous Price</span>
+                                        <span className="font-mono text-base font-bold text-gray-300 mt-0.5">
+                                            ${pendingModification.originalPrice < 1 ? pendingModification.originalPrice.toFixed(6) : pendingModification.originalPrice.toFixed(4)}
+                                        </span>
+                                    </div>
+
+                                    {/* New Price */}
+                                    <div className={`p-3 rounded-xl bg-black/40 border flex flex-col justify-center ${pendingModification.isSL ? 'border-red-500/30 bg-red-950/10' : 'border-cyan-500/30 bg-cyan-950/10'}`}>
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[11px] text-gray-400 uppercase tracking-wider">New Target</span>
+                                            {(() => {
+                                                const diff = pendingModification.newPrice - pendingModification.originalPrice;
+                                                const pct = (diff / pendingModification.originalPrice) * 100;
+                                                const isPositive = diff >= 0;
+                                                return (
+                                                    <span className={`text-[10px] font-mono font-semibold ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                        {isPositive ? '+' : ''}{pct.toFixed(2)}%
+                                                    </span>
+                                                );
+                                            })()}
+                                        </div>
+                                        <span className={`font-mono text-base font-bold mt-0.5 ${pendingModification.isSL ? 'text-red-400' : 'text-cyan-400'}`}>
+                                            ${pendingModification.newPrice < 1 ? pendingModification.newPrice.toFixed(6) : pendingModification.newPrice.toFixed(4)}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Market Reference */}
+                                <div className="flex items-center justify-between text-xs px-3.5 py-2 rounded-xl bg-white/[0.02] border border-white/5 text-gray-400">
+                                    <span>Live Market Price</span>
+                                    <span className="font-mono font-medium text-gray-200">
+                                        ${pendingModification.livePrice < 1 ? pendingModification.livePrice.toFixed(6) : pendingModification.livePrice.toFixed(4)}
+                                    </span>
+                                </div>
+
+                                {/* "Don't ask again" Checkbox */}
+                                <label className="flex items-center gap-2.5 text-xs text-gray-400 hover:text-gray-300 cursor-pointer select-none pt-1">
+                                    <input
+                                        type="checkbox"
+                                        checked={dontAskDragConfirm}
+                                        onChange={(e) => {
+                                            const val = e.target.checked;
+                                            setDontAskDragConfirm(val);
+                                            try {
+                                                localStorage.setItem('dontAskDragConfirm', String(val));
+                                            } catch (e) {}
+                                        }}
+                                        className="w-4 h-4 rounded bg-black/40 border border-white/20 text-cyan-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-500"
+                                    />
+                                    <span>Don't ask confirmation for drag & drop again</span>
+                                </label>
+                            </div>
+
+                            {/* Modal Actions */}
+                            <div className="flex items-center gap-3 pt-3 border-t border-white/10">
+                                <button
+                                    type="button"
+                                    disabled={isModifyingOrder}
+                                    onClick={() => cancelOrderModification(pendingModification)}
+                                    className="flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-all disabled:opacity-50 cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={isModifyingOrder}
+                                    onClick={() => executeOrderModification(pendingModification)}
+                                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold text-white shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${pendingModification.isSL ? 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 shadow-red-500/20' : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-cyan-500/20'}`}
+                                >
+                                    {isModifyingOrder ? (
+                                        <>
+                                            <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            <span>Updating...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span>Confirm & Update</span>
+                                            <span>✓</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
             <MLPredictionRenderer 
                 series={candlestickSeriesRef.current} 
                 predictionResult={predictionResult} 

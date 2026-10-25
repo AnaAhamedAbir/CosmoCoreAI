@@ -689,6 +689,13 @@ class ManualTradeService:
             is_ws_success = False
             ex_params = {}
             order_type = 'limit'
+
+            # Apply exchange precision to prevent precision filter rejections
+            if hasattr(exchange, 'price_to_precision'):
+                new_price = float(exchange.price_to_precision(symbol, new_price))
+            if hasattr(exchange, 'amount_to_precision'):
+                amount = float(exchange.amount_to_precision(symbol, amount))
+
             price_arg = new_price
 
             if original_order:
@@ -702,16 +709,23 @@ class ManualTradeService:
                     
                     if orig_type in ('stop_limit', 'take_profit_limit'):
                         # If it was a stop limit, we need both trigger and exec price. 
-                        # We'll just shift the limit price by the same delta if possible.
-                        orig_trigger = original_order.get('stopPrice') or original_order.get('triggerPrice') or new_price
-                        orig_limit = original_order.get('price') or orig_trigger
+                        # We'll shift the limit price by the same delta.
+                        orig_trigger = float(original_order.get('stopPrice') or original_order.get('triggerPrice') or new_price)
+                        orig_limit = float(original_order.get('price') or orig_trigger)
                         delta = new_price - orig_trigger
-                        price_arg = orig_limit + delta
+                        calc_price = orig_limit + delta
+                        price_arg = float(exchange.price_to_precision(symbol, calc_price)) if hasattr(exchange, 'price_to_precision') else calc_price
                 
                 if original_order.get('postOnly'):
                     ex_params['postOnly'] = True
                 if original_order.get('reduceOnly'):
                     ex_params['reduceOnly'] = True
+
+                # Preserve positionSide for Binance futures hedge mode
+                orig_pos_side = original_order.get('info', {}).get('positionSide')
+                if orig_pos_side and is_futures:
+                    ex_params['positionSide'] = orig_pos_side
+
                 orig_iceberg = original_order.get('info', {}).get('icebergQty')
                 if orig_iceberg and float(orig_iceberg) > 0:
                     ex_params['icebergAmount'] = float(orig_iceberg)

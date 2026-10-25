@@ -130,6 +130,12 @@ class EditOrderRequest(BaseModel):
     amount: float
     new_price: float
 
+class UpdateSoftwareBracketRequest(BaseModel):
+    symbol: str
+    side: str
+    new_price: float
+    amount: Optional[float] = None
+
 @router.put("/order/{api_key_id}/{order_id}")
 async def edit_order(
     api_key_id: int,
@@ -138,8 +144,28 @@ async def edit_order(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user)
 ):
-    """Edit an existing open order (uses cancel + create internally)"""
+    """Edit an existing open order (uses cancel + create internally) or active software SL bracket"""
     try:
+        from app.services.bracket_order_service import BracketOrderService
+        if order_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
+            return await BracketOrderService.update_software_bracket(
+                sl_id=order_id,
+                new_price=request.new_price,
+                api_key_id=api_key_id,
+                user_id=current_user.id
+            )
+        
+        from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
+        if order_id in ACTIVE_SMART_CHASES:
+            ACTIVE_SMART_CHASES[order_id]['original_sl'] = request.new_price
+            ACTIVE_SMART_CHASES[order_id]['current_maker_price'] = request.new_price
+            return {
+                "id": order_id,
+                "symbol": request.symbol,
+                "price": request.new_price,
+                "message": f"Active Smart Chase target updated to {request.new_price}"
+            }
+
         from app.services.manual_trade_service import manual_trade_service
         return await manual_trade_service.edit_manual_trade(
             db=db,
@@ -155,7 +181,55 @@ async def edit_order(
         raise he
     except Exception as e:
         logger.warning(f"⚠️ Order edit rejected: {e}")
-        raise HTTPException(status_code=400, detail=f"Exchange Error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Order Edit Failed: {str(e)}")
+
+@router.put("/software-bracket/{api_key_id}/{sl_id}")
+async def update_software_bracket_endpoint(
+    api_key_id: int,
+    sl_id: str,
+    req: UpdateSoftwareBracketRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """Update the trigger price of an active software SL (Smart Chase, Trailing, Fixed)"""
+    try:
+        from app.services.bracket_order_service import BracketOrderService
+        if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
+            return await BracketOrderService.update_software_bracket(
+                sl_id=sl_id,
+                new_price=req.new_price,
+                api_key_id=api_key_id,
+                user_id=current_user.id
+            )
+        
+        from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
+        if sl_id in ACTIVE_SMART_CHASES:
+            ACTIVE_SMART_CHASES[sl_id]['original_sl'] = req.new_price
+            ACTIVE_SMART_CHASES[sl_id]['current_maker_price'] = req.new_price
+            return {
+                "status": "success",
+                "sl_id": sl_id,
+                "new_price": req.new_price,
+                "message": f"Active Smart Chase target updated to {req.new_price}"
+            }
+
+        # If it's a native exchange order (Fixed SL on exchange)
+        from app.services.manual_trade_service import manual_trade_service
+        return await manual_trade_service.edit_manual_trade(
+            db=db,
+            user_id=current_user.id,
+            api_key_id=api_key_id,
+            order_id=sl_id,
+            symbol=req.symbol,
+            side=req.side,
+            amount=req.amount or 0.0,
+            new_price=req.new_price
+        )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Software SL edit failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to update Stop-Loss: {str(e)}")
 
 @router.get("/api-key-balance/{api_key_id}")
 async def get_api_key_balance(

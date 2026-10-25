@@ -17,11 +17,98 @@ from app.core.security import decrypt_key
 from app.services.notification import NotificationService
 
 import uuid
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
 class BracketOrderService:
     ACTIVE_SOFTWARE_SL = {}  # { sl_id: { symbol, side, amount, trigger_price, mode } }
+    
+    @staticmethod
+    async def update_software_bracket(sl_id: str, new_price: float, api_key_id: int = None, user_id: int = 0) -> dict:
+        """
+        Dynamically update the trigger price of an active software SL (Smart Chase, Trailing, Fixed).
+        Safely re-calculates futures disaster stops if active.
+        """
+        sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
+        if not sl_meta:
+            from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
+            if sl_id in ACTIVE_SMART_CHASES:
+                ACTIVE_SMART_CHASES[sl_id]['original_sl'] = new_price
+                ACTIVE_SMART_CHASES[sl_id]['current_maker_price'] = new_price
+                logger.info(f"🎯 Updated active smart chase target for {sl_id} to {new_price}")
+                return {
+                    "status": "success",
+                    "sl_id": sl_id,
+                    "new_price": new_price,
+                    "message": f"Updated active Smart Chase target to {new_price}"
+                }
+            raise HTTPException(status_code=404, detail="Software SL bracket not found or already triggered/closed.")
+
+        symbol = sl_meta.get('symbol')
+        side = sl_meta.get('side')
+        amount = sl_meta.get('amount', 0.0)
+        exchange = sl_meta.get('exchange')
+        is_futures = sl_meta.get('is_futures', False)
+        mode = sl_meta.get('mode', 'SMART_CHASE')
+
+        # Format price with exchange precision if available
+        prec_price = float(exchange.price_to_precision(symbol, new_price)) if exchange and hasattr(exchange, 'price_to_precision') else new_price
+
+        # Update metadata dynamically
+        sl_meta['trigger_price'] = prec_price
+        sl_meta['price'] = prec_price
+        sl_meta['manual_trigger_override'] = prec_price
+
+        # If disaster SL order exists on futures exchange, replace it with updated disaster level
+        disaster_order_id = sl_meta.get('disaster_sl_order_id')
+        max_dev = float(sl_meta.get('max_deviation_pct') or 1.0)
+        if disaster_order_id and exchange and is_futures:
+            try:
+                # Cancel previous disaster stop
+                try:
+                    await exchange.cancel_order(disaster_order_id, symbol)
+                except Exception as c_err:
+                    logger.debug(f"Previous disaster SL cancel non-fatal error: {c_err}")
+                
+                # Re-place disaster stop at new price ± max_dev
+                disaster_price = prec_price * (1 - (max_dev / 100.0)) if side == 'sell' else prec_price * (1 + (max_dev / 100.0))
+                disaster_price_prec = (
+                    float(exchange.price_to_precision(symbol, disaster_price))
+                    if hasattr(exchange, 'price_to_precision') else disaster_price
+                )
+                disaster_params = {'reduceOnly': True, 'stopPrice': disaster_price_prec}
+                
+                # Check hedge mode positionSide
+                api_key_rec = sl_meta.get('api_key_record')
+                if getattr(api_key_rec, 'exchange', '').lower().startswith('binance') or getattr(exchange, 'id', '').lower().startswith('binance'):
+                    for method_name in ['fapiPrivateGetPositionSideDual', 'fapiprivateGetPositionsideDual', 'fapiprivate_get_positionside_dual']:
+                        method = getattr(exchange, method_name, None)
+                        if method and callable(method):
+                            try:
+                                res = await method()
+                                if res.get('dualSidePosition', False):
+                                    disaster_params['positionSide'] = 'LONG' if side == 'sell' else 'SHORT'
+                                break
+                            except Exception:
+                                pass
+                
+                d_res = await exchange.create_order(symbol, 'STOP_MARKET', side, amount, None, disaster_params)
+                sl_meta['disaster_sl_order_id'] = d_res.get('id')
+                logger.info(f"🛡️ Replaced Native Disaster SL at {disaster_price_prec} (New ID: {d_res.get('id')})")
+            except Exception as d_err:
+                logger.warning(f"⚠️ Failed to update native disaster SL: {d_err}")
+
+        logger.info(f"✅ Software SL [{mode}] for {symbol} ({side}) trigger price updated to {prec_price}")
+        return {
+            "status": "success",
+            "sl_id": sl_id,
+            "symbol": symbol,
+            "side": side,
+            "new_price": prec_price,
+            "mode": mode,
+            "message": f"Stop-Loss trigger price successfully updated to {prec_price}"
+        }
     
     @staticmethod
     async def monitor_and_execute_bracket(
@@ -531,6 +618,7 @@ class BracketOrderService:
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
             'id': sl_id,
             'api_key_id': getattr(api_key_record, 'id', None),
+            'api_key_record': api_key_record,
             'symbol': symbol,
             'side': opposite_side,
             'amount': amount,
@@ -538,7 +626,11 @@ class BracketOrderService:
             'mode': mode,
             'price': entry_price,
             'trigger_price': entry_price,
-            'entry_price': entry_price
+            'entry_price': entry_price,
+            'val': val,
+            'is_futures': is_futures,
+            'exchange': exchange,
+            'status': 'monitoring'
         }
 
         logger.info(f"🏁 Trailing SL loop started for {symbol} | Entry: {entry_price}")
@@ -626,6 +718,7 @@ class BracketOrderService:
                         continue
                         
                 trigger_price = 0.0
+                manual_override = sl_meta.get('manual_trigger_override')
                 if opposite_side == 'sell': # We are Long, so we want to sell
                     highest_price = max(highest_price, current_price)
                     if mode == 'percentage':
@@ -639,6 +732,9 @@ class BracketOrderService:
                         new_trigger = highest_price - val
                         trigger_price = max(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                         
+                    if manual_override is not None:
+                        trigger_price = max(trigger_price, float(manual_override))
+
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['trigger_price'] = trigger_price
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['price'] = trigger_price
 
@@ -659,6 +755,9 @@ class BracketOrderService:
                         new_trigger = lowest_price + val
                         trigger_price = min(trigger_price, new_trigger) if trigger_price > 0 else new_trigger
                         
+                    if manual_override is not None:
+                        trigger_price = min(trigger_price, float(manual_override)) if trigger_price > 0 else float(manual_override)
+
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['trigger_price'] = trigger_price
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['price'] = trigger_price
 
@@ -755,6 +854,7 @@ class BracketOrderService:
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
             'id': sl_id,
             'api_key_id': getattr(api_key_record, 'id', None),
+            'api_key_record': api_key_record,
             'symbol': symbol,
             'side': opposite_side,
             'amount': amount,
@@ -764,7 +864,12 @@ class BracketOrderService:
             'trigger_source': trigger_source,
             'price': sl_price,
             'trigger_price': sl_price,
-            'entry_price': entry_price
+            'entry_price': entry_price,
+            'disaster_sl_order_id': disaster_sl_order_id,
+            'is_futures': is_futures,
+            'max_deviation_pct': max_deviation_pct,
+            'exchange': exchange,
+            'status': 'monitoring'
         }
 
         logger.info(f"🏁 Smart Chase Monitor started for {symbol} | Trigger: {sl_price} | Source: {trigger_source.upper()} | Entry: {entry_price}")
@@ -801,15 +906,19 @@ class BracketOrderService:
                     current_price = last_price
                     source_label = f"Last Price ({current_price})"
 
+                # Dynamic trigger price (in case user dragged/edited on chart)
+                current_sl_trigger = float(sl_meta.get('trigger_price') if sl_meta.get('trigger_price') is not None else sl_price)
+                sl_price = current_sl_trigger
+
                 if current_price > 0:
                     if opposite_side == 'sell': # Long position, sell when price drops to or below sl_price
-                        if current_price <= sl_price:
-                            logger.info(f"💥 Smart Chase SL Triggered for Long! {source_label} <= {sl_price} [Source: {trigger_source.upper()}]")
+                        if current_price <= current_sl_trigger:
+                            logger.info(f"💥 Smart Chase SL Triggered for Long! {source_label} <= {current_sl_trigger} [Source: {trigger_source.upper()}]")
                             sl_triggered = True
                             break
                     else: # Short position, buy when price rises to or above sl_price
-                        if current_price >= sl_price:
-                            logger.info(f"💥 Smart Chase SL Triggered for Short! {source_label} >= {sl_price} [Source: {trigger_source.upper()}]")
+                        if current_price >= current_sl_trigger:
+                            logger.info(f"💥 Smart Chase SL Triggered for Short! {source_label} >= {current_sl_trigger} [Source: {trigger_source.upper()}]")
                             sl_triggered = True
                             break
 

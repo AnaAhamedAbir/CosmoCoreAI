@@ -1791,16 +1791,18 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             let width = 1;
 
             if (order.isSoftwareSL) {
-                color = '#ef4444'; // Red for trailing stops
-                label = `🏃 SL (${order.mode ? order.mode.toUpperCase() : 'Trailing'})`;
+                color = '#ef4444'; // Red for SL
+                const modeName = order.mode ? order.mode.toUpperCase() : 'SL';
+                const formattedMode = modeName === 'SMART_CHASE' ? 'SMART CHASE' : (modeName === 'TRAILING' ? 'TRAILING' : (modeName === 'STOP' ? 'FIXED' : modeName));
+                label = `🛑 ${formattedMode} SL (${order.price < 1 ? order.price.toFixed(6) : order.price.toFixed(4)})`;
                 style = 2; // Dashed
-                width = 2;
+                width = 1; // Sleek 1px line as explicitly requested
             } else if (order.isIceberg) {
                 color = isBuy ? '#06b6d4' : '#f43f5e'; // Cyan for buy iceberg, Rose for sell iceberg
                 const sliceText = order.icebergQty ? `${order.icebergQty.toFixed(2)}/` : '';
                 label = `🧊 ${isBuy ? '▲ BUY' : '▼ SELL'} [ICEBERG: ${sliceText}${order.amount.toFixed(2)}]`;
                 style = 2; // Dashed
-                width = 2;
+                width = 1;
             }
 
             if (!wallLinesRef.current.has(key)) {
@@ -1834,7 +1836,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     const ghostLineRef = useRef<any>(null);
     const openOrdersRef = useRef<OpenLimitOrder[]>([]);
     const isModifyingRef = useRef<boolean>(false);
+    const currentPriceRef = useRef<number>(currentPrice);
     
+    // Keep a fresh ref to live market price
+    useEffect(() => {
+        currentPriceRef.current = currentPrice;
+    }, [currentPrice]);
+
     // Keep a fresh ref to openOrders so DOM events can access it
     useEffect(() => {
         openOrdersRef.current = openOrders;
@@ -1869,13 +1877,18 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 
                 if (!ghostLineRef.current) {
                     const isBuy = clickedOrder.side === 'buy';
+                    const isSL = clickedOrder.isSoftwareSL;
+                    const color = isSL ? '#ef4444' : (isBuy ? 'rgba(34, 197, 94, 0.75)' : 'rgba(239, 68, 68, 0.75)');
+                    const modeName = clickedOrder.mode ? clickedOrder.mode.toUpperCase() : 'SL';
+                    const labelPrefix = isSL ? `DRAG TO EDIT ${modeName} SL` : `DRAG TO EDIT ${clickedOrder.side.toUpperCase()}`;
+
                     ghostLineRef.current = candlestickSeriesRef.current.createPriceLine({
                         price: clickedOrder.price, // Start at original price
-                        color: isBuy ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
-                        lineWidth: 2,
+                        color,
+                        lineWidth: 1, // Ultra-thin crisp line
                         lineStyle: 1, // Dotted
                         axisLabelVisible: true,
-                        title: `DRAG TO EDIT ${clickedOrder.side.toUpperCase()}`,
+                        title: `${labelPrefix} (${clickedOrder.price < 1 ? clickedOrder.price.toFixed(6) : clickedOrder.price.toFixed(4)})`,
                     });
                 }
             }
@@ -1884,20 +1897,28 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         const handleMouseMove = (e: MouseEvent) => {
             const chartRect = container.getBoundingClientRect();
             const y = e.clientY - chartRect.top;
-            const currentPrice = candlestickSeriesRef.current?.coordinateToPrice(y);
-            if (currentPrice === null || currentPrice === undefined) return;
+            const mousePrice = candlestickSeriesRef.current?.coordinateToPrice(y);
+            if (mousePrice === null || mousePrice === undefined) return;
             
             if (isDown && draggingOrderIdRef.current && ghostLineRef.current) {
-                ghostLineRef.current.applyOptions({ price: currentPrice });
-                container.style.cursor = 'grabbing';
+                const targetOrder = openOrdersRef.current.find(o => o.id === draggingOrderIdRef.current);
+                const isSL = targetOrder?.isSoftwareSL;
+                const modeName = targetOrder?.mode ? targetOrder.mode.toUpperCase() : 'SL';
+                const labelPrefix = isSL ? `DRAG TO EDIT ${modeName} SL` : `DRAG TO EDIT ${targetOrder?.side?.toUpperCase()}`;
+                
+                ghostLineRef.current.applyOptions({ 
+                    price: mousePrice,
+                    title: `${labelPrefix} (${mousePrice < 1 ? mousePrice.toFixed(6) : mousePrice.toFixed(4)})`
+                });
+                container.style.cursor = 'ns-resize';
             } else if (!isDown) {
-                const thresholdPrice1 = candlestickSeriesRef.current?.coordinateToPrice(y - 5);
-                const thresholdPrice2 = candlestickSeriesRef.current?.coordinateToPrice(y + 5);
+                const thresholdPrice1 = candlestickSeriesRef.current?.coordinateToPrice(y - 6);
+                const thresholdPrice2 = candlestickSeriesRef.current?.coordinateToPrice(y + 6);
                 const priceDiff = Math.abs((thresholdPrice1 || 0) - (thresholdPrice2 || 0));
                 
-                const hoverOrder = openOrdersRef.current.find(o => Math.abs(o.price - currentPrice) < priceDiff);
+                const hoverOrder = openOrdersRef.current.find(o => Math.abs(o.price - mousePrice) < priceDiff);
                 if (hoverOrder && !isModifyingRef.current && selectedApiKeyId) {
-                    container.style.cursor = 'grab';
+                    container.style.cursor = 'ns-resize';
                 } else {
                     container.style.cursor = 'crosshair';
                 }
@@ -1932,13 +1953,29 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             
             if (!newPrice || !targetOrder || !selectedApiKeyId) return;
 
-            // Auto-adjust price to prevent PostOnly rejection (Capping at current market price)
-            if (targetOrder.side === 'buy' && newPrice > currentPrice) {
-                newPrice = currentPrice;
-                toast.success('Buy price capped at current market price (PostOnly)');
-            } else if (targetOrder.side === 'sell' && newPrice < currentPrice) {
-                newPrice = currentPrice;
-                toast.success('Sell price floored at current market price (PostOnly)');
+            const livePrice = currentPriceRef.current || currentPrice;
+
+            // Stop-Loss Direction Validation vs Regular Limit Order PostOnly Capping
+            if (targetOrder.isSoftwareSL) {
+                // For Long position, SL is SELL side, and trigger price MUST be below current market price
+                if (targetOrder.side === 'sell' && newPrice >= livePrice) {
+                    toast.error(`⚠️ Long Stop-Loss must be placed below market price (${livePrice < 1 ? livePrice.toFixed(6) : livePrice.toFixed(4)})`);
+                    return;
+                }
+                // For Short position, SL is BUY side, and trigger price MUST be above current market price
+                if (targetOrder.side === 'buy' && newPrice <= livePrice) {
+                    toast.error(`⚠️ Short Stop-Loss must be placed above market price (${livePrice < 1 ? livePrice.toFixed(6) : livePrice.toFixed(4)})`);
+                    return;
+                }
+            } else {
+                // Auto-adjust price to prevent PostOnly rejection (Capping at current market price for limit orders)
+                if (targetOrder.side === 'buy' && newPrice > livePrice) {
+                    newPrice = livePrice;
+                    toast.success('Buy price capped at current market price (PostOnly)');
+                } else if (targetOrder.side === 'sell' && newPrice < livePrice) {
+                    newPrice = livePrice;
+                    toast.success('Sell price floored at current market price (PostOnly)');
+                }
             }
             
             // Skip if moved less than a fraction
@@ -1950,8 +1987,9 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 const line = wallLinesRef.current.get(key);
                 line?.applyOptions({ 
                     price: newPrice, 
-                    title: `Modifying...`,
+                    title: `Updating to ${newPrice < 1 ? newPrice.toFixed(6) : newPrice.toFixed(4)}...`,
                     color: '#f59e0b', // Amber/Orange
+                    lineWidth: 1,
                     lineStyle: 1
                 });
                 wallLinesRef.current.set(`${key}-modifying`, line);
@@ -1962,20 +2000,38 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             isModifyingRef.current = true;
             
             try {
-                await manualTradeService.editOrder(
-                    parseInt(selectedApiKeyId),
-                    orderId,
-                    {
-                        symbol,
-                        side: targetOrder.side,
-                        amount: targetOrder.amount, // Using original amount
-                        new_price: newPrice
-                    }
-                );
-                toast.success('Order price updated successfully');
+                if (targetOrder.isSoftwareSL) {
+                    await manualTradeService.updateSoftwareSL(
+                        parseInt(selectedApiKeyId),
+                        orderId,
+                        {
+                            symbol,
+                            side: targetOrder.side,
+                            new_price: newPrice,
+                            amount: targetOrder.amount
+                        }
+                    );
+                    const modeName = targetOrder.mode ? targetOrder.mode.toUpperCase() : 'SL';
+                    toast.success(`🎯 ${modeName} Stop-Loss updated to ${newPrice < 1 ? newPrice.toFixed(6) : newPrice.toFixed(4)}`);
+                } else {
+                    await manualTradeService.editOrder(
+                        parseInt(selectedApiKeyId),
+                        orderId,
+                        {
+                            symbol,
+                            side: targetOrder.side,
+                            amount: targetOrder.amount, // Using original amount
+                            new_price: newPrice
+                        }
+                    );
+                    toast.success(`Order price updated to ${newPrice < 1 ? newPrice.toFixed(6) : newPrice.toFixed(4)}`);
+                }
+
+                // Optimistically update openOrdersRef immediately for snappy UX
+                targetOrder.price = newPrice;
             } catch (err: any) {
                 console.error('Edit order failed', err);
-                toast.error('Failed to update order: ' + (err.response?.data?.detail || err.message));
+                toast.error('Failed to update: ' + (err.response?.data?.detail || err.message));
             } finally {
                 // Always remove the optimistic modifying line after the API call completes
                 const modifyingKey = `${key}-modifying`;

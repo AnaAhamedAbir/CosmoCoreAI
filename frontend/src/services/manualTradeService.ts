@@ -105,6 +105,15 @@ export const manualTradeService = {
     return response.data;
   },
 
+  updateSoftwareSL: async (apiKeyId: number, slId: string, payload: { symbol: string, side: string, new_price: number, amount?: number }) => {
+    const formattedPayload = {
+      ...payload,
+      side: payload.side.toLowerCase(),
+    };
+    const response = await api.put(`/trading/software-bracket/${apiKeyId}/${slId}`, formattedPayload);
+    return response.data;
+  },
+
   getActiveSoftwareBrackets: async (apiKeyId: number, symbol: string) => {
     const response = await api.get(`/trading/active-software-brackets/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`);
     return response.data;

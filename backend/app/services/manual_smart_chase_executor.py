@@ -53,6 +53,122 @@ def _get_min_notional(exchange, symbol: str) -> float:
     return 5.0  # Binance Spot standard min notional is $5.00
 
 
+def _calculate_target_maker_price(
+    exit_side: str,
+    ob: dict,
+    tick: float,
+    peg_strategy: str = 'bbo',
+    wall_multiplier: float = 2.5,
+    max_chase_price: float = 0.0,
+    exchange = None,
+    symbol: str = ''
+) -> float:
+    """
+    Computes optimal maker price based on chosen microstructure peg strategy:
+    - 'bbo': Standard Level 1 BBO (Best Ask for sell, Best Bid for buy)
+    - 'inside_spread': Jumps 1 tick inside the spread for #1 queue priority maker fill
+    - 'wall_aware': Scans L2 depth, detects support/resistance walls (> multiplier * avg),
+                    and front-runs 1 tick ahead.
+    Guarantees strict Post-Only maker boundary (never crosses the spread).
+    """
+    bids = ob.get('bids', []) if ob else []
+    asks = ob.get('asks', []) if ob else []
+    if not bids or not asks:
+        return 0.0
+
+    best_bid = float(bids[0][0])
+    best_ask = float(asks[0][0])
+    spread = best_ask - best_bid
+
+    target_price = best_ask if exit_side == "sell" else best_bid
+
+    # Strategy 1: Liquidity-Wall Aware Pegging (Microstructure Wall Front-Running)
+    if peg_strategy == 'wall_aware' and len(bids) >= 2 and len(asks) >= 2:
+        try:
+            if exit_side == "sell":  # Long Exit (Selling base): check ask resistance wall or bid support
+                ask_qtys = [float(a[1]) for a in asks[:10] if len(a) > 1]
+                avg_ask_vol = (sum(ask_qtys) / len(ask_qtys)) if ask_qtys else 0.0
+                detected_wall_price = None
+
+                for a in asks[:10]:
+                    p, q = float(a[0]), float(a[1])
+                    if avg_ask_vol > 0 and q >= avg_ask_vol * wall_multiplier and (max_chase_price == 0 or p >= max_chase_price):
+                        detected_wall_price = p
+                        break
+
+                if detected_wall_price and (detected_wall_price - tick) > best_bid:
+                    target_price = detected_wall_price - tick
+                else:
+                    # Check for bid support wall to rest safely right above it
+                    bid_qtys = [float(b[1]) for b in bids[:10] if len(b) > 1]
+                    avg_bid_vol = (sum(bid_qtys) / len(bid_qtys)) if bid_qtys else 0.0
+                    for b in bids[:10]:
+                        p, q = float(b[0]), float(b[1])
+                        if avg_bid_vol > 0 and q >= avg_bid_vol * wall_multiplier and (max_chase_price == 0 or p >= max_chase_price):
+                            if (p + tick) > best_bid:
+                                target_price = p + tick
+                            break
+            else:  # Short Exit (Buying base): check bid support wall or ask resistance
+                bid_qtys = [float(b[1]) for b in bids[:10] if len(b) > 1]
+                avg_bid_vol = (sum(bid_qtys) / len(bid_qtys)) if bid_qtys else 0.0
+                detected_wall_price = None
+
+                for b in bids[:10]:
+                    p, q = float(b[0]), float(b[1])
+                    if avg_bid_vol > 0 and q >= avg_bid_vol * wall_multiplier and (max_chase_price == 0 or p <= max_chase_price):
+                        detected_wall_price = p
+                        break
+
+                if detected_wall_price and (detected_wall_price + tick) < best_ask:
+                    target_price = detected_wall_price + tick
+                else:
+                    # Check for ask resistance wall to rest safely right below it
+                    ask_qtys = [float(a[1]) for a in asks[:10] if len(a) > 1]
+                    avg_ask_vol = (sum(ask_qtys) / len(ask_qtys)) if ask_qtys else 0.0
+                    for a in asks[:10]:
+                        p, q = float(a[0]), float(a[1])
+                        if avg_ask_vol > 0 and q >= avg_ask_vol * wall_multiplier and (max_chase_price == 0 or p <= max_chase_price):
+                            if (p - tick) < best_ask:
+                                target_price = p - tick
+                            break
+        except Exception as wall_err:
+            logger.debug(f"Wall detection fallback: {wall_err}")
+
+    # Strategy 2: Inside-Spread Pegging
+    elif peg_strategy == 'inside_spread' and spread > (tick * 1.5):
+        if exit_side == "sell":
+            candidate = best_ask - tick
+            if candidate > best_bid:
+                target_price = candidate
+        else:
+            candidate = best_bid + tick
+            if candidate < best_ask:
+                target_price = candidate
+
+    # Strict Maker Post-Only Guard: Must remain strictly on the maker side
+    if exit_side == "sell":
+        if target_price <= best_bid:
+            target_price = best_bid + tick
+    else:
+        if target_price >= best_ask:
+            target_price = best_ask - tick
+
+    # Format with exchange precision
+    if exchange and hasattr(exchange, 'price_to_precision') and symbol:
+        try:
+            target_price = float(exchange.price_to_precision(symbol, target_price))
+        except Exception:
+            pass
+
+    # Ensure precision rounding didn't cross the spread
+    if exit_side == "sell" and target_price <= best_bid:
+        target_price = float(exchange.price_to_precision(symbol, best_bid + tick)) if (exchange and hasattr(exchange, 'price_to_precision')) else (best_bid + tick)
+    elif exit_side == "buy" and target_price >= best_ask:
+        target_price = float(exchange.price_to_precision(symbol, best_ask - tick)) if (exchange and hasattr(exchange, 'price_to_precision')) else (best_ask - tick)
+
+    return target_price
+
+
 from datetime import datetime
 
 # Global registry of active Smart Chase executions: { chase_id: { ... } }
@@ -123,15 +239,19 @@ async def execute_manual_smart_chase(
     disaster_sl_order_id: Optional[str] = None,
     chase_id: Optional[str] = None,
     chase_mode: str = 'dynamic_bbo',  # 'dynamic_bbo' for real-time orderbook shadowing, 'interval' for timer
-    trigger_source: str = 'last'
+    trigger_source: str = 'last',
+    peg_strategy: str = 'bbo',        # 'bbo', 'inside_spread', or 'wall_aware'
+    wall_multiplier: float = 2.5
 ) -> Optional[Dict[str, Any]]:
     chase_delay_sec = max(0.2, chase_delay_ms / 1000.0)
     exchange_name = getattr(api_key_record, 'exchange', 'exchange').capitalize() if api_key_record else 'Exchange'
     min_notional = _get_min_notional(exchange, symbol)
+    ob_depth_limit = 20 if peg_strategy == 'wall_aware' else 5
 
     logger.info(
         f"🛡️ [Manual Smart Chase] Starting for {symbol} ({exit_side.upper()}) | Mode: {chase_mode.upper()} | "
-        f"Amount: {sell_amount_raw} | SL Trigger: {original_sl} | Max Dev: {max_deviation_pct}% | Delay: {chase_delay_ms}ms | MinNotional: ${min_notional:.2f}"
+        f"Strategy: {peg_strategy.upper()} | Amount: {sell_amount_raw} | SL Trigger: {original_sl} | "
+        f"Max Dev: {max_deviation_pct}% | Delay: {chase_delay_ms}ms | MinNotional: ${min_notional:.2f}"
     )
 
     # Detect Binance Hedge Mode on Futures to avoid -4061 rejection
@@ -257,7 +377,7 @@ async def execute_manual_smart_chase(
         await asyncio.sleep(0.1)  # Minimal 100ms buffer for Binance ledger release
         bal_res, ob_res = await asyncio.gather(
             exchange.fetch_balance(),
-            exchange.fetch_order_book(symbol, limit=5),
+            exchange.fetch_order_book(symbol, limit=ob_depth_limit),
             return_exceptions=True
         )
         if not isinstance(ob_res, Exception) and isinstance(ob_res, dict):
@@ -266,7 +386,7 @@ async def execute_manual_smart_chase(
             initial_bal = bal_res
     else:
         try:
-            cached_initial_ob = await exchange.fetch_order_book(symbol, limit=5)
+            cached_initial_ob = await exchange.fetch_order_book(symbol, limit=ob_depth_limit)
         except Exception:
             cached_initial_ob = None
 
@@ -305,6 +425,8 @@ async def execute_manual_smart_chase(
         'current_order_id': None,
         'chase_mode': chase_mode,
         'trigger_source': trigger_source,
+        'peg_strategy': peg_strategy,
+        'wall_multiplier': wall_multiplier,
         'cancel_event': cancel_event,
         'started_at': datetime.utcnow().isoformat()
     }
@@ -332,7 +454,7 @@ async def execute_manual_smart_chase(
             cached_initial_ob = None
         else:
             try:
-                ob = await exchange.fetch_order_book(symbol, limit=5)
+                ob = await exchange.fetch_order_book(symbol, limit=ob_depth_limit)
             except Exception as ob_e:
                 logger.warning(f"⚠️ [Manual Smart Chase] Could not fetch orderbook, falling back to ticker: {ob_e}")
 
@@ -346,36 +468,25 @@ async def execute_manual_smart_chase(
                 current_price = float(ticker.get('last') or original_sl)
                 best_bid = float(ticker.get('bid') or current_price)
                 best_ask = float(ticker.get('ask') or current_price)
+                ob = {'bids': [[best_bid, 1.0]], 'asks': [[best_ask, 1.0]]}
             except Exception:
                 best_bid = original_sl
                 best_ask = original_sl
+                ob = {'bids': [[best_bid, 1.0]], 'asks': [[best_ask, 1.0]]}
 
         tick = _get_market_tick(exchange, symbol, current_price)
 
-        # 2. Maker Price Guard:
-        # To guarantee Post-Only order rests in book without immediately matching:
-        # SELL order must be strictly ABOVE best_bid (at best_ask, or best_bid + 1 tick)
-        # BUY order must be strictly BELOW best_ask (at best_bid, or best_ask - 1 tick)
-        if exit_side == "sell":
-            target_maker_price = best_ask
-            if target_maker_price <= best_bid:
-                target_maker_price = best_bid + tick
-        else:
-            target_maker_price = best_bid
-            if target_maker_price >= best_ask:
-                target_maker_price = best_ask - tick
-
-        if hasattr(exchange, 'price_to_precision'):
-            try:
-                target_maker_price = float(exchange.price_to_precision(symbol, target_maker_price))
-            except Exception:
-                pass
-
-        # Ensure precision formatting didn't round back onto the spread
-        if exit_side == "sell" and target_maker_price <= best_bid:
-            target_maker_price = float(exchange.price_to_precision(symbol, best_bid + tick)) if hasattr(exchange, 'price_to_precision') else (best_bid + tick)
-        elif exit_side == "buy" and target_maker_price >= best_ask:
-            target_maker_price = float(exchange.price_to_precision(symbol, best_ask - tick)) if hasattr(exchange, 'price_to_precision') else (best_ask - tick)
+        # 2. Compute Maker Price according to chosen Strategy (BBO / Inside-Spread / Wall-Aware)
+        target_maker_price = _calculate_target_maker_price(
+            exit_side=exit_side,
+            ob=ob,
+            tick=tick,
+            peg_strategy=peg_strategy,
+            wall_multiplier=wall_multiplier,
+            max_chase_price=max_chase_price,
+            exchange=exchange,
+            symbol=symbol
+        )
 
         # Synchronize and clamp amount with live wallet balance before placing
         remaining_amount = await _sync_and_clamp_amount(target_maker_price)
@@ -582,7 +693,7 @@ async def execute_manual_smart_chase(
                         break
 
                     try:
-                        latest_ob = await exchange.fetch_order_book(symbol, limit=5)
+                        latest_ob = await exchange.fetch_order_book(symbol, limit=ob_depth_limit)
                         if latest_ob and latest_ob.get('bids') and latest_ob.get('asks') and len(latest_ob['bids']) > 0 and len(latest_ob['asks']) > 0:
                             l_best_bid = float(latest_ob['bids'][0][0])
                             l_best_ask = float(latest_ob['asks'][0][0])
@@ -596,20 +707,16 @@ async def execute_manual_smart_chase(
                                 )
                                 break
 
-                            if exit_side == "sell":
-                                new_maker_price = l_best_ask
-                                if new_maker_price <= l_best_bid:
-                                    new_maker_price = l_best_bid + l_tick
-                            else:
-                                new_maker_price = l_best_bid
-                                if new_maker_price >= l_best_ask:
-                                    new_maker_price = l_best_ask - l_tick
-
-                            if hasattr(exchange, 'price_to_precision'):
-                                try:
-                                    new_maker_price = float(exchange.price_to_precision(symbol, new_maker_price))
-                                except Exception:
-                                    pass
+                            new_maker_price = _calculate_target_maker_price(
+                                exit_side=exit_side,
+                                ob=latest_ob,
+                                tick=l_tick,
+                                peg_strategy=peg_strategy,
+                                wall_multiplier=wall_multiplier,
+                                max_chase_price=max_chase_price,
+                                exchange=exchange,
+                                symbol=symbol
+                            )
 
                             # ── DIRECTIONAL CHASE RULE (Never run away from incoming fills!) ──
                             # For BUY SL: We only chase if the market moved UP (higher than our bid), leaving us behind.

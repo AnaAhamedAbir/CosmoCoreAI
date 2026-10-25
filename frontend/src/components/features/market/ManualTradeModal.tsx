@@ -97,7 +97,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   });
   const [slConfig, setSlConfig] = useState({
     enabled: true,
-    type: 'fixed' as 'fixed' | 'trailing' | 'smart_chase',
+    type: 'fixed' as 'fixed' | 'trailing' | 'smart_chase' | 'trailing_chase',
     mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
     value: '0.0001',
     atrPeriod: 10,
@@ -108,7 +108,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     smartChaseDelayMs: 1500,
     smartChaseMaxAttempts: 0,
     smartChaseMode: 'dynamic_bbo' as 'dynamic_bbo' | 'interval',
-    smartChaseTriggerSource: 'last' as 'last' | 'bid_ask'
+    smartChaseTriggerSource: 'last' as 'last' | 'bid_ask',
+    smartChasePegStrategy: 'bbo' as 'bbo' | 'inside_spread' | 'wall_aware',
+    smartChaseWallMultiplier: 2.5,
+    autoBreakevenEnabled: false,
+    autoBreakevenTriggerPct: 1.0,
+    autoBreakevenBufferPct: 0.05
   });
   const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(true);
   const [activeBrackets, setActiveBrackets] = useState<any[]>([]);
@@ -458,8 +463,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         toast.error('Please enter a valid ATR Period and Multiplier.');
         return;
       }
-      if (slConfig.type === 'smart_chase' && (!slConfig.smartChaseDeviationPct || slConfig.smartChaseDeviationPct <= 0)) {
+      if ((slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase') && (!slConfig.smartChaseDeviationPct || slConfig.smartChaseDeviationPct <= 0)) {
         toast.error('Please enter a valid Max Deviation (%) for Smart Chase.');
+        return;
+      }
+      if (slConfig.autoBreakevenEnabled && (!slConfig.autoBreakevenTriggerPct || slConfig.autoBreakevenTriggerPct <= 0)) {
+        toast.error('Please enter a valid trigger profit % for Auto-Breakeven.');
         return;
       }
     }
@@ -521,7 +530,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         api_key_id: selectedApi ? Number(selectedApi) : undefined,
         params: Object.keys(paramsPayload).length > 0 ? paramsPayload : undefined,
         client_timestamp: Date.now(),
-        use_native_tp_sl: (!isFutures && orderType !== 'SmartPeg' && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))) ? Boolean(useNativeTpSl) : false,
+        use_native_tp_sl: (!isFutures && orderType !== 'SmartPeg' && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase' || slConfig.mode === 'atr' || slConfig.autoBreakevenEnabled))) ? Boolean(useNativeTpSl) : false,
         iceberg_qty: (orderType === 'Limit' && !isFutures && isIceberg && effectiveIcebergQty > 0) ? effectiveIcebergQty : undefined
       };
 
@@ -550,7 +559,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             smart_chase_delay_ms: slConfig.smartChaseDelayMs,
             smart_chase_max_attempts: slConfig.smartChaseMaxAttempts,
             smart_chase_mode: slConfig.smartChaseMode,
-            smart_chase_trigger_source: slConfig.smartChaseTriggerSource
+            smart_chase_trigger_source: slConfig.smartChaseTriggerSource,
+            smart_chase_peg_strategy: slConfig.smartChasePegStrategy,
+            smart_chase_wall_multiplier: slConfig.smartChaseWallMultiplier,
+            auto_breakeven_enabled: slConfig.autoBreakevenEnabled,
+            auto_breakeven_trigger_pct: slConfig.autoBreakevenTriggerPct,
+            auto_breakeven_buffer_pct: slConfig.autoBreakevenBufferPct
           };
         }
       }
@@ -1587,22 +1601,29 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                     <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
                                         <button
                                             onClick={() => setSlConfig({...slConfig, type: 'fixed', mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode})}
-                                            className={`flex-1 text-[9px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             Fixed
                                         </button>
                                         <button
                                             onClick={() => setSlConfig({...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode})}
-                                            className={`flex-1 text-[9px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             Trailing
                                         </button>
                                         <button
                                             onClick={() => setSlConfig({...slConfig, type: 'smart_chase', mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode})}
-                                            className={`flex-1 text-[9px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-bold shadow-sm' : 'text-gray-500 hover:text-white'}`}
+                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-bold shadow-sm' : 'text-gray-500 hover:text-white'}`}
                                             title="Smart Chase Limit (Maker Post-Only Exit with Circuit Breaker)"
                                         >
                                             Smart Chase
+                                        </button>
+                                        <button
+                                            onClick={() => setSlConfig({...slConfig, type: 'trailing_chase', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode})}
+                                            className={`flex-1 text-[8px] py-1 rounded transition-colors ${slConfig.type === 'trailing_chase' ? 'bg-gradient-to-r from-amber-500 via-rose-500 to-cyan-500 text-white font-bold shadow-sm' : 'text-gray-500 hover:text-white'}`}
+                                            title="Trailing Smart Chase (Trails in profit + exits via Zero-Fee Maker Limit order)"
+                                        >
+                                            ⚡ Trail Chase
                                         </button>
                                     </div>
                                 </div>
@@ -1624,12 +1645,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                             $
                                         </button>
                                         <button
-                                            onClick={() => setSlConfig({...slConfig, mode: 'absolute', type: slConfig.type === 'trailing' ? 'fixed' : slConfig.type})}
+                                            onClick={() => setSlConfig({...slConfig, mode: 'absolute', type: (slConfig.type === 'trailing' || slConfig.type === 'trailing_chase') ? 'fixed' : slConfig.type})}
                                             className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             🎯
                                         </button>
-                                        {slConfig.type !== 'smart_chase' && (
+                                        {slConfig.type !== 'smart_chase' && slConfig.type !== 'trailing_chase' && (
                                             <button
                                                 onClick={() => setSlConfig({...slConfig, mode: 'atr', type: 'trailing'})}
                                                 className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'atr' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
@@ -1683,7 +1704,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                 ) : (
                                     <div className="space-y-1">
                                         <label className="text-[10px] text-gray-400 font-medium">
-                                            {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'smart_chase' ? 'Chase Trigger Gap' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap'))}
+                                            {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'smart_chase' ? 'Chase Trigger Gap' : (slConfig.type === 'trailing_chase' ? 'Trailing Callback Gap' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap')))}
                                         </label>
                                         <div className="relative">
                                             <input 
@@ -1746,15 +1767,86 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                 </div>
                             </div>
 
-                            {/* Smart Chase Detailed Controls */}
-                            {slConfig.type === 'smart_chase' && (
+                            {/* Smart Chase Detailed Controls (for Smart Chase & Trailing Chase) */}
+                            {(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase') && (
                                 <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 space-y-2 mt-1 animate-fadeIn">
                                     <div className="flex items-center justify-between text-[10px]">
                                         <span className="font-bold text-red-400 flex items-center gap-1.5">
                                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                                            Smart Chase Settings (Maker Post-Only)
+                                            {slConfig.type === 'trailing_chase' ? 'Trailing Chase Engine (Maker Post-Only)' : 'Smart Chase Settings (Maker Post-Only)'}
                                         </span>
                                         <span className="text-[9px] text-amber-400 font-mono font-bold">Circuit: {slConfig.smartChaseDeviationPct}%</span>
+                                    </div>
+
+                                    {/* Pegging Strategy Selector: Standard BBO vs Inside-Spread vs Wall-Aware */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between items-center text-[9px] text-gray-400">
+                                            <span className="font-semibold text-gray-300">Pegging Strategy</span>
+                                            <span className="text-[8.5px] font-mono text-amber-300 font-bold">
+                                                {slConfig.smartChasePegStrategy === 'wall_aware' ? '🧱 Wall-Aware' : (slConfig.smartChasePegStrategy === 'inside_spread' ? '🎯 Inside-Spread' : '⚡ Top BBO')}
+                                            </span>
+                                        </div>
+                                        <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[9px] font-semibold">
+                                            <button
+                                                type="button"
+                                                onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'bbo' })}
+                                                className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                                    slConfig.smartChasePegStrategy === 'bbo'
+                                                        ? 'bg-amber-600 text-white font-bold shadow-md'
+                                                        : 'text-gray-400 hover:text-white'
+                                                }`}
+                                                title="Standard Top-of-Book BBO: Tracks Best Bid/Ask directly"
+                                            >
+                                                ⚡ Top BBO
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'inside_spread' })}
+                                                className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                                    slConfig.smartChasePegStrategy === 'inside_spread'
+                                                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold shadow-md'
+                                                        : 'text-gray-400 hover:text-white'
+                                                }`}
+                                                title="Inside-Spread Pegging: Places 1 tick inside spread when spread > 1 tick. Ensures #1 queue priority maker fill without taker fees."
+                                            >
+                                                🎯 Inside-Spread
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'wall_aware' })}
+                                                className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                                    slConfig.smartChasePegStrategy === 'wall_aware'
+                                                        ? 'bg-gradient-to-r from-orange-600 to-amber-600 text-white font-bold shadow-md'
+                                                        : 'text-gray-400 hover:text-white'
+                                                }`}
+                                                title="Liquidity-Wall Aware: Scans L2 depth, detects support/resistance walls, and front-runs 1 tick ahead."
+                                            >
+                                                🧱 Wall-Aware
+                                            </button>
+                                        </div>
+                                        {slConfig.smartChasePegStrategy === 'wall_aware' && (
+                                            <div className="p-2 rounded bg-amber-950/20 border border-amber-500/20 space-y-1">
+                                                <div className="flex justify-between items-center text-[8.5px]">
+                                                    <span className="text-gray-300">Wall Threshold Multiplier</span>
+                                                    <span className="text-amber-400 font-mono font-bold">{slConfig.smartChaseWallMultiplier}x Depth</span>
+                                                </div>
+                                                <input 
+                                                    type="range"
+                                                    min="1.5" max="5.0" step="0.5"
+                                                    value={slConfig.smartChaseWallMultiplier}
+                                                    onChange={(e) => setSlConfig({ ...slConfig, smartChaseWallMultiplier: parseFloat(e.target.value) || 2.5 })}
+                                                    className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                                />
+                                                <p className="text-[8px] text-gray-400 leading-tight">
+                                                    Front-runs orderbook clusters with volume ≥ {slConfig.smartChaseWallMultiplier}x average depth.
+                                                </p>
+                                            </div>
+                                        )}
+                                        {slConfig.smartChasePegStrategy === 'inside_spread' && (
+                                            <p className="text-[8px] text-cyan-400/90 leading-tight">
+                                                💡 Jumps 1 tick inside the spread to capture top execution priority before takers match other makers.
+                                            </p>
+                                        )}
                                     </div>
 
                                     {/* Chase Trigger Basis Toggle: Last Market Price vs Bid / Ask Price */}
@@ -1894,6 +1986,73 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                     </div>
                                 </div>
                             )}
+
+                            {/* Auto-Breakeven (Capital Protection) Panel */}
+                            <div className="bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-2.5 space-y-2 mt-2">
+                                <div className="flex justify-between items-center cursor-pointer group" onClick={() => setSlConfig({ ...slConfig, autoBreakevenEnabled: !slConfig.autoBreakevenEnabled })}>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                        <span className="text-[10px] font-bold text-emerald-300 group-hover:text-white transition-colors">
+                                            🛡️ Auto-Breakeven (Risk-Free Trade)
+                                        </span>
+                                    </div>
+                                    <div className={`relative w-7 h-3.5 rounded-full transition-colors ${slConfig.autoBreakevenEnabled ? 'bg-emerald-500' : 'bg-gray-700'}`}>
+                                        <MotionDiv 
+                                            className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
+                                            animate={{ x: slConfig.autoBreakevenEnabled ? 14 : 0 }}
+                                            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <AnimatePresence>
+                                    {slConfig.autoBreakevenEnabled && (
+                                        <MotionDiv
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: 'auto', opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            className="space-y-2 pt-1 border-t border-emerald-500/10 overflow-hidden"
+                                        >
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div className="space-y-1">
+                                                    <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                                        <span>Trigger at Profit</span>
+                                                        <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenTriggerPct}%</span>
+                                                    </label>
+                                                    <input 
+                                                        type="number"
+                                                        step="0.1"
+                                                        min="0.1"
+                                                        max="50"
+                                                        value={slConfig.autoBreakevenTriggerPct}
+                                                        onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenTriggerPct: parseFloat(e.target.value) || 0.5 })}
+                                                        className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                                        <span>Fee Buffer</span>
+                                                        <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenBufferPct}%</span>
+                                                    </label>
+                                                    <input 
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        max="1.0"
+                                                        value={slConfig.autoBreakevenBufferPct}
+                                                        onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenBufferPct: parseFloat(e.target.value) || 0.05 })}
+                                                        className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
+                                                        title="Extra cushion above entry price to guarantee 0 loss after exchange commissions"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <p className="text-[8px] text-emerald-400/80 leading-tight">
+                                                ⚡ When profit reaches +{slConfig.autoBreakevenTriggerPct}%, SL automatically ratchets to Entry + {slConfig.autoBreakevenBufferPct}% buffer (100% Risk-Free)!
+                                            </p>
+                                        </MotionDiv>
+                                    )}
+                                </AnimatePresence>
+                            </div>
                         </MotionDiv>
                      )}
                   </AnimatePresence>

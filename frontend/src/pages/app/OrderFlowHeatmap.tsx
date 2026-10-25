@@ -1793,7 +1793,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             if (order.isSoftwareSL) {
                 color = '#ef4444'; // Red for SL
                 const modeName = order.mode ? order.mode.toUpperCase() : 'SL';
-                const formattedMode = modeName === 'SMART_CHASE' ? 'SMART CHASE' : (modeName === 'TRAILING' ? 'TRAILING' : (modeName === 'STOP' ? 'FIXED' : modeName));
+                const formattedMode = modeName === 'TRAILING_CHASE' ? 'TRAILING CHASE' : (modeName === 'SMART_CHASE' ? 'SMART CHASE' : (modeName === 'TRAILING' ? 'TRAILING' : (modeName === 'STOP' ? 'FIXED' : modeName)));
                 label = `🛑 ${formattedMode} SL (${order.price < 1 ? order.price.toFixed(6) : order.price.toFixed(4)})`;
                 style = 2; // Dashed
                 width = 1; // Sleek 1px line as explicitly requested

@@ -22,7 +22,7 @@ class AttachedTPConfig(BaseModel):
 
 class AttachedSLConfig(BaseModel):
     enabled: bool
-    type: Optional[str] = 'fixed' # 'fixed', 'trailing', or 'smart_chase'
+    type: Optional[str] = 'fixed' # 'fixed', 'trailing', 'smart_chase', or 'trailing_chase'
     mode: str  # 'percentage' or 'price' or 'absolute' or 'atr'
     value: float
     atr_period: Optional[int] = 10
@@ -33,6 +33,11 @@ class AttachedSLConfig(BaseModel):
     smart_chase_max_attempts: Optional[int] = 15
     smart_chase_mode: Optional[str] = 'dynamic_bbo'  # 'dynamic_bbo' or 'interval'
     smart_chase_trigger_source: Optional[str] = 'last'  # 'last' or 'bid_ask'
+    smart_chase_peg_strategy: Optional[str] = 'bbo'  # 'bbo', 'inside_spread', or 'wall_aware'
+    smart_chase_wall_multiplier: Optional[float] = 2.5  # Multiplier over avg depth volume
+    auto_breakeven_enabled: Optional[bool] = False
+    auto_breakeven_trigger_pct: Optional[float] = 1.0  # Trigger when profit reaches +X%
+    auto_breakeven_buffer_pct: Optional[float] = 0.05  # Extra cushion to cover round-trip exchange fees
     timeout_mins: Optional[float] = 0
 
 class OrderRequest(BaseModel):

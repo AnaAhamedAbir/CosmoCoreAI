@@ -24,7 +24,7 @@ export interface OrderPayload {
   };
   attached_sl?: {
     enabled: boolean;
-    type: 'fixed' | 'trailing' | 'smart_chase';
+    type: 'fixed' | 'trailing' | 'smart_chase' | 'trailing_chase';
     mode: 'percentage' | 'price' | 'absolute' | 'atr';
     value: number;
     timeout_mins?: number | null;
@@ -36,6 +36,11 @@ export interface OrderPayload {
     smart_chase_max_attempts?: number;
     smart_chase_mode?: 'dynamic_bbo' | 'interval';
     smart_chase_trigger_source?: 'last' | 'bid_ask';
+    smart_chase_peg_strategy?: 'bbo' | 'inside_spread' | 'wall_aware';
+    smart_chase_wall_multiplier?: number;
+    auto_breakeven_enabled?: boolean;
+    auto_breakeven_trigger_pct?: number;
+    auto_breakeven_buffer_pct?: number;
   };
   use_native_tp_sl?: boolean;
   iceberg_qty?: number;

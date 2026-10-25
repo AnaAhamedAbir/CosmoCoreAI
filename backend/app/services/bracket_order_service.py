@@ -417,10 +417,17 @@ class BracketOrderService:
                 atr_multiplier = float(sl_config.get('atr_multiplier', 2.0))
                 atr_timeframe = sl_config.get('atr_timeframe', '15m')
 
-                if sl_type == 'trailing':
+                is_trailing_chase = (sl_type == 'trailing_chase')
+                peg_strategy = str(sl_config.get('smart_chase_peg_strategy') or 'bbo').lower()
+                wall_multiplier = float(sl_config.get('smart_chase_wall_multiplier') or 2.5)
+                auto_breakeven_enabled = bool(sl_config.get('auto_breakeven_enabled') or False)
+                auto_breakeven_trigger_pct = float(sl_config.get('auto_breakeven_trigger_pct') or 1.0)
+                auto_breakeven_buffer_pct = float(sl_config.get('auto_breakeven_buffer_pct') or 0.05)
+
+                if sl_type in ['trailing', 'trailing_chase']:
                     placed_native = False
-                    if is_futures and sl_mode == 'percentage':
-                        # Try Native Trailing Stop Market for Futures
+                    if not is_trailing_chase and is_futures and sl_mode == 'percentage':
+                        # Try Native Trailing Stop Market for Futures (Taker Exit)
                         try:
                             logger.info(f"🚀 Bracket Monitor: Placing Native Trailing Stop for {symbol} (Futures)")
                             sl_params = {'reduceOnly': True, 'callbackRate': sl_val}
@@ -463,10 +470,40 @@ class BracketOrderService:
                         except Exception as e:
                             logger.error(f"❌ Failed to place native Trailing SL: {e}. Falling back to software loop.")
                     
+                    # Trailing Chase MUST run via Software Maker Loop (never native taker)
+                    if is_trailing_chase:
+                        placed_native = False
+
                     if not placed_native:
-                        logger.info(f"🚀 Bracket Monitor: Starting Software Trailing Stop for {symbol}")
+                        logger.info(f"🚀 Bracket Monitor: Starting Software {'Trailing Chase (Maker)' if is_trailing_chase else 'Trailing Stop'} for {symbol}")
                         asyncio.create_task(
-                            BracketOrderService._software_trailing_stop_loop(exchange, symbol, opposite_side, final_amount, average_price, sl_mode, sl_val, is_futures, user_id, api_key_record, atr_period, atr_multiplier, atr_timeframe, tp_order_id)
+                            BracketOrderService._software_trailing_stop_loop(
+                                exchange=exchange,
+                                symbol=symbol,
+                                opposite_side=opposite_side,
+                                amount=final_amount,
+                                entry_price=average_price,
+                                mode=sl_mode,
+                                val=sl_val,
+                                is_futures=is_futures,
+                                user_id=user_id,
+                                api_key_record=api_key_record,
+                                atr_period=atr_period,
+                                atr_multiplier=atr_multiplier,
+                                atr_timeframe=atr_timeframe,
+                                tp_order_id=tp_order_id,
+                                is_smart_chase_exit=is_trailing_chase,
+                                max_deviation_pct=float(sl_config.get('smart_chase_deviation_pct') or 1.0),
+                                chase_delay_ms=int(sl_config.get('smart_chase_delay_ms') or 1500),
+                                max_attempts=int(sl_config.get('smart_chase_max_attempts') or 15),
+                                chase_mode=str(sl_config.get('smart_chase_mode') or 'dynamic_bbo').lower(),
+                                trigger_source=str(sl_config.get('smart_chase_trigger_source') or 'last').lower(),
+                                peg_strategy=peg_strategy,
+                                wall_multiplier=wall_multiplier,
+                                auto_breakeven_enabled=auto_breakeven_enabled,
+                                auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
+                                auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
+                            )
                         )
                 elif sl_type == 'smart_chase':
                     sl_price = average_price
@@ -515,7 +552,7 @@ class BracketOrderService:
                         except Exception as d_err:
                             logger.warning(f"⚠️ Failed to place native disaster SL: {d_err}")
 
-                    logger.info(f"🚀 Bracket Monitor: Starting Smart Chase Limit SL for {symbol} | Trigger: {final_sl_price} | Mode: {chase_mode.upper()} | Source: {trigger_source.upper()}")
+                    logger.info(f"🚀 Bracket Monitor: Starting Smart Chase Limit SL for {symbol} | Trigger: {final_sl_price} | Strategy: {peg_strategy.upper()} | Mode: {chase_mode.upper()}")
                     asyncio.create_task(
                         BracketOrderService._smart_chase_monitor_loop(
                             exchange=exchange,
@@ -533,7 +570,12 @@ class BracketOrderService:
                             tp_order_id=tp_order_id,
                             disaster_sl_order_id=disaster_sl_order_id,
                             chase_mode=chase_mode,
-                            trigger_source=trigger_source
+                            trigger_source=trigger_source,
+                            peg_strategy=peg_strategy,
+                            wall_multiplier=wall_multiplier,
+                            auto_breakeven_enabled=auto_breakeven_enabled,
+                            auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
+                            auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
                         )
                     )
                 else:
@@ -609,7 +651,18 @@ class BracketOrderService:
         entry_price: float, mode: str, val: float, is_futures: bool,
         user_id: int, api_key_record,
         atr_period: int = 10, atr_multiplier: float = 2.0, atr_timeframe: str = '15m',
-        tp_order_id: str = None
+        tp_order_id: str = None,
+        is_smart_chase_exit: bool = False,
+        max_deviation_pct: float = 1.0,
+        chase_delay_ms: int = 1500,
+        max_attempts: int = 15,
+        chase_mode: str = 'dynamic_bbo',
+        trigger_source: str = 'last',
+        peg_strategy: str = 'bbo',
+        wall_multiplier: float = 2.5,
+        auto_breakeven_enabled: bool = False,
+        auto_breakeven_trigger_pct: float = 1.0,
+        auto_breakeven_buffer_pct: float = 0.05
     ):
         highest_price = entry_price
         lowest_price = entry_price
@@ -622,18 +675,26 @@ class BracketOrderService:
             'symbol': symbol,
             'side': opposite_side,
             'amount': amount,
-            'type': 'trailing',
-            'mode': mode,
+            'type': 'trailing_chase' if is_smart_chase_exit else 'trailing',
+            'mode': 'TRAILING_CHASE' if is_smart_chase_exit else mode,
             'price': entry_price,
             'trigger_price': entry_price,
             'entry_price': entry_price,
             'val': val,
             'is_futures': is_futures,
             'exchange': exchange,
-            'status': 'monitoring'
+            'status': 'monitoring',
+            'peg_strategy': peg_strategy,
+            'wall_multiplier': wall_multiplier,
+            'auto_breakeven_enabled': auto_breakeven_enabled,
+            'breakeven_activated': False,
+            'max_deviation_pct': max_deviation_pct
         }
 
-        logger.info(f"🏁 Trailing SL loop started for {symbol} | Entry: {entry_price}")
+        logger.info(
+            f"🏁 {'Trailing Chase (Maker)' if is_smart_chase_exit else 'Trailing SL'} loop started for {symbol} | "
+            f"Entry: {entry_price} | Strategy: {peg_strategy.upper()}"
+        )
 
         # ATR Calculation Setup
         last_atr_fetch_time = 0
@@ -648,7 +709,7 @@ class BracketOrderService:
             ut_bot = UTBotTracker(exchange.id, symbol, sensitivity=atr_multiplier, atr_period=atr_period, use_heikin_ashi=False, timeframe=atr_timeframe)
 
         while True:
-            await asyncio.sleep(2)  # poll interval
+            await asyncio.sleep(0.5 if is_smart_chase_exit else 1.5)  # Responsive poll interval
             # Check if monitor was cancelled by user
             sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
             if not sl_meta or sl_meta.get('cancelled'):
@@ -694,6 +755,56 @@ class BracketOrderService:
                 current_price = ticker.get('last')
                 if not current_price:
                     continue
+
+                # ── AUTO-BREAKEVEN CHECK ──
+                if auto_breakeven_enabled and not sl_meta.get('breakeven_activated', False) and entry_price > 0 and current_price > 0:
+                    profit_pct = 0.0
+                    if opposite_side == 'sell':
+                        profit_pct = ((current_price - entry_price) / entry_price) * 100.0
+                    else:
+                        profit_pct = ((entry_price - current_price) / entry_price) * 100.0
+
+                    if profit_pct >= auto_breakeven_trigger_pct:
+                        be_buf = auto_breakeven_buffer_pct / 100.0
+                        target_be = entry_price * (1.0 + be_buf) if opposite_side == 'sell' else entry_price * (1.0 - be_buf)
+                        if exchange and hasattr(exchange, 'price_to_precision'):
+                            try:
+                                target_be = float(exchange.price_to_precision(symbol, target_be))
+                            except Exception:
+                                pass
+
+                        should_move = False
+                        curr_trig = float(sl_meta.get('trigger_price') or 0.0)
+                        if opposite_side == 'sell' and target_be > curr_trig:
+                            should_move = True
+                        elif opposite_side == 'buy' and (curr_trig == 0 or target_be < curr_trig):
+                            should_move = True
+
+                        if should_move:
+                            sl_meta['breakeven_activated'] = True
+                            sl_meta['manual_trigger_override'] = target_be
+                            sl_meta['trigger_price'] = target_be
+                            sl_meta['price'] = target_be
+                            logger.info(f"🛡️ [Auto-Breakeven] Activated for Trailing {symbol}! Profit: +{profit_pct:.2f}% >= +{auto_breakeven_trigger_pct}%. SL moved to {target_be}")
+                            if user_id:
+                                try:
+                                    from app.db.session import SessionLocal
+                                    db_be = SessionLocal()
+                                    try:
+                                        ex_lbl = getattr(api_key_record, 'exchange', 'Exchange').capitalize()
+                                        be_msg = (
+                                            f"🛡️ *Auto-Breakeven Activated!*\n"
+                                            f"Exchange: {ex_lbl}\n"
+                                            f"Pair: `{symbol}`\n"
+                                            f"Profit: `+{profit_pct:.2f}%`\n"
+                                            f"Protected SL: `{target_be}` (Entry: {entry_price})\n"
+                                            f"Trade is now 100% Risk-Free! 🎉"
+                                        )
+                                        asyncio.create_task(NotificationService.send_message(db_be, user_id, be_msg))
+                                    finally:
+                                        db_be.close()
+                                except Exception as notify_be_err:
+                                    logger.debug(f"Breakeven notification notice: {notify_be_err}")
                 
                 # Fetch ATR periodically if mode is ATR
                 if mode == 'atr' and ut_bot:
@@ -796,6 +907,35 @@ class BracketOrderService:
                 except Exception as bal_e:
                     logger.warning(f"Failed to fetch balance before SL: {bal_e}")
 
+            # ── TRAILING CHASE: ZERO-FEE MAKER PEGGING EXIT ──
+            if is_smart_chase_exit:
+                try:
+                    from app.services.manual_smart_chase_executor import execute_manual_smart_chase
+                    logger.info(f"⚡ [Trailing Chase] Triggered at {trigger_price}! Launching Smart Chase Dynamic Maker Exit...")
+                    await execute_manual_smart_chase(
+                        exchange=exchange,
+                        symbol=symbol,
+                        exit_side=opposite_side,
+                        sell_amount_raw=final_amount,
+                        entry_price=entry_price,
+                        original_sl=trigger_price,
+                        max_deviation_pct=max_deviation_pct,
+                        chase_delay_ms=chase_delay_ms,
+                        max_attempts=max_attempts,
+                        is_futures=is_futures,
+                        user_id=user_id,
+                        api_key_record=api_key_record,
+                        tp_order_id=tp_order_id,
+                        chase_id=sl_id,
+                        chase_mode=chase_mode,
+                        trigger_source=trigger_source,
+                        peg_strategy=peg_strategy,
+                        wall_multiplier=wall_multiplier
+                    )
+                    return
+                except Exception as chase_err:
+                    logger.error(f"❌ Trailing Chase Maker exit failed ({chase_err}). Fallback to Market sweep.")
+
             params = {'reduceOnly': True} if is_futures else {}
             sl_res = None
             is_ws_success = False
@@ -848,7 +988,12 @@ class BracketOrderService:
         user_id: int, api_key_record,
         tp_order_id: str = None, disaster_sl_order_id: str = None,
         chase_mode: str = 'dynamic_bbo',
-        trigger_source: str = 'last'
+        trigger_source: str = 'last',
+        peg_strategy: str = 'bbo',
+        wall_multiplier: float = 2.5,
+        auto_breakeven_enabled: bool = False,
+        auto_breakeven_trigger_pct: float = 1.0,
+        auto_breakeven_buffer_pct: float = 0.05
     ):
         sl_id = str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
@@ -862,6 +1007,8 @@ class BracketOrderService:
             'mode': 'SMART_CHASE',
             'chase_mode': chase_mode,
             'trigger_source': trigger_source,
+            'peg_strategy': peg_strategy,
+            'wall_multiplier': wall_multiplier,
             'price': sl_price,
             'trigger_price': sl_price,
             'entry_price': entry_price,
@@ -869,10 +1016,15 @@ class BracketOrderService:
             'is_futures': is_futures,
             'max_deviation_pct': max_deviation_pct,
             'exchange': exchange,
-            'status': 'monitoring'
+            'status': 'monitoring',
+            'auto_breakeven_enabled': auto_breakeven_enabled,
+            'breakeven_activated': False
         }
 
-        logger.info(f"🏁 Smart Chase Monitor started for {symbol} | Trigger: {sl_price} | Source: {trigger_source.upper()} | Entry: {entry_price}")
+        logger.info(
+            f"🏁 Smart Chase Monitor started for {symbol} | Trigger: {sl_price} | Strategy: {peg_strategy.upper()} | "
+            f"Source: {trigger_source.upper()} | Entry: {entry_price}"
+        )
         sl_triggered = False
         loop_tick = 0
 
@@ -909,6 +1061,56 @@ class BracketOrderService:
                 # Dynamic trigger price (in case user dragged/edited on chart)
                 current_sl_trigger = float(sl_meta.get('trigger_price') if sl_meta.get('trigger_price') is not None else sl_price)
                 sl_price = current_sl_trigger
+
+                # ── AUTO-BREAKEVEN CHECK ──
+                if auto_breakeven_enabled and not sl_meta.get('breakeven_activated', False) and entry_price > 0 and current_price > 0:
+                    profit_pct = 0.0
+                    if opposite_side == 'sell':
+                        profit_pct = ((current_price - entry_price) / entry_price) * 100.0
+                    else:
+                        profit_pct = ((entry_price - current_price) / entry_price) * 100.0
+
+                    if profit_pct >= auto_breakeven_trigger_pct:
+                        be_buf = auto_breakeven_buffer_pct / 100.0
+                        target_be = entry_price * (1.0 + be_buf) if opposite_side == 'sell' else entry_price * (1.0 - be_buf)
+                        if exchange and hasattr(exchange, 'price_to_precision'):
+                            try:
+                                target_be = float(exchange.price_to_precision(symbol, target_be))
+                            except Exception:
+                                pass
+
+                        should_move = False
+                        curr_trig = float(sl_meta.get('trigger_price') or 0.0)
+                        if opposite_side == 'sell' and target_be > curr_trig:
+                            should_move = True
+                        elif opposite_side == 'buy' and (curr_trig == 0 or target_be < curr_trig):
+                            should_move = True
+
+                        if should_move:
+                            sl_meta['breakeven_activated'] = True
+                            logger.info(f"🛡️ [Auto-Breakeven] Activated for Smart Chase {symbol}! Profit: +{profit_pct:.2f}% >= +{auto_breakeven_trigger_pct}%. Updating SL to {target_be}")
+                            await BracketOrderService.update_software_bracket(sl_id, target_be, getattr(api_key_record, 'id', None), user_id)
+                            current_sl_trigger = target_be
+                            sl_price = target_be
+                            if user_id:
+                                try:
+                                    from app.db.session import SessionLocal
+                                    db_be = SessionLocal()
+                                    try:
+                                        ex_lbl = getattr(api_key_record, 'exchange', 'Exchange').capitalize()
+                                        be_msg = (
+                                            f"🛡️ *Auto-Breakeven Activated!*\n"
+                                            f"Exchange: {ex_lbl}\n"
+                                            f"Pair: `{symbol}`\n"
+                                            f"Profit: `+{profit_pct:.2f}%`\n"
+                                            f"Protected SL: `{target_be}` (Entry: {entry_price})\n"
+                                            f"Trade is now 100% Risk-Free! 🎉"
+                                        )
+                                        asyncio.create_task(NotificationService.send_message(db_be, user_id, be_msg))
+                                    finally:
+                                        db_be.close()
+                                except Exception as notify_be_err:
+                                    logger.debug(f"Breakeven notification notice: {notify_be_err}")
 
                 if current_price > 0:
                     if opposite_side == 'sell': # Long position, sell when price drops to or below sl_price
@@ -997,7 +1199,9 @@ class BracketOrderService:
                 disaster_sl_order_id=disaster_sl_order_id,
                 chase_id=sl_id,
                 chase_mode=chase_mode,
-                trigger_source=trigger_source
+                trigger_source=trigger_source,
+                peg_strategy=peg_strategy,
+                wall_multiplier=wall_multiplier
             )
         except Exception as exec_err:
             logger.error(f"❌ Error invoking execute_manual_smart_chase: {exec_err}")

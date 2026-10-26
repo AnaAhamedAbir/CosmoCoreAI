@@ -172,7 +172,7 @@ async def edit_order(
             }
 
         from app.services.manual_trade_service import manual_trade_service
-        return await manual_trade_service.edit_manual_trade(
+        edit_res = await manual_trade_service.edit_manual_trade(
             db=db,
             user_id=current_user.id,
             api_key_id=api_key_id,
@@ -182,6 +182,17 @@ async def edit_order(
             amount=request.amount,
             new_price=request.new_price
         )
+        new_order_id = edit_res.get('id') if isinstance(edit_res, dict) else None
+        if new_order_id and str(new_order_id) != str(order_id):
+            clean_sym = str(request.symbol).split(':')[0].upper()
+            for s_id, s_meta in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+                s_sym = str(s_meta.get('symbol', '')).split(':')[0].upper()
+                s_api = s_meta.get('api_key_id')
+                if s_sym == clean_sym and (s_api is None or int(s_api) == int(api_key_id)):
+                    if str(s_meta.get('tp_order_id')) == str(order_id) or not s_meta.get('tp_order_id'):
+                        s_meta['tp_order_id'] = str(new_order_id)
+                        logger.info(f"🔄 Linked software bracket {s_id} TP order updated: {order_id} -> {new_order_id}")
+        return edit_res
     except HTTPException as he:
         raise he
     except Exception as e:

@@ -97,7 +97,8 @@ class BracketOrderService:
                             except Exception:
                                 pass
                 
-                d_res = await exchange.create_order(symbol, 'STOP_MARKET', side, amount, None, disaster_params)
+                prec_amount = float(exchange.amount_to_precision(symbol, amount)) if hasattr(exchange, 'amount_to_precision') else amount
+                d_res = await exchange.create_order(symbol, 'STOP_MARKET', side, prec_amount, None, disaster_params)
                 sl_meta['disaster_sl_order_id'] = d_res.get('id')
                 logger.info(f"🛡️ Replaced Native Disaster SL at {disaster_price_prec} (New ID: {d_res.get('id')})")
             except Exception as d_err:
@@ -714,7 +715,8 @@ class BracketOrderService:
             'wall_multiplier': wall_multiplier,
             'auto_breakeven_enabled': auto_breakeven_enabled,
             'breakeven_activated': False,
-            'max_deviation_pct': max_deviation_pct
+            'max_deviation_pct': max_deviation_pct,
+            'tp_order_id': str(tp_order_id) if tp_order_id else None
         }
 
         logger.info(
@@ -744,15 +746,20 @@ class BracketOrderService:
                     del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
                 return
 
+            # Keep dynamic TP and disaster order IDs synchronized
+            if sl_meta.get('tp_order_id'):
+                tp_order_id = sl_meta['tp_order_id']
+
             try:
                 # Security Check: Ensure position is still open to prevent accidental reverse trades
                 is_open = True
                 try:
-                    if tp_order_id:
+                    curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
+                    if curr_tp_id:
                         try:
-                            tp_chk = await exchange.fetch_order(tp_order_id, symbol)
+                            tp_chk = await exchange.fetch_order(curr_tp_id, symbol)
                             if tp_chk.get('status', '').lower() in ['closed', 'filled']:
-                                logger.info(f"🎯 TP order {tp_order_id} filled! Closing trailing stop monitor for {symbol}.")
+                                logger.info(f"🎯 TP order {curr_tp_id} filled! Closing trailing stop monitor for {symbol}.")
                                 is_open = False
                         except Exception:
                             pass
@@ -760,14 +767,16 @@ class BracketOrderService:
                     if is_open and is_futures:
                         try:
                             positions = await exchange.fetch_positions([symbol])
+                            clean_sym = str(symbol).split(':')[0].upper()
                             pos = None
                             for p in positions:
-                                if p.get('symbol') == symbol:
+                                if str(p.get('symbol', '')).split(':')[0].upper() == clean_sym:
                                     pos = p
                                     break
-                            raw_contracts = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
-                            if abs(raw_contracts) == 0:
-                                is_open = False
+                            if pos is not None:
+                                raw_contracts = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0))
+                                if abs(raw_contracts) == 0:
+                                    is_open = False
                         except Exception as pos_e:
                             logger.debug(f"Could not check position for trailing SL (non-fatal): {pos_e}")
                 except Exception as pos_e:
@@ -911,10 +920,11 @@ class BracketOrderService:
             return
 
         try:
-            if tp_order_id:
+            curr_tp_id = (sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id
+            if curr_tp_id:
                 try:
-                    await exchange.cancel_order(tp_order_id, symbol)
-                    logger.info(f"Cancelled TP order {tp_order_id} before executing SL.")
+                    await exchange.cancel_order(curr_tp_id, symbol)
+                    logger.info(f"Cancelled TP order {curr_tp_id} before executing SL.")
                 except Exception as c_e:
                     logger.debug(f"Failed to cancel TP order: {c_e}")
 
@@ -951,7 +961,7 @@ class BracketOrderService:
                         is_futures=is_futures,
                         user_id=user_id,
                         api_key_record=api_key_record,
-                        tp_order_id=tp_order_id,
+                        tp_order_id=curr_tp_id,
                         chase_id=sl_id,
                         chase_mode=chase_mode,
                         trigger_source=trigger_source,
@@ -1035,7 +1045,8 @@ class BracketOrderService:
             'exchange': exchange,
             'status': 'monitoring',
             'auto_breakeven_enabled': auto_breakeven_enabled,
-            'breakeven_activated': False
+            'breakeven_activated': False,
+            'tp_order_id': str(tp_order_id) if tp_order_id else None
         }
         logger.info(
             f"🛡️ [Fixed SL Auto-Breakeven] Started for {symbol} | Initial SL: {initial_sl_price} | "
@@ -1048,20 +1059,28 @@ class BracketOrderService:
                 sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
                 if not sl_meta or sl_meta.get('cancelled'):
                     logger.info(f"🛑 Fixed SL Auto-Breakeven monitor cancelled by user for {symbol}.")
-                    if disaster_sl_order_id:
+                    curr_disaster = (sl_meta.get('disaster_sl_order_id') if sl_meta else None) or disaster_sl_order_id
+                    if curr_disaster:
                         try:
-                            await exchange.cancel_order(disaster_sl_order_id, symbol)
+                            await exchange.cancel_order(curr_disaster, symbol)
                         except Exception:
                             pass
                     return
 
+                # Synchronize dynamic order IDs
+                if sl_meta.get('tp_order_id'):
+                    tp_order_id = sl_meta['tp_order_id']
+                if sl_meta.get('disaster_sl_order_id'):
+                    disaster_sl_order_id = sl_meta['disaster_sl_order_id']
+
                 # Check if position is still open or TP filled
                 is_open = True
-                if tp_order_id:
+                curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
+                if curr_tp_id:
                     try:
-                        tp_chk = await exchange.fetch_order(tp_order_id, symbol)
+                        tp_chk = await exchange.fetch_order(curr_tp_id, symbol)
                         if tp_chk.get('status', '').lower() in ['closed', 'filled']:
-                            logger.info(f"🎯 TP order {tp_order_id} filled! Closing Fixed SL monitor for {symbol}.")
+                            logger.info(f"🎯 TP order {curr_tp_id} filled! Closing Fixed SL monitor for {symbol}.")
                             is_open = False
                     except Exception:
                         pass
@@ -1069,17 +1088,24 @@ class BracketOrderService:
                 if is_open and is_futures:
                     try:
                         positions = await exchange.fetch_positions([symbol])
-                        pos = next((p for p in positions if p.get('symbol') == symbol), None)
-                        raw_contracts = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
-                        if abs(raw_contracts) == 0:
-                            is_open = False
+                        clean_sym = str(symbol).split(':')[0].upper()
+                        pos = None
+                        for p in positions:
+                            if str(p.get('symbol', '')).split(':')[0].upper() == clean_sym:
+                                pos = p
+                                break
+                        if pos is not None:
+                            raw_contracts = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0))
+                            if abs(raw_contracts) == 0:
+                                is_open = False
                     except Exception as pos_e:
                         logger.debug(f"Position check non-fatal error: {pos_e}")
 
                 if not is_open:
-                    if disaster_sl_order_id:
+                    curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
+                    if curr_disaster:
                         try:
-                            await exchange.cancel_order(disaster_sl_order_id, symbol)
+                            await exchange.cancel_order(curr_disaster, symbol)
                         except Exception:
                             pass
                     return
@@ -1203,7 +1229,8 @@ class BracketOrderService:
             'exchange': exchange,
             'status': 'monitoring',
             'auto_breakeven_enabled': auto_breakeven_enabled,
-            'breakeven_activated': False
+            'breakeven_activated': False,
+            'tp_order_id': str(tp_order_id) if tp_order_id else None
         }
 
         logger.info(
@@ -1218,14 +1245,21 @@ class BracketOrderService:
             sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
             if not sl_meta or sl_meta.get('cancelled'):
                 logger.info(f"🛑 Smart Chase monitor cancelled by user for {symbol}.")
-                if disaster_sl_order_id:
+                curr_disaster = (sl_meta.get('disaster_sl_order_id') if sl_meta else None) or disaster_sl_order_id
+                if curr_disaster:
                     try:
-                        await exchange.cancel_order(disaster_sl_order_id, symbol)
+                        await exchange.cancel_order(curr_disaster, symbol)
                     except Exception:
                         pass
                 if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
                     del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
                 return
+
+            # Keep dynamic TP and disaster SL IDs synchronized from sl_meta (e.g. if edited via chart drag)
+            if sl_meta.get('tp_order_id'):
+                tp_order_id = sl_meta['tp_order_id']
+            if sl_meta.get('disaster_sl_order_id'):
+                disaster_sl_order_id = sl_meta['disaster_sl_order_id']
 
             try:
                 # ── PRIORITY 1: FETCH TICKER FIRST FOR ULTRA-FAST SL DETECTION ──
@@ -1315,12 +1349,13 @@ class BracketOrderService:
                 if loop_tick % 6 == 0:
                     is_open = True
                     try:
-                        # Check if TP already filled on exchange
-                        if tp_order_id:
+                        # Check if TP already filled on exchange (using latest dynamic TP ID)
+                        curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
+                        if curr_tp_id:
                             try:
-                                tp_chk = await exchange.fetch_order(tp_order_id, symbol)
+                                tp_chk = await exchange.fetch_order(curr_tp_id, symbol)
                                 if tp_chk.get('status', '').lower() in ['closed', 'filled']:
-                                    logger.info(f"🎯 TP order {tp_order_id} filled! Closing Smart Chase monitor for {symbol}.")
+                                    logger.info(f"🎯 TP order {curr_tp_id} filled! Closing Smart Chase monitor for {symbol}.")
                                     is_open = False
                             except Exception:
                                 pass
@@ -1328,14 +1363,16 @@ class BracketOrderService:
                         if is_open and is_futures:
                             try:
                                 positions = await exchange.fetch_positions([symbol])
+                                clean_sym = str(symbol).split(':')[0].upper()
                                 pos = None
                                 for p in positions:
-                                    if p.get('symbol') == symbol:
+                                    if str(p.get('symbol', '')).split(':')[0].upper() == clean_sym:
                                         pos = p
                                         break
-                                raw_amt = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) if pos else 0.0
-                                if abs(raw_amt) == 0:
-                                    is_open = False
+                                if pos is not None:
+                                    raw_amt = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0))
+                                    if abs(raw_amt) == 0:
+                                        is_open = False
                             except Exception as pos_e:
                                 logger.debug(f"Position check non-fatal error: {pos_e}")
                     except Exception as pos_e:
@@ -1343,9 +1380,10 @@ class BracketOrderService:
 
                     if not is_open:
                         logger.info(f"🚫 Position closed externally. Canceling Smart Chase monitor for {symbol}.")
-                        if disaster_sl_order_id:
+                        curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
+                        if curr_disaster:
                             try:
-                                await exchange.cancel_order(disaster_sl_order_id, symbol)
+                                await exchange.cancel_order(curr_disaster, symbol)
                             except Exception:
                                 pass
                         break
@@ -1355,6 +1393,12 @@ class BracketOrderService:
 
             # Ultra-responsive 500ms sleep (safe from Binance 1200 weight/min limit)
             await asyncio.sleep(0.5)
+
+        # ── EXTRACT LATEST DYNAMIC PARAMS BEFORE REMOVING FROM ACTIVE_SOFTWARE_SL ──
+        curr_disaster_id = (sl_meta.get('disaster_sl_order_id') if sl_meta else None) or disaster_sl_order_id
+        curr_tp_id = (sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id
+        curr_sl_price = float(sl_meta.get('trigger_price') if (sl_meta and sl_meta.get('trigger_price') is not None) else sl_price)
+        curr_amount = float(sl_meta.get('amount') if (sl_meta and sl_meta.get('amount') is not None) else amount)
 
         # ── IMMEDIATELY REMOVE FROM ACTIVE_SOFTWARE_SL ──
         # Whether triggered or position closed, the trigger monitor is DONE.
@@ -1371,17 +1415,17 @@ class BracketOrderService:
                 exchange=exchange,
                 symbol=symbol,
                 exit_side=opposite_side,
-                sell_amount_raw=amount,
+                sell_amount_raw=curr_amount,
                 entry_price=entry_price,
-                original_sl=sl_price,
+                original_sl=curr_sl_price,
                 max_deviation_pct=max_deviation_pct,
                 chase_delay_ms=chase_delay_ms,
                 max_attempts=max_attempts,
                 is_futures=is_futures,
                 user_id=user_id,
                 api_key_record=api_key_record,
-                tp_order_id=tp_order_id,
-                disaster_sl_order_id=disaster_sl_order_id,
+                tp_order_id=curr_tp_id,
+                disaster_sl_order_id=curr_disaster_id,
                 chase_id=sl_id,
                 chase_mode=chase_mode,
                 trigger_source=trigger_source,

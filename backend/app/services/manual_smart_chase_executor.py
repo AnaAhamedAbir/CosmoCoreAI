@@ -279,17 +279,37 @@ async def execute_manual_smart_chase(
                 except Exception:
                     pass
 
-    # Cancel TP and Disaster SL helper (concurrent execution)
+    # Cancel TP, Disaster SL, and ANY conflicting open orders on symbol (concurrent execution)
     async def _cleanup_other_orders():
         nonlocal tp_order_id, disaster_sl_order_id
         cancel_tasks = []
         labels = []
         if tp_order_id:
             cancel_tasks.append(exchange.cancel_order(tp_order_id, symbol))
-            labels.append(('TP', tp_order_id))
+            labels.append(('TP', str(tp_order_id)))
         if disaster_sl_order_id:
             cancel_tasks.append(exchange.cancel_order(disaster_sl_order_id, symbol))
-            labels.append(('Disaster SL', disaster_sl_order_id))
+            labels.append(('Disaster SL', str(disaster_sl_order_id)))
+
+        # Extra safety: Also fetch open orders on the exchange to wipe any modified TP / SL orders
+        # that could block reduceOnly maker exit orders with Binance -2022 error
+        try:
+            open_orders = await exchange.fetch_open_orders(symbol)
+            for o in open_orders:
+                oid = str(o.get('id'))
+                if oid in [l[1] for l in labels]:
+                    continue
+                o_side = str(o.get('side', '')).lower()
+                o_info = o.get('info', {})
+                is_reduce = o.get('reduceOnly') or o_info.get('reduceOnly') in [True, 'true', 'True']
+                raw_type = str(o.get('type', '')).lower()
+                is_stop = 'stop' in raw_type or 'take_profit' in raw_type
+
+                if o_side == exit_side or is_reduce or is_stop:
+                    cancel_tasks.append(exchange.cancel_order(oid, symbol))
+                    labels.append(('ConflictingExitOrder', oid))
+        except Exception as open_err:
+            logger.debug(f"Open orders fetch during cleanup non-fatal error: {open_err}")
 
         if cancel_tasks:
             results = await asyncio.gather(*cancel_tasks, return_exceptions=True)
@@ -623,6 +643,14 @@ async def execute_manual_smart_chase(
                             target_maker_price = adj_price
                 except Exception as retry_e:
                     logger.warning(f"⚠️ Adjusted Maker retry failed: {retry_e}")
+            elif '-2022' in err_str or 'reduceonly' in err_str.lower():
+                logger.warning(
+                    f"⚠️ [Manual Smart Chase] ReduceOnly rejection (-2022) on attempt {attempts}: {err_str}. "
+                    f"Force clearing open orders on exchange and retrying..."
+                )
+                await _cleanup_other_orders()
+                await asyncio.sleep(0.15)
+                continue
             else:
                 logger.warning(f"⚠️ [Manual Smart Chase] Order placement error on attempt {attempts}: {err_str}")
 
@@ -631,12 +659,13 @@ async def execute_manual_smart_chase(
                 if attempts == 1 and is_futures:
                     try:
                         positions = await exchange.fetch_positions([symbol])
+                        clean_sym = str(symbol).split(':')[0].upper()
                         pos = None
                         for p in positions:
-                            if p.get('symbol') == symbol:
+                            if str(p.get('symbol', '')).split(':')[0].upper() == clean_sym:
                                 pos = p
                                 break
-                        if not pos or float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) == 0:
+                        if pos is not None and float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) == 0:
                             logger.info("✅ Position already closed natively. Aborting Smart Chase.")
                             break
                     except Exception:

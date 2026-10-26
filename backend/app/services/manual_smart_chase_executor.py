@@ -416,6 +416,20 @@ async def execute_manual_smart_chase(
 
     # Initial clamp (instant, using pre-fetched balance)
     remaining_amount = await _sync_and_clamp_amount(original_sl, cached_bal=initial_bal)
+
+    # Spot-specific ledger lag resilience: if balance is 0 right after cancelling TP order, give Binance ledger a short moment to release
+    if not is_futures and remaining_amount <= 0 and sell_amount_raw > 0:
+        for r_attempt in range(2):
+            await asyncio.sleep(0.25)
+            try:
+                fresh_bal = await exchange.fetch_balance()
+                remaining_amount = await _sync_and_clamp_amount(original_sl, cached_bal=fresh_bal)
+                if remaining_amount > 0:
+                    logger.info(f"🔓 [Manual Smart Chase] Spot balance successfully unlocked: {remaining_amount}")
+                    break
+            except Exception as fb_err:
+                logger.debug(f"Spot balance re-fetch error: {fb_err}")
+
     initial_notional = remaining_amount * original_sl
     if remaining_amount <= 0 or initial_notional < min_notional:
         logger.info(
@@ -606,7 +620,7 @@ async def execute_manual_smart_chase(
             is_postonly_rejection = (
                 'immediately match' in err_str.lower()
                 or '-5022' in err_str
-                or '-2010' in err_str
+                or (is_futures and '-2010' in err_str)
                 or 'post only' in err_str.lower()
                 or 'postonly' in err_str.lower()
             )
@@ -650,6 +664,15 @@ async def execute_manual_smart_chase(
                 )
                 await _cleanup_other_orders()
                 await asyncio.sleep(0.15)
+                continue
+            elif not is_futures and ('insufficient' in err_str.lower() or '-2010' in err_str):
+                logger.warning(
+                    f"⚠️ [Manual Smart Chase] Spot balance not free (-2010/insufficient) on attempt {attempts}: {err_str}. "
+                    f"Force clearing open orders on exchange and re-clamping balance..."
+                )
+                await _cleanup_other_orders()
+                await asyncio.sleep(0.25)
+                remaining_amount = await _sync_and_clamp_amount(target_maker_price)
                 continue
             else:
                 logger.warning(f"⚠️ [Manual Smart Chase] Order placement error on attempt {attempts}: {err_str}")

@@ -305,14 +305,30 @@ async def get_active_software_brackets(
             key_match = (data.get('api_key_id') is None or int(data.get('api_key_id')) == int(api_key_id))
             sym_match = str(data.get('symbol', '')).split(':')[0].upper() == str(symbol).split(':')[0].upper()
             if key_match and sym_match and not data.get('cancelled'):
-                item = dict(data)
-                item['status'] = item.get('status', 'monitoring')
-                price_val = item.get('trigger_price') if item.get('trigger_price') is not None else item.get('price', 0.0)
-                item['price'] = float(price_val)
-                item['trigger_price'] = float(price_val)
-                item['chase_mode'] = data.get('chase_mode', 'dynamic_bbo')
-                item['trigger_source'] = data.get('trigger_source', 'last')
-                active_brackets.append(item)
+                price_val = float(data.get('trigger_price') if data.get('trigger_price') is not None else data.get('price', 0.0))
+                active_brackets.append({
+                    'id': str(sl_id),
+                    'api_key_id': data.get('api_key_id'),
+                    'symbol': data.get('symbol'),
+                    'side': data.get('side'),
+                    'amount': float(data.get('amount') or 0.0),
+                    'type': data.get('type', 'smart_chase'),
+                    'mode': data.get('mode', 'SMART_CHASE'),
+                    'status': 'monitoring',
+                    'price': price_val,
+                    'trigger_price': price_val,
+                    'entry_price': float(data.get('entry_price') or 0.0),
+                    'is_futures': bool(data.get('is_futures', False)),
+                    'chase_mode': data.get('chase_mode', 'dynamic_bbo'),
+                    'trigger_source': data.get('trigger_source', 'last'),
+                    'peg_strategy': data.get('peg_strategy', 'bbo'),
+                    'wall_multiplier': float(data.get('wall_multiplier', 2.5)),
+                    'auto_breakeven_enabled': bool(data.get('auto_breakeven_enabled', False)),
+                    'breakeven_activated': bool(data.get('breakeven_activated', False)),
+                    'max_deviation_pct': float(data.get('max_deviation_pct', 1.0)),
+                    'current_attempt': data.get('current_attempt', 0),
+                    'max_attempts': data.get('max_attempts', 0),
+                })
 
         # 2. Actively executing Smart Chases (chasing maker fills)
         for chase_id, cdata in list(ACTIVE_SMART_CHASES.items()):

@@ -1773,65 +1773,6 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
     }, [mlSetup, symbol]);
 
-    // Open Limit Orders — color-coded horizontal price lines
-    useEffect(() => {
-        if (!candlestickSeriesRef.current) return;
-
-        const orderKeys = new Set<string>();
-
-        openOrders.forEach(order => {
-            if (!order.price || order.price <= 0) return;
-            const key = `order-${order.id}`;
-            orderKeys.add(key);
-
-            const isBuy = order.side === 'buy';
-            let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-            let label = `${isBuy ? '▲ BUY' : '▼ SELL'} ${order.remaining > 0 ? order.remaining.toFixed(4) : order.amount.toFixed(4)}`;
-            let style = 2; // Dashed
-            let width = 1;
-
-            if (order.isSoftwareSL) {
-                color = '#ef4444'; // Red for SL
-                const modeName = order.mode ? order.mode.toUpperCase() : 'SL';
-                const typeName = order.type ? order.type.toUpperCase() : '';
-                const isTrailingChase = modeName === 'TRAILING_CHASE' || typeName === 'TRAILING_CHASE';
-                const formattedMode = isTrailingChase ? 'TRAILING CHASE' : (modeName === 'SMART_CHASE' ? 'SMART CHASE' : (modeName === 'TRAILING' ? 'TRAILING' : (modeName === 'STOP' ? 'FIXED' : modeName)));
-                label = `🛑 ${formattedMode} SL (${order.price < 1 ? order.price.toFixed(6) : order.price.toFixed(4)})`;
-                style = 2; // Dashed
-                width = 1; // Sleek 1px line as explicitly requested
-            } else if (order.isIceberg) {
-                color = isBuy ? '#06b6d4' : '#f43f5e'; // Cyan for buy iceberg, Rose for sell iceberg
-                const sliceText = order.icebergQty ? `${order.icebergQty.toFixed(2)}/` : '';
-                label = `🧊 ${isBuy ? '▲ BUY' : '▼ SELL'} [ICEBERG: ${sliceText}${order.amount.toFixed(2)}]`;
-                style = 2; // Dashed
-                width = 1;
-            }
-
-            if (!wallLinesRef.current.has(key)) {
-                const line = candlestickSeriesRef.current?.createPriceLine({
-                    price: order.price,
-                    color,
-                    lineWidth: width as any,
-                    lineStyle: style as any,
-                    axisLabelVisible: true,
-                    title: label,
-                });
-                if (line) wallLinesRef.current.set(key, line);
-            } else {
-                wallLinesRef.current.get(key)?.applyOptions({ price: order.price, title: label, color, lineWidth: width as any, lineStyle: style as any });
-            }
-        });
-
-        // Cleanup stale order lines
-        for (const [key, line] of wallLinesRef.current.entries()) {
-            // Do not delete lines that are currently being optimistically modified
-            if (key.startsWith('order-') && !orderKeys.has(key) && !key.endsWith('-modifying')) {
-                try { candlestickSeriesRef.current?.removePriceLine(line); } catch { /* ignore */ }
-                wallLinesRef.current.delete(key);
-            }
-        }
-    }, [openOrders]);
-
     // ── Drag & Drop Open Orders Logic & Confirmation Modal ──
     interface PendingOrderModification {
         orderId: string;
@@ -1846,8 +1787,25 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         amount: number;
     }
 
+    const formatOrderLabel = (order: OpenLimitOrder, price: number) => {
+        const isBuy = order.side === 'buy';
+        if (order.isSoftwareSL) {
+            const modeName = order.mode ? order.mode.toUpperCase() : 'SL';
+            const typeName = order.type ? order.type.toUpperCase() : '';
+            const isTrailingChase = modeName === 'TRAILING_CHASE' || typeName === 'TRAILING_CHASE';
+            const formattedMode = isTrailingChase ? 'TRAILING CHASE' : (modeName === 'SMART_CHASE' ? 'SMART CHASE' : (modeName === 'TRAILING' ? 'TRAILING' : (modeName === 'STOP' ? 'FIXED' : modeName)));
+            return `🛑 ${formattedMode} SL (${price < 1 ? price.toFixed(6) : price.toFixed(4)})`;
+        }
+        if (order.isIceberg) {
+            const sliceText = order.icebergQty ? `${order.icebergQty.toFixed(2)}/` : '';
+            return `🧊 ${isBuy ? '▲ BUY' : '▼ SELL'} [ICEBERG: ${sliceText}${order.amount.toFixed(2)}]`;
+        }
+        return `${isBuy ? '▲ BUY' : '▼ SELL'} ${order.remaining > 0 ? order.remaining.toFixed(4) : order.amount.toFixed(4)}`;
+    };
+
     const [isModifyingOrder, setIsModifyingOrder] = useState<boolean>(false);
     const [pendingModification, setPendingModification] = useState<PendingOrderModification | null>(null);
+    const pendingModificationRef = useRef<PendingOrderModification | null>(null);
     const [dontAskDragConfirm, setDontAskDragConfirm] = useState<boolean>(() => {
         try {
             return localStorage.getItem('dontAskDragConfirm') === 'true';
@@ -1871,12 +1829,84 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         openOrdersRef.current = openOrders;
     }, [openOrders]);
 
+    // Open Limit Orders — color-coded horizontal price lines
+    useEffect(() => {
+        if (!candlestickSeriesRef.current) return;
+
+        const orderKeys = new Set<string>();
+
+        openOrders.forEach(order => {
+            if (!order.price || order.price <= 0) return;
+            const key = `order-${order.id}`;
+            orderKeys.add(key);
+
+            // Guard: If this order is currently being dragged or is pending confirmation, do NOT overwrite its position/styling
+            if (draggingOrderIdRef.current === order.id || pendingModificationRef.current?.orderId === order.id) {
+                return;
+            }
+
+            const isBuy = order.side === 'buy';
+            let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
+            let style = 2; // Dashed
+            let width = 1;
+
+            if (order.isSoftwareSL) {
+                color = '#ef4444'; // Red for SL
+                style = 2; // Dashed
+                width = 1; // Sleek 1px line
+            } else if (order.isIceberg) {
+                color = isBuy ? '#06b6d4' : '#f43f5e'; // Cyan for buy iceberg, Rose for sell iceberg
+                style = 2; // Dashed
+                width = 1;
+            }
+
+            const label = formatOrderLabel(order, order.price);
+
+            if (!wallLinesRef.current.has(key)) {
+                const line = candlestickSeriesRef.current?.createPriceLine({
+                    price: order.price,
+                    color,
+                    lineWidth: width as any,
+                    lineStyle: style as any,
+                    axisLabelVisible: true,
+                    title: label,
+                });
+                if (line) wallLinesRef.current.set(key, line);
+            } else {
+                wallLinesRef.current.get(key)?.applyOptions({
+                    price: order.price,
+                    title: label,
+                    color,
+                    lineWidth: width as any,
+                    lineStyle: style as any
+                });
+            }
+        });
+
+        // Cleanup stale order lines
+        for (const [key, line] of wallLinesRef.current.entries()) {
+            if (key.startsWith('order-')) {
+                const orderId = key.replace('order-', '').replace('-modifying', '');
+                // Do not delete lines that are currently being optimistically modified or actively dragged
+                if (draggingOrderIdRef.current === orderId || pendingModificationRef.current?.orderId === orderId) {
+                    continue;
+                }
+                // If it's a legacy '-modifying' key or not in active orderKeys, safely remove from chart
+                if (key.endsWith('-modifying') || !orderKeys.has(`order-${orderId}`)) {
+                    try { candlestickSeriesRef.current?.removePriceLine(line); } catch { /* ignore */ }
+                    wallLinesRef.current.delete(key);
+                }
+            }
+        }
+    }, [openOrders]);
+
     const executeOrderModification = async (mod: PendingOrderModification) => {
         if (!selectedApiKeyId) return;
         setIsModifyingOrder(true);
         isModifyingRef.current = true;
+        pendingModificationRef.current = mod;
         const key = `order-${mod.orderId}`;
-        const modifyingKey = `${key}-modifying`;
+        const line = wallLinesRef.current.get(key);
 
         try {
             if (mod.isSL) {
@@ -1908,46 +1938,43 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             // Optimistically update order price in state ref
             mod.targetOrder.price = mod.newPrice;
 
-            // Update line on chart to new price
-            if (wallLinesRef.current.has(modifyingKey)) {
-                const line = wallLinesRef.current.get(modifyingKey);
-                wallLinesRef.current.delete(modifyingKey);
-
-                const isBuy = mod.targetOrder.side === 'buy';
-                let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-                let label = `${isBuy ? '▲ BUY' : '▼ SELL'} ${mod.targetOrder.remaining > 0 ? mod.targetOrder.remaining.toFixed(4) : mod.targetOrder.amount.toFixed(4)}`;
-                if (mod.targetOrder.isSoftwareSL) {
-                    color = '#ef4444';
-                    label = `🛑 ${mod.modeName} SL (${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)})`;
-                } else if (mod.targetOrder.isIceberg) {
-                    color = isBuy ? '#06b6d4' : '#f43f5e';
-                    const sliceText = mod.targetOrder.icebergQty ? `${mod.targetOrder.icebergQty.toFixed(2)}/` : '';
-                    label = `🧊 ${isBuy ? '▲ BUY' : '▼ SELL'} [ICEBERG: ${sliceText}${mod.targetOrder.amount.toFixed(2)}]`;
-                }
-                line?.applyOptions({
-                    price: mod.newPrice,
-                    title: label,
-                    color,
-                    lineWidth: 1,
-                    lineStyle: 2
-                });
-                if (line) wallLinesRef.current.set(key, line);
+            // Update line on chart to new price with clean normal styling
+            const isBuy = mod.targetOrder.side === 'buy';
+            let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
+            if (mod.targetOrder.isSoftwareSL) {
+                color = '#ef4444';
+            } else if (mod.targetOrder.isIceberg) {
+                color = isBuy ? '#06b6d4' : '#f43f5e';
             }
+            const label = formatOrderLabel(mod.targetOrder, mod.newPrice);
+            line?.applyOptions({
+                price: mod.newPrice,
+                title: label,
+                color,
+                lineWidth: 1,
+                lineStyle: 2
+            });
         } catch (err: any) {
             console.error('Edit order failed', err);
             toast.error('Failed to update: ' + (err.response?.data?.detail || err.message));
             // Revert modifying line on error
-            if (wallLinesRef.current.has(modifyingKey)) {
-                const line = wallLinesRef.current.get(modifyingKey);
-                wallLinesRef.current.delete(modifyingKey);
-                line?.applyOptions({ price: mod.originalPrice });
-                if (line) wallLinesRef.current.set(key, line);
+            const isBuy = mod.targetOrder.side === 'buy';
+            let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
+            if (mod.targetOrder.isSoftwareSL) {
+                color = '#ef4444';
+            } else if (mod.targetOrder.isIceberg) {
+                color = isBuy ? '#06b6d4' : '#f43f5e';
             }
+            const label = formatOrderLabel(mod.targetOrder, mod.originalPrice);
+            line?.applyOptions({
+                price: mod.originalPrice,
+                title: label,
+                color,
+                lineWidth: 1,
+                lineStyle: 2
+            });
         } finally {
-            if (wallLinesRef.current.has(modifyingKey)) {
-                try { candlestickSeriesRef.current?.removePriceLine(wallLinesRef.current.get(modifyingKey)); } catch (e) {}
-                wallLinesRef.current.delete(modifyingKey);
-            }
+            pendingModificationRef.current = null;
             setIsModifyingOrder(false);
             isModifyingRef.current = false;
             setPendingModification(null);
@@ -1956,32 +1983,26 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
     const cancelOrderModification = (mod: PendingOrderModification) => {
         const key = `order-${mod.orderId}`;
-        const modifyingKey = `${key}-modifying`;
-        if (wallLinesRef.current.has(modifyingKey)) {
-            const line = wallLinesRef.current.get(modifyingKey);
-            wallLinesRef.current.delete(modifyingKey);
+        const line = wallLinesRef.current.get(key);
 
-            // Revert back to original price & style
-            const isBuy = mod.targetOrder.side === 'buy';
-            let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-            let label = `${isBuy ? '▲ BUY' : '▼ SELL'} ${mod.targetOrder.remaining > 0 ? mod.targetOrder.remaining.toFixed(4) : mod.targetOrder.amount.toFixed(4)}`;
-            if (mod.targetOrder.isSoftwareSL) {
-                color = '#ef4444';
-                label = `🛑 ${mod.modeName} SL (${mod.originalPrice < 1 ? mod.originalPrice.toFixed(6) : mod.originalPrice.toFixed(4)})`;
-            } else if (mod.targetOrder.isIceberg) {
-                color = isBuy ? '#06b6d4' : '#f43f5e';
-                const sliceText = mod.targetOrder.icebergQty ? `${mod.targetOrder.icebergQty.toFixed(2)}/` : '';
-                label = `🧊 ${isBuy ? '▲ BUY' : '▼ SELL'} [ICEBERG: ${sliceText}${mod.targetOrder.amount.toFixed(2)}]`;
-            }
-            line?.applyOptions({
-                price: mod.originalPrice,
-                title: label,
-                color,
-                lineWidth: 1,
-                lineStyle: 2
-            });
-            if (line) wallLinesRef.current.set(key, line);
+        // Revert back to original price & style
+        const isBuy = mod.targetOrder.side === 'buy';
+        let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
+        if (mod.targetOrder.isSoftwareSL) {
+            color = '#ef4444';
+        } else if (mod.targetOrder.isIceberg) {
+            color = isBuy ? '#06b6d4' : '#f43f5e';
         }
+        const label = formatOrderLabel(mod.targetOrder, mod.originalPrice);
+        line?.applyOptions({
+            price: mod.originalPrice,
+            title: label,
+            color,
+            lineWidth: 1,
+            lineStyle: 2
+        });
+
+        pendingModificationRef.current = null;
         setPendingModification(null);
         toast('Modification cancelled', { icon: '↩️' });
     };
@@ -2148,18 +2169,16 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             };
             
             const key = `order-${orderId}`;
-            if (wallLinesRef.current.has(key)) {
-                // Rename key so cleanup doesn't kill it immediately
-                const line = wallLinesRef.current.get(key);
-                line?.applyOptions({ 
+            const existingLine = wallLinesRef.current.get(key);
+            if (existingLine) {
+                // Keep the exact same line and key in wallLinesRef; update to amber pending state
+                existingLine.applyOptions({ 
                     price: newPrice, 
                     title: `Pending Confirmation (${newPrice < 1 ? newPrice.toFixed(6) : newPrice.toFixed(4)})...`,
                     color: '#f59e0b', // Amber/Orange
                     lineWidth: 1,
                     lineStyle: 1
                 });
-                wallLinesRef.current.set(`${key}-modifying`, line);
-                wallLinesRef.current.delete(key);
             }
             
             if (dontAskDragConfirm) {

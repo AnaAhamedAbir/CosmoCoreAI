@@ -1806,13 +1806,19 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     const [isModifyingOrder, setIsModifyingOrder] = useState<boolean>(false);
     const [pendingModification, setPendingModification] = useState<PendingOrderModification | null>(null);
     const pendingModificationRef = useRef<PendingOrderModification | null>(null);
-    const [dontAskDragConfirm, setDontAskDragConfirm] = useState<boolean>(() => {
+    const initialDontAsk = (() => {
         try {
             return localStorage.getItem('dontAskDragConfirm') === 'true';
         } catch {
             return false;
         }
-    });
+    })();
+    const [dontAskDragConfirm, setDontAskDragConfirm] = useState<boolean>(initialDontAsk);
+    const dontAskDragConfirmRef = useRef<boolean>(initialDontAsk);
+
+    useEffect(() => {
+        dontAskDragConfirmRef.current = dontAskDragConfirm;
+    }, [dontAskDragConfirm]);
     const draggingOrderIdRef = useRef<string | null>(null);
     const ghostLineRef = useRef<any>(null);
     const openOrdersRef = useRef<OpenLimitOrder[]>([]);
@@ -2181,7 +2187,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 });
             }
             
-            if (dontAskDragConfirm) {
+            const skipConfirm = dontAskDragConfirmRef.current || (typeof localStorage !== 'undefined' && localStorage.getItem('dontAskDragConfirm') === 'true');
+            if (skipConfirm) {
                 executeOrderModification(modData);
             } else {
                 setPendingModification(modData);
@@ -2775,6 +2782,24 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
                 {countdownFormatted && (
                     <div className="absolute bottom-[40px] right-[75px] z-20 pointer-events-none flex flex-col items-end gap-2">
+                        {dontAskDragConfirm && (
+                            <button
+                                onClick={() => {
+                                    setDontAskDragConfirm(false);
+                                    dontAskDragConfirmRef.current = false;
+                                    try {
+                                        localStorage.setItem('dontAskDragConfirm', 'false');
+                                    } catch (e) {}
+                                    toast('Drag & Drop confirmation popup re-enabled', { icon: '🛡️' });
+                                }}
+                                className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold bg-black/70 hover:bg-black/90 text-cyan-400 border border-cyan-500/40 hover:border-cyan-400 transition-all cursor-pointer pointer-events-auto shadow-lg backdrop-blur-md flex items-center gap-1.5 group"
+                                title="Click to require confirmation popup on drag & drop again"
+                            >
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                                <span>⚡ Instant Drag: ON</span>
+                                <span className="text-[9px] text-gray-400 group-hover:text-white underline">Re-enable popup</span>
+                            </button>
+                        )}
                         {botStatus && botStatus.is_absorbing && (
                             <div className="bg-orange-600 border border-orange-400 text-white text-[16px] font-bold px-3 py-1.5 rounded animate-pulse shadow-lg">
                                 🧬 ABSORPTION DETECTED
@@ -2903,6 +2928,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                                         onChange={(e) => {
                                             const val = e.target.checked;
                                             setDontAskDragConfirm(val);
+                                            dontAskDragConfirmRef.current = val;
                                             try {
                                                 localStorage.setItem('dontAskDragConfirm', String(val));
                                             } catch (e) {}

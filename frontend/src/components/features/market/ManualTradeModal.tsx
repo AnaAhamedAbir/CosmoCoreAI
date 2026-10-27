@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle, Minus, Maximize2, GripVertical } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
 
@@ -39,9 +39,14 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   buttonSize = 'md', 
   onClose 
 }) => {
-  const dragControls = useDragControls();
   const [isOpen, setIsOpen] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [submittingSide, setSubmittingSide] = useState<'Buy' | 'Sell' | null>(null);
   const [activeSymbol, setActiveSymbol] = useState<string>(symbol);
+
+  // Floating Modal Drag Position State (Matches OrderFlowHeatmap HUD drag pattern)
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragRef = React.useRef({ isDragging: false, startX: 0, startY: 0, originX: 0, originY: 0 });
 
   // Sync internal activeSymbol whenever parent symbol prop updates
   React.useEffect(() => {
@@ -302,6 +307,60 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     return () => window.removeEventListener('resize', updatePosition);
   }, [isOpen]);
 
+  // Smooth Mouse Drag Handler (Following battle-tested OrderFlowHeatmap HUD pattern)
+  const handleStartDrag = React.useCallback((e: React.MouseEvent) => {
+    // Only primary mouse button (left-click)
+    if (e.button !== 0) return;
+
+    // Do not initiate drag if clicking on interactive controls (buttons, inputs, select)
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('select')) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const drag = dragRef.current;
+    drag.isDragging = true;
+    drag.startX = e.clientX;
+    drag.startY = e.clientY;
+    drag.originX = dragOffset.x;
+    drag.originY = dragOffset.y;
+
+    document.body.style.userSelect = 'none';
+
+    const onMove = (mv: MouseEvent) => {
+      if (!dragRef.current.isDragging) return;
+      const dx = mv.clientX - drag.startX;
+      const dy = mv.clientY - drag.startY;
+
+      const rawX = drag.originX + dx;
+      const rawY = drag.originY + dy;
+
+      // Keep modal within screen bounds
+      const minX = -modalLeft + 10;
+      const maxX = (typeof window !== 'undefined' ? window.innerWidth : 1920) - modalLeft - 100;
+      const minY = -((typeof window !== 'undefined' ? window.innerHeight : 1080) - 140);
+      const maxY = 80;
+
+      const clampedX = Math.max(minX, Math.min(maxX, rawX));
+      const clampedY = Math.max(minY, Math.min(maxY, rawY));
+
+      setDragOffset({ x: clampedX, y: clampedY });
+    };
+
+    const onUp = () => {
+      dragRef.current.isDragging = false;
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [dragOffset.x, dragOffset.y, modalLeft]);
+
   // Size mode: 'base' = in token (DOGE), 'quote' = in USD (USDC/USDT)
   const [sizeMode, setSizeMode] = useState<'base' | 'quote'>('base');
 
@@ -425,6 +484,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         setIsAutoLimit(false); // Disable auto best limit since user manually picked a price
         setLimitPrice(clickedPrice.toString());
         setIsOpen(true); // Auto-open modal if closed
+        setIsMinimized(false);
       }
     } else if (!openTrigger || openTrigger === 0) {
       lastTriggerRef.current = 0;
@@ -441,11 +501,13 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const handleTrade = async (side: 'Buy' | 'Sell') => {
     if (!selectedApi) {
       toast.error('Please select an API Key to execute the trade.');
+      setIsMinimized(false);
       return;
     }
 
     if (!size || isNaN(Number(size)) || Number(size) <= 0) {
       toast.error('Please enter a valid size');
+      setIsMinimized(false);
       return;
     }
 
@@ -484,6 +546,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     }
     
     setIsSubmitting(true);
+    setSubmittingSide(side);
     try {
       if (orderType === 'Limit' && !isAutoLimit && (!limitPrice || Number(limitPrice) <= 0)) {
         toast.error('Please enter a valid limit price or enable Auto Limit.');
@@ -583,6 +646,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     } finally {
       // BUG-02 fix: Always reset submitting state regardless of outcome
       setIsSubmitting(false);
+      setSubmittingSide(null);
     }
   };
 
@@ -595,7 +659,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
-            onClick={() => setIsOpen(true)}
+            onClick={() => {
+              setIsOpen(true);
+              setIsMinimized(false);
+            }}
             className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center border text-white backdrop-blur-md z-[999] transition-all focus:outline-none group ${
               activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging')
                 ? 'bg-gradient-to-r from-red-600 via-amber-600 to-amber-500 border-amber-400 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.7)]'
@@ -676,7 +743,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
               )}
               <button
                 type="button"
-                onClick={() => setIsOpen(true)}
+                onClick={() => {
+                  setIsOpen(true);
+                  setIsMinimized(false);
+                }}
                 className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white text-[10px] font-bold uppercase transition-all cursor-pointer"
               >
                 Open
@@ -691,61 +761,188 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       {typeof document !== 'undefined' && createPortal(
         <AnimatePresence>
           {isOpen && (
-            <MotionDiv
-              drag
-              dragControls={dragControls}
-              dragListener={false}
-              dragMomentum={false}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              style={{ left: `${modalLeft}px`, touchAction: 'none' }}
-              className="fixed bottom-[104px] w-80 rounded-2xl bg-[#000000]/80 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-[99999] overflow-hidden"
+            <div
+              style={{
+                left: `${modalLeft + dragOffset.x}px`,
+                bottom: `${104 - dragOffset.y}px`,
+                touchAction: 'none'
+              }}
+              className={`fixed w-80 rounded-2xl ${
+                isMinimized
+                  ? 'bg-[#090d16]/95 border-cyan-500/40 shadow-[0_8px_32px_rgba(6,182,212,0.25)]'
+                  : 'bg-[#000000]/80 border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)]'
+              } backdrop-blur-xl border z-[99999] overflow-hidden transition-colors duration-200 select-none`}
             >
-              {/* Header (Drag area) */}
-              <div 
-                onPointerDown={(e: React.PointerEvent) => {
-                  dragControls.start(e);
-                }}
-                className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/5 cursor-grab active:cursor-grabbing select-none"
-              >
-                <div className="flex flex-col pointer-events-none text-left">
-                  <span className="font-bold text-white text-lg tracking-wide leading-tight">{activeSymbol}</span>
-                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand-primary">
-                    <span>Quick Trade • {isFutures ? 'Futures' : 'Spot'}</span>
-                    {effectiveCurrentPrice > 0 && (
-                      <span className="text-gray-400 font-mono normal-case">
-                        (${formatDisplayPrice(effectiveCurrentPrice)})
+              {isMinimized ? (
+                /* MINIMIZED QUICK BUY/SELL VIEW */
+                <div className="p-3 select-none">
+                  {/* Minimized Drag Handle & Header */}
+                  <div
+                    onMouseDown={handleStartDrag}
+                    className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 cursor-grab active:cursor-grabbing select-none"
+                    title="Drag to move"
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0 pointer-events-none">
+                      <GripVertical className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                      <div className="flex flex-col min-w-0 text-left">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-white text-xs tracking-wide truncate">{activeSymbol}</span>
+                          <span className="text-[9px] uppercase px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-400 font-mono font-bold">
+                            {isFutures ? 'Futures' : 'Spot'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-mono">
+                          {effectiveCurrentPrice > 0 && (
+                            <span className="text-emerald-400 font-semibold">${formatDisplayPrice(effectiveCurrentPrice)}</span>
+                          )}
+                          {size ? (
+                            <span className="text-gray-300">
+                              • {size} {sizeMode === 'quote' ? quoteCurrency : baseCurrency}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsMinimized(false);
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                        title="Expand Settings (Size, TP/SL, Leverage)"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsOpen(false);
+                          setIsMinimized(false);
+                          onClose?.();
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
+                        title="Close"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quick Buy & Sell Buttons */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTrade('Buy');
+                      }}
+                      className="py-2.5 px-3 rounded-xl font-bold flex flex-col items-center justify-center bg-gradient-to-br from-emerald-500/25 to-green-600/30 hover:from-emerald-500 hover:to-green-600 text-emerald-400 hover:text-white border border-emerald-500/40 hover:border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {isSubmitting && submittingSide === 'Buy' ? (
+                          <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                        ) : (
+                          <TrendingUp className="w-4 h-4 text-emerald-400 group-hover:text-white group-hover:-translate-y-0.5 transition-transform" />
+                        )}
+                        <span className="text-xs uppercase tracking-wider font-extrabold">
+                          {isSubmitting && submittingSide === 'Buy' ? 'Buying...' : isFutures ? 'BUY / LONG' : 'BUY'}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-mono text-emerald-300/80 group-hover:text-white/90">
+                        {orderType === 'SmartPeg' ? 'Smart Peg' : orderType}
                       </span>
-                    )}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTrade('Sell');
+                      }}
+                      className="py-2.5 px-3 rounded-xl font-bold flex flex-col items-center justify-center bg-gradient-to-br from-rose-500/25 to-red-600/30 hover:from-rose-500 hover:to-red-600 text-rose-400 hover:text-white border border-rose-500/40 hover:border-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.2)] hover:shadow-[0_0_20px_rgba(244,63,94,0.5)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {isSubmitting && submittingSide === 'Sell' ? (
+                          <RefreshCw className="w-4 h-4 animate-spin text-rose-400" />
+                        ) : (
+                          <TrendingDown className="w-4 h-4 text-rose-400 group-hover:text-white group-hover:translate-y-0.5 transition-transform" />
+                        )}
+                        <span className="text-xs uppercase tracking-wider font-extrabold">
+                          {isSubmitting && submittingSide === 'Sell' ? 'Selling...' : isFutures ? 'SELL / SHORT' : 'SELL'}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-mono text-rose-300/80 group-hover:text-white/90">
+                        {orderType === 'SmartPeg' ? 'Smart Peg' : orderType}
+                      </span>
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      fetchBalance(false);
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    className={`p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-cyan-400 transition-colors cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''}`}
-                    title="Refresh Balance & Position"
+              ) : (
+                <>
+                  {/* Header (Drag area) */}
+                  <div 
+                    onMouseDown={handleStartDrag}
+                    className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/5 cursor-grab active:cursor-grabbing select-none"
+                    title="Drag to move"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-                  </button>
-                  <button 
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
-                      setIsOpen(false); 
-                      onClose?.();
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
+                    <div className="flex flex-col pointer-events-none text-left">
+                      <span className="font-bold text-white text-lg tracking-wide leading-tight">{activeSymbol}</span>
+                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand-primary">
+                        <span>Quick Trade • {isFutures ? 'Futures' : 'Spot'}</span>
+                        {effectiveCurrentPrice > 0 && (
+                          <span className="text-gray-400 font-mono normal-case">
+                            (${formatDisplayPrice(effectiveCurrentPrice)})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fetchBalance(false);
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className={`p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-cyan-400 transition-colors cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''}`}
+                        title="Refresh Balance & Position"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsMinimized(true);
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                        title="Minimize to Quick Buy/Sell"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          setIsOpen(false); 
+                          setIsMinimized(false);
+                          onClose?.();
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
 
               {/* Multi-Chart Pair Selector Dropdown */}
               {availablePairs && availablePairs.length > 1 && (
@@ -2165,7 +2362,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                 Secure Execution via API
               </span>
             </div>
-          </MotionDiv>
+                </>
+              )}
+            </div>
         )}
       </AnimatePresence>,
       document.body

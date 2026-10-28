@@ -41,17 +41,20 @@ async def stop_smart_peg(
             if pid != peg_id:
                 continue
         else:
-            p_sym = str(pdata.get('symbol', '')).split(':')[0].upper()
-            target_sym = str(symbol or '').split(':')[0].upper()
-            if target_sym and p_sym != target_sym:
-                continue
+            raw_p_sym = str(pdata.get('symbol', '')).strip()
+            raw_target_sym = str(symbol or '').strip()
+            if raw_target_sym:
+                if (':' in raw_p_sym) != (':' in raw_target_sym):
+                    continue
+                if raw_p_sym.split(':')[0].upper() != raw_target_sym.split(':')[0].upper():
+                    continue
 
         if api_key_id is not None and pdata.get('api_key_id') is not None and int(pdata.get('api_key_id')) != int(api_key_id):
             continue
         if user_id is not None and pdata.get('user_id') is not None and int(pdata.get('user_id')) != int(user_id):
             continue
 
-        logger.info(f"🛑 [Smart Peg Entry] Aborting active peg {pid} for {symbol}...")
+        logger.info(f"🛑 [Smart Peg Entry] Aborting active peg {pid} for {pdata.get('symbol') or symbol}...")
         cancel_evt = pdata.get('cancel_event')
         if cancel_evt and not cancel_evt.is_set():
             cancel_evt.set()
@@ -61,7 +64,7 @@ async def stop_smart_peg(
         ex = pdata.get('exchange')
         if curr_order_id and ex:
             try:
-                await ex.cancel_order(curr_order_id, symbol)
+                await ex.cancel_order(curr_order_id, pdata.get('symbol') or symbol)
                 logger.info(f"🛑 Proactively cancelled resting entry limit order {curr_order_id} on exchange.")
             except Exception as ce:
                 logger.debug(f"Order cancel notice on stop peg: {ce}")
@@ -83,7 +86,8 @@ async def execute_smart_peg_entry(
     sl_config: Optional[dict] = None,
     max_chase_deviation_pct: float = 2.0, # 0 = unlimited, >0 = maximum price drift cap from start
     max_attempts: int = 0,      # 0 = unlimited
-    peg_id: Optional[str] = None
+    peg_id: Optional[str] = None,
+    reduce_only: bool = False
 ) -> Optional[Dict[str, Any]]:
     """
     Executes a continuous Dynamic BBO Maker Peg Entry.
@@ -355,8 +359,14 @@ async def execute_smart_peg_entry(
             f"for {remaining_amount} at {target_maker_price} (Book: Bid={best_bid}, Ask={best_ask})"
         )
         ex_params = {'postOnly': True}
-        if is_futures and is_hedge_mode:
-            ex_params['positionSide'] = 'LONG' if side.lower() == 'buy' else 'SHORT'
+        if is_futures:
+            if is_hedge_mode:
+                if reduce_only:
+                    ex_params['positionSide'] = 'SHORT' if side.lower() == 'buy' else 'LONG'
+                else:
+                    ex_params['positionSide'] = 'LONG' if side.lower() == 'buy' else 'SHORT'
+            elif reduce_only:
+                ex_params['reduceOnly'] = True
 
         peg_order = None
         try:
@@ -443,15 +453,22 @@ async def execute_smart_peg_entry(
                         except Exception:
                             pass
 
-                    # Outbid / Spread shift condition
+                    # Outbid / Spread shift condition with FIFO Queue Priority protection:
+                    # - If someone outbids our maker order (new_maker > target for Buy, new_maker < target for Sell),
+                    #   wait at least 3 polls (0.75s) to avoid micro-flicker churn, then step ahead.
+                    # - If top-of-book retreats away from our resting order, wait at least 6 polls (1.5s)
+                    #   because our resting order is already at the very front of the book about to get filled!
                     if new_maker != target_maker_price:
-                        logger.info(
-                            f"⚡ [Smart Peg Entry] BBO shifted: {target_maker_price} ➜ {new_maker} "
-                            f"(Bid={l_best_bid}, Ask={l_best_ask}). Re-pegging immediately!"
-                        )
-                        repeg_triggered = True
-                        cached_ob = latest_ob  # Pre-cache for 0ms re-peg!
-                        break
+                        is_outbid = (new_maker > target_maker_price) if side.lower() == "buy" else (new_maker < target_maker_price)
+                        min_polls_required = 3 if is_outbid else 6
+                        if poll_count >= min_polls_required:
+                            logger.info(
+                                f"⚡ [Smart Peg Entry] BBO shifted ({'outbid' if is_outbid else 'retreat'}): {target_maker_price} ➜ {new_maker} "
+                                f"(Bid={l_best_bid}, Ask={l_best_ask}). Re-pegging!"
+                            )
+                            repeg_triggered = True
+                            cached_ob = latest_ob  # Pre-cache for 0ms re-peg!
+                            break
             except Exception as ob_p_err:
                 logger.debug(f"Entry BBO poll non-fatal error: {ob_p_err}")
 
@@ -476,8 +493,8 @@ async def execute_smart_peg_entry(
                     exec_p = float((cancel_res or {}).get('average') or (cancel_res or {}).get('price') or target_maker_price)
                     logger.info(f"🔄 [Smart Peg Entry] Captured partial fill upon cancel: {p_filled} at {exec_p}")
 
-                    # Spawn bracket for this filled chunk if configured
-                    if tp_config or sl_config:
+                    # Spawn bracket for this filled chunk if configured (and not a reduceOnly exit)
+                    if (tp_config or sl_config) and not reduce_only:
                         from app.services.bracket_order_service import BracketOrderService
                         asyncio.create_task(
                             BracketOrderService._spawn_bracket_for_amount(
@@ -526,7 +543,7 @@ async def execute_smart_peg_entry(
                 )
 
                 # Link Attached TP & Attached SL (or Smart Chase SL)
-                if tp_config or sl_config:
+                if (tp_config or sl_config) and not reduce_only:
                     from app.services.bracket_order_service import BracketOrderService
                     logger.info(f"🚀 [Smart Peg Entry] Spawning Attached TP/SL Brackets for filled entry position...")
                     asyncio.create_task(
@@ -578,7 +595,7 @@ async def execute_smart_peg_entry(
                         remaining_amount = max(0.0, remaining_amount - p_filled)
 
                         # Spawn bracket for this partial chunk if configured
-                        if tp_config or sl_config:
+                        if (tp_config or sl_config) and not reduce_only:
                             from app.services.bracket_order_service import BracketOrderService
                             asyncio.create_task(
                                 BracketOrderService._spawn_bracket_for_amount(

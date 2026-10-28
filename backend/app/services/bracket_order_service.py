@@ -253,11 +253,109 @@ class BracketOrderService:
                 float(exchange.amount_to_precision(symbol, filled_amount))
                 if hasattr(exchange, 'amount_to_precision') else filled_amount
             )
+            if final_amount <= 0:
+                return
             opposite_side = 'sell' if side.lower() == 'buy' else 'buy'
+            api_key_id = getattr(api_key_record, 'id', None)
+
+            # --- Partial Fill / Iceberg Bracket Consolidation ---
+            # If an active software SL monitor already exists for this (api_key_id, symbol, opposite_side),
+            # consolidate the new partial chunk into the existing bracket rather than spawning duplicate SL loops.
+            existing_sl = None
+            for _, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+                if sdata.get('cancelled') or sdata.get('status') != 'monitoring':
+                    continue
+                if api_key_id is not None and sdata.get('api_key_id') is not None and int(sdata.get('api_key_id')) != int(api_key_id):
+                    continue
+                if str(sdata.get('symbol', '')).strip().upper() == str(symbol).strip().upper() and str(sdata.get('side', '')).lower() == opposite_side:
+                    existing_sl = sdata
+                    break
+
+            if existing_sl is not None:
+                prev_amt = float(existing_sl.get('amount') or 0.0)
+                raw_total = prev_amt + final_amount
+                new_total_amt = (
+                    float(exchange.amount_to_precision(symbol, raw_total))
+                    if hasattr(exchange, 'amount_to_precision') else raw_total
+                )
+                prev_entry = float(existing_sl.get('entry_price') or average_price)
+                weighted_entry = ((prev_amt * prev_entry) + (final_amount * average_price)) / raw_total if raw_total > 0 else average_price
+                existing_sl['amount'] = new_total_amt
+                existing_sl['entry_price'] = weighted_entry
+
+                # Consolidate TP order if configured
+                if tp_config:
+                    old_tp_id = existing_sl.get('tp_order_id')
+                    if old_tp_id:
+                        try:
+                            await exchange.cancel_order(old_tp_id, symbol)
+                        except Exception as c_tp_err:
+                            logger.debug(f"Consolidate TP cancel notice: {c_tp_err}")
+                        await asyncio.sleep(0.1)
+
+                    tp_order_type = tp_config.get('order_type', 'Limit').lower()
+                    mode = tp_config.get('mode', 'percentage')
+                    val = float(tp_config.get('value', 0))
+                    if mode == 'percentage':
+                        pct = val / 100.0
+                        tp_price = weighted_entry * (1 + pct) if opposite_side == 'sell' else weighted_entry * (1 - pct)
+                    elif mode == 'absolute':
+                        tp_price = val
+                    else:
+                        tp_price = weighted_entry + val if opposite_side == 'sell' else weighted_entry - val
+
+                    final_tp_price = (
+                        float(exchange.price_to_precision(symbol, tp_price))
+                        if hasattr(exchange, 'price_to_precision') else tp_price
+                    )
+                    ex_params: dict = {}
+                    if is_futures:
+                        ex_params['reduceOnly'] = True
+                    if tp_order_type == 'limit':
+                        ex_params['postOnly'] = True
+                    try:
+                        if tp_order_type == 'limit':
+                            tp_res = await exchange.create_limit_order(symbol, opposite_side, new_total_amt, final_tp_price, ex_params)
+                        else:
+                            tp_res = await exchange.create_market_order(symbol, opposite_side, new_total_amt, params=ex_params)
+                        if tp_res and tp_res.get('id'):
+                            existing_sl['tp_order_id'] = str(tp_res.get('id'))
+                            logger.info(f"🔄 Consolidated Bracket TP to {new_total_amt} at {final_tp_price} (ID: {tp_res.get('id')})")
+                    except Exception as tp_cons_err:
+                        logger.warning(f"Failed to replace consolidated TP order: {tp_cons_err}")
+
+                # Consolidate Futures disaster SL if present
+                old_dis_id = existing_sl.get('disaster_sl_order_id')
+                if old_dis_id and is_futures:
+                    try:
+                        await BracketOrderService.update_software_bracket(
+                            existing_sl['id'],
+                            float(existing_sl.get('trigger_price') or existing_sl.get('price') or average_price),
+                            api_key_id,
+                            user_id
+                        )
+                    except Exception as dis_cons_err:
+                        logger.debug(f"Consolidate disaster SL notice: {dis_cons_err}")
+
+                logger.info(
+                    f"🔄 [Bracket Monitor] Consolidated partial fill chunk (+{final_amount} -> total {new_total_amt}) "
+                    f"into active software SL bracket {existing_sl.get('id')} for {symbol}"
+                )
+                return
 
             # --- Binance Spot OCO handling ---
             sl_type = sl_config.get('type', 'fixed') if sl_config else None
-            if exchange.id == 'binance' and not is_futures and tp_config and sl_config and sl_type == 'fixed':
+            sl_auto_be = bool(sl_config.get('auto_breakeven_enabled') or False) if sl_config else False
+            tp_order_type_cfg = tp_config.get('order_type', 'Limit').lower() if tp_config else 'limit'
+            if (
+                exchange.id == 'binance'
+                and not is_futures
+                and tp_config
+                and sl_config
+                and sl_type == 'fixed'
+                and not sl_auto_be
+                and tp_order_type_cfg == 'limit'
+            ):
                 logger.info(f"⚡ Bracket Monitor: Using Native Binance OCO for {symbol} (Market Entry Fallback)")
                 
                 # Calculate TP Price
@@ -330,8 +428,7 @@ class BracketOrderService:
                             pass
                     return # Exit since we placed both successfully!
                 except Exception as e:
-                    logger.error(f"❌ Native OCO failed: {e}")
-                    raise
+                    logger.warning(f"⚠️ Native OCO failed ({e}). Falling back to Software Bracket TP/SL.")
 
             tp_order_id = None
             # --- Execute TP ---
@@ -597,76 +694,113 @@ class BracketOrderService:
                         float(exchange.price_to_precision(symbol, sl_price))
                         if hasattr(exchange, 'price_to_precision') else sl_price
                     )
-    
-                    sl_params: dict = {'stopPrice': final_sl_price}
-                    if is_futures:
-                        sl_params['reduceOnly'] = True
-    
-                    try:
-                        order_type = 'STOP_MARKET' if is_futures else 'STOP_LOSS'
-                        sl_res = None
-                        is_ws_success = False
-                        
-                        if exchange.has.get('createOrderWs'):
-                            try:
-                                sl_res = await exchange.create_order_ws(
+
+                    if not is_futures:
+                        # On Spot (when Native OCO was not used, e.g., Auto-Breakeven is active or TP is Market),
+                        # placing a Limit TP locks 100% of the base asset, so an exchange STOP_LOSS order would be rejected
+                        # for insufficient balance. Instead, monitor Fixed SL in software and cancel TP before market exit!
+                        logger.info(
+                            f"🛡️ Bracket Monitor: Starting Software Fixed SL Monitor for Spot {symbol} at {final_sl_price} "
+                            f"(Auto-Breakeven: {auto_breakeven_enabled})"
+                        )
+                        asyncio.create_task(
+                            BracketOrderService._fixed_sl_auto_breakeven_loop(
+                                exchange=exchange,
+                                symbol=symbol,
+                                opposite_side=opposite_side,
+                                amount=final_amount,
+                                entry_price=average_price,
+                                initial_sl_price=final_sl_price,
+                                is_futures=False,
+                                user_id=user_id,
+                                api_key_record=api_key_record,
+                                tp_order_id=tp_order_id,
+                                disaster_sl_order_id=None,
+                                auto_breakeven_enabled=auto_breakeven_enabled,
+                                auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
+                                auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
+                            )
+                        )
+                    else:
+                        sl_params: dict = {'stopPrice': final_sl_price, 'reduceOnly': True}
+                        if getattr(api_key_record, 'exchange', '').lower().startswith('binance'):
+                            for method_name in ['fapiPrivateGetPositionSideDual', 'fapiprivateGetPositionsideDual', 'fapiprivate_get_positionside_dual']:
+                                method = getattr(exchange, method_name, None)
+                                if method and callable(method):
+                                    try:
+                                        res = await method()
+                                        if res.get('dualSidePosition', False):
+                                            sl_params['positionSide'] = 'LONG' if opposite_side == 'sell' else 'SHORT'
+                                            sl_params.pop('reduceOnly', None)
+                                        break
+                                    except Exception:
+                                        pass
+        
+                        try:
+                            order_type = 'STOP_MARKET'
+                            sl_res = None
+                            is_ws_success = False
+                            
+                            if exchange.has.get('createOrderWs'):
+                                try:
+                                    sl_res = await exchange.create_order_ws(
+                                        symbol, order_type, opposite_side, final_amount, None, sl_params
+                                    )
+                                    is_ws_success = True
+                                except Exception as ws_e:
+                                    logger.warning(f"Bracket SL WebSocket failed ({ws_e}). Fallback to REST.")
+                            
+                            if not is_ws_success:
+                                sl_res = await exchange.create_order(
                                     symbol, order_type, opposite_side, final_amount, None, sl_params
                                 )
-                                is_ws_success = True
-                            except Exception as ws_e:
-                                logger.warning(f"Bracket SL WebSocket failed ({ws_e}). Fallback to REST.")
-                        
-                        if not is_ws_success:
-                            sl_res = await exchange.create_order(
-                                symbol, order_type, opposite_side, final_amount, None, sl_params
-                            )
-    
-                        logger.info(f"✅ Bracket Monitor: SL placed! ID: {sl_res.get('id') if sl_res else 'Local'}")
-    
-                        if user_id:
-                            try:
-                                from app.db.session import SessionLocal
-                                db = SessionLocal()
+        
+                            logger.info(f"✅ Bracket Monitor: SL placed! ID: {sl_res.get('id') if sl_res else 'Local'}")
+        
+                            if user_id:
                                 try:
-                                    msg = (
-                                        f"🛡️ *Bracket SL Executed (Chunk)*\n"
-                                        f"Exchange: {api_key_record.exchange.capitalize()}\n"
-                                        f"Pair: `{symbol}`\n"
-                                        f"SL Side: {opposite_side.upper()}\n"
-                                        f"Amount: `{final_amount}`\n"
-                                        f"Stop Price: `{final_sl_price}`\n"
-                                        f"Mode: {sl_mode} ({sl_val}{'%' if sl_mode == 'percentage' else '$'})"
-                                    )
-                                    await NotificationService.send_message(db, user_id, msg)
-                                finally:
-                                    db.close()
-                            except Exception as notify_err:
-                                logger.warning(f"SL notification failed (non-fatal): {notify_err}")
+                                    from app.db.session import SessionLocal
+                                    db = SessionLocal()
+                                    try:
+                                        msg = (
+                                            f"🛡️ *Bracket SL Executed (Chunk)*\n"
+                                            f"Exchange: {api_key_record.exchange.capitalize()}\n"
+                                            f"Pair: `{symbol}`\n"
+                                            f"SL Side: {opposite_side.upper()}\n"
+                                            f"Amount: `{final_amount}`\n"
+                                            f"Stop Price: `{final_sl_price}`\n"
+                                            f"Mode: {sl_mode} ({sl_val}{'%' if sl_mode == 'percentage' else '$'})"
+                                        )
+                                        await NotificationService.send_message(db, user_id, msg)
+                                    finally:
+                                        db.close()
+                                except Exception as notify_err:
+                                    logger.warning(f"SL notification failed (non-fatal): {notify_err}")
 
-                        # If Auto-Breakeven is active, spawn background monitor loop to ratchet SL to Entry on profit
-                        if auto_breakeven_enabled:
-                            logger.info(f"🛡️ Spawning Auto-Breakeven monitor loop for Fixed SL on {symbol} (Target: +{auto_breakeven_trigger_pct}%)")
-                            asyncio.create_task(
-                                BracketOrderService._fixed_sl_auto_breakeven_loop(
-                                    exchange=exchange,
-                                    symbol=symbol,
-                                    opposite_side=opposite_side,
-                                    amount=final_amount,
-                                    entry_price=average_price,
-                                    initial_sl_price=final_sl_price,
-                                    is_futures=is_futures,
-                                    user_id=user_id,
-                                    api_key_record=api_key_record,
-                                    tp_order_id=tp_order_id,
-                                    disaster_sl_order_id=sl_res.get('id') if sl_res else None,
-                                    auto_breakeven_enabled=True,
-                                    auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
-                                    auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
+                            # If Auto-Breakeven is active, spawn background monitor loop to ratchet SL to Entry on profit
+                            if auto_breakeven_enabled:
+                                logger.info(f"🛡️ Spawning Auto-Breakeven monitor loop for Fixed SL on {symbol} (Target: +{auto_breakeven_trigger_pct}%)")
+                                asyncio.create_task(
+                                    BracketOrderService._fixed_sl_auto_breakeven_loop(
+                                        exchange=exchange,
+                                        symbol=symbol,
+                                        opposite_side=opposite_side,
+                                        amount=final_amount,
+                                        entry_price=average_price,
+                                        initial_sl_price=final_sl_price,
+                                        is_futures=is_futures,
+                                        user_id=user_id,
+                                        api_key_record=api_key_record,
+                                        tp_order_id=tp_order_id,
+                                        disaster_sl_order_id=sl_res.get('id') if sl_res else None,
+                                        auto_breakeven_enabled=True,
+                                        auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
+                                        auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
+                                    )
                                 )
-                            )
-    
-                    except Exception as ex_e:
-                        logger.error(f"❌ Bracket Monitor: Failed to place SL Order! {ex_e}")
+        
+                        except Exception as ex_e:
+                            logger.error(f"❌ Bracket Monitor: Failed to place SL Order! {ex_e}")
 
         except Exception as chunk_e:
             logger.error(f"Failed to spawn bracket for chunk: {chunk_e}")
@@ -921,20 +1055,22 @@ class BracketOrderService:
 
         try:
             curr_tp_id = (sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id
+            curr_amount = float(sl_meta.get('amount') if (sl_meta and sl_meta.get('amount') is not None) else amount)
             if curr_tp_id:
                 try:
                     await exchange.cancel_order(curr_tp_id, symbol)
                     logger.info(f"Cancelled TP order {curr_tp_id} before executing SL.")
+                    await asyncio.sleep(0.15)
                 except Exception as c_e:
                     logger.debug(f"Failed to cancel TP order: {c_e}")
 
-            final_amount = amount
+            final_amount = curr_amount
             if not is_futures and opposite_side.lower() == 'sell':
                 try:
                     base_currency = symbol.split('/')[0]
                     balance = await exchange.fetch_balance()
-                    available = balance.get(base_currency, {}).get('free', 0.0)
-                    if 0 < available < amount:
+                    available = float(balance.get(base_currency, {}).get('free', 0.0))
+                    if 0 < available < curr_amount:
                         final_amount = float(exchange.amount_to_precision(symbol, available))
                         logger.info(f"Adjusted SL sell amount to available balance: {final_amount}")
                     elif available == 0:
@@ -1176,12 +1312,28 @@ class BracketOrderService:
                     if triggered:
                         logger.info(f"💥 Fixed SL triggered on Spot! Current: {current_price}, Trigger: {current_trig}. Exiting market...")
                         try:
-                            if tp_order_id:
+                            curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
+                            curr_amount = float(sl_meta.get('amount') if sl_meta.get('amount') is not None else amount)
+                            if curr_tp_id:
                                 try:
-                                    await exchange.cancel_order(tp_order_id, symbol)
+                                    await exchange.cancel_order(curr_tp_id, symbol)
+                                    await asyncio.sleep(0.15)
                                 except Exception:
                                     pass
-                            await exchange.create_market_order(symbol, opposite_side, amount)
+                            sell_amt = curr_amount
+                            if opposite_side.lower() == 'sell':
+                                try:
+                                    base_currency = symbol.split('/')[0]
+                                    balance = await exchange.fetch_balance()
+                                    available = float(balance.get(base_currency, {}).get('free', 0.0))
+                                    if 0 < available < curr_amount:
+                                        sell_amt = float(exchange.amount_to_precision(symbol, available))
+                                    elif available <= 0:
+                                        logger.warning("No free base balance available to execute Spot Fixed SL (maybe already closed by TP).")
+                                        return
+                                except Exception as bal_e:
+                                    logger.debug(f"Spot Fixed SL balance check notice: {bal_e}")
+                            await exchange.create_market_order(symbol, opposite_side, sell_amt)
                         except Exception as mkt_err:
                             logger.error(f"Failed to market sell Spot on SL: {mkt_err}")
                         return

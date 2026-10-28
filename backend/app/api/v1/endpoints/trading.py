@@ -309,12 +309,19 @@ async def get_active_software_brackets(
     try:
         from app.services.bracket_order_service import BracketOrderService
         from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
+
+        def _sym_matches(sym_a: str, sym_b: str) -> bool:
+            sa = str(sym_a or '').strip()
+            sb = str(sym_b or '').strip()
+            if (':' in sa) != (':' in sb):
+                return False
+            return sa.split(':')[0].upper() == sb.split(':')[0].upper()
         
         active_brackets = []
         # 1. Monitoring brackets (waiting for trigger)
         for sl_id, data in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
             key_match = (data.get('api_key_id') is None or int(data.get('api_key_id')) == int(api_key_id))
-            sym_match = str(data.get('symbol', '')).split(':')[0].upper() == str(symbol).split(':')[0].upper()
+            sym_match = _sym_matches(data.get('symbol', ''), symbol)
             if key_match and sym_match and not data.get('cancelled'):
                 price_val = float(data.get('trigger_price') if data.get('trigger_price') is not None else data.get('price', 0.0))
                 active_brackets.append({
@@ -344,7 +351,7 @@ async def get_active_software_brackets(
         # 2. Actively executing Smart Chases (chasing maker fills)
         for chase_id, cdata in list(ACTIVE_SMART_CHASES.items()):
             key_match = (cdata.get('api_key_id') is None or int(cdata.get('api_key_id')) == int(api_key_id))
-            sym_match = str(cdata.get('symbol', '')).split(':')[0].upper() == str(symbol).split(':')[0].upper()
+            sym_match = _sym_matches(cdata.get('symbol', ''), symbol)
             if key_match and sym_match:
                 price_val = cdata.get('current_maker_price') or cdata.get('original_sl', 0.0)
                 active_brackets.append({
@@ -373,7 +380,7 @@ async def get_active_software_brackets(
             from app.services.smart_peg_entry_executor import ACTIVE_SMART_PEGS
             for peg_id, pdata in list(ACTIVE_SMART_PEGS.items()):
                 key_match = (pdata.get('api_key_id') is None or int(pdata.get('api_key_id')) == int(api_key_id))
-                sym_match = str(pdata.get('symbol', '')).split(':')[0].upper() == str(symbol).split(':')[0].upper()
+                sym_match = _sym_matches(pdata.get('symbol', ''), symbol)
                 if key_match and sym_match:
                     price_val = pdata.get('current_maker_price', 0.0)
                     active_brackets.append({
@@ -431,7 +438,9 @@ async def stop_smart_chase_endpoint(
         cancelled_monitors = 0
         for sl_id, data in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
             key_match = (req.api_key_id is None or data.get('api_key_id') is None or int(data.get('api_key_id')) == int(req.api_key_id))
-            sym_match = str(data.get('symbol', '')).split(':')[0].upper() == str(req.symbol).split(':')[0].upper()
+            sa = str(data.get('symbol', '')).strip()
+            sb = str(req.symbol or '').strip()
+            sym_match = ((':' in sa) == (':' in sb)) and (sa.split(':')[0].upper() == sb.split(':')[0].upper())
             id_match = (req.sl_id is None or sl_id == req.sl_id)
             if key_match and sym_match and id_match:
                 data['cancelled'] = True

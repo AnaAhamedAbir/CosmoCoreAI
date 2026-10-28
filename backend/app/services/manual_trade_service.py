@@ -382,6 +382,10 @@ class ManualTradeService:
                 if isinstance(order_req.params, dict) and order_req.params.get('maxChaseDeviationPct') is not None:
                     max_dev = float(order_req.params.get('maxChaseDeviationPct'))
 
+                is_reduce_only = bool(ex_params.get('reduceOnly', False))
+                if isinstance(order_req.params, dict) and order_req.params.get('reduceOnly'):
+                    is_reduce_only = True
+
                 asyncio.create_task(
                     execute_smart_peg_entry(
                         exchange=exchange,
@@ -391,10 +395,11 @@ class ManualTradeService:
                         is_futures=is_futures,
                         user_id=user_id,
                         api_key_record=api_key_record,
-                        tp_config=order_req.attached_tp.dict() if getattr(order_req, 'attached_tp', None) and order_req.attached_tp.enabled else None,
-                        sl_config=order_req.attached_sl.dict() if getattr(order_req, 'attached_sl', None) and order_req.attached_sl.enabled else None,
+                        tp_config=order_req.attached_tp.dict() if (not is_reduce_only and getattr(order_req, 'attached_tp', None) and order_req.attached_tp.enabled) else None,
+                        sl_config=order_req.attached_sl.dict() if (not is_reduce_only and getattr(order_req, 'attached_sl', None) and order_req.attached_sl.enabled) else None,
                         max_chase_deviation_pct=max_dev,
-                        peg_id=peg_cid
+                        peg_id=peg_cid,
+                        reduce_only=is_reduce_only
                     )
                 )
 
@@ -431,9 +436,20 @@ class ManualTradeService:
 
             # --- NATIVE BINANCE OTOCO SUPPORT ---
             use_native_otoco = getattr(order_req, 'use_native_tp_sl', False)
-            if use_native_otoco and order_req.attached_sl and order_req.attached_sl.type in ('trailing', 'smart_chase'):
-                use_native_otoco = False # Disable native for trailing/ATR/smart_chase SL
-            if use_native_otoco and exchange.id == 'binance' and order_req.type.lower() == 'limit' and (order_req.attached_tp or order_req.attached_sl):
+            if use_native_otoco and order_req.attached_sl and order_req.attached_sl.enabled:
+                if (
+                    order_req.attached_sl.type in ('trailing', 'smart_chase', 'trailing_chase')
+                    or order_req.attached_sl.mode == 'atr'
+                    or getattr(order_req.attached_sl, 'auto_breakeven_enabled', False)
+                ):
+                    use_native_otoco = False  # Disable native for trailing/ATR/smart_chase/trailing_chase/auto-breakeven SL
+            if use_native_otoco and order_req.attached_tp and order_req.attached_tp.enabled:
+                if getattr(order_req.attached_tp, 'order_type', 'Limit').lower() == 'market':
+                    use_native_otoco = False  # Native Spot OTO/OTOCO only supports LIMIT_MAKER TP
+            if use_native_otoco and not is_futures and exchange.id == 'binance' and order_req.type.lower() == 'limit' and (
+                (order_req.attached_tp and order_req.attached_tp.enabled)
+                or (order_req.attached_sl and order_req.attached_sl.enabled)
+            ):
                 logger.info(f"⚡ Using Binance Native Attached Orders (OTO/OTOCO) for {order_req.symbol}...")
                 
                 market = exchange.market(order_req.symbol)
@@ -456,6 +472,14 @@ class ManualTradeService:
                         tp_price = val
                     else:
                         tp_price = entry_price + val if order_req.side.lower() == 'buy' else entry_price - val
+                    if tp_price <= 0:
+                        raise HTTPException(status_code=400, detail=f"Invalid Take-Profit price ({tp_price:.6f}): must be > 0.")
+                    if order_req.side.lower() == 'buy' and tp_price <= entry_price:
+                        raise HTTPException(status_code=400, detail=f"For BUY order, TP price ({tp_price:.6f}) must be above entry price ({entry_price:.6f}).")
+                    if order_req.side.lower() == 'sell' and tp_price >= entry_price:
+                        raise HTTPException(status_code=400, detail=f"For SELL order, TP price ({tp_price:.6f}) must be below entry price ({entry_price:.6f}).")
+                    if exchange.price_to_precision(order_req.symbol, tp_price) == exchange.price_to_precision(order_req.symbol, entry_price):
+                        raise HTTPException(status_code=400, detail=f"TP gap ({val}) is smaller than 1 price tick for {order_req.symbol} at {entry_price}.")
                         
                 if has_sl:
                     mode = order_req.attached_sl.mode
@@ -467,6 +491,14 @@ class ManualTradeService:
                         sl_price = val
                     else:
                         sl_price = entry_price - val if order_req.side.lower() == 'buy' else entry_price + val
+                    if sl_price <= 0:
+                        raise HTTPException(status_code=400, detail=f"Invalid Stop-Loss price ({sl_price:.6f}): must be > 0.")
+                    if order_req.side.lower() == 'buy' and sl_price >= entry_price:
+                        raise HTTPException(status_code=400, detail=f"For BUY order, SL price ({sl_price:.6f}) must be below entry price ({entry_price:.6f}).")
+                    if order_req.side.lower() == 'sell' and sl_price <= entry_price:
+                        raise HTTPException(status_code=400, detail=f"For SELL order, SL price ({sl_price:.6f}) must be above entry price ({entry_price:.6f}).")
+                    if exchange.price_to_precision(order_req.symbol, sl_price) == exchange.price_to_precision(order_req.symbol, entry_price):
+                        raise HTTPException(status_code=400, detail=f"SL gap ({val}) is smaller than 1 price tick for {order_req.symbol} at {entry_price}.")
                 
                 is_post_only = ex_params.get('postOnly', False)
                 payload = {
@@ -525,7 +557,7 @@ class ManualTradeService:
                         raw_res = await exchange.private_post_orderlist_oto(payload)
 
                     order_list = raw_res.get('orderReports', [])
-                    working_order = next((o for o in order_list if o['type'] == 'LIMIT'), None)
+                    working_order = next((o for o in order_list if o.get('type') in ('LIMIT', 'LIMIT_MAKER')), None)
                     if not working_order and len(order_list) > 0:
                         working_order = order_list[0]
                     

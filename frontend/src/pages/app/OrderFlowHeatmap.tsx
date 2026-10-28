@@ -4219,19 +4219,22 @@ const OrderFlowHeatmap: React.FC = () => {
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
             >
-                {/* COLLAPSIBLE BUTTONS DRAWER (Smooth animated slide from right to left) */}
-                <AnimatePresence>
-                    {isFloatingToolbarOpen && (
-                        <motion.div
-                            key="floating-action-tools-drawer"
-                            initial={{ opacity: 0, x: 50, scale: 0.95 }}
-                            animate={{ opacity: 1, x: 0, scale: 1 }}
-                            exit={{ opacity: 0, x: 50, scale: 0.95 }}
-                            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                            className="flex flex-row-reverse items-center gap-2.5"
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onClick={(e) => e.stopPropagation()}
-                        >
+                {/* COLLAPSIBLE BUTTONS DRAWER (Kept mounted so ManualTradeModal/Predictor state & API keys persist when hidden) */}
+                <motion.div
+                    key="floating-action-tools-drawer"
+                    initial={false}
+                    animate={
+                        isFloatingToolbarOpen
+                            ? { opacity: 1, x: 0, scale: 1 }
+                            : { opacity: 0, x: 50, scale: 0.95 }
+                    }
+                    transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                    style={{ pointerEvents: isFloatingToolbarOpen ? 'auto' : 'none' }}
+                    aria-hidden={!isFloatingToolbarOpen}
+                    className={`flex flex-row-reverse items-center gap-2.5 ${isFloatingToolbarOpen ? '' : 'invisible'}`}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                >
                             {/* WALLHUNTER FLOATING ACTION BUTTON */}
                             {selectedHudBotId ? (
                                 <div className="flex flex-row gap-2.5 items-center opacity-100 transition-opacity duration-300">
@@ -4386,9 +4389,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                 </svg>
                             </button>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                </motion.div>
 
                 {/* MAIN COLLAPSIBLE TOGGLE BUTTON WITH ARROW */}
                 <button

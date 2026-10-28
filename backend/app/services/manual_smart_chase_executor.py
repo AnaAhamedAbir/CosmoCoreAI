@@ -196,17 +196,20 @@ async def stop_smart_chase(
             if cid != chase_id:
                 continue
         else:
-            c_sym = str(cdata.get('symbol', '')).split(':')[0].upper()
-            target_sym = str(symbol or '').split(':')[0].upper()
-            if target_sym and c_sym != target_sym:
-                continue
+            raw_c_sym = str(cdata.get('symbol', '')).strip()
+            raw_target_sym = str(symbol or '').strip()
+            if raw_target_sym:
+                if (':' in raw_c_sym) != (':' in raw_target_sym):
+                    continue
+                if raw_c_sym.split(':')[0].upper() != raw_target_sym.split(':')[0].upper():
+                    continue
 
         if api_key_id is not None and cdata.get('api_key_id') is not None and int(cdata.get('api_key_id')) != int(api_key_id):
             continue
         if user_id is not None and cdata.get('user_id') is not None and int(cdata.get('user_id')) != int(user_id):
             continue
 
-        logger.info(f"🛑 [Manual Smart Chase] Aborting active chase {cid} for {symbol}...")
+        logger.info(f"🛑 [Manual Smart Chase] Aborting active chase {cid} for {cdata.get('symbol') or symbol}...")
         cancel_evt = cdata.get('cancel_event')
         if cancel_evt and not cancel_evt.is_set():
             cancel_evt.set()
@@ -216,7 +219,7 @@ async def stop_smart_chase(
         ex = cdata.get('exchange')
         if curr_order_id and ex:
             try:
-                await ex.cancel_order(curr_order_id, symbol)
+                await ex.cancel_order(curr_order_id, cdata.get('symbol') or symbol)
                 logger.info(f"🛑 Proactively cancelled resting limit order {curr_order_id} on exchange.")
             except Exception as ce:
                 logger.debug(f"Order cancel notice on stop: {ce}")

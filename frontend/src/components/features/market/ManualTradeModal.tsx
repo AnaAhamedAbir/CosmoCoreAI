@@ -47,6 +47,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   // Floating Modal Drag Position State (Matches OrderFlowHeatmap HUD drag pattern)
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragRef = React.useRef({ isDragging: false, startX: 0, startY: 0, originX: 0, originY: 0 });
+  const modalContainerRef = React.useRef<HTMLDivElement>(null);
 
   // Sync internal activeSymbol whenever parent symbol prop updates
   React.useEffect(() => {
@@ -95,16 +96,16 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [isLoadingPosition, setIsLoadingPosition] = useState(false);
   const [tpConfig, setTpConfig] = useState({
     enabled: true,
-    mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
-    value: '0.0003',
+    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
+    value: '0.35',
     orderType: 'Limit' as 'Limit' | 'Market',
     timeoutMins: 0
   });
   const [slConfig, setSlConfig] = useState({
     enabled: true,
     type: 'fixed' as 'fixed' | 'trailing' | 'smart_chase' | 'trailing_chase',
-    mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
-    value: '0.0001',
+    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
+    value: '0.15',
     atrPeriod: 10,
     atrMultiplier: 2.0,
     atrTimeframe: '15m',
@@ -307,6 +308,46 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     return () => window.removeEventListener('resize', updatePosition);
   }, [isOpen]);
 
+  // Clamp drag offset using actual rendered modal dimensions so header never goes off-screen
+  const clampModalOffset = React.useCallback((rawX: number, rawY: number) => {
+    const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+    const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+    const modalEl = modalContainerRef.current;
+    const modalW = modalEl?.offsetWidth || 320;
+    const modalH = modalEl?.offsetHeight || (isMinimized ? 110 : 580);
+
+    const minX = -modalLeft + 10;
+    const maxX = Math.max(minX, winW - modalLeft - modalW - 10);
+
+    // Modal is positioned with `bottom: 104 - y` => top = winH - (104 - y) - modalH
+    // Enforce top >= 12px => y >= -(winH - 104 - modalH - 12)
+    // Enforce bottom >= 12px => 104 - y >= 12 => y <= 92
+    const minY = -Math.max(0, winH - 104 - modalH - 12);
+    const maxY = 92;
+
+    return {
+      x: Math.max(minX, Math.min(maxX, rawX)),
+      y: Math.max(minY, Math.min(maxY, rawY))
+    };
+  }, [modalLeft, isMinimized]);
+
+  // Re-clamp modal position whenever it expands/collapses, toggles sections, or window resizes
+  React.useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') return;
+    const enforceBounds = () => {
+      setDragOffset(prev => {
+        const next = clampModalOffset(prev.x, prev.y);
+        return (next.x !== prev.x || next.y !== prev.y) ? next : prev;
+      });
+    };
+    const rafId = window.requestAnimationFrame(enforceBounds);
+    window.addEventListener('resize', enforceBounds);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', enforceBounds);
+    };
+  }, [isOpen, isMinimized, modalLeft, tpConfig.enabled, slConfig.enabled, isIceberg, clampModalOffset]);
+
   // Smooth Mouse Drag Handler (Following battle-tested OrderFlowHeatmap HUD pattern)
   const handleStartDrag = React.useCallback((e: React.MouseEvent) => {
     // Only primary mouse button (left-click)
@@ -338,16 +379,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       const rawX = drag.originX + dx;
       const rawY = drag.originY + dy;
 
-      // Keep modal within screen bounds
-      const minX = -modalLeft + 10;
-      const maxX = (typeof window !== 'undefined' ? window.innerWidth : 1920) - modalLeft - 100;
-      const minY = -((typeof window !== 'undefined' ? window.innerHeight : 1080) - 140);
-      const maxY = 80;
-
-      const clampedX = Math.max(minX, Math.min(maxX, rawX));
-      const clampedY = Math.max(minY, Math.min(maxY, rawY));
-
-      setDragOffset({ x: clampedX, y: clampedY });
+      setDragOffset(clampModalOffset(rawX, rawY));
     };
 
     const onUp = () => {
@@ -359,7 +391,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [dragOffset.x, dragOffset.y, modalLeft]);
+  }, [dragOffset.x, dragOffset.y, clampModalOffset]);
 
   // Size mode: 'base' = in token (DOGE), 'quote' = in USD (USDC/USDT)
   const [sizeMode, setSizeMode] = useState<'base' | 'quote'>('base');
@@ -374,16 +406,71 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   // For Limit orders
   const [limitPrice, setLimitPrice] = useState<string>(effectiveCurrentPrice ? effectiveCurrentPrice.toString() : '');
 
+  // Effective reference price for sizing and TP/SL estimation: uses custom Limit price when in manual Limit mode
+  const effectiveOrderPrice = React.useMemo(() => {
+    if (orderType === 'Limit' && !isAutoLimit && limitPrice && Number(limitPrice) > 0) {
+      return Number(limitPrice);
+    }
+    return effectiveCurrentPrice;
+  }, [orderType, isAutoLimit, limitPrice, effectiveCurrentPrice]);
+
+  // Smart default value calculator when user switches TP/SL mode (% <-> $ <-> Absolute)
+  const getSmartGapValue = React.useCallback((
+    targetMode: 'percentage' | 'price' | 'absolute',
+    isTp: boolean,
+    side: 'Buy' | 'Sell' = tradeSide
+  ): string => {
+    const defaultPct = isTp ? 0.35 : 0.15;
+    if (targetMode === 'percentage') {
+      return defaultPct.toString();
+    }
+    const refPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
+    if (refPrice <= 0) {
+      return isTp ? '0.0003' : '0.0001';
+    }
+    const decimals = refPrice >= 1000 ? 2 : refPrice >= 1 ? 4 : refPrice >= 0.001 ? 5 : 7;
+    if (targetMode === 'price') {
+      const rawGap = refPrice * (defaultPct / 100);
+      const minTick = Math.pow(10, -decimals);
+      const clampedGap = Math.max(minTick, Number(rawGap.toFixed(decimals)));
+      return clampedGap.toString();
+    }
+    // targetMode === 'absolute'
+    const dir = isTp
+      ? (side === 'Buy' ? 1 : -1)
+      : (side === 'Buy' ? -1 : 1);
+    const absTarget = refPrice * (1 + dir * (defaultPct / 100));
+    return Math.max(Math.pow(10, -decimals), Number(absTarget.toFixed(decimals))).toString();
+  }, [effectiveOrderPrice, effectiveCurrentPrice, tradeSide]);
+
+  // Unified eligibility check for Native Binance Spot OTO/OTOCO
+  const isNativeTpSlSupported = React.useMemo(() => {
+    if (isFutures) return false;
+    if (orderType !== 'Limit') return false;
+    if (!tpConfig.enabled && !slConfig.enabled) return false;
+    if (tpConfig.enabled && tpConfig.orderType === 'Market') return false;
+    if (slConfig.enabled && (
+      slConfig.type === 'trailing' ||
+      slConfig.type === 'smart_chase' ||
+      slConfig.type === 'trailing_chase' ||
+      slConfig.mode === 'atr' ||
+      slConfig.autoBreakevenEnabled
+    )) {
+      return false;
+    }
+    return true;
+  }, [isFutures, orderType, tpConfig.enabled, tpConfig.orderType, slConfig.enabled, slConfig.type, slConfig.mode, slConfig.autoBreakevenEnabled]);
+
   // Derived total base amount currently configured
   const currentBaseAmount = React.useMemo(() => {
     const raw = parseFloat(size);
     if (isNaN(raw) || raw <= 0) return 0;
     if (sizeMode === 'quote') {
-      const p = effectiveCurrentPrice || Number(limitPrice) || 0;
+      const p = effectiveOrderPrice || effectiveCurrentPrice || Number(limitPrice) || 0;
       return p > 0 ? raw / p : 0;
     }
     return raw;
-  }, [size, sizeMode, effectiveCurrentPrice, limitPrice]);
+  }, [size, sizeMode, effectiveOrderPrice, effectiveCurrentPrice, limitPrice]);
 
   // Derived effective iceberg visible quantity in base asset
   const effectiveIcebergQty = React.useMemo(() => {
@@ -443,11 +530,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
   // Automatically recalculate size when selectedPercent is active and balance/price/settings change
   React.useEffect(() => {
-    if (selectedPercent && balanceData && effectiveCurrentPrice > 0) {
+    if (selectedPercent && balanceData && effectiveOrderPrice > 0) {
       const calculated = calculateSize(
         selectedPercent,
         balanceData,
-        effectiveCurrentPrice,
+        effectiveOrderPrice,
         sizeMode,
         tradeSide,
         isFutures,
@@ -462,7 +549,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   }, [
     selectedPercent,
     balanceData,
-    effectiveCurrentPrice,
+    effectiveOrderPrice,
     sizeMode,
     tradeSide,
     isFutures,
@@ -472,7 +559,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     calculateSize
   ]);
 
-  const lastTriggerRef = React.useRef<number>(openTrigger || 0);
+  const lastTriggerRef = React.useRef<number>(0);
 
   // Update limit price when clickedPrice from chart changes via an explicit trigger
   React.useEffect(() => {
@@ -505,15 +592,72 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       return;
     }
 
-    if (!size || isNaN(Number(size)) || Number(size) <= 0) {
+    // Sync tradeSide and recalculate percentage-based size when clicking Buy/Sell for the opposite side (e.g. in Minimized mode)
+    let resolvedSizeStr = size;
+    if (side !== tradeSide) {
+      setTradeSide(side);
+      if (selectedPercent && balanceData && effectiveOrderPrice > 0) {
+        const recalculated = calculateSize(
+          selectedPercent,
+          balanceData,
+          effectiveOrderPrice,
+          sizeMode,
+          side,
+          isFutures,
+          leverage,
+          reduceOnly,
+          positionData
+        );
+        if (recalculated && Number(recalculated) > 0) {
+          resolvedSizeStr = recalculated;
+          setSize(recalculated);
+        } else if (!isFutures) {
+          toast.error(`Insufficient ${side === 'Buy' ? quoteCurrency : baseCurrency} balance for ${side} order.`);
+          return;
+        }
+      }
+    }
+
+    if (!resolvedSizeStr || isNaN(Number(resolvedSizeStr)) || Number(resolvedSizeStr) <= 0) {
       toast.error('Please enter a valid size');
       setIsMinimized(false);
       return;
     }
 
-    if (tpConfig.enabled && (!tpConfig.value || isNaN(Number(tpConfig.value)) || Number(tpConfig.value) <= 0)) {
-      toast.error('Please enter a valid target gap for the Attached TP.');
-      return;
+    const refEntryPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
+
+    if (tpConfig.enabled) {
+      const tpVal = Number(tpConfig.value);
+      if (!tpConfig.value || isNaN(tpVal) || tpVal <= 0) {
+        toast.error('Please enter a valid target gap for the Attached TP.');
+        return;
+      }
+      if (refEntryPrice > 0) {
+        let estTp = 0;
+        if (tpConfig.mode === 'percentage') {
+          estTp = side === 'Buy' ? refEntryPrice * (1 + tpVal / 100) : refEntryPrice * (1 - tpVal / 100);
+        } else if (tpConfig.mode === 'price') {
+          estTp = side === 'Buy' ? refEntryPrice + tpVal : refEntryPrice - tpVal;
+        } else if (tpConfig.mode === 'absolute') {
+          estTp = tpVal;
+        }
+        if (estTp <= 0) {
+          toast.error(`❌ Invalid TP price: computed TP (${estTp.toFixed(6)}) must be greater than 0.`);
+          return;
+        }
+        if (side === 'Buy' && estTp <= refEntryPrice) {
+          toast.error(`❌ For a BUY order, Take-Profit (${formatDisplayPrice(estTp)}) must be ABOVE entry price (${formatDisplayPrice(refEntryPrice)}).`);
+          return;
+        }
+        if (side === 'Sell' && estTp >= refEntryPrice) {
+          toast.error(`❌ For a SELL order, Take-Profit (${formatDisplayPrice(estTp)}) must be BELOW entry price (${formatDisplayPrice(refEntryPrice)}).`);
+          return;
+        }
+        if (Math.abs(estTp - refEntryPrice) / refEntryPrice < 0.00001) {
+          toast.error(`❌ TP gap (${tpConfig.value}) is too small for ${activeSymbol} at $${formatDisplayPrice(refEntryPrice)} and would round to entry price.`);
+          return;
+        }
+      }
     }
 
     if (slConfig.enabled) {
@@ -533,16 +677,44 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         toast.error('Please enter a valid trigger profit % for Auto-Breakeven.');
         return;
       }
+      if (slConfig.mode !== 'atr' && refEntryPrice > 0) {
+        const slVal = Number(slConfig.value);
+        let estSl = 0;
+        if (slConfig.mode === 'percentage') {
+          estSl = side === 'Buy' ? refEntryPrice * (1 - slVal / 100) : refEntryPrice * (1 + slVal / 100);
+        } else if (slConfig.mode === 'price') {
+          estSl = side === 'Buy' ? refEntryPrice - slVal : refEntryPrice + slVal;
+        } else if (slConfig.mode === 'absolute') {
+          estSl = slVal;
+        }
+        if (estSl <= 0) {
+          toast.error(`❌ Invalid SL price: computed SL (${estSl.toFixed(6)}) must be greater than 0.`);
+          return;
+        }
+        if (side === 'Buy' && estSl >= refEntryPrice) {
+          toast.error(`❌ For a BUY order, Stop-Loss (${formatDisplayPrice(estSl)}) must be BELOW entry price (${formatDisplayPrice(refEntryPrice)}).`);
+          return;
+        }
+        if (side === 'Sell' && estSl <= refEntryPrice) {
+          toast.error(`❌ For a SELL order, Stop-Loss (${formatDisplayPrice(estSl)}) must be ABOVE entry price (${formatDisplayPrice(refEntryPrice)}).`);
+          return;
+        }
+        if (Math.abs(estSl - refEntryPrice) / refEntryPrice < 0.00001) {
+          toast.error(`❌ SL gap (${slConfig.value}) is too small for ${activeSymbol} at $${formatDisplayPrice(refEntryPrice)} and would round to entry price.`);
+          return;
+        }
+      }
     }
 
     // Convert quote amount → base amount if needed
-    let baseAmount = Number(size);
+    let baseAmount = Number(resolvedSizeStr);
     if (sizeMode === 'quote') {
-      if (!effectiveCurrentPrice || effectiveCurrentPrice <= 0) {
-        toast.error('Cannot convert: current price is unavailable.');
+      const convPrice = effectiveOrderPrice || effectiveCurrentPrice;
+      if (!convPrice || convPrice <= 0) {
+        toast.error('Cannot convert: reference price is unavailable.');
         return;
       }
-      baseAmount = Number(size) / effectiveCurrentPrice;
+      baseAmount = Number(resolvedSizeStr) / convPrice;
     }
     
     setIsSubmitting(true);
@@ -563,7 +735,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
           toast.error(`Iceberg slice (${effectiveIcebergQty.toFixed(2)}) must be smaller than total order quantity (${baseAmount.toFixed(2)} ${baseCurrency}).`);
           return;
         }
-        const refPrice = Number(limitPrice) || effectiveCurrentPrice || 0;
+        const refPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
         const sliceNotional = effectiveIcebergQty * refPrice;
         if (sliceNotional < 5.0) {
           const minQty = refPrice > 0 ? Math.ceil(5.05 / refPrice) : 65;
@@ -593,7 +765,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         api_key_id: selectedApi ? Number(selectedApi) : undefined,
         params: Object.keys(paramsPayload).length > 0 ? paramsPayload : undefined,
         client_timestamp: Date.now(),
-        use_native_tp_sl: (!isFutures && orderType !== 'SmartPeg' && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase' || slConfig.mode === 'atr' || slConfig.autoBreakevenEnabled))) ? Boolean(useNativeTpSl) : false,
+        use_native_tp_sl: isNativeTpSlSupported ? Boolean(useNativeTpSl) : false,
         iceberg_qty: (orderType === 'Limit' && !isFutures && isIceberg && effectiveIcebergQty > 0) ? effectiveIcebergQty : undefined
       };
 
@@ -762,6 +934,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         <AnimatePresence>
           {isOpen && (
             <div
+              ref={modalContainerRef}
               style={{
                 left: `${modalLeft + dragOffset.x}px`,
                 bottom: `${104 - dragOffset.y}px`,
@@ -1408,16 +1581,16 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                 </div>
 
                 {/* Live conversion estimate */}
-                {size && Number(size) > 0 && effectiveCurrentPrice > 0 && (
+                {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
                   <div className="flex items-center gap-1 px-1 pt-0.5">
                     <span className="text-[10px] text-gray-600">≈</span>
                     {sizeMode === 'quote' ? (
                       <span className="text-[10px] text-yellow-400 font-semibold">
-                        {(Number(size) / effectiveCurrentPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} {baseCurrency}
+                        {(Number(size) / effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} {baseCurrency}
                       </span>
                     ) : (
                       <span className="text-[10px] text-yellow-400 font-semibold">
-                        ${(Number(size) * effectiveCurrentPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
+                        ${(Number(size) * effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
                       </span>
                     )}
                   </div>
@@ -1437,11 +1610,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                         }`}
                         onClick={() => {
                           setSelectedPercent(pct);
-                          if (balanceData && effectiveCurrentPrice > 0) {
+                          if (balanceData && effectiveOrderPrice > 0) {
                             const newSize = calculateSize(
                               pct,
                               balanceData,
-                              effectiveCurrentPrice,
+                              effectiveOrderPrice,
                               sizeMode,
                               tradeSide,
                               isFutures,
@@ -1569,7 +1742,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                         {/* Live Slice Calculation & Warning Pill */}
                         {(() => {
                           if (effectiveIcebergQty <= 0 || currentBaseAmount <= 0) return null;
-                          const refPrice = Number(limitPrice) || effectiveCurrentPrice || 0;
+                          const refPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
                           const sliceNotional = effectiveIcebergQty * refPrice;
                           const minRequiredSlice = refPrice > 0 ? Math.ceil(5.05 / refPrice) : 65;
 
@@ -1627,26 +1800,30 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
               {/* Native Binance TP/SL Toggle */}
               {(tpConfig.enabled || slConfig.enabled) && !isFutures && (
-                <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${(orderType === 'SmartPeg' || (slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))) ? 'opacity-40 pointer-events-none' : ''}`}>
+                <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${!isNativeTpSlSupported ? 'opacity-40 pointer-events-none' : ''}`}>
                   <div className="flex flex-col">
                       <span className="text-xs font-bold text-brand-primary">Use Native Binance OTO/OTOCO</span>
                       <span className="text-[9px] text-brand-primary/80">
                         {orderType === 'SmartPeg'
                           ? '⚡ Dynamic Peg Mode: Entry is dynamic maker; Native OCO auto-spawns upon fill'
-                          : (slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))
-                            ? '⚠️ Auto-disabled: Trailing/Smart Chase/ATR SL is active'
-                            : 'Exchange atomic bracket (100% crash proof)'
+                          : orderType === 'Market'
+                            ? '⚡ Market Entry: Post-fill Native OCO/Bracket spawns automatically upon fill'
+                            : (tpConfig.enabled && tpConfig.orderType === 'Market')
+                              ? '⚠️ Auto-disabled: Market TP requires software bracket execution'
+                              : !isNativeTpSlSupported
+                                ? '⚠️ Auto-disabled: Trailing / Smart Chase / ATR / Auto-BE SL is active'
+                                : 'Exchange atomic bracket (100% crash proof)'
                         }
                       </span>
                   </div>
-                  <div className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${useNativeTpSl && orderType !== 'SmartPeg' && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr')) ? 'bg-brand-primary' : 'bg-gray-600'}`} onClick={() => {
-                      if (orderType !== 'SmartPeg' && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))) {
+                  <div className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${useNativeTpSl && isNativeTpSlSupported ? 'bg-brand-primary' : 'bg-gray-600'}`} onClick={() => {
+                      if (isNativeTpSlSupported) {
                           setUseNativeTpSl(!useNativeTpSl);
                       }
                   }}>
                       <MotionDiv 
                           className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                          animate={{ x: (useNativeTpSl && orderType !== 'SmartPeg' && !(slConfig.enabled && (slConfig.type === 'trailing' || slConfig.type === 'smart_chase' || slConfig.mode === 'atr'))) ? 16 : 0 }}
+                          animate={{ x: (useNativeTpSl && isNativeTpSlSupported) ? 16 : 0 }}
                           transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                       />
                   </div>
@@ -1700,19 +1877,31 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                     <label className="text-[10px] text-gray-400 font-medium">Mode</label>
                                     <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
                                         <button
-                                            onClick={() => setTpConfig({...tpConfig, mode: 'percentage'})}
+                                            onClick={() => setTpConfig({
+                                                ...tpConfig,
+                                                mode: 'percentage',
+                                                value: tpConfig.mode === 'percentage' ? tpConfig.value : getSmartGapValue('percentage', true)
+                                            })}
                                             className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'percentage' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             %
                                         </button>
                                         <button
-                                            onClick={() => setTpConfig({...tpConfig, mode: 'price'})}
+                                            onClick={() => setTpConfig({
+                                                ...tpConfig,
+                                                mode: 'price',
+                                                value: tpConfig.mode === 'price' ? tpConfig.value : getSmartGapValue('price', true)
+                                            })}
                                             className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'price' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             $
                                         </button>
                                         <button
-                                            onClick={() => setTpConfig({...tpConfig, mode: 'absolute'})}
+                                            onClick={() => setTpConfig({
+                                                ...tpConfig,
+                                                mode: 'absolute',
+                                                value: tpConfig.mode === 'absolute' ? tpConfig.value : getSmartGapValue('absolute', true)
+                                            })}
                                             className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'absolute' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             🎯
@@ -1820,26 +2009,46 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                     <label className="text-[10px] text-gray-400 font-medium">SL Type</label>
                                     <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
                                         <button
-                                            onClick={() => setSlConfig({...slConfig, type: 'fixed', mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode})}
+                                            onClick={() => setSlConfig({
+                                                ...slConfig,
+                                                type: 'fixed',
+                                                mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
+                                                value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
+                                            })}
                                             className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             Fixed
                                         </button>
                                         <button
-                                            onClick={() => setSlConfig({...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode})}
+                                            onClick={() => setSlConfig({
+                                                ...slConfig,
+                                                type: 'trailing',
+                                                mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode,
+                                                value: slConfig.mode === 'absolute' ? getSmartGapValue('percentage', false) : slConfig.value
+                                            })}
                                             className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             Trailing
                                         </button>
                                         <button
-                                            onClick={() => setSlConfig({...slConfig, type: 'smart_chase', mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode})}
+                                            onClick={() => setSlConfig({
+                                                ...slConfig,
+                                                type: 'smart_chase',
+                                                mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
+                                                value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
+                                            })}
                                             className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-bold shadow-sm' : 'text-gray-500 hover:text-white'}`}
                                             title="Smart Chase Limit (Maker Post-Only Exit with Circuit Breaker)"
                                         >
                                             Smart Chase
                                         </button>
                                         <button
-                                            onClick={() => setSlConfig({...slConfig, type: 'trailing_chase', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode})}
+                                            onClick={() => setSlConfig({
+                                                ...slConfig,
+                                                type: 'trailing_chase',
+                                                mode: (slConfig.mode === 'absolute' || slConfig.mode === 'atr') ? 'percentage' : slConfig.mode,
+                                                value: (slConfig.mode === 'absolute' || slConfig.mode === 'atr') ? getSmartGapValue('percentage', false) : slConfig.value
+                                            })}
                                             className={`flex-1 text-[8px] py-1 rounded transition-colors ${slConfig.type === 'trailing_chase' ? 'bg-gradient-to-r from-amber-500 via-rose-500 to-cyan-500 text-white font-bold shadow-sm' : 'text-gray-500 hover:text-white'}`}
                                             title="Trailing Smart Chase (Trails in profit + exits via Zero-Fee Maker Limit order)"
                                         >
@@ -1853,19 +2062,32 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                     <label className="text-[10px] text-gray-400 font-medium">Mode</label>
                                     <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
                                         <button
-                                            onClick={() => setSlConfig({...slConfig, mode: 'percentage'})}
+                                            onClick={() => setSlConfig({
+                                                ...slConfig,
+                                                mode: 'percentage',
+                                                value: slConfig.mode === 'percentage' ? slConfig.value : getSmartGapValue('percentage', false)
+                                            })}
                                             className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             %
                                         </button>
                                         <button
-                                            onClick={() => setSlConfig({...slConfig, mode: 'price'})}
+                                            onClick={() => setSlConfig({
+                                                ...slConfig,
+                                                mode: 'price',
+                                                value: slConfig.mode === 'price' ? slConfig.value : getSmartGapValue('price', false)
+                                            })}
                                             className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             $
                                         </button>
                                         <button
-                                            onClick={() => setSlConfig({...slConfig, mode: 'absolute', type: (slConfig.type === 'trailing' || slConfig.type === 'trailing_chase') ? 'fixed' : slConfig.type})}
+                                            onClick={() => setSlConfig({
+                                                ...slConfig,
+                                                mode: 'absolute',
+                                                type: (slConfig.type === 'trailing' || slConfig.type === 'trailing_chase') ? 'fixed' : slConfig.type,
+                                                value: slConfig.mode === 'absolute' ? slConfig.value : getSmartGapValue('absolute', false)
+                                            })}
                                             className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                         >
                                             🎯

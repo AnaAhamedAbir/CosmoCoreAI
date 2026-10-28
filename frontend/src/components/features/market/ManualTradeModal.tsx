@@ -44,9 +44,21 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [submittingSide, setSubmittingSide] = useState<'Buy' | 'Sell' | null>(null);
   const [activeSymbol, setActiveSymbol] = useState<string>(symbol);
 
-  // Floating Modal Drag Position State (Matches OrderFlowHeatmap HUD drag pattern)
+  // Floating Modal Drag Position State (Zero-React-Re-render Direct GPU Transform Pattern)
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const dragRef = React.useRef({ isDragging: false, startX: 0, startY: 0, originX: 0, originY: 0 });
+  const dragRef = React.useRef({
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+    currentX: 0,
+    currentY: 0,
+    minX: -100,
+    maxX: 1500,
+    minY: -800,
+    maxY: 92
+  });
   const modalContainerRef = React.useRef<HTMLDivElement>(null);
 
   // Sync internal activeSymbol whenever parent symbol prop updates
@@ -319,7 +331,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     const minX = -modalLeft + 10;
     const maxX = Math.max(minX, winW - modalLeft - modalW - 10);
 
-    // Modal is positioned with `bottom: 104 - y` => top = winH - (104 - y) - modalH
+    // Modal base position is `bottom: 104px` + `translate3d(x, y, 0)` => top = winH - (104 - y) - modalH
     // Enforce top >= 12px => y >= -(winH - 104 - modalH - 12)
     // Enforce bottom >= 12px => 104 - y >= 12 => y <= 92
     const minY = -Math.max(0, winH - 104 - modalH - 12);
@@ -335,8 +347,14 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   React.useEffect(() => {
     if (!isOpen || typeof window === 'undefined') return;
     const enforceBounds = () => {
+      if (dragRef.current.isDragging) return;
       setDragOffset(prev => {
         const next = clampModalOffset(prev.x, prev.y);
+        dragRef.current.currentX = next.x;
+        dragRef.current.currentY = next.y;
+        if (modalContainerRef.current) {
+          modalContainerRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0)`;
+        }
         return (next.x !== prev.x || next.y !== prev.y) ? next : prev;
       });
     };
@@ -348,7 +366,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     };
   }, [isOpen, isMinimized, modalLeft, tpConfig.enabled, slConfig.enabled, isIceberg, clampModalOffset]);
 
-  // Smooth Mouse Drag Handler (Following battle-tested OrderFlowHeatmap HUD pattern)
+  // Ultra-Smooth 120fps GPU Mouse Drag Handler (Zero React re-renders & zero layout thrashing during drag)
   const handleStartDrag = React.useCallback((e: React.MouseEvent) => {
     // Only primary mouse button (left-click)
     if (e.button !== 0) return;
@@ -362,36 +380,100 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     e.preventDefault();
     e.stopPropagation();
 
+    const modalEl = modalContainerRef.current;
+    const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+    const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+    const modalW = modalEl?.offsetWidth || 320;
+    const modalH = modalEl?.offsetHeight || (isMinimized ? 110 : 580);
+
     const drag = dragRef.current;
     drag.isDragging = true;
     drag.startX = e.clientX;
     drag.startY = e.clientY;
     drag.originX = dragOffset.x;
     drag.originY = dragOffset.y;
+    drag.currentX = dragOffset.x;
+    drag.currentY = dragOffset.y;
+    drag.minX = -modalLeft + 10;
+    drag.maxX = Math.max(drag.minX, winW - modalLeft - modalW - 10);
+    drag.minY = -Math.max(0, winH - 104 - modalH - 12);
+    drag.maxY = 92;
 
     document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+    // Shield underlying LightweightCharts / OrderFlowHeatmap canvas from receiving mousemove / crosshair events during drag
+    document.body.style.pointerEvents = 'none';
+
+    // Temporarily suspend expensive 24px Gaussian backdrop-filter blur over live 60fps WebGL/Canvas while dragging
+    if (modalEl) {
+      modalEl.style.pointerEvents = 'auto';
+      modalEl.style.backdropFilter = 'none';
+      (modalEl.style as any).webkitBackdropFilter = 'none';
+      modalEl.style.backgroundColor = isMinimized ? 'rgba(9, 13, 22, 0.98)' : 'rgba(6, 9, 15, 0.96)';
+      modalEl.style.transition = 'none';
+    }
 
     const onMove = (mv: MouseEvent) => {
-      if (!dragRef.current.isDragging) return;
-      const dx = mv.clientX - drag.startX;
-      const dy = mv.clientY - drag.startY;
+      if (!drag.isDragging) return;
+      const rawX = drag.originX + (mv.clientX - drag.startX);
+      const rawY = drag.originY + (mv.clientY - drag.startY);
 
-      const rawX = drag.originX + dx;
-      const rawY = drag.originY + dy;
+      const clampedX = Math.max(drag.minX, Math.min(drag.maxX, rawX));
+      const clampedY = Math.max(drag.minY, Math.min(drag.maxY, rawY));
 
-      setDragOffset(clampModalOffset(rawX, rawY));
+      drag.currentX = clampedX;
+      drag.currentY = clampedY;
+
+      if (modalContainerRef.current) {
+        modalContainerRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
+      }
     };
 
     const onUp = () => {
-      dragRef.current.isDragging = false;
+      if (!drag.isDragging) return;
+      drag.isDragging = false;
       document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.body.style.pointerEvents = '';
+
+      if (modalContainerRef.current) {
+        modalContainerRef.current.style.pointerEvents = '';
+        modalContainerRef.current.style.backdropFilter = '';
+        (modalContainerRef.current.style as any).webkitBackdropFilter = '';
+        modalContainerRef.current.style.backgroundColor = '';
+        modalContainerRef.current.style.transition = '';
+      }
+
+      setDragOffset({ x: drag.currentX, y: drag.currentY });
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('blur', onUp);
     };
 
-    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mousemove', onMove, { passive: true });
     window.addEventListener('mouseup', onUp);
-  }, [dragOffset.x, dragOffset.y, clampModalOffset]);
+    window.addEventListener('blur', onUp);
+  }, [dragOffset.x, dragOffset.y, modalLeft, isMinimized]);
+
+  // Safety cleanup: ensure body styles are always restored if modal closes or unmounts mid-drag
+  React.useEffect(() => {
+    if (!isOpen && dragRef.current.isDragging) {
+      dragRef.current.isDragging = false;
+      if (typeof document !== 'undefined') {
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        document.body.style.pointerEvents = '';
+      }
+    }
+    return () => {
+      if (typeof document !== 'undefined' && dragRef.current.isDragging) {
+        dragRef.current.isDragging = false;
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        document.body.style.pointerEvents = '';
+      }
+    };
+  }, [isOpen]);
 
   // Size mode: 'base' = in token (DOGE), 'quote' = in USD (USDC/USDT)
   const [sizeMode, setSizeMode] = useState<'base' | 'quote'>('base');
@@ -936,8 +1018,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             <div
               ref={modalContainerRef}
               style={{
-                left: `${modalLeft + dragOffset.x}px`,
-                bottom: `${104 - dragOffset.y}px`,
+                left: `${modalLeft}px`,
+                bottom: '104px',
+                transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : dragOffset.x}px, ${dragRef.current.isDragging ? dragRef.current.currentY : dragOffset.y}px, 0)`,
+                willChange: 'transform',
                 touchAction: 'none'
               }}
               className={`fixed w-80 rounded-2xl ${

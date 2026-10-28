@@ -366,18 +366,26 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     };
   }, [isOpen, isMinimized, modalLeft, tpConfig.enabled, slConfig.enabled, isIceberg, clampModalOffset]);
 
-  // Ultra-Smooth 120fps GPU Mouse Drag Handler (Zero React re-renders & zero layout thrashing during drag)
-  const handleStartDrag = React.useCallback((e: React.MouseEvent) => {
-    // Only primary mouse button (left-click)
-    if (e.button !== 0) return;
+  // Ultra-Smooth 120fps GPU Mouse & Touch Drag Handler (Zero React re-renders & zero layout thrashing during drag)
+  const handleStartDrag = React.useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    const isTouch = 'touches' in e;
 
-    // Do not initiate drag if clicking on interactive controls (buttons, inputs, select)
+    // For mouse events, only allow primary mouse button (left-click)
+    if (!isTouch && (e as React.MouseEvent).button !== 0) return;
+
+    // Do not initiate drag if clicking/tapping on interactive controls (buttons, inputs, select)
     const target = e.target as HTMLElement;
     if (target.closest('button') || target.closest('input') || target.closest('select')) {
       return;
     }
 
-    e.preventDefault();
+    const startClientX = isTouch ? e.touches[0]?.clientX : (e as React.MouseEvent).clientX;
+    const startClientY = isTouch ? e.touches[0]?.clientY : (e as React.MouseEvent).clientY;
+    if (startClientX === undefined || startClientY === undefined) return;
+
+    if (!isTouch && e.cancelable) {
+      e.preventDefault();
+    }
     e.stopPropagation();
 
     const modalEl = modalContainerRef.current;
@@ -388,8 +396,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
     const drag = dragRef.current;
     drag.isDragging = true;
-    drag.startX = e.clientX;
-    drag.startY = e.clientY;
+    drag.startX = startClientX;
+    drag.startY = startClientY;
     drag.originX = dragOffset.x;
     drag.originY = dragOffset.y;
     drag.currentX = dragOffset.x;
@@ -413,10 +421,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       modalEl.style.transition = 'none';
     }
 
-    const onMove = (mv: MouseEvent) => {
+    const applyMove = (clientX: number, clientY: number) => {
       if (!drag.isDragging) return;
-      const rawX = drag.originX + (mv.clientX - drag.startX);
-      const rawY = drag.originY + (mv.clientY - drag.startY);
+      const rawX = drag.originX + (clientX - drag.startX);
+      const rawY = drag.originY + (clientY - drag.startY);
 
       const clampedX = Math.max(drag.minX, Math.min(drag.maxX, rawX));
       const clampedY = Math.max(drag.minY, Math.min(drag.maxY, rawY));
@@ -427,6 +435,18 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       if (modalContainerRef.current) {
         modalContainerRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
       }
+    };
+
+    const onMouseMove = (mv: MouseEvent) => {
+      applyMove(mv.clientX, mv.clientY);
+    };
+
+    const onTouchMove = (tv: TouchEvent) => {
+      if (!drag.isDragging) return;
+      if (tv.cancelable) tv.preventDefault();
+      const touch = tv.touches[0];
+      if (!touch) return;
+      applyMove(touch.clientX, touch.clientY);
     };
 
     const onUp = () => {
@@ -445,13 +465,19 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       }
 
       setDragOffset({ x: drag.currentX, y: drag.currentY });
-      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onUp);
+      window.removeEventListener('touchcancel', onUp);
       window.removeEventListener('blur', onUp);
     };
 
-    window.addEventListener('mousemove', onMove, { passive: true });
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
     window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+    window.addEventListener('touchcancel', onUp);
     window.addEventListener('blur', onUp);
   }, [dragOffset.x, dragOffset.y, modalLeft, isMinimized]);
 
@@ -1021,8 +1047,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                 left: `${modalLeft}px`,
                 bottom: '104px',
                 transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : dragOffset.x}px, ${dragRef.current.isDragging ? dragRef.current.currentY : dragOffset.y}px, 0)`,
-                willChange: 'transform',
-                touchAction: 'none'
+                willChange: 'transform'
               }}
               className={`fixed w-80 rounded-2xl ${
                 isMinimized
@@ -1032,10 +1057,17 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             >
               {isMinimized ? (
                 /* MINIMIZED QUICK BUY/SELL VIEW */
-                <div className="p-3 select-none">
+                <div
+                  onMouseDown={handleStartDrag}
+                  onTouchStart={handleStartDrag}
+                  style={{ touchAction: 'none' }}
+                  className="p-3 select-none"
+                >
                   {/* Minimized Drag Handle & Header */}
                   <div
                     onMouseDown={handleStartDrag}
+                    onTouchStart={handleStartDrag}
+                    style={{ touchAction: 'none' }}
                     className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 cursor-grab active:cursor-grabbing select-none"
                     title="Drag to move"
                   >
@@ -1147,6 +1179,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                   {/* Header (Drag area) */}
                   <div 
                     onMouseDown={handleStartDrag}
+                    onTouchStart={handleStartDrag}
+                    style={{ touchAction: 'none' }}
                     className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/5 cursor-grab active:cursor-grabbing select-none"
                     title="Drag to move"
                   >
@@ -1242,7 +1276,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                 className="p-4 flex flex-col cursor-default"
               >
               {/* Scrollable Content */}
-              <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 pb-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/20">
+              <div
+                style={{ touchAction: 'pan-y' }}
+                className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 pb-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/20"
+              >
 
               {/* ACTIVE SMART CHASE / SOFTWARE SL / SMART PEG LIVE STATUS & CANCEL BUTTON */}
               {(() => {

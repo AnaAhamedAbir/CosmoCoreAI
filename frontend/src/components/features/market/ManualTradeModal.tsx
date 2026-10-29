@@ -89,8 +89,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     return val.toFixed(6);
   };
 
-  const [orderType, setOrderType] = useState<'Market' | 'Limit' | 'SmartPeg'>('Limit');
-  const [smartPegMaxDev, setSmartPegMaxDev] = useState<number>(2.0);
+  const [orderType, setOrderType] = useState<'Market' | 'Limit' | 'SmartPeg'>('SmartPeg');
+  const [smartPegMaxDev, setSmartPegMaxDev] = useState<number>(5.0);
   const [size, setSize] = useState<string>('');
   const [selectedPercent, setSelectedPercent] = useState<string | null>('100%');
   const [leverage, setLeverage] = useState<number>(10);
@@ -108,25 +108,25 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [isLoadingPosition, setIsLoadingPosition] = useState(false);
   const [tpConfig, setTpConfig] = useState({
     enabled: true,
-    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
-    value: '0.35',
+    mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
+    value: '0.0005',
     orderType: 'Limit' as 'Limit' | 'Market',
     timeoutMins: 0
   });
   const [slConfig, setSlConfig] = useState({
     enabled: true,
-    type: 'fixed' as 'fixed' | 'trailing' | 'smart_chase' | 'trailing_chase',
-    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
-    value: '0.15',
+    type: 'smart_chase' as 'fixed' | 'trailing' | 'smart_chase' | 'trailing_chase',
+    mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
+    value: '0.0005',
     atrPeriod: 10,
     atrMultiplier: 2.0,
     atrTimeframe: '15m',
     timeoutMins: 0,
-    smartChaseDeviationPct: 1.0,
+    smartChaseDeviationPct: 5.0,
     smartChaseDelayMs: 1500,
-    smartChaseMaxAttempts: 0,
+    smartChaseMaxAttempts: 10000,
     smartChaseMode: 'dynamic_bbo' as 'dynamic_bbo' | 'interval',
-    smartChaseTriggerSource: 'last' as 'last' | 'bid_ask',
+    smartChaseTriggerSource: 'bid_ask' as 'last' | 'bid_ask',
     smartChasePegStrategy: 'bbo' as 'bbo' | 'inside_spread' | 'wall_aware',
     smartChaseWallMultiplier: 2.5,
     autoBreakevenEnabled: false,
@@ -2523,7 +2523,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                             </label>
                                             <input 
                                                 type="number"
-                                                min="0" max="999" step="1"
+                                                min="0" max="100000" step="1"
                                                 value={slConfig.smartChaseMaxAttempts}
                                                 onChange={(e) => setSlConfig({...slConfig, smartChaseMaxAttempts: parseInt(e.target.value) || 0})}
                                                 placeholder="0 (Unlimited)"

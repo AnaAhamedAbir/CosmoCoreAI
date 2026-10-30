@@ -2031,71 +2031,103 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         if (!container || !chartRef.current || !candlestickSeriesRef.current) return;
 
         let isDown = false;
-        
-        const handleMouseDown = (e: MouseEvent) => {
-            if (isModifyingRef.current || pendingModification) return;
-            const chartRect = container.getBoundingClientRect();
-            const y = e.clientY - chartRect.top;
-            
-            const clickedPrice = candlestickSeriesRef.current?.coordinateToPrice(y);
-            if (clickedPrice === null || clickedPrice === undefined) return;
-            
-            const thresholdPrice1 = candlestickSeriesRef.current?.coordinateToPrice(y - 8);
-            const thresholdPrice2 = candlestickSeriesRef.current?.coordinateToPrice(y + 8);
-            const priceDiff = Math.abs((thresholdPrice1 || 0) - (thresholdPrice2 || 0));
-            
-            const clickedOrder = openOrdersRef.current.find(o => Math.abs(o.price - clickedPrice) < priceDiff);
-            
-            if (clickedOrder && selectedApiKeyId) {
-                isDown = true;
-                draggingOrderIdRef.current = clickedOrder.id;
-                
-                // Disable chart panning while dragging
-                chartRef.current?.applyOptions({ handleScroll: false, handleScale: false });
-                
-                if (!ghostLineRef.current) {
-                    const isBuy = clickedOrder.side === 'buy';
-                    const isSL = clickedOrder.isSoftwareSL;
-                    const color = isSL ? '#ef4444' : (isBuy ? 'rgba(34, 197, 94, 0.75)' : 'rgba(239, 68, 68, 0.75)');
-                    const modeName = clickedOrder.mode ? clickedOrder.mode.toUpperCase() : 'SL';
-                    const labelPrefix = isSL ? `DRAG TO EDIT ${modeName} SL` : `DRAG TO EDIT ${clickedOrder.side.toUpperCase()}`;
 
-                    ghostLineRef.current = candlestickSeriesRef.current.createPriceLine({
-                        price: clickedOrder.price, // Start at original price
-                        color,
-                        lineWidth: 1, // Ultra-thin crisp line
-                        lineStyle: 1, // Dotted
-                        axisLabelVisible: true,
-                        title: `${labelPrefix} (${clickedOrder.price < 1 ? clickedOrder.price.toFixed(6) : clickedOrder.price.toFixed(4)})`,
-                    });
+        const findClosestOrderAtY = (y: number, hitRadiusPx: number): OpenLimitOrder | undefined => {
+            const series = candlestickSeriesRef.current;
+            if (!series) return undefined;
+
+            const clickedPrice = series.coordinateToPrice(y);
+            if (clickedPrice === null || clickedPrice === undefined) return undefined;
+
+            const thresholdPrice1 = series.coordinateToPrice(y - hitRadiusPx);
+            const thresholdPrice2 = series.coordinateToPrice(y + hitRadiusPx);
+            const fallbackPriceDiff = Math.abs((thresholdPrice1 || 0) - (thresholdPrice2 || 0)) / 2;
+
+            let bestOrder: OpenLimitOrder | undefined;
+            let bestDistPx = Infinity;
+
+            for (const o of openOrdersRef.current) {
+                const orderY = series.priceToCoordinate(o.price);
+                if (orderY !== null && orderY !== undefined) {
+                    const distPx = Math.abs(orderY - y);
+                    if (distPx <= hitRadiusPx && distPx < bestDistPx) {
+                        bestDistPx = distPx;
+                        bestOrder = o;
+                    }
+                } else if (fallbackPriceDiff > 0) {
+                    const priceDist = Math.abs(o.price - clickedPrice);
+                    if (priceDist <= fallbackPriceDiff && priceDist < bestDistPx) {
+                        bestDistPx = priceDist;
+                        bestOrder = o;
+                    }
                 }
             }
+            return bestOrder;
         };
 
-        const handleMouseMove = (e: MouseEvent) => {
+        const startDragAt = (clientX: number, clientY: number, isTouch: boolean, rawEvent: Event): boolean => {
+            if (isModifyingRef.current || pendingModificationRef.current || !selectedApiKeyId) return false;
             const chartRect = container.getBoundingClientRect();
-            const y = e.clientY - chartRect.top;
-            const mousePrice = candlestickSeriesRef.current?.coordinateToPrice(y);
-            if (mousePrice === null || mousePrice === undefined) return;
-            
+            const x = clientX - chartRect.left;
+            const y = clientY - chartRect.top;
+            if (x < 0 || x > chartRect.width || y < 0 || y > chartRect.height) return false;
+
+            const clickedOrder = findClosestOrderAtY(y, isTouch ? 24 : 10);
+            if (!clickedOrder) return false;
+
+            isDown = true;
+            draggingOrderIdRef.current = clickedOrder.id;
+
+            // Disable chart panning/pinch and page scrolling while dragging the order line
+            chartRef.current?.applyOptions({ handleScroll: false, handleScale: false });
+            rawEvent.stopPropagation();
+            if (rawEvent.cancelable) {
+                rawEvent.preventDefault();
+            }
+
+            if (!ghostLineRef.current && candlestickSeriesRef.current) {
+                const isBuy = clickedOrder.side === 'buy';
+                const isSL = clickedOrder.isSoftwareSL;
+                const color = isSL ? '#ef4444' : (isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)');
+                const modeName = clickedOrder.mode ? clickedOrder.mode.toUpperCase() : 'SL';
+                const labelPrefix = isSL ? `DRAG TO EDIT ${modeName} SL` : `DRAG TO EDIT ${clickedOrder.side.toUpperCase()}`;
+
+                ghostLineRef.current = candlestickSeriesRef.current.createPriceLine({
+                    price: clickedOrder.price,
+                    color,
+                    lineWidth: (isTouch ? 2 : 1) as any,
+                    lineStyle: 1, // Dotted
+                    axisLabelVisible: true,
+                    title: `${labelPrefix} (${clickedOrder.price < 1 ? clickedOrder.price.toFixed(6) : clickedOrder.price.toFixed(4)})`,
+                });
+            }
+            return true;
+        };
+
+        const moveDragAt = (clientY: number, isTouch: boolean, rawEvent?: Event) => {
+            const chartRect = container.getBoundingClientRect();
+            const clampedY = Math.max(0, Math.min(chartRect.height, clientY - chartRect.top));
+            const pointerPrice = candlestickSeriesRef.current?.coordinateToPrice(clampedY);
+            if (pointerPrice === null || pointerPrice === undefined) return;
+
             if (isDown && draggingOrderIdRef.current && ghostLineRef.current) {
+                if (rawEvent) {
+                    rawEvent.stopPropagation();
+                    if (rawEvent.cancelable) rawEvent.preventDefault();
+                }
                 const targetOrder = openOrdersRef.current.find(o => o.id === draggingOrderIdRef.current);
                 const isSL = targetOrder?.isSoftwareSL;
                 const modeName = targetOrder?.mode ? targetOrder.mode.toUpperCase() : 'SL';
                 const labelPrefix = isSL ? `DRAG TO EDIT ${modeName} SL` : `DRAG TO EDIT ${targetOrder?.side?.toUpperCase()}`;
-                
-                ghostLineRef.current.applyOptions({ 
-                    price: mousePrice,
-                    title: `${labelPrefix} (${mousePrice < 1 ? mousePrice.toFixed(6) : mousePrice.toFixed(4)})`
+
+                ghostLineRef.current.applyOptions({
+                    price: pointerPrice,
+                    title: `${labelPrefix} (${pointerPrice < 1 ? pointerPrice.toFixed(6) : pointerPrice.toFixed(4)})`
                 });
-                container.style.cursor = 'ns-resize';
-            } else if (!isDown) {
-                const thresholdPrice1 = candlestickSeriesRef.current?.coordinateToPrice(y - 6);
-                const thresholdPrice2 = candlestickSeriesRef.current?.coordinateToPrice(y + 6);
-                const priceDiff = Math.abs((thresholdPrice1 || 0) - (thresholdPrice2 || 0));
-                
-                const hoverOrder = openOrdersRef.current.find(o => Math.abs(o.price - mousePrice) < priceDiff);
-                if (hoverOrder && !isModifyingRef.current && !pendingModification && selectedApiKeyId) {
+                if (!isTouch) container.style.cursor = 'ns-resize';
+            } else if (!isDown && !isTouch) {
+                const hoverOrder = findClosestOrderAtY(clientY - chartRect.top, 8);
+                if (hoverOrder && !isModifyingRef.current && !pendingModificationRef.current && selectedApiKeyId) {
                     container.style.cursor = 'ns-resize';
                 } else {
                     container.style.cursor = 'crosshair';
@@ -2103,32 +2135,33 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             }
         };
 
-        const handleMouseUp = async (e: MouseEvent) => {
+        const finishDragAt = async (clientY: number | null) => {
             if (!isDown || !draggingOrderIdRef.current || !ghostLineRef.current) {
                 isDown = false;
                 draggingOrderIdRef.current = null;
-                // Re-enable panning just in case
                 chartRef.current?.applyOptions({ handleScroll: true, handleScale: true });
                 return;
             }
-            
+
             isDown = false;
             chartRef.current?.applyOptions({ handleScroll: true, handleScale: true });
             container.style.cursor = 'crosshair';
-            
+
             const chartRect = container.getBoundingClientRect();
-            const y = e.clientY - chartRect.top;
-            let newPrice = candlestickSeriesRef.current?.coordinateToPrice(y as any) as number | null | undefined;
-            
+            const clampedY = clientY !== null ? Math.max(0, Math.min(chartRect.height, clientY - chartRect.top)) : null;
+            let newPrice = clampedY !== null
+                ? (candlestickSeriesRef.current?.coordinateToPrice(clampedY as any) as number | null | undefined)
+                : undefined;
+
             const orderId = draggingOrderIdRef.current;
             const targetOrder = openOrdersRef.current.find(o => o.id === orderId);
             draggingOrderIdRef.current = null;
-            
+
             try {
                 candlestickSeriesRef.current?.removePriceLine(ghostLineRef.current);
                 ghostLineRef.current = null;
             } catch (err) {}
-            
+
             if (!newPrice || !targetOrder || !selectedApiKeyId) return;
 
             const livePrice = currentPriceRef.current || currentPrice;
@@ -2155,7 +2188,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     toast.success('Sell price floored at current market price (PostOnly)');
                 }
             }
-            
+
             // Skip if moved less than a fraction
             if (Math.abs(targetOrder.price - newPrice) < (targetOrder.price * 0.0001)) return;
 
@@ -2172,36 +2205,79 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 side: targetOrder.side,
                 amount: targetOrder.amount
             };
-            
+
             const key = `order-${orderId}`;
             const existingLine = wallLinesRef.current.get(key);
             if (existingLine) {
                 // Keep the exact same line and key in wallLinesRef; update to amber pending state
-                existingLine.applyOptions({ 
-                    price: newPrice, 
+                existingLine.applyOptions({
+                    price: newPrice,
                     title: `Pending Confirmation (${newPrice < 1 ? newPrice.toFixed(6) : newPrice.toFixed(4)})...`,
                     color: '#f59e0b', // Amber/Orange
                     lineWidth: 1,
                     lineStyle: 1
                 });
             }
-            
+
             const skipConfirm = dontAskDragConfirmRef.current || (typeof localStorage !== 'undefined' && localStorage.getItem('dontAskDragConfirm') === 'true');
             if (skipConfirm) {
                 executeOrderModification(modData);
             } else {
+                pendingModificationRef.current = modData;
                 setPendingModification(modData);
             }
         };
 
-        container.addEventListener('mousedown', handleMouseDown);
+        const handleMouseDown = (e: MouseEvent) => {
+            if (e.button !== 0) return;
+            startDragAt(e.clientX, e.clientY, false, e);
+        };
+
+        const handleMouseMove = (e: MouseEvent) => {
+            moveDragAt(e.clientY, false);
+        };
+
+        const handleMouseUp = (e: MouseEvent) => {
+            finishDragAt(e.clientY);
+        };
+
+        const handleTouchStart = (e: TouchEvent) => {
+            if (e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            startDragAt(touch.clientX, touch.clientY, true, e);
+        };
+
+        const handleTouchMove = (e: TouchEvent) => {
+            if (!isDown) return;
+            const touch = e.touches[0] || e.changedTouches[0];
+            if (!touch) return;
+            moveDragAt(touch.clientY, true, e);
+        };
+
+        const handleTouchEnd = (e: TouchEvent) => {
+            if (!isDown) return;
+            const touch = e.changedTouches[0] || e.touches[0];
+            finishDragAt(touch ? touch.clientY : null);
+        };
+
+        container.addEventListener('mousedown', handleMouseDown, { capture: true });
         container.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
 
+        container.addEventListener('touchstart', handleTouchStart, { capture: true, passive: false });
+        window.addEventListener('touchmove', handleTouchMove, { passive: false });
+        window.addEventListener('touchend', handleTouchEnd);
+        window.addEventListener('touchcancel', handleTouchEnd);
+
         return () => {
-            container.removeEventListener('mousedown', handleMouseDown);
+            container.removeEventListener('mousedown', handleMouseDown, { capture: true });
             container.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
+
+            container.removeEventListener('touchstart', handleTouchStart, { capture: true });
+            window.removeEventListener('touchmove', handleTouchMove);
+            window.removeEventListener('touchend', handleTouchEnd);
+            window.removeEventListener('touchcancel', handleTouchEnd);
         };
     }, [symbol, selectedApiKeyId]);
 

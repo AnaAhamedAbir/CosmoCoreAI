@@ -48,7 +48,6 @@ import { ForexWallHunterModal } from '../../components/features/market/ForexWall
 import { TechnicalIndicatorModal } from '../../components/features/market/TechnicalIndicators/TechnicalIndicatorModal';
 import { ManualTradeModal, AvailablePair } from '../../components/features/market/ManualTradeModal';
 import { FloatingTVChartButton } from '../../components/features/market/FloatingTVChartButton';
-import { QuickTradeToolbar } from '../../components/features/market/QuickTradeToolbar';
 import { AetherFlowRenderer } from '../../components/features/market/AetherFlowRenderer';
 import { useAetherFlowData } from '../../hooks/useAetherFlowData';
 import { AIModelDeploymentModal } from '../../components/features/market/AIModelDeploymentModal';
@@ -4430,16 +4429,7 @@ const OrderFlowHeatmap: React.FC = () => {
 
 
 
-            {/* QUICK TRADE DRAG & DROP TOOLBAR */}
-            <QuickTradeToolbar 
-                symbol={symbol} 
-                currentPrice={currentPrice}
-                isFullscreen={false}
-                onDragStart={(side) => (window as any)._handleQuickTradeDragStart(side)}
-                onDragMove={(y) => (window as any)._handleQuickTradeDragMove(y)}
-                onDragEnd={(side, y, size, apiId) => (window as any)._handleQuickTradeDragEnd(side, y, size, apiId)}
-            />
-
+            
             <WallHunterModal
                 isOpen={isWallHunterOpen}
                 onClose={() => setIsWallHunterOpen(false)}

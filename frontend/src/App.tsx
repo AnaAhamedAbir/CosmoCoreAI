@@ -24,6 +24,23 @@ function App() {
   const [appState, setAppState] = useState<AppState>(AppState.PUBLIC);
   const [resetToken, setResetToken] = useState<string | null>(null);
 
+  // Sync dynamic viewport height (--app-height) for tablet/mobile Chrome (e.g., Redmi Pad 2 Pro)
+  useEffect(() => {
+    const updateAppHeight = () => {
+      const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      document.documentElement.style.setProperty('--app-height', `${vh}px`);
+    };
+    updateAppHeight();
+    window.addEventListener('resize', updateAppHeight);
+    window.addEventListener('orientationchange', updateAppHeight);
+    window.visualViewport?.addEventListener('resize', updateAppHeight);
+    return () => {
+      window.removeEventListener('resize', updateAppHeight);
+      window.removeEventListener('orientationchange', updateAppHeight);
+      window.visualViewport?.removeEventListener('resize', updateAppHeight);
+    };
+  }, []);
+
   useEffect(() => {
     // Check if token exists in current tab's session or local storage
     const token = sessionStorage.getItem('accessToken') || localStorage.getItem('accessToken');
@@ -195,7 +212,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen font-sans">
+    <div className={appState === AppState.LOGGED_IN ? "h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-full max-w-[100vw] overflow-hidden font-sans" : "min-h-[var(--app-height,100dvh)] font-sans"}>
       <Toaster 
         position="top-right" 
         toastOptions={{ 

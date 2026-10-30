@@ -15,8 +15,8 @@ export default {
                 // Custom laptop breakpoint — targets screens ≤1366px wide.
                 // Usage: className="laptop:p-4 laptop:text-sm"
                 // Note: 'laptop' is a max-width breakpoint (mobile-first reversed).
-                'laptop': { 'max': '1366px' },
-                'laptop-h': { 'raw': '(max-width: 1366px) and (max-height: 768px)' },
+                'laptop': { 'max': '1600px' },
+                'laptop-h': { 'raw': '(max-width: 1600px) and (max-height: 1000px)' },
             },
             fontFamily: {
                 sans: ['Inter', 'sans-serif'],

@@ -174,7 +174,7 @@ const UnusualOptionsActivity: React.FC = () => {
     };
 
     return (
-        <div className="h-[calc(100vh-140px)] flex flex-col gap-6 overflow-hidden">
+        <div className="h-full flex flex-col gap-6 laptop:gap-3 overflow-hidden">
 
             {/* Top HUD Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-shrink-0 staggered-fade-in">

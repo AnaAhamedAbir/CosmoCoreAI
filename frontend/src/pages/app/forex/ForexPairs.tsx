@@ -103,7 +103,7 @@ const ForexPairs = () => {
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="h-[calc(100vh-120px)] flex flex-col gap-6"
+      className="h-full flex flex-col gap-6 laptop:gap-3"
     >
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-shrink-0">

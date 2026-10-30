@@ -37,7 +37,7 @@ export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({
     isAddChartDisabled
 }) => {
     return (
-        <div className="flex bg-white dark:bg-[#000000] border-b border-gray-200 dark:border-white/10 px-4 py-2 items-center gap-4">
+        <div className="flex flex-wrap bg-white dark:bg-[#000000] border-b border-gray-200 dark:border-white/10 px-4 py-2 laptop:px-2.5 laptop:py-1.5 items-center gap-4 laptop:gap-2">
             <div className="flex items-center gap-2">
                 <div className="flex space-x-1 bg-gray-100 dark:bg-black/30 p-1 rounded-lg">
                     <button

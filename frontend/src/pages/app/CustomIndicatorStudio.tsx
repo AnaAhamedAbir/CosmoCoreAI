@@ -291,7 +291,7 @@ const CustomIndicatorStudio: React.FC = () => {
     }, [isResizing, handleMouseMove, handleMouseUp]);
 
     return (
-        <div ref={splitPaneRef} className="flex flex-col h-[calc(100vh-140px)] relative overflow-hidden bg-gray-100 dark:bg-[#0A0A0A] rounded-2xl border border-brand-border-light dark:border-[#1A1A1A] shadow-2xl">
+        <div ref={splitPaneRef} className="flex flex-col h-full relative overflow-hidden bg-gray-100 dark:bg-[#0A0A0A] rounded-2xl border border-brand-border-light dark:border-[#1A1A1A] shadow-2xl">
             {isResizing && <div className="absolute inset-0 z-50 cursor-row-resize" />}
 
             {/* Top Pane: Chart */}

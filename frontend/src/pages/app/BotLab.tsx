@@ -219,7 +219,7 @@ const BotLab: React.FC = () => {
     const [isDeFiOpen, setIsDeFiOpen] = useState(false);
 
     return (
-        <div className="h-screen flex flex-col animate-fade-in relative overflow-hidden bg-slate-50 dark:bg-transparent">
+        <div className="h-full flex flex-col animate-fade-in relative overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-transparent">
             {/* Background Decor */}
             <div className="fixed inset-0 z-[-1] pointer-events-none">
                 <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full dark:bg-cyan-900/10 bg-cyan-200/30 blur-[120px]"></div>
@@ -255,7 +255,7 @@ const BotLab: React.FC = () => {
                 />
             )}
 
-            <div className="flex-none p-4 md:p-8 pb-0 space-y-8">
+            <div className="flex-none p-4 md:p-8 laptop:p-3 pb-0 space-y-8 laptop:space-y-4">
                 <div className="flex flex-col md:flex-row justify-between items-end gap-4 staggered-fade-in">
                     <div>
                         <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r dark:from-white dark:to-gray-400 from-gray-900 to-gray-600">Bot Laboratory</h2>
@@ -280,7 +280,7 @@ const BotLab: React.FC = () => {
                 <BotLabHeader bots={bots} stats={stats} onOpenCreate={() => setIsCreating(true)} />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 px-4 md:px-8 pb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 px-4 md:px-8 laptop:px-3 pb-8 laptop:pb-4">
                 {bots.map((bot, index) => (
                     <BotCard
                         key={bot.id}

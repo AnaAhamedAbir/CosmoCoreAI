@@ -701,8 +701,8 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
             </header>
 
             <div className="flex-1 flex flex-col min-h-0 relative z-10">
-                <div className="w-full flex flex-col bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative overflow-hidden h-full">
-                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 flex-1 min-h-0">
+                <div className="w-full flex flex-col bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 laptop:p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative overflow-hidden h-full">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 laptop:gap-4 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                         
                         {/* COLUMN 1: Core Parameters (Modularized) */}
                         <ForexCoreParametersPanel

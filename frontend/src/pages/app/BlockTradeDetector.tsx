@@ -222,7 +222,7 @@ const BlockTradeDetector: React.FC = () => {
     const largeTradeCount = whaleTrades.length;
 
     return (
-        <div className="h-[calc(100vh-140px)] flex flex-col gap-6 overflow-hidden">
+        <div className="h-full flex flex-col gap-6 laptop:gap-3 overflow-hidden">
 
             {/* Config Modal */}
             <Modal isOpen={isOpen} onClose={onClose} isCentered>

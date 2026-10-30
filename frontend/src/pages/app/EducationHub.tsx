@@ -86,7 +86,7 @@ const EducationHub: React.FC = () => {
     ];
 
     return (
-        <div className="min-h-screen bg-[#0B0E14] text-white font-sans selection:bg-blue-500/30">
+        <div className="min-h-full bg-[#0B0E14] text-white font-sans selection:bg-blue-500/30">
 
             {/* --- Hero Section with Glow --- */}
             <div className="relative overflow-hidden bg-gradient-to-b from-blue-900/20 to-transparent pb-10 pt-6 px-6 md:px-12 border-b border-white/5">

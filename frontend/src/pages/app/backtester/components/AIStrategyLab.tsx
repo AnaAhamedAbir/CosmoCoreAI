@@ -46,7 +46,7 @@ export const AIStrategyLab: React.FC<AIStrategyLabProps> = ({
     ];
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in h-[calc(100vh-140px)] min-h-[600px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in h-full min-h-[380px]">
             {/* Left Panel: AI Control Center */}
             <div className="lg:col-span-4 flex flex-col gap-4 h-full">
 

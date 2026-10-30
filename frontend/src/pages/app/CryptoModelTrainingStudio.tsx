@@ -1041,11 +1041,11 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
             <div className="flex-1 flex flex-col min-h-0 relative z-10">
                 {/* Configuration Panel */}
-                <div className="w-full flex flex-col bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative overflow-hidden h-full">
+                <div className="w-full flex flex-col bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 laptop:p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative overflow-hidden h-full">
                     {/* Glass reflection */}
                     <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent"></div>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 flex-1 min-h-0">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 laptop:gap-4 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                         {/* COLUMN 1: Core Parameters */}
                         <div className="flex flex-col h-full bg-white/5 border border-amber-500/50 rounded-2xl shadow-[0_0_12px_rgba(245,158,11,0.4)] overflow-hidden">
                             <div className="p-5 bg-black/40 border-b border-white/10 flex-shrink-0 relative z-20">

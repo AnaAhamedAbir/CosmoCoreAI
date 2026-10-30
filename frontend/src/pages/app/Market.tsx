@@ -624,7 +624,7 @@ const Market: React.FC = () => {
     const activeGradientClass = activeOrderFormTab === 'buy' ? 'from-emerald-500/20 to-emerald-500/5' : 'from-rose-500/20 to-rose-500/5';
 
     return (
-        <div className="flex flex-col h-full gap-4 overflow-hidden">
+        <div className="flex flex-col h-full gap-4 laptop:gap-2 overflow-hidden">
             {isModalOpen && (
                 <ConnectExchangeModal
                     isOpen={isModalOpen}
@@ -640,7 +640,7 @@ const Market: React.FC = () => {
             <NewsTickerBar />
 
             {/* Market HUD */}
-            <div className="flex-shrink-0 staggered-fade-in bg-white dark:bg-[#0A0A0A] rounded-2xl border border-brand-border-light dark:border-[#1A1A1A] p-4 shadow-lg relative overflow-hidden">
+            <div className="flex-shrink-0 staggered-fade-in bg-white dark:bg-[#0A0A0A] rounded-2xl border border-brand-border-light dark:border-[#1A1A1A] p-4 laptop:p-2.5 shadow-lg relative overflow-hidden">
                 <div className={`absolute top-0 right-0 w-96 h-full bg-gradient-to-l ${isPositive ? 'from-emerald-500/10' : 'from-rose-500/10'} to-transparent pointer-events-none`}></div>
 
                 <div className="flex flex-wrap items-center justify-between gap-6 laptop:gap-3 relative z-10">
@@ -800,12 +800,12 @@ const Market: React.FC = () => {
                         <div className="flex-1 min-h-0 p-4 overflow-y-auto">
                             {activeSidePanelTab === 'trade' && (
                                 <div className="h-full flex flex-col">
-                                    <div className="flex mb-6 bg-gray-100 dark:bg-[#000000]/50 p-1 rounded-xl">
-                                        <button onClick={() => setActiveOrderFormTab('buy')} className={`flex-1 py-3 text-center font-bold rounded-lg transition-all duration-200 ${activeOrderFormTab === 'buy' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25' : 'text-gray-500 hover:bg-white/5'}`}>Buy / Long</button>
-                                        <button onClick={() => setActiveOrderFormTab('sell')} className={`flex-1 py-3 text-center font-bold rounded-lg transition-all duration-200 ${activeOrderFormTab === 'sell' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25' : 'text-gray-500 hover:bg-white/5'}`}>Sell / Short</button>
+                                    <div className="flex mb-6 laptop:mb-3 bg-gray-100 dark:bg-[#000000]/50 p-1 rounded-xl">
+                                        <button onClick={() => setActiveOrderFormTab('buy')} className={`flex-1 py-3 laptop:py-2 text-center font-bold rounded-lg transition-all duration-200 ${activeOrderFormTab === 'buy' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25' : 'text-gray-500 hover:bg-white/5'}`}>Buy / Long</button>
+                                        <button onClick={() => setActiveOrderFormTab('sell')} className={`flex-1 py-3 laptop:py-2 text-center font-bold rounded-lg transition-all duration-200 ${activeOrderFormTab === 'sell' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25' : 'text-gray-500 hover:bg-white/5'}`}>Sell / Short</button>
                                     </div>
 
-                                    <div className="flex gap-4 mb-6 overflow-x-auto pb-2 no-scrollbar border-b border-gray-200 dark:border-white/5">
+                                    <div className="flex gap-4 mb-6 laptop:mb-3 overflow-x-auto pb-2 no-scrollbar border-b border-gray-200 dark:border-white/5">
                                         <button
                                             onClick={() => setIsSmartOrderMode(false)}
                                             className={`whitespace-nowrap text-xs font-bold uppercase pb-1 transition-colors ${!isSmartOrderMode ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400 hover:text-gray-300'}`}
@@ -834,7 +834,7 @@ const Market: React.FC = () => {
                                                 ))}
                                             </div>
 
-                                            <div className="space-y-5">
+                                            <div className="space-y-5 laptop:space-y-3">
                                                 <div className={`transition-all duration-300 ${activeOrderType !== 'Market' ? 'opacity-100 h-auto' : 'opacity-50 h-auto grayscale'}`}>
                                                     <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Price (USDT)</label>
                                                     <div className="relative">

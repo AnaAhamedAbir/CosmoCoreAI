@@ -3477,7 +3477,7 @@ const OrderFlowChartPanel: React.FC<{
             onClick={onSelectActive}
             className={isFullscreen 
                 ? 'fixed inset-0 z-[200] flex flex-col bg-gray-50 dark:bg-[#000000] p-4 overflow-y-auto hide-scrollbar' 
-                : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border transition-all duration-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col min-h-[400px] cursor-pointer ${
+                : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border transition-all duration-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col min-h-[240px] cursor-pointer ${
                     isActive && allChartsCount > 1 
                         ? 'border-brand-primary/80 ring-2 ring-brand-primary/20 shadow-[0_0_25px_rgba(59,130,246,0.2)]' 
                         : 'border-gray-200 dark:border-white/5'
@@ -3889,13 +3889,13 @@ const OrderFlowHeatmap: React.FC = () => {
                     position: 'relative',
                     zIndex: 30,          // sit above the chart so dropdowns render on top
                     overflow: 'hidden',  // will be flipped to 'visible' via onTransitionEnd when open
-                    maxHeight: showSubNav ? '160px' : '0px',
+                    maxHeight: showSubNav ? '220px' : '0px',
                     opacity: showSubNav ? 1 : 0,
                     transition: 'max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease',
                     willChange: 'max-height, opacity',
                 }}
             >
-                <header className="relative z-20 flex-shrink-0 p-4 border-b border-gray-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-[#000000]">
+                <header className="relative z-20 flex-shrink-0 p-4 laptop:p-2 flex-wrap gap-2 border-b border-gray-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-[#000000]">
                 <div className="flex items-center gap-4">
                     <HeatmapSymbolSelector symbol={symbol} exchange={exchange} onSymbolChange={setSymbol} onExchangeChange={setExchange} />
                     <TimeframeSelector interval={interval} onIntervalChange={setInterval} />
@@ -4020,9 +4020,9 @@ const OrderFlowHeatmap: React.FC = () => {
             </div>
 
 
-            <div className="flex-1 flex flex-col p-4 overflow-y-auto hide-scrollbar relative bg-gray-50 dark:bg-[#000000]">
+            <div className="flex-1 min-h-0 flex flex-col p-4 laptop:p-2 overflow-y-auto hide-scrollbar relative bg-gray-50 dark:bg-[#000000]">
                 {/* RENDER GRID OF CHARTS */}
-                <div className={`flex-1 w-full grid gap-4 ${allCharts.length === 1 ? 'grid-cols-1' : allCharts.length === 2 ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1 xl:grid-cols-2 grid-rows-2'}`}>
+                <div className={`flex-1 w-full grid gap-4 ${allCharts.length === 1 ? 'grid-cols-1' : allCharts.length === 2 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 lg:grid-cols-2 grid-rows-2'}`}>
                     {allCharts.map(c => (
                         <OrderFlowChartPanel 
                             key={c.id} 

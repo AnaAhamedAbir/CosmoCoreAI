@@ -347,7 +347,7 @@ const AlternativeData: React.FC = () => {
     ];
 
     return (
-        <div className="h-[calc(100vh-140px)] flex flex-col gap-6 animate-fade-in-slide-up">
+        <div className="h-full flex flex-col gap-6 laptop:gap-3 animate-fade-in-slide-up">
 
             {/* Control Deck */}
             <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-[#0A0A0A] border border-brand-border-light dark:border-[#1A1A1A] p-2 rounded-2xl shadow-sm flex-shrink-0">

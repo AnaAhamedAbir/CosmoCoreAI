@@ -346,7 +346,7 @@ RULES:
     return (
         <div 
             ref={containerRef} 
-            className="h-[calc(100vh-140px)] flex flex-col lg:flex-row animate-fade-in-slide-up overflow-hidden relative"
+            className="h-full flex flex-col lg:flex-row animate-fade-in-slide-up overflow-hidden relative"
         >
             
             {/* LEFT PANEL: COMMAND CENTER */}
@@ -357,7 +357,7 @@ RULES:
             >
                 
                 {/* Strategy Composer - Resizable Height */}
-                <div style={{ height: window.innerWidth >= 1024 ? `${composerHeight}%` : 'auto' }} className="flex flex-col min-h-[300px]">
+                <div style={{ height: window.innerWidth >= 1024 ? `${composerHeight}%` : 'auto' }} className="flex flex-col min-h-[200px]">
                     <div className="bg-white dark:bg-[#0A0A0A] border border-brand-border-light dark:border-[#1A1A1A] rounded-2xl shadow-lg relative overflow-hidden flex flex-col h-full">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
                         

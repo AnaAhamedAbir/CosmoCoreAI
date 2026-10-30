@@ -233,7 +233,7 @@ const CorporateFilings: React.FC = () => {
     }, [filings]);
 
     return (
-        <div className="h-[calc(100vh-140px)] flex flex-col gap-6">
+        <div className="h-full flex flex-col gap-6 laptop:gap-3">
             {isModalOpen && <AddFilingModal onClose={() => setIsModalOpen(false)} onAddFiling={handleAddFiling} />}
 
             {/* Header / HUD */}

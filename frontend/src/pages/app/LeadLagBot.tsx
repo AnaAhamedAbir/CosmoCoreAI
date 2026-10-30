@@ -184,7 +184,7 @@ const LeadLagBot = () => {
     };
 
     return (
-        <div className="flex flex-col h-[calc(100vh-100px)] gap-6 staggered-fade-in pb-4">
+        <div className="flex flex-col h-full gap-6 laptop:gap-3 staggered-fade-in pb-4">
 
             {/* Header */}
             <div className="flex justify-between items-end gap-4 mb-2 flex-shrink-0">

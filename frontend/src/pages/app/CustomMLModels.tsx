@@ -1663,7 +1663,7 @@ const CustomMLModels: React.FC<{ onNavigate?: (view: AppView, section?: string) 
     };
 
     return (
-        <div className="relative min-h-[calc(100vh-140px)]">
+        <div className="relative min-h-full">
             <NeuralMeshBackground />
 
             {modalState.isOpen && <UploadModelModal onClose={() => setModalState({ isOpen: false })} onUpload={handleUpload} existingModel={modalState.modelToUpdate} />}

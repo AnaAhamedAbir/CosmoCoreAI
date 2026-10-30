@@ -268,7 +268,7 @@ const EventDrivenSimulator: React.FC = () => {
     ];
 
     return (
-        <div className="flex flex-col h-[calc(100vh-8rem)] gap-4 p-2">
+        <div className="flex flex-col h-full gap-4 laptop:gap-2 p-2">
             
             {/* Top Bar - Stats & Controls */}
             <Card className="flex-shrink-0 flex justify-between items-center bg-white/80 dark:bg-[#0A0A0A]/80 backdrop-blur-xl p-4 border border-slate-200 dark:border-[#1F1F1F] shadow-sm rounded-2xl">

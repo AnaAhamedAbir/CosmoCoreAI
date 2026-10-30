@@ -259,7 +259,7 @@ const Sidebar: React.FC<{
     }, [activeMarket]);
 
     return (
-        <aside className={`${isCollapsed ? 'w-20' : 'w-72'} bg-[#F8FAFC] dark:bg-[#000000] border-r border-gray-200 dark:border-white/5 flex flex-col h-screen transition-all duration-400 ease-in-out will-change-[width] shadow-[5px_0_20px_rgba(0,0,0,0.05)] z-20 relative group`}>
+        <aside className={`${isCollapsed ? 'w-20' : 'w-72'} bg-[#F8FAFC] dark:bg-[#000000] border-r border-gray-200 dark:border-white/5 flex flex-col h-full max-h-full flex-shrink-0 overflow-hidden transition-all duration-400 ease-in-out will-change-[width] shadow-[5px_0_20px_rgba(0,0,0,0.05)] z-20 relative group`}>
 
             {/* Collapse Toggle Button */}
             <button
@@ -272,7 +272,7 @@ const Sidebar: React.FC<{
             {/* Glowing Background Effect */}
             <div className="absolute top-0 left-0 w-full h-96 bg-brand-primary/5 dark:bg-brand-primary/10 blur-[80px] pointer-events-none"></div>
 
-            <div className="p-6 pb-4 relative z-10">
+            <div className="p-6 pb-4 laptop:p-3 laptop:pb-2 relative z-10 flex-shrink-0">
                 <div className={`flex items-center justify-center mb-2 transition-all duration-400 ease-in-out will-change-transform ${
                     isCollapsed 
                         ? 'opacity-80 scale-50 -translate-y-4' 
@@ -283,10 +283,10 @@ const Sidebar: React.FC<{
                     <Logo />
                 </div>
                 {/* Stylish Divider */}
-                <div className={`h-px w-full bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent my-6 transition-all duration-400 ease-in-out ${isCollapsed ? 'opacity-0 scale-x-0' : 'opacity-100 scale-x-100'}`}></div>
+                <div className={`h-px w-full bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent my-6 laptop:my-2 transition-all duration-400 ease-in-out ${isCollapsed ? 'opacity-0 scale-x-0' : 'opacity-100 scale-x-100'}`}></div>
             </div>
 
-            <nav className="flex-1 space-y-2 overflow-y-auto px-4 custom-scrollbar pb-4 relative z-10">
+            <nav className="flex-1 min-h-0 space-y-2 overflow-y-auto px-4 laptop:px-2.5 custom-scrollbar pb-4 laptop:pb-2 relative z-10">
                 {navCategories.map(category => (
                     <div key={category.title} className="mb-8 last:mb-0">
                         {/* Gradient Text Header */}
@@ -313,7 +313,7 @@ const Sidebar: React.FC<{
             </nav>
 
             {/* Profile Section */}
-            <div className="p-4 relative z-20" ref={profileRef}>
+            <div className="p-4 laptop:p-2.5 relative z-20 flex-shrink-0" ref={profileRef}>
                 {/* Backdrop Overlay */}
                 <div 
                     className={`fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-[100] transition-opacity duration-300 ${isProfileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
@@ -325,7 +325,7 @@ const Sidebar: React.FC<{
 
                 {/* Slide-over Profile Drawer */}
                 <div 
-                    className={`fixed top-0 left-0 h-full w-80 bg-white dark:bg-[#0A0A0A] shadow-[10px_0_30px_rgba(0,0,0,0.1)] dark:shadow-[10px_0_30px_rgba(0,0,0,0.5)] border-r border-gray-200 dark:border-gray-800 z-[110] transform transition-transform duration-400 ease-in-out ${isProfileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+                    className={`fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-80 max-w-[85vw] bg-white dark:bg-[#0A0A0A] shadow-[10px_0_30px_rgba(0,0,0,0.1)] dark:shadow-[10px_0_30px_rgba(0,0,0,0.5)] border-r border-gray-200 dark:border-gray-800 z-[110] transform transition-transform duration-400 ease-in-out ${isProfileOpen ? 'translate-x-0' : '-translate-x-full'}`}
                     onClick={(e) => e.stopPropagation()}
                 >
                     <div className="flex flex-col h-full">
@@ -360,7 +360,7 @@ const Sidebar: React.FC<{
                         </div>
 
                         {/* Drawer Menu Items */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1">
                             <DropdownMenuItem icon={<UserCircleIcon />} label="Profile Settings" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/profile'); setIsProfileOpen(false); }} />
                             <DropdownMenuItem icon={<CreditCardIcon />} label="Billing & Subscription" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }} />
                             <DropdownMenuItem icon={<Shield className="w-5 h-5" />} label="Security" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/security'); setIsProfileOpen(false); }} />
@@ -438,7 +438,19 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
     const [isAssistantOpen, setIsAssistantOpen] = useState(false);
     const [modalView, setModalView] = useState<AppView | null>(null);
     // Auto-collapse sidebar on laptop/small screens (≤1366px)
-    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth <= 1366);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() =>
+        typeof window !== 'undefined' && (window.innerWidth <= 1440 || window.matchMedia?.('(pointer: coarse)').matches)
+    );
+
+    // Lock document/body scroll while inside the app dashboard shell
+    useEffect(() => {
+        document.documentElement.classList.add('app-shell-locked');
+        document.body.classList.add('app-shell-locked');
+        return () => {
+            document.documentElement.classList.remove('app-shell-locked');
+            document.body.classList.remove('app-shell-locked');
+        };
+    }, []);
     const prevViewRef = useRef<AppView>(currentView || AppView.DASHBOARD);
 
     // OmniTrade State Removed
@@ -564,28 +576,28 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
 
     return (
         <BacktestProvider>
-            <div className="flex h-screen bg-brand-light dark:bg-[#000000] transition-all duration-300">
+            <div className="flex h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-full max-w-[100vw] overflow-hidden bg-brand-light dark:bg-[#000000] transition-all duration-300">
                 <Sidebar 
                         onLogout={onLogout} 
                         isCollapsed={isSidebarCollapsed} 
                         onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
                     />
-                    <div className="flex-1 flex flex-col overflow-hidden relative z-0">
+                    <div className="flex-1 min-w-0 min-h-0 h-full flex flex-col overflow-hidden relative z-0">
                         <header className="relative z-50 flex-shrink-0 bg-white/80 dark:bg-[#000000]/80 backdrop-blur-md border-b border-gray-200 dark:border-[#1A1A1A]/50">
-                            <div className="grid grid-cols-3 items-center px-8 laptop:px-4 h-16 laptop:h-12">
+                            <div className="flex items-center justify-between gap-2 px-8 laptop:px-4 h-16 laptop:h-12 min-w-0">
                                 {/* Left — Page Title */}
-                                <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                                <h1 className="text-xl laptop:text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2 truncate min-w-0 shrink">
                                     {viewToRender}
                                 </h1>
 
                                 {/* Center — Market Switcher & System Alert Monitor Widget */}
-                                <div className="flex items-center justify-center gap-4">
+                                <div className="flex items-center justify-center gap-4 laptop:gap-2 shrink-0">
                                     <MarketSwitcher />
                                     <SystemAlertWidget />
                                 </div>
 
                                 {/* Right — Action Buttons */}
-                                <div className="flex items-center gap-4 justify-end">
+                                <div className="flex items-center gap-4 laptop:gap-2 justify-end shrink-0">
                                     {showWalletConnect && (
                                         <div>
                                              {walletAddress ? (
@@ -610,7 +622,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                             </div>
                             {viewToRender === AppView.MARKET && <div className="border-t border-gray-100 dark:border-gray-800"><MarketTicker /></div>}
                         </header>
-                        <main className="flex-1 overflow-y-auto p-8 laptop:p-4 laptop-h:p-3 relative z-0">
+                        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-8 laptop:p-3 laptop-h:p-2.5 relative z-0">
                             {renderContent()}
                         </main>
                     </div>

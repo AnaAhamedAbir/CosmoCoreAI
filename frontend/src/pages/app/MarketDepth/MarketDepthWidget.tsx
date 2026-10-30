@@ -329,7 +329,7 @@ const MarketDepthWidget: React.FC = () => {
 
 
     return (
-        <div className="h-full flex flex-col p-6 space-y-4">
+        <div className="h-full flex flex-col p-6 laptop:p-3 space-y-4 laptop:space-y-2.5">
             {/* Header Section */}
             <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white dark:bg-[#0A0A0A] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
                 <div>
@@ -401,7 +401,7 @@ const MarketDepthWidget: React.FC = () => {
             </div>
 
             {/* Main Chart Area */}
-            <div className="flex-1 bg-[#111827] rounded-2xl shadow-lg border border-gray-800 overflow-hidden relative min-h-[400px]">
+            <div className="flex-1 bg-[#111827] rounded-2xl shadow-lg border border-gray-800 overflow-hidden relative min-h-[240px]">
                 {loading && !depthData && (
                     <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 backdrop-blur-sm">
                         <div className="text-brand-primary animate-pulse font-mono">Fetching Market Data...</div>

@@ -174,7 +174,7 @@ const InstitutionalHoldingsTracker: React.FC = () => {
 
     if (loading) {
         return (
-            <div className="h-[calc(100vh-140px)] flex flex-col gap-6 p-6">
+            <div className="h-full flex flex-col gap-6 laptop:gap-3 p-6 laptop:p-3">
                 <div className="flex gap-4 overflow-x-auto">
                     {[1, 2, 3].map(i => <Skeleton key={i} className="w-72 h-32 flex-shrink-0 rounded-2xl" />)}
                 </div>
@@ -198,7 +198,7 @@ const InstitutionalHoldingsTracker: React.FC = () => {
     }
 
     return (
-        <div className="h-[calc(100vh-140px)] flex flex-col gap-6">
+        <div className="h-full flex flex-col gap-6 laptop:gap-3">
             {selectedHolding && <HoldingDetailModal holding={selectedHolding} onClose={() => setSelectedHolding(null)} />}
 
             {/* Guru Selector Deck */}

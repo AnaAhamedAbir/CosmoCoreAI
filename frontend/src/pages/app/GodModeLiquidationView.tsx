@@ -237,7 +237,7 @@ const GodModeLiquidationView: React.FC = () => {
                 </div>
 
                 {/* CENTER HUD: Advanced Chart & Magnet Zones & Algo Predictor */}
-                <div className="col-span-12 lg:col-span-6 flex flex-col gap-4 min-h-[400px] relative">
+                <div className="col-span-12 lg:col-span-6 flex flex-col gap-4 min-h-[240px] relative">
                     <Card className="flex-1 bg-gradient-to-b from-[#090E17] to-[#05080F] border-brand-primary/20 p-0 relative overflow-hidden group shadow-[0_0_30px_rgba(0,0,0,0.8)] flex flex-col">
                         <div className="p-3 sm:p-4 border-b border-white/5 flex flex-col sm:flex-row gap-2 sm:items-center justify-between z-20 absolute top-0 w-full bg-black/40 backdrop-blur-md">
                             <div className="flex gap-4">

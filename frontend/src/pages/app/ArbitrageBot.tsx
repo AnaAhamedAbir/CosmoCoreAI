@@ -306,7 +306,7 @@ const ArbitrageBot = () => {
     const labelClasses = "block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2";
 
     return (
-        <div className="space-y-6 staggered-fade-in relative min-h-screen pb-10">
+        <div className="space-y-6 laptop:space-y-4 staggered-fade-in relative min-h-full pb-10 laptop:pb-4">
             {/* Background Decor */}
             <div className="fixed inset-0 z-[-1] pointer-events-none">
                 <div className="absolute top-[-10%] right-[-5%] w-[30%] h-[30%] rounded-full bg-violet-900/10 blur-[120px]"></div>

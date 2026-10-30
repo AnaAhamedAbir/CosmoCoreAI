@@ -532,7 +532,7 @@ const GridBot = () => {
     };
 
     return (
-        <div className="flex flex-col h-[calc(100vh-100px)] gap-6 staggered-fade-in pb-4">
+        <div className="flex flex-col h-full gap-6 laptop:gap-3 staggered-fade-in pb-4">
             {/* TOP BAR: Bot List & Tools */}
             <div className="w-full flex-shrink-0">
                 <GlassCard className="p-4 flex flex-col">

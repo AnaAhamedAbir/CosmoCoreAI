@@ -259,7 +259,7 @@ const Sidebar: React.FC<{
     }, [activeMarket]);
 
     return (
-        <aside className={`${isCollapsed ? 'w-20' : 'w-72'} bg-[#F8FAFC] dark:bg-[#000000] border-r border-gray-200 dark:border-white/5 flex flex-col h-full max-h-full flex-shrink-0 overflow-hidden transition-all duration-400 ease-in-out will-change-[width] shadow-[5px_0_20px_rgba(0,0,0,0.05)] z-20 relative group`}>
+        <aside className={`${isCollapsed ? 'w-20' : 'w-72'} bg-[#F8FAFC] dark:bg-[#000000] border-r border-gray-200 dark:border-white/5 flex flex-col h-full max-h-full flex-shrink-0 transition-all duration-400 ease-in-out will-change-[width] shadow-[5px_0_20px_rgba(0,0,0,0.05)] z-30 relative group`}>
 
             {/* Collapse Toggle Button */}
             <button
@@ -270,9 +270,11 @@ const Sidebar: React.FC<{
             </button>
 
             {/* Glowing Background Effect */}
-            <div className="absolute top-0 left-0 w-full h-96 bg-brand-primary/5 dark:bg-brand-primary/10 blur-[80px] pointer-events-none"></div>
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute top-0 left-0 w-full h-96 bg-brand-primary/5 dark:bg-brand-primary/10 blur-[80px] pointer-events-none"></div>
+            </div>
 
-            <div className="p-6 pb-4 laptop:p-3 laptop:pb-2 relative z-10 flex-shrink-0">
+            <div className="p-6 pb-4 laptop:p-3 laptop:pb-2 relative z-10 flex-shrink-0 overflow-hidden">
                 <div className={`flex items-center justify-center mb-2 transition-all duration-400 ease-in-out will-change-transform ${
                     isCollapsed 
                         ? 'opacity-80 scale-50 -translate-y-4' 

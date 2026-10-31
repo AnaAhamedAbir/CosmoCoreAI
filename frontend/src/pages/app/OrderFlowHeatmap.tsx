@@ -3540,6 +3540,7 @@ const OrderFlowChartPanel: React.FC<{
     parentL2Data?: any;
     showCrosshairAIPredict?: boolean;
     showBidAsk?: boolean;
+    renderFloatingTools?: React.ReactNode;
 }> = ({ 
     config, 
     isMain, 
@@ -3565,9 +3566,31 @@ const OrderFlowChartPanel: React.FC<{
     volumeMode, 
     parentL2Data, 
     showCrosshairAIPredict = false,
-    showBidAsk = false
+    showBidAsk = false,
+    renderFloatingTools
 }) => {
     const [isFullscreen, setIsFullscreen] = useState(false);
+
+    const handleToggleFullscreen = useCallback((e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        setIsFullscreen(prev => {
+            const next = !prev;
+            onFullscreenChange?.(next);
+            return next;
+        });
+    }, [onFullscreenChange]);
+
+    useEffect(() => {
+        if (!isFullscreen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setIsFullscreen(false);
+                onFullscreenChange?.(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isFullscreen, onFullscreenChange]);
     const [isTradingViewMode, setIsTradingViewMode] = useState(false);
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
     const [isForexWallHunterOpen, setIsForexWallHunterOpen] = useState(false);
@@ -3758,6 +3781,7 @@ const OrderFlowChartPanel: React.FC<{
                     }}
                 />
             )}
+            {isFullscreen && renderFloatingTools}
         </div>
     );
 
@@ -3779,6 +3803,7 @@ const OrderFlowHeatmap: React.FC = () => {
     const [isForexWallHunterOpen, setIsForexWallHunterOpen] = useState(false);
     const [isEmergencySelling, setIsEmergencySelling] = useState(false); // NEW STATE
     const [isFloatingToolbarOpen, setIsFloatingToolbarOpen] = useState(false);
+    const [hasFullscreenChart, setHasFullscreenChart] = useState(false);
     const [showCrosshairAIPredict, setShowCrosshairAIPredict] = useState<boolean>(() => {
         try {
             const saved = localStorage.getItem('orderflow_show_crosshair_ai_predict');
@@ -4034,6 +4059,203 @@ const OrderFlowHeatmap: React.FC = () => {
         }
     };
 
+    const floatingToolsNode = (
+        <>
+                {/* FLOATING ACTION BUTTONS CONTAINER */}
+                <div 
+                    className="fixed bottom-8 right-8 z-[999] flex flex-row items-center gap-2.5"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {/* COLLAPSIBLE BUTTONS DRAWER (Kept mounted so ManualTradeModal/Predictor state & API keys persist when hidden) */}
+                    <motion.div
+                        key="floating-action-tools-drawer"
+                        initial={false}
+                        animate={
+                            isFloatingToolbarOpen
+                                ? { opacity: 1, x: 0, scale: 1 }
+                                : { opacity: 0, x: 50, scale: 0.95 }
+                        }
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                        style={{ pointerEvents: isFloatingToolbarOpen ? 'auto' : 'none' }}
+                        aria-hidden={!isFloatingToolbarOpen}
+                        className={`flex flex-row-reverse items-center gap-2.5 ${isFloatingToolbarOpen ? '' : 'invisible'}`}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                                {/* WALLHUNTER FLOATING ACTION BUTTON */}
+                                {selectedHudBotId ? (
+                                    <div className="flex flex-row gap-2.5 items-center opacity-100 transition-opacity duration-300">
+                                        <button
+                                            onClick={() => setIsWallHunterOpen(true)}
+                                            className="group relative w-[42px] h-[42px] shrink-0"
+                                            title="Update WallHunter Config"
+                                        >
+                                            <div className="absolute inset-0 bg-indigo-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center border border-white/20 shadow-[0_0_12px_rgba(99,102,241,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
+                                                <svg className="w-4.5 h-4.5 text-white group-hover:rotate-90 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                </svg>
+                                            </div>
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    await botService.controlBot(selectedHudBotId, 'stop');
+                                                    const chartsWithBot = Object.entries(activeBotsByChartId).filter(([cId, bId]) => bId === selectedHudBotId).map(([cId]) => cId);
+                                                    chartsWithBot.forEach(cId => removeBotForChart(cId));
+                                                    if (activeWallHunterId === selectedHudBotId) {
+                                                        setActiveWallHunterId(null);
+                                                    }
+                                                } catch (err) {
+                                                    console.error("Failed to stop WallHunter bot", err);
+                                                }
+                                            }}
+                                            className="group relative w-[42px] h-[42px] shrink-0"
+                                            title="Abort WallHunter"
+                                        >
+                                            <div className="absolute inset-0 bg-red-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-red-500 to-red-700 rounded-full flex items-center justify-center border-2 border-white/20 shadow-[0_0_12px_rgba(239,68,68,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
+                                                <svg className="w-5 h-5 text-white group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </div>
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex gap-2.5">
+                                        <button
+                                            onClick={() => setIsWallHunterOpen(true)}
+                                            className="relative w-[42px] h-[42px] shrink-0 group opacity-100 transition-opacity duration-300"
+                                            title="Deploy WallHunter"
+                                        >
+                                            <div className="absolute inset-0 bg-yellow-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center border-2 border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
+                                                <svg className="w-5 h-5 text-white group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                                </svg>
+                                            </div>
+                                        </button>
+                                        <button
+                                            onClick={() => setIsForexWallHunterOpen(true)}
+                                            className="relative w-[42px] h-[42px] shrink-0 group opacity-100 transition-opacity duration-300"
+                                            title="Deploy Forex WallHunter"
+                                        >
+                                            <div className="absolute inset-0 bg-emerald-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full flex items-center justify-center border-2 border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
+                                                <svg className="w-5 h-5 text-white group-hover:-rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                                </svg>
+                                            </div>
+                                        </button>
+                                    </div>
+                                )}
+    
+                                {/* MANUAL TRADE MODAL */}
+                                <div className="w-[42px] h-[42px] relative shrink-0">
+                                    <ManualTradeModal 
+                                        buttonSize="sm" 
+                                        symbol={manualTradeSymbol || activeChart?.symbol || symbol} 
+                                        currentPrice={chartPrices[activeChart?.id || 'main'] || (activeChart?.isMain ? currentPrice : (chartPrices[activeChart?.id || ''] || currentPrice))} 
+                                        availablePairs={availablePairs}
+                                        onSelectPair={(pair) => {
+                                            setActiveChartId(pair.id);
+                                            setManualTradeSymbol(pair.symbol);
+                                        }}
+                                        onApiKeyChange={setSelectedApiKeyId} 
+                                        clickedPrice={manualTradePrice} 
+                                        openTrigger={manualTradeTrigger}
+                                        onClose={() => {
+                                            setManualTradePrice(null);
+                                            setManualTradeTrigger(0);
+                                        }}
+                                    />
+                                </div>
+    
+                                {/* FLOATING ORDER FLOW CHART BUTTON */}
+                                <div className="w-[42px] h-[42px] relative shrink-0">
+                                    <FloatingTVChartButton size="sm" symbol={activeChart?.symbol || symbol} exchange={activeChart?.exchange || exchange} />
+                                </div>
+    
+                                {/* ALGO PREDICTOR MODAL */}
+                                <ModelPredictorModal 
+                                    size="sm"
+                                    currentPrice={currentPrice} 
+                                    onPrediction={setPredictionResult}
+                                    externalPrice={externalAIPrice}
+                                    externalOpenTrigger={externalAIOpenTrigger}
+                                    showCrosshairAIPredict={showCrosshairAIPredict}
+                                    onToggleCrosshairAIPredict={handleToggleCrosshairAIPredict}
+                                />
+    
+                                {/* FLOATING LEVEL 2 ORDER BOOK BUTTON */}
+                                <button
+                                    onClick={() => setIsOrderBookModalOpen(true)}
+                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border border-blue-400/30 text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                    title="Level 2 Order Book"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:scale-110 transition-transform"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+                                </button>
+    
+                                {/* FLOATING AI DEPLOYMENT BUTTON */}
+                                <button
+                                    onClick={() => setIsAIDeploymentModalOpen(true)}
+                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 border border-purple-400/30 text-white shadow-[0_0_12px_rgba(168,85,247,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                    title="Deploy AI Trading Model"
+                                >
+                                    <svg className="w-5 h-5 group-hover:scale-110 transition-transform bg-transparent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+                                        <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
+                                        <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>
+                                        <path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/>
+                                        <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/>
+                                        <path d="M3.477 10.896a4 4 0 0 1 .585-.396"/>
+                                        <path d="M19.938 10.5a4 4 0 0 1 .585.396"/>
+                                        <path d="M6 18a4 4 0 0 1-1.967-.516"/>
+                                        <path d="M19.967 17.484A4 4 0 0 1 18 18"/>
+                                    </svg>
+                                </button>
+    
+                                {/* FLOATING TOP TOKENS DASHBOARD BUTTON */}
+                                <button
+                                    onClick={() => setIsTopTokensModalOpen(true)}
+                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-400 hover:to-red-500 border border-orange-400/30 text-white shadow-[0_0_12px_rgba(249,115,22,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                    title="Top Tokens Dashboard"
+                                >
+                                    <svg className="w-5 h-5 group-hover:scale-110 transition-transform bg-transparent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+                                    </svg>
+                                </button>
+    
+                                {/* FLOATING TECHNICAL INDICATORS BUTTON */}
+                                <button
+                                    onClick={() => setIsIndicatorModalOpen(true)}
+                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 border border-teal-400/30 text-white shadow-[0_0_12px_rgba(20,184,166,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                    title="Technical Analysis Indicators"
+                                >
+                                    <svg className="w-5 h-5 group-hover:scale-110 transition-transform bg-transparent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                    </svg>
+                                </button>
+                    </motion.div>
+    
+                    {/* MAIN COLLAPSIBLE TOGGLE BUTTON WITH ARROW */}
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setIsFloatingToolbarOpen(prev => !prev);
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-[#121624] to-[#0b0e17] hover:from-[#1b2236] hover:to-[#121624] border border-cyan-500/40 text-cyan-400 hover:text-white shadow-[0_0_15px_rgba(6,182,212,0.35)] z-[1000] transition-all duration-300 hover:scale-110 active:scale-95 group cursor-pointer"
+                        title={isFloatingToolbarOpen ? "Hide Tools" : "Show Floating Tools"}
+                    >
+                        <ChevronLeft className={`w-5 h-5 transition-transform duration-300 ${isFloatingToolbarOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                </div>
+        </>
+    );
+
     return (
         <div className="flex flex-col h-full bg-brand-light dark:bg-[#000000] text-slate-900 dark:text-white overflow-hidden rounded-xl border border-gray-200 dark:border-white/10">
             {/* ── Animated collapsible toolbar (header + subnav) ──────────── */}
@@ -4217,6 +4439,7 @@ const OrderFlowHeatmap: React.FC = () => {
                             parentL2Data={c.isMain ? { bids, asks, walls, currentPrice, tradeEvent } : undefined}
                             showCrosshairAIPredict={showCrosshairAIPredict}
                             showBidAsk={showBidAsk}
+                            renderFloatingTools={!hasFullscreenChart && floatingToolsNode}
                         />
                     ))}
                 </div>
@@ -4375,270 +4598,81 @@ const OrderFlowHeatmap: React.FC = () => {
                 )}
             </div>
 
-            {/* FLOATING ACTION BUTTONS CONTAINER */}
-            <div 
-                className="fixed bottom-8 right-8 z-[999] flex flex-row items-center gap-2.5"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-            >
-                {/* COLLAPSIBLE BUTTONS DRAWER (Kept mounted so ManualTradeModal/Predictor state & API keys persist when hidden) */}
-                <motion.div
-                    key="floating-action-tools-drawer"
-                    initial={false}
-                    animate={
-                        isFloatingToolbarOpen
-                            ? { opacity: 1, x: 0, scale: 1 }
-                            : { opacity: 0, x: 50, scale: 0.95 }
-                    }
-                    transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                    style={{ pointerEvents: isFloatingToolbarOpen ? 'auto' : 'none' }}
-                    aria-hidden={!isFloatingToolbarOpen}
-                    className={`flex flex-row-reverse items-center gap-2.5 ${isFloatingToolbarOpen ? '' : 'invisible'}`}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
-                >
-                            {/* WALLHUNTER FLOATING ACTION BUTTON */}
-                            {selectedHudBotId ? (
-                                <div className="flex flex-row gap-2.5 items-center opacity-100 transition-opacity duration-300">
+{floatingToolsNode}
+
+
+
+            {/* LEVEL 2 ORDER BOOK MODAL & GLOBAL OVERLAYS (Portaled to body at z-[100000] for fullscreen compatibility) */}
+            {typeof document !== 'undefined' && createPortal(
+                <div className="relative z-[100000]">
+                    {isOrderBookModalOpen && (
+                        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                            <div className="relative w-[90%] md:w-[70%] lg:w-[60%] max-w-4xl h-[75vh] bg-white dark:bg-[#000000] rounded-xl shadow-2xl border border-gray-200 dark:border-white/10 overflow-hidden flex flex-col transform transition-all scale-100">
+                                <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-white/10 shrink-0">
+                                    <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-cyan-500">Level 2 Order Book</h2>
                                     <button
-                                        onClick={() => setIsWallHunterOpen(true)}
-                                        className="group relative w-[42px] h-[42px] shrink-0"
-                                        title="Update WallHunter Config"
+                                        onClick={() => setIsOrderBookModalOpen(false)}
+                                        className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
                                     >
-                                        <div className="absolute inset-0 bg-indigo-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                        <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center border border-white/20 shadow-[0_0_12px_rgba(99,102,241,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
-                                            <svg className="w-4.5 h-4.5 text-white group-hover:rotate-90 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                            </svg>
-                                        </div>
-                                    </button>
-                                    <button
-                                        onClick={async () => {
-                                            try {
-                                                await botService.controlBot(selectedHudBotId, 'stop');
-                                                const chartsWithBot = Object.entries(activeBotsByChartId).filter(([cId, bId]) => bId === selectedHudBotId).map(([cId]) => cId);
-                                                chartsWithBot.forEach(cId => removeBotForChart(cId));
-                                                if (activeWallHunterId === selectedHudBotId) {
-                                                    setActiveWallHunterId(null);
-                                                }
-                                            } catch (err) {
-                                                console.error("Failed to stop WallHunter bot", err);
-                                            }
-                                        }}
-                                        className="group relative w-[42px] h-[42px] shrink-0"
-                                        title="Abort WallHunter"
-                                    >
-                                        <div className="absolute inset-0 bg-red-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                        <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-red-500 to-red-700 rounded-full flex items-center justify-center border-2 border-white/20 shadow-[0_0_12px_rgba(239,68,68,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
-                                            <svg className="w-5 h-5 text-white group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
-                                            </svg>
-                                        </div>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                     </button>
                                 </div>
-                            ) : (
-                                <div className="flex gap-2.5">
-                                    <button
-                                        onClick={() => setIsWallHunterOpen(true)}
-                                        className="relative w-[42px] h-[42px] shrink-0 group opacity-100 transition-opacity duration-300"
-                                        title="Deploy WallHunter"
-                                    >
-                                        <div className="absolute inset-0 bg-yellow-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                        <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center border-2 border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
-                                            <svg className="w-5 h-5 text-white group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                            </svg>
-                                        </div>
-                                    </button>
-                                    <button
-                                        onClick={() => setIsForexWallHunterOpen(true)}
-                                        className="relative w-[42px] h-[42px] shrink-0 group opacity-100 transition-opacity duration-300"
-                                        title="Deploy Forex WallHunter"
-                                    >
-                                        <div className="absolute inset-0 bg-emerald-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                        <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full flex items-center justify-center border-2 border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
-                                            <svg className="w-5 h-5 text-white group-hover:-rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                                            </svg>
-                                        </div>
-                                    </button>
+                                <div className="flex-1 overflow-hidden p-2">
+                                    <OrderBook bids={bids} asks={asks} maxTotal={maxTotal} volumeThreshold={volumeThreshold} />
                                 </div>
-                            )}
-
-                            {/* MANUAL TRADE MODAL */}
-                            <div className="w-[42px] h-[42px] relative shrink-0">
-                                <ManualTradeModal 
-                                    buttonSize="sm" 
-                                    symbol={manualTradeSymbol || activeChart?.symbol || symbol} 
-                                    currentPrice={chartPrices[activeChart?.id || 'main'] || (activeChart?.isMain ? currentPrice : (chartPrices[activeChart?.id || ''] || currentPrice))} 
-                                    availablePairs={availablePairs}
-                                    onSelectPair={(pair) => {
-                                        setActiveChartId(pair.id);
-                                        setManualTradeSymbol(pair.symbol);
-                                    }}
-                                    onApiKeyChange={setSelectedApiKeyId} 
-                                    clickedPrice={manualTradePrice} 
-                                    openTrigger={manualTradeTrigger}
-                                    onClose={() => {
-                                        setManualTradePrice(null);
-                                        setManualTradeTrigger(0);
-                                    }}
-                                />
                             </div>
-
-                            {/* FLOATING ORDER FLOW CHART BUTTON */}
-                            <div className="w-[42px] h-[42px] relative shrink-0">
-                                <FloatingTVChartButton size="sm" symbol={activeChart?.symbol || symbol} exchange={activeChart?.exchange || exchange} />
-                            </div>
-
-                            {/* ALGO PREDICTOR MODAL */}
-                            <ModelPredictorModal 
-                                size="sm"
-                                currentPrice={currentPrice} 
-                                onPrediction={setPredictionResult}
-                                externalPrice={externalAIPrice}
-                                externalOpenTrigger={externalAIOpenTrigger}
-                                showCrosshairAIPredict={showCrosshairAIPredict}
-                                onToggleCrosshairAIPredict={handleToggleCrosshairAIPredict}
-                            />
-
-                            {/* FLOATING LEVEL 2 ORDER BOOK BUTTON */}
-                            <button
-                                onClick={() => setIsOrderBookModalOpen(true)}
-                                className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border border-blue-400/30 text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
-                                title="Level 2 Order Book"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:scale-110 transition-transform"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
-                            </button>
-
-                            {/* FLOATING AI DEPLOYMENT BUTTON */}
-                            <button
-                                onClick={() => setIsAIDeploymentModalOpen(true)}
-                                className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 border border-purple-400/30 text-white shadow-[0_0_12px_rgba(168,85,247,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
-                                title="Deploy AI Trading Model"
-                            >
-                                <svg className="w-5 h-5 group-hover:scale-110 transition-transform bg-transparent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
-                                    <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
-                                    <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>
-                                    <path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/>
-                                    <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/>
-                                    <path d="M3.477 10.896a4 4 0 0 1 .585-.396"/>
-                                    <path d="M19.938 10.5a4 4 0 0 1 .585.396"/>
-                                    <path d="M6 18a4 4 0 0 1-1.967-.516"/>
-                                    <path d="M19.967 17.484A4 4 0 0 1 18 18"/>
-                                </svg>
-                            </button>
-
-                            {/* FLOATING TOP TOKENS DASHBOARD BUTTON */}
-                            <button
-                                onClick={() => setIsTopTokensModalOpen(true)}
-                                className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-400 hover:to-red-500 border border-orange-400/30 text-white shadow-[0_0_12px_rgba(249,115,22,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
-                                title="Top Tokens Dashboard"
-                            >
-                                <svg className="w-5 h-5 group-hover:scale-110 transition-transform bg-transparent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
-                                </svg>
-                            </button>
-
-                            {/* FLOATING TECHNICAL INDICATORS BUTTON */}
-                            <button
-                                onClick={() => setIsIndicatorModalOpen(true)}
-                                className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 border border-teal-400/30 text-white shadow-[0_0_12px_rgba(20,184,166,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
-                                title="Technical Analysis Indicators"
-                            >
-                                <svg className="w-5 h-5 group-hover:scale-110 transition-transform bg-transparent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                </svg>
-                            </button>
-                </motion.div>
-
-                {/* MAIN COLLAPSIBLE TOGGLE BUTTON WITH ARROW */}
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        setIsFloatingToolbarOpen(prev => !prev);
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-[#121624] to-[#0b0e17] hover:from-[#1b2236] hover:to-[#121624] border border-cyan-500/40 text-cyan-400 hover:text-white shadow-[0_0_15px_rgba(6,182,212,0.35)] z-[1000] transition-all duration-300 hover:scale-110 active:scale-95 group cursor-pointer"
-                    title={isFloatingToolbarOpen ? "Hide Tools" : "Show Floating Tools"}
-                >
-                    <ChevronLeft className={`w-5 h-5 transition-transform duration-300 ${isFloatingToolbarOpen ? 'rotate-180' : ''}`} />
-                </button>
-            </div>
-
-
-
-            {/* LEVEL 2 ORDER BOOK MODAL */}
-            {isOrderBookModalOpen && (
-                <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="relative w-[90%] md:w-[70%] lg:w-[60%] max-w-4xl h-[75vh] bg-white dark:bg-[#000000] rounded-xl shadow-2xl border border-gray-200 dark:border-white/10 overflow-hidden flex flex-col transform transition-all scale-100">
-                        <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-white/10 shrink-0">
-                            <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-cyan-500">Level 2 Order Book</h2>
-                            <button
-                                onClick={() => setIsOrderBookModalOpen(false)}
-                                className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                            </button>
                         </div>
-                        <div className="flex-1 overflow-hidden p-2">
-                            <OrderBook bids={bids} asks={asks} maxTotal={maxTotal} volumeThreshold={volumeThreshold} />
-                        </div>
-                    </div>
-                </div>
+                    )}
+
+                    <WallHunterModal
+                        isOpen={isWallHunterOpen}
+                        onClose={() => setIsWallHunterOpen(false)}
+                        symbol={symbol}
+                        exchange={exchange}
+                        bids={bids}
+                        asks={asks}
+                        onDeploySuccess={(botId) => {
+                            setActiveWallHunterId(Number(botId));
+                            setBotForChart('main', Number(botId));
+                            setIsWallHunterOpen(false);
+                        }}
+                    />
+
+                    <ForexWallHunterModal
+                        isOpen={isForexWallHunterOpen}
+                        onClose={() => setIsForexWallHunterOpen(false)}
+                        onDeploySuccess={(botId) => {
+                            setActiveWallHunterId(Number(botId));
+                            setBotForChart('main', Number(botId));
+                            setIsForexWallHunterOpen(false);
+                        }}
+                    />
+
+                    <AIModelDeploymentModal
+                        isOpen={isAIDeploymentModalOpen}
+                        onClose={() => setIsAIDeploymentModalOpen(false)}
+                        symbol={symbol}
+                        exchange={exchange}
+                        onDeploySuccess={(botId) => {
+                            setActiveWallHunterId(Number(botId));
+                            setIsAIDeploymentModalOpen(false);
+                            setActiveTab('heatmap');
+                        }}
+                    />
+
+                    <TopTokensModal 
+                        isOpen={isTopTokensModalOpen} 
+                        onClose={() => setIsTopTokensModalOpen(false)} 
+                    />
+
+                    <TechnicalIndicatorModal
+                        isOpen={isIndicatorModalOpen}
+                        onClose={() => setIsIndicatorModalOpen(false)}
+                        symbol={symbol}
+                    />
+                </div>,
+                document.body
             )}
-
-
-
-            
-            <WallHunterModal
-                isOpen={isWallHunterOpen}
-                onClose={() => setIsWallHunterOpen(false)}
-                symbol={symbol}
-                exchange={exchange}
-                bids={bids}
-                asks={asks}
-                onDeploySuccess={(botId) => {
-                    setActiveWallHunterId(Number(botId));
-                    setBotForChart('main', Number(botId));
-                    setIsWallHunterOpen(false);
-                }}
-            />
-
-            <ForexWallHunterModal
-                isOpen={isForexWallHunterOpen}
-                onClose={() => setIsForexWallHunterOpen(false)}
-                onDeploySuccess={(botId) => {
-                    setActiveWallHunterId(Number(botId));
-                    setBotForChart('main', Number(botId));
-                    setIsForexWallHunterOpen(false);
-                }}
-            />
-
-            <AIModelDeploymentModal
-                isOpen={isAIDeploymentModalOpen}
-                onClose={() => setIsAIDeploymentModalOpen(false)}
-                symbol={symbol}
-                exchange={exchange}
-                onDeploySuccess={(botId) => {
-                    setActiveWallHunterId(Number(botId));
-                    setIsAIDeploymentModalOpen(false);
-                    setActiveTab('heatmap');
-                }}
-            />
-
-            <TopTokensModal 
-                isOpen={isTopTokensModalOpen} 
-                onClose={() => setIsTopTokensModalOpen(false)} 
-            />
-
-            <TechnicalIndicatorModal
-                isOpen={isIndicatorModalOpen}
-                onClose={() => setIsIndicatorModalOpen(false)}
-                symbol={symbol}
-            />
         </div >
     );
 };

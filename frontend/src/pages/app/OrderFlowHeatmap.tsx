@@ -3558,6 +3558,7 @@ const OrderFlowChartPanel: React.FC<{
     showCrosshairAIPredict?: boolean;
     showBidAsk?: boolean;
     renderFloatingTools?: React.ReactNode;
+    onFullscreenChange?: (isFullscreen: boolean) => void;
 }> = ({ 
     config, 
     isMain, 
@@ -3584,7 +3585,8 @@ const OrderFlowChartPanel: React.FC<{
     parentL2Data, 
     showCrosshairAIPredict = false,
     showBidAsk = false,
-    renderFloatingTools
+    renderFloatingTools,
+    onFullscreenChange
 }) => {
     const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -3740,10 +3742,7 @@ const OrderFlowChartPanel: React.FC<{
                 <div className="flex items-center gap-2">
                     <button 
                         type="button"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setIsFullscreen(!isFullscreen);
-                        }}
+                        onClick={handleToggleFullscreen}
                         className={`p-1.5 rounded-lg transition-all flex items-center justify-center cursor-pointer ${isFullscreen ? 'bg-brand-primary text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] ring-2 ring-brand-primary/40' : 'text-gray-500 hover:text-brand-primary hover:bg-gray-100 dark:hover:bg-white/10'}`}
                         title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Chart"}
                     >
@@ -4456,7 +4455,8 @@ const OrderFlowHeatmap: React.FC = () => {
                             parentL2Data={c.isMain ? { bids, asks, walls, currentPrice, tradeEvent } : undefined}
                             showCrosshairAIPredict={showCrosshairAIPredict}
                             showBidAsk={showBidAsk}
-                            renderFloatingTools={!hasFullscreenChart && floatingToolsNode}
+                            renderFloatingTools={floatingToolsNode}
+                            onFullscreenChange={setHasFullscreenChart}
                         />
                     ))}
                 </div>
@@ -4615,7 +4615,7 @@ const OrderFlowHeatmap: React.FC = () => {
                 )}
             </div>
 
-{floatingToolsNode}
+            {!hasFullscreenChart && floatingToolsNode}
 
 
 

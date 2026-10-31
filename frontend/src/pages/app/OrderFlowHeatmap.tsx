@@ -2241,13 +2241,70 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             finishDragAt(e.clientY);
         };
 
+        let isPinchingChart = false;
+        let pinchStartDist = 0;
+        let pinchStartRange: { from: number; to: number } | null = null;
+        let pinchMidRatio = 0.5;
+
+        const cancelActiveLineDrag = () => {
+            if (!isDown) return;
+            isDown = false;
+            draggingOrderIdRef.current = null;
+            if (ghostLineRef.current && candlestickSeriesRef.current) {
+                try {
+                    candlestickSeriesRef.current.removePriceLine(ghostLineRef.current);
+                } catch {}
+                ghostLineRef.current = null;
+            }
+            chartRef.current?.applyOptions({ handleScroll: true, handleScale: true });
+        };
+
         const handleTouchStart = (e: TouchEvent) => {
-            if (e.touches.length !== 1) return;
+            if (e.touches.length === 2) {
+                // Cancel any 1-finger line drag and switch to 2-finger chart pinch zoom
+                cancelActiveLineDrag();
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+
+                const t0 = e.touches[0];
+                const t1 = e.touches[1];
+                const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+                const visibleRange = chartRef.current?.timeScale()?.getVisibleLogicalRange?.();
+                if (dist > 5 && visibleRange && typeof visibleRange.from === 'number' && typeof visibleRange.to === 'number') {
+                    isPinchingChart = true;
+                    pinchStartDist = dist;
+                    pinchStartRange = { from: visibleRange.from, to: visibleRange.to };
+                    const chartRect = container.getBoundingClientRect();
+                    const midX = (t0.clientX + t1.clientX) / 2 - chartRect.left;
+                    pinchMidRatio = chartRect.width > 0 ? Math.max(0.05, Math.min(0.95, midX / chartRect.width)) : 0.5;
+                    chartRef.current?.applyOptions({ handleScroll: false, handleScale: false });
+                }
+                return;
+            }
+            if (e.touches.length !== 1 || isPinchingChart) return;
             const touch = e.touches[0];
             startDragAt(touch.clientX, touch.clientY, true, e);
         };
 
         const handleTouchMove = (e: TouchEvent) => {
+            if (isPinchingChart && e.touches.length >= 2 && pinchStartRange && pinchStartDist > 0) {
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+
+                const t0 = e.touches[0];
+                const t1 = e.touches[1];
+                const currentDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+                if (currentDist > 5) {
+                    const scale = currentDist / pinchStartDist;
+                    const startSpan = Math.max(5, pinchStartRange.to - pinchStartRange.from);
+                    const newSpan = Math.max(10, Math.min(1500, startSpan / scale));
+                    const anchorLogical = pinchStartRange.from + startSpan * pinchMidRatio;
+                    const newFrom = anchorLogical - newSpan * pinchMidRatio;
+                    const newTo = anchorLogical + newSpan * (1 - pinchMidRatio);
+                    chartRef.current?.timeScale()?.setVisibleLogicalRange?.({ from: newFrom, to: newTo });
+                }
+                return;
+            }
             if (!isDown) return;
             const touch = e.touches[0] || e.changedTouches[0];
             if (!touch) return;
@@ -2255,6 +2312,15 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         const handleTouchEnd = (e: TouchEvent) => {
+            if (isPinchingChart) {
+                if (e.touches.length < 2) {
+                    isPinchingChart = false;
+                    pinchStartDist = 0;
+                    pinchStartRange = null;
+                    chartRef.current?.applyOptions({ handleScroll: true, handleScale: true });
+                }
+                return;
+            }
             if (!isDown) return;
             const touch = e.changedTouches[0] || e.touches[0];
             finishDragAt(touch ? touch.clientY : null);
@@ -2454,7 +2520,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     return (
         <div className="w-full h-full flex flex-col absolute inset-0">
             <div className="flex-1 relative">
-                <div ref={chartContainerRef} className="w-full h-full absolute inset-0 z-0" />
+                <div ref={chartContainerRef} className="w-full h-full absolute inset-0 z-0 touch-none select-none" />
                 <CandlestickTooltip candle={tooltipData} position={tooltipPos} chartContainerRef={chartContainerRef} />
                 {showCrosshairAIPredict && (
                     <button

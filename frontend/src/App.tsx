@@ -34,10 +34,27 @@ function App() {
     window.addEventListener('resize', updateAppHeight);
     window.addEventListener('orientationchange', updateAppHeight);
     window.visualViewport?.addEventListener('resize', updateAppHeight);
+
+    // Prevent multi-finger pinch from zooming the entire browser page/UI on tablets
+    const preventPagePinchZoom = (e: TouchEvent) => {
+      if (e.touches.length > 1 && e.cancelable) {
+        e.preventDefault();
+      }
+    };
+    const preventGestureZoom = (e: Event) => {
+      if (e.cancelable) e.preventDefault();
+    };
+    document.addEventListener('touchmove', preventPagePinchZoom, { passive: false });
+    document.addEventListener('gesturestart', preventGestureZoom, { passive: false } as AddEventListenerOptions);
+    document.addEventListener('gesturechange', preventGestureZoom, { passive: false } as AddEventListenerOptions);
+
     return () => {
       window.removeEventListener('resize', updateAppHeight);
       window.removeEventListener('orientationchange', updateAppHeight);
       window.visualViewport?.removeEventListener('resize', updateAppHeight);
+      document.removeEventListener('touchmove', preventPagePinchZoom);
+      document.removeEventListener('gesturestart', preventGestureZoom);
+      document.removeEventListener('gesturechange', preventGestureZoom);
     };
   }, []);
 

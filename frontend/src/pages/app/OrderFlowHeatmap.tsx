@@ -3613,11 +3613,11 @@ const OrderFlowChartPanel: React.FC<{
         return newWalls;
     }, [walls, bids, asks, volumeThreshold, volumeMode]);
 
-    return (
+    const panelContent = (
         <div 
             onClick={onSelectActive}
             className={isFullscreen 
-                ? 'fixed inset-0 z-[1200] flex flex-col bg-gray-50 dark:bg-[#000000] p-3 md:p-4 overflow-hidden w-screen h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)]' 
+                ? 'fixed inset-0 z-[99999] flex flex-col bg-[#050505] p-2 md:p-4 overflow-hidden w-screen h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)]' 
                 : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border transition-all duration-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col min-h-[240px] cursor-pointer ${
                     isActive && allChartsCount > 1 
                         ? 'border-brand-primary/80 ring-2 ring-brand-primary/20 shadow-[0_0_25px_rgba(59,130,246,0.2)]' 
@@ -3760,6 +3760,11 @@ const OrderFlowChartPanel: React.FC<{
             )}
         </div>
     );
+
+    if (isFullscreen && typeof document !== 'undefined') {
+        return createPortal(panelContent, document.body);
+    }
+    return panelContent;
 };
 
 // Main Page Component

@@ -16,7 +16,12 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 from app.services.notification import NotificationService
 from app.db.session import SessionLocal
-from app.services.manual_smart_chase_executor import _get_market_tick, _get_min_notional
+from app.services.manual_smart_chase_executor import (
+    _get_market_tick,
+    _get_min_notional,
+    _calc_order_notional_usd,
+    _is_inverse_market
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,15 +109,14 @@ async def execute_smart_peg_entry(
 
     # Detect Binance Hedge Mode on Futures
     is_hedge_mode = False
+    is_inverse = _is_inverse_market(exchange, symbol)
     if is_futures and exchange_name.lower().startswith('binance'):
-        for method_name in [
-            'fapiPrivateGetPositionSideDual',
-            'fapiprivateGetPositionsideDual',
-            'fapiprivate_get_positionside_dual',
-            'dapiPrivateGetPositionSideDual',
-            'dapiprivateGetPositionsideDual',
-            'dapiprivate_get_positionside_dual'
-        ]:
+        methods = (
+            ['dapiPrivateGetPositionSideDual', 'fapiPrivateGetPositionSideDual']
+            if is_inverse else
+            ['fapiPrivateGetPositionSideDual', 'dapiPrivateGetPositionSideDual']
+        )
+        for method_name in methods:
             method = getattr(exchange, method_name, None)
             if method and callable(method):
                 try:
@@ -210,8 +214,9 @@ async def execute_smart_peg_entry(
 
     # Initial clamp
     remaining_amount = await _sync_and_clamp_amount(initial_benchmark_price)
-    if remaining_amount <= 0 or (remaining_amount * initial_benchmark_price) < min_notional:
-        logger.warning(f"⚠️ [Smart Peg Entry] Amount {remaining_amount} below min notional ${min_notional:.2f}. Aborted.")
+    initial_notional = _calc_order_notional_usd(exchange, symbol, remaining_amount, initial_benchmark_price)
+    if remaining_amount <= 0 or initial_notional < min_notional:
+        logger.warning(f"⚠️ [Smart Peg Entry] Amount {remaining_amount} (~${initial_notional:.2f}) below min notional ${min_notional:.2f}. Aborted.")
         return None
 
     cid = peg_id or f"peg_{getattr(api_key_record, 'id', user_id)}_{symbol}_{int(datetime.utcnow().timestamp())}"
@@ -342,7 +347,7 @@ async def execute_smart_peg_entry(
 
         # Re-clamp amount
         remaining_amount = await _sync_and_clamp_amount(target_maker_price)
-        order_notional = remaining_amount * target_maker_price
+        order_notional = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
         if remaining_amount <= 0 or order_notional < min_notional:
             logger.info(f"✅ [Smart Peg Entry] Remaining value ${order_notional:.2f} < min notional ${min_notional:.2f}. Done.")
             break
@@ -616,7 +621,7 @@ async def execute_smart_peg_entry(
                             ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
                             ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
 
-                        rem_val = remaining_amount * target_maker_price
+                        rem_val = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
                         if remaining_amount <= 0 or rem_val < min_notional:
                             logger.info(f"✅ [Smart Peg Entry] Position complete (remaining ${rem_val:.2f} < ${min_notional:.2f}).")
                             final_res = cancel_res or {'status': 'closed', 'id': order_id, 'filled': total_filled}

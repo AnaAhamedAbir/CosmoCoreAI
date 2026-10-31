@@ -83,6 +83,11 @@ async def get_or_create_exchange(
 
         if is_futures:
             config['options']['defaultType'] = 'swap'
+            if exchange_name.lower() == 'binance':
+                config['options']['fetchMarkets'] = {'types': ['linear', 'inverse']}
+        elif exchange_name.lower() == 'binance':
+            config['options']['defaultType'] = 'spot'
+            config['options']['fetchMarkets'] = {'types': ['spot']}
 
         exchange = exchange_class(config)
 

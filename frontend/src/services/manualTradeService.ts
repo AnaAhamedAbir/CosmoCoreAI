@@ -13,6 +13,8 @@ export interface OrderPayload {
     marginMode?: 'cross' | 'isolated';
     reduceOnly?: boolean;
     maxChaseDeviationPct?: number;
+    contracts?: number;
+    positionSide?: string;
   };
   client_timestamp?: number;
   attached_tp?: {
@@ -64,11 +66,17 @@ export interface FastBalanceResponse {
   quote_free: number;
   quote_used?: number;
   quote_total?: number;
+  settle?: string;
   is_futures: boolean;
+  is_inverse?: boolean;
+  contract_size?: number;
 }
 
 export interface FastPositionResponse {
   amount: number;
+  contracts?: number;
+  contract_size?: number;
+  is_inverse?: boolean;
   side: 'long' | 'short' | 'none';
 }
 

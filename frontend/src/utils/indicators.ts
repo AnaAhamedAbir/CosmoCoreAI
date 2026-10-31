@@ -48,36 +48,53 @@ export interface MsbObResult {
 }
 
 // Simple Moving Average
-export const calculateSMA = (data: { time: any; close: number }[], period: number): IndicatorDataPoint[] => {
+export const calculateSMA = (data: { time: any; close: number }[], period: number = 20): IndicatorDataPoint[] => {
+    const p = Math.max(1, Math.floor(Number(period) || 20));
+    if (!Array.isArray(data) || data.length < p) return [];
+
     const result: IndicatorDataPoint[] = [];
-    for (let i = period - 1; i < data.length; i++) {
+    for (let i = p - 1; i < data.length; i++) {
+        if (!data[i] || data[i].time === undefined) continue;
         let sum = 0;
-        for (let j = 0; j < period; j++) {
-            sum += data[i - j].close;
+        let valid = true;
+        for (let j = 0; j < p; j++) {
+            const item = data[i - j];
+            if (!item || typeof item.close !== 'number' || isNaN(item.close)) {
+                valid = false;
+                break;
+            }
+            sum += item.close;
         }
-        result.push({ time: data[i].time, value: sum / period });
+        if (valid) {
+            result.push({ time: data[i].time, value: sum / p });
+        }
     }
     return result;
 };
 
 // Exponential Moving Average
-export const calculateEMA = (data: { time: any; close: number }[], period: number): IndicatorDataPoint[] => {
-    const result: IndicatorDataPoint[] = [];
-    if (data.length < period) return result;
+export const calculateEMA = (data: { time: any; close: number }[], period: number = 20): IndicatorDataPoint[] => {
+    const p = Math.max(1, Math.floor(Number(period) || 20));
+    if (!Array.isArray(data) || data.length < p || !data[p - 1]) return [];
 
-    const multiplier = 2 / (period + 1);
+    const result: IndicatorDataPoint[] = [];
+    const multiplier = 2 / (p + 1);
 
     // First EMA is SMA
     let sum = 0;
-    for (let i = 0; i < period; i++) {
-        sum += data[i].close;
+    for (let i = 0; i < p; i++) {
+        if (!data[i]) return [];
+        sum += data[i].close || 0;
     }
-    let prevEMA = sum / period;
+    let prevEMA = sum / p;
 
-    result.push({ time: data[period - 1].time, value: prevEMA });
+    if (data[p - 1]?.time !== undefined) {
+        result.push({ time: data[p - 1].time, value: prevEMA });
+    }
 
-    for (let i = period; i < data.length; i++) {
-        const ema = (data[i].close - prevEMA) * multiplier + prevEMA;
+    for (let i = p; i < data.length; i++) {
+        if (!data[i] || data[i].time === undefined) continue;
+        const ema = ((data[i].close || 0) - prevEMA) * multiplier + prevEMA;
         result.push({ time: data[i].time, value: ema });
         prevEMA = ema;
     }
@@ -87,27 +104,40 @@ export const calculateEMA = (data: { time: any; close: number }[], period: numbe
 
 // Bollinger Bands
 // Returns { time, upper, middle, lower }
-export const calculateBollingerBands = (data: { time: any; close: number }[], period: number, stdDev: number = 2): BollingerBandsDataPoint[] => {
+export const calculateBollingerBands = (data: { time: any; close: number }[], period: number = 20, stdDev: number = 2): BollingerBandsDataPoint[] => {
+    const p = Math.max(1, Math.floor(Number(period) || 20));
+    const sdMult = Number.isFinite(Number(stdDev)) && Number(stdDev) > 0 ? Number(stdDev) : 2;
+    if (!Array.isArray(data) || data.length < p) return [];
+
     const result: BollingerBandsDataPoint[] = [];
-    for (let i = period - 1; i < data.length; i++) {
+    for (let i = p - 1; i < data.length; i++) {
+        if (!data[i] || data[i].time === undefined) continue;
         let sum = 0;
-        for (let j = 0; j < period; j++) {
-            sum += data[i - j].close;
+        let valid = true;
+        for (let j = 0; j < p; j++) {
+            const item = data[i - j];
+            if (!item || typeof item.close !== 'number' || isNaN(item.close)) {
+                valid = false;
+                break;
+            }
+            sum += item.close;
         }
-        const middle = sum / period;
+        if (!valid) continue;
+
+        const middle = sum / p;
 
         let varianceSum = 0;
-        for (let j = 0; j < period; j++) {
-            varianceSum += Math.pow(data[i - j].close - middle, 2);
+        for (let j = 0; j < p; j++) {
+            varianceSum += Math.pow((data[i - j].close || 0) - middle, 2);
         }
-        const variance = varianceSum / period;
+        const variance = varianceSum / p;
         const sd = Math.sqrt(variance);
 
         result.push({
             time: data[i].time,
-            upper: middle + stdDev * sd,
+            upper: middle + sdMult * sd,
             middle: middle,
-            lower: middle - stdDev * sd
+            lower: middle - sdMult * sd
         });
     }
     return result;
@@ -115,15 +145,17 @@ export const calculateBollingerBands = (data: { time: any; close: number }[], pe
 
 // Relative Strength Index
 export const calculateRSI = (data: { time: any; close: number }[], period: number = 14): IndicatorDataPoint[] => {
-    const result: IndicatorDataPoint[] = [];
-    if (data.length <= period) return result;
+    const p = Math.max(1, Math.floor(Number(period) || 14));
+    if (!Array.isArray(data) || data.length <= p || !data[p]) return [];
 
+    const result: IndicatorDataPoint[] = [];
     let upSum = 0;
     let downSum = 0;
 
     // Calculate initial average gain/loss
-    for (let i = 1; i <= period; i++) {
-        const diff = data[i].close - data[i - 1].close;
+    for (let i = 1; i <= p; i++) {
+        if (!data[i] || !data[i - 1]) return [];
+        const diff = (data[i].close || 0) - (data[i - 1].close || 0);
         if (diff > 0) {
             upSum += diff;
         } else {
@@ -131,17 +163,20 @@ export const calculateRSI = (data: { time: any; close: number }[], period: numbe
         }
     }
 
-    let avgUp = upSum / period;
-    let avgDown = downSum / period;
+    let avgUp = upSum / p;
+    let avgDown = downSum / p;
 
-    result.push({
-        time: data[period].time,
-        value: avgDown === 0 ? 100 : 100 - (100 / (1 + avgUp / avgDown))
-    });
+    if (data[p]?.time !== undefined) {
+        result.push({
+            time: data[p].time,
+            value: avgDown === 0 ? 100 : 100 - (100 / (1 + avgUp / avgDown))
+        });
+    }
 
     // Wilder's Smoothing
-    for (let i = period + 1; i < data.length; i++) {
-        const diff = data[i].close - data[i - 1].close;
+    for (let i = p + 1; i < data.length; i++) {
+        if (!data[i] || !data[i - 1] || data[i].time === undefined) continue;
+        const diff = (data[i].close || 0) - (data[i - 1].close || 0);
         let up = 0;
         let down = 0;
 
@@ -151,8 +186,8 @@ export const calculateRSI = (data: { time: any; close: number }[], period: numbe
             down = -diff;
         }
 
-        avgUp = (avgUp * (period - 1) + up) / period;
-        avgDown = (avgDown * (period - 1) + down) / period;
+        avgUp = (avgUp * (p - 1) + up) / p;
+        avgDown = (avgDown * (p - 1) + down) / p;
 
         let rsi = 100;
         if (avgDown > 0) {
@@ -173,9 +208,11 @@ export const calculateRSI = (data: { time: any; close: number }[], period: numbe
  * @param prevEMA The EMA value of the previous candle
  * @param period EMA period
  */
-export const updateEMA = (data: { time: any; close: number }, prevEMA: number, period: number): IndicatorDataPoint => {
-    const multiplier = 2 / (period + 1);
-    const ema = (data.close - prevEMA) * multiplier + prevEMA;
+export const updateEMA = (data: { time: any; close: number }, prevEMA: number, period: number = 20): IndicatorDataPoint => {
+    if (!data || data.time === undefined) return { time: 0, value: prevEMA || 0 };
+    const p = Math.max(1, Math.floor(Number(period) || 20));
+    const multiplier = 2 / (p + 1);
+    const ema = ((data.close || 0) - (prevEMA || 0)) * multiplier + (prevEMA || 0);
     return { time: data.time, value: ema };
 };
 
@@ -184,34 +221,45 @@ export const updateEMA = (data: { time: any; close: number }, prevEMA: number, p
  * Note: BB needs some history to calculate standard deviation accurately.
  * For efficiency, we only use the last 'period' candles.
  */
-export const updateBollingerBands = (dataSlice: { time: any; close: number }[], period: number, stdDev: number = 2): BollingerBandsDataPoint => {
+export const updateBollingerBands = (dataSlice: { time: any; close: number }[], period: number = 20, stdDev: number = 2): BollingerBandsDataPoint => {
+    if (!Array.isArray(dataSlice) || dataSlice.length === 0) {
+        return { time: 0, upper: 0, middle: 0, lower: 0 };
+    }
     const lastPoint = dataSlice[dataSlice.length - 1];
+    if (!lastPoint || lastPoint.time === undefined) {
+        return { time: 0, upper: 0, middle: 0, lower: 0 };
+    }
+    const sdMult = Number.isFinite(Number(stdDev)) && Number(stdDev) > 0 ? Number(stdDev) : 2;
     let sum = 0;
     for (let i = 0; i < dataSlice.length; i++) {
-        sum += dataSlice[i].close;
+        sum += dataSlice[i]?.close || 0;
     }
     const middle = sum / dataSlice.length;
 
     let varianceSum = 0;
     for (let i = 0; i < dataSlice.length; i++) {
-        varianceSum += Math.pow(dataSlice[i].close - middle, 2);
+        varianceSum += Math.pow((dataSlice[i]?.close || 0) - middle, 2);
     }
     const variance = varianceSum / dataSlice.length;
     const sd = Math.sqrt(variance);
 
     return {
         time: lastPoint.time,
-        upper: middle + stdDev * sd,
+        upper: middle + sdMult * sd,
         middle: middle,
-        lower: middle - stdDev * sd
+        lower: middle - sdMult * sd
     };
 };
 
 /**
  * Updates RSI for the latest data point using Wilder's Smoothing
  */
-export const updateRSI = (data: { close: number; time: any }, prevClose: number, prevAvgUp: number, prevAvgDown: number, period: number): { rsi: IndicatorDataPoint, avgUp: number, avgDown: number } => {
-    const diff = data.close - prevClose;
+export const updateRSI = (data: { close: number; time: any }, prevClose: number, prevAvgUp: number, prevAvgDown: number, period: number = 14): { rsi: IndicatorDataPoint, avgUp: number, avgDown: number } => {
+    if (!data || data.time === undefined) {
+        return { rsi: { time: 0, value: 50 }, avgUp: prevAvgUp || 0, avgDown: prevAvgDown || 0 };
+    }
+    const p = Math.max(1, Math.floor(Number(period) || 14));
+    const diff = (data.close || 0) - (prevClose || 0);
     let up = 0;
     let down = 0;
 
@@ -221,8 +269,11 @@ export const updateRSI = (data: { close: number; time: any }, prevClose: number,
         down = -diff;
     }
 
-    const avgUp = (prevAvgUp * (period - 1) + up) / period;
-    const avgDown = (prevAvgDown * (period - 1) + down) / period;
+    const safePrevAvgUp = Number.isFinite(prevAvgUp) ? prevAvgUp : 0;
+    const safePrevAvgDown = Number.isFinite(prevAvgDown) ? prevAvgDown : 0;
+
+    const avgUp = (safePrevAvgUp * (p - 1) + up) / p;
+    const avgDown = (safePrevAvgDown * (p - 1) + down) / p;
 
     let rsiValue = 100;
     if (avgDown > 0) {
@@ -242,11 +293,12 @@ export const updateRSI = (data: { close: number; time: any }, prevClose: number,
  * @param period ATR period
  */
 export const calculateATR = (data: { time: any; high: number; low: number; close: number }[], period: number = 14): IndicatorDataPoint[] => {
-    const result: IndicatorDataPoint[] = [];
-    if (data.length <= period) return result;
+    const p = Math.max(1, Math.floor(Number(period) || 14));
+    if (!Array.isArray(data) || data.length <= p) return [];
 
     const trs: number[] = [];
     for (let i = 1; i < data.length; i++) {
+        if (!data[i] || !data[i - 1]) continue;
         const h = data[i].high;
         const l = data[i].low;
         const pc = data[i - 1].close;
@@ -254,18 +306,25 @@ export const calculateATR = (data: { time: any; high: number; low: number; close
         trs.push(tr);
     }
 
+    if (trs.length < p) return [];
+
+    const result: IndicatorDataPoint[] = [];
     // First ATR is SMA of TRs
     let trSum = 0;
-    for (let i = 0; i < period; i++) {
+    for (let i = 0; i < p; i++) {
         trSum += trs[i];
     }
-    let prevATR = trSum / period;
-    result.push({ time: data[period].time, value: prevATR });
+    let prevATR = trSum / p;
+    if (data[p]?.time !== undefined) {
+        result.push({ time: data[p].time, value: prevATR });
+    }
 
     // Subsequent ATRs use smoothing
-    for (let i = period; i < trs.length; i++) {
-        const atr = (prevATR * (period - 1) + trs[i]) / period;
-        result.push({ time: data[i + 1].time, value: atr });
+    for (let i = p; i < trs.length; i++) {
+        const nextCandle = data[i + 1];
+        if (!nextCandle || nextCandle.time === undefined) continue;
+        const atr = (prevATR * (p - 1) + trs[i]) / p;
+        result.push({ time: nextCandle.time, value: atr });
         prevATR = atr;
     }
 
@@ -289,23 +348,29 @@ export const calculateIchimoku = (
     senkouBPeriod: number = 52,
     displacement: number = 26
 ): IchimokuDataPoint[] => {
+    const tp = Math.max(1, Math.floor(Number(tenkanPeriod) || 9));
+    const kp = Math.max(1, Math.floor(Number(kijunPeriod) || 26));
+    const sbp = Math.max(1, Math.floor(Number(senkouBPeriod) || 52));
+    const disp = Math.max(1, Math.floor(Number(displacement) || 26));
+
     const result: IchimokuDataPoint[] = [];
-    if (data.length < Math.min(tenkanPeriod, kijunPeriod, senkouBPeriod)) return result;
+    if (!Array.isArray(data) || data.length < Math.min(tp, kp, sbp)) return result;
 
     const getExtremes = (slice: { high: number; low: number }[]) => {
         let h = -Infinity;
         let l = Infinity;
         for (const p of slice) {
-            if (p.high > h) h = p.high;
-            if (p.low < l) l = p.low;
+            if (p && p.high > h) h = p.high;
+            if (p && p.low < l) l = p.low;
         }
         return (h + l) / 2;
     };
 
     for (let i = 0; i < data.length; i++) {
-        const tenkan = i >= tenkanPeriod - 1 ? getExtremes(data.slice(i - tenkanPeriod + 1, i + 1)) : null;
-        const kijun = i >= kijunPeriod - 1 ? getExtremes(data.slice(i - kijunPeriod + 1, i + 1)) : null;
-        const senkouB = i >= senkouBPeriod - 1 ? getExtremes(data.slice(i - senkouBPeriod + 1, i + 1)) : null;
+        if (!data[i] || data[i].time === undefined) continue;
+        const tenkan = i >= tp - 1 ? getExtremes(data.slice(i - tp + 1, i + 1)) : null;
+        const kijun = i >= kp - 1 ? getExtremes(data.slice(i - kp + 1, i + 1)) : null;
+        const senkouB = i >= sbp - 1 ? getExtremes(data.slice(i - sbp + 1, i + 1)) : null;
         
         let senkouA = null;
         if (tenkan !== null && kijun !== null) {
@@ -313,8 +378,8 @@ export const calculateIchimoku = (
         }
 
         let chikou = null;
-        if (i + displacement < data.length) {
-            chikou = data[i + displacement].close;
+        if (i + disp < data.length && data[i + disp]) {
+            chikou = data[i + disp].close;
         }
 
         result.push({
@@ -539,11 +604,14 @@ export const calculateUTBotAlerts = (
     h: boolean = false
 ): UTBotDataPoint[] => {
     const result: UTBotDataPoint[] = [];
-    if (data.length <= c) return result;
+    const sens = Number(a) > 0 ? Number(a) : 1;
+    const atrPeriod = Math.max(1, Math.floor(Number(c) || 10));
+    if (!Array.isArray(data) || data.length <= atrPeriod) return result;
 
     // Calculate True Range and RMA (TradingView ATR)
     const trs: number[] = [0]; 
     for (let i = 1; i < data.length; i++) {
+        if (!data[i] || !data[i - 1]) { trs.push(0); continue; }
         const h_val = data[i].high;
         const l_val = data[i].low;
         const pc = data[i - 1].close;
@@ -553,23 +621,25 @@ export const calculateUTBotAlerts = (
 
     const atrs: number[] = new Array(data.length).fill(0);
     let trSum = 0;
-    for (let i = 1; i <= c; i++) {
-        trSum += trs[i];
+    for (let i = 1; i <= atrPeriod; i++) {
+        trSum += trs[i] || 0;
     }
-    atrs[c] = trSum / c;
+    atrs[atrPeriod] = trSum / atrPeriod;
 
-    const alpha = 1 / c;
-    for (let i = c + 1; i < data.length; i++) {
-        atrs[i] = alpha * trs[i] + (1 - alpha) * atrs[i - 1];
+    const alpha = 1 / atrPeriod;
+    for (let i = atrPeriod + 1; i < data.length; i++) {
+        atrs[i] = alpha * (trs[i] || 0) + (1 - alpha) * atrs[i - 1];
     }
 
     // Heikin Ashi Calculation
     const haCloses: number[] = new Array(data.length).fill(0);
+    if (!data[0]) return result;
     let prevHaOpen = data[0].open;
     let prevHaClose = (data[0].open + data[0].high + data[0].low + data[0].close) / 4;
     haCloses[0] = prevHaClose;
 
     for (let i = 1; i < data.length; i++) {
+        if (!data[i]) continue;
         const haClose = (data[i].open + data[i].high + data[i].low + data[i].close) / 4;
         const haOpen = (prevHaOpen + prevHaClose) / 2;
         haCloses[i] = haClose;
@@ -582,9 +652,10 @@ export const calculateUTBotAlerts = (
     let pos = 0;
     
     for (let i = 1; i < data.length; i++) {
+        if (!data[i] || !data[i - 1] || data[i].time === undefined) continue;
         const src = h ? haCloses[i] : data[i].close;
         const src1 = h ? haCloses[i - 1] : data[i - 1].close;
-        const nLoss = a * atrs[i];
+        const nLoss = sens * atrs[i];
         
         let newXATRTrailingStop = xATRTrailingStop;
         
@@ -605,9 +676,6 @@ export const calculateUTBotAlerts = (
             newPos = -1;
         }
         
-        // Crossovers logic from PineScript:
-        // ema = ema(src, 1) -> Which is just `src`
-        // above = crossover(ema, xATRTrailingStop)
         const above = src > newXATRTrailingStop && src1 <= xATRTrailingStop;
         const below = src < newXATRTrailingStop && src1 >= xATRTrailingStop;
         
@@ -616,7 +684,7 @@ export const calculateUTBotAlerts = (
         const barbuy = src > newXATRTrailingStop;
         const barsell = src < newXATRTrailingStop;
         
-        if (i >= c) {
+        if (i >= atrPeriod) {
             result.push({
                 time: data[i].time,
                 trailingStop: newXATRTrailingStop,
@@ -679,6 +747,7 @@ export const calculateSessions = (
     timezoneOffset: number = 0
 ): SessionData[] => {
     const result: SessionData[] = [];
+    if (!Array.isArray(data) || data.length === 0 || !sessionStr) return result;
     
     let currentHigh = -Infinity;
     let currentLow = Infinity;
@@ -700,6 +769,7 @@ export const calculateSessions = (
 
     for (let i = 0; i < data.length; i++) {
         const bar = data[i];
+        if (!bar || bar.time === undefined) continue;
         const timeMs = (typeof bar.time === 'number' && bar.time < 10000000000) ? bar.time * 1000 : bar.time;
         const nowInSession = isTimeInSession(timeMs, sessionStr, timezoneOffset);
         
@@ -794,21 +864,26 @@ export const calculateMACD = (
     slowPeriod: number = 26,
     signalPeriod: number = 9
 ): MACDDataPoint[] => {
-    const result: MACDDataPoint[] = [];
-    if (data.length < slowPeriod) return result;
+    const fast = Math.max(1, Math.floor(Number(fastPeriod) || 12));
+    const slow = Math.max(1, Math.floor(Number(slowPeriod) || 26));
+    const signal = Math.max(1, Math.floor(Number(signalPeriod) || 9));
 
-    const fastEMA = calculateEMA(data, fastPeriod);
-    const slowEMA = calculateEMA(data, slowPeriod);
+    const result: MACDDataPoint[] = [];
+    if (!Array.isArray(data) || data.length < slow) return result;
+
+    const fastEMA = calculateEMA(data, fast);
+    const slowEMA = calculateEMA(data, slow);
 
     const macdLineData: { time: any; close: number }[] = [];
-    for (let i = slowPeriod - 1; i < data.length; i++) {
+    for (let i = slow - 1; i < data.length; i++) {
+        if (!data[i] || data[i].time === undefined) continue;
         const time = data[i].time;
         const currentFast = fastEMA.find(e => e.time === time)?.value || 0;
         const currentSlow = slowEMA.find(e => e.time === time)?.value || 0;
         macdLineData.push({ time, close: currentFast - currentSlow });
     }
 
-    const signalEMA = calculateEMA(macdLineData, signalPeriod);
+    const signalEMA = calculateEMA(macdLineData, signal);
 
     for (let i = 0; i < macdLineData.length; i++) {
         const time = macdLineData[i].time;
@@ -840,8 +915,10 @@ export const calculateSupertrend = (
     multiplier: number = 3.0,
     changeATR: boolean = true
 ): SupertrendDataPoint[] => {
+    const p = Math.max(1, Math.floor(Number(period) || 10));
+    const mult = Number.isFinite(Number(multiplier)) && Number(multiplier) > 0 ? Number(multiplier) : 3.0;
     const result: SupertrendDataPoint[] = [];
-    if (data.length <= period) return result;
+    if (!Array.isArray(data) || data.length <= p) return result;
 
     const hl2 = data.map(d => (d.high + d.low) / 2);
     
@@ -858,20 +935,20 @@ export const calculateSupertrend = (
     const atrs: number[] = new Array(data.length).fill(0);
     if (changeATR) {
         // Pine's atr(period) is RMA (Relative Moving Average)
-        // Pine seeds with SMA of first `period` TR values (indices 0 to period-1)
+        // Pine seeds with SMA of first `p` TR values (indices 0 to p-1)
         let trSum = 0;
-        for (let i = 0; i < period; i++) trSum += trs[i];
-        atrs[period - 1] = trSum / period;
-        const alpha = 1 / period;
-        for (let i = period; i < data.length; i++) {
-            atrs[i] = alpha * trs[i] + (1 - alpha) * atrs[i - 1];
+        for (let i = 0; i < p; i++) trSum += trs[i] || 0;
+        atrs[p - 1] = trSum / p;
+        const alpha = 1 / p;
+        for (let i = p; i < data.length; i++) {
+            atrs[i] = alpha * (trs[i] || 0) + (1 - alpha) * atrs[i - 1];
         }
     } else {
         // SMA of TR
-        for (let i = period; i < data.length; i++) {
+        for (let i = p; i < data.length; i++) {
             let sum = 0;
-            for (let j = 0; j < period; j++) sum += trs[i - j];
-            atrs[i] = sum / period;
+            for (let j = 0; j < p; j++) sum += trs[i - j] || 0;
+            atrs[i] = sum / p;
         }
     }
 
@@ -882,7 +959,8 @@ export const calculateSupertrend = (
     let prevTrend = 1;
 
     for (let i = 0; i < data.length; i++) {
-        if (i < period) {
+        if (!data[i] || data[i].time === undefined) continue;
+        if (i < p) {
             result.push({ 
                 time: data[i].time, 
                 value: 0, 
@@ -953,8 +1031,9 @@ export const calculateSqueeze = (
     bbMult: number = 2.0,
     kcMult: number = 1.5
 ): SqueezeDataPoint[] => {
+    const len = Math.max(1, Math.floor(Number(length) || 20));
     const result: SqueezeDataPoint[] = [];
-    if (data.length < length) return result;
+    if (!Array.isArray(data) || data.length < len) return result;
 
     const bbData = calculateBollingerBands(data, length, bbMult);
     const smaData = calculateSMA(data, length);
@@ -999,7 +1078,7 @@ export const calculateSqueeze = (
 // On-Balance Volume (OBV)
 export const calculateOBV = (data: { time: any; close: number; volume: number }[]): IndicatorDataPoint[] => {
     const result: IndicatorDataPoint[] = [];
-    if (data.length === 0) return result;
+    if (!Array.isArray(data) || data.length === 0) return result;
 
     let obv = 0;
     result.push({ time: data[0].time, value: obv });
@@ -1021,10 +1100,14 @@ export const calculateOBV = (data: { time: any; close: number; volume: number }[
 };
 
 // Stochastic RSI
-export const calculateStochRSI = (data: { time: any; close: number }[], rsiPeriod: number, stochPeriod: number, kPeriod: number): { time: any; k: number }[] => {
+export const calculateStochRSI = (data: { time: any; close: number }[], rsiPeriod: number = 14, stochPeriod: number = 14, kPeriod: number = 3): { time: any; k: number }[] => {
+    const rp = Math.max(1, Math.floor(Number(rsiPeriod) || 14));
+    const sp = Math.max(1, Math.floor(Number(stochPeriod) || 14));
+    const kp = Math.max(1, Math.floor(Number(kPeriod) || 3));
     const result: { time: any; k: number }[] = [];
-    const rsiData = calculateRSI(data, rsiPeriod);
-    if (rsiData.length < stochPeriod) return result;
+    if (!Array.isArray(data)) return result;
+    const rsiData = calculateRSI(data, rp);
+    if (rsiData.length < sp) return result;
 
     const stochRSI: { time: any; stoch: number }[] = [];
     for (let i = stochPeriod - 1; i < rsiData.length; i++) {
@@ -1052,9 +1135,10 @@ export const calculateStochRSI = (data: { time: any; close: number }[], rsiPerio
 };
 
 // ADX (Average Directional Index)
-export const calculateADX = (data: { time: any; high: number; low: number; close: number }[], period: number): { time: any; adx: number; diPlus: number; diMinus: number }[] => {
+export const calculateADX = (data: { time: any; high: number; low: number; close: number }[], period: number = 14): { time: any; adx: number; diPlus: number; diMinus: number }[] => {
+    const p = Math.max(1, Math.floor(Number(period) || 14));
     const result: { time: any; adx: number; diPlus: number; diMinus: number }[] = [];
-    if (data.length < period + 1) return result;
+    if (!Array.isArray(data) || data.length < p + 1) return result;
 
     const tr: number[] = [];
     const plusDM: number[] = [];
@@ -1146,7 +1230,8 @@ export const calculateADX = (data: { time: any; high: number; low: number; close
 
 // Calculate Pivots (Structure)
 export const calculateStructure = (data: { high: number; low: number }[], lookback: number = 5): { isBullStruct: boolean; isBearStruct: boolean } => {
-    if (data.length < lookback * 2 + 1) return { isBullStruct: false, isBearStruct: false };
+    const lb = Math.max(1, Math.floor(Number(lookback) || 5));
+    if (!Array.isArray(data) || data.length < lb * 2 + 1) return { isBullStruct: false, isBearStruct: false };
 
     let lastPh = 0, prevPh = 0;
     let lastPl = Infinity, prevPl = Infinity;
@@ -1189,9 +1274,10 @@ export const calculateMsbOb = (
     fibFactor: number = 0.33,
     deleteBroken: boolean = true
 ): MsbObResult => {
+    const zl = Math.max(1, Math.floor(Number(zigzagLen) || 9));
     const points: MsbObDataPoint[] = [];
     const zones: MsbObZone[] = [];
-    if (data.length < zigzagLen * 2) return { points, zones };
+    if (!Array.isArray(data) || data.length < zl * 2) return { points, zones };
 
     const highPointsArr: { val: number; idx: number }[] = [];
     const lowPointsArr: { val: number; idx: number }[] = [];
@@ -1421,8 +1507,10 @@ export const calculateWickRejectionSR = (
     atrPeriod: number = 14,
     atrMultiplier: number = 0.5,
 ): WickSRResult => {
+    const ap = Math.max(1, Math.floor(Number(atrPeriod) || 14));
+    const lb = Math.max(ap + 2, Math.floor(Number(lookback) || 300));
     const result: WickSRResult = { levels: [] };
-    if (data.length < atrPeriod + 2) return result;
+    if (!Array.isArray(data) || data.length < ap + 2) return result;
 
     // ── Step 1: Use the lookback slice ──────────────────────────────────────
     const slice = data.slice(-Math.min(lookback, data.length));
@@ -1596,7 +1684,7 @@ export const calculateVWAPSD = (
     mult3: number = 2.5
 ): VWAPSDDataPoint[] => {
     const result: VWAPSDDataPoint[] = [];
-    if (data.length === 0) return result;
+    if (!Array.isArray(data) || data.length === 0) return result;
 
     let cumVolume = 0;
     let cumPriceVolume = 0;

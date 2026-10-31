@@ -309,9 +309,17 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
 
     const updateSetting = (key: keyof IndicatorSettings, value: number) => {
         if (!isNaN(value)) {
+            const isPeriod = /period|lookback|length|len|fast|slow|signal|minconf|touches/i.test(String(key));
+            const isPositiveFloat = /stddev|dev|mult|multiplier|factor|sensitiv/i.test(String(key));
+            let safeValue = value;
+            if (isPeriod) {
+                safeValue = Math.max(1, Math.floor(value));
+            } else if (isPositiveFloat) {
+                safeValue = value <= 0 ? 0.1 : value;
+            }
             onSettingsChange({
                 ...settings,
-                [key]: value
+                [key]: safeValue
             });
         }
     };

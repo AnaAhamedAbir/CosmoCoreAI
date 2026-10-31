@@ -12,6 +12,33 @@ interface BotState {
     setIndicatorSettings: (settings: IndicatorSettings) => void;
 }
 
+export const sanitizeIndicatorSettings = (settings: IndicatorSettings): IndicatorSettings => {
+    if (!settings) return settings;
+    return {
+        ...settings,
+        emaPeriod: Math.max(1, Math.floor(Number(settings.emaPeriod) || 20)),
+        bbPeriod: Math.max(1, Math.floor(Number(settings.bbPeriod) || 20)),
+        bbStdDev: Number.isFinite(Number(settings.bbStdDev)) && Number(settings.bbStdDev) > 0 ? Number(settings.bbStdDev) : 2,
+        rsiPeriod: Math.max(1, Math.floor(Number(settings.rsiPeriod) || 14)),
+        macdFast: Math.max(1, Math.floor(Number(settings.macdFast) || 12)),
+        macdSlow: Math.max(1, Math.floor(Number(settings.macdSlow) || 26)),
+        macdSignal: Math.max(1, Math.floor(Number(settings.macdSignal) || 9)),
+        utBotSensitivity: Number.isFinite(Number(settings.utBotSensitivity)) && Number(settings.utBotSensitivity) > 0 ? Number(settings.utBotSensitivity) : 1,
+        utBotAtrPeriod: Math.max(1, Math.floor(Number(settings.utBotAtrPeriod) || 10)),
+        supertrendAtrPeriod: Math.max(1, Math.floor(Number(settings.supertrendAtrPeriod) || 10)),
+        supertrendMultiplier: Number.isFinite(Number(settings.supertrendMultiplier)) && Number(settings.supertrendMultiplier) > 0 ? Number(settings.supertrendMultiplier) : 3,
+        msbObZigzagLen: Math.max(1, Math.floor(Number(settings.msbObZigzagLen) || 9)),
+        msbObFibFactor: Number.isFinite(Number(settings.msbObFibFactor)) ? Number(settings.msbObFibFactor) : 0.33,
+        wickSRLookback: Math.max(10, Math.floor(Number(settings.wickSRLookback) || 300)),
+        wickSRMinTouches: Math.max(1, Math.floor(Number(settings.wickSRMinTouches) || 25)),
+        wickSRAtrPeriod: Math.max(1, Math.floor(Number(settings.wickSRAtrPeriod) || 14)),
+        wickSRAtrMultiplier: Number.isFinite(Number(settings.wickSRAtrMultiplier)) && Number(settings.wickSRAtrMultiplier) > 0 ? Number(settings.wickSRAtrMultiplier) : 0.5,
+        vwapSDMultiplier1: Number.isFinite(Number(settings.vwapSDMultiplier1)) ? Number(settings.vwapSDMultiplier1) : 1.0,
+        vwapSDMultiplier2: Number.isFinite(Number(settings.vwapSDMultiplier2)) ? Number(settings.vwapSDMultiplier2) : 2.0,
+        vwapSDMultiplier3: Number.isFinite(Number(settings.vwapSDMultiplier3)) ? Number(settings.vwapSDMultiplier3) : 2.5,
+    };
+};
+
 export const useBotStore = create<BotState>()(
     persist(
         (set) => ({
@@ -228,10 +255,17 @@ export const useBotStore = create<BotState>()(
         aetherSmc: true,
         aetherFvg: true,
     },
-    setIndicatorSettings: (settings) => set({ indicatorSettings: settings }),
+    setIndicatorSettings: (settings) => set((state) => ({
+        indicatorSettings: sanitizeIndicatorSettings({ ...state.indicatorSettings, ...settings })
+    })),
         }),
         {
             name: 'bot-store-storage',
+            onRehydrateStorage: () => (state) => {
+                if (state && state.indicatorSettings) {
+                    state.indicatorSettings = sanitizeIndicatorSettings(state.indicatorSettings);
+                }
+            },
         }
     )
 );

@@ -47,26 +47,32 @@ interface IndicatorConfig {
 
 // Simple Moving Average (SMA)
 const calculateSMA = (data: CandleData[], period: number) => {
+    const p = Math.max(1, Math.floor(Number(period) || 20));
+    if (!Array.isArray(data) || data.length < p) return [];
     const smaData = [];
-    for (let i = period - 1; i < data.length; i++) {
-        const slice = data.slice(i - period + 1, i + 1);
-        const sum = slice.reduce((acc, val) => acc + val.close, 0);
-        smaData.push({ time: data[i].time as Time, value: sum / period });
+    for (let i = p - 1; i < data.length; i++) {
+        if (!data[i] || data[i].time === undefined) continue;
+        const slice = data.slice(i - p + 1, i + 1);
+        const sum = slice.reduce((acc, val) => acc + (val?.close || 0), 0);
+        smaData.push({ time: data[i].time as Time, value: sum / p });
     }
     return smaData;
 };
 
 // Exponential Moving Average (EMA)
 const calculateEMA = (data: CandleData[], period: number) => {
+    const p = Math.max(1, Math.floor(Number(period) || 20));
+    if (!Array.isArray(data) || data.length === 0 || !data[0]) return [];
     const emaData = [];
-    const k = 2 / (period + 1);
-    let ema = data[0].close;
+    const k = 2 / (p + 1);
+    let ema = data[0].close || 0;
 
     for (let i = 0; i < data.length; i++) {
+        if (!data[i] || data[i].time === undefined) continue;
         if (i === 0) {
             emaData.push({ time: data[i].time as Time, value: data[i].close });
         } else {
-            ema = data[i].close * k + ema * (1 - k);
+            ema = (data[i].close || 0) * k + ema * (1 - k);
             emaData.push({ time: data[i].time as Time, value: ema });
         }
     }
@@ -75,27 +81,29 @@ const calculateEMA = (data: CandleData[], period: number) => {
 
 // Bollinger Bands
 const calculateBollingerBands = (data: CandleData[], period: number, stdDevMultiplier: number) => {
-    const upper = [];
-    const lower = [];
-    const middle = calculateSMA(data, period);
+    const p = Math.max(1, Math.floor(Number(period) || 20));
+    const mult = Number.isFinite(Number(stdDevMultiplier)) ? Number(stdDevMultiplier) : 2;
+    const upper: { time: Time; value: number }[] = [];
+    const lower: { time: Time; value: number }[] = [];
+    if (!Array.isArray(data) || data.length < p) return { upper, middle: [], lower };
 
-    // Map logic needs to match indices properly
-    // We start from the point where SMA exists
-    const startIndex = period - 1;
+    const middle = calculateSMA(data, p);
+    const startIndex = p - 1;
 
     for (let i = 0; i < middle.length; i++) {
         const dataIndex = startIndex + i;
         const currentData = data[dataIndex];
-        const slice = data.slice(dataIndex - period + 1, dataIndex + 1);
+        if (!currentData || currentData.time === undefined) continue;
+        const slice = data.slice(dataIndex - p + 1, dataIndex + 1);
         
         // Calculate Standard Deviation
         const mean = middle[i].value;
-        const squaredDiffs = slice.map(d => Math.pow(d.close - mean, 2));
-        const variance = squaredDiffs.reduce((acc, val) => acc + val, 0) / period;
+        const squaredDiffs = slice.map(d => Math.pow((d?.close || 0) - mean, 2));
+        const variance = squaredDiffs.reduce((acc, val) => acc + val, 0) / p;
         const stdDev = Math.sqrt(variance);
 
-        upper.push({ time: currentData.time as Time, value: mean + stdDev * stdDevMultiplier });
-        lower.push({ time: currentData.time as Time, value: mean - stdDev * stdDevMultiplier });
+        upper.push({ time: currentData.time as Time, value: mean + stdDev * mult });
+        lower.push({ time: currentData.time as Time, value: mean - stdDev * mult });
     }
 
     return { upper, middle, lower };

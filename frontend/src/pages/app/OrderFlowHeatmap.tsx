@@ -405,15 +405,17 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
                 if (!isMounted) return;
 
-                const candles = data.map((k: any) => ({
-                    time: k.time as any,
-                    open: parseFloat(k.open),
-                    high: parseFloat(k.high),
-                    low: parseFloat(k.low),
-                    close: parseFloat(k.close),
-                    volume: parseFloat(k.volume || 100),
-                    patterns: k.patterns || [],
-                }));
+                const candles = (Array.isArray(data) ? data : [])
+                    .filter((k: any) => k && k.time != null && !isNaN(Number(k.close)))
+                    .map((k: any) => ({
+                        time: k.time as any,
+                        open: parseFloat(k.open),
+                        high: parseFloat(k.high),
+                        low: parseFloat(k.low),
+                        close: parseFloat(k.close),
+                        volume: parseFloat(k.volume || 100),
+                        patterns: k.patterns || [],
+                    }));
                 if (candlestickSeriesRef.current && isMounted) {
                     candlestickSeriesRef.current.setData(candles);
                     allCandlesRef.current = candles;
@@ -442,18 +444,23 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
                     // Initialize Indicators immediately after fetching history
                     if (candles.length > 0) {
+                        const emaP = Math.max(1, Math.floor(Number(indicatorSettings.emaPeriod) || 20));
+                        const bbP = Math.max(1, Math.floor(Number(indicatorSettings.bbPeriod) || 20));
+                        const bbDev = Number.isFinite(Number(indicatorSettings.bbStdDev)) && Number(indicatorSettings.bbStdDev) > 0 ? Number(indicatorSettings.bbStdDev) : 2;
+                        const rsiP = Math.max(1, Math.floor(Number(indicatorSettings.rsiPeriod) || 14));
+
                         if (indicatorSettings.showEMA && emaSeriesRef.current) {
-                            emaSeriesRef.current.setData(calculateEMA(candles, indicatorSettings.emaPeriod) as any);
+                            emaSeriesRef.current.setData(calculateEMA(candles, emaP) as any);
                         }
                         if (indicatorSettings.showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current) {
-                            const bbResult = calculateBollingerBands(candles, indicatorSettings.bbPeriod, indicatorSettings.bbStdDev);
+                            const bbResult = calculateBollingerBands(candles, bbP, bbDev);
                             bbUpperSeriesRef.current.setData(bbResult.map((d: any) => ({ time: d.time, value: d.upper })) as any);
                             bbMiddleSeriesRef.current.setData(bbResult.map((d: any) => ({ time: d.time, value: d.middle })) as any);
                             bbLowerSeriesRef.current.setData(bbResult.map((d: any) => ({ time: d.time, value: d.lower })) as any);
                             setBbData(bbResult);
                         }
                         if (indicatorSettings.showRSI && rsiSeriesRef.current) {
-                            rsiSeriesRef.current.setData(calculateRSI(candles, indicatorSettings.rsiPeriod) as any);
+                            rsiSeriesRef.current.setData(calculateRSI(candles, rsiP) as any);
                         }
                         if (indicatorSettings.showUTBot && utBotSeriesRef.current) {
                             const utData = calculateUTBotAlerts(candles, indicatorSettings.utBotSensitivity, indicatorSettings.utBotAtrPeriod, indicatorSettings.utBotUseHeikinAshi);
@@ -679,18 +686,23 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
         if (data.length === 0) return;
 
-        if (indicatorSettings.showEMA) {
-            emaSeriesRef.current.setData(calculateEMA(data, indicatorSettings.emaPeriod) as any);
+        const emaP = Math.max(1, Math.floor(Number(indicatorSettings.emaPeriod) || 20));
+        const bbP = Math.max(1, Math.floor(Number(indicatorSettings.bbPeriod) || 20));
+        const bbDev = Number.isFinite(Number(indicatorSettings.bbStdDev)) && Number(indicatorSettings.bbStdDev) > 0 ? Number(indicatorSettings.bbStdDev) : 2;
+        const rsiP = Math.max(1, Math.floor(Number(indicatorSettings.rsiPeriod) || 14));
+
+        if (indicatorSettings.showEMA && emaSeriesRef.current) {
+            emaSeriesRef.current.setData(calculateEMA(data, emaP) as any);
         }
-        if (showBB) {
-            const bbResult = calculateBollingerBands(data, indicatorSettings.bbPeriod, indicatorSettings.bbStdDev);
+        if (showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current) {
+            const bbResult = calculateBollingerBands(data, bbP, bbDev);
             bbUpperSeriesRef.current.setData(bbResult.map(d => ({ time: d.time, value: d.upper })) as any);
             bbMiddleSeriesRef.current.setData(bbResult.map(d => ({ time: d.time, value: d.middle })) as any);
             bbLowerSeriesRef.current.setData(bbResult.map(d => ({ time: d.time, value: d.lower })) as any);
             setBbData(bbResult);
         }
-        if (indicatorSettings.showRSI) {
-            rsiSeriesRef.current.setData(calculateRSI(data, indicatorSettings.rsiPeriod) as any);
+        if (indicatorSettings.showRSI && rsiSeriesRef.current) {
+            rsiSeriesRef.current.setData(calculateRSI(data, rsiP) as any);
         }
 
         if (indicatorSettings.showUTBot && utBotSeriesRef.current) {
@@ -1408,13 +1420,18 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             try {
                 const curData = allCandlesRef.current;
                 const lastCandle = lastCandleRef.current as any;
-                if (curData.length > 0) {
+                if (curData && curData.length > 0) {
+                    const emaP = Math.max(1, Math.floor(Number(indicatorSettings.emaPeriod) || 20));
+                    const bbP = Math.max(1, Math.floor(Number(indicatorSettings.bbPeriod) || 20));
+                    const bbDev = Number.isFinite(Number(indicatorSettings.bbStdDev)) && Number(indicatorSettings.bbStdDev) > 0 ? Number(indicatorSettings.bbStdDev) : 2;
+                    const rsiP = Math.max(1, Math.floor(Number(indicatorSettings.rsiPeriod) || 14));
+
                     if (indicatorSettings.showEMA && emaSeriesRef.current) {
-                        const emaData = calculateEMA(curData, indicatorSettings.emaPeriod);
+                        const emaData = calculateEMA(curData, emaP);
                         if (emaData.length > 0) emaSeriesRef.current.update(emaData[emaData.length - 1] as any);
                     }
                     if (indicatorSettings.showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current) {
-                        const bbData = calculateBollingerBands(curData, indicatorSettings.bbPeriod, indicatorSettings.bbStdDev);
+                        const bbData = calculateBollingerBands(curData, bbP, bbDev);
                         if (bbData.length > 0) {
                             const lastBB = bbData[bbData.length - 1];
                             bbUpperSeriesRef.current.update({ time: lastBB.time, value: lastBB.upper } as any);
@@ -1423,7 +1440,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         }
                     }
                     if (indicatorSettings.showRSI && rsiSeriesRef.current) {
-                        const rsiData = calculateRSI(curData, indicatorSettings.rsiPeriod);
+                        const rsiData = calculateRSI(curData, rsiP);
                         if (rsiData.length > 0) rsiSeriesRef.current.update(rsiData[rsiData.length - 1] as any);
                     }
                     if (indicatorSettings.showUTBot && utBotSeriesRef.current) {

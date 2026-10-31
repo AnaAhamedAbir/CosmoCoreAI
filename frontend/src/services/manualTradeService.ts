@@ -70,6 +70,8 @@ export interface FastBalanceResponse {
   is_futures: boolean;
   is_inverse?: boolean;
   contract_size?: number;
+  spot_free?: number;
+  usds_futures_free?: number;
 }
 
 export interface FastPositionResponse {

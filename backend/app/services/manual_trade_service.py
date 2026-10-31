@@ -254,27 +254,11 @@ class ManualTradeService:
         is_futures = ':' in symbol
         try:
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
-            
-            parts = symbol.split('/')
-            base_part = parts[0] if len(parts) > 1 else symbol
-            quote_part = parts[1].split(':')[0] if len(parts) > 1 else "USDT"
-            
-            # Pass symbol constraints if the exchange supports lightweight fetching
-            try:
-                balance = await exchange.fetch_balance()
-            except Exception:  # BUG-06 fix: was bare except, now catches only Exception subclasses
-                balance = await exchange.fetch_balance()
+            meta = ManualTradeService._get_contract_meta(exchange, symbol)
+            balance = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta)
 
-            # Symbol থেকে base এবং quote বের করা
-            # Futures: DOGE/USDT:USDT → base=DOGE, quote=USDT
-            # Spot:    DOGE/FDUSD    → base=DOGE, quote=FDUSD
-            parts = symbol.split('/')
-            if len(parts) > 1:
-                base_part = parts[0]
-                quote_part = parts[1].split(':')[0]
-            else:
-                base_part = symbol
-                quote_part = "USDT"
+            base_part = meta["base"]
+            quote_part = meta["quote"]
 
             base_info = balance.get(base_part, {}) if isinstance(balance.get(base_part), dict) else {}
             quote_info = balance.get(quote_part, {}) if isinstance(balance.get(quote_part), dict) else {}
@@ -287,6 +271,68 @@ class ManualTradeService:
             quote_used = quote_info.get('used') or (balance.get('used', {}).get(quote_part) if isinstance(balance.get('used'), dict) else 0.0) or 0.0
             quote_total = quote_info.get('total') or (balance.get('total', {}).get(quote_part) if isinstance(balance.get('total'), dict) else 0.0) or (float(quote_free) + float(quote_used))
 
+            # Direct fallback check for Binance COIN-M if base_free is 0.0
+            # Some accounts or assets with updateTime=0 get skipped by CCXT parse_balance
+            spot_doge = 0.0
+            usds_doge = 0.0
+            if meta.get('is_inverse') and float(base_free) == 0.0 and getattr(exchange, 'id', '').lower().startswith('binance'):
+                # 1. Direct dapiPrivateGetBalance
+                try:
+                    if hasattr(exchange, 'dapiPrivateGetBalance'):
+                        d_bals = await exchange.dapiPrivateGetBalance()
+                        if isinstance(d_bals, list):
+                            for b in d_bals:
+                                if str(b.get('asset', '')).upper() == base_part.upper():
+                                    avail = float(b.get('availableBalance') or b.get('withdrawAvailable') or b.get('balance') or 0.0)
+                                    tot = float(b.get('balance') or avail)
+                                    base_free = avail
+                                    base_used = max(0.0, tot - avail)
+                                    base_total = tot
+                                    logger.info(f"💰 Direct dapiPrivateGetBalance for {base_part}: free={base_free}, total={base_total}")
+                                    break
+                except Exception as d_err:
+                    logger.debug(f"Direct dapiPrivateGetBalance fallback check: {d_err}")
+
+                # 2. Direct dapiPrivateGetAccount if still 0.0
+                if float(base_free) == 0.0:
+                    try:
+                        if hasattr(exchange, 'dapiPrivateGetAccount'):
+                            acct = await exchange.dapiPrivateGetAccount()
+                            for a in acct.get('assets', []):
+                                if str(a.get('asset', '')).upper() == base_part.upper():
+                                    avail = float(a.get('availableBalance') or a.get('walletBalance') or 0.0)
+                                    tot = float(a.get('walletBalance') or a.get('marginBalance') or avail)
+                                    base_free = avail
+                                    base_used = max(0.0, tot - avail)
+                                    base_total = tot
+                                    logger.info(f"💰 Direct dapiPrivateGetAccount for {base_part}: free={base_free}, total={base_total}")
+                                    break
+                    except Exception as acct_err:
+                        logger.debug(f"Direct dapiPrivateGetAccount fallback check: {acct_err}")
+
+                # 3. Check other wallets (USDⓈ-M or Spot) to diagnose if user transferred to wrong wallet
+                if float(base_free) == 0.0:
+                    try:
+                        if hasattr(exchange, 'fapiPrivateV2GetBalance'):
+                            f_bals = await exchange.fapiPrivateV2GetBalance()
+                            if isinstance(f_bals, list):
+                                for b in f_bals:
+                                    if str(b.get('asset', '')).upper() == base_part.upper():
+                                        usds_doge = float(b.get('balance') or b.get('availableBalance') or 0.0)
+                                        if usds_doge > 0:
+                                            logger.info(f"ℹ️ User has {usds_doge} {base_part} in USDⓈ-M wallet instead of COIN-M")
+                                        break
+                    except Exception:
+                        pass
+
+                    try:
+                        spot_b = await exchange.fetch_balance({'type': 'spot'})
+                        spot_doge = float(spot_b.get(base_part, {}).get('free', 0.0) or (spot_b.get('free', {}).get(base_part, 0.0) if isinstance(spot_b.get('free'), dict) else 0.0))
+                        if spot_doge > 0:
+                            logger.info(f"ℹ️ User has {spot_doge} {base_part} in Spot wallet instead of COIN-M")
+                    except Exception:
+                        pass
+
             return {
                 "base": base_part,
                 "base_free": float(base_free),
@@ -296,7 +342,12 @@ class ManualTradeService:
                 "quote_free": float(quote_free),
                 "quote_used": float(quote_used),
                 "quote_total": float(quote_total),
-                "is_futures": is_futures
+                "settle": meta["settle"],
+                "is_futures": is_futures,
+                "is_inverse": meta["is_inverse"],
+                "contract_size": meta["contract_size"],
+                "spot_free": spot_doge,
+                "usds_futures_free": usds_doge
             }
 
         except HTTPException:

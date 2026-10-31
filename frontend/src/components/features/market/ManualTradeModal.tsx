@@ -1730,6 +1730,18 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                       </span>
                     </div>
 
+                    {/* Show helpful diagnostic badge if funds are located in USDⓈ-M or Spot wallet instead of COIN-M */}
+                    {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.usds_futures_free && balanceData.usds_futures_free > 0) && (
+                      <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in USDⓈ-M Futures wallet instead of COIN-M Futures">
+                        <span>⚠️ {balanceData?.usds_futures_free?.toFixed(2)} in USDⓈ-M! Transfer to COIN-M</span>
+                      </div>
+                    )}
+                    {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.spot_free && balanceData.spot_free > 0) && (
+                      <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in Spot wallet instead of COIN-M Futures">
+                        <span>⚠️ {balanceData?.spot_free?.toFixed(2)} in Spot! Transfer to COIN-M</span>
+                      </div>
+                    )}
+
                     {/* Show Locked / In-Orders Balance if any */}
                     {balanceData && (
                       (() => {

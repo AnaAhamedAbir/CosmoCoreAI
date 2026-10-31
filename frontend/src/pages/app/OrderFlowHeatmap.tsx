@@ -3617,7 +3617,7 @@ const OrderFlowChartPanel: React.FC<{
         <div 
             onClick={onSelectActive}
             className={isFullscreen 
-                ? 'fixed inset-0 z-[200] flex flex-col bg-gray-50 dark:bg-[#000000] p-4 overflow-y-auto hide-scrollbar' 
+                ? 'fixed inset-0 z-[1200] flex flex-col bg-gray-50 dark:bg-[#000000] p-3 md:p-4 overflow-hidden w-screen h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)]' 
                 : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border transition-all duration-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col min-h-[240px] cursor-pointer ${
                     isActive && allChartsCount > 1 
                         ? 'border-brand-primary/80 ring-2 ring-brand-primary/20 shadow-[0_0_25px_rgba(59,130,246,0.2)]' 
@@ -3698,8 +3698,24 @@ const OrderFlowChartPanel: React.FC<{
                     )}
                 </div>
                 <div className="flex items-center gap-2">
-                    <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-gray-500 hover:text-brand-primary transition-colors">
-                        {isFullscreen ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>}
+                    <button 
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsFullscreen(!isFullscreen);
+                        }}
+                        className={`p-1.5 rounded-lg transition-all flex items-center justify-center cursor-pointer ${isFullscreen ? 'bg-brand-primary text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] ring-2 ring-brand-primary/40' : 'text-gray-500 hover:text-brand-primary hover:bg-gray-100 dark:hover:bg-white/10'}`}
+                        title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Chart"}
+                    >
+                        {isFullscreen ? (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        ) : (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                            </svg>
+                        )}
                     </button>
                     {!isMain && (
                         <button onClick={() => onRemove(config.id)} className="text-gray-500 hover:text-red-500 transition-colors ml-2" title="Close Chart">

@@ -1280,19 +1280,22 @@ class BracketOrderService:
                             tp_chk = await exchange.fetch_order(curr_tp_id, symbol)
                             if tp_chk.get('status', '').lower() in ['closed', 'filled']:
                                 logger.info(f"🎯 TP order {curr_tp_id} filled! Closing trailing stop monitor for {symbol}.")
+                                is_open = False
                                 exit_price = float(tp_chk.get('average') or tp_chk.get('price') or 0.0)
                                 if user_id:
-                                    asyncio.create_task(
-                                        BracketOrderService._send_tp_completed_notification(
-                                            user_id=user_id,
-                                            symbol=symbol,
-                                            opposite_side=opposite_side,
-                                            amount=amount,
-                                            entry_price=entry_price,
-                                            exit_price=exit_price
+                                    try:
+                                        asyncio.create_task(
+                                            BracketOrderService._send_tp_completed_notification(
+                                                user_id=user_id,
+                                                symbol=symbol,
+                                                opposite_side=opposite_side,
+                                                amount=amount,
+                                                entry_price=entry_price,
+                                                exit_price=exit_price
+                                            )
                                         )
-                                    )
-                                is_open = False
+                                    except Exception:
+                                        pass
                         except Exception:
                             pass
 
@@ -1587,19 +1590,22 @@ class BracketOrderService:
                         tp_chk = await exchange.fetch_order(curr_tp_id, symbol)
                         if tp_chk.get('status', '').lower() in ['closed', 'filled']:
                             logger.info(f"🎯 TP order {curr_tp_id} filled! Closing Fixed SL monitor for {symbol}.")
+                            is_open = False
                             exit_price = float(tp_chk.get('average') or tp_chk.get('price') or 0.0)
                             if user_id:
-                                asyncio.create_task(
-                                    BracketOrderService._send_tp_completed_notification(
-                                        user_id=user_id,
-                                        symbol=symbol,
-                                        opposite_side=opposite_side,
-                                        amount=amount,
-                                        entry_price=entry_price,
-                                        exit_price=exit_price
+                                try:
+                                    asyncio.create_task(
+                                        BracketOrderService._send_tp_completed_notification(
+                                            user_id=user_id,
+                                            symbol=symbol,
+                                            opposite_side=opposite_side,
+                                            amount=amount,
+                                            entry_price=entry_price,
+                                            exit_price=exit_price
+                                        )
                                     )
-                                )
-                            is_open = False
+                                except Exception:
+                                    pass
                     except Exception:
                         pass
 

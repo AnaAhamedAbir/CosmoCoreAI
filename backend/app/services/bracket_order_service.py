@@ -1794,11 +1794,13 @@ class BracketOrderService:
                     del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
                 return
 
-            # Keep dynamic TP and disaster SL IDs synchronized from sl_meta (e.g. if edited via chart drag)
+            # Keep dynamic TP, disaster SL, and amount synchronized from sl_meta (e.g. if edited via chart drag)
             if sl_meta.get('tp_order_id'):
                 tp_order_id = sl_meta['tp_order_id']
             if sl_meta.get('disaster_sl_order_id'):
                 disaster_sl_order_id = sl_meta['disaster_sl_order_id']
+            curr_amount = float(sl_meta.get('amount') if (sl_meta and sl_meta.get('amount') is not None) else amount)
+            curr_sl_price = float(sl_meta.get('trigger_price') if (sl_meta and sl_meta.get('trigger_price') is not None) else sl_price)
 
             try:
                 # ── PRIORITY 1: FETCH TICKER FIRST FOR ULTRA-FAST SL DETECTION ──
@@ -1905,21 +1907,25 @@ class BracketOrderService:
                                 tp_chk = await exchange.fetch_order(curr_tp_id, symbol)
                                 if tp_chk.get('status', '').lower() in ['closed', 'filled']:
                                     logger.info(f"🎯 TP order {curr_tp_id} filled! Closing Smart Chase monitor for {symbol}.")
-                                    exit_price = float(tp_chk.get('average') or tp_chk.get('price') or 0.0)
-                                    if user_id:
-                                        asyncio.create_task(
-                                            BracketOrderService._send_tp_completed_notification(
-                                                user_id=user_id,
-                                                symbol=symbol,
-                                                opposite_side=opposite_side,
-                                                amount=curr_amount,
-                                                entry_price=entry_price,
-                                                exit_price=exit_price
-                                            )
-                                        )
                                     is_open = False
-                            except Exception:
-                                pass
+                                    exit_price = float(tp_chk.get('average') or tp_chk.get('price') or 0.0)
+                                    fill_amt = float(tp_chk.get('filled') or tp_chk.get('amount') or curr_amount)
+                                    if user_id:
+                                        try:
+                                            asyncio.create_task(
+                                                BracketOrderService._send_tp_completed_notification(
+                                                    user_id=user_id,
+                                                    symbol=symbol,
+                                                    opposite_side=opposite_side,
+                                                    amount=fill_amt,
+                                                    entry_price=entry_price,
+                                                    exit_price=exit_price
+                                                )
+                                            )
+                                        except Exception as notify_err:
+                                            logger.debug(f"TP completed notification notice: {notify_err}")
+                            except Exception as tp_chk_err:
+                                logger.debug(f"TP order check error: {tp_chk_err}")
 
                         if is_open and is_futures:
                             is_open = await BracketOrderService._check_futures_position_is_open(exchange, symbol, opposite_side)
@@ -1927,13 +1933,15 @@ class BracketOrderService:
                         logger.debug(f"Position check non-fatal error: {pos_e}")
 
                     if not is_open:
-                        logger.info(f"🚫 Position closed externally. Canceling Smart Chase monitor for {symbol}.")
+                        logger.info(f"🚫 Position closed externally (TP filled or position closed). Canceling Smart Chase monitor for {symbol}.")
                         curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
                         if curr_disaster:
                             try:
                                 await exchange.cancel_order(curr_disaster, symbol)
-                            except Exception:
-                                pass
+                                logger.info(f"🛡️ Successfully cancelled Disaster SL #{curr_disaster} on exchange.")
+                            except Exception as c_err:
+                                logger.debug(f"Disaster SL cancel notice: {c_err}")
+                        sl_triggered = False
                         break
 
             except Exception as e:

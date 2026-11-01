@@ -78,6 +78,55 @@ class BracketOrderService:
         return params
 
     @staticmethod
+    async def _check_futures_position_is_open(exchange, symbol: str, opposite_side: str = None) -> bool:
+        """
+        Checks if the live futures position for the symbol is still open (> 0 contracts).
+        Handles both Linear (USDT-M) and Inverse (COIN-M) markets as well as Hedge Mode.
+        Returns False if position contracts == 0, True if > 0 or if check fails (failsafe).
+        """
+        try:
+            is_inverse = False
+            if hasattr(exchange, 'markets') and exchange.markets and symbol in exchange.markets:
+                mkt = exchange.markets[symbol]
+                is_inverse = bool(mkt.get('inverse') or mkt.get('subType') == 'inverse')
+            elif ':' in symbol:
+                parts = symbol.split('/')
+                base = parts[0]
+                settle = parts[1].split(':')[1] if ':' in parts[1] else ''
+                if settle.upper() == base.upper():
+                    is_inverse = True
+
+            pos_params = {'subType': 'inverse'} if is_inverse else {}
+            positions = await exchange.fetch_positions([symbol], pos_params)
+            if not positions:
+                return False
+
+            clean_sym = str(symbol).split(':')[0].upper().replace('/', '')
+            expected_hedge_side = ('LONG' if opposite_side.lower() == 'sell' else 'SHORT') if opposite_side else None
+
+            matching_pos_found = False
+            for p in positions:
+                p_sym = str(p.get('symbol', '')).split(':')[0].upper().replace('/', '')
+                info_sym = str(p.get('info', {}).get('symbol', '')).replace('_', '').upper()
+                if p_sym == clean_sym or clean_sym in info_sym:
+                    if expected_hedge_side:
+                        pos_side = str(p.get('info', {}).get('positionSide') or p.get('side') or '').upper()
+                        if pos_side in ['LONG', 'SHORT'] and pos_side != expected_hedge_side:
+                            continue
+
+                    matching_pos_found = True
+                    raw_contracts = float(p.get('contracts', 0) or p.get('info', {}).get('positionAmt', 0))
+                    if abs(raw_contracts) > 0:
+                        return True
+
+            if matching_pos_found:
+                return False
+            return False
+        except Exception as pos_e:
+            logger.debug(f"Position check non-fatal error: {pos_e}")
+            return True
+
+    @staticmethod
     async def _send_entry_filled_notification(
         user_id: int, symbol: str, side: str, filled: float, total_amount: float, average_price: float, is_futures: bool
     ):
@@ -1246,20 +1295,7 @@ class BracketOrderService:
                             pass
 
                     if is_open and is_futures:
-                        try:
-                            positions = await exchange.fetch_positions([symbol])
-                            clean_sym = str(symbol).split(':')[0].upper()
-                            pos = None
-                            for p in positions:
-                                if str(p.get('symbol', '')).split(':')[0].upper() == clean_sym:
-                                    pos = p
-                                    break
-                            if pos is not None:
-                                raw_contracts = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0))
-                                if abs(raw_contracts) == 0:
-                                    is_open = False
-                        except Exception as pos_e:
-                            logger.debug(f"Could not check position for trailing SL (non-fatal): {pos_e}")
+                        is_open = await BracketOrderService._check_futures_position_is_open(exchange, symbol, opposite_side)
                 except Exception as pos_e:
                     logger.debug(f"Position check non-fatal error: {pos_e}")
                 
@@ -1566,20 +1602,7 @@ class BracketOrderService:
                         pass
 
                 if is_open and is_futures:
-                    try:
-                        positions = await exchange.fetch_positions([symbol])
-                        clean_sym = str(symbol).split(':')[0].upper()
-                        pos = None
-                        for p in positions:
-                            if str(p.get('symbol', '')).split(':')[0].upper() == clean_sym:
-                                pos = p
-                                break
-                        if pos is not None:
-                            raw_contracts = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0))
-                            if abs(raw_contracts) == 0:
-                                is_open = False
-                    except Exception as pos_e:
-                        logger.debug(f"Position check non-fatal error: {pos_e}")
+                    is_open = await BracketOrderService._check_futures_position_is_open(exchange, symbol, opposite_side)
 
                 if not is_open:
                     curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
@@ -1838,16 +1861,34 @@ class BracketOrderService:
                                 )
 
                 if current_price > 0:
+                    should_trigger_sl = False
                     if opposite_side == 'sell': # Long position, sell when price drops to or below sl_price
                         if current_price <= current_sl_trigger:
-                            logger.info(f"💥 Smart Chase SL Triggered for Long! {source_label} <= {current_sl_trigger} [Source: {trigger_source.upper()}]")
-                            sl_triggered = True
-                            break
+                            should_trigger_sl = True
                     else: # Short position, buy when price rises to or above sl_price
                         if current_price >= current_sl_trigger:
-                            logger.info(f"💥 Smart Chase SL Triggered for Short! {source_label} >= {current_sl_trigger} [Source: {trigger_source.upper()}]")
-                            sl_triggered = True
-                            break
+                            should_trigger_sl = True
+
+                    if should_trigger_sl:
+                        # Pre-trigger position verification for futures:
+                        # Ensure position didn't already close externally (TP filled or manual close)
+                        if is_futures:
+                            pos_still_open = await BracketOrderService._check_futures_position_is_open(exchange, symbol, opposite_side)
+                            if not pos_still_open:
+                                logger.info(f"🚫 Position closed externally before Smart Chase SL trigger for {symbol}. Skipping Smart Chase.")
+                                curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
+                                if curr_disaster:
+                                    try:
+                                        await exchange.cancel_order(curr_disaster, symbol)
+                                    except Exception:
+                                        pass
+                                sl_triggered = False
+                                is_open = False
+                                break
+
+                        logger.info(f"💥 Smart Chase SL Triggered for {opposite_side.upper()}! {source_label} vs {current_sl_trigger} [Source: {trigger_source.upper()}]")
+                        sl_triggered = True
+                        break
 
                 # ── PRIORITY 2: PERIODIC POSITION / TP INTEGRITY CHECK (every 6 ticks ≈ 3s) ──
                 # Throttling this background check avoids wasting 300ms on every tick while still safely detecting if TP filled
@@ -1879,20 +1920,7 @@ class BracketOrderService:
                                 pass
 
                         if is_open and is_futures:
-                            try:
-                                positions = await exchange.fetch_positions([symbol])
-                                clean_sym = str(symbol).split(':')[0].upper()
-                                pos = None
-                                for p in positions:
-                                    if str(p.get('symbol', '')).split(':')[0].upper() == clean_sym:
-                                        pos = p
-                                        break
-                                if pos is not None:
-                                    raw_amt = float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0))
-                                    if abs(raw_amt) == 0:
-                                        is_open = False
-                            except Exception as pos_e:
-                                logger.debug(f"Position check non-fatal error: {pos_e}")
+                            is_open = await BracketOrderService._check_futures_position_is_open(exchange, symbol, opposite_side)
                     except Exception as pos_e:
                         logger.debug(f"Position check non-fatal error: {pos_e}")
 

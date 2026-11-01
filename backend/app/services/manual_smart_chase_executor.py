@@ -88,6 +88,63 @@ def _get_min_notional(exchange, symbol: str) -> float:
     return 5.0  # Binance Spot standard min notional is $5.00
 
 
+async def _get_live_position_contracts(exchange, symbol: str, exit_side: str, is_inverse: bool = False) -> float:
+    """
+    Fetches the live open position size (in contracts or base units) for the symbol
+    corresponding to the position we are attempting to exit.
+    Returns 0.0 if the position is already closed or does not exist.
+    Returns -1.0 if the exchange API call failed (failsafe to avoid false zero).
+    """
+    try:
+        pos_params = {'subType': 'inverse'} if is_inverse else {}
+        positions = await exchange.fetch_positions([symbol], pos_params)
+        if not positions:
+            return 0.0
+
+        target_clean = symbol.replace('/', '').replace(':', '').upper()
+        target_base = symbol.split('/')[0].upper()
+        expected_hedge_side = 'LONG' if exit_side.lower() == 'sell' else 'SHORT'
+
+        matching_pos_found = False
+        for p in positions:
+            p_sym = str(p.get('symbol') or '')
+            p_info_sym = str(p.get('info', {}).get('symbol') or '')
+
+            clean_p = p_sym.replace('/', '').replace(':', '').upper()
+            clean_info = p_info_sym.replace('_', '').upper()
+
+            matches = (
+                p_sym == symbol
+                or clean_p == target_clean
+                or clean_info == target_clean
+                or (clean_info.startswith(target_base) and any(x in clean_info for x in ['USD', 'USDT', 'FDUSD', 'PERP']))
+            )
+            if not matches:
+                continue
+
+            pos_side = str(p.get('info', {}).get('positionSide') or p.get('side') or '').upper()
+            if pos_side in ['LONG', 'SHORT'] and pos_side != expected_hedge_side:
+                # Opposite side in hedge mode, skip
+                continue
+
+            matching_pos_found = True
+            contracts = float(p.get('contracts') or 0.0)
+            if contracts == 0.0:
+                raw_amt = p.get('info', {}).get('positionAmt')
+                if raw_amt is not None:
+                    contracts = abs(float(raw_amt))
+
+            if contracts > 0.0:
+                return contracts
+
+        if matching_pos_found:
+            return 0.0
+        return 0.0
+    except Exception as e:
+        logger.warning(f"⚠️ [Manual Smart Chase] Position check non-fatal error: {e}")
+        return -1.0
+
+
 def _calculate_target_maker_price(
     exit_side: str,
     ob: dict,
@@ -385,6 +442,25 @@ async def execute_manual_smart_chase(
     async def _sync_and_clamp_amount(price: float, cached_bal: Optional[dict] = None) -> float:
         nonlocal remaining_amount
         if is_futures:
+            try:
+                is_inv = _is_inverse_market(exchange, symbol)
+                live_contracts = await _get_live_position_contracts(exchange, symbol, exit_side, is_inv)
+                if live_contracts == 0.0:
+                    logger.info(
+                        f"✅ [Manual Smart Chase] Live futures position for {symbol} is 0.0! "
+                        f"Position was closed/filled externally."
+                    )
+                    remaining_amount = 0.0
+                    return 0.0
+                elif live_contracts > 0.0 and live_contracts < remaining_amount:
+                    adjusted = float(exchange.amount_to_precision(symbol, live_contracts)) if hasattr(exchange, 'amount_to_precision') else live_contracts
+                    if adjusted != remaining_amount:
+                        logger.info(
+                            f"🔄 [Manual Smart Chase] Clamped exit amount from {remaining_amount} to live position: {adjusted}"
+                        )
+                        remaining_amount = adjusted
+            except Exception as fe:
+                logger.warning(f"⚠️ [Manual Smart Chase] Futures position sync warning: {fe}")
             return remaining_amount
 
         try:
@@ -446,13 +522,17 @@ async def execute_manual_smart_chase(
         if not isinstance(bal_res, Exception) and isinstance(bal_res, dict):
             initial_bal = bal_res
     else:
-        try:
-            cached_initial_ob = await exchange.fetch_order_book(symbol, limit=ob_depth_limit)
-        except Exception:
-            cached_initial_ob = None
+        pos_fut_res, ob_res = await asyncio.gather(
+            _sync_and_clamp_amount(original_sl),
+            exchange.fetch_order_book(symbol, limit=ob_depth_limit),
+            return_exceptions=True
+        )
+        if not isinstance(ob_res, Exception) and isinstance(ob_res, dict):
+            cached_initial_ob = ob_res
 
     # Initial clamp (instant, using pre-fetched balance)
-    remaining_amount = await _sync_and_clamp_amount(original_sl, cached_bal=initial_bal)
+    if not is_futures:
+        remaining_amount = await _sync_and_clamp_amount(original_sl, cached_bal=initial_bal)
 
     # Spot-specific ledger lag resilience: if balance is 0 right after cancelling TP order, give Binance ledger a short moment to release
     if not is_futures and remaining_amount <= 0 and sell_amount_raw > 0:
@@ -466,6 +546,12 @@ async def execute_manual_smart_chase(
                     break
             except Exception as fb_err:
                 logger.debug(f"Spot balance re-fetch error: {fb_err}")
+
+    if is_futures and remaining_amount <= 0:
+        logger.info(
+            f"✅ [Manual Smart Chase] Position for {symbol} is already 0.0 before start. Terminating immediately."
+        )
+        return {'status': 'closed', 'id': 'position_already_closed', 'filled': sell_amount_raw}
 
     initial_notional = _calc_order_notional_usd(exchange, symbol, remaining_amount, original_sl)
     if remaining_amount <= 0 or initial_notional < min_notional:
@@ -508,6 +594,7 @@ async def execute_manual_smart_chase(
 
     chase_active = True
     attempts = 0
+    reduce_only_rejections = 0
     final_res = None
 
     while chase_active:
@@ -646,9 +733,11 @@ async def execute_manual_smart_chase(
         )
         ex_params = {'postOnly': True}
         if is_futures:
-            ex_params['reduceOnly'] = True
             if is_hedge_mode:
                 ex_params['positionSide'] = 'LONG' if exit_side == 'sell' else 'SHORT'
+                ex_params.pop('reduceOnly', None)
+            else:
+                ex_params['reduceOnly'] = True
 
         chase_res = None
         try:
@@ -697,13 +786,36 @@ async def execute_manual_smart_chase(
                             target_maker_price = adj_price
                 except Exception as retry_e:
                     logger.warning(f"⚠️ Adjusted Maker retry failed: {retry_e}")
-            elif '-2022' in err_str or 'reduceonly' in err_str.lower():
+            elif '-2022' in err_str or '-4118' in err_str or 'reduceonly' in err_str.lower():
+                reduce_only_rejections += 1
                 logger.warning(
-                    f"⚠️ [Manual Smart Chase] ReduceOnly rejection (-2022) on attempt {attempts}: {err_str}. "
-                    f"Force clearing open orders on exchange and retrying..."
+                    f"⚠️ [Manual Smart Chase] ReduceOnly rejection (-2022/-4118) #{reduce_only_rejections} on attempt {attempts}: {err_str}. "
+                    f"Force clearing open orders on exchange and checking live position..."
                 )
                 await _cleanup_other_orders()
-                await asyncio.sleep(0.15)
+                if is_futures:
+                    is_inv = _is_inverse_market(exchange, symbol)
+                    live_pos = await _get_live_position_contracts(exchange, symbol, exit_side, is_inv)
+                    if live_pos == 0.0:
+                        logger.info(
+                            f"✅ [Manual Smart Chase] Live position for {symbol} is 0.0 after ReduceOnly rejection. "
+                            f"Position has already been closed/filled. Terminating Smart Chase."
+                        )
+                        final_res = {'status': 'closed', 'id': 'position_already_closed', 'filled': sell_amount_raw}
+                        break
+                    elif live_pos > 0.0 and live_pos < remaining_amount:
+                        remaining_amount = float(exchange.amount_to_precision(symbol, live_pos)) if hasattr(exchange, 'amount_to_precision') else live_pos
+                        logger.info(f"🔄 Re-clamped remaining amount to live position: {remaining_amount}")
+
+                if reduce_only_rejections >= 3:
+                    logger.error(
+                        f"❌ [Manual Smart Chase] ReduceOnly rejected {reduce_only_rejections} times consecutively. "
+                        f"Position likely closed or blocked by exchange. Aborting Smart Chase to prevent loop."
+                    )
+                    final_res = {'status': 'closed', 'id': 'reduce_only_aborted', 'filled': sell_amount_raw}
+                    break
+
+                await asyncio.sleep(0.2)
                 continue
             elif not is_futures and ('insufficient' in err_str.lower() or '-2010' in err_str):
                 logger.warning(
@@ -719,18 +831,16 @@ async def execute_manual_smart_chase(
 
             if not chase_res or not chase_res.get('id'):
                 # Check if position was closed externally
-                if attempts == 1 and is_futures:
+                if is_futures:
                     try:
-                        positions = await exchange.fetch_positions([symbol])
-                        clean_sym = str(symbol).split(':')[0].upper()
-                        pos = None
-                        for p in positions:
-                            if str(p.get('symbol', '')).split(':')[0].upper() == clean_sym:
-                                pos = p
-                                break
-                        if pos is not None and float(pos.get('contracts', 0) or pos.get('info', {}).get('positionAmt', 0)) == 0:
-                            logger.info("✅ Position already closed natively. Aborting Smart Chase.")
+                        is_inv = _is_inverse_market(exchange, symbol)
+                        live_pos = await _get_live_position_contracts(exchange, symbol, exit_side, is_inv)
+                        if live_pos == 0.0:
+                            logger.info("✅ [Manual Smart Chase] Position already closed natively. Aborting Smart Chase.")
+                            final_res = {'status': 'closed', 'id': 'position_already_closed', 'filled': sell_amount_raw}
                             break
+                        elif live_pos > 0.0 and live_pos < remaining_amount:
+                            remaining_amount = float(exchange.amount_to_precision(symbol, live_pos)) if hasattr(exchange, 'amount_to_precision') else live_pos
                     except Exception:
                         pass
                 await asyncio.sleep(chase_delay_sec)
@@ -957,9 +1067,12 @@ async def execute_manual_smart_chase(
         logger.warning(
             f"⚠️ [Manual Smart Chase] Max attempts ({max_attempts}) reached without full fill. Forcing Market Sweep!"
         )
-        params = {'reduceOnly': True} if is_futures else {}
-        if is_futures and is_hedge_mode:
-            params['positionSide'] = 'LONG' if exit_side == 'sell' else 'SHORT'
+        params = {}
+        if is_futures:
+            if is_hedge_mode:
+                params['positionSide'] = 'LONG' if exit_side == 'sell' else 'SHORT'
+            else:
+                params['reduceOnly'] = True
 
         sweep_amt = remaining_amount
         mkt_price = original_sl

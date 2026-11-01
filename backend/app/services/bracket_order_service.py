@@ -568,9 +568,11 @@ class BracketOrderService:
                 if not is_unlimited and elapsed_seconds >= max_timeout_mins * 60:
                     break
                 
-                # Adaptive Polling to prevent rate limit bans on unlimited orders
-                if elapsed_seconds < 300: # First 5 mins
-                    sleep_time = 2
+                # Adaptive Polling: Ultra-fast initial check (350ms) to detect immediate fills instantly
+                if elapsed_seconds == 0:
+                    sleep_time = 0.35
+                elif elapsed_seconds < 300: # First 5 mins
+                    sleep_time = 1.5
                 elif elapsed_seconds < 3600: # Next 1 hour
                     sleep_time = 10
                 else: # After 1 hour

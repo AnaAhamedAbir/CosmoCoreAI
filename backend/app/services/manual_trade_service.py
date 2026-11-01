@@ -118,6 +118,8 @@ async def _send_trade_fired_notification(
 
 
 class ManualTradeService:
+    _HEDGE_MODE_CACHE = {}  # { cache_key: (is_hedge, expire_timestamp) }
+    _LEVERAGE_CACHE = {}    # { cache_key: (leverage, expire_timestamp) }
 
     @staticmethod
     async def _get_exchange(api_key_record: models.ApiKey, is_futures: bool):
@@ -216,10 +218,18 @@ class ManualTradeService:
         """
         Binance Futures er khetre Hedge Mode (Dual Position Side) on kina check kore.
         Inverse (COIN-M) hole dapi age check kore, Linear (USDT-M) hole fapi age check kore.
+        Cache ব্যবহার করে প্রতি ক্লিকে অতিরিক্ত 200ms latency বাঁচায়।
         """
         ex_id = getattr(exchange, 'id', '').lower()
         if not ex_id.startswith('binance'):
             return False
+
+        cache_key = f"{getattr(exchange, 'apiKey', '')}_{is_inverse}"
+        now = time.time()
+        if cache_key in ManualTradeService._HEDGE_MODE_CACHE:
+            val, expire = ManualTradeService._HEDGE_MODE_CACHE[cache_key]
+            if now < expire:
+                return val
 
         methods = (
             ['dapiPrivateGetPositionSideDual', 'fapiPrivateGetPositionSideDual']
@@ -231,7 +241,9 @@ class ManualTradeService:
             if m and callable(m):
                 try:
                     res = await m()
-                    return bool(res.get('dualSidePosition', False))
+                    val = bool(res.get('dualSidePosition', False))
+                    ManualTradeService._HEDGE_MODE_CACHE[cache_key] = (val, now + 300)
+                    return val
                 except Exception:
                     pass
         return False
@@ -587,10 +599,16 @@ class ManualTradeService:
                         logger.warning(f"Margin mode set skipped (may already be set or unsupported): {mm_e}")
 
                 if leverage:
-                    try:
-                        await exchange.set_leverage(leverage, order_req.symbol)
-                    except Exception as lev_e:
-                        logger.warning(f"Leverage set skipped (may already be set): {lev_e}")
+                    lev_cache_key = f"{getattr(exchange, 'apiKey', '')}_{order_req.symbol}"
+                    now_ts = time.time()
+                    cached_lev, exp_ts = ManualTradeService._LEVERAGE_CACHE.get(lev_cache_key, (None, 0))
+                    if cached_lev != leverage or now_ts >= exp_ts:
+                        try:
+                            await exchange.set_leverage(leverage, order_req.symbol)
+                            ManualTradeService._LEVERAGE_CACHE[lev_cache_key] = (leverage, now_ts + 600)
+                        except Exception as lev_e:
+                            logger.warning(f"Leverage set skipped (may already be set): {lev_e}")
+                            ManualTradeService._LEVERAGE_CACHE[lev_cache_key] = (leverage, now_ts + 600)
 
             # Prepare Limit Order parameters if needed (Moved before margin check)
             if order_req.type.lower() == 'limit':

@@ -53,7 +53,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="w-full p-1.5 text-sm bg-gray-100 dark:bg-gray-800 border border-transparent rounded text-slate-900 dark:text-white focus:ring-1 focus:ring-brand-primary outline-none"
-                            autoFocus
+                            autoFocus={!isTouchDevice}
                         />
                     </div>
 

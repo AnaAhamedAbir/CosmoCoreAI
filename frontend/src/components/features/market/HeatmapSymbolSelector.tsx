@@ -17,6 +17,7 @@ export const HeatmapSymbolSelector: React.FC<HeatmapSymbolSelectorProps> = ({ sy
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -134,7 +135,7 @@ export const HeatmapSymbolSelector: React.FC<HeatmapSymbolSelectorProps> = ({ sy
                             <Search size={18} className="ml-3 text-gray-400 group-focus-within:text-brand-primary transition-colors" />
                             <input
                                 type="text"
-                                autoFocus={isDropdownOpen}
+                                autoFocus={!isTouchDevice && isDropdownOpen}
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 placeholder="Search markets (e.g. BTC/USDT)..."

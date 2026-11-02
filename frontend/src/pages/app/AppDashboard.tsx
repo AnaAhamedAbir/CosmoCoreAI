@@ -443,6 +443,8 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() =>
         typeof window !== 'undefined' && (window.innerWidth <= 1440 || window.matchMedia?.('(pointer: coarse)').matches)
     );
+    const lastWidthRef = useRef(typeof window !== 'undefined' ? window.innerWidth : 0);
+    const userToggledSidebarRef = useRef(false);
 
     // Lock document/body scroll while inside the app dashboard shell
     useEffect(() => {
@@ -457,10 +459,27 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
 
     // OmniTrade State Removed
 
-    // Sync sidebar collapse state with window resize
+    // Sync sidebar collapse state with window resize (only when screen width changes, not on virtual keyboard)
     useEffect(() => {
         const handleResize = () => {
-            if (window.innerWidth <= 1366) {
+            const currentWidth = window.innerWidth;
+            // Virtual keyboard open/close on mobile/tablet triggers resize, but width remains unchanged.
+            // Ignore vertical-only height changes to prevent un-minimizing the sidebar!
+            if (currentWidth === lastWidthRef.current) {
+                return;
+            }
+            lastWidthRef.current = currentWidth;
+
+            // If user explicitly toggled the sidebar, respect their choice
+            if (userToggledSidebarRef.current) {
+                if (currentWidth <= 1024) {
+                    setIsSidebarCollapsed(true);
+                }
+                return;
+            }
+
+            const isTouch = window.matchMedia?.('(pointer: coarse)').matches || 'ontouchstart' in window;
+            if (currentWidth <= 1440 || isTouch) {
                 setIsSidebarCollapsed(true);
             } else {
                 setIsSidebarCollapsed(false);
@@ -582,7 +601,10 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                 <Sidebar 
                         onLogout={onLogout} 
                         isCollapsed={isSidebarCollapsed} 
-                        onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
+                        onToggle={() => {
+                            userToggledSidebarRef.current = true;
+                            setIsSidebarCollapsed(!isSidebarCollapsed);
+                        }} 
                     />
                     <div className="flex-1 min-w-0 min-h-0 h-full flex flex-col overflow-hidden relative z-0">
                         <header className="relative z-50 flex-shrink-0 bg-white/80 dark:bg-[#000000]/80 backdrop-blur-md border-b border-gray-200 dark:border-[#1A1A1A]/50">

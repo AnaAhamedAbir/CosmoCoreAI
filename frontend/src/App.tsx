@@ -26,14 +26,32 @@ function App() {
 
   // Sync dynamic viewport height (--app-height) for tablet/mobile Chrome (e.g., Redmi Pad 2 Pro)
   useEffect(() => {
+    const isInputActive = () => {
+      const el = document.activeElement;
+      if (!el) return false;
+      const tag = el.tagName.toLowerCase();
+      return tag === 'input' || tag === 'textarea' || (el as HTMLElement).isContentEditable;
+    };
+
     const updateAppHeight = () => {
-      const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      // Prevent crushing/shrinking the layout height when virtual keyboard pops up on tablets/phones
+      if (isInputActive()) {
+        return;
+      }
+      const vh = window.innerHeight;
       document.documentElement.style.setProperty('--app-height', `${vh}px`);
     };
+
     updateAppHeight();
     window.addEventListener('resize', updateAppHeight);
-    window.addEventListener('orientationchange', updateAppHeight);
-    window.visualViewport?.addEventListener('resize', updateAppHeight);
+    window.addEventListener('orientationchange', () => {
+      setTimeout(updateAppHeight, 150);
+    });
+
+    const handleFocusOut = () => {
+      setTimeout(updateAppHeight, 200);
+    };
+    window.addEventListener('focusout', handleFocusOut);
 
     // Prevent multi-finger pinch from zooming the entire browser page/UI on tablets
     const preventPagePinchZoom = (e: TouchEvent) => {
@@ -51,7 +69,7 @@ function App() {
     return () => {
       window.removeEventListener('resize', updateAppHeight);
       window.removeEventListener('orientationchange', updateAppHeight);
-      window.visualViewport?.removeEventListener('resize', updateAppHeight);
+      window.removeEventListener('focusout', handleFocusOut);
       document.removeEventListener('touchmove', preventPagePinchZoom);
       document.removeEventListener('gesturestart', preventGestureZoom);
       document.removeEventListener('gesturechange', preventGestureZoom);

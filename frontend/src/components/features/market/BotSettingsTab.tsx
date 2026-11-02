@@ -311,7 +311,7 @@ export const BotSettingsTab: React.FC = () => {
                                             <Search size={14} className="text-gray-400 mr-2" />
                                             <input
                                                 type="text"
-                                                autoFocus
+                                                autoFocus={typeof window !== "undefined" && !("ontouchstart" in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0))}
                                                 value={pairSearchQuery}
                                                 onChange={(e) => setPairSearchQuery(e.target.value)}
                                                 placeholder="Search pairs..."

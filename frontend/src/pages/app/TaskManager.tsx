@@ -68,7 +68,7 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onAddTask: (task: Omit<Ta
                             onChange={(e) => setInputText(e.target.value)}
                             placeholder="e.g., Execute arbitrage strategy..."
                             className={inputClasses}
-                            autoFocus
+                            autoFocus={typeof window !== "undefined" && !("ontouchstart" in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0))}
                         />
                     </div>
                     

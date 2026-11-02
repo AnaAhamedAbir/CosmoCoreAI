@@ -163,7 +163,7 @@ const ForexSymbolSelector = ({ symbol, setSymbol, broker, setBroker, instruments
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500/50"
-                                        autoFocus
+                                        autoFocus={typeof window !== "undefined" && !("ontouchstart" in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0))}
                                     />
                                 </div>
                                 <div className="overflow-y-auto custom-scrollbar p-1">

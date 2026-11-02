@@ -232,6 +232,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     useEffect(() => {
         if (!chartContainerRef.current) return;
 
+        const isTouchScreen = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
+
         const chart = createChart(chartContainerRef.current, {
             layout: {
                 background: { type: 'solid', color: 'transparent' } as any,
@@ -254,6 +256,22 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 visible: false,
                 borderColor: 'rgba(255, 255, 255, 0.1)',
                 scaleMargins: { top: 0.8, bottom: 0 }, // RSI takes bottom 20%
+            },
+            handleScroll: {
+                mouseWheel: true,
+                pressedMouseMove: true,
+                horzTouchDrag: true,
+                vertTouchDrag: false,
+            },
+            handleScale: {
+                axisPressedMouseMove: true,
+                mouseWheel: true,
+                pinch: true,
+                axisDoubleClickReset: true,
+            },
+            kineticScroll: {
+                touch: isTouchScreen,
+                mouse: false,
             },
         });
 
@@ -789,6 +807,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         let isCancelled = false;
 
         const runCalc = () => {
+            if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (candles.length < 10) return;
             const { walls: liveWalls, cvdData: liveCvd, footprintData: liveFp, currentPrice: livePx } = smcDataRef.current;
@@ -853,6 +872,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         const runIctCalc = () => {
+            if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (candles.length < 10) return;
             try {
@@ -952,6 +972,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
 
         const runSupertrendCalc = () => {
+            if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (candles.length < 10) return;
             try {
@@ -981,6 +1002,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
 
         const runMsbObCalc = () => {
+            if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (candles.length < 10) return;
             try {
@@ -1055,6 +1077,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
 
         const runQuantumCalc = () => {
+            if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (!candles || candles.length < 200) return;
             try {
@@ -1085,6 +1108,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
 
         const runVwapSDCalc = () => {
+            if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (!candles || candles.length < 5) return;
             try {
@@ -1245,6 +1269,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
 
         const runPatternExtraction = () => {
+            if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (candles.length === 0) return;
             const markers: any[] = [];
@@ -1415,6 +1440,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     // Throttled Technical Indicator Engine (Runs smoothly every 200ms without freezing UI)
     useEffect(() => {
         const updateInterval = setInterval(() => {
+            if (document.hidden) return;
             if (!candlestickSeriesRef.current || !lastCandleRef.current || allCandlesRef.current.length === 0) return;
 
             try {

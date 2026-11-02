@@ -1739,4 +1739,26 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     min-height: 100% !important;
   }
 }
-
+
+
+/* Tablet & Mobile Touch Ergonomics (Redmi Pad 2 Pro / Touchscreens) */
+@media (pointer: coarse) {
+  button, 
+  a, 
+  [role="button"], 
+  input[type="button"], 
+  input[type="submit"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Custom sleek scrollbars for touchscreens */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.25);
+    border-radius: 9999px;
+  }
+}

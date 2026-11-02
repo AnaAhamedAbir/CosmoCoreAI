@@ -87,7 +87,7 @@ export const TimeframeSelector: React.FC<TimeframeSelectorProps> = ({ interval, 
                                     <button
                                         key={item}
                                         onClick={() => { onIntervalChange(item); setIsOpen(false); }}
-                                        className={`px-2 py-1.5 text-xs font-mono font-bold rounded-lg transition-all relative group
+                                        className={`px-2 py-2 min-h-[34px] flex items-center justify-center text-xs font-mono font-bold rounded-lg transition-all relative group active:scale-95
                                             ${isSelected
                                                 ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/25'
                                                 : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-slate-950 dark:hover:text-white'

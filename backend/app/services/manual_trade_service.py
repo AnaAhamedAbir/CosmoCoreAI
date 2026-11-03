@@ -1023,10 +1023,19 @@ class ManualTradeService:
             is_limit_order = order_req.type.lower() == 'limit'
 
             if not is_native_otoco_used and (has_tp or has_sl or is_limit_order):
+                from types import SimpleNamespace
+                # Detached-safe snapshot of api_key_record to prevent DetachedInstanceError in background task
+                safe_api_key_record = SimpleNamespace(
+                    id=api_key_record.id,
+                    exchange=api_key_record.exchange,
+                    api_key=api_key_record.api_key,
+                    secret_key=api_key_record.secret_key,
+                    passphrase=getattr(api_key_record, 'passphrase', None)
+                )
                 initial_price = response.get('price') or response.get('average') or getattr(order_req, 'price', 0.0)
                 asyncio.create_task(
                     bracket_order_service.monitor_and_execute_bracket(
-                        api_key_record=api_key_record,
+                        api_key_record=safe_api_key_record,
                         entry_order_id=response.get('id'),
                         symbol=order_req.symbol,
                         side=order_req.side,

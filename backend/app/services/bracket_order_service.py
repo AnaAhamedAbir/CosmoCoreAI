@@ -325,6 +325,29 @@ class BracketOrderService:
             db.close()
 
     @staticmethod
+    async def _send_bracket_failure_alert(user_id: int, symbol: str, order_kind: str, error_msg: str):
+        """Sends urgent alert to Telegram if a TP or SL bracket order could not be placed on the exchange."""
+        if not user_id:
+            return
+        from app.db.session import SessionLocal
+        from app.services.notification import NotificationService
+        db = SessionLocal()
+        try:
+            msg = (
+                f"🚨 *CRITICAL: BRACKET {order_kind.upper()} PLACEMENT FAILED!* 🚨\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"• Pair: `{symbol}`\n"
+                f"• Target Order: *{order_kind}*\n"
+                f"• Exchange Rejection: `{error_msg}`\n\n"
+                f"⚠️ *ACTION REQUIRED:* আপনার পজিশনটি এই মুহূর্তে {order_kind} ছাড়াই ওপেন রয়েছে! অনাকাঙ্ক্ষিত লস এড়াতে অবিলম্বে এক্সচেঞ্জে (Binance) গিয়ে ম্যানুয়ালি {order_kind} সেট করুন।"
+            )
+            await NotificationService.send_message(db, user_id, msg, parse_mode="Markdown", alert_type="alert_manual_trade")
+        except Exception as notify_err:
+            logger.warning(f"Failed to send bracket failure alert: {notify_err}")
+        finally:
+            db.close()
+
+    @staticmethod
     async def monitor_native_otoco(
         exchange, symbol: str, side: str, amount: float, entry_price: float,
         raw_res: dict, user_id: int
@@ -656,10 +679,28 @@ class BracketOrderService:
         is_futures: bool, tp_config: dict, sl_config: dict, user_id: int, api_key_record
     ):
         try:
-            final_amount = (
-                float(exchange.amount_to_precision(symbol, filled_amount))
-                if hasattr(exchange, 'amount_to_precision') else filled_amount
-            )
+            # Check if this is an Inverse / COIN-M contract (e.g. DOGE/USD:DOGE)
+            is_inverse = False
+            try:
+                if hasattr(exchange, 'markets') and exchange.markets and symbol in exchange.markets:
+                    mkt = exchange.markets[symbol]
+                    is_inverse = bool(mkt.get('inverse') or mkt.get('subType') == 'inverse')
+                elif ':' in symbol:
+                    parts = symbol.split('/')
+                    base = parts[0]
+                    settle = parts[1].split(':')[1] if ':' in parts[1] else ''
+                    if settle.upper() == base.upper():
+                        is_inverse = True
+            except Exception:
+                pass
+
+            if is_inverse:
+                final_amount = max(1.0, round(float(filled_amount)))
+            else:
+                final_amount = (
+                    float(exchange.amount_to_precision(symbol, filled_amount))
+                    if hasattr(exchange, 'amount_to_precision') else filled_amount
+                )
             if final_amount <= 0:
                 return
             opposite_side = 'sell' if side.lower() == 'buy' else 'buy'
@@ -716,11 +757,18 @@ class BracketOrderService:
                         if hasattr(exchange, 'price_to_precision') else tp_price
                     )
                     ex_params = await BracketOrderService._apply_futures_exit_params(exchange, symbol, opposite_side) if is_futures else {}
-                    if tp_order_type == 'limit':
-                        ex_params['postOnly'] = True
                     try:
                         if tp_order_type == 'limit':
-                            tp_res = await exchange.create_limit_order(symbol, opposite_side, new_total_amt, final_tp_price, ex_params)
+                            ex_params_po = dict(ex_params)
+                            ex_params_po['postOnly'] = True
+                            try:
+                                tp_res = await exchange.create_limit_order(symbol, opposite_side, new_total_amt, final_tp_price, ex_params_po)
+                            except Exception as po_cons_err:
+                                logger.warning(f"Consolidated TP Post-Only rejected ({po_cons_err}). Retrying with standard GTC Limit...")
+                                ex_params_gtc = dict(ex_params)
+                                ex_params_gtc.pop('postOnly', None)
+                                ex_params_gtc['timeInForce'] = 'GTC'
+                                tp_res = await exchange.create_limit_order(symbol, opposite_side, new_total_amt, final_tp_price, ex_params_gtc)
                         else:
                             tp_res = await exchange.create_market_order(symbol, opposite_side, new_total_amt, params=ex_params)
                         if tp_res and tp_res.get('id'):
@@ -857,39 +905,38 @@ class BracketOrderService:
                 )
     
                 ex_params = await BracketOrderService._apply_futures_exit_params(exchange, symbol, opposite_side) if is_futures else {}
-                if tp_order_type == 'limit':
-                    ex_params['postOnly'] = True
-    
                 try:
                     tp_res = None
-                    is_ws_success = False
-                    
-                    if exchange.has.get('createOrderWs'):
+                    if tp_order_type == 'limit':
+                        # 1st attempt: Post-Only Maker limit order (saves fees)
+                        ex_params_po = dict(ex_params)
+                        ex_params_po['postOnly'] = True
                         try:
-                            tp_price_arg = final_tp_price if tp_order_type == 'limit' else None
-                            tp_res = await exchange.create_order_ws(
-                                symbol, tp_order_type, opposite_side, final_amount, tp_price_arg, ex_params
-                            )
-                            is_ws_success = True
-                        except Exception as ws_e:
-                            logger.warning(f"Bracket TP WebSocket failed ({ws_e}). Fallback to REST.")
-                            
-                    if not is_ws_success:
-                        if tp_order_type == 'limit':
                             tp_res = await exchange.create_limit_order(
-                                symbol, opposite_side, final_amount, final_tp_price, ex_params
+                                symbol, opposite_side, final_amount, final_tp_price, ex_params_po
                             )
-                        else:
-                            tp_res = await exchange.create_market_order(
-                                symbol, opposite_side, final_amount, params=ex_params
+                            logger.info(f"✅ Bracket Monitor: Maker Post-Only TP placed! ID: {tp_res.get('id')}")
+                        except Exception as po_e:
+                            logger.warning(f"⚠️ Bracket TP Post-Only rejected ({po_e}). Retrying immediately with standard GTC Limit...")
+                            # 2nd attempt: Standard GTC Limit order (guaranteed placement, never rejected for crossing book)
+                            ex_params_gtc = dict(ex_params)
+                            ex_params_gtc.pop('postOnly', None)
+                            ex_params_gtc['timeInForce'] = 'GTC'
+                            tp_res = await exchange.create_limit_order(
+                                symbol, opposite_side, final_amount, final_tp_price, ex_params_gtc
                             )
+                            logger.info(f"✅ Bracket Monitor: Standard GTC Limit TP placed successfully! ID: {tp_res.get('id')}")
+                    else:
+                        tp_res = await exchange.create_market_order(
+                            symbol, opposite_side, final_amount, params=ex_params
+                        )
     
                     if tp_res:
                         tp_order_id = tp_res.get('id')
 
-                    logger.info(f"✅ Bracket Monitor: TP placed! ID: {tp_res.get('id')}")
+                    logger.info(f"✅ Bracket Monitor: TP placed! ID: {tp_res.get('id') if tp_res else 'N/A'}")
     
-                    if user_id:
+                    if user_id and tp_res:
                         try:
                             from app.db.session import SessionLocal
                             db = SessionLocal()
@@ -911,6 +958,12 @@ class BracketOrderService:
     
                 except Exception as ex_e:
                     logger.error(f"❌ Bracket Monitor: Failed to place TP Order! {ex_e}")
+                    if user_id:
+                        asyncio.create_task(
+                            BracketOrderService._send_bracket_failure_alert(
+                                user_id, symbol, "Take-Profit (TP)", str(ex_e)
+                            )
+                        )
 
             # --- Execute SL ---
             if sl_config:
@@ -1187,6 +1240,12 @@ class BracketOrderService:
         
                         except Exception as ex_e:
                             logger.error(f"❌ Bracket Monitor: Failed to place SL Order! {ex_e}")
+                            if user_id:
+                                asyncio.create_task(
+                                    BracketOrderService._send_bracket_failure_alert(
+                                        user_id, symbol, "Stop-Loss (SL)", str(ex_e)
+                                    )
+                                )
 
         except Exception as chunk_e:
             logger.error(f"Failed to spawn bracket for chunk: {chunk_e}")

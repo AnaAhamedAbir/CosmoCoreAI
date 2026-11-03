@@ -109,16 +109,16 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [isLoadingPosition, setIsLoadingPosition] = useState(false);
   const [tpConfig, setTpConfig] = useState({
     enabled: true,
-    mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
-    value: '0.0005',
+    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
+    value: '1.5',
     orderType: 'Limit' as 'Limit' | 'Market',
     timeoutMins: 0
   });
   const [slConfig, setSlConfig] = useState({
     enabled: true,
-    type: 'smart_chase' as 'fixed' | 'trailing' | 'smart_chase' | 'trailing_chase',
-    mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
-    value: '0.0005',
+    type: 'fixed' as 'fixed' | 'trailing' | 'smart_chase' | 'trailing_chase',
+    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
+    value: '1.0',
     atrPeriod: 10,
     atrMultiplier: 2.0,
     atrTimeframe: '15m',
@@ -555,7 +555,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     isTp: boolean,
     side: 'Buy' | 'Sell' = tradeSide
   ): string => {
-    const defaultPct = isTp ? 0.35 : 0.15;
+    const defaultPct = isTp ? 1.5 : 1.0;
     if (targetMode === 'percentage') {
       return defaultPct.toString();
     }
@@ -2198,7 +2198,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                   <div className="flex justify-between items-center cursor-pointer group" onClick={() => setSlConfig({...slConfig, enabled: !slConfig.enabled})}>
                       <div className="flex flex-col">
                           <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors">Attached Stop-Loss (SL)</span>
-                          <span className="text-[10px] text-gray-500">Auto-trigger market stop to manage risk</span>
+                          <span className="text-[10px] text-gray-400">{(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native Order (Visible on Exchange)' : '⚡ Bot Maker Loop (Zero Maker Fee)'}</span>
                       </div>
                       <div className={`relative w-8 h-4 rounded-full transition-colors ${slConfig.enabled ? 'bg-red-500' : 'bg-gray-600'}`}>
                           <MotionDiv 
@@ -2217,106 +2217,176 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                             exit={{ height: 0, opacity: 0 }}
                             className="space-y-3 overflow-hidden pt-2 border-t border-white/5"
                         >
-                            {/* Layout Grid */}
-                            <div className="grid grid-cols-2 gap-2">
-                                {/* SL Type */}
-                                <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">SL Type</label>
-                                    <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
-                                        <button
-                                            onClick={() => setSlConfig({
-                                                ...slConfig,
-                                                type: 'fixed',
-                                                mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
-                                                value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
-                                            })}
-                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                        >
-                                            Fixed
-                                        </button>
-                                        <button
-                                            onClick={() => setSlConfig({
-                                                ...slConfig,
-                                                type: 'trailing',
-                                                mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode,
-                                                value: slConfig.mode === 'absolute' ? getSmartGapValue('percentage', false) : slConfig.value
-                                            })}
-                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                        >
-                                            Trailing
-                                        </button>
-                                        <button
-                                            onClick={() => setSlConfig({
-                                                ...slConfig,
-                                                type: 'smart_chase',
-                                                mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
-                                                value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
-                                            })}
-                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-bold shadow-sm' : 'text-gray-500 hover:text-white'}`}
-                                            title="Smart Chase Limit (Maker Post-Only Exit with Circuit Breaker)"
-                                        >
-                                            Smart Chase
-                                        </button>
-                                        <button
-                                            onClick={() => setSlConfig({
-                                                ...slConfig,
-                                                type: 'trailing_chase',
-                                                mode: (slConfig.mode === 'absolute' || slConfig.mode === 'atr') ? 'percentage' : slConfig.mode,
-                                                value: (slConfig.mode === 'absolute' || slConfig.mode === 'atr') ? getSmartGapValue('percentage', false) : slConfig.value
-                                            })}
-                                            className={`flex-1 text-[8px] py-1 rounded transition-colors ${slConfig.type === 'trailing_chase' ? 'bg-gradient-to-r from-amber-500 via-rose-500 to-cyan-500 text-white font-bold shadow-sm' : 'text-gray-500 hover:text-white'}`}
-                                            title="Trailing Smart Chase (Trails in profit + exits via Zero-Fee Maker Limit order)"
-                                        >
-                                            ⚡ Trail Chase
-                                        </button>
+                            {/* Execution Engine Selector (Exchange Native vs Smart Chase Bot) */}
+                            <div className="space-y-2 bg-black/30 p-2.5 rounded-lg border border-white/5">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[10px] text-gray-300 font-semibold flex items-center gap-1">
+                                        <span>SL Execution Engine</span>
+                                    </label>
+                                    <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                                        (slConfig.type === 'fixed' || slConfig.type === 'trailing')
+                                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    }`}>
+                                        {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native (Safe)' : '⚡ Bot Software Loop'}
+                                    </span>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/50 rounded-lg border border-white/10">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSlConfig({
+                                            ...slConfig,
+                                            type: 'fixed',
+                                            mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
+                                            value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
+                                        })}
+                                        className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all text-center ${
+                                            (slConfig.type === 'fixed' || slConfig.type === 'trailing')
+                                                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-md shadow-emerald-950/40 ring-1 ring-emerald-400/30'
+                                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                        }`}
+                                    >
+                                        <span className="text-[10.5px] font-bold flex items-center gap-1">
+                                            <span>🛡️</span> Exchange Native
+                                        </span>
+                                        <span className="text-[7.5px] opacity-80 leading-tight mt-0.5">
+                                            Real order on Binance • 24/7 Safe
+                                        </span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setSlConfig({
+                                            ...slConfig,
+                                            type: 'smart_chase',
+                                            mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
+                                            value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
+                                        })}
+                                        className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all text-center ${
+                                            (slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
+                                                ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-bold shadow-md shadow-amber-950/40 ring-1 ring-amber-400/30'
+                                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                        }`}
+                                    >
+                                        <span className="text-[10.5px] font-bold flex items-center gap-1">
+                                            <span>⚡</span> Smart Chase
+                                        </span>
+                                        <span className="text-[7.5px] opacity-80 leading-tight mt-0.5">
+                                            Bot Maker Loop • 0% Fee
+                                        </span>
+                                    </button>
+                                </div>
+
+                                {/* Dynamic Sub-Variant & Gap Mode */}
+                                <div className="grid grid-cols-2 gap-2 pt-0.5">
+                                    {/* Sub-variant based on selected target */}
+                                    <div className="space-y-1">
+                                        <label className="text-[9.5px] text-gray-400 font-medium">
+                                            {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? 'Order Variant' : 'Chase Strategy'}
+                                        </label>
+                                        <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                            {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSlConfig({ ...slConfig, type: 'fixed' })}
+                                                        className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-emerald-600 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                                    >
+                                                        Fixed Stop
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSlConfig({ ...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode })}
+                                                        className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-emerald-600 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                                    >
+                                                        Trailing
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSlConfig({ ...slConfig, type: 'smart_chase' })}
+                                                        className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-amber-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                                    >
+                                                        BBO Chase
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSlConfig({ ...slConfig, type: 'trailing_chase' })}
+                                                        className={`flex-1 text-[8px] py-1 rounded transition-colors ${slConfig.type === 'trailing_chase' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                                    >
+                                                        ⚡ Trail Chase
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Gap Mode */}
+                                    <div className="space-y-1">
+                                        <label className="text-[9.5px] text-gray-400 font-medium">Gap Unit</label>
+                                        <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setSlConfig({
+                                                    ...slConfig,
+                                                    mode: 'percentage',
+                                                    value: slConfig.mode === 'percentage' ? slConfig.value : getSmartGapValue('percentage', false)
+                                                })}
+                                                className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            >
+                                                %
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSlConfig({
+                                                    ...slConfig,
+                                                    mode: 'price',
+                                                    value: slConfig.mode === 'price' ? slConfig.value : getSmartGapValue('price', false)
+                                                })}
+                                                className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            >
+                                                $
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSlConfig({
+                                                    ...slConfig,
+                                                    mode: 'absolute',
+                                                    type: (slConfig.type === 'trailing' || slConfig.type === 'trailing_chase') ? 'fixed' : slConfig.type,
+                                                    value: slConfig.mode === 'absolute' ? slConfig.value : getSmartGapValue('absolute', false)
+                                                })}
+                                                className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            >
+                                                🎯
+                                            </button>
+                                            {slConfig.type !== 'smart_chase' && slConfig.type !== 'trailing_chase' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSlConfig({...slConfig, mode: 'atr', type: 'trailing'})}
+                                                    className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'atr' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                                >
+                                                    ATR
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Gap Mode */}
-                                <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">Mode</label>
-                                    <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
-                                        <button
-                                            onClick={() => setSlConfig({
-                                                ...slConfig,
-                                                mode: 'percentage',
-                                                value: slConfig.mode === 'percentage' ? slConfig.value : getSmartGapValue('percentage', false)
-                                            })}
-                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                        >
-                                            %
-                                        </button>
-                                        <button
-                                            onClick={() => setSlConfig({
-                                                ...slConfig,
-                                                mode: 'price',
-                                                value: slConfig.mode === 'price' ? slConfig.value : getSmartGapValue('price', false)
-                                            })}
-                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                        >
-                                            $
-                                        </button>
-                                        <button
-                                            onClick={() => setSlConfig({
-                                                ...slConfig,
-                                                mode: 'absolute',
-                                                type: (slConfig.type === 'trailing' || slConfig.type === 'trailing_chase') ? 'fixed' : slConfig.type,
-                                                value: slConfig.mode === 'absolute' ? slConfig.value : getSmartGapValue('absolute', false)
-                                            })}
-                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                        >
-                                            🎯
-                                        </button>
-                                        {slConfig.type !== 'smart_chase' && slConfig.type !== 'trailing_chase' && (
-                                            <button
-                                                onClick={() => setSlConfig({...slConfig, mode: 'atr', type: 'trailing'})}
-                                                className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'atr' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                            >
-                                                ATR
-                                            </button>
-                                        )}
+                                {/* Assurance Banner */}
+                                {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? (
+                                    <div className="text-[9px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                                        <span>🛡️</span>
+                                        <span><strong>Binance Native Stop:</strong> অর্ডার সরাসরি Binance-এ বসবে এবং অ্যাপে দৃশ্যমান থাকবে।</span>
                                     </div>
-                                </div>
+                                ) : (
+                                    <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
+                                        <span>⚠️</span>
+                                        <span><strong>Bot Software Loop:</strong> ব্যাকএন্ড মেমোরিতে ট্র্যাক হবে (Binance অর্ডারবুকে সরাসরি বসবে না)।</span>
+                                    </div>
+                                )}
                             </div>
                             
                             {/* Target Gap & Timeout */}

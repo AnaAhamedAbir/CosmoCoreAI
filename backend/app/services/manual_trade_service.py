@@ -471,6 +471,14 @@ class ManualTradeService:
         try:
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
             raw_orders = await exchange.fetch_open_orders(symbol)
+            if is_futures:
+                try:
+                    # On Binance Futures, conditional/algo stop orders (like STOP_MARKET) must be fetched explicitly
+                    stop_orders = await exchange.fetch_open_orders(symbol, params={'stop': True})
+                    if stop_orders:
+                        raw_orders.extend(stop_orders)
+                except Exception as s_err:
+                    logger.debug(f'Failed to fetch conditional stop orders for {symbol}: {s_err}')
 
             # Exclude internal disaster SL orders that belong to active software Smart Chases
             # so the chart only displays the primary Smart Chase trigger line
@@ -509,7 +517,13 @@ class ManualTradeService:
                 # Fetch price: stop orders may have 0 for price and the trigger in stopPrice/triggerPrice
                 price = float(o.get('price') or 0.0)
                 if price <= 0:
-                    price = float(o.get('stopPrice') or o.get('triggerPrice') or 0.0)
+                    price = float(
+                        o.get('stopPrice') or 
+                        o.get('triggerPrice') or 
+                        o.get('info', {}).get('triggerPrice') or 
+                        o.get('info', {}).get('stopPrice') or 
+                        0.0
+                    )
 
                 if price > 0:
                     raw_iceberg_qty = float(o.get('info', {}).get('icebergQty') or 0.0)

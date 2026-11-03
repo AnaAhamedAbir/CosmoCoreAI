@@ -441,6 +441,30 @@ class BracketOrderService:
 
     
     @staticmethod
+    async def _cancel_futures_order_universal(exchange, order_id: str, symbol: str):
+        """
+        Safely cancels an order on Futures, attempting standard order cancellation
+        and conditional/algo cancellation (params={'stop': True}) so no order is left behind.
+        """
+        if not order_id or not exchange:
+            return
+        cancelled = False
+        try:
+            await exchange.cancel_order(order_id, symbol)
+            cancelled = True
+            logger.info(f"✅ Cancelled regular order {order_id} on {symbol}")
+        except Exception as e:
+            logger.debug(f"Standard cancel notice for {order_id}: {e}")
+
+        if not cancelled:
+            try:
+                await exchange.cancel_order(order_id, symbol, params={'stop': True})
+                cancelled = True
+                logger.info(f"✅ Cancelled conditional/algo order {order_id} on {symbol}")
+            except Exception as e:
+                logger.debug(f"Conditional cancel notice for {order_id}: {e}")
+
+    @staticmethod
     async def update_software_bracket(sl_id: str, new_price: float, api_key_id: int = None, user_id: int = 0) -> dict:
         """
         Dynamically update the trigger price of an active software SL (Smart Chase, Trailing, Fixed).
@@ -1216,27 +1240,29 @@ class BracketOrderService:
                                 except Exception as notify_err:
                                     logger.warning(f"SL notification failed (non-fatal): {notify_err}")
 
-                            # If Auto-Breakeven is active, spawn background monitor loop to ratchet SL to Entry on profit
-                            if auto_breakeven_enabled:
-                                logger.info(f"🛡️ Spawning Auto-Breakeven monitor loop for Fixed SL on {symbol} (Target: +{auto_breakeven_trigger_pct}%)")
-                                asyncio.create_task(
-                                    BracketOrderService._fixed_sl_auto_breakeven_loop(
-                                        exchange=exchange,
-                                        symbol=symbol,
-                                        opposite_side=opposite_side,
-                                        amount=final_amount,
-                                        entry_price=average_price,
-                                        initial_sl_price=final_sl_price,
-                                        is_futures=is_futures,
-                                        user_id=user_id,
-                                        api_key_record=api_key_record,
-                                        tp_order_id=tp_order_id,
-                                        disaster_sl_order_id=sl_res.get('id') if sl_res else None,
-                                        auto_breakeven_enabled=True,
-                                        auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
-                                        auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
-                                    )
+                            # Spawn OCO Watchdog (and Auto-Breakeven if enabled) to ensure TP & SL cancel each other
+                            logger.info(
+                                f"🛡️ Spawning Fixed SL {'Auto-Breakeven' if auto_breakeven_enabled else 'OCO Watchdog'} loop for {symbol} "
+                                f"(SL: {sl_res.get('id') if sl_res else 'None'}, TP: {tp_order_id or 'None'})"
+                            )
+                            asyncio.create_task(
+                                BracketOrderService._fixed_sl_auto_breakeven_loop(
+                                    exchange=exchange,
+                                    symbol=symbol,
+                                    opposite_side=opposite_side,
+                                    amount=final_amount,
+                                    entry_price=average_price,
+                                    initial_sl_price=final_sl_price,
+                                    is_futures=is_futures,
+                                    user_id=user_id,
+                                    api_key_record=api_key_record,
+                                    tp_order_id=tp_order_id,
+                                    disaster_sl_order_id=sl_res.get('id') if sl_res else None,
+                                    auto_breakeven_enabled=auto_breakeven_enabled,
+                                    auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
+                                    auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
                                 )
+                            )
         
                         except Exception as ex_e:
                             logger.error(f"❌ Bracket Monitor: Failed to place SL Order! {ex_e}")
@@ -1629,10 +1655,7 @@ class BracketOrderService:
                     logger.info(f"🛑 Fixed SL Auto-Breakeven monitor cancelled by user for {symbol}.")
                     curr_disaster = (sl_meta.get('disaster_sl_order_id') if sl_meta else None) or disaster_sl_order_id
                     if curr_disaster:
-                        try:
-                            await exchange.cancel_order(curr_disaster, symbol)
-                        except Exception:
-                            pass
+                        await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
                     return
 
                 # Synchronize dynamic order IDs
@@ -1674,10 +1697,10 @@ class BracketOrderService:
                 if not is_open:
                     curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
                     if curr_disaster:
-                        try:
-                            await exchange.cancel_order(curr_disaster, symbol)
-                        except Exception:
-                            pass
+                        await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
+                    curr_tp = sl_meta.get('tp_order_id') or tp_order_id
+                    if curr_tp:
+                        await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp, symbol)
                     return
 
                 # Check if native SL order already filled on futures
@@ -1700,10 +1723,7 @@ class BracketOrderService:
                                     )
                                 )
                             if tp_order_id:
-                                try:
-                                    await exchange.cancel_order(tp_order_id, symbol)
-                                except Exception:
-                                    pass
+                                await BracketOrderService._cancel_futures_order_universal(exchange, tp_order_id, symbol)
                             return
                     except Exception:
                         pass

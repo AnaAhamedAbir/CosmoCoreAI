@@ -1119,21 +1119,36 @@ class ManualTradeService:
             try:
                 original_order = await exchange.fetch_order(order_id, symbol)
             except Exception as e:
-                logger.warning(f"Could not fetch original order {order_id} during edit: {e}")
+                if is_futures:
+                    try:
+                        original_order = await exchange.fetch_order(order_id, symbol, params={'stop': True})
+                    except Exception:
+                        pass
+                if not original_order:
+                    logger.warning(f"Could not fetch original order {order_id} during edit: {e}")
             
             # Use cancel + create pattern as it is more universally supported across exchanges than native editOrder
-            # 1. Cancel existing order
+            # 1. Cancel existing order (supports both regular and conditional/algo orders on Binance)
+            cancelled = False
             try:
                 if exchange.has.get('cancelOrderWs'):
                     try:
                         await exchange.cancel_order_ws(id=order_id, symbol=symbol)
-                    except Exception as ws_e:
-                        logger.warning(f"WebSocket cancel failed ({ws_e}), falling back to REST.")
-                        await exchange.cancel_order(id=order_id, symbol=symbol)
-                else:
+                        cancelled = True
+                    except Exception:
+                        pass
+                if not cancelled:
                     await exchange.cancel_order(id=order_id, symbol=symbol)
-            except Exception as cancel_e:
-                logger.warning(f"Error canceling order {order_id} during edit: {cancel_e}")
+                    cancelled = True
+            except Exception:
+                pass
+
+            if not cancelled and is_futures:
+                try:
+                    await exchange.cancel_order(id=order_id, symbol=symbol, params={'stop': True})
+                    cancelled = True
+                except Exception as cancel_e:
+                    logger.warning(f"Error canceling order {order_id} during edit: {cancel_e}")
             
             # Small buffer to ensure exchange processes the cancel before replacing, preventing margin errors
             await asyncio.sleep(0.1)

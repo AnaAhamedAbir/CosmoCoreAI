@@ -49,6 +49,16 @@ async def get_or_create_exchange(
         if cache_key in _pool:
             exchange, created_at = _pool[cache_key]
             if time.time() - created_at < CACHE_TTL_SECONDS:
+                if not getattr(exchange, 'markets', None):
+                    try:
+                        await asyncio.wait_for(exchange.load_markets(), timeout=8.0)
+                    except Exception:
+                        if is_futures and exchange_name.lower() == 'binance':
+                            try:
+                                exchange.options['fetchMarkets'] = {'types': ['linear']}
+                                await asyncio.wait_for(exchange.load_markets(), timeout=8.0)
+                            except Exception:
+                                pass
                 logger.debug(f"[ExchangePool] ✅ Cache HIT for key={api_key_id} mode={'futures' if is_futures else 'spot'}")
                 return exchange
             else:
@@ -71,7 +81,7 @@ async def get_or_create_exchange(
             'apiKey': decrypted_api_key,
             'secret': decrypted_secret,
             'enableRateLimit': True,
-            'timeout': 30000,
+            'timeout': 20000,
             'options': {
                 'adjustForTimeDifference': True,
                 'recvWindow': 60000 if exchange_name.lower() == 'mexc' else 10000,
@@ -93,10 +103,17 @@ async def get_or_create_exchange(
 
         # Markets লোড করে রাখুন — পরবর্তী রিকোয়েস্টে আর লাগবে না
         try:
-            await exchange.load_markets()
+            await asyncio.wait_for(exchange.load_markets(), timeout=10.0)
             logger.info(f"[ExchangePool] ✅ Markets loaded for {exchange_name} key={api_key_id}")
         except Exception as e:
             logger.warning(f"[ExchangePool] ⚠️ Market load warning for {exchange_name}: {e}")
+            if is_futures and exchange_name.lower() == 'binance':
+                try:
+                    exchange.options['fetchMarkets'] = {'types': ['linear']}
+                    await asyncio.wait_for(exchange.load_markets(), timeout=8.0)
+                    logger.info(f"[ExchangePool] ✅ Linear Futures markets loaded via fallback for {exchange_name} key={api_key_id}")
+                except Exception as lin_e:
+                    logger.warning(f"[ExchangePool] ⚠️ Linear fallback market load warning: {lin_e}")
 
         _pool[cache_key] = (exchange, time.time())
         return exchange

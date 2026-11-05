@@ -378,24 +378,35 @@ async def execute_smart_peg_entry(
             peg_order = await exchange.create_limit_order(
                 symbol, side.lower(), remaining_amount, target_maker_price, ex_params
             )
+            # On Binance Futures, a GTX Post-Only order that crosses the spread returns HTTP 200 with status='expired'
+            if peg_order and str(peg_order.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled'):
+                raise Exception(f"Post-Only GTX order returned status={peg_order.get('status')}")
         except Exception as place_err:
             err_str = str(place_err).lower()
-            is_postonly = 'immediately match' in err_str or '-5022' in err_str or 'post only' in err_str or 'postonly' in err_str
+            is_postonly = (
+                'immediately match' in err_str or '-5022' in err_str or
+                'post only' in err_str or 'postonly' in err_str or
+                'post-only' in err_str or 'expired' in err_str
+            )
             if is_postonly:
-                logger.warning(f"⚠️ [Smart Peg Entry] Post-Only touched spread. Retrying 1 tick safer...")
+                logger.warning(f"⚠️ [Smart Peg Entry] Post-Only touched spread ({place_err}). Retrying 1 tick safer...")
+                peg_order = None
                 try:
                     f_ob = await exchange.fetch_order_book(symbol, limit=5)
                     if f_ob and f_ob.get('bids') and f_ob.get('asks'):
                         f_bid = float(f_ob['bids'][0][0])
                         f_ask = float(f_ob['asks'][0][0])
                         adj_price = (f_bid - tick) if side.lower() == 'buy' else (f_ask + tick)
-                        if hasattr(exchange, 'price_to_precision'):
+                        if hasattr(exchange, 'price_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
                             adj_price = float(exchange.price_to_precision(symbol, adj_price))
                         peg_order = await exchange.create_limit_order(symbol, side.lower(), remaining_amount, adj_price, ex_params)
-                        if peg_order and peg_order.get('id'):
+                        if peg_order and str(peg_order.get('status', '')).lower() not in ('expired', 'rejected', 'canceled', 'cancelled') and peg_order.get('id'):
                             target_maker_price = adj_price
+                        else:
+                            peg_order = None
                 except Exception as adj_e:
                     logger.debug(f"Post-only fallback retry failed: {adj_e}")
+                    peg_order = None
             else:
                 logger.warning(f"⚠️ [Smart Peg Entry] Placement error: {place_err}")
 
@@ -416,66 +427,75 @@ async def execute_smart_peg_entry(
         user_cancelled = False
         repeg_triggered = False
 
-        while True:
-            if cancel_event.is_set():
-                user_cancelled = True
-                break
+        # If order already filled immediately, skip watch loop
+        if str(peg_order.get('status', '')).lower() in ('closed', 'filled'):
+            latest_order_chk = peg_order
+        else:
+            while True:
+                if cancel_event.is_set():
+                    user_cancelled = True
+                    break
 
-            await asyncio.sleep(peg_poll_interval)
-            poll_count += 1
+                await asyncio.sleep(peg_poll_interval)
+                poll_count += 1
 
-            # In-loop fast fill detection every 4 polls (~1.0s)
-            if poll_count % 4 == 0:
-                try:
-                    chk_in_loop = await exchange.fetch_order(order_id, symbol)
-                    if chk_in_loop.get('status', '').lower() in ['closed', 'filled']:
-                        logger.info(f"✅ [Smart Peg Entry] Order #{order_id} filled detected during BBO shadow watch!")
-                        latest_order_chk = chk_in_loop
-                        break
-                except Exception as poll_e:
-                    logger.debug(f"Entry order poll check notice: {poll_e}")
-
-            # Fetch live orderbook to verify if we are still top of book
-            try:
-                latest_ob = await exchange.fetch_order_book(symbol, limit=5)
-                if latest_ob and latest_ob.get('bids') and latest_ob.get('asks') and len(latest_ob['bids']) > 0 and len(latest_ob['asks']) > 0:
-                    l_best_bid = float(latest_ob['bids'][0][0])
-                    l_best_ask = float(latest_ob['asks'][0][0])
-                    l_tick = _get_market_tick(exchange, symbol, l_best_bid)
-
-                    if side.lower() == "buy":
-                        new_maker = l_best_bid
-                        if new_maker >= l_best_ask:
-                            new_maker = l_best_ask - l_tick
-                    else:
-                        new_maker = l_best_ask
-                        if new_maker <= l_best_bid:
-                            new_maker = l_best_bid + l_tick
-
-                    if hasattr(exchange, 'price_to_precision'):
-                        try:
-                            new_maker = float(exchange.price_to_precision(symbol, new_maker))
-                        except Exception:
-                            pass
-
-                    # Outbid / Spread shift condition with FIFO Queue Priority protection:
-                    # - If someone outbids our maker order (new_maker > target for Buy, new_maker < target for Sell),
-                    #   wait at least 3 polls (0.75s) to avoid micro-flicker churn, then step ahead.
-                    # - If top-of-book retreats away from our resting order, wait at least 6 polls (1.5s)
-                    #   because our resting order is already at the very front of the book about to get filled!
-                    if new_maker != target_maker_price:
-                        is_outbid = (new_maker > target_maker_price) if side.lower() == "buy" else (new_maker < target_maker_price)
-                        min_polls_required = 3 if is_outbid else 6
-                        if poll_count >= min_polls_required:
-                            logger.info(
-                                f"⚡ [Smart Peg Entry] BBO shifted ({'outbid' if is_outbid else 'retreat'}): {target_maker_price} ➜ {new_maker} "
-                                f"(Bid={l_best_bid}, Ask={l_best_ask}). Re-pegging!"
-                            )
-                            repeg_triggered = True
-                            cached_ob = latest_ob  # Pre-cache for 0ms re-peg!
+                # In-loop fast fill detection every 2 polls (~0.5s)
+                if poll_count % 2 == 0:
+                    try:
+                        chk_in_loop = await exchange.fetch_order(order_id, symbol)
+                        chk_st = str(chk_in_loop.get('status', '')).lower()
+                        if chk_st in ['closed', 'filled']:
+                            logger.info(f"✅ [Smart Peg Entry] Order #{order_id} filled detected during BBO shadow watch!")
+                            latest_order_chk = chk_in_loop
                             break
-            except Exception as ob_p_err:
-                logger.debug(f"Entry BBO poll non-fatal error: {ob_p_err}")
+                        elif chk_st in ['expired', 'canceled', 'cancelled', 'rejected']:
+                            latest_order_chk = chk_in_loop
+                            repeg_triggered = True
+                            break
+                    except Exception as poll_e:
+                        logger.debug(f"Entry order poll check notice: {poll_e}")
+
+                # Fetch live orderbook to verify if we are still top of book
+                try:
+                    latest_ob = await exchange.fetch_order_book(symbol, limit=5)
+                    if latest_ob and latest_ob.get('bids') and latest_ob.get('asks') and len(latest_ob['bids']) > 0 and len(latest_ob['asks']) > 0:
+                        l_best_bid = float(latest_ob['bids'][0][0])
+                        l_best_ask = float(latest_ob['asks'][0][0])
+                        l_tick = _get_market_tick(exchange, symbol, l_best_bid)
+
+                        if side.lower() == "buy":
+                            new_maker = l_best_bid
+                            if new_maker >= l_best_ask:
+                                new_maker = l_best_ask - l_tick
+                        else:
+                            new_maker = l_best_ask
+                            if new_maker <= l_best_bid:
+                                new_maker = l_best_bid + l_tick
+
+                        if hasattr(exchange, 'price_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
+                            try:
+                                new_maker = float(exchange.price_to_precision(symbol, new_maker))
+                            except Exception:
+                                pass
+
+                        # Outbid / Spread shift condition with FIFO Queue Priority protection:
+                        # - If someone outbids our maker order (new_maker > target for Buy, new_maker < target for Sell),
+                        #   wait at least 3 polls (0.75s) to avoid micro-flicker churn, then step ahead.
+                        # - If top-of-book retreats away from our resting order, wait at least 6 polls (1.5s)
+                        #   because our resting order is already at the very front of the book about to get filled!
+                        if new_maker != target_maker_price:
+                            is_outbid = (new_maker > target_maker_price) if side.lower() == "buy" else (new_maker < target_maker_price)
+                            min_polls_required = 3 if is_outbid else 6
+                            if poll_count >= min_polls_required:
+                                logger.info(
+                                    f"⚡ [Smart Peg Entry] BBO shifted ({'outbid' if is_outbid else 'retreat'}): {target_maker_price} ➜ {new_maker} "
+                                    f"(Bid={l_best_bid}, Ask={l_best_ask}). Re-pegging!"
+                                )
+                                repeg_triggered = True
+                                cached_ob = latest_ob  # Pre-cache for 0ms re-peg!
+                                break
+                except Exception as ob_p_err:
+                    logger.debug(f"Entry BBO poll non-fatal error: {ob_p_err}")
 
         # Handle user cancellation
         if user_cancelled:

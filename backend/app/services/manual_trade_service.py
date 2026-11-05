@@ -498,18 +498,29 @@ class ManualTradeService:
                 logger.debug(f"Disaster ID exclusion check: {d_chk_err}")
 
             orders = []
+            seen_order_ids = set()
             for o in raw_orders:
-                status = o.get('status', '').lower()
-                if status != 'open':
+                status = str(o.get('status') or '').lower()
+                if status not in ('open', 'new', 'untiggered', 'untriggered'):
                     continue
 
                 order_id_str = str(o.get('id'))
-                if order_id_str in active_disaster_ids:
+                if not order_id_str or order_id_str in active_disaster_ids or order_id_str in seen_order_ids:
                     continue
 
-                raw_type = o.get('type', '').lower()
-                is_stop = 'stop' in raw_type or 'take_profit' in raw_type
-                is_limit = 'limit' in raw_type or is_stop
+                raw_type = str(o.get('type') or '').lower()
+                info_dict = o.get('info') if isinstance(o.get('info'), dict) else {}
+                info_type = str(info_dict.get('orderType') or info_dict.get('type') or info_dict.get('origType') or '').lower()
+                has_trigger = bool(
+                    o.get('stopPrice') or o.get('triggerPrice') or
+                    info_dict.get('triggerPrice') or info_dict.get('stopPrice')
+                )
+                is_stop = (
+                    'stop' in raw_type or 'take_profit' in raw_type or 'trailing' in raw_type or
+                    'stop' in info_type or 'take_profit' in info_type or 'trailing' in info_type or
+                    has_trigger
+                )
+                is_limit = 'limit' in raw_type or 'limit' in info_type or is_stop
 
                 if not is_limit:
                     continue
@@ -520,20 +531,22 @@ class ManualTradeService:
                     price = float(
                         o.get('stopPrice') or 
                         o.get('triggerPrice') or 
-                        o.get('info', {}).get('triggerPrice') or 
-                        o.get('info', {}).get('stopPrice') or 
+                        info_dict.get('triggerPrice') or 
+                        info_dict.get('stopPrice') or 
+                        info_dict.get('activatePrice') or
                         0.0
                     )
 
                 if price > 0:
-                    raw_iceberg_qty = float(o.get('info', {}).get('icebergQty') or 0.0)
+                    seen_order_ids.add(order_id_str)
+                    raw_iceberg_qty = float(info_dict.get('icebergQty') or 0.0)
                     orders.append({
-                        'id': str(o.get('id')),
-                        'side': o.get('side', '').lower(),  # 'buy' or 'sell'
+                        'id': order_id_str,
+                        'side': str(o.get('side') or '').lower(),  # 'buy' or 'sell'
                         'price': price,
-                        'amount': float(o.get('amount') or 0.0),
+                        'amount': float(o.get('amount') or info_dict.get('origQty') or 0.0),
                         'filled': float(o.get('filled') or 0.0),
-                        'remaining': float(o.get('remaining') or o.get('amount') or 0.0),
+                        'remaining': float(o.get('remaining') or o.get('amount') or info_dict.get('origQty') or 0.0),
                         'isSoftwareSL': is_stop,
                         'mode': 'STOP' if is_stop else 'LIMIT',
                         'isIceberg': raw_iceberg_qty > 0,
@@ -669,8 +682,7 @@ class ManualTradeService:
                 else:
                     order_req.amount = max(1.0, round(order_req.amount))
 
-                if hasattr(exchange, 'amount_to_precision'):
-                    order_req.amount = float(exchange.amount_to_precision(order_req.symbol, order_req.amount))
+                order_req.amount = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, order_req.amount)
 
             # --- Pre-flight Margin Check ---
             try:
@@ -706,6 +718,16 @@ class ManualTradeService:
             except Exception as margin_e:
                 logger.debug(f"Pre-flight margin check skipped: {margin_e}")
 
+            # Detached-safe snapshot of api_key_record to prevent DetachedInstanceError in background tasks
+            from types import SimpleNamespace
+            safe_api_key_record = SimpleNamespace(
+                id=api_key_record.id,
+                exchange=api_key_record.exchange,
+                api_key=api_key_record.api_key,
+                secret_key=api_key_record.secret_key,
+                passphrase=getattr(api_key_record, 'passphrase', None)
+            )
+
             # --- SMART PEG ENTRY (DYNAMIC BBO ORDER BOOK SHADOWING) ---
             if order_req.type.lower() in ('smart_peg', 'smartpeg'):
                 from app.services.smart_peg_entry_executor import execute_smart_peg_entry
@@ -727,7 +749,7 @@ class ManualTradeService:
                         amount=order_req.amount,
                         is_futures=is_futures,
                         user_id=user_id,
-                        api_key_record=api_key_record,
+                        api_key_record=safe_api_key_record,
                         tp_config=order_req.attached_tp.dict() if (not is_reduce_only and getattr(order_req, 'attached_tp', None) and order_req.attached_tp.enabled) else None,
                         sl_config=order_req.attached_sl.dict() if (not is_reduce_only and getattr(order_req, 'attached_sl', None) and order_req.attached_sl.enabled) else None,
                         max_chase_deviation_pct=max_dev,
@@ -745,7 +767,7 @@ class ManualTradeService:
                         side=order_req.side,
                         order_type='SmartPeg',
                         amount=order_req.amount,
-                        fill_price=getattr(order_req, 'price', 0.0),
+                        fill_price=getattr(order_req, 'price', 0.0) or req_price,
                         latency_ms=0,
                         attached_tp=order_req.attached_tp,
                         attached_sl=order_req.attached_sl,
@@ -782,7 +804,7 @@ class ManualTradeService:
                 try:
                     f_iceberg = float(raw_iceberg)
                     if 0 < f_iceberg < float(order_req.amount):
-                        valid_iceberg = float(exchange.amount_to_precision(order_req.symbol, f_iceberg))
+                        valid_iceberg = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, f_iceberg)
                         logger.info(f"🧊 Native Iceberg detected: visible slice {valid_iceberg} of total {order_req.amount}")
                     else:
                         logger.warning(f"⚠️ Invalid iceberg_qty {f_iceberg} (must be > 0 and < {order_req.amount}). Ignoring.")
@@ -811,8 +833,7 @@ class ManualTradeService:
             ):
                 logger.info(f"⚡ Using Binance Native Attached Orders (OTO/OTOCO) for {order_req.symbol}...")
                 
-                market = exchange.market(order_req.symbol)
-                native_symbol = market['id']
+                native_symbol = bracket_order_service._resolve_native_futures_symbol(exchange, order_req.symbol, False)
                 has_tp = bool(order_req.attached_tp and order_req.attached_tp.enabled)
                 has_sl = bool(order_req.attached_sl and order_req.attached_sl.enabled)
                 
@@ -837,7 +858,7 @@ class ManualTradeService:
                         raise HTTPException(status_code=400, detail=f"For BUY order, TP price ({tp_price:.6f}) must be above entry price ({entry_price:.6f}).")
                     if order_req.side.lower() == 'sell' and tp_price >= entry_price:
                         raise HTTPException(status_code=400, detail=f"For SELL order, TP price ({tp_price:.6f}) must be below entry price ({entry_price:.6f}).")
-                    if exchange.price_to_precision(order_req.symbol, tp_price) == exchange.price_to_precision(order_req.symbol, entry_price):
+                    if bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, tp_price) == bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, entry_price):
                         raise HTTPException(status_code=400, detail=f"TP gap ({val}) is smaller than 1 price tick for {order_req.symbol} at {entry_price}.")
                         
                 if has_sl:
@@ -856,7 +877,7 @@ class ManualTradeService:
                         raise HTTPException(status_code=400, detail=f"For BUY order, SL price ({sl_price:.6f}) must be below entry price ({entry_price:.6f}).")
                     if order_req.side.lower() == 'sell' and sl_price <= entry_price:
                         raise HTTPException(status_code=400, detail=f"For SELL order, SL price ({sl_price:.6f}) must be above entry price ({entry_price:.6f}).")
-                    if exchange.price_to_precision(order_req.symbol, sl_price) == exchange.price_to_precision(order_req.symbol, entry_price):
+                    if bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price) == bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, entry_price):
                         raise HTTPException(status_code=400, detail=f"SL gap ({val}) is smaller than 1 price tick for {order_req.symbol} at {entry_price}.")
                 
                 is_post_only = ex_params.get('postOnly', False)
@@ -864,55 +885,55 @@ class ManualTradeService:
                     "symbol": native_symbol,
                     "workingType": "LIMIT_MAKER" if is_post_only else "LIMIT",
                     "workingSide": order_req.side.upper(),
-                    "workingPrice": exchange.price_to_precision(order_req.symbol, order_req.price),
-                    "workingQuantity": exchange.amount_to_precision(order_req.symbol, order_req.amount),
+                    "workingPrice": str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, order_req.price)),
+                    "workingQuantity": str(bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, order_req.amount)),
                     "pendingSide": "SELL" if order_req.side.lower() == "buy" else "BUY",
-                    "pendingQuantity": exchange.amount_to_precision(order_req.symbol, order_req.amount),
+                    "pendingQuantity": str(bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, order_req.amount)),
                 }
                 
                 if not is_post_only:
                     payload["workingTimeInForce"] = "GTC"
                 
                 if valid_iceberg is not None:
-                    payload["workingIcebergQty"] = exchange.amount_to_precision(order_req.symbol, valid_iceberg)
+                    payload["workingIcebergQty"] = str(bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, valid_iceberg))
                     logger.info(f"🧊 Attaching workingIcebergQty={payload['workingIcebergQty']} to Native Binance OTO/OTOCO")
                 
                 try:
                     if has_tp and has_sl:
                         if order_req.side.lower() == 'buy':
                             payload['pendingAboveType'] = 'LIMIT_MAKER'
-                            payload['pendingAbovePrice'] = exchange.price_to_precision(order_req.symbol, tp_price)
+                            payload['pendingAbovePrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, tp_price))
                             payload['pendingBelowType'] = 'STOP_LOSS_LIMIT'
                             payload['pendingBelowTimeInForce'] = 'GTC'
-                            payload['pendingBelowStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
-                            payload['pendingBelowPrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 0.999)
+                            payload['pendingBelowStopPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price))
+                            payload['pendingBelowPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price * 0.999))
                         else:
                             payload['pendingAboveType'] = 'STOP_LOSS_LIMIT'
                             payload['pendingAboveTimeInForce'] = 'GTC'
-                            payload['pendingAboveStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
-                            payload['pendingAbovePrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 1.001)
+                            payload['pendingAboveStopPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price))
+                            payload['pendingAbovePrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price * 1.001))
                             payload['pendingBelowType'] = 'LIMIT_MAKER'
-                            payload['pendingBelowPrice'] = exchange.price_to_precision(order_req.symbol, tp_price)
+                            payload['pendingBelowPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, tp_price))
                         raw_res = await exchange.private_post_orderlist_otoco(payload)
                     else: # OTO
                         if order_req.side.lower() == 'buy':
                             if has_tp:
                                 payload['pendingType'] = 'LIMIT_MAKER'
-                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, tp_price)
+                                payload['pendingPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, tp_price))
                             elif has_sl:
                                 payload['pendingType'] = 'STOP_LOSS_LIMIT'
                                 payload['pendingTimeInForce'] = 'GTC'
-                                payload['pendingStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
-                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 0.999)
+                                payload['pendingStopPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price))
+                                payload['pendingPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price * 0.999))
                         else:
                             if has_tp:
                                 payload['pendingType'] = 'LIMIT_MAKER'
-                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, tp_price)
+                                payload['pendingPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, tp_price))
                             elif has_sl:
                                 payload['pendingType'] = 'STOP_LOSS_LIMIT'
                                 payload['pendingTimeInForce'] = 'GTC'
-                                payload['pendingStopPrice'] = exchange.price_to_precision(order_req.symbol, sl_price)
-                                payload['pendingPrice'] = exchange.price_to_precision(order_req.symbol, sl_price * 1.001)
+                                payload['pendingStopPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price))
+                                payload['pendingPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price * 1.001))
                         raw_res = await exchange.private_post_orderlist_oto(payload)
 
                     order_list = raw_res.get('orderReports', [])
@@ -959,7 +980,7 @@ class ManualTradeService:
             # If not executed via OTOCO and iceberg is requested for spot limit order
             if not is_ws_success and valid_iceberg is not None:
                 ex_params['icebergAmount'] = valid_iceberg
-                ex_params['icebergQty'] = exchange.amount_to_precision(order_req.symbol, valid_iceberg)
+                ex_params['icebergQty'] = str(bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, valid_iceberg))
                 if 'timeInForce' not in ex_params and not ex_params.get('postOnly'):
                     ex_params['timeInForce'] = 'GTC'
                 logger.info(f"🧊 Configured icebergQty={ex_params['icebergQty']} on Spot limit order")
@@ -984,11 +1005,47 @@ class ManualTradeService:
                         order_req.symbol, order_req.side, order_req.amount, params=ex_params
                     )
                 elif order_req.type.lower() == 'limit':
-                    response = await exchange.create_limit_order(
-                        order_req.symbol, order_req.side, order_req.amount, order_req.price, ex_params
-                    )
+                    try:
+                        response = await exchange.create_limit_order(
+                            order_req.symbol, order_req.side, order_req.amount, order_req.price, ex_params
+                        )
+                    except Exception as lim_e:
+                        if params.get('autoBestLimit') and ex_params.get('postOnly'):
+                            logger.warning(f"⚠️ AutoBestLimit Post-Only rejected ({lim_e}). Retrying with standard GTC Limit...")
+                            ex_params_gtc = dict(ex_params)
+                            ex_params_gtc.pop('postOnly', None)
+                            ex_params_gtc['timeInForce'] = 'GTC'
+                            response = await exchange.create_limit_order(
+                                order_req.symbol, order_req.side, order_req.amount, order_req.price, ex_params_gtc
+                            )
+                        else:
+                            raise lim_e
                 else:
                     raise HTTPException(status_code=400, detail="Invalid order type. Use 'market' or 'limit'.")
+
+            # On Binance Futures, a GTX Post-Only limit order that crosses the book returns HTTP 200 with status='expired'
+            if (
+                order_req.type.lower() == 'limit'
+                and ex_params.get('postOnly')
+                and response
+                and str(response.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled')
+            ):
+                if params.get('autoBestLimit'):
+                    logger.warning(
+                        f"⚠️ AutoBestLimit Post-Only returned status='{response.get('status')}' on {order_req.symbol}. "
+                        f"Retrying immediately with standard GTC Limit..."
+                    )
+                    ex_params_gtc = dict(ex_params)
+                    ex_params_gtc.pop('postOnly', None)
+                    ex_params_gtc['timeInForce'] = 'GTC'
+                    response = await exchange.create_limit_order(
+                        order_req.symbol, order_req.side, order_req.amount, order_req.price, ex_params_gtc
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Exchange Error: Post-Only order would immediately match and take liquidity (GTX expired)."
+                    )
 
             # Calculate Latency (using backend perf_counter to eliminate PC-Server clock drift)
             latency_ms = 0
@@ -1006,7 +1063,7 @@ class ManualTradeService:
                 if response:
                     exec_price = float(response.get('price') or response.get('average') or 0.0)
                 if not exec_price:
-                    exec_price = float(getattr(order_req, 'price', 0.0) or 0.0)
+                    exec_price = float(getattr(order_req, 'price', 0.0) or req_price or 0.0)
 
                 asyncio.create_task(
                     _send_trade_fired_notification(
@@ -1037,16 +1094,13 @@ class ManualTradeService:
             is_limit_order = order_req.type.lower() == 'limit'
 
             if not is_native_otoco_used and (has_tp or has_sl or is_limit_order):
-                from types import SimpleNamespace
-                # Detached-safe snapshot of api_key_record to prevent DetachedInstanceError in background task
-                safe_api_key_record = SimpleNamespace(
-                    id=api_key_record.id,
-                    exchange=api_key_record.exchange,
-                    api_key=api_key_record.api_key,
-                    secret_key=api_key_record.secret_key,
-                    passphrase=getattr(api_key_record, 'passphrase', None)
+                initial_price = (
+                    response.get('average') or
+                    response.get('price') or
+                    getattr(order_req, 'price', 0.0) or
+                    req_price or
+                    0.0
                 )
-                initial_price = response.get('price') or response.get('average') or getattr(order_req, 'price', 0.0)
                 asyncio.create_task(
                     bracket_order_service.monitor_and_execute_bracket(
                         api_key_record=safe_api_key_record,
@@ -1068,7 +1122,7 @@ class ManualTradeService:
                 "status": response.get('status', 'open'),
                 "side": response.get('side'),
                 "amount": response.get('amount'),
-                "price": response.get('price') or response.get('average'),
+                "price": response.get('price') or response.get('average') or req_price,
                 "message": "Order placed successfully"
             }
 
@@ -1129,26 +1183,7 @@ class ManualTradeService:
             
             # Use cancel + create pattern as it is more universally supported across exchanges than native editOrder
             # 1. Cancel existing order (supports both regular and conditional/algo orders on Binance)
-            cancelled = False
-            try:
-                if exchange.has.get('cancelOrderWs'):
-                    try:
-                        await exchange.cancel_order_ws(id=order_id, symbol=symbol)
-                        cancelled = True
-                    except Exception:
-                        pass
-                if not cancelled:
-                    await exchange.cancel_order(id=order_id, symbol=symbol)
-                    cancelled = True
-            except Exception:
-                pass
-
-            if not cancelled and is_futures:
-                try:
-                    await exchange.cancel_order(id=order_id, symbol=symbol, params={'stop': True})
-                    cancelled = True
-                except Exception as cancel_e:
-                    logger.warning(f"Error canceling order {order_id} during edit: {cancel_e}")
+            await bracket_order_service._cancel_futures_order_universal(exchange, order_id, symbol)
             
             # Small buffer to ensure exchange processes the cancel before replacing, preventing margin errors
             await asyncio.sleep(0.1)
@@ -1158,44 +1193,65 @@ class ManualTradeService:
             is_ws_success = False
             ex_params = {}
             order_type = 'limit'
+            is_conditional_stop = False
 
-            # Apply exchange precision to prevent precision filter rejections
-            if hasattr(exchange, 'price_to_precision'):
-                new_price = float(exchange.price_to_precision(symbol, new_price))
-            if hasattr(exchange, 'amount_to_precision'):
-                amount = float(exchange.amount_to_precision(symbol, amount))
+            # Apply exchange precision safely to prevent precision filter rejections
+            new_price = bracket_order_service._safe_price_to_precision(exchange, symbol, new_price)
+            amount = bracket_order_service._safe_amount_to_precision(exchange, symbol, amount)
 
             price_arg = new_price
 
             if original_order:
-                orig_type = original_order.get('type', 'limit').lower()
-                order_type = orig_type
-                
+                orig_type = str(original_order.get('type') or 'limit').lower()
+                info_dict = original_order.get('info') if isinstance(original_order.get('info'), dict) else {}
+                info_type = str(info_dict.get('orderType') or info_dict.get('type') or info_dict.get('origType') or '').lower()
+                has_trigger = bool(
+                    original_order.get('stopPrice') or original_order.get('triggerPrice') or
+                    info_dict.get('triggerPrice') or info_dict.get('stopPrice')
+                )
+
+                # In CCXT 4.5.76, STOP_MARKET / TAKE_PROFIT_MARKET orders have orig_type == 'market'
+                # while info_type == 'stop_market' / 'take_profit_market'.
+                if 'stop' in info_type or 'take_profit' in info_type:
+                    order_type = info_type.upper() if is_futures else info_type
+                    is_conditional_stop = True
+                elif 'stop' in orig_type or 'take_profit' in orig_type or has_trigger:
+                    order_type = 'STOP_MARKET' if (is_futures and orig_type == 'market') else orig_type
+                    is_conditional_stop = True
+                else:
+                    order_type = orig_type
+
                 # If it's a stop order, the new price is the trigger price
-                if 'stop' in orig_type or 'take_profit' in orig_type:
+                if is_conditional_stop:
                     ex_params['stopPrice'] = new_price
                     price_arg = None # Market stops have no execution price
                     
-                    if orig_type in ('stop_limit', 'take_profit_limit'):
+                    if order_type.lower() in ('stop_limit', 'take_profit_limit', 'stop', 'take_profit'):
                         # If it was a stop limit, we need both trigger and exec price. 
                         # We'll shift the limit price by the same delta.
-                        orig_trigger = float(original_order.get('stopPrice') or original_order.get('triggerPrice') or new_price)
+                        orig_trigger = float(
+                            original_order.get('stopPrice') or original_order.get('triggerPrice') or
+                            info_dict.get('triggerPrice') or info_dict.get('stopPrice') or new_price
+                        )
                         orig_limit = float(original_order.get('price') or orig_trigger)
-                        delta = new_price - orig_trigger
-                        calc_price = orig_limit + delta
-                        price_arg = float(exchange.price_to_precision(symbol, calc_price)) if hasattr(exchange, 'price_to_precision') else calc_price
+                        if orig_limit > 0:
+                            delta = new_price - orig_trigger
+                            calc_price = orig_limit + delta
+                            price_arg = bracket_order_service._safe_price_to_precision(exchange, symbol, calc_price)
                 
-                if original_order.get('postOnly'):
+                if original_order.get('postOnly') or info_dict.get('timeInForce') == 'GTX':
                     ex_params['postOnly'] = True
-                if original_order.get('reduceOnly'):
+                if original_order.get('reduceOnly') or str(info_dict.get('reduceOnly', '')).lower() == 'true':
                     ex_params['reduceOnly'] = True
 
                 # Preserve positionSide for Binance futures hedge mode
-                orig_pos_side = original_order.get('info', {}).get('positionSide')
+                orig_pos_side = info_dict.get('positionSide')
                 if orig_pos_side and is_futures:
-                    ex_params['positionSide'] = orig_pos_side
+                    if str(orig_pos_side).upper() in ('LONG', 'SHORT'):
+                        ex_params['positionSide'] = str(orig_pos_side).upper()
+                        ex_params.pop('reduceOnly', None)
 
-                orig_iceberg = original_order.get('info', {}).get('icebergQty')
+                orig_iceberg = info_dict.get('icebergQty')
                 if orig_iceberg and float(orig_iceberg) > 0:
                     ex_params['icebergAmount'] = float(orig_iceberg)
                     ex_params['icebergQty'] = orig_iceberg
@@ -1206,20 +1262,56 @@ class ManualTradeService:
                 # Fallback if fetch failed
                 ex_params['postOnly'] = True
 
-            if exchange.has.get('createOrderWs'):
-                try:
-                    logger.info(f"⚡ Attempting WebSocket order edit (create) for {symbol} ({order_type})...")
-                    response = await exchange.create_order_ws(
+            if is_futures and is_conditional_stop:
+                # Use hardened conditional order placement on Futures (bypasses CCXT 4.5.76 create_order_ws bug)
+                if not ex_params.get('positionSide') and 'reduceOnly' not in ex_params:
+                    ex_params = await bracket_order_service._apply_futures_exit_params(exchange, symbol, side, ex_params)
+                response = await bracket_order_service._place_futures_conditional_order(
+                    exchange, symbol, order_type, side, amount,
+                    stop_price=new_price, extra_params=ex_params
+                )
+            else:
+                if exchange.has.get('createOrderWs'):
+                    try:
+                        logger.info(f"⚡ Attempting WebSocket order edit (create) for {symbol} ({order_type})...")
+                        response = await exchange.create_order_ws(
+                            symbol, order_type, side, amount, price_arg, ex_params
+                        )
+                        is_ws_success = True
+                    except Exception as ws_e:
+                        logger.warning(f"⚠️ WebSocket Order Edit Failed ({ws_e}). Falling back to REST API.")
+                
+                if not is_ws_success:
+                    response = await exchange.create_order(
                         symbol, order_type, side, amount, price_arg, ex_params
                     )
-                    is_ws_success = True
-                except Exception as ws_e:
-                    logger.warning(f"⚠️ WebSocket Order Edit Failed ({ws_e}). Falling back to REST API.")
-            
-            if not is_ws_success:
-                response = await exchange.create_order(
-                    symbol, order_type, side, amount, price_arg, ex_params
-                )
+                if (
+                    ex_params.get('postOnly')
+                    and response
+                    and str(response.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled')
+                ):
+                    ex_params_gtc = dict(ex_params)
+                    ex_params_gtc.pop('postOnly', None)
+                    ex_params_gtc['timeInForce'] = 'GTC'
+                    response = await exchange.create_order(
+                        symbol, order_type, side, amount, price_arg, ex_params_gtc
+                    )
+
+            # Synchronize new order ID with any active software bracket (TP or Disaster SL)
+            new_order_id = str(response.get('id')) if response and response.get('id') else None
+            if new_order_id:
+                try:
+                    for s_data in bracket_order_service.ACTIVE_SOFTWARE_SL.values():
+                        if str(s_data.get('tp_order_id')) == str(order_id):
+                            s_data['tp_order_id'] = new_order_id
+                            logger.info(f"🔄 Updated active bracket tp_order_id: {order_id} -> {new_order_id}")
+                        if str(s_data.get('disaster_sl_order_id')) == str(order_id):
+                            s_data['disaster_sl_order_id'] = new_order_id
+                            s_data['trigger_price'] = new_price
+                            s_data['price'] = new_price
+                            logger.info(f"🔄 Updated active bracket disaster_sl_order_id: {order_id} -> {new_order_id} @ {new_price}")
+                except Exception as sync_err:
+                    logger.debug(f"Bracket ID sync notice: {sync_err}")
             
             # Send Notification
             try:
@@ -1237,10 +1329,10 @@ class ManualTradeService:
 
             return {
                 "id": response.get('id'),
-                "symbol": response.get('symbol'),
+                "symbol": response.get('symbol') or symbol,
                 "status": response.get('status', 'open'),
-                "side": response.get('side'),
-                "amount": response.get('amount'),
+                "side": response.get('side') or side,
+                "amount": response.get('amount') or amount,
                 "price": response.get('price') or new_price,
                 "message": "Order edited successfully"
             }

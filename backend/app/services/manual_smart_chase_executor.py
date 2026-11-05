@@ -376,31 +376,44 @@ async def execute_manual_smart_chase(
     # Cancel TP, Disaster SL, and ANY conflicting open orders on symbol (concurrent execution)
     async def _cleanup_other_orders():
         nonlocal tp_order_id, disaster_sl_order_id
+        from app.services.bracket_order_service import BracketOrderService
         cancel_tasks = []
         labels = []
         if tp_order_id:
-            cancel_tasks.append(exchange.cancel_order(tp_order_id, symbol))
+            cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, tp_order_id, symbol))
             labels.append(('TP', str(tp_order_id)))
         if disaster_sl_order_id:
-            cancel_tasks.append(exchange.cancel_order(disaster_sl_order_id, symbol))
+            cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, disaster_sl_order_id, symbol))
             labels.append(('Disaster SL', str(disaster_sl_order_id)))
 
-        # Extra safety: Also fetch open orders on the exchange to wipe any modified TP / SL orders
-        # that could block reduceOnly maker exit orders with Binance -2022 error
+        # Extra safety: Also fetch open orders on the exchange (including conditional/algo stop orders on Futures)
+        # to wipe any modified TP / SL orders that could block reduceOnly maker exit orders with Binance -2022 error
         try:
             open_orders = await exchange.fetch_open_orders(symbol)
+            if is_futures:
+                try:
+                    cond_orders = await exchange.fetch_open_orders(symbol, params={'stop': True})
+                    if cond_orders:
+                        open_orders.extend(cond_orders)
+                except Exception:
+                    pass
             for o in open_orders:
                 oid = str(o.get('id'))
-                if oid in [l[1] for l in labels]:
+                if not oid or oid in [l[1] for l in labels]:
                     continue
                 o_side = str(o.get('side', '')).lower()
-                o_info = o.get('info', {})
+                o_info = o.get('info', {}) if isinstance(o.get('info'), dict) else {}
                 is_reduce = o.get('reduceOnly') or o_info.get('reduceOnly') in [True, 'true', 'True']
                 raw_type = str(o.get('type', '')).lower()
-                is_stop = 'stop' in raw_type or 'take_profit' in raw_type
+                info_type = str(o_info.get('orderType') or o_info.get('type') or o_info.get('origType') or '').lower()
+                is_stop = (
+                    'stop' in raw_type or 'take_profit' in raw_type or
+                    'stop' in info_type or 'take_profit' in info_type or
+                    bool(o.get('stopPrice') or o.get('triggerPrice') or o_info.get('triggerPrice') or o_info.get('stopPrice'))
+                )
 
                 if o_side == exit_side or is_reduce or is_stop:
-                    cancel_tasks.append(exchange.cancel_order(oid, symbol))
+                    cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, oid, symbol))
                     labels.append(('ConflictingExitOrder', oid))
         except Exception as open_err:
             logger.debug(f"Open orders fetch during cleanup non-fatal error: {open_err}")
@@ -744,6 +757,8 @@ async def execute_manual_smart_chase(
             chase_res = await exchange.create_limit_order(
                 symbol, exit_side, remaining_amount, target_maker_price, ex_params
             )
+            if chase_res and str(chase_res.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled'):
+                raise Exception(f"Post-Only GTX order returned status={chase_res.get('status')}")
         except Exception as place_e:
             err_str = str(place_e)
             is_postonly_rejection = (
@@ -752,6 +767,8 @@ async def execute_manual_smart_chase(
                 or (is_futures and '-2010' in err_str)
                 or 'post only' in err_str.lower()
                 or 'postonly' in err_str.lower()
+                or 'post-only' in err_str.lower()
+                or 'expired' in err_str.lower()
             )
 
             if is_postonly_rejection:
@@ -759,6 +776,7 @@ async def execute_manual_smart_chase(
                     f"⚠️ [Manual Smart Chase] Post-Only rejected by exchange (spread crossed: {err_str}). "
                     f"Re-fetching book and retrying with safe maker buffer..."
                 )
+                chase_res = None
                 try:
                     # Nudge 1 tick further away to ensure it rests as maker
                     fresh_ob = await exchange.fetch_order_book(symbol, limit=5)
@@ -770,7 +788,7 @@ async def execute_manual_smart_chase(
                     else:
                         adj_price = f_bid - tick
 
-                    if hasattr(exchange, 'price_to_precision'):
+                    if hasattr(exchange, 'price_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
                         adj_price = float(exchange.price_to_precision(symbol, adj_price))
 
                     # Re-sync amount for adjusted price
@@ -782,10 +800,13 @@ async def execute_manual_smart_chase(
                         chase_res = await exchange.create_limit_order(
                             symbol, exit_side, remaining_amount, adj_price, ex_params
                         )
-                        if chase_res and chase_res.get('id'):
+                        if chase_res and str(chase_res.get('status', '')).lower() not in ('expired', 'rejected', 'canceled', 'cancelled') and chase_res.get('id'):
                             target_maker_price = adj_price
+                        else:
+                            chase_res = None
                 except Exception as retry_e:
                     logger.warning(f"⚠️ Adjusted Maker retry failed: {retry_e}")
+                    chase_res = None
             elif '-2022' in err_str or '-4118' in err_str or 'reduceonly' in err_str.lower():
                 reduce_only_rejections += 1
                 logger.warning(

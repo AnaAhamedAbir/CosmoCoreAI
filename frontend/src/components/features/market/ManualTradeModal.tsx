@@ -384,9 +384,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     // For mouse events, only allow primary mouse button (left-click)
     if (!isTouch && (e as React.MouseEvent).button !== 0) return;
 
-    // Do not initiate drag if clicking/tapping on interactive controls (buttons, inputs, select)
+    // Do not initiate drag if clicking/tapping on interactive controls (buttons, inputs, select, slider)
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('input') || target.closest('select')) {
+    if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('[data-no-drag="true"]')) {
       return;
     }
 
@@ -719,6 +719,95 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     calculateSize
   ]);
 
+  const sliderPercentValue = React.useMemo(() => {
+    if (selectedPercent) {
+      const parsed = Number(selectedPercent.replace('%', ''));
+      if (!isNaN(parsed)) return Math.max(0, Math.min(100, Math.round(parsed)));
+    }
+    if (!size || Number(size) <= 0 || !balanceData || effectiveOrderPrice <= 0) return 0;
+    const maxStr = calculateSize(
+      '100%',
+      balanceData,
+      effectiveOrderPrice,
+      sizeMode,
+      tradeSide,
+      isFutures,
+      leverage,
+      reduceOnly,
+      positionData
+    );
+    const maxVal = Number(maxStr);
+    if (!maxVal || maxVal <= 0) return 0;
+    return Math.max(0, Math.min(100, Math.round((Number(size) / maxVal) * 100)));
+  }, [
+    selectedPercent,
+    size,
+    balanceData,
+    effectiveOrderPrice,
+    sizeMode,
+    tradeSide,
+    isFutures,
+    leverage,
+    reduceOnly,
+    positionData,
+    calculateSize
+  ]);
+
+  const handlePercentSliderChange = React.useCallback((pctNum: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(pctNum)));
+    if (clamped === 0) {
+      setSelectedPercent(null);
+      setSize('');
+      return;
+    }
+    const pctStr = `${clamped}%`;
+    setSelectedPercent(pctStr);
+    if (balanceData && effectiveOrderPrice > 0) {
+      let newSize = calculateSize(
+        pctStr,
+        balanceData,
+        effectiveOrderPrice,
+        sizeMode,
+        tradeSide,
+        isFutures,
+        leverage,
+        reduceOnly,
+        positionData
+      );
+      if (!newSize && !isFutures) {
+        const altSide: 'Buy' | 'Sell' = tradeSide === 'Buy' ? 'Sell' : 'Buy';
+        const altSize = calculateSize(
+          pctStr,
+          balanceData,
+          effectiveOrderPrice,
+          sizeMode,
+          altSide,
+          isFutures,
+          leverage,
+          reduceOnly,
+          positionData
+        );
+        if (altSize) {
+          setTradeSide(altSide);
+          newSize = altSize;
+        }
+      }
+      if (newSize) {
+        setSize(newSize);
+      }
+    }
+  }, [
+    balanceData,
+    effectiveOrderPrice,
+    sizeMode,
+    tradeSide,
+    isFutures,
+    leverage,
+    reduceOnly,
+    positionData,
+    calculateSize
+  ]);
+
   const lastTriggerRef = React.useRef<number>(0);
 
   // Update limit price when clickedPrice from chart changes via an explicit trigger
@@ -754,8 +843,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
     // Sync tradeSide and recalculate percentage-based size when clicking Buy/Sell for the opposite side (e.g. in Minimized mode)
     let resolvedSizeStr = size;
-    if (side !== tradeSide) {
-      setTradeSide(side);
+    if (side !== tradeSide || ((!resolvedSizeStr || Number(resolvedSizeStr) <= 0) && selectedPercent)) {
+      if (side !== tradeSide) setTradeSide(side);
       if (selectedPercent && balanceData && effectiveOrderPrice > 0) {
         const recalculated = calculateSize(
           selectedPercent,
@@ -1118,129 +1207,349 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                 transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : dragOffset.x}px, ${dragRef.current.isDragging ? dragRef.current.currentY : dragOffset.y}px, 0)`,
                 willChange: 'transform'
               }}
-              className={`fixed w-80 rounded-2xl ${
+              className={`fixed rounded-2xl ${
                 isMinimized
-                  ? 'bg-[#090d16]/95 border-cyan-500/40 shadow-[0_8px_32px_rgba(6,182,212,0.25)]'
-                  : 'bg-[#000000]/80 border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)]'
+                  ? 'w-[340px] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/98 to-[#05070d]/98 border-cyan-500/35 shadow-[0_16px_48px_rgba(0,0,0,0.85),0_0_28px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)]'
+                  : 'w-80 bg-[#000000]/80 border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)]'
               } backdrop-blur-xl border z-[99999] overflow-hidden transition-colors duration-200 select-none`}
             >
               {isMinimized ? (
-                /* MINIMIZED QUICK BUY/SELL VIEW */
+                /* ULTRA-PREMIUM MINIMIZED QUICK TRADE CYBER-HUD */
                 <div
                   onMouseDown={handleStartDrag}
                   onTouchStart={handleStartDrag}
                   style={{ touchAction: 'none' }}
-                  className="p-3 select-none"
+                  className="relative select-none overflow-hidden"
                 >
-                  {/* Minimized Drag Handle & Header */}
-                  <div
-                    onMouseDown={handleStartDrag}
-                    onTouchStart={handleStartDrag}
-                    style={{ touchAction: 'none' }}
-                    className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 cursor-grab active:cursor-grabbing select-none"
-                    title="Drag to move"
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0 pointer-events-none">
-                      <GripVertical className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                      <div className="flex flex-col min-w-0 text-left">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-white text-xs tracking-wide truncate">{activeSymbol}</span>
-                          <span className="text-[9px] uppercase px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-400 font-mono font-bold">
-                            {isFutures ? 'Futures' : 'Spot'}
+                  {/* Top Neon Horizon Accent Line */}
+                  <div className="h-[2px] w-full bg-gradient-to-r from-transparent via-cyan-400 to-emerald-400 opacity-85" />
+
+                  {/* Ambient Radial Glows */}
+                  <div className="pointer-events-none absolute -top-10 -left-10 w-28 h-28 rounded-full bg-cyan-500/10 blur-2xl" />
+                  <div className="pointer-events-none absolute -bottom-10 -right-10 w-28 h-28 rounded-full bg-emerald-500/10 blur-2xl" />
+
+                  <div className="p-3 space-y-2.5 relative z-10">
+                    {/* Minimized Drag Handle & Header */}
+                    <div
+                      onMouseDown={handleStartDrag}
+                      onTouchStart={handleStartDrag}
+                      style={{ touchAction: 'none' }}
+                      className="flex items-center justify-between pb-2 border-b border-white/[0.08] cursor-grab active:cursor-grabbing select-none"
+                      title="Drag to move HUD"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 pointer-events-none">
+                        <div className="p-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-cyan-400/80 shrink-0 shadow-inner">
+                          <GripVertical className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="flex flex-col min-w-0 text-left">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse shrink-0" />
+                            <span className="font-black text-white text-[13px] tracking-wide truncate">{activeSymbol}</span>
+                            <span
+                              className={`text-[9px] uppercase px-1.5 py-0.5 rounded-md font-mono font-extrabold border ${
+                                isFutures
+                                  ? 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 border-amber-400/40 text-amber-300'
+                                  : 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-400/40 text-cyan-300'
+                              }`}
+                            >
+                              {isFutures ? `FUT ${leverage}x` : 'SPOT'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[10px] font-mono mt-0.5 flex-wrap">
+                            {effectiveCurrentPrice > 0 && (
+                              <span className="text-emerald-400 font-bold tracking-tight">
+                                ${formatDisplayPrice(effectiveCurrentPrice)}
+                              </span>
+                            )}
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/[0.06] border border-white/10 text-gray-300 font-bold uppercase">
+                              {orderType === 'SmartPeg' ? '⚡ PEG' : orderType}
+                            </span>
+                            {tpConfig.enabled && (
+                              <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold">
+                                TP
+                              </span>
+                            )}
+                            {slConfig.enabled && (
+                              <span className="text-[8px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 font-bold">
+                                SL
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fetchBalance(false);
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className={`p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/[0.07] text-gray-400 hover:text-cyan-300 transition-all cursor-pointer ${
+                            isRefreshing ? 'text-cyan-400' : ''
+                          }`}
+                          title="Refresh Balance"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsMinimized(false);
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="p-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-white shadow-[0_0_10px_rgba(6,182,212,0.15)] transition-all cursor-pointer"
+                          title="Expand Full Trade Terminal"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsOpen(false);
+                            setIsMinimized(false);
+                            onClose?.();
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-rose-500/20 border border-white/[0.07] hover:border-rose-500/40 text-gray-400 hover:text-rose-300 transition-all cursor-pointer"
+                          title="Close"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Interactive Order Size & 0-100% Percentage Slide Bar Panel */}
+                    <div
+                      data-no-drag="true"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className="rounded-xl bg-[#04070e]/90 border border-white/[0.08] p-2.5 space-y-2 shadow-[inset_0_2px_10px_rgba(0,0,0,0.65)]"
+                    >
+                      {/* Top Row: Unit Toggle + Editable Size Readout + Live Percentage Pill */}
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          {/* Base / Quote Mini Toggle */}
+                          <div className="flex items-center bg-[#0a101d] rounded-lg p-0.5 border border-white/10 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSizeMode('base');
+                                if (!selectedPercent) setSize('');
+                              }}
+                              className={`px-1.5 py-0.5 rounded-md text-[9px] font-extrabold transition-all cursor-pointer ${
+                                sizeMode === 'base'
+                                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
+                                  : 'text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              {baseCurrency}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSizeMode('quote');
+                                if (!selectedPercent) setSize('');
+                              }}
+                              className={`px-1.5 py-0.5 rounded-md text-[9px] font-extrabold transition-all cursor-pointer ${
+                                sizeMode === 'quote'
+                                  ? 'bg-amber-400 text-slate-950 shadow-[0_0_8px_rgba(251,191,36,0.5)]'
+                                  : 'text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              {quoteCurrency}
+                            </button>
+                          </div>
+
+                          {/* Compact Size Input */}
+                          <div className="relative flex-1 min-w-0">
+                            <input
+                              type="number"
+                              value={size}
+                              onChange={(e) => {
+                                setSize(e.target.value);
+                                setSelectedPercent(null);
+                              }}
+                              placeholder="0.00"
+                              className="w-full bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1 px-2 text-white font-mono text-xs font-bold focus:outline-none transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Live Percentage Readout Badge */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="px-2 py-0.5 rounded-md bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 border border-cyan-400/40 text-cyan-300 font-mono text-[11px] font-black shadow-[0_0_10px_rgba(6,182,212,0.18)]">
+                            {sliderPercentValue}%
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-mono">
-                          {effectiveCurrentPrice > 0 && (
-                            <span className="text-emerald-400 font-semibold">${formatDisplayPrice(effectiveCurrentPrice)}</span>
+                      </div>
+
+                      {/* Sub-row: Conversion Estimate & Available Balance */}
+                      <div className="flex items-center justify-between text-[9px] font-mono px-0.5">
+                        <span className="text-gray-400 truncate">
+                          {size && Number(size) > 0 && effectiveOrderPrice > 0 ? (
+                            sizeMode === 'quote' ? (
+                              <span className="text-amber-300/90 font-semibold">
+                                ≈ {(Number(size) / effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {baseCurrency}
+                              </span>
+                            ) : (
+                              <span className="text-amber-300/90 font-semibold">
+                                ≈ ${(Number(size) * effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-gray-500">Slide or tap % to set size</span>
                           )}
-                          {size ? (
-                            <span className="text-gray-300">
-                              • {size} {sizeMode === 'quote' ? quoteCurrency : baseCurrency}
-                            </span>
-                          ) : null}
+                        </span>
+                        <span className="text-gray-400 shrink-0">
+                          Avail:{' '}
+                          <span className="text-gray-200 font-bold">
+                            {balanceData
+                              ? isInverseFutures
+                                ? `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency}`
+                                : sizeMode === 'quote' || isFutures || tradeSide === 'Buy'
+                                  ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
+                                  : `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency}`
+                              : '...'}
+                          </span>
+                        </span>
+                      </div>
+
+                      {/* 0% to 100% Interactive Slide Bar with Milestone Track Points */}
+                      <div className="relative h-5 flex items-center select-none px-1">
+                        {/* Base Recessed Track */}
+                        <div className="w-full h-1.5 rounded-full bg-[#0c1424] border border-white/10 relative overflow-visible">
+                          {/* Active Neon Progress Fill */}
+                          <div
+                            style={{ width: `${sliderPercentValue}%` }}
+                            className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-sky-400 to-emerald-400 shadow-[0_0_10px_rgba(6,182,212,0.65)] transition-all duration-75"
+                          />
+
+                          {/* Milestone Track Nodes (0%, 25%, 50%, 75%, 100%) */}
+                          {[0, 25, 50, 75, 100].map((pt) => {
+                            const isReached = sliderPercentValue >= pt && (pt > 0 || sliderPercentValue > 0);
+                            return (
+                              <div
+                                key={pt}
+                                style={{ left: `${pt}%` }}
+                                className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full border transition-all duration-150 ${
+                                  isReached
+                                    ? 'bg-cyan-300 border-white shadow-[0_0_6px_rgba(34,211,238,0.9)] scale-110'
+                                    : 'bg-[#152036] border-white/25'
+                                }`}
+                              />
+                            );
+                          })}
                         </div>
+
+                        {/* Glowing Custom Slider Thumb */}
+                        <div
+                          style={{ left: `calc(${sliderPercentValue}% - 7px)` }}
+                          className="pointer-events-none absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white border-2 border-cyan-400 shadow-[0_0_12px_rgba(6,182,212,1),0_0_4px_rgba(255,255,255,0.9)] transition-all duration-75"
+                        />
+
+                        {/* Native Range Input Overlay for Smooth 0-100% Dragging */}
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={sliderPercentValue}
+                          onChange={(e) => handlePercentSliderChange(Number(e.target.value))}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onTouchStart={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                          title={`Order Size: ${sliderPercentValue}%`}
+                        />
+                      </div>
+
+                      {/* 4 Shortcut Point Buttons: 25%, 50%, 75%, 100% */}
+                      <div className="grid grid-cols-4 gap-1.5 pt-0.5">
+                        {[25, 50, 75, 100].map((pt) => {
+                          const isSelected = sliderPercentValue === pt;
+                          return (
+                            <button
+                              key={pt}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePercentSliderChange(pt);
+                              }}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              className={`py-1 px-1.5 rounded-lg font-mono text-[10px] font-extrabold border transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95 ${
+                                isSelected
+                                  ? 'bg-gradient-to-r from-cyan-500/30 via-sky-500/25 to-emerald-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.35)]'
+                                  : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-cyan-500/40 text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                                  isSelected ? 'bg-cyan-300 shadow-[0_0_6px_rgba(34,211,238,1)]' : 'bg-gray-600'
+                                }`}
+                              />
+                              <span>{pt}%</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
+                    {/* Quick Buy & Sell Execution Buttons */}
+                    <div className="grid grid-cols-2 gap-2.5">
                       <button
                         type="button"
+                        disabled={isSubmitting}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setIsMinimized(false);
+                          handleTrade('Buy');
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
-                        title="Expand Settings (Size, TP/SL, Leverage)"
+                        className="relative overflow-hidden py-2.5 px-3 rounded-xl font-bold flex flex-col items-center justify-center bg-gradient-to-b from-emerald-500/30 via-emerald-600/25 to-green-900/40 hover:from-emerald-500 hover:via-emerald-600 hover:to-green-700 text-emerald-300 hover:text-white border border-emerald-400/50 hover:border-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_4px_20px_rgba(16,185,129,0.22)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_0_25px_rgba(16,185,129,0.55)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
                       >
-                        <Maximize2 className="w-3.5 h-3.5" />
+                        <div className="flex items-center gap-1.5">
+                          {isSubmitting && submittingSide === 'Buy' ? (
+                            <RefreshCw className="w-4 h-4 animate-spin text-emerald-300" />
+                          ) : (
+                            <TrendingUp className="w-4 h-4 text-emerald-400 group-hover:text-white group-hover:-translate-y-0.5 transition-transform" />
+                          )}
+                          <span className="text-xs uppercase tracking-wider font-black">
+                            {isSubmitting && submittingSide === 'Buy' ? 'Buying...' : isFutures ? 'BUY / LONG' : 'BUY'}
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-mono text-emerald-300/80 group-hover:text-white/90 mt-0.5">
+                          {orderType === 'SmartPeg' ? '⚡ Smart Peg' : orderType}
+                        </span>
                       </button>
+
                       <button
                         type="button"
+                        disabled={isSubmitting}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setIsOpen(false);
-                          setIsMinimized(false);
-                          onClose?.();
+                          handleTrade('Sell');
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
-                        title="Close"
+                        className="relative overflow-hidden py-2.5 px-3 rounded-xl font-bold flex flex-col items-center justify-center bg-gradient-to-b from-rose-500/30 via-rose-600/25 to-red-900/40 hover:from-rose-500 hover:via-rose-600 hover:to-red-700 text-rose-300 hover:text-white border border-rose-400/50 hover:border-rose-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_4px_20px_rgba(244,63,94,0.22)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_0_25px_rgba(244,63,94,0.55)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <div className="flex items-center gap-1.5">
+                          {isSubmitting && submittingSide === 'Sell' ? (
+                            <RefreshCw className="w-4 h-4 animate-spin text-rose-300" />
+                          ) : (
+                            <TrendingDown className="w-4 h-4 text-rose-400 group-hover:text-white group-hover:translate-y-0.5 transition-transform" />
+                          )}
+                          <span className="text-xs uppercase tracking-wider font-black">
+                            {isSubmitting && submittingSide === 'Sell' ? 'Selling...' : isFutures ? 'SELL / SHORT' : 'SELL'}
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-mono text-rose-300/80 group-hover:text-white/90 mt-0.5">
+                          {orderType === 'SmartPeg' ? '⚡ Smart Peg' : orderType}
+                        </span>
                       </button>
                     </div>
-                  </div>
-
-                  {/* Quick Buy & Sell Buttons */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      disabled={isSubmitting}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTrade('Buy');
-                      }}
-                      className="py-2.5 px-3 rounded-xl font-bold flex flex-col items-center justify-center bg-gradient-to-br from-emerald-500/25 to-green-600/30 hover:from-emerald-500 hover:to-green-600 text-emerald-400 hover:text-white border border-emerald-500/40 hover:border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {isSubmitting && submittingSide === 'Buy' ? (
-                          <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
-                        ) : (
-                          <TrendingUp className="w-4 h-4 text-emerald-400 group-hover:text-white group-hover:-translate-y-0.5 transition-transform" />
-                        )}
-                        <span className="text-xs uppercase tracking-wider font-extrabold">
-                          {isSubmitting && submittingSide === 'Buy' ? 'Buying...' : isFutures ? 'BUY / LONG' : 'BUY'}
-                        </span>
-                      </div>
-                      <span className="text-[9px] font-mono text-emerald-300/80 group-hover:text-white/90">
-                        {orderType === 'SmartPeg' ? 'Smart Peg' : orderType}
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={isSubmitting}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTrade('Sell');
-                      }}
-                      className="py-2.5 px-3 rounded-xl font-bold flex flex-col items-center justify-center bg-gradient-to-br from-rose-500/25 to-red-600/30 hover:from-rose-500 hover:to-red-600 text-rose-400 hover:text-white border border-rose-500/40 hover:border-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.2)] hover:shadow-[0_0_20px_rgba(244,63,94,0.5)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {isSubmitting && submittingSide === 'Sell' ? (
-                          <RefreshCw className="w-4 h-4 animate-spin text-rose-400" />
-                        ) : (
-                          <TrendingDown className="w-4 h-4 text-rose-400 group-hover:text-white group-hover:translate-y-0.5 transition-transform" />
-                        )}
-                        <span className="text-xs uppercase tracking-wider font-extrabold">
-                          {isSubmitting && submittingSide === 'Sell' ? 'Selling...' : isFutures ? 'SELL / SHORT' : 'SELL'}
-                        </span>
-                      </div>
-                      <span className="text-[9px] font-mono text-rose-300/80 group-hover:text-white/90">
-                        {orderType === 'SmartPeg' ? 'Smart Peg' : orderType}
-                      </span>
-                    </button>
                   </div>
                 </div>
               ) : (

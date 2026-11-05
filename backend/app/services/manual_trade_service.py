@@ -452,6 +452,30 @@ class ManualTradeService:
             raise HTTPException(status_code=500, detail=f"Position Error: {str(e)}")
 
     @staticmethod
+    def _extract_trigger_price(order_dict: dict, info_dict: dict = None) -> float:
+        """
+        Safely extract a positive trigger/stop price (> 0) from CCXT order + raw exchange info.
+        Prevents the Python truthiness bug where Binance returns string "0.00000000" in info['stopPrice'].
+        """
+        if info_dict is None:
+            info_dict = order_dict.get('info') if isinstance(order_dict.get('info'), dict) else {}
+        for candidate in (
+            order_dict.get('stopPrice'),
+            order_dict.get('triggerPrice'),
+            info_dict.get('triggerPrice'),
+            info_dict.get('stopPrice'),
+            info_dict.get('activatePrice'),
+        ):
+            if candidate is not None:
+                try:
+                    val = float(candidate)
+                    if val > 0:
+                        return val
+                except (ValueError, TypeError):
+                    continue
+        return 0.0
+
+    @staticmethod
     async def get_open_limit_orders(db: Session, user_id: int, api_key_id: int, symbol: str) -> dict:
         """
         ওই exchange এর চলমান Open Limit Orders ফেচ করে chart overlay এর জন্য।
@@ -483,19 +507,27 @@ class ManualTradeService:
             # Exclude internal disaster SL orders that belong to active software Smart Chases
             # so the chart only displays the primary Smart Chase trigger line
             active_disaster_ids = set()
+            active_tp_ids = set()
             try:
                 from app.services.bracket_order_service import BracketOrderService
+                active_tp_ids.update(BracketOrderService.KNOWN_TP_ORDER_IDS)
                 for s_data in BracketOrderService.ACTIVE_SOFTWARE_SL.values():
                     d_id = s_data.get('disaster_sl_order_id')
                     if d_id:
                         active_disaster_ids.add(str(d_id))
+                    t_id = s_data.get('tp_order_id')
+                    if t_id:
+                        active_tp_ids.add(str(t_id))
                 from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
                 for c_data in ACTIVE_SMART_CHASES.values():
                     d_id = c_data.get('disaster_sl_order_id')
                     if d_id:
                         active_disaster_ids.add(str(d_id))
+                    t_id = c_data.get('tp_order_id')
+                    if t_id:
+                        active_tp_ids.add(str(t_id))
             except Exception as d_chk_err:
-                logger.debug(f"Disaster ID exclusion check: {d_chk_err}")
+                logger.debug(f"Disaster/TP ID check: {d_chk_err}")
 
             orders = []
             seen_order_ids = set()
@@ -511,16 +543,20 @@ class ManualTradeService:
                 raw_type = str(o.get('type') or '').lower()
                 info_dict = o.get('info') if isinstance(o.get('info'), dict) else {}
                 info_type = str(info_dict.get('orderType') or info_dict.get('type') or info_dict.get('origType') or '').lower()
-                has_trigger = bool(
-                    o.get('stopPrice') or o.get('triggerPrice') or
-                    info_dict.get('triggerPrice') or info_dict.get('stopPrice')
+                trigger_px = ManualTradeService._extract_trigger_price(o, info_dict)
+                has_trigger = trigger_px > 0
+
+                is_tp = (
+                    'take_profit' in raw_type or
+                    'take_profit' in info_type or
+                    order_id_str in active_tp_ids
                 )
-                is_stop = (
-                    'stop' in raw_type or 'take_profit' in raw_type or 'trailing' in raw_type or
-                    'stop' in info_type or 'take_profit' in info_type or 'trailing' in info_type or
+                is_stop = (not is_tp) and (
+                    'stop' in raw_type or 'trailing' in raw_type or
+                    'stop' in info_type or 'trailing' in info_type or
                     has_trigger
                 )
-                is_limit = 'limit' in raw_type or 'limit' in info_type or is_stop
+                is_limit = 'limit' in raw_type or 'limit' in info_type or is_stop or is_tp
 
                 if not is_limit:
                     continue
@@ -528,14 +564,7 @@ class ManualTradeService:
                 # Fetch price: stop orders may have 0 for price and the trigger in stopPrice/triggerPrice
                 price = float(o.get('price') or 0.0)
                 if price <= 0:
-                    price = float(
-                        o.get('stopPrice') or 
-                        o.get('triggerPrice') or 
-                        info_dict.get('triggerPrice') or 
-                        info_dict.get('stopPrice') or 
-                        info_dict.get('activatePrice') or
-                        0.0
-                    )
+                    price = trigger_px
 
                 if price > 0:
                     seen_order_ids.add(order_id_str)
@@ -548,7 +577,7 @@ class ManualTradeService:
                         'filled': float(o.get('filled') or 0.0),
                         'remaining': float(o.get('remaining') or o.get('amount') or info_dict.get('origQty') or 0.0),
                         'isSoftwareSL': is_stop,
-                        'mode': 'STOP' if is_stop else 'LIMIT',
+                        'mode': 'TP' if is_tp else ('STOP' if is_stop else 'LIMIT'),
                         'isIceberg': raw_iceberg_qty > 0,
                         'icebergQty': raw_iceberg_qty if raw_iceberg_qty > 0 else None
                     })
@@ -940,6 +969,9 @@ class ManualTradeService:
                     working_order = next((o for o in order_list if o.get('type') in ('LIMIT', 'LIMIT_MAKER')), None)
                     if not working_order and len(order_list) > 0:
                         working_order = order_list[0]
+                    for rep in order_list:
+                        if rep is not working_order and str(rep.get('type', '')).upper() in ('LIMIT', 'LIMIT_MAKER') and rep.get('orderId'):
+                            bracket_order_service.KNOWN_TP_ORDER_IDS.add(str(rep.get('orderId')))
                     
                     response = {
                         'id': str(working_order.get('orderId')) if working_order else str(raw_res.get('orderListId', 'otoco')),
@@ -1205,10 +1237,8 @@ class ManualTradeService:
                 orig_type = str(original_order.get('type') or 'limit').lower()
                 info_dict = original_order.get('info') if isinstance(original_order.get('info'), dict) else {}
                 info_type = str(info_dict.get('orderType') or info_dict.get('type') or info_dict.get('origType') or '').lower()
-                has_trigger = bool(
-                    original_order.get('stopPrice') or original_order.get('triggerPrice') or
-                    info_dict.get('triggerPrice') or info_dict.get('stopPrice')
-                )
+                orig_trigger_px = ManualTradeService._extract_trigger_price(original_order, info_dict)
+                has_trigger = orig_trigger_px > 0
 
                 # In CCXT 4.5.76, STOP_MARKET / TAKE_PROFIT_MARKET orders have orig_type == 'market'
                 # while info_type == 'stop_market' / 'take_profit_market'.
@@ -1229,10 +1259,7 @@ class ManualTradeService:
                     if order_type.lower() in ('stop_limit', 'take_profit_limit', 'stop', 'take_profit'):
                         # If it was a stop limit, we need both trigger and exec price. 
                         # We'll shift the limit price by the same delta.
-                        orig_trigger = float(
-                            original_order.get('stopPrice') or original_order.get('triggerPrice') or
-                            info_dict.get('triggerPrice') or info_dict.get('stopPrice') or new_price
-                        )
+                        orig_trigger = float(orig_trigger_px or new_price)
                         orig_limit = float(original_order.get('price') or orig_trigger)
                         if orig_limit > 0:
                             delta = new_price - orig_trigger
@@ -1301,6 +1328,9 @@ class ManualTradeService:
             new_order_id = str(response.get('id')) if response and response.get('id') else None
             if new_order_id:
                 try:
+                    if str(order_id) in bracket_order_service.KNOWN_TP_ORDER_IDS:
+                        bracket_order_service.KNOWN_TP_ORDER_IDS.discard(str(order_id))
+                        bracket_order_service.KNOWN_TP_ORDER_IDS.add(str(new_order_id))
                     for s_data in bracket_order_service.ACTIVE_SOFTWARE_SL.values():
                         if str(s_data.get('tp_order_id')) == str(order_id):
                             s_data['tp_order_id'] = new_order_id

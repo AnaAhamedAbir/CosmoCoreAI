@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 class BracketOrderService:
     ACTIVE_SOFTWARE_SL = {}  # { sl_id: { symbol, side, amount, trigger_price, mode } }
+    KNOWN_TP_ORDER_IDS = set()  # Set of exchange order IDs placed as Attached Take-Profit orders
 
     @staticmethod
     def _safe_amount_to_precision(exchange, symbol: str, amount: float) -> float:
@@ -1065,6 +1066,7 @@ class BracketOrderService:
                                 tp_res = await exchange.create_limit_order(symbol, opposite_side, new_total_amt, final_tp_price, ex_params_gtc)
                         if tp_res and tp_res.get('id'):
                             existing_sl['tp_order_id'] = str(tp_res.get('id'))
+                            BracketOrderService.KNOWN_TP_ORDER_IDS.add(str(tp_res.get('id')))
                             logger.info(f"🔄 Consolidated Bracket TP to {new_total_amt} at {final_tp_price} (ID: {tp_res.get('id')})")
                     except Exception as tp_cons_err:
                         logger.warning(f"Failed to replace consolidated TP order: {tp_cons_err}")
@@ -1149,6 +1151,10 @@ class BracketOrderService:
                         payload['belowPrice'] = str(BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price))
                         
                     raw_res = await exchange.private_post_orderlist_oco(payload)
+                    if isinstance(raw_res, dict):
+                        for rep in (raw_res.get('orderReports') or []):
+                            if str(rep.get('type', '')).upper() in ('LIMIT_MAKER', 'LIMIT') and rep.get('orderId'):
+                                BracketOrderService.KNOWN_TP_ORDER_IDS.add(str(rep.get('orderId')))
                     logger.info(f"✅ Native Binance OCO placed successfully! ID: {raw_res.get('orderListId')}")
                     
                     if user_id:
@@ -1244,6 +1250,8 @@ class BracketOrderService:
     
                     if tp_res:
                         tp_order_id = tp_res.get('id')
+                        if tp_order_id:
+                            BracketOrderService.KNOWN_TP_ORDER_IDS.add(str(tp_order_id))
 
                     logger.info(f"✅ Bracket Monitor: TP placed! ID: {tp_res.get('id') if tp_res else 'N/A'}")
     

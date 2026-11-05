@@ -422,13 +422,22 @@ async def execute_manual_smart_chase(
                     is_reduce = o.get('reduceOnly') or o_info.get('reduceOnly') in [True, 'true', 'True']
                     raw_type = str(o.get('type', '')).lower()
                     info_type = str(o_info.get('orderType') or o_info.get('type') or o_info.get('origType') or '').lower()
+                    has_trig = False
+                    for cand in (o.get('stopPrice'), o.get('triggerPrice'), o_info.get('triggerPrice'), o_info.get('stopPrice'), o_info.get('activatePrice')):
+                        if cand is not None:
+                            try:
+                                if float(cand) > 0:
+                                    has_trig = True
+                                    break
+                            except (ValueError, TypeError):
+                                pass
                     is_stop = (
                         'stop' in raw_type or 'take_profit' in raw_type or
                         'stop' in info_type or 'take_profit' in info_type or
-                        bool(o.get('stopPrice') or o.get('triggerPrice') or o_info.get('triggerPrice') or o_info.get('stopPrice'))
+                        has_trig
                     )
 
-                    if o_side == exit_side or is_reduce or is_stop:
+                    if o_side == exit_side or (is_reduce and o_side == exit_side) or (is_stop and o_side == exit_side):
                         cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, oid, symbol))
                         labels.append(('ConflictingExitOrder', oid))
             except Exception as open_err:

@@ -33,7 +33,7 @@ export const useOpenOrders = (
   intervalMs = 2000
 ): OpenLimitOrder[] => {
   const [orders, setOrders] = useState<OpenLimitOrder[]>([]);
-  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isVisibleRef = useRef(true);
   const isMountedRef = useRef(true); // BUG-05: mount guard
 
@@ -45,7 +45,7 @@ export const useOpenOrders = (
         api.get(`/trading/open-limit-orders/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`).catch(() => ({ data: { orders: [] } })),
         api.get(`/trading/active-software-brackets/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`).catch(() => ({ data: [] }))
       ]);
-      
+
       // Guard again after await — component may have unmounted during the request
       if (isMountedRef.current) {
         const limitOrders = (res.data?.orders ?? []).map((o: any) => ({
@@ -55,7 +55,7 @@ export const useOpenOrders = (
         }));
         const rawSLs = Array.isArray(slRes.data) ? slRes.data : [];
         const softwareSLs = rawSLs
-          .filter((sl: any) => sl.status !== 'chasing')
+          .filter((sl: any) => sl.status !== 'chasing' && sl.status !== 'pegging' && sl.type !== 'smart_peg')
           .map((sl: any) => ({
             id: String(sl.id),
             side: sl.side,

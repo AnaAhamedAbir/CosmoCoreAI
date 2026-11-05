@@ -1840,6 +1840,11 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             const amtText = slAmt > 0 ? ` ${slAmt >= 1 ? slAmt.toFixed(2) : slAmt.toFixed(4)}` : '';
             return `🛑 ${formattedMode} SL${amtText} (${price < 1 ? price.toFixed(6) : price.toFixed(4)})`;
         }
+        if (order.mode === 'TP') {
+            const tpAmt = order.remaining > 0 ? order.remaining : order.amount;
+            const amtStr = tpAmt >= 1 ? tpAmt.toFixed(2) : tpAmt.toFixed(4);
+            return `🎯 TP ${isBuy ? '▲ BUY' : '▼ SELL'} ${amtStr} (${price < 1 ? price.toFixed(6) : price.toFixed(4)})`;
+        }
         if (order.isIceberg) {
             const sliceText = order.icebergQty ? `${order.icebergQty.toFixed(2)}/` : '';
             return `🧊 ${isBuy ? '▲ BUY' : '▼ SELL'} [ICEBERG: ${sliceText}${order.amount.toFixed(2)}]`;

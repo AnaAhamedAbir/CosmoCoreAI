@@ -532,7 +532,8 @@ async def execute_smart_peg_entry(
                                 tp_config=tp_config,
                                 sl_config=sl_config,
                                 user_id=user_id,
-                                api_key_record=api_key_record
+                                api_key_record=api_key_record,
+                                entry_order_id=cid
                             )
                         )
             except Exception as p_err:
@@ -582,7 +583,8 @@ async def execute_smart_peg_entry(
                             tp_config=tp_config,
                             sl_config=sl_config,
                             user_id=user_id,
-                            api_key_record=api_key_record
+                            api_key_record=api_key_record,
+                            entry_order_id=cid
                         )
                     )
 
@@ -633,7 +635,8 @@ async def execute_smart_peg_entry(
                                     tp_config=tp_config,
                                     sl_config=sl_config,
                                     user_id=user_id,
-                                    api_key_record=api_key_record
+                                    api_key_record=api_key_record,
+                                    entry_order_id=cid
                                 )
                             )
 

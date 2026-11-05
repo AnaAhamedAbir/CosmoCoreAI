@@ -1354,7 +1354,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
               {(() => {
                 const activePeg = activeBrackets.find(b => b.status === 'pegging');
                 const activeChase = activeBrackets.find(b => b.status === 'chasing');
-                const activeSoftwareSl = activeBrackets.find(b => b.status === 'monitoring' && (b.type === 'smart_chase' || b.type === 'trailing_chase' || b.type === 'trailing' || b.auto_breakeven_enabled));
+                const activeSoftwareSls = activeBrackets.filter(b => b.status === 'monitoring' && (b.type === 'smart_chase' || b.type === 'trailing_chase' || b.type === 'trailing' || b.auto_breakeven_enabled));
 
                 if (activePeg) {
                   return (
@@ -1459,50 +1459,57 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                   );
                 }
 
-                if (activeSoftwareSl) {
-                  const isChase = activeSoftwareSl.type === 'smart_chase';
-                  const isTrailChase = activeSoftwareSl.type === 'trailing_chase';
-                  const titleLabel = isTrailChase 
-                    ? '⚡ Trailing Chase Armed' 
-                    : (isChase ? '⚡ Smart Chase Armed' : (activeSoftwareSl.type === 'trailing' ? '⚡ Trailing SL Armed' : '🛡️ Stop-Loss Armed'));
-
+                if (activeSoftwareSls.length > 0) {
                   return (
-                    <div className="p-2.5 rounded-xl bg-blue-950/60 border border-blue-500/40 shadow-sm flex items-center justify-between gap-2 animate-fadeIn">
-                      <div className="flex items-center gap-2">
-                        <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0" />
-                        <div className="flex flex-col text-left">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[11px] font-bold text-cyan-300 uppercase leading-tight">{titleLabel}</span>
-                            {activeSoftwareSl.peg_strategy === 'wall_aware' && (
-                              <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
-                                🧱 Wall-Aware
-                              </span>
-                            )}
-                            {activeSoftwareSl.peg_strategy === 'inside_spread' && (
-                              <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
-                                🎯 Inside-Spread
-                              </span>
-                            )}
-                            {activeSoftwareSl.auto_breakeven_enabled && (
-                              <span className={`text-[8px] font-mono px-1 py-0.2 rounded font-bold border ${activeSoftwareSl.breakeven_activated ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'}`}>
-                                {activeSoftwareSl.breakeven_activated ? '🛡️ BE Active' : '🛡️ Auto-BE'}
-                              </span>
-                            )}
+                    <div className="flex flex-col gap-1.5 animate-fadeIn">
+                      {activeSoftwareSls.map((activeSoftwareSl, idx) => {
+                        const isChase = activeSoftwareSl.type === 'smart_chase';
+                        const isTrailChase = activeSoftwareSl.type === 'trailing_chase';
+                        const baseLabel = isTrailChase 
+                          ? '⚡ Trailing Chase Armed' 
+                          : (isChase ? '⚡ Smart Chase Armed' : (activeSoftwareSl.type === 'trailing' ? '⚡ Trailing SL Armed' : '🛡️ Stop-Loss Armed'));
+                        const titleLabel = activeSoftwareSls.length > 1 ? `${baseLabel} #${idx + 1}` : baseLabel;
+
+                        return (
+                          <div key={activeSoftwareSl.id || idx} className="p-2.5 rounded-xl bg-blue-950/60 border border-blue-500/40 shadow-sm flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0" />
+                              <div className="flex flex-col text-left">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[11px] font-bold text-cyan-300 uppercase leading-tight">{titleLabel}</span>
+                                  {activeSoftwareSl.peg_strategy === 'wall_aware' && (
+                                    <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                                      🧱 Wall-Aware
+                                    </span>
+                                  )}
+                                  {activeSoftwareSl.peg_strategy === 'inside_spread' && (
+                                    <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
+                                      🎯 Inside-Spread
+                                    </span>
+                                  )}
+                                  {activeSoftwareSl.auto_breakeven_enabled && (
+                                    <span className={`text-[8px] font-mono px-1 py-0.2 rounded font-bold border ${activeSoftwareSl.breakeven_activated ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'}`}>
+                                      {activeSoftwareSl.breakeven_activated ? '🛡️ BE Active' : '🛡️ Auto-BE'}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-gray-300 font-mono">
+                                  SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
+                                  {activeSoftwareSl.trigger_source === 'bid_ask' ? ' • ⚡ Bid/Ask' : ' • 📊 Last'}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={isStoppingChase}
+                              onClick={() => handleStopSmartChase(activeSoftwareSl)}
+                              className="py-1 px-2.5 rounded-md bg-white/5 hover:bg-red-950/80 hover:text-red-300 hover:border-red-500/50 border border-white/10 text-gray-300 text-[10px] font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              {isStoppingChase ? 'Cancelling...' : 'Cancel SL'}
+                            </button>
                           </div>
-                          <span className="text-[10px] text-gray-300 font-mono">
-                            SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
-                            {activeSoftwareSl.trigger_source === 'bid_ask' ? ' • ⚡ Bid/Ask' : ' • 📊 Last'}
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={isStoppingChase}
-                        onClick={() => handleStopSmartChase(activeSoftwareSl)}
-                        className="py-1 px-2.5 rounded-md bg-white/5 hover:bg-red-950/80 hover:text-red-300 hover:border-red-500/50 border border-white/10 text-gray-300 text-[10px] font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50"
-                      >
-                        {isStoppingChase ? 'Cancelling...' : 'Cancel SL'}
-                      </button>
+                        );
+                      })}
                     </div>
                   );
                 }

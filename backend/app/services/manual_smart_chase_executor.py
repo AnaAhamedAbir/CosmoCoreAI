@@ -373,12 +373,13 @@ async def execute_manual_smart_chase(
                 except Exception:
                     pass
 
-    # Cancel TP, Disaster SL, and ANY conflicting open orders on symbol (concurrent execution)
-    async def _cleanup_other_orders():
+    # Cancel this bracket's own TP and Disaster SL (protecting other independent brackets on the same symbol!)
+    async def _cleanup_other_orders(scan_unlinked: bool = False):
         nonlocal tp_order_id, disaster_sl_order_id
         from app.services.bracket_order_service import BracketOrderService
         cancel_tasks = []
         labels = []
+        had_own_linked_orders = bool(tp_order_id or disaster_sl_order_id)
         if tp_order_id:
             cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, tp_order_id, symbol))
             labels.append(('TP', str(tp_order_id)))
@@ -386,37 +387,52 @@ async def execute_manual_smart_chase(
             cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, disaster_sl_order_id, symbol))
             labels.append(('Disaster SL', str(disaster_sl_order_id)))
 
-        # Extra safety: Also fetch open orders on the exchange (including conditional/algo stop orders on Futures)
-        # to wipe any modified TP / SL orders that could block reduceOnly maker exit orders with Binance -2022 error
-        try:
-            open_orders = await exchange.fetch_open_orders(symbol)
-            if is_futures:
-                try:
-                    cond_orders = await exchange.fetch_open_orders(symbol, params={'stop': True})
-                    if cond_orders:
-                        open_orders.extend(cond_orders)
-                except Exception:
-                    pass
-            for o in open_orders:
-                oid = str(o.get('id'))
-                if not oid or oid in [l[1] for l in labels]:
-                    continue
-                o_side = str(o.get('side', '')).lower()
-                o_info = o.get('info', {}) if isinstance(o.get('info'), dict) else {}
-                is_reduce = o.get('reduceOnly') or o_info.get('reduceOnly') in [True, 'true', 'True']
-                raw_type = str(o.get('type', '')).lower()
-                info_type = str(o_info.get('orderType') or o_info.get('type') or o_info.get('origType') or '').lower()
-                is_stop = (
-                    'stop' in raw_type or 'take_profit' in raw_type or
-                    'stop' in info_type or 'take_profit' in info_type or
-                    bool(o.get('stopPrice') or o.get('triggerPrice') or o_info.get('triggerPrice') or o_info.get('stopPrice'))
-                )
+        # Only scan open orders on exchange if requested (e.g. balance/reduceOnly blocked) or if no linked TP/SL ID was passed,
+        # and ALWAYS protect TP / Disaster SL orders belonging to other active brackets in ACTIVE_SOFTWARE_SL!
+        if scan_unlinked or not had_own_linked_orders:
+            protected_order_ids = set()
+            try:
+                for s_id, s_data in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+                    if chase_id and str(s_id) == str(chase_id):
+                        continue
+                    if s_data.get('cancelled'):
+                        continue
+                    if s_data.get('tp_order_id'):
+                        protected_order_ids.add(str(s_data.get('tp_order_id')))
+                    if s_data.get('disaster_sl_order_id'):
+                        protected_order_ids.add(str(s_data.get('disaster_sl_order_id')))
+            except Exception:
+                pass
 
-                if o_side == exit_side or is_reduce or is_stop:
-                    cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, oid, symbol))
-                    labels.append(('ConflictingExitOrder', oid))
-        except Exception as open_err:
-            logger.debug(f"Open orders fetch during cleanup non-fatal error: {open_err}")
+            try:
+                open_orders = await exchange.fetch_open_orders(symbol)
+                if is_futures:
+                    try:
+                        cond_orders = await exchange.fetch_open_orders(symbol, params={'stop': True})
+                        if cond_orders:
+                            open_orders.extend(cond_orders)
+                    except Exception:
+                        pass
+                for o in open_orders:
+                    oid = str(o.get('id'))
+                    if not oid or oid in [l[1] for l in labels] or oid in protected_order_ids:
+                        continue
+                    o_side = str(o.get('side', '')).lower()
+                    o_info = o.get('info', {}) if isinstance(o.get('info'), dict) else {}
+                    is_reduce = o.get('reduceOnly') or o_info.get('reduceOnly') in [True, 'true', 'True']
+                    raw_type = str(o.get('type', '')).lower()
+                    info_type = str(o_info.get('orderType') or o_info.get('type') or o_info.get('origType') or '').lower()
+                    is_stop = (
+                        'stop' in raw_type or 'take_profit' in raw_type or
+                        'stop' in info_type or 'take_profit' in info_type or
+                        bool(o.get('stopPrice') or o.get('triggerPrice') or o_info.get('triggerPrice') or o_info.get('stopPrice'))
+                    )
+
+                    if o_side == exit_side or is_reduce or is_stop:
+                        cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, oid, symbol))
+                        labels.append(('ConflictingExitOrder', oid))
+            except Exception as open_err:
+                logger.debug(f"Open orders fetch during cleanup non-fatal error: {open_err}")
 
         if cancel_tasks:
             results = await asyncio.gather(*cancel_tasks, return_exceptions=True)
@@ -811,9 +827,9 @@ async def execute_manual_smart_chase(
                 reduce_only_rejections += 1
                 logger.warning(
                     f"⚠️ [Manual Smart Chase] ReduceOnly rejection (-2022/-4118) #{reduce_only_rejections} on attempt {attempts}: {err_str}. "
-                    f"Force clearing open orders on exchange and checking live position..."
+                    f"Force clearing unlinked open orders on exchange and checking live position..."
                 )
-                await _cleanup_other_orders()
+                await _cleanup_other_orders(scan_unlinked=True)
                 if is_futures:
                     is_inv = _is_inverse_market(exchange, symbol)
                     live_pos = await _get_live_position_contracts(exchange, symbol, exit_side, is_inv)
@@ -841,9 +857,9 @@ async def execute_manual_smart_chase(
             elif not is_futures and ('insufficient' in err_str.lower() or '-2010' in err_str):
                 logger.warning(
                     f"⚠️ [Manual Smart Chase] Spot balance not free (-2010/insufficient) on attempt {attempts}: {err_str}. "
-                    f"Force clearing open orders on exchange and re-clamping balance..."
+                    f"Force clearing unlinked open orders on exchange and re-clamping balance..."
                 )
-                await _cleanup_other_orders()
+                await _cleanup_other_orders(scan_unlinked=True)
                 await asyncio.sleep(0.25)
                 remaining_amount = await _sync_and_clamp_amount(target_maker_price)
                 continue

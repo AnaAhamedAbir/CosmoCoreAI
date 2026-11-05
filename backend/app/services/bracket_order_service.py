@@ -890,7 +890,8 @@ class BracketOrderService:
                         asyncio.create_task(
                             BracketOrderService._spawn_bracket_for_amount(
                                 exchange, symbol, side, newly_filled, average_price,
-                                is_futures, tp_config, sl_config, user_id, api_key_record
+                                is_futures, tp_config, sl_config, user_id, api_key_record,
+                                entry_order_id=entry_order_id
                             )
                         )
                         # Send Entry Order Fill notification to Telegram
@@ -944,7 +945,8 @@ class BracketOrderService:
     @staticmethod
     async def _spawn_bracket_for_amount(
         exchange, symbol: str, side: str, filled_amount: float, average_price: float,
-        is_futures: bool, tp_config: dict, sl_config: dict, user_id: int, api_key_record
+        is_futures: bool, tp_config: dict, sl_config: dict, user_id: int, api_key_record,
+        entry_order_id: str = None
     ):
         try:
             # Ensure exchange markets are loaded if possible (non-fatal)
@@ -988,18 +990,21 @@ class BracketOrderService:
             opposite_side = 'sell' if side.lower() == 'buy' else 'buy'
             api_key_id = getattr(api_key_record, 'id', None)
 
-            # --- Partial Fill / Iceberg Bracket Consolidation ---
-            # If an active software SL monitor already exists for this (api_key_id, symbol, opposite_side),
-            # consolidate the new partial chunk into the existing bracket rather than spawning duplicate SL loops.
+            # --- Partial Fill / Iceberg Bracket Consolidation (SAME entry_order_id ONLY) ---
+            # Consolidate ONLY when multiple partial fill chunks come from the exact SAME entry_order_id.
+            # Separate manual trade orders have distinct entry_order_ids and MUST maintain their own individual TP and SL!
             existing_sl = None
-            for _, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
-                if sdata.get('cancelled') or sdata.get('status') != 'monitoring':
-                    continue
-                if api_key_id is not None and sdata.get('api_key_id') is not None and int(sdata.get('api_key_id')) != int(api_key_id):
-                    continue
-                if str(sdata.get('symbol', '')).strip().upper() == str(symbol).strip().upper() and str(sdata.get('side', '')).lower() == opposite_side:
-                    existing_sl = sdata
-                    break
+            if entry_order_id:
+                for _, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+                    if sdata.get('cancelled') or sdata.get('status') != 'monitoring':
+                        continue
+                    if str(sdata.get('entry_order_id') or '') != str(entry_order_id):
+                        continue
+                    if api_key_id is not None and sdata.get('api_key_id') is not None and int(sdata.get('api_key_id')) != int(api_key_id):
+                        continue
+                    if str(sdata.get('symbol', '')).strip().upper() == str(symbol).strip().upper() and str(sdata.get('side', '')).lower() == opposite_side:
+                        existing_sl = sdata
+                        break
 
             if existing_sl is not None:
                 prev_amt = float(existing_sl.get('amount') or 0.0)
@@ -1342,7 +1347,8 @@ class BracketOrderService:
                                     disaster_sl_order_id=sl_res.get('id') if sl_res else None,
                                     auto_breakeven_enabled=False,
                                     auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
-                                    auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
+                                    auto_breakeven_buffer_pct=auto_breakeven_buffer_pct,
+                                    entry_order_id=entry_order_id
                                 )
                             )
                         except Exception as e:
@@ -1380,7 +1386,8 @@ class BracketOrderService:
                                 wall_multiplier=wall_multiplier,
                                 auto_breakeven_enabled=auto_breakeven_enabled,
                                 auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
-                                auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
+                                auto_breakeven_buffer_pct=auto_breakeven_buffer_pct,
+                                entry_order_id=entry_order_id
                             )
                         )
                 elif sl_type == 'smart_chase':
@@ -1441,7 +1448,8 @@ class BracketOrderService:
                             wall_multiplier=wall_multiplier,
                             auto_breakeven_enabled=auto_breakeven_enabled,
                             auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
-                            auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
+                            auto_breakeven_buffer_pct=auto_breakeven_buffer_pct,
+                            entry_order_id=entry_order_id
                         )
                     )
                 else:
@@ -1479,7 +1487,8 @@ class BracketOrderService:
                                 disaster_sl_order_id=None,
                                 auto_breakeven_enabled=auto_breakeven_enabled,
                                 auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
-                                auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
+                                auto_breakeven_buffer_pct=auto_breakeven_buffer_pct,
+                                entry_order_id=entry_order_id
                             )
                         )
                     else:
@@ -1546,7 +1555,8 @@ class BracketOrderService:
                                 disaster_sl_order_id=sl_res.get('id') if sl_res else None,
                                 auto_breakeven_enabled=auto_breakeven_enabled,
                                 auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
-                                auto_breakeven_buffer_pct=auto_breakeven_buffer_pct
+                                auto_breakeven_buffer_pct=auto_breakeven_buffer_pct,
+                                entry_order_id=entry_order_id
                             )
                         )
 
@@ -1571,7 +1581,8 @@ class BracketOrderService:
         wall_multiplier: float = 2.5,
         auto_breakeven_enabled: bool = False,
         auto_breakeven_trigger_pct: float = 1.0,
-        auto_breakeven_buffer_pct: float = 0.05
+        auto_breakeven_buffer_pct: float = 0.05,
+        entry_order_id: str = None
     ):
         highest_price = entry_price
         lowest_price = entry_price
@@ -1579,6 +1590,7 @@ class BracketOrderService:
         sl_id = str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
             'id': sl_id,
+            'entry_order_id': str(entry_order_id) if entry_order_id else None,
             'api_key_id': getattr(api_key_record, 'id', None),
             'api_key_record': api_key_record,
             'symbol': symbol,
@@ -1892,11 +1904,13 @@ class BracketOrderService:
         disaster_sl_order_id: str = None,
         auto_breakeven_enabled: bool = True,
         auto_breakeven_trigger_pct: float = 1.0,
-        auto_breakeven_buffer_pct: float = 0.05
+        auto_breakeven_buffer_pct: float = 0.05,
+        entry_order_id: str = None
     ):
         sl_id = str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
             'id': sl_id,
+            'entry_order_id': str(entry_order_id) if entry_order_id else None,
             'api_key_id': getattr(api_key_record, 'id', None),
             'api_key_record': api_key_record,
             'symbol': symbol,
@@ -2115,11 +2129,13 @@ class BracketOrderService:
         wall_multiplier: float = 2.5,
         auto_breakeven_enabled: bool = False,
         auto_breakeven_trigger_pct: float = 1.0,
-        auto_breakeven_buffer_pct: float = 0.05
+        auto_breakeven_buffer_pct: float = 0.05,
+        entry_order_id: str = None
     ):
         sl_id = str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
             'id': sl_id,
+            'entry_order_id': str(entry_order_id) if entry_order_id else None,
             'api_key_id': getattr(api_key_record, 'id', None),
             'api_key_record': api_key_record,
             'symbol': symbol,

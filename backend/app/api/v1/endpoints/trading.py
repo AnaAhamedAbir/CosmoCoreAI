@@ -189,7 +189,7 @@ async def edit_order(
                 s_sym = str(s_meta.get('symbol', '')).split(':')[0].upper()
                 s_api = s_meta.get('api_key_id')
                 if s_sym == clean_sym and (s_api is None or int(s_api) == int(api_key_id)):
-                    if str(s_meta.get('tp_order_id')) == str(order_id) or not s_meta.get('tp_order_id'):
+                    if str(s_meta.get('tp_order_id')) == str(order_id):
                         s_meta['tp_order_id'] = str(new_order_id)
                         logger.info(f"🔄 Linked software bracket {s_id} TP order updated: {order_id} -> {new_order_id}")
         return edit_res

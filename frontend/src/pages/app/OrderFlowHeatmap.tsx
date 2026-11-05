@@ -1836,7 +1836,9 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             const typeName = order.type ? order.type.toUpperCase() : '';
             const isTrailingChase = modeName === 'TRAILING_CHASE' || typeName === 'TRAILING_CHASE';
             const formattedMode = isTrailingChase ? 'TRAILING CHASE' : (modeName === 'SMART_CHASE' ? 'SMART CHASE' : (modeName === 'TRAILING' ? 'TRAILING' : (modeName === 'STOP' ? 'FIXED' : modeName)));
-            return `🛑 ${formattedMode} SL (${price < 1 ? price.toFixed(6) : price.toFixed(4)})`;
+            const slAmt = order.remaining > 0 ? order.remaining : order.amount;
+            const amtText = slAmt > 0 ? ` ${slAmt >= 1 ? slAmt.toFixed(2) : slAmt.toFixed(4)}` : '';
+            return `🛑 ${formattedMode} SL${amtText} (${price < 1 ? price.toFixed(6) : price.toFixed(4)})`;
         }
         if (order.isIceberg) {
             const sliceText = order.icebergQty ? `${order.icebergQty.toFixed(2)}/` : '';

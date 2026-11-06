@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 class BracketOrderService:
     ACTIVE_SOFTWARE_SL = {}  # { sl_id: { symbol, side, amount, trigger_price, mode } }
     KNOWN_TP_ORDER_IDS = set()  # Set of exchange order IDs placed as Attached Take-Profit orders
+    ENTRY_BRACKET_LOCKS = {}  # { entry_order_id: asyncio.Lock } to serialize partial-fill chunks of the same entry order
+    ACTIVE_ENTRY_BRACKETS = {}  # { entry_order_id: { tp_order_id, amount, entry_price, symbol, side, api_key_id } }
 
     @staticmethod
     def _safe_amount_to_precision(exchange, symbol: str, amount: float) -> float:
@@ -885,30 +887,40 @@ class BracketOrderService:
                                 average_price = float(ticker.get('last') or ticker.get('close') or 0.0)
                             except Exception:
                                 pass
-                        logger.info(f"⚡ Partial/Full fill detected for {entry_order_id}: {newly_filled} @ {average_price} (Total: {filled}/{amount})")
-                        
-                        # Spawning bracket for this chunk
-                        asyncio.create_task(
-                            BracketOrderService._spawn_bracket_for_amount(
-                                exchange, symbol, side, newly_filled, average_price,
-                                is_futures, tp_config, sl_config, user_id, api_key_record,
-                                entry_order_id=entry_order_id
+
+                        # On Spot, if a partial fill chunk is below $5.00 min notional while the entry order is still open
+                        # and no bracket exists yet for this entry_order_id, wait for more fills (or order close) before spawning TP
+                        chunk_notional = newly_filled * average_price
+                        if not is_futures and status == 'open' and processed_amount <= 0 and 0 < chunk_notional < 5.0:
+                            logger.info(
+                                f"⏳ [Bracket Monitor] Partial fill {newly_filled} (${chunk_notional:.2f} < $5.00 Spot Min Notional) "
+                                f"for {entry_order_id}. Waiting for additional fill or order close..."
                             )
-                        )
-                        # Send Entry Order Fill notification to Telegram
-                        if user_id:
+                        else:
+                            logger.info(f"⚡ Partial/Full fill detected for {entry_order_id}: {newly_filled} @ {average_price} (Total: {filled}/{amount})")
+                            
+                            # Spawning bracket for this chunk
                             asyncio.create_task(
-                                BracketOrderService._send_entry_filled_notification(
-                                    user_id=user_id,
-                                    symbol=symbol,
-                                    side=side,
-                                    filled=filled,
-                                    total_amount=amount,
-                                    average_price=average_price,
-                                    is_futures=is_futures
+                                BracketOrderService._spawn_bracket_for_amount(
+                                    exchange, symbol, side, newly_filled, average_price,
+                                    is_futures, tp_config, sl_config, user_id, api_key_record,
+                                    entry_order_id=entry_order_id
                                 )
                             )
-                        processed_amount = filled
+                            # Send Entry Order Fill notification to Telegram
+                            if user_id:
+                                asyncio.create_task(
+                                    BracketOrderService._send_entry_filled_notification(
+                                        user_id=user_id,
+                                        symbol=symbol,
+                                        side=side,
+                                        filled=filled,
+                                        total_amount=amount,
+                                        average_price=average_price,
+                                        is_futures=is_futures
+                                    )
+                                )
+                            processed_amount = filled
 
                     if status in ('closed', 'filled') or processed_amount >= amount * 0.99:
                         order_closed = True
@@ -949,6 +961,10 @@ class BracketOrderService:
         is_futures: bool, tp_config: dict, sl_config: dict, user_id: int, api_key_record,
         entry_order_id: str = None
     ):
+        entry_lock = None
+        if entry_order_id:
+            entry_lock = BracketOrderService.ENTRY_BRACKET_LOCKS.setdefault(str(entry_order_id), asyncio.Lock())
+            await entry_lock.acquire()
         try:
             # Ensure exchange markets are loaded if possible (non-fatal)
             if not getattr(exchange, 'markets', None):
@@ -1006,6 +1022,15 @@ class BracketOrderService:
                     if str(sdata.get('symbol', '')).strip().upper() == str(symbol).strip().upper() and str(sdata.get('side', '')).lower() == opposite_side:
                         existing_sl = sdata
                         break
+                if existing_sl is None:
+                    eb_cand = BracketOrderService.ACTIVE_ENTRY_BRACKETS.get(str(entry_order_id))
+                    if (
+                        eb_cand
+                        and not eb_cand.get('cancelled')
+                        and str(eb_cand.get('symbol', '')).strip().upper() == str(symbol).strip().upper()
+                        and str(eb_cand.get('side', '')).lower() == opposite_side
+                    ):
+                        existing_sl = eb_cand
 
             if existing_sl is not None:
                 prev_amt = float(existing_sl.get('amount') or 0.0)
@@ -1015,13 +1040,35 @@ class BracketOrderService:
                 weighted_entry = ((prev_amt * prev_entry) + (final_amount * average_price)) / raw_total if raw_total > 0 else average_price
                 existing_sl['amount'] = new_total_amt
                 existing_sl['entry_price'] = weighted_entry
+                if entry_order_id and str(entry_order_id) in BracketOrderService.ACTIVE_ENTRY_BRACKETS:
+                    BracketOrderService.ACTIVE_ENTRY_BRACKETS[str(entry_order_id)]['amount'] = new_total_amt
+                    BracketOrderService.ACTIVE_ENTRY_BRACKETS[str(entry_order_id)]['entry_price'] = weighted_entry
 
                 # Consolidate TP order if configured
                 if tp_config:
                     old_tp_id = existing_sl.get('tp_order_id')
+                    tp_target_amt = new_total_amt
                     if old_tp_id:
-                        await BracketOrderService._cancel_futures_order_universal(exchange, old_tp_id, symbol)
-                        await asyncio.sleep(0.1)
+                        old_tp_filled = 0.0
+                        old_tp_already_closed = False
+                        try:
+                            old_tp_chk = (
+                                await BracketOrderService._fetch_futures_order_universal(exchange, old_tp_id, symbol, is_conditional=False)
+                                if is_futures else await exchange.fetch_order(old_tp_id, symbol)
+                            )
+                            if old_tp_chk:
+                                old_tp_filled = float(old_tp_chk.get('filled') or 0.0)
+                                if str(old_tp_chk.get('status', '')).lower() in ('closed', 'filled'):
+                                    old_tp_already_closed = True
+                        except Exception:
+                            pass
+                        if not old_tp_already_closed:
+                            await BracketOrderService._cancel_futures_order_universal(exchange, old_tp_id, symbol)
+                            await asyncio.sleep(0.1)
+                        if old_tp_filled > 0:
+                            tp_target_amt = BracketOrderService._safe_amount_to_precision(
+                                exchange, symbol, max(final_amount, raw_total - old_tp_filled)
+                            )
 
                     tp_order_type = tp_config.get('order_type', 'Limit').lower()
                     mode = tp_config.get('mode', 'percentage')
@@ -1042,7 +1089,7 @@ class BracketOrderService:
                             ex_params_po = dict(ex_params)
                             ex_params_po['postOnly'] = True
                             try:
-                                tp_res = await exchange.create_limit_order(symbol, opposite_side, new_total_amt, final_tp_price, ex_params_po)
+                                tp_res = await exchange.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_po)
                             except Exception as po_cons_err:
                                 logger.warning(f"Consolidated TP Post-Only rejected ({po_cons_err}). Retrying with standard GTC Limit...")
                                 tp_res = None
@@ -1050,30 +1097,32 @@ class BracketOrderService:
                                 ex_params_gtc = dict(ex_params)
                                 ex_params_gtc.pop('postOnly', None)
                                 ex_params_gtc['timeInForce'] = 'GTC'
-                                tp_res = await exchange.create_limit_order(symbol, opposite_side, new_total_amt, final_tp_price, ex_params_gtc)
+                                tp_res = await exchange.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_gtc)
                         else:
                             if is_futures:
                                 tp_cond_params = dict(ex_params)
                                 tp_cond_params['stopPrice'] = final_tp_price
                                 tp_res = await BracketOrderService._place_futures_conditional_order(
-                                    exchange, symbol, 'TAKE_PROFIT_MARKET', opposite_side, new_total_amt,
+                                    exchange, symbol, 'TAKE_PROFIT_MARKET', opposite_side, tp_target_amt,
                                     stop_price=final_tp_price, extra_params=tp_cond_params
                                 )
                             else:
                                 ex_params_gtc = dict(ex_params)
                                 ex_params_gtc.pop('postOnly', None)
                                 ex_params_gtc['timeInForce'] = 'GTC'
-                                tp_res = await exchange.create_limit_order(symbol, opposite_side, new_total_amt, final_tp_price, ex_params_gtc)
+                                tp_res = await exchange.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_gtc)
                         if tp_res and tp_res.get('id'):
                             existing_sl['tp_order_id'] = str(tp_res.get('id'))
+                            if entry_order_id and str(entry_order_id) in BracketOrderService.ACTIVE_ENTRY_BRACKETS:
+                                BracketOrderService.ACTIVE_ENTRY_BRACKETS[str(entry_order_id)]['tp_order_id'] = str(tp_res.get('id'))
                             BracketOrderService.KNOWN_TP_ORDER_IDS.add(str(tp_res.get('id')))
-                            logger.info(f"🔄 Consolidated Bracket TP to {new_total_amt} at {final_tp_price} (ID: {tp_res.get('id')})")
+                            logger.info(f"🔄 Consolidated Bracket TP to {tp_target_amt} at {final_tp_price} (ID: {tp_res.get('id')})")
                     except Exception as tp_cons_err:
                         logger.warning(f"Failed to replace consolidated TP order: {tp_cons_err}")
 
                 # Consolidate Futures disaster SL if present
                 old_dis_id = existing_sl.get('disaster_sl_order_id')
-                if old_dis_id and is_futures:
+                if old_dis_id and is_futures and existing_sl.get('id'):
                     try:
                         await BracketOrderService.update_software_bracket(
                             existing_sl['id'],
@@ -1086,7 +1135,7 @@ class BracketOrderService:
 
                 logger.info(
                     f"🔄 [Bracket Monitor] Consolidated partial fill chunk (+{final_amount} -> total {new_total_amt}) "
-                    f"into active software SL bracket {existing_sl.get('id')} for {symbol}"
+                    f"into active bracket for entry #{entry_order_id} on {symbol}"
                 )
                 return
 
@@ -1097,6 +1146,7 @@ class BracketOrderService:
             if (
                 exchange.id == 'binance'
                 and not is_futures
+                and not entry_order_id
                 and tp_config
                 and sl_config
                 and sl_type == 'fixed'
@@ -1568,8 +1618,25 @@ class BracketOrderService:
                             )
                         )
 
+            if entry_order_id:
+                BracketOrderService.ACTIVE_ENTRY_BRACKETS[str(entry_order_id)] = {
+                    'entry_order_id': str(entry_order_id),
+                    'api_key_id': api_key_id,
+                    'symbol': symbol,
+                    'side': opposite_side,
+                    'amount': final_amount,
+                    'entry_price': average_price,
+                    'tp_order_id': str(tp_order_id) if tp_order_id else None,
+                    'cancelled': False,
+                }
+                # Yield 1 event-loop tick so any spawned SL monitor task registers in ACTIVE_SOFTWARE_SL before lock release
+                await asyncio.sleep(0)
+
         except Exception as chunk_e:
             logger.error(f"Failed to spawn bracket for chunk: {chunk_e}")
+        finally:
+            if entry_lock is not None and entry_lock.locked():
+                entry_lock.release()
 
 
     @staticmethod

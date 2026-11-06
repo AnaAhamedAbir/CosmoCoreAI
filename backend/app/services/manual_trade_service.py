@@ -747,6 +747,25 @@ class ManualTradeService:
             except Exception as margin_e:
                 logger.debug(f"Pre-flight margin check skipped: {margin_e}")
 
+            # --- Refresh Auto-Best-Limit Price right after Margin Check so BBO is 0ms fresh ---
+            if order_req.type.lower() == 'limit' and params.get('autoBestLimit'):
+                try:
+                    from app.services.smart_peg_entry_executor import _get_market_tick
+                    ob_fresh = await exchange.fetch_order_book(order_req.symbol, limit=5)
+                    if ob_fresh and ob_fresh.get('bids') and ob_fresh.get('asks'):
+                        f_bid = float(ob_fresh['bids'][0][0])
+                        f_ask = float(ob_fresh['asks'][0][0])
+                        f_tick = _get_market_tick(exchange, order_req.symbol, f_bid)
+                        if order_req.side.lower() == 'buy':
+                            target_p = f_bid if f_bid < f_ask else (f_ask - f_tick)
+                        else:
+                            target_p = f_ask if f_ask > f_bid else (f_bid + f_tick)
+                        order_req.price = bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, target_p)
+                        req_price = order_req.price
+                    ex_params['postOnly'] = True
+                except Exception as fresh_ob_e:
+                    logger.debug(f"Fresh BBO refresh notice: {fresh_ob_e}")
+
             # Detached-safe snapshot of api_key_record to prevent DetachedInstanceError in background tasks
             from types import SimpleNamespace
             safe_api_key_record = SimpleNamespace(
@@ -846,6 +865,11 @@ class ManualTradeService:
 
             # --- NATIVE BINANCE OTOCO SUPPORT ---
             use_native_otoco = getattr(order_req, 'use_native_tp_sl', False)
+            if params.get('autoBestLimit') or ex_params.get('postOnly'):
+                # Disable Native OTO/OTOCO for Post-Only / Auto-Best-Limit so that:
+                # 1) Strict Post-Only BBO Maker retry loop can guarantee 0% Taker execution
+                # 2) Partial fills immediately place Attached TP/SL via BracketOrderService
+                use_native_otoco = False
             if use_native_otoco and order_req.attached_sl and order_req.attached_sl.enabled:
                 if (
                     order_req.attached_sl.type in ('trailing', 'smart_chase', 'trailing_chase')
@@ -1017,7 +1041,7 @@ class ManualTradeService:
                     ex_params['timeInForce'] = 'GTC'
                 logger.info(f"🧊 Configured icebergQty={ex_params['icebergQty']} on Spot limit order")
 
-            if not is_ws_success and exchange.has.get('createOrderWs'):
+            if not is_ws_success and exchange.has.get('createOrderWs') and not ex_params.get('postOnly'):
                 try:
                     logger.info(f"⚡ Attempting WebSocket order execution for {order_req.symbol}...")
                     order_type = order_req.type.lower()
@@ -1037,47 +1061,65 @@ class ManualTradeService:
                         order_req.symbol, order_req.side, order_req.amount, params=ex_params
                     )
                 elif order_req.type.lower() == 'limit':
-                    try:
-                        response = await exchange.create_limit_order(
-                            order_req.symbol, order_req.side, order_req.amount, order_req.price, ex_params
-                        )
-                    except Exception as lim_e:
-                        if params.get('autoBestLimit') and ex_params.get('postOnly'):
-                            logger.warning(f"⚠️ AutoBestLimit Post-Only rejected ({lim_e}). Retrying with standard GTC Limit...")
-                            ex_params_gtc = dict(ex_params)
-                            ex_params_gtc.pop('postOnly', None)
-                            ex_params_gtc['timeInForce'] = 'GTC'
+                    max_po_attempts = 4 if (params.get('autoBestLimit') and ex_params.get('postOnly')) else 1
+                    for po_attempt in range(1, max_po_attempts + 1):
+                        try:
                             response = await exchange.create_limit_order(
-                                order_req.symbol, order_req.side, order_req.amount, order_req.price, ex_params_gtc
+                                order_req.symbol, order_req.side, order_req.amount, order_req.price, ex_params
                             )
-                        else:
+                            if (
+                                ex_params.get('postOnly')
+                                and response
+                                and str(response.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled')
+                            ):
+                                raise Exception(f"Post-Only GTX returned status='{response.get('status')}'")
+                            break
+                        except Exception as lim_e:
+                            err_s = str(lim_e).lower()
+                            is_po_cross = (
+                                'immediately match' in err_s
+                                or '-2010' in err_s
+                                or '-5022' in err_s
+                                or 'post only' in err_s
+                                or 'postonly' in err_s
+                                or 'post-only' in err_s
+                                or 'gtx' in err_s
+                                or 'expired' in err_s
+                            )
+                            if params.get('autoBestLimit') and ex_params.get('postOnly') and is_po_cross and po_attempt < max_po_attempts:
+                                try:
+                                    from app.services.smart_peg_entry_executor import _get_market_tick
+                                    ob_retry = await exchange.fetch_order_book(order_req.symbol, limit=5)
+                                    if ob_retry and ob_retry.get('bids') and ob_retry.get('asks'):
+                                        r_bid = float(ob_retry['bids'][0][0])
+                                        r_ask = float(ob_retry['asks'][0][0])
+                                        r_tick = _get_market_tick(exchange, order_req.symbol, r_bid)
+                                        prev_p = float(order_req.price)
+                                        if order_req.side.lower() == 'buy':
+                                            cand_p = r_bid if r_bid < r_ask else (r_ask - r_tick)
+                                            if cand_p >= prev_p:
+                                                cand_p = min(cand_p, prev_p - r_tick)
+                                        else:
+                                            cand_p = r_ask if r_ask > r_bid else (r_bid + r_tick)
+                                            if cand_p <= prev_p:
+                                                cand_p = max(cand_p, prev_p + r_tick)
+                                        order_req.price = bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, cand_p)
+                                        req_price = order_req.price
+                                        logger.warning(
+                                            f"⚠️ AutoBestLimit Post-Only crossed spread on attempt {po_attempt}/{max_po_attempts} ({lim_e}). "
+                                            f"Re-pegged strictly as Maker at {order_req.price} (Bid={r_bid}, Ask={r_ask})..."
+                                        )
+                                        continue
+                                except Exception as re_ob_e:
+                                    logger.debug(f"AutoBestLimit BBO retry fetch failed: {re_ob_e}")
+                            if ex_params.get('postOnly') and is_po_cross:
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail="Exchange Error: Post-Only order would immediately match and take liquidity. Try again or use Smart Peg Entry."
+                                )
                             raise lim_e
                 else:
                     raise HTTPException(status_code=400, detail="Invalid order type. Use 'market' or 'limit'.")
-
-            # On Binance Futures, a GTX Post-Only limit order that crosses the book returns HTTP 200 with status='expired'
-            if (
-                order_req.type.lower() == 'limit'
-                and ex_params.get('postOnly')
-                and response
-                and str(response.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled')
-            ):
-                if params.get('autoBestLimit'):
-                    logger.warning(
-                        f"⚠️ AutoBestLimit Post-Only returned status='{response.get('status')}' on {order_req.symbol}. "
-                        f"Retrying immediately with standard GTC Limit..."
-                    )
-                    ex_params_gtc = dict(ex_params)
-                    ex_params_gtc.pop('postOnly', None)
-                    ex_params_gtc['timeInForce'] = 'GTC'
-                    response = await exchange.create_limit_order(
-                        order_req.symbol, order_req.side, order_req.amount, order_req.price, ex_params_gtc
-                    )
-                else:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Exchange Error: Post-Only order would immediately match and take liquidity (GTX expired)."
-                    )
 
             # Calculate Latency (using backend perf_counter to eliminate PC-Server clock drift)
             latency_ms = 0

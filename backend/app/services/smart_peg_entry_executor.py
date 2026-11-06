@@ -426,6 +426,7 @@ async def execute_smart_peg_entry(
         latest_order_chk = None
         user_cancelled = False
         repeg_triggered = False
+        order_processed_filled = 0.0
 
         # If order already filled immediately, skip watch loop
         if str(peg_order.get('status', '')).lower() in ('closed', 'filled'):
@@ -452,6 +453,41 @@ async def execute_smart_peg_entry(
                             latest_order_chk = chk_in_loop
                             repeg_triggered = True
                             break
+                        else:
+                            curr_loop_filled = float(chk_in_loop.get('filled') or 0.0)
+                            if curr_loop_filled > order_processed_filled:
+                                chunk_filled = curr_loop_filled - order_processed_filled
+                                exec_p = float(chk_in_loop.get('average') or chk_in_loop.get('price') or target_maker_price)
+                                chunk_notional = _calc_order_notional_usd(exchange, symbol, chunk_filled, exec_p)
+                                if is_futures or chunk_notional >= min_notional or total_filled > 0:
+                                    order_processed_filled = curr_loop_filled
+                                    total_filled += chunk_filled
+                                    accumulated_cost += (chunk_filled * exec_p)
+                                    remaining_amount = max(0.0, remaining_amount - chunk_filled)
+                                    if cid in ACTIVE_SMART_PEGS:
+                                        ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
+                                        ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
+                                    logger.info(
+                                        f"⚡ [Smart Peg Entry] Resting Partial Fill detected on #{order_id}: "
+                                        f"+{chunk_filled} @ {exec_p} (Total Filled: {total_filled}/{amount})"
+                                    )
+                                    if (tp_config or sl_config) and not reduce_only:
+                                        from app.services.bracket_order_service import BracketOrderService
+                                        asyncio.create_task(
+                                            BracketOrderService._spawn_bracket_for_amount(
+                                                exchange=exchange,
+                                                symbol=symbol,
+                                                side=side.lower(),
+                                                filled_amount=chunk_filled,
+                                                average_price=exec_p,
+                                                is_futures=is_futures,
+                                                tp_config=tp_config,
+                                                sl_config=sl_config,
+                                                user_id=user_id,
+                                                api_key_record=api_key_record,
+                                                entry_order_id=cid
+                                            )
+                                        )
                     except Exception as poll_e:
                         logger.debug(f"Entry order poll check notice: {poll_e}")
 
@@ -509,11 +545,13 @@ async def execute_smart_peg_entry(
 
             # Check if there was any partial fill before cancellation took effect
             try:
-                p_filled = float((cancel_res or {}).get('filled') or 0.0) if isinstance(cancel_res, dict) else 0.0
-                if p_filled <= 0:
+                raw_p_filled = float((cancel_res or {}).get('filled') or 0.0) if isinstance(cancel_res, dict) else 0.0
+                if raw_p_filled <= 0:
                     cancel_chk = await exchange.fetch_order(order_id, symbol)
-                    p_filled = float(cancel_chk.get('filled') or 0.0)
+                    raw_p_filled = float(cancel_chk.get('filled') or 0.0)
+                p_filled = max(0.0, raw_p_filled - order_processed_filled)
                 if p_filled > 0:
+                    order_processed_filled = raw_p_filled
                     total_filled += p_filled
                     exec_p = float((cancel_res or {}).get('average') or (cancel_res or {}).get('price') or target_maker_price)
                     logger.info(f"🔄 [Smart Peg Entry] Captured partial fill upon cancel: {p_filled} at {exec_p}")
@@ -556,20 +594,23 @@ async def execute_smart_peg_entry(
             status = chk.get('status', '').lower()
 
             if status in ['closed', 'filled']:
-                filled_amt = float(chk.get('filled') or remaining_amount)
+                raw_filled_amt = float(chk.get('filled') or (remaining_amount + order_processed_filled))
+                filled_amt = max(0.0, raw_filled_amt - order_processed_filled)
                 exec_price = float(chk.get('average') or chk.get('price') or target_maker_price)
-                total_filled += filled_amt
-                accumulated_cost += (filled_amt * exec_price)
-                remaining_amount = max(0.0, remaining_amount - filled_amt)
+                if filled_amt > 0:
+                    order_processed_filled = raw_filled_amt
+                    total_filled += filled_amt
+                    accumulated_cost += (filled_amt * exec_price)
+                    remaining_amount = max(0.0, remaining_amount - filled_amt)
                 final_res = chk
 
                 logger.info(
-                    f"🎯 [Smart Peg Entry] 100% FILLED! Amount: {filled_amt} at {exec_price} "
+                    f"🎯 [Smart Peg Entry] 100% FILLED! Amount: {raw_filled_amt} at {exec_price} "
                     f"(Total Filled: {total_filled}/{amount}) as Maker ⚡"
                 )
 
-                # Link Attached TP & Attached SL (or Smart Chase SL)
-                if (tp_config or sl_config) and not reduce_only:
+                # Link Attached TP & Attached SL (or Smart Chase SL) for the newly filled delta
+                if filled_amt > 0 and (tp_config or sl_config) and not reduce_only:
                     from app.services.bracket_order_service import BracketOrderService
                     logger.info(f"🚀 [Smart Peg Entry] Spawning Attached TP/SL Brackets for filled entry position...")
                     asyncio.create_task(
@@ -593,7 +634,7 @@ async def execute_smart_peg_entry(
                     f"Exchange: {exchange_name}\n"
                     f"Pair: `{symbol}`\n"
                     f"Side: {side.upper()} (Maker Entry ⚡)\n"
-                    f"Filled Amount: `{filled_amt}`\n"
+                    f"Filled Amount: `{total_filled}`\n"
                     f"Price: `{exec_price}`\n"
                     f"Attempts: {attempts}"
                 )
@@ -610,12 +651,14 @@ async def execute_smart_peg_entry(
 
                 # Check partial fill
                 try:
-                    p_filled = float(cancel_res.get('filled') or 0.0) if isinstance(cancel_res, dict) and cancel_res.get('filled') is not None else 0.0
-                    if p_filled <= 0:
+                    raw_p_filled = float(cancel_res.get('filled') or 0.0) if isinstance(cancel_res, dict) and cancel_res.get('filled') is not None else 0.0
+                    if raw_p_filled <= 0:
                         cancel_chk = await exchange.fetch_order(order_id, symbol)
-                        p_filled = float(cancel_chk.get('filled') or 0.0)
+                        raw_p_filled = float(cancel_chk.get('filled') or 0.0)
+                    p_filled = max(0.0, raw_p_filled - order_processed_filled)
                     if p_filled > 0:
-                        logger.info(f"🔄 [Smart Peg Entry] Partial fill: {p_filled}")
+                        logger.info(f"🔄 [Smart Peg Entry] Partial fill on re-peg cancel: {p_filled}")
+                        order_processed_filled = raw_p_filled
                         total_filled += p_filled
                         exec_p = float((cancel_res or {}).get('average') or (cancel_res or {}).get('price') or target_maker_price)
                         accumulated_cost += (p_filled * exec_p)

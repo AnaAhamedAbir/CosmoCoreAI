@@ -134,7 +134,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     autoBreakevenTriggerPct: 1.0,
     autoBreakevenBufferPct: 0.05
   });
-  const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(true);
+  const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(false);
   const [activeBrackets, setActiveBrackets] = useState<any[]>([]);
   const [isStoppingChase, setIsStoppingChase] = useState(false);
   const [isStoppingPeg, setIsStoppingPeg] = useState(false);

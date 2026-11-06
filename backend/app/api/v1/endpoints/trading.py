@@ -346,6 +346,8 @@ async def get_active_software_brackets(
                     'max_deviation_pct': float(data.get('max_deviation_pct', 1.0)),
                     'current_attempt': data.get('current_attempt', 0),
                     'max_attempts': data.get('max_attempts', 0),
+                    'tp_order_id': str(data.get('tp_order_id')) if data.get('tp_order_id') else None,
+                    'entry_order_id': str(data.get('entry_order_id')) if data.get('entry_order_id') else None,
                 })
 
         # 2. Actively executing Smart Chases (chasing maker fills)
@@ -503,6 +505,9 @@ class EmergencyForceOrderRequest(BaseModel):
     execution_mode: str = 'limit_maker'  # 'limit_maker' or 'market'
     size_pct: Optional[float] = 100.0
     custom_amount: Optional[float] = None
+    target_order_id: Optional[str] = None
+    target_order_amount: Optional[float] = None
+    target_order_mode: Optional[str] = None
     leverage: Optional[int] = None
     margin_mode: Optional[str] = None
     reduce_only: Optional[bool] = False
@@ -517,8 +522,8 @@ async def emergency_force_order_endpoint(
 ):
     """
     Emergency Force Sell / Buy at current price:
-    Cancels all open orders and active brackets on the symbol, unlocks balance, and executes via
-    Dynamic Smart Peg Maker (0% fee) or Instant Market Price.
+    Cancels either a specific selected order/bracket or all open orders/brackets on the symbol,
+    unlocks balance, and executes via Dynamic Smart Peg Maker (0% fee) or Instant Market Price.
     """
     try:
         import time
@@ -533,6 +538,9 @@ async def emergency_force_order_endpoint(
             execution_mode=req.execution_mode,
             size_pct=req.size_pct if req.size_pct is not None else 100.0,
             custom_amount=req.custom_amount,
+            target_order_id=req.target_order_id,
+            target_order_amount=req.target_order_amount,
+            target_order_mode=req.target_order_mode,
             leverage=req.leverage,
             margin_mode=req.margin_mode,
             reduce_only=bool(req.reduce_only),

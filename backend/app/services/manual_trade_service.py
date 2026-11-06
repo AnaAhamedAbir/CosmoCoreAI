@@ -1445,22 +1445,24 @@ class ManualTradeService:
         reduce_only: bool = False,
         attached_tp = None,
         attached_sl = None,
+        target_order_id: str = None,
+        target_order_amount: float = None,
+        target_order_mode: str = None,
         start_time: float = None
     ) -> dict:
         """
         Emergency Force Buy / Sell at Current Price:
-        1. Stops all active Smart Chase SL, Smart Peg Entry, and Software SL brackets for (api_key_id, symbol).
-        2. Cancels all open exchange orders (Spot & Futures regular + conditional) on `symbol` to unlock 100% of locked balance/margin.
-        3. Calculates target order size from `size_pct` (defaults to 100% full available balance or active opposite Futures position).
-        4. Executes immediately via:
-           - 'limit_maker': Dynamic Smart Peg Maker (0% Maker Fee, chases Best Bid/Ask every 180ms until 100% filled)
-           - 'market': Instant Market Order sweep at current price
-        5. If not a reduceOnly position exit and Attached TP / SL are enabled in the modal, automatically links them.
+        - If `target_order_id` (and != 'all') is specified:
+          Cancels ONLY that specific open order / bracket (and its linked TP/SL partner) and force-executes
+          that order's exact amount at current price via 'limit_maker' (0% fee Smart Peg) or 'market'.
+        - If `target_order_id` is None or 'all':
+          Cancels all open orders & active brackets on `symbol` to unlock 100% of locked balance/margin,
+          and executes `size_pct%` of wallet balance / opposite Futures position.
         """
         import math
         from types import SimpleNamespace
-        from app.services.manual_smart_chase_executor import stop_smart_chase
-        from app.services.smart_peg_entry_executor import stop_smart_peg, execute_smart_peg_entry
+        from app.services.manual_smart_chase_executor import stop_smart_chase, ACTIVE_SMART_CHASES
+        from app.services.smart_peg_entry_executor import stop_smart_peg, execute_smart_peg_entry, ACTIVE_SMART_PEGS
 
         api_key_record = db.query(models.ApiKey).filter(
             models.ApiKey.id == api_key_id,
@@ -1471,22 +1473,18 @@ class ManualTradeService:
         if not api_key_record:
             raise HTTPException(status_code=404, detail="API Key not found or inactive")
 
-        meta = ManualTradeService._parse_symbol_meta(symbol)
-        is_futures = meta["is_futures"]
-        is_inverse = meta["is_inverse"]
-        contract_size = meta["contract_size"]
-        base_part = meta["base"]
-        quote_part = meta["quote"]
+        is_futures = ':' in symbol
         side_lower = str(side or 'sell').strip().lower()
         mode_lower = str(execution_mode or 'limit_maker').strip().lower()
+        specific_oid = str(target_order_id).strip() if (target_order_id and str(target_order_id).strip().lower() != 'all') else None
 
         try:
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
-
-            # 1. Stop any active Smart Chase SL, Smart Peg Entry, Entry Monitors, and Software Brackets for this symbol
-            stopped_chases = await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
-            stopped_pegs = await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
-            cancelled_brackets = 0
+            meta = ManualTradeService._get_contract_meta(exchange, symbol)
+            is_inverse = meta["is_inverse"]
+            contract_size = meta["contract_size"]
+            base_part = meta["base"]
+            quote_part = meta["quote"]
 
             def _sym_matches(sa: str, sb: str) -> bool:
                 s1 = str(sa or '').strip()
@@ -1495,61 +1493,164 @@ class ManualTradeService:
                     return False
                 return s1.split(':')[0].upper() == s2.split(':')[0].upper()
 
-            for em_id, em_data in list(bracket_order_service.ACTIVE_ENTRY_MONITORS.items()):
-                key_match = (em_data.get('api_key_id') is None or int(em_data.get('api_key_id')) == int(api_key_id))
-                if key_match and _sym_matches(em_data.get('symbol', ''), symbol):
-                    em_data['cancelled'] = True
-
-            for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
-                key_match = (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == int(api_key_id))
-                if key_match and _sym_matches(sdata.get('symbol', ''), symbol) and not sdata.get('cancelled'):
-                    sdata['cancelled'] = True
-                    cancelled_brackets += 1
-                    tp_oid = sdata.get('tp_order_id')
-                    dis_oid = sdata.get('disaster_sl_order_id')
-                    if tp_oid:
-                        try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, tp_oid, symbol)
-                        except Exception:
-                            pass
-                    if dis_oid:
-                        try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, dis_oid, symbol)
-                        except Exception:
-                            pass
-
-            for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
-                key_match = (eb_data.get('api_key_id') is None or int(eb_data.get('api_key_id')) == int(api_key_id))
-                if key_match and _sym_matches(eb_data.get('symbol', ''), symbol) and not eb_data.get('cancelled'):
-                    eb_data['cancelled'] = True
-                    tp_oid = eb_data.get('tp_order_id')
-                    if tp_oid:
-                        try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, tp_oid, symbol)
-                        except Exception:
-                            pass
-
-            # 2. Cancel all open exchange orders on this symbol to unlock locked Spot/Futures balance
+            stopped_chases = 0
+            stopped_pegs = 0
+            cancelled_brackets = 0
             cancelled_open_orders = 0
-            try:
-                if hasattr(exchange, 'cancel_all_orders'):
-                    await exchange.cancel_all_orders(symbol)
-                    cancelled_open_orders += 1
-            except Exception:
-                pass
+            resolved_specific_amt = float(target_order_amount or 0.0)
+            is_exit_order = str(target_order_mode or '').upper() in ('TP', 'STOP', 'SL', 'SMART_CHASE', 'TRAILING', 'TRAILING_CHASE', 'FIXED')
 
-            try:
-                open_orders = await ManualTradeService.get_open_limit_orders(db, user_id, api_key_id, symbol)
-                for o in (open_orders or []):
-                    oid = o.get('id')
-                    if oid:
+            if specific_oid:
+                # --- TARGETED SINGLE ORDER / BRACKET CANCELLATION ---
+                # 1A. Check if specific_oid is an active Smart Peg Entry
+                if specific_oid in ACTIVE_SMART_PEGS:
+                    pdata = ACTIVE_SMART_PEGS.get(specific_oid) or {}
+                    if resolved_specific_amt <= 0:
+                        resolved_specific_amt = float(pdata.get('amount') or 0.0)
+                    stopped_pegs += await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id, peg_id=specific_oid)
+
+                # 1B. Check if specific_oid is an active Smart Chase SL
+                if specific_oid in ACTIVE_SMART_CHASES:
+                    cdata = ACTIVE_SMART_CHASES.get(specific_oid) or {}
+                    if resolved_specific_amt <= 0:
+                        resolved_specific_amt = float(cdata.get('amount') or 0.0)
+                    is_exit_order = True
+                    tp_oid = cdata.get('tp_order_id')
+                    if tp_oid:
                         try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, str(oid), symbol)
+                            await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
                             cancelled_open_orders += 1
                         except Exception:
                             pass
-            except Exception:
-                pass
+                    stopped_chases += await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id, chase_id=specific_oid)
+
+                # 1C. Check if specific_oid matches a Software SL bracket (by sl_id, tp_order_id, disaster_sl_order_id, or entry_order_id)
+                for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
+                    key_match = (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == int(api_key_id))
+                    if not key_match or not _sym_matches(sdata.get('symbol', ''), symbol) or sdata.get('cancelled'):
+                        continue
+                    if (
+                        str(sl_id) == specific_oid
+                        or str(sdata.get('tp_order_id') or '') == specific_oid
+                        or str(sdata.get('disaster_sl_order_id') or '') == specific_oid
+                        or str(sdata.get('entry_order_id') or '') == specific_oid
+                    ):
+                        sdata['cancelled'] = True
+                        cancelled_brackets += 1
+                        is_exit_order = True
+                        if resolved_specific_amt <= 0:
+                            resolved_specific_amt = float(sdata.get('amount') or 0.0)
+                        tp_oid = sdata.get('tp_order_id')
+                        dis_oid = sdata.get('disaster_sl_order_id')
+                        if tp_oid:
+                            try:
+                                await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
+                                cancelled_open_orders += 1
+                            except Exception:
+                                pass
+                        if dis_oid:
+                            try:
+                                await bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol)
+                                cancelled_open_orders += 1
+                            except Exception:
+                                pass
+
+                # 1D. Check ACTIVE_ENTRY_BRACKETS (TP-only brackets)
+                for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
+                    key_match = (eb_data.get('api_key_id') is None or int(eb_data.get('api_key_id')) == int(api_key_id))
+                    if not key_match or not _sym_matches(eb_data.get('symbol', ''), symbol) or eb_data.get('cancelled'):
+                        continue
+                    if str(eb_id) == specific_oid or str(eb_data.get('tp_order_id') or '') == specific_oid:
+                        eb_data['cancelled'] = True
+                        is_exit_order = True
+                        if resolved_specific_amt <= 0:
+                            resolved_specific_amt = float(eb_data.get('amount') or 0.0)
+                        tp_oid = eb_data.get('tp_order_id')
+                        if tp_oid:
+                            try:
+                                await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
+                                cancelled_open_orders += 1
+                            except Exception:
+                                pass
+
+                # 1E. If specific_oid is a pending entry monitor or exchange order, abort monitor & cancel order on exchange
+                if specific_oid in bracket_order_service.ACTIVE_ENTRY_MONITORS:
+                    bracket_order_service.ACTIVE_ENTRY_MONITORS[specific_oid]['cancelled'] = True
+                if specific_oid in bracket_order_service.KNOWN_TP_ORDER_IDS:
+                    is_exit_order = True
+
+                if specific_oid not in ACTIVE_SMART_PEGS and specific_oid not in ACTIVE_SMART_CHASES and specific_oid not in bracket_order_service.ACTIVE_SOFTWARE_SL:
+                    if resolved_specific_amt <= 0:
+                        try:
+                            ord_info = await exchange.fetch_order(specific_oid, symbol)
+                            if ord_info:
+                                resolved_specific_amt = float(ord_info.get('remaining') or ord_info.get('amount') or 0.0)
+                        except Exception:
+                            pass
+                    try:
+                        await bracket_order_service._cancel_futures_order_universal(exchange, specific_oid, symbol)
+                        cancelled_open_orders += 1
+                    except Exception:
+                        pass
+            else:
+                # --- CANCEL ALL OPEN ORDERS & BRACKETS ON SYMBOL ---
+                stopped_chases = await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
+                stopped_pegs = await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
+
+                for em_id, em_data in list(bracket_order_service.ACTIVE_ENTRY_MONITORS.items()):
+                    key_match = (em_data.get('api_key_id') is None or int(em_data.get('api_key_id')) == int(api_key_id))
+                    if key_match and _sym_matches(em_data.get('symbol', ''), symbol):
+                        em_data['cancelled'] = True
+
+                for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
+                    key_match = (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == int(api_key_id))
+                    if key_match and _sym_matches(sdata.get('symbol', ''), symbol) and not sdata.get('cancelled'):
+                        sdata['cancelled'] = True
+                        cancelled_brackets += 1
+                        tp_oid = sdata.get('tp_order_id')
+                        dis_oid = sdata.get('disaster_sl_order_id')
+                        if tp_oid:
+                            try:
+                                await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
+                            except Exception:
+                                pass
+                        if dis_oid:
+                            try:
+                                await bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol)
+                            except Exception:
+                                pass
+
+                for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
+                    key_match = (eb_data.get('api_key_id') is None or int(eb_data.get('api_key_id')) == int(api_key_id))
+                    if key_match and _sym_matches(eb_data.get('symbol', ''), symbol) and not eb_data.get('cancelled'):
+                        eb_data['cancelled'] = True
+                        tp_oid = eb_data.get('tp_order_id')
+                        if tp_oid:
+                            try:
+                                await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
+                            except Exception:
+                                pass
+
+                try:
+                    if hasattr(exchange, 'cancel_all_orders'):
+                        await exchange.cancel_all_orders(symbol)
+                        cancelled_open_orders += 1
+                except Exception:
+                    pass
+
+                try:
+                    open_orders_res = await ManualTradeService.get_open_limit_orders(db, user_id, api_key_id, symbol)
+                    open_orders_list = open_orders_res.get('orders', []) if isinstance(open_orders_res, dict) else (open_orders_res or [])
+                    for o in open_orders_list:
+                        oid = o.get('id') if isinstance(o, dict) else None
+                        if oid:
+                            try:
+                                await bracket_order_service._cancel_futures_order_universal(exchange, str(oid), symbol)
+                                cancelled_open_orders += 1
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
 
             # Brief pause so exchange releases locked balance/margin after order cancellations
             await asyncio.sleep(0.08)
@@ -1579,7 +1680,7 @@ class ManualTradeService:
 
             bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta)
             target_amount = 0.0
-            is_closing_position = bool(reduce_only)
+            is_closing_position = bool(reduce_only) or (is_futures and is_exit_order)
 
             if is_futures:
                 # Check if user has an active opposite Futures position to force-close/reduce
@@ -1593,32 +1694,30 @@ class ManualTradeService:
                 pos_side = str((pos_info or {}).get('side') or 'none').lower()
                 if pos_amt > 0 and ((pos_side == 'long' and side_lower == 'sell') or (pos_side == 'short' and side_lower == 'buy')):
                     is_closing_position = True
-                    if is_inverse:
+                    if specific_oid and resolved_specific_amt > 0:
+                        target_amount = min(pos_amt if not is_inverse else float(pos_info.get('contracts') or pos_amt), resolved_specific_amt * pct_ratio)
+                    elif is_inverse:
                         total_cont = float(pos_info.get('contracts') or max(1, round((pos_amt * ref_price) / contract_size)))
                         target_amount = max(1.0, round(total_cont * pct_ratio))
                     else:
                         target_amount = pos_amt * pct_ratio
                 else:
-                    # Opening / adding to Futures position -> sync margin mode & leverage with cache
-                    now_ts = time.time()
-                    if margin_mode and hasattr(exchange, 'set_margin_mode'):
-                        mm_key = (api_key_record.id, symbol)
-                        cached_mm = ManualTradeService._MARGIN_MODE_CACHE.get(mm_key)
-                        if not cached_mm or cached_mm[0] != margin_mode or cached_mm[1] < now_ts:
-                            try:
-                                await exchange.set_margin_mode(margin_mode, symbol)
-                            except Exception:
-                                pass
-                            ManualTradeService._MARGIN_MODE_CACHE[mm_key] = (margin_mode, now_ts + 600)
-                    if leverage and hasattr(exchange, 'set_leverage'):
-                        lev_key = (api_key_record.id, symbol)
-                        cached_lev = ManualTradeService._LEVERAGE_CACHE.get(lev_key)
-                        if not cached_lev or cached_lev[0] != int(leverage) or cached_lev[1] < now_ts:
+                    # Opening / adding to Futures position -> sync margin mode & leverage
+                    if margin_mode:
+                        try:
+                            await exchange.set_margin_mode(margin_mode, symbol)
+                        except Exception:
+                            pass
+                    if leverage:
+                        lev_cache_key = f"{getattr(exchange, 'apiKey', '')}_{symbol}"
+                        now_ts = time.time()
+                        cached_lev, exp_ts = ManualTradeService._LEVERAGE_CACHE.get(lev_cache_key, (None, 0))
+                        if cached_lev != leverage or now_ts >= exp_ts:
                             try:
                                 await exchange.set_leverage(int(leverage), symbol)
                             except Exception:
                                 pass
-                            ManualTradeService._LEVERAGE_CACHE[lev_key] = (int(leverage), now_ts + 600)
+                            ManualTradeService._LEVERAGE_CACHE[lev_cache_key] = (leverage, now_ts + 600)
 
                     lev = float(leverage or 1)
                     if is_inverse:
@@ -1628,7 +1727,11 @@ class ManualTradeService:
                         if free_base <= 0:
                             raise HTTPException(status_code=400, detail=f"No free {base_part} margin available for Emergency {side.upper()}.")
                         total_notional_usd = free_base * 0.985 * ref_price * lev
-                        target_amount = max(1.0, math.floor((total_notional_usd * pct_ratio) / contract_size))
+                        max_cont = max(1.0, math.floor(total_notional_usd / contract_size))
+                        if specific_oid and resolved_specific_amt > 0:
+                            target_amount = min(max_cont, max(1.0, round(resolved_specific_amt * pct_ratio)))
+                        else:
+                            target_amount = max(1.0, math.floor((total_notional_usd * pct_ratio) / contract_size))
                     else:
                         free_quote = float(bal.get(quote_part, {}).get('free', 0.0)) or (
                             float(bal.get('free', {}).get(quote_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0
@@ -1636,10 +1739,13 @@ class ManualTradeService:
                         if free_quote <= 0:
                             raise HTTPException(status_code=400, detail=f"No free {quote_part} margin available for Emergency {side.upper()}.")
                         safety = 0.985 if mode_lower == 'market' else 0.992
-                        if custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
-                            target_amount = min(float(custom_amount), (free_quote * lev * safety) / ref_price)
+                        max_afford = (free_quote * lev * safety) / ref_price
+                        if specific_oid and resolved_specific_amt > 0:
+                            target_amount = min(max_afford, resolved_specific_amt * pct_ratio)
+                        elif custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
+                            target_amount = min(float(custom_amount), max_afford)
                         else:
-                            target_amount = (free_quote * lev * pct_ratio * safety) / ref_price
+                            target_amount = max_afford * pct_ratio
             else:
                 # Spot Market
                 if side_lower == 'sell':
@@ -1648,7 +1754,9 @@ class ManualTradeService:
                     )
                     if free_base <= 0:
                         raise HTTPException(status_code=400, detail=f"Insufficient {base_part} balance (0 available) for Emergency Force Sell.")
-                    if custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
+                    if specific_oid and resolved_specific_amt > 0:
+                        target_amount = min(free_base * 0.9995, resolved_specific_amt * pct_ratio)
+                    elif custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
                         target_amount = min(float(custom_amount), free_base * 0.9995)
                     else:
                         target_amount = free_base * pct_ratio * (0.9995 if pct_ratio >= 0.99 else 1.0)
@@ -1659,10 +1767,13 @@ class ManualTradeService:
                     if free_quote <= 0:
                         raise HTTPException(status_code=400, detail=f"Insufficient {quote_part} balance (0 available) for Emergency Force Buy.")
                     safety = 0.992 if mode_lower == 'market' else 0.998
-                    if custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
-                        target_amount = min(float(custom_amount), (free_quote * safety) / ref_price)
+                    max_afford_spot = (free_quote * safety) / ref_price
+                    if specific_oid and resolved_specific_amt > 0:
+                        target_amount = min(max_afford_spot, resolved_specific_amt * pct_ratio)
+                    elif custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
+                        target_amount = min(float(custom_amount), max_afford_spot)
                     else:
-                        target_amount = (free_quote * pct_ratio * safety) / ref_price
+                        target_amount = max_afford_spot * pct_ratio
 
             target_amount = bracket_order_service._safe_amount_to_precision(exchange, symbol, target_amount)
             if target_amount <= 0:
@@ -1676,8 +1787,9 @@ class ManualTradeService:
                 passphrase=getattr(api_key_record, 'passphrase', None)
             )
 
-            has_tp = bool(not is_closing_position and attached_tp and getattr(attached_tp, 'enabled', False))
-            has_sl = bool(not is_closing_position and attached_sl and getattr(attached_sl, 'enabled', False))
+            # Do not attach new TP/SL if we are force-executing an existing exit/TP/SL order or closing a position
+            has_tp = bool(not is_closing_position and not is_exit_order and attached_tp and getattr(attached_tp, 'enabled', False))
+            has_sl = bool(not is_closing_position and not is_exit_order and attached_sl and getattr(attached_sl, 'enabled', False))
             tp_cfg_dict = attached_tp.dict() if has_tp else None
             sl_cfg_dict = attached_sl.dict() if has_sl else None
 

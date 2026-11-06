@@ -134,6 +134,11 @@ export const manualTradeService = {
     return response.data;
   },
 
+  getOpenLimitOrders: async (apiKeyId: number, symbol: string) => {
+    const response = await api.get(`/trading/open-limit-orders/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`);
+    return response.data;
+  },
+
   stopSmartChase: async (payload: { apiKeyId?: number; symbol: string; slId?: string }) => {
     const response = await api.post('/trading/stop-smart-chase', {
       api_key_id: payload.apiKeyId,
@@ -159,6 +164,9 @@ export const manualTradeService = {
     executionMode: 'limit_maker' | 'market';
     sizePct?: number;
     customAmount?: number;
+    targetOrderId?: string;
+    targetOrderAmount?: number;
+    targetOrderMode?: string;
     leverage?: number;
     marginMode?: 'cross' | 'isolated';
     reduceOnly?: boolean;
@@ -172,6 +180,9 @@ export const manualTradeService = {
       execution_mode: payload.executionMode,
       size_pct: payload.sizePct ?? 100.0,
       custom_amount: payload.customAmount,
+      target_order_id: payload.targetOrderId,
+      target_order_amount: payload.targetOrderAmount,
+      target_order_mode: payload.targetOrderMode,
       leverage: payload.leverage,
       margin_mode: payload.marginMode,
       reduce_only: Boolean(payload.reduceOnly),

@@ -136,6 +136,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   });
   const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(false);
   const [activeBrackets, setActiveBrackets] = useState<any[]>([]);
+  const [openLimitOrders, setOpenLimitOrders] = useState<any[]>([]);
+  const [selectedForceOrderId, setSelectedForceOrderId] = useState<string>('all');
+  const userChoseAllForceRef = React.useRef<boolean>(false);
+  const openOrdersPollTickRef = React.useRef<number>(0);
   const [isStoppingChase, setIsStoppingChase] = useState(false);
   const [isStoppingPeg, setIsStoppingPeg] = useState(false);
   const [emergencyMode, setEmergencyMode] = useState<'limit_maker' | 'market'>('limit_maker');
@@ -158,23 +162,158 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [icebergPercent, setIcebergPercent] = useState<string>('20');
   const [icebergCustomQty, setIcebergCustomQty] = useState<string>('');
 
-  // Poll active software brackets and actively running smart chases
-  const fetchActiveBrackets = React.useCallback(async () => {
+  // Poll active software brackets and open exchange orders
+  const fetchActiveBrackets = React.useCallback(async (forceOpenOrders = false) => {
     if (!selectedApi) return;
     try {
-      const data = await manualTradeService.getActiveSoftwareBrackets(Number(selectedApi), activeSymbol);
-      setActiveBrackets(data || []);
+      const shouldFetchOpenOrders =
+        forceOpenOrders || (isOpen && openOrdersPollTickRef.current % 2 === 0);
+      openOrdersPollTickRef.current += 1;
+
+      if (shouldFetchOpenOrders) {
+        const [bracketsRes, openOrdersRes] = await Promise.all([
+          manualTradeService.getActiveSoftwareBrackets(Number(selectedApi), activeSymbol).catch(() => []),
+          manualTradeService.getOpenLimitOrders(Number(selectedApi), activeSymbol).catch(() => ({ orders: [] }))
+        ]);
+        setActiveBrackets(bracketsRes || []);
+        const ordersList = Array.isArray(openOrdersRes) ? openOrdersRes : (openOrdersRes?.orders || []);
+        setOpenLimitOrders(ordersList);
+      } else {
+        const data = await manualTradeService.getActiveSoftwareBrackets(Number(selectedApi), activeSymbol);
+        setActiveBrackets(data || []);
+      }
     } catch (err) {
       // silent background check
     }
-  }, [selectedApi, activeSymbol]);
+  }, [selectedApi, activeSymbol, isOpen]);
 
   React.useEffect(() => {
     if (!selectedApi) return;
-    fetchActiveBrackets();
-    const interval = setInterval(fetchActiveBrackets, 1500);
+    fetchActiveBrackets(true);
+    const interval = setInterval(() => fetchActiveBrackets(false), 1500);
     return () => clearInterval(interval);
   }, [selectedApi, activeSymbol, fetchActiveBrackets]);
+
+  // Unified list of selectable open orders & software brackets for Emergency Force Buy/Sell
+  const forceOrderTargets = React.useMemo(() => {
+    const items: Array<{
+      id: string;
+      side: 'buy' | 'sell';
+      amount: number;
+      price: number;
+      mode: string;
+      label: string;
+    }> = [];
+    const mergedBracketIds = new Set<string>();
+    const seenOrderIds = new Set<string>();
+
+    // 1. Exchange open limit / TP / STOP orders (correlating linked software SL brackets if present)
+    for (const ord of openLimitOrders) {
+      if (!ord || !ord.id) continue;
+      const oid = String(ord.id);
+      if (seenOrderIds.has(oid)) continue;
+      seenOrderIds.add(oid);
+
+      const sideLower = String(ord.side || 'sell').toLowerCase() === 'buy' ? 'buy' : 'sell';
+      const sideLabel = sideLower.toUpperCase();
+      const amt = Number(ord.amount || 0);
+      const price = Number(ord.price || 0);
+      const mode = String(ord.mode || 'LIMIT').toUpperCase();
+
+      const linkedSl = activeBrackets.find(
+        (b) =>
+          b &&
+          b.id &&
+          (String(b.tp_order_id || '') === oid || String(b.entry_order_id || '') === oid)
+      );
+
+      if (linkedSl) {
+        mergedBracketIds.add(String(linkedSl.id));
+        const slPrice = Number(linkedSl.trigger_price || linkedSl.price || 0);
+        const effAmt = amt || Number(linkedSl.amount || 0);
+        items.push({
+          id: oid,
+          side: sideLower,
+          amount: effAmt,
+          price,
+          mode: 'TP',
+          label: `🎯 [TP+SL] ${sideLabel} ${Number(effAmt.toFixed(4))} @ $${formatDisplayPrice(price)}${
+            slPrice > 0 ? ` / SL $${formatDisplayPrice(slPrice)}` : ''
+          }`
+        });
+      } else {
+        const icon = mode === 'TP' ? '🎯' : mode === 'STOP' ? '🛑' : '📌';
+        items.push({
+          id: oid,
+          side: sideLower,
+          amount: amt,
+          price,
+          mode,
+          label: `${icon} [${mode}] ${sideLabel} ${Number(amt.toFixed(4))} @ $${formatDisplayPrice(price)}`
+        });
+      }
+    }
+
+    // 2. Remaining active software brackets / Smart Pegs / Smart Chases
+    for (const b of activeBrackets) {
+      if (!b || !b.id) continue;
+      const bid = String(b.id);
+      if (mergedBracketIds.has(bid) || seenOrderIds.has(bid)) continue;
+      seenOrderIds.add(bid);
+
+      const sideLower = String(b.side || 'sell').toLowerCase() === 'buy' ? 'buy' : 'sell';
+      const sideLabel = sideLower.toUpperCase();
+      const totalAmt = Number(b.amount || 0);
+      const filledAmt = Number(b.filled_amount || 0);
+      const remAmt =
+        b.status === 'pegging' && filledAmt > 0 && totalAmt > filledAmt
+          ? totalAmt - filledAmt
+          : totalAmt;
+      const price = Number(b.current_maker_price || b.trigger_price || b.price || 0);
+      const mode = String(b.mode || b.type || 'SMART_CHASE').toUpperCase();
+      const tag =
+        b.status === 'pegging'
+          ? '⚡ [PEG]'
+          : b.status === 'chasing'
+            ? '🔥 [CHASE]'
+            : mode === 'TRAILING'
+              ? '📈 [TRAIL]'
+              : '🛡️ [SL]';
+
+      items.push({
+        id: bid,
+        side: sideLower,
+        amount: remAmt,
+        price,
+        mode,
+        label: `${tag} ${sideLabel} ${Number(remAmt.toFixed(4))} @ $${formatDisplayPrice(price)}`
+      });
+    }
+
+    return items;
+  }, [openLimitOrders, activeBrackets]);
+
+  // Keep selectedForceOrderId synchronized with live open orders/brackets
+  React.useEffect(() => {
+    if (forceOrderTargets.length === 0) {
+      userChoseAllForceRef.current = false;
+      if (selectedForceOrderId !== 'all') {
+        setSelectedForceOrderId('all');
+      }
+      return;
+    }
+    const stillExists = forceOrderTargets.some((t) => t.id === selectedForceOrderId);
+    if (selectedForceOrderId !== 'all' && !stillExists) {
+      setSelectedForceOrderId(forceOrderTargets[0].id);
+    } else if (selectedForceOrderId === 'all' && !userChoseAllForceRef.current) {
+      setSelectedForceOrderId(forceOrderTargets[0].id);
+    }
+  }, [forceOrderTargets, selectedForceOrderId]);
+
+  const selectedForceTarget = React.useMemo(
+    () => (selectedForceOrderId !== 'all' ? forceOrderTargets.find((t) => t.id === selectedForceOrderId) : undefined),
+    [forceOrderTargets, selectedForceOrderId]
+  );
 
   const handleStopSmartChase = async (targetChase?: any) => {
     if (!selectedApi) return;
@@ -186,7 +325,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         slId: targetChase?.id
       });
       toast.success(res.message || '🛑 Smart Chase SL stopped.');
-      fetchActiveBrackets();
+      fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to stop Smart Chase');
@@ -205,7 +344,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         pegId: targetPeg?.id
       });
       toast.success(res.message || '🛑 Smart Peg Entry cancelled.');
-      fetchActiveBrackets();
+      fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to stop Smart Peg Entry');
@@ -223,12 +362,21 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     setIsEmergencySubmitting(true);
     setEmergencySubmittingSide(side);
     try {
-      const hasCustomTypedSize = !selectedPercent && Boolean(size) && Number(size) > 0;
-      const effectivePct = hasCustomTypedSize
-        ? 0
-        : selectedPercent
+      const targetObj =
+        selectedForceOrderId !== 'all'
+          ? forceOrderTargets.find((t) => t.id === selectedForceOrderId)
+          : undefined;
+
+      const hasCustomTypedSize = !targetObj && !selectedPercent && Boolean(size) && Number(size) > 0;
+      const effectivePct = targetObj
+        ? selectedPercent
           ? Math.max(1, Math.min(100, Number(selectedPercent.replace('%', '')) || 100))
-          : 100;
+          : 100
+        : hasCustomTypedSize
+          ? 0
+          : selectedPercent
+            ? Math.max(1, Math.min(100, Number(selectedPercent.replace('%', '')) || 100))
+            : 100;
       const customBaseAmt = hasCustomTypedSize
         ? (sizeMode === 'quote' && effectiveOrderPrice > 0 ? Number(size) / effectiveOrderPrice : Number(size))
         : undefined;
@@ -275,6 +423,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         executionMode: emergencyMode,
         sizePct: effectivePct,
         customAmount: customBaseAmt,
+        targetOrderId: targetObj ? targetObj.id : 'all',
+        targetOrderAmount: targetObj ? targetObj.amount : undefined,
+        targetOrderMode: targetObj ? targetObj.mode : undefined,
         leverage: isFutures ? leverage : undefined,
         marginMode: isFutures ? marginMode : undefined,
         reduceOnly: isFutures ? reduceOnly : false,
@@ -288,10 +439,16 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             ? `⚡ Emergency Force ${side} (0% Fee Maker Peg) active for ${activeSymbol}!`
             : `🚨 Emergency Force ${side} (Market) executed for ${activeSymbol}!`)
       );
-      fetchActiveBrackets();
+      fetchActiveBrackets(true);
       fetchBalance(true);
-      setTimeout(() => fetchBalance(true), 1000);
-      setTimeout(() => fetchBalance(true), 2200);
+      setTimeout(() => {
+        fetchActiveBrackets(true);
+        fetchBalance(true);
+      }, 1000);
+      setTimeout(() => {
+        fetchActiveBrackets(true);
+        fetchBalance(true);
+      }, 2200);
     } catch (err: any) {
       const errMsg = err?.response?.data?.detail || err?.message || 'Emergency Force Order failed';
       toast.error(`❌ ${errMsg}`);
@@ -1164,10 +1321,17 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       await manualTradeService.placeOrder(payload);
       toast.success(orderType === 'SmartPeg' ? `⚡ ${side} Smart Peg Entry active for ${activeSymbol}` : `✅ ${side} ${orderType} order placed for ${activeSymbol}`);
 
-      // Auto-refresh balance immediately after order placement, followed by staggered syncs
+      // Auto-refresh balance & open orders immediately after order placement, followed by staggered syncs
+      fetchActiveBrackets(true);
       fetchBalance(true);
-      setTimeout(() => fetchBalance(true), 1200);
-      setTimeout(() => fetchBalance(true), 2500);
+      setTimeout(() => {
+        fetchActiveBrackets(true);
+        fetchBalance(true);
+      }, 1200);
+      setTimeout(() => {
+        fetchActiveBrackets(true);
+        fetchBalance(true);
+      }, 2500);
     } catch (error: any) {
       // BUG-02 fix: Read FastAPI detail message if available
       const errMsg = error?.response?.data?.detail || error?.message || 'Unknown error occurred';
@@ -1592,129 +1756,220 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                       </button>
                     </div>
 
-                    {/* Row 4: Ultra-Slim Emergency Force Buy / Sell Bar (Limit Maker 0% Fee vs Market Price) */}
+                    {/* Row 4: Ultra-Slim Emergency Force Buy / Sell Panel with Target Order Selector */}
                     <div
                       data-no-drag="true"
                       onMouseDown={(e) => e.stopPropagation()}
                       onTouchStart={(e) => e.stopPropagation()}
-                      className="flex items-center justify-between gap-1.5 rounded-lg bg-gradient-to-r from-[#13070c]/95 via-[#090d18]/95 to-[#061310]/95 border border-amber-500/30 px-2 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                      className="rounded-lg bg-gradient-to-r from-[#13070c]/95 via-[#090d18]/95 to-[#061310]/95 border border-amber-500/35 px-2 py-1 space-y-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
                     >
-                      {/* Left: Emergency Label + 2 Execution Mode Options (1. Limit Maker 0% Fee | 2. Market) */}
-                      <div className="flex items-center gap-1 shrink-0">
+                      {/* Sub-Row 4A: Target Order Selector (Select which specific Open Order / Bracket to Force Buy/Sell, or ALL) */}
+                      <div className="flex items-center justify-between gap-1">
                         <span
-                          className="flex items-center gap-0.5 text-[8px] font-black uppercase tracking-wider text-amber-300"
-                          title="Emergency Force Trigger: Cancels open orders/brackets & executes at current price"
+                          className="flex items-center gap-1 text-[8px] font-mono font-extrabold uppercase tracking-tight text-amber-300/90 shrink-0"
+                          title="Choose which open order or active bracket to cancel & force execute at current price"
                         >
-                          <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400 animate-pulse" />
-                          FORCE
+                          <span>🎯 ORDER</span>
+                          <span
+                            className={`px-1 py-0.2 rounded text-[7px] font-black leading-none border ${
+                              forceOrderTargets.length > 0
+                                ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
+                                : 'bg-white/5 border-white/10 text-gray-400'
+                            }`}
+                          >
+                            {forceOrderTargets.length}
+                          </span>
                         </span>
 
-                        <div className="flex items-center bg-[#050811] rounded p-0.5 border border-white/10">
-                          <button
-                            type="button"
-                            onClick={(e) => {
+                        <div className="relative flex-1 min-w-0">
+                          <select
+                            value={selectedForceOrderId}
+                            onChange={(e) => {
                               e.stopPropagation();
-                              setEmergencyMode('limit_maker');
+                              const val = e.target.value;
+                              userChoseAllForceRef.current = val === 'all' && forceOrderTargets.length > 0;
+                              setSelectedForceOrderId(val);
                             }}
+                            onMouseDown={(e) => e.stopPropagation()}
                             onPointerDown={(e) => e.stopPropagation()}
-                            className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${
-                              emergencyMode === 'limit_maker'
-                                ? 'bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
-                                : 'text-gray-400 hover:text-white'
-                            }`}
-                            title="Option 1: Dynamic Limit Maker (0% Maker Fee — chases Best Bid/Ask until 100% filled)"
+                            className="w-full appearance-none bg-[#050811]/95 hover:bg-[#080d1a] text-cyan-200 font-mono text-[9px] font-bold rounded border border-cyan-500/35 focus:border-amber-400/80 pl-1.5 pr-4 py-0.5 truncate cursor-pointer focus:outline-none transition-colors"
+                            title="Select specific open order/bracket to Force Buy or Force Sell, or select ALL / Wallet Balance"
                           >
-                            MAKER 0%
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEmergencyMode('market');
-                            }}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${
-                              emergencyMode === 'market'
-                                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
-                                : 'text-gray-400 hover:text-white'
-                            }`}
-                            title="Option 2: Instant Market Price Sweep"
-                          >
-                            MARKET
-                          </button>
+                            {forceOrderTargets.map((t, idx) => (
+                              <option key={t.id} value={t.id} className="bg-[#070b14] text-white font-mono">
+                                {`#${idx + 1} ${t.label}`}
+                              </option>
+                            ))}
+                            <option value="all" className="bg-[#070b14] text-amber-300 font-mono font-bold">
+                              {forceOrderTargets.length > 0
+                                ? `⚡ ALL OPEN ORDERS (${forceOrderTargets.length}) + WALLET`
+                                : `⚡ WALLET / POSITION (No Open Orders)`}
+                            </option>
+                          </select>
+                          <ChevronDown className="w-2.5 h-2.5 text-cyan-400 pointer-events-none absolute right-1 top-1/2 -translate-y-1/2" />
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fetchActiveBrackets(true);
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="p-0.5 rounded bg-white/[0.04] hover:bg-white/10 border border-white/10 text-gray-400 hover:text-amber-300 transition-colors cursor-pointer shrink-0"
+                          title="Refresh Open Orders List"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                        </button>
                       </div>
 
-                      {/* Right: Instant Emergency Force Buy & Force Sell Triggers (+ Stop button if Peg/Chase active) */}
-                      <div className="flex items-center gap-1 flex-1 justify-end">
-                        {activeBrackets.some((b) => b.status === 'pegging' || b.status === 'chasing') && (
+                      {/* Sub-Row 4B: Execution Mode (1. Limit Maker 0% Fee | 2. Market) + Force Buy & Force Sell Triggers */}
+                      <div className="flex items-center justify-between gap-1.5">
+                        {/* Left: Emergency Label + 2 Execution Mode Options (1. Limit Maker 0% Fee | 2. Market) */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span
+                            className="flex items-center gap-0.5 text-[8px] font-black uppercase tracking-wider text-amber-300"
+                            title="Emergency Force Trigger: Cancels selected order & executes at current price"
+                          >
+                            <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400 animate-pulse" />
+                            FORCE
+                          </span>
+
+                          <div className="flex items-center bg-[#050811] rounded p-0.5 border border-white/10">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEmergencyMode('limit_maker');
+                              }}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${
+                                emergencyMode === 'limit_maker'
+                                  ? 'bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
+                                  : 'text-gray-400 hover:text-white'
+                              }`}
+                              title="Option 1: Dynamic Limit Maker (0% Maker Fee — chases Best Bid/Ask until 100% filled)"
+                            >
+                              MAKER 0%
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEmergencyMode('market');
+                              }}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${
+                                emergencyMode === 'market'
+                                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+                                  : 'text-gray-400 hover:text-white'
+                              }`}
+                              title="Option 2: Instant Market Price Sweep"
+                            >
+                              MARKET
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Right: Instant Emergency Force Buy & Force Sell Triggers (+ Stop button if Peg/Chase active) */}
+                        <div className="flex items-center gap-1 flex-1 justify-end">
+                          {activeBrackets.some((b) => b.status === 'pegging' || b.status === 'chasing') && (
+                            <button
+                              type="button"
+                              disabled={isStoppingPeg || isStoppingChase}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const peg = activeBrackets.find((b) => b.status === 'pegging');
+                                if (peg) {
+                                  handleStopSmartPeg(peg);
+                                } else {
+                                  handleStopSmartChase(activeBrackets.find((b) => b.status === 'chasing'));
+                                }
+                              }}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              className="px-1.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500 border border-amber-400/60 text-amber-200 hover:text-slate-950 font-mono text-[8px] font-black uppercase tracking-tight transition-all cursor-pointer active:scale-95 shrink-0"
+                              title="Stop Active Smart Peg / Chase Immediately"
+                            >
+                              ⏹ STOP
+                            </button>
+                          )}
+
                           <button
                             type="button"
-                            disabled={isStoppingPeg || isStoppingChase}
+                            disabled={isEmergencySubmitting}
                             onClick={(e) => {
                               e.stopPropagation();
-                              const peg = activeBrackets.find((b) => b.status === 'pegging');
-                              if (peg) {
-                                handleStopSmartPeg(peg);
-                              } else {
-                                handleStopSmartChase(activeBrackets.find((b) => b.status === 'chasing'));
-                              }
+                              handleEmergencyForceTrade('Buy');
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
-                            className="px-1.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500 border border-amber-400/60 text-amber-200 hover:text-slate-950 font-mono text-[8px] font-black uppercase tracking-tight transition-all cursor-pointer active:scale-95 shrink-0"
-                            title="Stop Active Smart Peg / Chase Immediately"
+                            className={`flex-1 py-1 px-1.5 rounded bg-gradient-to-r from-emerald-600/35 to-cyan-600/35 hover:from-emerald-500 hover:to-cyan-500 border hover:border-white text-emerald-200 hover:text-slate-950 font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:shadow-[0_0_14px_rgba(16,185,129,0.6)] transition-all cursor-pointer active:scale-95 disabled:opacity-50 ${
+                              selectedForceTarget?.side === 'buy'
+                                ? 'border-emerald-300 ring-1 ring-emerald-400/50'
+                                : 'border-emerald-400/60'
+                            }`}
+                            title={
+                              selectedForceTarget
+                                ? `Force BUY Selected Order (${selectedForceTarget.label}) via ${
+                                    emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                  }`
+                                : `Emergency Force BUY (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
+                                    emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                  }`
+                            }
                           >
-                            ⏹ STOP
+                            {isEmergencySubmitting && emergencySubmittingSide === 'Buy' ? (
+                              <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
+                            ) : (
+                              <Zap className="w-2.5 h-2.5 fill-current shrink-0" />
+                            )}
+                            <span>FORCE BUY</span>
+                            <span className="text-[8px] opacity-90">
+                              {selectedForceTarget
+                                ? `${Number(selectedForceTarget.amount.toFixed(1))}`
+                                : sliderPercentValue > 0
+                                  ? `${sliderPercentValue}%`
+                                  : '100%'}
+                            </span>
                           </button>
-                        )}
 
-                        <button
-                          type="button"
-                          disabled={isEmergencySubmitting}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEmergencyForceTrade('Buy');
-                          }}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          className="flex-1 py-1 px-1.5 rounded bg-gradient-to-r from-emerald-600/35 to-cyan-600/35 hover:from-emerald-500 hover:to-cyan-500 border border-emerald-400/60 hover:border-white text-emerald-200 hover:text-slate-950 font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:shadow-[0_0_14px_rgba(16,185,129,0.6)] transition-all cursor-pointer active:scale-95 disabled:opacity-50"
-                          title={`Emergency Force BUY (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
-                            emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                          } — Cancels open orders & executes immediately`}
-                        >
-                          {isEmergencySubmitting && emergencySubmittingSide === 'Buy' ? (
-                            <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
-                          ) : (
-                            <Zap className="w-2.5 h-2.5 fill-current shrink-0" />
-                          )}
-                          <span>FORCE BUY</span>
-                          <span className="text-[8px] opacity-85">
-                            {sliderPercentValue > 0 ? `${sliderPercentValue}%` : '100%'}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isEmergencySubmitting}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEmergencyForceTrade('Sell');
-                          }}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          className="flex-1 py-1 px-1.5 rounded bg-gradient-to-r from-rose-600/40 to-amber-600/35 hover:from-rose-500 hover:to-amber-500 border border-rose-400/60 hover:border-white text-rose-200 hover:text-white font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(244,63,94,0.25)] hover:shadow-[0_0_14px_rgba(244,63,94,0.65)] transition-all cursor-pointer active:scale-95 disabled:opacity-50"
-                          title={`Emergency Force SELL (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
-                            emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                          } — Cancels open orders & executes immediately`}
-                        >
-                          {isEmergencySubmitting && emergencySubmittingSide === 'Sell' ? (
-                            <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
-                          ) : (
-                            <Zap className="w-2.5 h-2.5 fill-current shrink-0" />
-                          )}
-                          <span>FORCE SELL</span>
-                          <span className="text-[8px] opacity-85">
-                            {sliderPercentValue > 0 ? `${sliderPercentValue}%` : '100%'}
-                          </span>
-                        </button>
+                          <button
+                            type="button"
+                            disabled={isEmergencySubmitting}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEmergencyForceTrade('Sell');
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className={`flex-1 py-1 px-1.5 rounded bg-gradient-to-r from-rose-600/40 to-amber-600/35 hover:from-rose-500 hover:to-amber-500 border hover:border-white text-rose-200 hover:text-white font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(244,63,94,0.25)] hover:shadow-[0_0_14px_rgba(244,63,94,0.65)] transition-all cursor-pointer active:scale-95 disabled:opacity-50 ${
+                              selectedForceTarget?.side === 'sell'
+                                ? 'border-rose-300 ring-1 ring-rose-400/50'
+                                : 'border-rose-400/60'
+                            }`}
+                            title={
+                              selectedForceTarget
+                                ? `Force SELL Selected Order (${selectedForceTarget.label}) via ${
+                                    emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                  }`
+                                : `Emergency Force SELL (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
+                                    emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                  }`
+                            }
+                          >
+                            {isEmergencySubmitting && emergencySubmittingSide === 'Sell' ? (
+                              <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
+                            ) : (
+                              <Zap className="w-2.5 h-2.5 fill-current shrink-0" />
+                            )}
+                            <span>FORCE SELL</span>
+                            <span className="text-[8px] opacity-90">
+                              {selectedForceTarget
+                                ? `${Number(selectedForceTarget.amount.toFixed(1))}`
+                                : sliderPercentValue > 0
+                                  ? `${sliderPercentValue}%`
+                                  : '100%'}
+                            </span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>

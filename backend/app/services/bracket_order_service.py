@@ -26,6 +26,7 @@ class BracketOrderService:
     KNOWN_TP_ORDER_IDS = set()  # Set of exchange order IDs placed as Attached Take-Profit orders
     ENTRY_BRACKET_LOCKS = {}  # { entry_order_id: asyncio.Lock } to serialize partial-fill chunks of the same entry order
     ACTIVE_ENTRY_BRACKETS = {}  # { entry_order_id: { tp_order_id, amount, entry_price, symbol, side, api_key_id } }
+    ACTIVE_ENTRY_MONITORS = {}  # { entry_order_id: { symbol, api_key_id, cancelled } }
 
     @staticmethod
     def _safe_amount_to_precision(exchange, symbol: str, amount: float) -> float:
@@ -847,9 +848,19 @@ class BracketOrderService:
             average_price = float(initial_entry_price or 0.0)
             order_closed = False
             elapsed_seconds = 0
+            if entry_order_id:
+                BracketOrderService.ACTIVE_ENTRY_MONITORS[str(entry_order_id)] = {
+                    'entry_order_id': str(entry_order_id),
+                    'symbol': symbol,
+                    'api_key_id': getattr(api_key_record, 'id', None),
+                    'cancelled': False,
+                }
 
             # ── Polling Loop ───────────────────────────────────────────
             while True:
+                if entry_order_id and BracketOrderService.ACTIVE_ENTRY_MONITORS.get(str(entry_order_id), {}).get('cancelled'):
+                    logger.info(f"🛑 Bracket Monitor for {entry_order_id} aborted by Emergency Force Order.")
+                    break
                 if not is_unlimited and elapsed_seconds >= max_timeout_mins * 60:
                     break
                 
@@ -865,6 +876,10 @@ class BracketOrderService:
                     
                 await asyncio.sleep(sleep_time)
                 elapsed_seconds += sleep_time
+
+                if entry_order_id and BracketOrderService.ACTIVE_ENTRY_MONITORS.get(str(entry_order_id), {}).get('cancelled'):
+                    logger.info(f"🛑 Bracket Monitor for {entry_order_id} aborted by Emergency Force Order.")
+                    break
 
                 try:
                     order_status = await exchange.fetch_order(entry_order_id, symbol)
@@ -953,6 +968,9 @@ class BracketOrderService:
 
         except Exception as main_e:
             logger.error(f"Bracket Monitor critical failure: {main_e}", exc_info=True)
+        finally:
+            if entry_order_id:
+                BracketOrderService.ACTIVE_ENTRY_MONITORS.pop(str(entry_order_id), None)
 
 
     @staticmethod

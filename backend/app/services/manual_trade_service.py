@@ -1430,4 +1430,386 @@ class ManualTradeService:
             logger.error(f"Internal order edit error: {e}")
             raise HTTPException(status_code=500, detail=f"Order Edit Failed: {err_str}")
 
+    @staticmethod
+    async def execute_emergency_force_order(
+        db: Session,
+        user_id: int,
+        api_key_id: int,
+        symbol: str,
+        side: str,
+        execution_mode: str = 'limit_maker',
+        size_pct: float = 100.0,
+        custom_amount: float = None,
+        leverage: int = None,
+        margin_mode: str = None,
+        reduce_only: bool = False,
+        attached_tp = None,
+        attached_sl = None,
+        start_time: float = None
+    ) -> dict:
+        """
+        Emergency Force Buy / Sell at Current Price:
+        1. Stops all active Smart Chase SL, Smart Peg Entry, and Software SL brackets for (api_key_id, symbol).
+        2. Cancels all open exchange orders (Spot & Futures regular + conditional) on `symbol` to unlock 100% of locked balance/margin.
+        3. Calculates target order size from `size_pct` (defaults to 100% full available balance or active opposite Futures position).
+        4. Executes immediately via:
+           - 'limit_maker': Dynamic Smart Peg Maker (0% Maker Fee, chases Best Bid/Ask every 180ms until 100% filled)
+           - 'market': Instant Market Order sweep at current price
+        5. If not a reduceOnly position exit and Attached TP / SL are enabled in the modal, automatically links them.
+        """
+        import math
+        from types import SimpleNamespace
+        from app.services.manual_smart_chase_executor import stop_smart_chase
+        from app.services.smart_peg_entry_executor import stop_smart_peg, execute_smart_peg_entry
+
+        api_key_record = db.query(models.ApiKey).filter(
+            models.ApiKey.id == api_key_id,
+            models.ApiKey.user_id == user_id,
+            models.ApiKey.is_enabled == True
+        ).first()
+
+        if not api_key_record:
+            raise HTTPException(status_code=404, detail="API Key not found or inactive")
+
+        meta = ManualTradeService._parse_symbol_meta(symbol)
+        is_futures = meta["is_futures"]
+        is_inverse = meta["is_inverse"]
+        contract_size = meta["contract_size"]
+        base_part = meta["base"]
+        quote_part = meta["quote"]
+        side_lower = str(side or 'sell').strip().lower()
+        mode_lower = str(execution_mode or 'limit_maker').strip().lower()
+
+        try:
+            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
+
+            # 1. Stop any active Smart Chase SL, Smart Peg Entry, Entry Monitors, and Software Brackets for this symbol
+            stopped_chases = await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
+            stopped_pegs = await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
+            cancelled_brackets = 0
+
+            def _sym_matches(sa: str, sb: str) -> bool:
+                s1 = str(sa or '').strip()
+                s2 = str(sb or '').strip()
+                if (':' in s1) != (':' in s2):
+                    return False
+                return s1.split(':')[0].upper() == s2.split(':')[0].upper()
+
+            for em_id, em_data in list(bracket_order_service.ACTIVE_ENTRY_MONITORS.items()):
+                key_match = (em_data.get('api_key_id') is None or int(em_data.get('api_key_id')) == int(api_key_id))
+                if key_match and _sym_matches(em_data.get('symbol', ''), symbol):
+                    em_data['cancelled'] = True
+
+            for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
+                key_match = (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == int(api_key_id))
+                if key_match and _sym_matches(sdata.get('symbol', ''), symbol) and not sdata.get('cancelled'):
+                    sdata['cancelled'] = True
+                    cancelled_brackets += 1
+                    tp_oid = sdata.get('tp_order_id')
+                    dis_oid = sdata.get('disaster_sl_order_id')
+                    if tp_oid:
+                        try:
+                            await bracket_order_service._cancel_futures_order_universal(exchange, tp_oid, symbol)
+                        except Exception:
+                            pass
+                    if dis_oid:
+                        try:
+                            await bracket_order_service._cancel_futures_order_universal(exchange, dis_oid, symbol)
+                        except Exception:
+                            pass
+
+            for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
+                key_match = (eb_data.get('api_key_id') is None or int(eb_data.get('api_key_id')) == int(api_key_id))
+                if key_match and _sym_matches(eb_data.get('symbol', ''), symbol) and not eb_data.get('cancelled'):
+                    eb_data['cancelled'] = True
+                    tp_oid = eb_data.get('tp_order_id')
+                    if tp_oid:
+                        try:
+                            await bracket_order_service._cancel_futures_order_universal(exchange, tp_oid, symbol)
+                        except Exception:
+                            pass
+
+            # 2. Cancel all open exchange orders on this symbol to unlock locked Spot/Futures balance
+            cancelled_open_orders = 0
+            try:
+                if hasattr(exchange, 'cancel_all_orders'):
+                    await exchange.cancel_all_orders(symbol)
+                    cancelled_open_orders += 1
+            except Exception:
+                pass
+
+            try:
+                open_orders = await ManualTradeService.get_open_limit_orders(db, user_id, api_key_id, symbol)
+                for o in (open_orders or []):
+                    oid = o.get('id')
+                    if oid:
+                        try:
+                            await bracket_order_service._cancel_futures_order_universal(exchange, str(oid), symbol)
+                            cancelled_open_orders += 1
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            # Brief pause so exchange releases locked balance/margin after order cancellations
+            await asyncio.sleep(0.08)
+
+            # 3. Fetch fresh live orderbook BBO & unlocked balance
+            ref_price = 0.0
+            best_bid = 0.0
+            best_ask = 0.0
+            try:
+                ob = await exchange.fetch_order_book(symbol, limit=5)
+                if ob and ob.get('bids') and ob.get('asks'):
+                    best_bid = float(ob['bids'][0][0])
+                    best_ask = float(ob['asks'][0][0])
+                    ref_price = best_bid if side_lower == 'sell' else best_ask
+            except Exception:
+                pass
+
+            if ref_price <= 0:
+                ticker = await exchange.fetch_ticker(symbol)
+                ref_price = float(ticker.get('last') or ticker.get('close') or ticker.get('bid') or ticker.get('ask') or 0.0)
+
+            if ref_price <= 0:
+                raise HTTPException(status_code=400, detail=f"Could not determine live market price for {symbol}.")
+
+            pct = float(size_pct) if (size_pct is not None and float(size_pct) > 0) else 100.0
+            pct_ratio = min(1.0, max(0.01, pct / 100.0))
+
+            bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta)
+            target_amount = 0.0
+            is_closing_position = bool(reduce_only)
+
+            if is_futures:
+                # Check if user has an active opposite Futures position to force-close/reduce
+                pos_info = None
+                try:
+                    pos_info = await ManualTradeService.get_active_position(db, user_id, api_key_id, symbol)
+                except Exception:
+                    pos_info = None
+
+                pos_amt = float((pos_info or {}).get('amount') or 0.0)
+                pos_side = str((pos_info or {}).get('side') or 'none').lower()
+                if pos_amt > 0 and ((pos_side == 'long' and side_lower == 'sell') or (pos_side == 'short' and side_lower == 'buy')):
+                    is_closing_position = True
+                    if is_inverse:
+                        total_cont = float(pos_info.get('contracts') or max(1, round((pos_amt * ref_price) / contract_size)))
+                        target_amount = max(1.0, round(total_cont * pct_ratio))
+                    else:
+                        target_amount = pos_amt * pct_ratio
+                else:
+                    # Opening / adding to Futures position -> sync margin mode & leverage with cache
+                    now_ts = time.time()
+                    if margin_mode and hasattr(exchange, 'set_margin_mode'):
+                        mm_key = (api_key_record.id, symbol)
+                        cached_mm = ManualTradeService._MARGIN_MODE_CACHE.get(mm_key)
+                        if not cached_mm or cached_mm[0] != margin_mode or cached_mm[1] < now_ts:
+                            try:
+                                await exchange.set_margin_mode(margin_mode, symbol)
+                            except Exception:
+                                pass
+                            ManualTradeService._MARGIN_MODE_CACHE[mm_key] = (margin_mode, now_ts + 600)
+                    if leverage and hasattr(exchange, 'set_leverage'):
+                        lev_key = (api_key_record.id, symbol)
+                        cached_lev = ManualTradeService._LEVERAGE_CACHE.get(lev_key)
+                        if not cached_lev or cached_lev[0] != int(leverage) or cached_lev[1] < now_ts:
+                            try:
+                                await exchange.set_leverage(int(leverage), symbol)
+                            except Exception:
+                                pass
+                            ManualTradeService._LEVERAGE_CACHE[lev_key] = (int(leverage), now_ts + 600)
+
+                    lev = float(leverage or 1)
+                    if is_inverse:
+                        free_base = float(bal.get(base_part, {}).get('free', 0.0)) or (
+                            float(bal.get('free', {}).get(base_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0
+                        )
+                        if free_base <= 0:
+                            raise HTTPException(status_code=400, detail=f"No free {base_part} margin available for Emergency {side.upper()}.")
+                        total_notional_usd = free_base * 0.985 * ref_price * lev
+                        target_amount = max(1.0, math.floor((total_notional_usd * pct_ratio) / contract_size))
+                    else:
+                        free_quote = float(bal.get(quote_part, {}).get('free', 0.0)) or (
+                            float(bal.get('free', {}).get(quote_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0
+                        )
+                        if free_quote <= 0:
+                            raise HTTPException(status_code=400, detail=f"No free {quote_part} margin available for Emergency {side.upper()}.")
+                        safety = 0.985 if mode_lower == 'market' else 0.992
+                        if custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
+                            target_amount = min(float(custom_amount), (free_quote * lev * safety) / ref_price)
+                        else:
+                            target_amount = (free_quote * lev * pct_ratio * safety) / ref_price
+            else:
+                # Spot Market
+                if side_lower == 'sell':
+                    free_base = float(bal.get(base_part, {}).get('free', 0.0)) or (
+                        float(bal.get('free', {}).get(base_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0
+                    )
+                    if free_base <= 0:
+                        raise HTTPException(status_code=400, detail=f"Insufficient {base_part} balance (0 available) for Emergency Force Sell.")
+                    if custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
+                        target_amount = min(float(custom_amount), free_base * 0.9995)
+                    else:
+                        target_amount = free_base * pct_ratio * (0.9995 if pct_ratio >= 0.99 else 1.0)
+                else:
+                    free_quote = float(bal.get(quote_part, {}).get('free', 0.0)) or (
+                        float(bal.get('free', {}).get(quote_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0
+                    )
+                    if free_quote <= 0:
+                        raise HTTPException(status_code=400, detail=f"Insufficient {quote_part} balance (0 available) for Emergency Force Buy.")
+                    safety = 0.992 if mode_lower == 'market' else 0.998
+                    if custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
+                        target_amount = min(float(custom_amount), (free_quote * safety) / ref_price)
+                    else:
+                        target_amount = (free_quote * pct_ratio * safety) / ref_price
+
+            target_amount = bracket_order_service._safe_amount_to_precision(exchange, symbol, target_amount)
+            if target_amount <= 0:
+                raise HTTPException(status_code=400, detail=f"Calculated emergency order size is 0 for {symbol}.")
+
+            safe_api_key_record = SimpleNamespace(
+                id=api_key_record.id,
+                exchange=api_key_record.exchange,
+                api_key=api_key_record.api_key,
+                secret_key=api_key_record.secret_key,
+                passphrase=getattr(api_key_record, 'passphrase', None)
+            )
+
+            has_tp = bool(not is_closing_position and attached_tp and getattr(attached_tp, 'enabled', False))
+            has_sl = bool(not is_closing_position and attached_sl and getattr(attached_sl, 'enabled', False))
+            tp_cfg_dict = attached_tp.dict() if has_tp else None
+            sl_cfg_dict = attached_sl.dict() if has_sl else None
+
+            # 4A. Execute as Dynamic Smart Peg Maker (0% Maker Fee)
+            if mode_lower in ('limit_maker', 'maker', 'smart_peg'):
+                peg_cid = f"peg_{api_key_record.id}_{symbol}_{int(time.time())}"
+                asyncio.create_task(
+                    execute_smart_peg_entry(
+                        exchange=exchange,
+                        symbol=symbol,
+                        side=side_lower,
+                        amount=target_amount,
+                        is_futures=is_futures,
+                        user_id=user_id,
+                        api_key_record=safe_api_key_record,
+                        tp_config=tp_cfg_dict,
+                        sl_config=sl_cfg_dict,
+                        max_chase_deviation_pct=10.0,
+                        peg_id=peg_cid,
+                        reduce_only=is_closing_position,
+                        urgent_mode=True
+                    )
+                )
+
+                asyncio.create_task(
+                    _send_trade_fired_notification(
+                        user_id=user_id,
+                        exchange_name=api_key_record.exchange,
+                        symbol=symbol,
+                        side=side_lower,
+                        order_type='EmergencyMakerPeg',
+                        amount=target_amount,
+                        fill_price=ref_price,
+                        latency_ms=int((time.perf_counter() - start_time) * 1000) if start_time else 0,
+                        attached_tp=attached_tp if has_tp else None,
+                        attached_sl=attached_sl if has_sl else None,
+                        leverage=leverage if is_futures else None,
+                        margin_mode=margin_mode if is_futures else None,
+                        is_futures=is_futures,
+                        max_dev=10.0,
+                        contract_size=contract_size,
+                        is_inverse=is_inverse
+                    )
+                )
+
+                return {
+                    "id": peg_cid,
+                    "symbol": symbol,
+                    "status": "pegging",
+                    "side": side_lower,
+                    "amount": target_amount,
+                    "price": ref_price,
+                    "execution_mode": "limit_maker",
+                    "cleared_orders": cancelled_open_orders + stopped_chases + stopped_pegs + cancelled_brackets,
+                    "message": f"⚡ Emergency Force {side.upper()} (0% Fee Maker Peg) active for {target_amount} {symbol}!"
+                }
+
+            # 4B. Execute as Instant Market Price Order
+            ex_params = {}
+            if is_futures:
+                if is_closing_position:
+                    ex_params = await bracket_order_service._apply_futures_exit_params(exchange, symbol, side_lower)
+                else:
+                    is_hedge = False
+                    for method_name in (['dapiPrivateGetPositionSideDual', 'fapiPrivateGetPositionSideDual'] if is_inverse else ['fapiPrivateGetPositionSideDual', 'dapiPrivateGetPositionSideDual']):
+                        method = getattr(exchange, method_name, None)
+                        if method and callable(method):
+                            try:
+                                pos_mode_res = await method()
+                                is_hedge = bool(pos_mode_res.get('dualSidePosition'))
+                                break
+                            except Exception:
+                                pass
+                    if is_hedge:
+                        ex_params['positionSide'] = 'LONG' if side_lower == 'buy' else 'SHORT'
+
+            response = await exchange.create_market_order(symbol, side_lower, target_amount, params=ex_params)
+            exec_price = float((response or {}).get('average') or (response or {}).get('price') or ref_price)
+            latency_ms = int((time.perf_counter() - start_time) * 1000) if start_time else 0
+
+            if has_tp or has_sl:
+                asyncio.create_task(
+                    bracket_order_service.monitor_and_execute_bracket(
+                        api_key_record=safe_api_key_record,
+                        entry_order_id=(response or {}).get('id'),
+                        symbol=symbol,
+                        side=side_lower,
+                        amount=target_amount,
+                        is_futures=is_futures,
+                        tp_config=tp_cfg_dict,
+                        sl_config=sl_cfg_dict,
+                        initial_entry_price=exec_price,
+                        user_id=user_id
+                    )
+                )
+
+            asyncio.create_task(
+                _send_trade_fired_notification(
+                    user_id=user_id,
+                    exchange_name=api_key_record.exchange,
+                    symbol=symbol,
+                    side=side_lower,
+                    order_type='EmergencyMarket',
+                    amount=target_amount,
+                    fill_price=exec_price,
+                    latency_ms=latency_ms,
+                    attached_tp=attached_tp if has_tp else None,
+                    attached_sl=attached_sl if has_sl else None,
+                    leverage=leverage if is_futures else None,
+                    margin_mode=margin_mode if is_futures else None,
+                    is_futures=is_futures,
+                    contract_size=contract_size,
+                    is_inverse=is_inverse
+                )
+            )
+
+            return {
+                "id": (response or {}).get('id'),
+                "symbol": symbol,
+                "status": (response or {}).get('status', 'closed'),
+                "side": side_lower,
+                "amount": target_amount,
+                "price": exec_price,
+                "execution_mode": "market",
+                "cleared_orders": cancelled_open_orders + stopped_chases + stopped_pegs + cancelled_brackets,
+                "message": f"🚨 Emergency Force {side.upper()} (Market) filled {target_amount} {symbol} @ {exec_price}!"
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Emergency force order error ({symbol}): {e}")
+            raise HTTPException(status_code=400, detail=f"Emergency Force {side.upper()} Failed: {str(e)}")
+
 manual_trade_service = ManualTradeService()

@@ -150,6 +150,35 @@ export const manualTradeService = {
       sl_id: payload.pegId
     });
     return response.data;
+  },
+
+  emergencyForceOrder: async (payload: {
+    apiKeyId: number;
+    symbol: string;
+    side: 'Buy' | 'Sell';
+    executionMode: 'limit_maker' | 'market';
+    sizePct?: number;
+    customAmount?: number;
+    leverage?: number;
+    marginMode?: 'cross' | 'isolated';
+    reduceOnly?: boolean;
+    attached_tp?: OrderPayload['attached_tp'];
+    attached_sl?: OrderPayload['attached_sl'];
+  }) => {
+    const response = await api.post('/trading/emergency-force-order', {
+      api_key_id: payload.apiKeyId,
+      symbol: payload.symbol,
+      side: payload.side.toLowerCase(),
+      execution_mode: payload.executionMode,
+      size_pct: payload.sizePct ?? 100.0,
+      custom_amount: payload.customAmount,
+      leverage: payload.leverage,
+      margin_mode: payload.marginMode,
+      reduce_only: Boolean(payload.reduceOnly),
+      attached_tp: payload.attached_tp,
+      attached_sl: payload.attached_sl
+    });
+    return response.data;
   }
 };
 

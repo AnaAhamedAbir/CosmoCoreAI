@@ -92,7 +92,8 @@ async def execute_smart_peg_entry(
     max_chase_deviation_pct: float = 2.0, # 0 = unlimited, >0 = maximum price drift cap from start
     max_attempts: int = 0,      # 0 = unlimited
     peg_id: Optional[str] = None,
-    reduce_only: bool = False
+    reduce_only: bool = False,
+    urgent_mode: bool = False
 ) -> Optional[Dict[str, Any]]:
     """
     Executes a continuous Dynamic BBO Maker Peg Entry.
@@ -420,8 +421,8 @@ async def execute_smart_peg_entry(
 
         logger.info(f"✅ [Smart Peg Entry] Order #{order_id} ACTIVE at {target_maker_price} (Queue Priority Active)")
 
-        # 5. Dynamic BBO Peg Watch Loop (250ms polling)
-        peg_poll_interval = 0.25
+        # 5. Dynamic BBO Peg Watch Loop (180ms in urgent_mode, 250ms standard)
+        peg_poll_interval = 0.18 if urgent_mode else 0.25
         poll_count = 0
         latest_order_chk = None
         user_cancelled = False
@@ -521,7 +522,7 @@ async def execute_smart_peg_entry(
                         #   because our resting order is already at the very front of the book about to get filled!
                         if new_maker != target_maker_price:
                             is_outbid = (new_maker > target_maker_price) if side.lower() == "buy" else (new_maker < target_maker_price)
-                            min_polls_required = 3 if is_outbid else 6
+                            min_polls_required = (1 if is_outbid else 2) if urgent_mode else (3 if is_outbid else 6)
                             if poll_count >= min_polls_required:
                                 logger.info(
                                     f"⚡ [Smart Peg Entry] BBO shifted ({'outbid' if is_outbid else 'retreat'}): {target_maker_price} ➜ {new_maker} "

@@ -138,6 +138,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [activeBrackets, setActiveBrackets] = useState<any[]>([]);
   const [isStoppingChase, setIsStoppingChase] = useState(false);
   const [isStoppingPeg, setIsStoppingPeg] = useState(false);
+  const [emergencyMode, setEmergencyMode] = useState<'limit_maker' | 'market'>('limit_maker');
+  const [isEmergencySubmitting, setIsEmergencySubmitting] = useState(false);
+  const [emergencySubmittingSide, setEmergencySubmittingSide] = useState<'Buy' | 'Sell' | null>(null);
   const [isTelegramConnected, setIsTelegramConnected] = useState<boolean | null>(null);
 
   React.useEffect(() => {
@@ -208,6 +211,93 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to stop Smart Peg Entry');
     } finally {
       setIsStoppingPeg(false);
+    }
+  };
+
+  const handleEmergencyForceTrade = async (side: 'Buy' | 'Sell') => {
+    if (!selectedApi) {
+      toast.error('Please select an API Key first.');
+      setIsMinimized(false);
+      return;
+    }
+    setIsEmergencySubmitting(true);
+    setEmergencySubmittingSide(side);
+    try {
+      const hasCustomTypedSize = !selectedPercent && Boolean(size) && Number(size) > 0;
+      const effectivePct = hasCustomTypedSize
+        ? 0
+        : selectedPercent
+          ? Math.max(1, Math.min(100, Number(selectedPercent.replace('%', '')) || 100))
+          : 100;
+      const customBaseAmt = hasCustomTypedSize
+        ? (sizeMode === 'quote' && effectiveOrderPrice > 0 ? Number(size) / effectiveOrderPrice : Number(size))
+        : undefined;
+
+      const attachedTpPayload =
+        tpConfig.enabled && tpConfig.value && Number(tpConfig.value) > 0
+          ? {
+              enabled: true,
+              mode: tpConfig.mode as 'percentage' | 'price' | 'absolute',
+              value: Number(tpConfig.value),
+              order_type: tpConfig.orderType,
+              timeout_mins: tpConfig.timeoutMins
+            }
+          : undefined;
+
+      const attachedSlPayload =
+        slConfig.enabled && (slConfig.mode === 'atr' || (slConfig.value && Number(slConfig.value) > 0))
+          ? {
+              enabled: true,
+              type: slConfig.type,
+              mode: slConfig.mode,
+              value: Number(slConfig.value || 0),
+              atr_period: slConfig.atrPeriod,
+              atr_multiplier: slConfig.atrMultiplier,
+              atr_timeframe: slConfig.atrTimeframe,
+              timeout_mins: slConfig.timeoutMins,
+              smart_chase_deviation_pct: slConfig.smartChaseDeviationPct,
+              smart_chase_delay_ms: slConfig.smartChaseDelayMs,
+              smart_chase_max_attempts: slConfig.smartChaseMaxAttempts,
+              smart_chase_mode: slConfig.smartChaseMode,
+              smart_chase_trigger_source: slConfig.smartChaseTriggerSource,
+              smart_chase_peg_strategy: slConfig.smartChasePegStrategy,
+              smart_chase_wall_multiplier: slConfig.smartChaseWallMultiplier,
+              auto_breakeven_enabled: slConfig.autoBreakevenEnabled,
+              auto_breakeven_trigger_pct: slConfig.autoBreakevenTriggerPct,
+              auto_breakeven_buffer_pct: slConfig.autoBreakevenBufferPct
+            }
+          : undefined;
+
+      const res = await manualTradeService.emergencyForceOrder({
+        apiKeyId: Number(selectedApi),
+        symbol: activeSymbol,
+        side,
+        executionMode: emergencyMode,
+        sizePct: effectivePct,
+        customAmount: customBaseAmt,
+        leverage: isFutures ? leverage : undefined,
+        marginMode: isFutures ? marginMode : undefined,
+        reduceOnly: isFutures ? reduceOnly : false,
+        attached_tp: attachedTpPayload,
+        attached_sl: attachedSlPayload
+      });
+
+      toast.success(
+        res.message ||
+          (emergencyMode === 'limit_maker'
+            ? `⚡ Emergency Force ${side} (0% Fee Maker Peg) active for ${activeSymbol}!`
+            : `🚨 Emergency Force ${side} (Market) executed for ${activeSymbol}!`)
+      );
+      fetchActiveBrackets();
+      fetchBalance(true);
+      setTimeout(() => fetchBalance(true), 1000);
+      setTimeout(() => fetchBalance(true), 2200);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.detail || err?.message || 'Emergency Force Order failed';
+      toast.error(`❌ ${errMsg}`);
+    } finally {
+      setIsEmergencySubmitting(false);
+      setEmergencySubmittingSide(null);
     }
   };
 
@@ -1500,6 +1590,132 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           </span>
                         )}
                       </button>
+                    </div>
+
+                    {/* Row 4: Ultra-Slim Emergency Force Buy / Sell Bar (Limit Maker 0% Fee vs Market Price) */}
+                    <div
+                      data-no-drag="true"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className="flex items-center justify-between gap-1.5 rounded-lg bg-gradient-to-r from-[#13070c]/95 via-[#090d18]/95 to-[#061310]/95 border border-amber-500/30 px-2 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                    >
+                      {/* Left: Emergency Label + 2 Execution Mode Options (1. Limit Maker 0% Fee | 2. Market) */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span
+                          className="flex items-center gap-0.5 text-[8px] font-black uppercase tracking-wider text-amber-300"
+                          title="Emergency Force Trigger: Cancels open orders/brackets & executes at current price"
+                        >
+                          <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400 animate-pulse" />
+                          FORCE
+                        </span>
+
+                        <div className="flex items-center bg-[#050811] rounded p-0.5 border border-white/10">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEmergencyMode('limit_maker');
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${
+                              emergencyMode === 'limit_maker'
+                                ? 'bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
+                                : 'text-gray-400 hover:text-white'
+                            }`}
+                            title="Option 1: Dynamic Limit Maker (0% Maker Fee — chases Best Bid/Ask until 100% filled)"
+                          >
+                            MAKER 0%
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEmergencyMode('market');
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${
+                              emergencyMode === 'market'
+                                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+                                : 'text-gray-400 hover:text-white'
+                            }`}
+                            title="Option 2: Instant Market Price Sweep"
+                          >
+                            MARKET
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Right: Instant Emergency Force Buy & Force Sell Triggers (+ Stop button if Peg/Chase active) */}
+                      <div className="flex items-center gap-1 flex-1 justify-end">
+                        {activeBrackets.some((b) => b.status === 'pegging' || b.status === 'chasing') && (
+                          <button
+                            type="button"
+                            disabled={isStoppingPeg || isStoppingChase}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const peg = activeBrackets.find((b) => b.status === 'pegging');
+                              if (peg) {
+                                handleStopSmartPeg(peg);
+                              } else {
+                                handleStopSmartChase(activeBrackets.find((b) => b.status === 'chasing'));
+                              }
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className="px-1.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500 border border-amber-400/60 text-amber-200 hover:text-slate-950 font-mono text-[8px] font-black uppercase tracking-tight transition-all cursor-pointer active:scale-95 shrink-0"
+                            title="Stop Active Smart Peg / Chase Immediately"
+                          >
+                            ⏹ STOP
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={isEmergencySubmitting}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEmergencyForceTrade('Buy');
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="flex-1 py-1 px-1.5 rounded bg-gradient-to-r from-emerald-600/35 to-cyan-600/35 hover:from-emerald-500 hover:to-cyan-500 border border-emerald-400/60 hover:border-white text-emerald-200 hover:text-slate-950 font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:shadow-[0_0_14px_rgba(16,185,129,0.6)] transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                          title={`Emergency Force BUY (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
+                            emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                          } — Cancels open orders & executes immediately`}
+                        >
+                          {isEmergencySubmitting && emergencySubmittingSide === 'Buy' ? (
+                            <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
+                          ) : (
+                            <Zap className="w-2.5 h-2.5 fill-current shrink-0" />
+                          )}
+                          <span>FORCE BUY</span>
+                          <span className="text-[8px] opacity-85">
+                            {sliderPercentValue > 0 ? `${sliderPercentValue}%` : '100%'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isEmergencySubmitting}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEmergencyForceTrade('Sell');
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="flex-1 py-1 px-1.5 rounded bg-gradient-to-r from-rose-600/40 to-amber-600/35 hover:from-rose-500 hover:to-amber-500 border border-rose-400/60 hover:border-white text-rose-200 hover:text-white font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(244,63,94,0.25)] hover:shadow-[0_0_14px_rgba(244,63,94,0.65)] transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                          title={`Emergency Force SELL (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
+                            emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                          } — Cancels open orders & executes immediately`}
+                        >
+                          {isEmergencySubmitting && emergencySubmittingSide === 'Sell' ? (
+                            <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
+                          ) : (
+                            <Zap className="w-2.5 h-2.5 fill-current shrink-0" />
+                          )}
+                          <span>FORCE SELL</span>
+                          <span className="text-[8px] opacity-85">
+                            {sliderPercentValue > 0 ? `${sliderPercentValue}%` : '100%'}
+                          </span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

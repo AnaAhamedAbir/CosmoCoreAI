@@ -496,6 +496,56 @@ async def stop_smart_peg_endpoint(
         logger.error(f"Stop Smart Peg failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to stop Smart Peg Entry: {str(e)}")
 
+class EmergencyForceOrderRequest(BaseModel):
+    api_key_id: int
+    symbol: str
+    side: str  # 'buy' or 'sell'
+    execution_mode: str = 'limit_maker'  # 'limit_maker' or 'market'
+    size_pct: Optional[float] = 100.0
+    custom_amount: Optional[float] = None
+    leverage: Optional[int] = None
+    margin_mode: Optional[str] = None
+    reduce_only: Optional[bool] = False
+    attached_tp: Optional[AttachedTPConfig] = None
+    attached_sl: Optional[AttachedSLConfig] = None
+
+@router.post("/emergency-force-order")
+async def emergency_force_order_endpoint(
+    req: EmergencyForceOrderRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """
+    Emergency Force Sell / Buy at current price:
+    Cancels all open orders and active brackets on the symbol, unlocks balance, and executes via
+    Dynamic Smart Peg Maker (0% fee) or Instant Market Price.
+    """
+    try:
+        import time
+        start_time = time.perf_counter()
+        from app.services.manual_trade_service import manual_trade_service
+        return await manual_trade_service.execute_emergency_force_order(
+            db=db,
+            user_id=current_user.id,
+            api_key_id=req.api_key_id,
+            symbol=req.symbol,
+            side=req.side,
+            execution_mode=req.execution_mode,
+            size_pct=req.size_pct if req.size_pct is not None else 100.0,
+            custom_amount=req.custom_amount,
+            leverage=req.leverage,
+            margin_mode=req.margin_mode,
+            reduce_only=bool(req.reduce_only),
+            attached_tp=req.attached_tp,
+            attached_sl=req.attached_sl,
+            start_time=start_time
+        )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Emergency Force Order failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Emergency Force Order Failed: {str(e)}")
+
 @router.post("/sor/preview")
 async def preview_sor_order(
     request: SORRequest,

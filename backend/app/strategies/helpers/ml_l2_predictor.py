@@ -31,6 +31,7 @@ _PRED_TARGET_CACHE = {}
 _MODEL_NAME_CACHE = {}
 _DATASET_TYPE_CACHE = {}
 _INDICATORS_CACHE = {}
+_CLASS_PRIORS_CACHE = {}
 # -------------------------------------------------
 
 class MLL2Predictor:
@@ -45,6 +46,7 @@ class MLL2Predictor:
         self.model_name = None
         self.dataset_type = None
         self.indicators = []
+        self.class_priors = None
         self.prediction_target = "classification"  # default
         self.model_features = None
         self.is_loaded = False
@@ -113,6 +115,7 @@ class MLL2Predictor:
             self.model_name = _MODEL_NAME_CACHE.get(self.ai_model_id)
             self.dataset_type = _DATASET_TYPE_CACHE.get(self.ai_model_id)
             self.indicators = _INDICATORS_CACHE.get(self.ai_model_id, [])
+            self.class_priors = _CLASS_PRIORS_CACHE.get(self.ai_model_id)
             self.is_loaded = True
             logger.info(f"⚡ [Cache Hit] Loaded L2 AI Model {self.ai_model_id} from RAM instantly.")
             return
@@ -199,6 +202,19 @@ class MLL2Predictor:
                             self.prediction_target = meta.get("prediction_target")
                         elif "target_type" in meta:
                             self.prediction_target = meta.get("target_type")
+                        cm_dict = None
+                        if isinstance(meta.get("explainability"), dict):
+                            cm_dict = meta["explainability"].get("confusionMatrix")
+                        if not cm_dict and isinstance(getattr(db_version, "explainability", None), dict):
+                            cm_dict = db_version.explainability.get("confusionMatrix")
+                        if isinstance(cm_dict, dict) and isinstance(cm_dict.get("matrix"), list) and len(cm_dict["matrix"]) == 2:
+                            try:
+                                r0 = float(sum(cm_dict["matrix"][0]))
+                                r1 = float(sum(cm_dict["matrix"][1]))
+                                if (r0 + r1) > 0:
+                                    self.class_priors = (r0 / (r0 + r1), r1 / (r0 + r1))
+                            except Exception:
+                                pass
                 except Exception as e:
                     logger.warning(f"MLL2Predictor: Failed to load metadata: {e}")
 
@@ -315,6 +331,7 @@ class MLL2Predictor:
                 _MODEL_NAME_CACHE[self.ai_model_id] = self.model_name
                 _DATASET_TYPE_CACHE[self.ai_model_id] = self.dataset_type
                 _INDICATORS_CACHE[self.ai_model_id] = self.indicators
+                _CLASS_PRIORS_CACHE[self.ai_model_id] = self.class_priors
                 logger.info(f"✅ L2 AI Model {self.model_type} loaded successfully and cached.")
                 
         except Exception as e:
@@ -628,7 +645,17 @@ class MLL2Predictor:
                             is_long_req = (side.lower() in ("long", "buy"))
                             pred = float(probas[2]) if is_long_req else (1.0 - float(probas[0]))
                         else:
-                            pred = float(probas[1])
+                            p0, p1 = float(probas[0]), float(probas[1])
+                            if self.class_priors and (self.class_priors[0] > 0.60 or self.class_priors[0] < 0.40):
+                                pi0, pi1 = self.class_priors
+                                if 0.01 < pi0 < 0.99 and 0.01 < pi1 < 0.99:
+                                    w1 = p1 / (pi1 ** 0.85)
+                                    w0 = p0 / (pi0 ** 0.85)
+                                    pred = float(w1 / (w1 + w0)) if (w1 + w0) > 0 else p1
+                                else:
+                                    pred = p1
+                            else:
+                                pred = p1
                     except Exception:
                         pred = float(self.model.predict(features)[0])
                 else:

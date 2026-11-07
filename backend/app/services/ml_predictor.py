@@ -51,6 +51,21 @@ _SHARED_CCXT_CLIENTS = {}   # { "binance" | "binanceusdm": ccxt_instance }
 _FEATURE_ROW_CACHE = {}     # { f"{model_id}_{symbol}": {"df_tail": pd.DataFrame, "timestamp": float, "refreshing": bool} }
 _THREAD_LOCAL = threading.local()
 
+ADVANCED_TICK_FEATURES = {
+    'trade_size_variance', 'avg_trade_size', 'trade_velocity', 'zero_tick_ratio',
+    'whale_trade_freq', 'vpin_proxy', 'up_down_tick_ratio', 'entropy_of_signs',
+    'consecutive_runs', 'autocorr_signs', 'rolling_vol_imbalance',
+    'retail_participation_ratio', 'tick_acceleration', 'time_since_last_bar',
+    'net_volume', 'micro_volatility', 'realized_variance'
+}
+
+PRICE_LEVEL_COL_PREFIXES = (
+    'Open', 'High', 'Low', 'Close', 'EMA_', 'SMA_', 'BBL_', 'BBM_', 'BBU_',
+    'KCL', 'KCB', 'KCU', 'DCL_', 'DCM_', 'DCU_', 'SUPERT_', 'VWAP_D', 'microprice'
+)
+
+SPARSE_ZERO_COL_PREFIXES = ('PSARl', 'PSARs', 'SUPERTl', 'SUPERTs')
+
 
 def _get_shared_ccxt_exchange(symbol: str):
     """Returns a singleton CCXT instance to avoid socket/file-descriptor leaks."""
@@ -66,6 +81,189 @@ def _get_shared_ccxt_exchange(symbol: str):
     return ex
 
 
+def _fetch_live_trade_bars(symbol: str, timeframe: str = "1m", fast_limit: bool = False) -> Optional[pd.DataFrame]:
+    """
+    Fetches live tick trades from the exchange and builds institutional Volume Bars
+    using `process_historical_trades` so `historical_trades` models receive exact tick-level
+    microstructure features and volume bars (instead of 1d OHLCV candles).
+    """
+    try:
+        from app.services.trade_data_processor import process_historical_trades
+
+        exchange = _get_shared_ccxt_exchange(symbol)
+        trades = exchange.fetch_trades(symbol, limit=1000)
+        if not trades or len(trades) < 25:
+            return None
+
+        rows = []
+        for t in trades:
+            ts = t.get('timestamp')
+            px = float(t.get('price') or 0.0)
+            amt = float(t.get('amount') or 0.0)
+            side = str(t.get('side') or '').lower()
+            if px > 0 and amt > 0 and ts:
+                rows.append({
+                    'datetime': pd.to_datetime(ts, unit='ms'),
+                    'price': px,
+                    'amount': amt,
+                    'side': side if side in ('buy', 'sell') else None
+                })
+        if len(rows) < 25:
+            return None
+
+        df_raw = pd.DataFrame(rows)
+        if df_raw['side'].isna().all():
+            df_raw.drop(columns=['side'], inplace=True)
+
+        total_vol = float(df_raw['amount'].sum())
+        target_bars = 215.0
+        auto_vol_thresh = max(1e-6, total_vol / target_bars)
+
+        df = process_historical_trades(
+            df_raw=df_raw,
+            bar_type="volume",
+            volume_threshold=auto_vol_thresh,
+            add_log_func=lambda m: None
+        )
+
+        # If a few large whale trades skewed cumulative volume so fewer than 75 bars were formed,
+        # retry using 85th-percentile-Based volume threshold so we get high-resolution volume bars.
+        if df is None or len(df) < 75:
+            q80_amt = float(df_raw['amount'].quantile(0.80) or df_raw['amount'].median() or 1.0)
+            df_capped = df_raw.copy()
+            cap_val = max(1e-6, q80_amt * 2.5)
+            df_capped['amount'] = df_capped['amount'].clip(upper=cap_val)
+            retry_thresh = max(1e-6, float(df_capped['amount'].sum()) / target_bars)
+            df_retry = process_historical_trades(
+                df_raw=df_capped,
+                bar_type="volume",
+                volume_threshold=retry_thresh,
+                add_log_func=lambda m: None
+            )
+            if df_retry is not None and len(df_retry) > (len(df) if df is not None else 0):
+                df = df_retry
+
+        if df is None or df.empty:
+            return None
+
+        # Ensure strictly monotonic unique DatetimeIndex so pandas_ta VWAP / VWAP_SD never fail
+        df.sort_index(inplace=True)
+        if df.index.duplicated().any():
+            base_idx = pd.to_datetime(df.index)
+            offsets = pd.to_timedelta(np.arange(len(df)), unit='us')
+            df.index = base_idx + offsets
+
+        # Prepend warmup bars if len(df) < 215 so 200-period indicators (EMA_200, SMA_200) never return NaN
+        min_warmup_bars = 215
+        if len(df) < min_warmup_bars:
+            pad_n = min_warmup_bars - len(df)
+            first_row = df.iloc[0:1].copy()
+            pad_df = pd.concat([first_row] * pad_n, ignore_index=True)
+            first_ts = pd.to_datetime(df.index[0])
+            pad_df.index = [first_ts - pd.Timedelta(seconds=(pad_n - i)) for i in range(pad_n)]
+            df = pd.concat([pad_df, df])
+
+        return df
+    except Exception as e:
+        print(f"[ml_predictor] Live trade bar construction fallback notice for {symbol}: {e}")
+        return None
+
+
+def _clean_and_impute_feature_df(df: pd.DataFrame, ref_price: Optional[float] = None) -> pd.DataFrame:
+    """
+    Mirrors `apply_data_cleaning` from training (`ml_utils.py`):
+      1) Replaces infinities with NaN
+      2) Fills sparse directional indicator columns (`PSARl*`, `PSARs*`, `SUPERTl*`, `SUPERTs*`) with 0.0
+      3) Forward-fills and backward-fills remaining series
+      4) Imputes any price-level column (`EMA_200`, `SMA_200`, `BBL_50`, `KCLe_50`, `VWAP_D`, etc.)
+         that is still NaN or 0.0 with `Close` (`ref_price`) so PCA and StandardScaler never see 0.0 price outliers.
+    """
+    if df is None or df.empty:
+        return df
+
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+    sparse_cols = [c for c in df.columns if str(c).startswith(SPARSE_ZERO_COL_PREFIXES)]
+    if sparse_cols:
+        df[sparse_cols] = df[sparse_cols].fillna(0.0)
+
+    non_sparse_cols = [c for c in df.columns if c not in sparse_cols]
+    if non_sparse_cols:
+        df[non_sparse_cols] = df[non_sparse_cols].ffill().bfill()
+
+    if ref_price is None or ref_price <= 0:
+        if 'Close' in df.columns and len(df) > 0:
+            ref_price = float(df['Close'].iloc[-1] or 0.0)
+        elif 'close' in df.columns and len(df) > 0:
+            ref_price = float(df['close'].iloc[-1] or 0.0)
+
+    if ref_price and ref_price > 0:
+        for col in df.columns:
+            col_s = str(col)
+            if col_s in sparse_cols:
+                continue
+            if col_s.startswith(PRICE_LEVEL_COL_PREFIXES):
+                df[col] = df[col].fillna(ref_price)
+                zero_mask = df[col] == 0.0
+                if zero_mask.any():
+                    df.loc[zero_mask, col] = ref_price
+
+    df.fillna(0.0, inplace=True)
+    return df
+
+
+def _apply_price_point_override(df: pd.DataFrame, price_point: float) -> pd.DataFrame:
+    """
+    Updates the latest bar's Close/High/Low to `price_point` and dynamically updates
+    price-sensitive relative features (`vwap_deviation`, `VWAP_Z_Score`, `ROC_*`, `BBP_*`)
+    before PCA and final scaling.
+    """
+    if df is None or df.empty or price_point is None or float(price_point) <= 0:
+        return df
+
+    pp = float(price_point)
+    old_close = float(df['Close'].iloc[-1]) if 'Close' in df.columns else pp
+    if 'Close' in df.columns:
+        df.iloc[-1, df.columns.get_loc('Close')] = pp
+    elif 'close' in df.columns:
+        df.iloc[-1, df.columns.get_loc('close')] = pp
+    if 'High' in df.columns and pp > float(df['High'].iloc[-1]):
+        df.iloc[-1, df.columns.get_loc('High')] = pp
+    if 'Low' in df.columns and pp < float(df['Low'].iloc[-1]):
+        df.iloc[-1, df.columns.get_loc('Low')] = pp
+
+    if old_close > 0 and abs(pp - old_close) / old_close > 1e-7:
+        # Update vwap_deviation
+        if 'vwap_deviation' in df.columns:
+            if 'VWAP_D' in df.columns and float(df['VWAP_D'].iloc[-1]) > 0:
+                vwap_val = float(df['VWAP_D'].iloc[-1])
+                df.iloc[-1, df.columns.get_loc('vwap_deviation')] = (pp - vwap_val) / vwap_val
+            else:
+                old_dev = float(df['vwap_deviation'].iloc[-1] or 0.0)
+                df.iloc[-1, df.columns.get_loc('vwap_deviation')] = old_dev + ((pp - old_close) / old_close)
+
+        # Update ROC_10, ROC_20, ROC_50
+        for roc_len in (10, 20, 50):
+            roc_col = f"ROC_{roc_len}"
+            if roc_col in df.columns and len(df) > roc_len and 'Close' in df.columns:
+                prev_c = float(df['Close'].iloc[-(roc_len + 1)])
+                if prev_c > 0:
+                    df.iloc[-1, df.columns.get_loc(roc_col)] = ((pp - prev_c) / prev_c) * 100.0
+
+        # Update Bollinger Band Percent (BBP_*)
+        for bb_len in (5, 20, 50):
+            bbp_col = f"BBP_{bb_len}_2.0_2.0"
+            bbl_col = f"BBL_{bb_len}_2.0_2.0"
+            bbu_col = f"BBU_{bb_len}_2.0_2.0"
+            if bbp_col in df.columns and bbl_col in df.columns and bbu_col in df.columns:
+                bbl_v = float(df[bbl_col].iloc[-1])
+                bbu_v = float(df[bbu_col].iloc[-1])
+                if bbu_v > bbl_v:
+                    df.iloc[-1, df.columns.get_loc(bbp_col)] = (pp - bbl_v) / (bbu_v - bbl_v)
+
+    return df
+
+
 def _build_pre_pca_feature_df(
     symbol: str,
     timeframe: str,
@@ -75,12 +273,19 @@ def _build_pre_pca_feature_df(
     features: list,
     db: Optional[Session] = None,
     sequence_length: Optional[int] = None,
-    fast_limit: bool = False
+    fast_limit: bool = False,
+    pca_to_compress: Optional[list] = None
 ) -> pd.DataFrame:
     """
-    Fetches live OHLCV / L2 data and computes technical indicators, PLP, Forex, and Trade tick features
+    Fetches live OHLCV / L2 / Tick Volume Bars and computes technical indicators, PLP, Forex, and Trade tick features
     (all steps prior to PCA and final scaling).
     """
+    all_required_cols = list(dict.fromkeys((features or []) + (pca_to_compress or [])))
+    needs_tick_bars = (
+        dataset_type == "historical_trades"
+        or any(f in ADVANCED_TICK_FEATURES for f in all_required_cols)
+    )
+
     if dataset_type in ("l2_orderbook", "hybrid_deep", "hybrid"):
         if db is None:
             from app.db.session import SessionLocal
@@ -93,6 +298,11 @@ def _build_pre_pca_feature_df(
             df = _fetch_live_l2_data(symbol, db, sequence_length=sequence_length)
         if df is None or df.empty:
             raise RuntimeError(f"Live L2 data is currently unavailable for {symbol}. Cannot generate a valid prediction for an L2-trained model.")
+    elif needs_tick_bars:
+        df = _fetch_live_trade_bars(symbol, timeframe=timeframe, fast_limit=fast_limit)
+        if df is None or df.empty:
+            fallback_tf = timeframe if timeframe in ("1m", "5m", "15m") else "1m"
+            df = _fetch_live_ohlcv(symbol, fallback_tf, "ohlcv", limit=260 if fast_limit else 500)
     else:
         df = _fetch_live_ohlcv(symbol, timeframe, dataset_type, limit=250 if fast_limit else 1000)
 
@@ -117,16 +327,16 @@ def _build_pre_pca_feature_df(
     if dataset_type == 'forex' or '_' in symbol or len(symbol) == 7 and '/' in symbol and not symbol.endswith('USDT'):
         try:
             from app.services.ml.forex_feature_engine import generate_ohlcv_features
-            forex_feats_to_calc = plp_features if plp_features else [f for f in features if f in ["session_features", "macro_calendar", "cot_data", "order_flow_imbalance", "liquidity_voids", "retail_sentiment"]]
-            forex_feats_to_calc = list(set(forex_feats_to_calc + features))
+            forex_feats_to_calc = plp_features if plp_features else [f for f in all_required_cols if f in ["session_features", "macro_calendar", "cot_data", "order_flow_imbalance", "liquidity_voids", "retail_sentiment"]]
+            forex_feats_to_calc = list(set(forex_feats_to_calc + all_required_cols))
             if forex_feats_to_calc:
                 df = generate_ohlcv_features(df, forex_feats_to_calc)
         except Exception as e:
             print(f"[ml_predictor] Failed to calculate Forex features: {e}")
 
-    # Fetch Recent Trades for Hybrid/Trade features
+    # Fetch Recent Trades for Hybrid/Trade features if any are still missing on OHLCV dataframe
     trade_features = {'cvd', 'buy_volume', 'sell_volume', 'trade_count', 'aggressor_ratio', 'large_trade_flag', 'vwap_deviation', 'trade_imbalance_ratio', 'tick_speed', 'price_impact', 'rolling_cvd_5', 'rolling_cvd_20'}
-    missing_trade_feats = [f for f in features if f in trade_features and f not in df.columns]
+    missing_trade_feats = [f for f in all_required_cols if f in trade_features and f not in df.columns]
 
     if missing_trade_feats:
         try:
@@ -154,6 +364,7 @@ def _build_pre_pca_feature_df(
         except Exception as e:
             print(f"[ml_predictor] Failed to fetch live trades: {e}")
 
+    df = _clean_and_impute_feature_df(df)
     return df
 
 
@@ -165,7 +376,8 @@ def _trigger_bg_feature_refresh(
     indicators: list,
     plp_features: list,
     features: list,
-    seq_len: int
+    seq_len: int,
+    pca_to_compress: Optional[list] = None
 ):
     """Non-blocking background refresh of _FEATURE_ROW_CACHE so fast_mode predictions stay <5ms."""
     def _worker():
@@ -179,11 +391,12 @@ def _trigger_bg_feature_refresh(
                 features=features,
                 db=None,
                 sequence_length=seq_len,
-                fast_limit=True
+                fast_limit=True,
+                pca_to_compress=pca_to_compress
             )
             if df_fresh is not None and not df_fresh.empty:
                 _FEATURE_ROW_CACHE[cache_key] = {
-                    "df_tail": df_fresh.tail(max(seq_len, 5)).copy(),
+                    "df_tail": df_fresh.tail(max(seq_len, 60)).copy(),
                     "timestamp": time.time(),
                     "refreshing": False
                 }
@@ -414,6 +627,7 @@ def predict(
 
     # ── 4 & 5. Fetch Live Data & Compute Features (RAM-Cached in fast_mode) ─
     seq_len = sequence_length if sequence_length and sequence_length > 1 else 1
+    pca_to_compress = pca_model_data.get('to_compress', []) if isinstance(pca_model_data, dict) else []
     cache_key = f"{model_id}_{symbol}"
     df = None
 
@@ -422,8 +636,8 @@ def predict(
         now_ts = time.time()
         if cached_entry and cached_entry.get("df_tail") is not None and (now_ts - cached_entry.get("timestamp", 0)) < 300.0:
             df = cached_entry["df_tail"].copy()
-            # Trigger non-blocking background refresh if older than 8 seconds
-            if (now_ts - cached_entry.get("timestamp", 0)) > 8.0 and not cached_entry.get("refreshing", False):
+            # Trigger non-blocking background refresh if older than 6 seconds
+            if (now_ts - cached_entry.get("timestamp", 0)) > 6.0 and not cached_entry.get("refreshing", False):
                 cached_entry["refreshing"] = True
                 _trigger_bg_feature_refresh(
                     cache_key=cache_key,
@@ -433,7 +647,8 @@ def predict(
                     indicators=indicators,
                     plp_features=plp_features,
                     features=features,
-                    seq_len=seq_len
+                    seq_len=seq_len,
+                    pca_to_compress=pca_to_compress
                 )
         else:
             df_full = _build_pre_pca_feature_df(
@@ -445,9 +660,10 @@ def predict(
                 features=features,
                 db=db,
                 sequence_length=seq_len,
-                fast_limit=True
+                fast_limit=True,
+                pca_to_compress=pca_to_compress
             )
-            df_tail = df_full.tail(max(seq_len, 5)).copy()
+            df_tail = df_full.tail(max(seq_len, 60)).copy()
             _FEATURE_ROW_CACHE[cache_key] = {
                 "df_tail": df_tail,
                 "timestamp": time.time(),
@@ -464,25 +680,24 @@ def predict(
             features=features,
             db=db,
             sequence_length=seq_len,
-            fast_limit=False
+            fast_limit=False,
+            pca_to_compress=pca_to_compress
         )
         _FEATURE_ROW_CACHE[cache_key] = {
-            "df_tail": df.tail(max(seq_len, 5)).copy(),
+            "df_tail": df.tail(max(seq_len, 60)).copy(),
             "timestamp": time.time(),
             "refreshing": False
         }
 
-    # Apply price_point override prior to PCA so PCA components also reflect the live entry price
+    # Apply price_point override prior to PCA so PCA components and relative bands reflect the exact entry price
     if price_point is not None and float(price_point) > 0:
-        pp = float(price_point)
-        if 'Close' in df.columns:
-            df.iloc[-1, df.columns.get_loc('Close')] = pp
-        elif 'close' in df.columns:
-            df.iloc[-1, df.columns.get_loc('close')] = pp
-        if 'High' in df.columns and pp > float(df['High'].iloc[-1]):
-            df.iloc[-1, df.columns.get_loc('High')] = pp
-        if 'Low' in df.columns and pp < float(df['Low'].iloc[-1]):
-            df.iloc[-1, df.columns.get_loc('Low')] = pp
+        df = _apply_price_point_override(df, float(price_point))
+
+    current_price = float(df['Close'].iloc[-1]) if 'Close' in df.columns else float(df['close'].iloc[-1])
+    if price_point is not None and float(price_point) > 0:
+        current_price = float(price_point)
+
+    df = _clean_and_impute_feature_df(df, ref_price=current_price)
 
     # ── 5.6 Apply PCA (if applicable) ────────────────────────────────────────
     if pca_model_data is not None:
@@ -490,12 +705,15 @@ def predict(
             to_compress = pca_model_data['to_compress']
             pca_cols = pca_model_data['pca_cols']
             
-            # Extract features to compress. If missing, fill with 0
+            # Extract features to compress. If missing, impute price-level columns with current_price and others with 0.0
             missing_cols = [c for c in to_compress if c not in df.columns]
             for mc in missing_cols:
-                df[mc] = 0.0
+                if str(mc).startswith(PRICE_LEVEL_COL_PREFIXES) and not str(mc).startswith(SPARSE_ZERO_COL_PREFIXES):
+                    df[mc] = current_price
+                else:
+                    df[mc] = 0.0
                 
-            X_comp = df[to_compress].fillna(0)
+            X_comp = df[to_compress].fillna(0.0)
             X_scaled_full = pca_model_data['scaler'].transform(X_comp)
             X_pca_full = pca_model_data['pca'].transform(X_scaled_full)
             
@@ -513,26 +731,20 @@ def predict(
     if not available_features:
         raise ValueError(f"None of the training features found in live data. Expected: {features[:5]}")
 
-    df[available_features] = df[available_features].ffill().fillna(0)
-
-    current_price = float(df['Close'].iloc[-1]) if 'Close' in df.columns else float(df['close'].iloc[-1])
-    if price_point is not None and float(price_point) > 0:
-        current_price = float(price_point)
-        if 'Close' in df.columns:
-            df.iloc[-1, df.columns.get_loc('Close')] = float(price_point)
-        elif 'close' in df.columns:
-            df.iloc[-1, df.columns.get_loc('close')] = float(price_point)
+    df[available_features] = df[available_features].ffill().fillna(0.0)
 
     # Extract last `seq_len` rows
     sequence_data = df[available_features].tail(seq_len).values.astype(float)
 
-    # Pad missing features (columns) with 0
+    # Pad missing features (columns) with 0 (or current_price for price-level columns)
     if len(available_features) < len(features):
         padded_seq = np.zeros((sequence_data.shape[0], len(features)))
         for i, feat in enumerate(features):
             if feat in available_features:
                 col_idx = available_features.index(feat)
                 padded_seq[:, i] = sequence_data[:, col_idx]
+            elif str(feat).startswith(PRICE_LEVEL_COL_PREFIXES) and not str(feat).startswith(SPARSE_ZERO_COL_PREFIXES):
+                padded_seq[:, i] = current_price
         sequence_data = padded_seq
 
     # If rows are fewer than requested seq_len, pad by repeating the first available row
@@ -541,9 +753,67 @@ def predict(
         padding = np.repeat(sequence_data[0:1], padding_needed, axis=0)
         sequence_data = np.vstack([padding, sequence_data])
 
+    # ── 6.5 Extract Live Tick Microstructure & Volatility Context ────────────
+    microstructure = {}
+    try:
+        last_row = df.iloc[-1]
+        agg_ratio = float(last_row.get('aggressor_ratio', 0.5)) if 'aggressor_ratio' in df.columns else 0.5
+        if not np.isfinite(agg_ratio) or agg_ratio <= 0.0 or agg_ratio >= 1.0:
+            if 'buy_volume' in df.columns and 'sell_volume' in df.columns:
+                bv = float(last_row.get('buy_volume', 0.0) or 0.0)
+                sv = float(last_row.get('sell_volume', 0.0) or 0.0)
+                agg_ratio = (bv / (bv + sv)) if (bv + sv) > 0 else 0.5
+            else:
+                agg_ratio = 0.5
+
+        vol_total = float(last_row.get('Volume', 0.0) or 0.0) if 'Volume' in df.columns else 0.0
+        net_vol = float(last_row.get('net_volume', 0.0) or 0.0) if 'net_volume' in df.columns else 0.0
+        if net_vol == 0.0 and 'buy_volume' in df.columns and 'sell_volume' in df.columns:
+            net_vol = float(last_row.get('buy_volume', 0.0) or 0.0) - float(last_row.get('sell_volume', 0.0) or 0.0)
+        net_vol_ratio = float(np.clip(net_vol / vol_total, -1.0, 1.0)) if vol_total > 0 else 0.0
+
+        ud_ratio = float(last_row.get('up_down_tick_ratio', 1.0) or 1.0) if 'up_down_tick_ratio' in df.columns else 1.0
+        if not np.isfinite(ud_ratio) or ud_ratio <= 0:
+            ud_ratio = 1.0
+
+        vwap_dev = float(last_row.get('vwap_deviation', 0.0) or 0.0) if 'vwap_deviation' in df.columns else 0.0
+
+        ret_5_pct = 0.0
+        bar_vol_pct = 0.08
+        if 'Close' in df.columns and len(df) >= 6:
+            c_prev5 = float(df['Close'].iloc[-6] or 0.0)
+            if c_prev5 > 0:
+                ret_5_pct = ((current_price - c_prev5) / c_prev5) * 100.0
+            pct_changes = df['Close'].pct_change().dropna().tail(20) * 100.0
+            if len(pct_changes) >= 3:
+                bar_vol_pct = max(0.02, float(pct_changes.std() or 0.08))
+
+        # Combine live tick orderflow signals into a directional flow probability in [0.05, 0.95]
+        s_agg = float(np.clip(agg_ratio, 0.10, 0.90))
+        s_net = float(np.clip(0.5 + 0.45 * net_vol_ratio, 0.10, 0.90))
+        s_ud = float(np.clip(ud_ratio / (1.0 + ud_ratio), 0.15, 0.85))
+        s_mom = float(np.clip(0.5 + np.tanh(ret_5_pct * 6.0) * 0.35, 0.15, 0.85))
+
+        flow_bull = float(np.clip(0.35 * s_agg + 0.30 * s_net + 0.20 * s_ud + 0.15 * s_mom, 0.05, 0.95))
+        flow_bear = float(1.0 - flow_bull)
+
+        microstructure = {
+            "aggressor_ratio": round(agg_ratio, 4),
+            "net_volume_ratio": round(net_vol_ratio, 4),
+            "up_down_tick_ratio": round(ud_ratio, 4),
+            "vwap_deviation": round(vwap_dev, 5),
+            "ret_5_bars_pct": round(ret_5_pct, 4),
+            "bar_volatility_pct": round(bar_vol_pct, 4),
+            "flow_bullish_score": round(flow_bull, 4),
+            "flow_bearish_score": round(flow_bear, 4)
+        }
+    except Exception as micro_err:
+        print(f"[ml_predictor] Microstructure calculation notice: {micro_err}")
+
     # ── 7. Run Inference ─────────────────────────────────────────────────────
     sl_price, tp_price, raw_return = None, None, None
     bullish_prob, bearish_prob = 0.0, 0.0
+    raw_bullish_prob, raw_bearish_prob = 0.0, 0.0
     try:
         X = sequence_data  # Shape: (seq_len, features)
         
@@ -596,6 +866,60 @@ def predict(
         else:
             bullish_prob = 0.0
             bearish_prob = 0.0
+
+        raw_bullish_prob = bullish_prob
+        raw_bearish_prob = bearish_prob
+
+        # ── 7.5 Prior Calibration & Microstructure Fusion for 2-Class Imbalanced Models ──
+        # In 2-class classification (`pct_return > fee_threshold`), Class 0 often has 85–92% base rate
+        # (including flat & mild uptrends), making raw Class 0 probability artificially high (~65-75%)
+        # even when the market is bullish. Calibrate using the training confusionMatrix priors + live flow.
+        if prediction_target == "classification" and (bullish_prob + bearish_prob) > 0.95:
+            cm_dict = None
+            if isinstance(metadata.get("explainability"), dict):
+                cm_dict = metadata["explainability"].get("confusionMatrix")
+            if not cm_dict and isinstance(version_explainability, dict):
+                cm_dict = version_explainability.get("confusionMatrix")
+
+            pi0, pi1 = 0.5, 0.5
+            is_imbalanced_binary = False
+            if isinstance(cm_dict, dict) and isinstance(cm_dict.get("matrix"), list) and len(cm_dict["matrix"]) == 2:
+                try:
+                    mat = cm_dict["matrix"]
+                    r0 = float(sum(mat[0]))
+                    r1 = float(sum(mat[1]))
+                    tot = r0 + r1
+                    if tot > 0:
+                        pi0 = r0 / tot
+                        pi1 = r1 / tot
+                        if pi0 > 0.60 or pi0 < 0.40:
+                            is_imbalanced_binary = True
+                except Exception:
+                    pass
+
+            if is_imbalanced_binary and 0.01 < pi1 < 0.99 and 0.01 < pi0 < 0.99:
+                gamma = 0.85
+                w1 = bullish_prob / (pi1 ** gamma)
+                w0 = bearish_prob / (pi0 ** gamma)
+                cal_bull = w1 / (w1 + w0) if (w1 + w0) > 0 else bullish_prob
+                cal_bear = 1.0 - cal_bull
+
+                flow_b = microstructure.get("flow_bullish_score", 0.5)
+                flow_s = microstructure.get("flow_bearish_score", 0.5)
+                bullish_prob = float(np.clip(0.75 * cal_bull + 0.25 * flow_b, 0.01, 0.99))
+                bearish_prob = float(np.clip(0.75 * cal_bear + 0.25 * flow_s, 0.01, 0.99))
+            elif dataset_type == "historical_trades" and microstructure:
+                flow_b = microstructure.get("flow_bullish_score", 0.5)
+                flow_s = microstructure.get("flow_bearish_score", 0.5)
+                bullish_prob = float(np.clip(0.82 * bullish_prob + 0.18 * flow_b, 0.01, 0.99))
+                bearish_prob = float(np.clip(0.82 * bearish_prob + 0.18 * flow_s, 0.01, 0.99))
+
+            if bullish_prob >= bearish_prob:
+                signal_str = "BUY"
+                confidence = bullish_prob
+            else:
+                signal_str = "SELL"
+                confidence = bearish_prob
             
     except Exception as e:
         print(f"[ml_predictor] Inference error: {e}")
@@ -631,17 +955,20 @@ def predict(
             db.rollback()
 
     res = {
-        "signal":        signal_str,
-        "confidence":    round(confidence, 4),
-        "bullish_prob":  round(bullish_prob, 4),
-        "bearish_prob":  round(bearish_prob, 4),
-        "price":         current_price,
-        "symbol":        symbol,
-        "algorithm":     algorithm,
-        "timestamp":     datetime.utcnow().isoformat() + "Z",
-        "features_used": len(available_features),
-        "dataset_type":  dataset_type,
-        "latency_ms":    round(latency * 1000, 2)
+        "signal":           signal_str,
+        "confidence":       round(confidence, 4),
+        "bullish_prob":     round(bullish_prob, 4),
+        "bearish_prob":     round(bearish_prob, 4),
+        "raw_bullish_prob": round(raw_bullish_prob, 4),
+        "raw_bearish_prob": round(raw_bearish_prob, 4),
+        "price":            current_price,
+        "symbol":           symbol,
+        "algorithm":        algorithm,
+        "timestamp":        datetime.utcnow().isoformat() + "Z",
+        "features_used":    len(available_features),
+        "dataset_type":     dataset_type,
+        "latency_ms":       round(latency * 1000, 2),
+        "microstructure":   microstructure
     }
     if sl_price is not None:
         res["sl"] = sl_price
@@ -964,39 +1291,93 @@ def _fetch_live_l2_data(symbol: str, db: Session, sequence_length: Optional[int]
 
 
 def _calculate_indicators(df: pd.DataFrame, indicators: list) -> pd.DataFrame:
-    """Calculate the same technical indicators as used during training."""
+    """Calculate the exact same technical, Multi-parameter, and Institutional indicators as used during training."""
     import pandas_ta as ta
 
-    # pandas_ta requires lowercase column names for some methods
     from app.services.helpers.vwap_calculator import calculate_vwap_sd_features
-    from app.services.helpers.institutional_features import add_smc_fvg, add_ict_killzones, add_wick_rejection, add_swing_structure, add_order_blocks
+    from app.services.helpers.institutional_features import (
+        add_smc_fvg, add_ict_killzones, add_wick_rejection, add_swing_structure, add_order_blocks
+    )
+    from app.services.aether_ml_features import add_aether_smc_features
+    from app.services.feature_engines.trend_momentum import add_trend_momentum_features
+    from app.services.feature_engines.volume_flow import add_volume_flow_features
+    from app.services.feature_engines.volatility_risk import add_volatility_risk_features
+    from app.services.feature_engines.geometric_cycles import add_geometric_cycle_features
+    from app.services.feature_engines.confluence_matrix import add_confluence_features
+
+    # Ensure DatetimeIndex is sorted & unique before VWAP / pandas_ta runs
+    try:
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+        if not df.index.is_monotonic_increasing:
+            df.sort_index(inplace=True)
+        if df.index.duplicated().any():
+            df.index = df.index + pd.to_timedelta(np.arange(len(df)), unit='us')
+    except Exception:
+        pass
 
     INDICATOR_MAP = {
+        # Momentum
         "RSI":            lambda d: d.ta.rsi(append=True),
         "Stoch":          lambda d: d.ta.stoch(append=True),
         "ROC":            lambda d: d.ta.roc(append=True),
         "CCI":            lambda d: d.ta.cci(append=True),
         "WillR":          lambda d: d.ta.willr(append=True),
         "MFI":            lambda d: d.ta.mfi(append=True),
+
+        # Trend
         "MACD":           lambda d: d.ta.macd(append=True),
         "EMA":            lambda d: d.ta.ema(append=True),
         "SMA":            lambda d: d.ta.sma(append=True),
         "ADX":            lambda d: d.ta.adx(append=True),
         "Supertrend":     lambda d: d.ta.supertrend(append=True),
         "Parabolic SAR":  lambda d: d.ta.psar(append=True),
+
+        # Volatility
         "BBANDS":         lambda d: d.ta.bbands(append=True),
         "ATR":            lambda d: d.ta.atr(append=True),
         "Keltner Channel":lambda d: d.ta.kc(append=True),
         "Donchian Channel":lambda d: d.ta.donchian(append=True),
+
+        # Volume
         "OBV":            lambda d: d.ta.obv(append=True),
         "VWAP":           lambda d: d.ta.vwap(append=True),
         "CMF":            lambda d: d.ta.cmf(append=True),
         "ADOSC":          lambda d: d.ta.adosc(append=True),
+
+        # Institutional & Price Action
         "SMC FVG":        lambda d: add_smc_fvg(d),
         "ICT Killzones":  lambda d: add_ict_killzones(d),
         "Wick Rejection": lambda d: add_wick_rejection(d),
         "Market Structure":lambda d: add_swing_structure(d),
         "Order Blocks":   lambda d: add_order_blocks(d),
+        "Aether SMC Flow":lambda d: add_aether_smc_features(d),
+
+        # Advanced Phase 2 Modules (Bulk Additions)
+        "Advanced Trend & Momentum":      lambda d: add_trend_momentum_features(d),
+        "Advanced Volume & Flow":         lambda d: add_volume_flow_features(d),
+        "Advanced Volatility & Risk":     lambda d: add_volatility_risk_features(d),
+        "Advanced Geometric Cycles":      lambda d: add_geometric_cycle_features(d),
+        "Advanced Hedge Fund Confluence": lambda d: add_confluence_features(d),
+
+        # --- Multi-Parameter (Dynamic) Variants ---
+        "RSI Multi":              lambda d: [d.ta.rsi(length=l, append=True) for l in [7, 14, 21]],
+        "Stoch Multi":            lambda d: [d.ta.stoch(k=k, d=3, append=True) for k in [9, 14, 21]],
+        "ROC Multi":              lambda d: [d.ta.roc(length=l, append=True) for l in [10, 20, 50]],
+        "CCI Multi":              lambda d: [d.ta.cci(length=l, append=True) for l in [14, 20, 40]],
+        "WillR Multi":            lambda d: [d.ta.willr(length=l, append=True) for l in [14, 28, 50]],
+        "MFI Multi":              lambda d: [d.ta.mfi(length=l, append=True) for l in [14, 21, 50]],
+        "MACD Multi":             lambda d: [d.ta.macd(fast=f, slow=s, signal=sig, append=True) for f, s, sig in [(12, 26, 9), (8, 21, 5), (5, 13, 3)]],
+        "EMA Multi":              lambda d: [d.ta.ema(length=l, append=True) for l in [9, 21, 50, 200]],
+        "SMA Multi":              lambda d: [d.ta.sma(length=l, append=True) for l in [10, 20, 50, 200]],
+        "ADX Multi":              lambda d: [d.ta.adx(length=l, append=True) for l in [14, 28]],
+        "Supertrend Multi":       lambda d: [d.ta.supertrend(length=l, multiplier=m, append=True) for l, m in [(7, 3), (10, 3), (14, 2)]],
+        "Parabolic SAR Multi":    lambda d: [d.ta.psar(af0=af, af=af, max_af=0.2, append=True) for af in [0.02, 0.04]],
+        "BBANDS Multi":           lambda d: [d.ta.bbands(length=l, append=True) for l in [20, 50]],
+        "ATR Multi":              lambda d: [d.ta.atr(length=l, append=True) for l in [7, 14, 21]],
+        "Keltner Channel Multi":  lambda d: [d.ta.kc(length=l, append=True) for l in [20, 50]],
+        "Donchian Channel Multi": lambda d: [d.ta.donchian(length=l, append=True) for l in [20, 50]],
+        "CMF Multi":              lambda d: [d.ta.cmf(length=l, append=True) for l in [20, 50]],
     }
 
     for ind in indicators:

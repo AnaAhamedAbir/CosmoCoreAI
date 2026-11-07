@@ -632,6 +632,53 @@ class ManualTradeService:
             return {"status": "warning", "detail": str(e)}
 
     @staticmethod
+    def _resolve_attached_tp_sl_prices(mid_p: float, is_buy_side: bool, attached_tp=None, attached_sl=None) -> tuple:
+        """
+        Resolves exact target `tp_price`, `sl_price`, `tp_dist_pct`, and `sl_dist_pct`
+        from the user's `attached_tp` and `attached_sl` configs relative to `mid_p`.
+        """
+        tp_price, sl_price = 0.0, 0.0
+        tp_dist_pct, sl_dist_pct = 0.0, 0.0
+        if mid_p <= 0:
+            return tp_price, sl_price, tp_dist_pct, sl_dist_pct
+
+        try:
+            if attached_tp and getattr(attached_tp, 'enabled', False):
+                val = float(getattr(attached_tp, 'value', 0.0) or 0.0)
+                mode = str(getattr(attached_tp, 'mode', 'percentage') or 'percentage').lower()
+                if val > 0:
+                    if mode == 'percentage':
+                        pct = val / 100.0
+                        tp_price = mid_p * (1.0 + pct) if is_buy_side else mid_p * (1.0 - pct)
+                    elif mode == 'absolute':
+                        tp_price = val
+                    else:
+                        tp_price = (mid_p + val) if is_buy_side else (mid_p - val)
+                    if tp_price > 0:
+                        tp_dist_pct = abs(tp_price - mid_p) / mid_p * 100.0
+        except Exception:
+            pass
+
+        try:
+            if attached_sl and getattr(attached_sl, 'enabled', False):
+                val = float(getattr(attached_sl, 'value', 0.0) or 0.0)
+                mode = str(getattr(attached_sl, 'mode', 'percentage') or 'percentage').lower()
+                if val > 0:
+                    if mode == 'percentage':
+                        pct = val / 100.0
+                        sl_price = mid_p * (1.0 - pct) if is_buy_side else mid_p * (1.0 + pct)
+                    elif mode == 'absolute':
+                        sl_price = val
+                    else:
+                        sl_price = (mid_p - val) if is_buy_side else (mid_p + val)
+                    if sl_price > 0:
+                        sl_dist_pct = abs(sl_price - mid_p) / mid_p * 100.0
+        except Exception:
+            pass
+
+        return tp_price, sl_price, tp_dist_pct, sl_dist_pct
+
+    @staticmethod
     async def _validate_with_ml_filter(
         exchange,
         symbol: str,
@@ -640,14 +687,17 @@ class ManualTradeService:
         bullish_thresh: float = 0.50,
         bearish_thresh: float = 0.50,
         execution_mode: str = "basic",
-        eval_price_override: float = None
+        eval_price_override: float = None,
+        attached_tp=None,
+        attached_sl=None
     ) -> dict:
         """
         Universal AI Entry Gatekeeper for Manual Trade & Emergency Force Orders.
         Supports:
           1) L2 Orderbook / Hybrid Deep / RL models via MLL2Predictor
-          2) OHLCV / Technical Indicator / Next-Gen models trained in Training Studio via ml_predictor.predict (fast_mode=True, <5ms RAM-cached)
-        Validates BUY orders against bullish_thresh and SELL orders (Spot Hold Sell or Futures Short) against bearish_thresh.
+          2) OHLCV / Historical Trades (Tick/Volume Bars) / Technical Indicator / Next-Gen models
+             trained in Training Studio via ml_predictor.predict (fast_mode=True, <5ms RAM-cached)
+        Evaluates Entry Price + Attached TP/SL + Live Tick Microstructure + Live L2 Orderbook Imbalance.
         """
         if not ml_model_id:
             raise HTTPException(
@@ -697,7 +747,7 @@ class ManualTradeService:
 
         mid_p = float(eval_price_override) if (eval_price_override and float(eval_price_override) > 0) else 0.0
 
-        # --- Route A: OHLCV / Indicator / Next-Gen Model from Training Studio (<5ms RAM-Cached Fast Mode) ---
+        # --- Route A: OHLCV / Tick-Trade / Indicator / Next-Gen Model from Training Studio ---
         if use_ohlcv_predictor:
             from app.services import ml_predictor
             from app.db.session import SessionLocal
@@ -715,40 +765,158 @@ class ManualTradeService:
                 finally:
                     t_db.close()
 
-            try:
-                pred_res = await asyncio.to_thread(_run_ohlcv_fast)
-            except Exception as pred_err:
-                logger.error(f"ManualTrade OHLCV ML Filter failed for {symbol}: {pred_err}")
+            async def _fetch_ob_safe():
+                try:
+                    return await exchange.fetch_order_book(symbol, limit=20)
+                except Exception:
+                    return None
+
+            pred_res, live_ob = await asyncio.gather(
+                asyncio.to_thread(_run_ohlcv_fast),
+                _fetch_ob_safe(),
+                return_exceptions=True
+            )
+
+            if isinstance(pred_res, Exception):
+                logger.error(f"ManualTrade OHLCV ML Filter failed for {symbol}: {pred_res}")
                 raise HTTPException(
                     status_code=400,
-                    detail=f"AI Filter Error: Model inference failed for {symbol} ({str(pred_err)})."
+                    detail=f"AI Filter Error: Model inference failed for {symbol} ({str(pred_res)})."
                 )
+            if isinstance(live_ob, Exception):
+                live_ob = None
 
             sig = str(pred_res.get("signal", "HOLD")).upper()
             conf = float(pred_res.get("confidence", 0.0))
             bull_prob = pred_res.get("bullish_prob")
             bear_prob = pred_res.get("bearish_prob")
-            if mid_p <= 0 and pred_res.get("price"):
-                mid_p = float(pred_res["price"])
+            raw_bull = pred_res.get("raw_bullish_prob")
+            raw_bear = pred_res.get("raw_bearish_prob")
+            micro = pred_res.get("microstructure") or {}
+
+            if mid_p <= 0:
+                if live_ob and live_ob.get('bids') and live_ob.get('asks'):
+                    mid_p = (float(live_ob['bids'][0][0]) + float(live_ob['asks'][0][0])) / 2.0
+                elif pred_res.get("price"):
+                    mid_p = float(pred_res["price"])
+
             model_label = getattr(predictor, 'model_name', None) or str(pred_res.get("algorithm", "AI Model"))
             ai_sl = pred_res.get("sl")
             ai_tp = pred_res.get("tp")
 
-            if is_buy_side:
-                if bull_prob is not None:
-                    buy_p = float(bull_prob)
-                    sell_p = float(bear_prob or 0.0)
-                    is_valid = buy_p >= bull_t
+            # Compute Live L2 Orderbook Imbalance & TP Barrier Wall Metrics
+            l2_bid_share = 0.50
+            l2_wall_opposing_tp = False
+            l2_wall_ratio = 1.0
+            user_tp_p, user_sl_p, tp_dist_pct, sl_dist_pct = ManualTradeService._resolve_attached_tp_sl_prices(
+                mid_p, is_buy_side, attached_tp, attached_sl
+            )
+
+            if live_ob and live_ob.get('bids') and live_ob.get('asks'):
+                try:
+                    bids_20 = [(float(b[0]), float(b[1])) for b in live_ob['bids'][:20] if float(b[0]) > 0]
+                    asks_20 = [(float(a[0]), float(a[1])) for a in live_ob['asks'][:20] if float(a[0]) > 0]
+                    bid_vol_10 = sum(q for _, q in bids_20[:10])
+                    ask_vol_10 = sum(q for _, q in asks_20[:10])
+                    if (bid_vol_10 + ask_vol_10) > 0:
+                        l2_bid_share = bid_vol_10 / (bid_vol_10 + ask_vol_10)
+
+                    # Check if a heavy opposing L2 wall blocks the path between Entry (mid_p) and User TP
+                    if user_tp_p > 0 and tp_dist_pct <= 0.60:
+                        if is_buy_side and user_tp_p > mid_p:
+                            blocking_ask_vol = sum(q for p, q in asks_20 if p < user_tp_p)
+                            support_bid_vol = max(1e-9, bid_vol_10)
+                            l2_wall_ratio = blocking_ask_vol / support_bid_vol
+                            if l2_wall_ratio >= 2.6:
+                                l2_wall_opposing_tp = True
+                        elif (not is_buy_side) and user_tp_p < mid_p:
+                            blocking_bid_vol = sum(q for p, q in bids_20 if p > user_tp_p)
+                            pressure_ask_vol = max(1e-9, ask_vol_10)
+                            l2_wall_ratio = blocking_bid_vol / pressure_ask_vol
+                            if l2_wall_ratio >= 2.6:
+                                l2_wall_opposing_tp = True
+                except Exception:
+                    pass
+
+            flow_bull = float(micro.get("flow_bullish_score", 0.50))
+            flow_bear = float(micro.get("flow_bearish_score", 0.50))
+            bar_vol_pct = max(0.03, float(micro.get("bar_volatility_pct", 0.08)))
+
+            # Blend calibrated model probability (85%) with live L2 Orderbook Depth (15%)
+            if bull_prob is not None and bear_prob is not None:
+                buy_p = float(bull_prob)
+                sell_p = float(bear_prob)
+                if live_ob and (buy_p + sell_p) > 0.5:
+                    buy_p = float(min(0.99, max(0.01, 0.85 * buy_p + 0.15 * l2_bid_share)))
+                    sell_p = float(min(0.99, max(0.01, 0.85 * sell_p + 0.15 * (1.0 - l2_bid_share))))
+
+                # Apply tight-scalp TP/SL counter-flow protection
+                scalp_penalty_reason = None
+                if is_buy_side:
+                    if l2_wall_opposing_tp and flow_bear >= 0.58:
+                        buy_p = max(0.01, buy_p - 0.14)
+                        sell_p = min(0.99, 1.0 - buy_p)
+                        scalp_penalty_reason = f"Heavy Ask Wall ({l2_wall_ratio:.1f}x) blocks TP {user_tp_p:.5f} & Seller Flow {flow_bear*100:.0f}%"
+                    elif tp_dist_pct > 0 and tp_dist_pct <= 0.35 and flow_bear >= 0.64 and l2_bid_share <= 0.38:
+                        buy_p = max(0.01, buy_p - 0.12)
+                        sell_p = min(0.99, 1.0 - buy_p)
+                        scalp_penalty_reason = f"Strong Seller Orderflow ({flow_bear*100:.0f}%) & L2 Ask Pressure ({(1-l2_bid_share)*100:.0f}%) oppose {tp_dist_pct:.2f}% BUY scalp"
+                else:
+                    if l2_wall_opposing_tp and flow_bull >= 0.58:
+                        sell_p = max(0.01, sell_p - 0.14)
+                        buy_p = min(0.99, 1.0 - sell_p)
+                        scalp_penalty_reason = f"Heavy Bid Wall ({l2_wall_ratio:.1f}x) blocks TP {user_tp_p:.5f} & Buyer Flow {flow_bull*100:.0f}%"
+                    elif tp_dist_pct > 0 and tp_dist_pct <= 0.35 and flow_bull >= 0.64 and l2_bid_share >= 0.62:
+                        sell_p = max(0.01, sell_p - 0.12)
+                        buy_p = min(0.99, 1.0 - sell_p)
+                        scalp_penalty_reason = f"Strong Buyer Orderflow ({flow_bull*100:.0f}%) & L2 Bid Support ({l2_bid_share*100:.0f}%) oppose {tp_dist_pct:.2f}% SELL scalp"
+
+                # Estimate TP-before-SL hit probability when both TP and SL are attached
+                tp_hit_note = ""
+                if tp_dist_pct > 0 and sl_dist_pct > 0:
+                    dir_edge = (buy_p - 0.50) if is_buy_side else (sell_p - 0.50)
+                    base_rw = sl_dist_pct / (tp_dist_pct + sl_dist_pct)
+                    est_tp_hit = min(0.98, max(0.02, base_rw + dir_edge * 0.85))
+                    tp_hit_note = f" | TP Hit Est: {est_tp_hit*100:.0f}%"
+                    # If SL is >= 1.6x larger than TP (negative R:R scalp) AND directional probability is < 52%, block bad R:R drift!
+                    if (sl_dist_pct / max(1e-6, tp_dist_pct)) >= 1.6 and ((is_buy_side and buy_p < max(bull_t, 0.52)) or ((not is_buy_side) and sell_p < max(bear_t, 0.52))):
+                        if is_buy_side:
+                            scalp_penalty_reason = scalp_penalty_reason or f"SL ({sl_dist_pct:.2f}%) is {sl_dist_pct/tp_dist_pct:.1f}x wider than TP ({tp_dist_pct:.2f}%), requiring ≥52% Bullish edge"
+                        else:
+                            scalp_penalty_reason = scalp_penalty_reason or f"SL ({sl_dist_pct:.2f}%) is {sl_dist_pct/tp_dist_pct:.1f}x wider than TP ({tp_dist_pct:.2f}%), requiring ≥52% Bearish edge"
+
+                if is_buy_side:
+                    req_t = max(bull_t, 0.52) if (tp_dist_pct > 0 and sl_dist_pct >= 1.6 * tp_dist_pct and bull_t <= 0.50) else bull_t
+                    is_valid = buy_p >= req_t
                     if not is_valid:
-                        conf_str = f"Bullish Prob: {buy_p * 100:.1f}% < Threshold {bull_t * 100:.0f}% [Bearish: {sell_p * 100:.1f}%]"
+                        raw_note = f" (Raw: {float(raw_bull)*100:.1f}%)" if (raw_bull is not None and abs(float(raw_bull) - buy_p) > 0.05) else ""
+                        flow_note = f" | Flow Bull: {flow_bull*100:.0f}%, L2 Bid: {l2_bid_share*100:.0f}%"
+                        reason_sfx = f" | {scalp_penalty_reason}" if scalp_penalty_reason else ""
+                        conf_str = f"Calibrated Bullish: {buy_p * 100:.1f}%{raw_note} < Threshold {req_t * 100:.0f}% [Bearish: {sell_p * 100:.1f}%{flow_note}{tp_hit_note}{reason_sfx}]"
                         logger.info(f"🚫 [ManualTrade AI Filter] Denied BUY on {symbol} by {model_label} ({conf_str})")
                         raise HTTPException(
                             status_code=400,
                             detail=f"🚫 AI Filter Denied BUY: '{model_label}' predicts unfavorable condition ({conf_str})."
                         )
-                    ai_filter_info = f"{model_label} Bullish {buy_p * 100:.1f}% (≥{bull_t * 100:.0f}%)"
+                    ai_filter_info = f"{model_label} Bullish {buy_p * 100:.1f}% (≥{req_t * 100:.0f}%) | Flow {flow_bull*100:.0f}% | L2 Bid {l2_bid_share*100:.0f}%{tp_hit_note}"
                     conf = buy_p
                 else:
+                    req_t = max(bear_t, 0.52) if (tp_dist_pct > 0 and sl_dist_pct >= 1.6 * tp_dist_pct and bear_t <= 0.50) else bear_t
+                    is_valid = sell_p >= req_t
+                    if not is_valid:
+                        raw_note = f" (Raw Uncalibrated: {float(raw_bear)*100:.1f}%)" if (raw_bear is not None and abs(float(raw_bear) - sell_p) > 0.05) else ""
+                        flow_note = f" | Flow Bear: {flow_bear*100:.0f}%, L2 Ask: {(1.0-l2_bid_share)*100:.0f}%"
+                        reason_sfx = f" | {scalp_penalty_reason}" if scalp_penalty_reason else ""
+                        conf_str = f"Calibrated Bearish: {sell_p * 100:.1f}%{raw_note} < Threshold {req_t * 100:.0f}% [Bullish: {buy_p * 100:.1f}%{flow_note}{tp_hit_note}{reason_sfx}]"
+                        logger.info(f"🚫 [ManualTrade AI Filter] Denied SELL on {symbol} by {model_label} ({conf_str})")
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"🚫 AI Filter Denied SELL: '{model_label}' predicts unfavorable condition ({conf_str})."
+                        )
+                    ai_filter_info = f"{model_label} Bearish {sell_p * 100:.1f}% (≥{req_t * 100:.0f}%) | Flow {flow_bear*100:.0f}% | L2 Ask {(1.0-l2_bid_share)*100:.0f}%{tp_hit_note}"
+                    conf = sell_p
+            else:
+                if is_buy_side:
                     is_valid = sig in ("BUY", "PUMP RISK") and conf >= bull_t
                     if not is_valid:
                         conf_str = f"Signal: {sig} ({conf * 100:.1f}%) | Required BUY ≥ {bull_t * 100:.0f}%"
@@ -758,20 +926,6 @@ class ManualTradeService:
                             detail=f"🚫 AI Filter Denied BUY: '{model_label}' predicts unfavorable condition ({conf_str})."
                         )
                     ai_filter_info = f"{model_label} BUY {conf * 100:.1f}% (≥{bull_t * 100:.0f}%)"
-            else:
-                if bear_prob is not None:
-                    sell_p = float(bear_prob)
-                    buy_p = float(bull_prob or 0.0)
-                    is_valid = sell_p >= bear_t
-                    if not is_valid:
-                        conf_str = f"Bearish Prob: {sell_p * 100:.1f}% < Threshold {bear_t * 100:.0f}% [Bullish: {buy_p * 100:.1f}%]"
-                        logger.info(f"🚫 [ManualTrade AI Filter] Denied SELL on {symbol} by {model_label} ({conf_str})")
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"🚫 AI Filter Denied SELL: '{model_label}' predicts unfavorable condition ({conf_str})."
-                        )
-                    ai_filter_info = f"{model_label} Bearish {sell_p * 100:.1f}% (≥{bear_t * 100:.0f}%)"
-                    conf = sell_p
                 else:
                     is_valid = sig in ("SELL", "CRASH RISK") and conf >= bear_t
                     if not is_valid:
@@ -955,7 +1109,9 @@ class ManualTradeService:
                     bullish_thresh=bullish_thresh,
                     bearish_thresh=bearish_thresh,
                     execution_mode=ml_exec_mode,
-                    eval_price_override=eval_p
+                    eval_price_override=eval_p,
+                    attached_tp=getattr(order_req, 'attached_tp', None),
+                    attached_sl=getattr(order_req, 'attached_sl', None)
                 )
                 ai_filter_info = ml_res.get("ai_filter_info")
                 if str(ml_exec_mode or 'basic').lower() == 'advanced':
@@ -1884,7 +2040,9 @@ class ManualTradeService:
                         ml_model_id=ml_model_id,
                         bullish_thresh=ml_bullish_threshold,
                         bearish_thresh=ml_bearish_threshold,
-                        execution_mode=ml_execution_mode
+                        execution_mode=ml_execution_mode,
+                        attached_tp=attached_tp,
+                        attached_sl=attached_sl
                     )
                     ai_filter_info = ml_res.get("ai_filter_info")
                     if str(ml_execution_mode or 'basic').lower() == 'advanced':

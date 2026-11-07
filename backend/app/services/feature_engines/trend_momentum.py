@@ -7,6 +7,12 @@ def add_trend_momentum_features(df: pd.DataFrame) -> pd.DataFrame:
     Applies Advanced Trend & Momentum indicators to the dataset in a vectorized, RAM-efficient manner.
     Uses pandas-ta and numpy for calculation.
     """
+    orig_df = df
+    tmp_lc_cols = []
+    for uc, lc in (('Open', 'open'), ('High', 'high'), ('Low', 'low'), ('Close', 'close'), ('Volume', 'volume')):
+        if lc not in df.columns and uc in df.columns:
+            df[lc] = df[uc]
+            tmp_lc_cols.append(lc)
     try:
         # 1. Ichimoku Cloud
         ichimoku, _ = ta.ichimoku(df['high'], df['low'], df['close'])
@@ -116,5 +122,14 @@ def add_trend_momentum_features(df: pd.DataFrame) -> pd.DataFrame:
 
     except Exception as e:
         print(f"Error in trend_momentum feature engineering: {e}")
+    finally:
+        for lc in tmp_lc_cols:
+            df.drop(columns=[lc], inplace=True, errors='ignore')
+        if orig_df is not df:
+            for lc in tmp_lc_cols:
+                orig_df.drop(columns=[lc], inplace=True, errors='ignore')
+            for col in df.columns:
+                if col not in orig_df.columns:
+                    orig_df[col] = df[col]
         
     return df

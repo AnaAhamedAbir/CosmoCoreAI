@@ -6,6 +6,11 @@ def add_confluence_features(df: pd.DataFrame) -> pd.DataFrame:
     Applies Advanced Hedge Fund Confluence Logic.
     Safely wraps all conditions to avoid breaking the pipeline if specific features are disabled.
     """
+    tmp_lc_cols = []
+    for uc, lc in (('Open', 'open'), ('High', 'high'), ('Low', 'low'), ('Close', 'close'), ('Volume', 'volume')):
+        if lc not in df.columns and uc in df.columns:
+            df[lc] = df[uc]
+            tmp_lc_cols.append(lc)
     # Create empty columns first to ensure they exist for ML schema
     confluence_cols = [
         'Conf_SMA_RSI_Bull', 'Conf_SMA_RSI_Bear', 'Conf_EMA_MACD_Bull', 
@@ -139,4 +144,6 @@ def add_confluence_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Convert all confluence columns to float32
     df[confluence_cols] = df[confluence_cols].fillna(0).astype(np.float32)
+    for lc in tmp_lc_cols:
+        df.drop(columns=[lc], inplace=True, errors='ignore')
     return df

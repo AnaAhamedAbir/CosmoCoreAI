@@ -1429,7 +1429,9 @@ def _calculate_indicators(df: pd.DataFrame, indicators: list) -> pd.DataFrame:
                 vwap_feats = calculate_vwap_sd_features(df, anchor='Daily')
                 df['VWAP_Z_Score'] = vwap_feats['VWAP_Z_Score']
             elif ind in INDICATOR_MAP:
-                INDICATOR_MAP[ind](df)
+                res = INDICATOR_MAP[ind](df)
+                if isinstance(res, pd.DataFrame):
+                    df = res
         except Exception:
             pass
 

@@ -37,7 +37,8 @@ async def _send_trade_fired_notification(
     is_futures: bool = False,
     max_dev: float = None,
     contract_size: float = 1.0,
-    is_inverse: bool = False
+    is_inverse: bool = False,
+    ai_filter_info: str = None
 ):
     """Sends formatted Trade Fired alert to Telegram using its own dedicated DB session."""
     db = SessionLocal()
@@ -95,6 +96,7 @@ async def _send_trade_fired_notification(
             unit = "%" if mode == "percentage" else "$"
             sl_text = f"🛡️ Attached SL: `{val}{unit}` ({sl_type.replace('_', ' ').capitalize()})\n"
 
+        ai_text = f"🤖 AI Filter: `{ai_filter_info}` ✅\n" if ai_filter_info else ""
         speed_text = f"⏱ Execution Speed: `{latency_ms} ms` ⚡\n" if latency_ms > 0 else ""
 
         msg = (
@@ -108,6 +110,7 @@ async def _send_trade_fired_notification(
             f"{lev_text}"
             f"{tp_text}"
             f"{sl_text}"
+            f"{ai_text}"
             f"{speed_text}"
         )
         await NotificationService.send_message(db, user_id, msg, parse_mode="Markdown", alert_type="alert_manual_trade")
@@ -120,6 +123,7 @@ async def _send_trade_fired_notification(
 class ManualTradeService:
     _HEDGE_MODE_CACHE = {}  # { cache_key: (is_hedge, expire_timestamp) }
     _LEVERAGE_CACHE = {}    # { cache_key: (leverage, expire_timestamp) }
+    _ML_PREDICTOR_CACHE = {}  # { f"{model_id}_{symbol}": MLL2Predictor }
 
     @staticmethod
     async def _get_exchange(api_key_record: models.ApiKey, is_futures: bool):
@@ -591,6 +595,232 @@ class ManualTradeService:
             raise HTTPException(status_code=500, detail=f"Open Orders Error: {str(e)}")
 
     @staticmethod
+    async def _validate_with_ml_filter(
+        exchange,
+        symbol: str,
+        side: str,
+        ml_model_id: str,
+        bullish_thresh: float = 0.50,
+        bearish_thresh: float = 0.50,
+        execution_mode: str = "basic",
+        eval_price_override: float = None
+    ) -> dict:
+        """
+        Universal AI Entry Gatekeeper for Manual Trade & Emergency Force Orders.
+        Supports:
+          1) L2 Orderbook / Hybrid Deep / RL models via MLL2Predictor
+          2) OHLCV / Technical Indicator / Next-Gen models trained in Training Studio via ml_predictor.predict
+        Validates BUY orders against bullish_thresh and SELL orders (Spot Hold Sell or Futures Short) against bearish_thresh.
+        """
+        if not ml_model_id:
+            raise HTTPException(
+                status_code=400,
+                detail="AI Filter Error: Please select a trained ML Model from Registry or turn off the L2 ML Filter."
+            )
+
+        from app.strategies.helpers.ml_l2_predictor import MLL2Predictor
+
+        predictor_key = f"{ml_model_id}_{symbol}"
+        predictor = ManualTradeService._ML_PREDICTOR_CACHE.get(predictor_key)
+        if predictor is None:
+            predictor = MLL2Predictor(str(ml_model_id))
+            if getattr(predictor, 'is_loaded', False):
+                ManualTradeService._ML_PREDICTOR_CACHE[predictor_key] = predictor
+
+        l2_supported_features = {
+            'obi', 'spread', 'microprice', 'obi_ema_5', 'obi_std_20',
+            'spread_mean_10', 'micro_momentum_5', 'vwap_dist_20',
+            'trade_imbalance_1m', 'cvd_5m', 'vwap_deviation', 'vpin_proxy',
+            'price_impact', 'absorption_ratio', 'tape_speed_tps', 'large_lot_filter'
+        }
+
+        dataset_type = getattr(predictor, 'dataset_type', None)
+        indicators = getattr(predictor, 'indicators', None) or []
+        model_features = getattr(predictor, 'model_features', None) or []
+        has_non_l2_features = bool(model_features) and any(f not in l2_supported_features for f in model_features)
+
+        use_ohlcv_predictor = (
+            not getattr(predictor, 'is_loaded', False)
+            or dataset_type in ('ohlcv', 'historical_trades', 'forex')
+            or bool(indicators)
+            or has_non_l2_features
+        )
+
+        is_buy_side = str(side or 'buy').strip().lower() in ('buy', 'long')
+        exec_mode_lower = str(execution_mode or 'basic').strip().lower()
+        bull_t = float(bullish_thresh if bullish_thresh is not None else 0.50)
+        bear_t = float(bearish_thresh if bearish_thresh is not None else 0.50)
+
+        # Fetch live L2 orderbook for live mid_price (and L2 features if L2 model)
+        ml_ob = None
+        mid_p = float(eval_price_override) if (eval_price_override and float(eval_price_override) > 0) else 0.0
+        try:
+            ml_ob = await exchange.fetch_order_book(symbol, limit=20)
+            if ml_ob and ml_ob.get('bids') and ml_ob.get('asks'):
+                best_bid_p = float(ml_ob['bids'][0][0])
+                best_ask_p = float(ml_ob['asks'][0][0])
+                if mid_p <= 0:
+                    mid_p = (best_bid_p + best_ask_p) / 2.0
+        except Exception as ob_err:
+            if not use_ohlcv_predictor:
+                logger.error(f"ManualTrade ML Filter failed to fetch orderbook for {symbol}: {ob_err}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"AI Filter Error: Could not fetch live L2 Orderbook for {symbol}."
+                )
+
+        # --- Route A: OHLCV / Indicator / Next-Gen Model from Training Studio ---
+        if use_ohlcv_predictor:
+            from app.services import ml_predictor
+            from app.db.session import SessionLocal
+
+            def _run_ohlcv_sync():
+                t_db = SessionLocal()
+                try:
+                    return ml_predictor.predict(
+                        model_id=str(ml_model_id),
+                        symbol_override=symbol,
+                        db=t_db,
+                        price_point=mid_p if mid_p > 0 else None
+                    )
+                finally:
+                    t_db.close()
+
+            try:
+                pred_res = await asyncio.to_thread(_run_ohlcv_sync)
+            except Exception as pred_err:
+                logger.error(f"ManualTrade OHLCV ML Filter failed for {symbol}: {pred_err}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"AI Filter Error: Model inference failed for {symbol} ({str(pred_err)})."
+                )
+
+            sig = str(pred_res.get("signal", "HOLD")).upper()
+            conf = float(pred_res.get("confidence", 0.0))
+            model_label = getattr(predictor, 'model_name', None) or str(pred_res.get("algorithm", "AI Model"))
+            ai_sl = pred_res.get("sl")
+            ai_tp = pred_res.get("tp")
+
+            if is_buy_side:
+                is_valid = sig in ("BUY", "PUMP RISK") and conf >= bull_t
+                if not is_valid:
+                    conf_str = f"Signal: {sig} ({conf * 100:.1f}%) | Required BUY ≥ {bull_t * 100:.0f}%"
+                    logger.info(f"🚫 [ManualTrade AI Filter] Denied BUY on {symbol} by {model_label} ({conf_str})")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"🚫 AI Filter Denied BUY: '{model_label}' predicts unfavorable condition ({conf_str})."
+                    )
+                ai_filter_info = f"{model_label} BUY {conf * 100:.1f}% (≥{bull_t * 100:.0f}%)"
+            else:
+                is_valid = sig in ("SELL", "CRASH RISK") and conf >= bear_t
+                if not is_valid:
+                    conf_str = f"Signal: {sig} ({conf * 100:.1f}%) | Required SELL ≥ {bear_t * 100:.0f}%"
+                    logger.info(f"🚫 [ManualTrade AI Filter] Denied SELL on {symbol} by {model_label} ({conf_str})")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"🚫 AI Filter Denied SELL: '{model_label}' predicts unfavorable condition ({conf_str})."
+                    )
+                ai_filter_info = f"{model_label} SELL {conf * 100:.1f}% (≥{bear_t * 100:.0f}%)"
+
+            out_sl = float(ai_sl) if (exec_mode_lower == 'advanced' and ai_sl and float(ai_sl) > 0) else None
+            out_tp = float(ai_tp) if (exec_mode_lower == 'advanced' and ai_tp and float(ai_tp) > 0) else None
+            if exec_mode_lower == 'advanced' and (out_sl is None or out_tp is None) and mid_p > 0:
+                try:
+                    from app.strategies.helpers.ml_advanced_setup import MLAdvancedSetupGenerator
+                    from types import SimpleNamespace
+                    gen = MLAdvancedSetupGenerator(SimpleNamespace(indicators={}))
+                    setup = gen.generate_setup(mid_p, "long" if is_buy_side else "short", conf)
+                    if setup and setup.get("sl_price") and setup.get("tp_price"):
+                        out_sl = float(setup["sl_price"])
+                        out_tp = float(setup["tp_price"])
+                except Exception:
+                    pass
+
+            logger.info(f"🤖 ✅ [ManualTrade AI Filter] Permitted {side.upper()} on {symbol} | {ai_filter_info}")
+            return {"ai_filter_info": ai_filter_info, "sl_price": out_sl, "tp_price": out_tp}
+
+        # --- Route B: L2 Orderbook / Hybrid Deep / RL Model via MLL2Predictor ---
+        try:
+            await predictor.start_background_engine(symbol)
+        except Exception as bg_err:
+            logger.debug(f"ManualTrade ML background engine start skipped: {bg_err}")
+
+        if not ml_ob or not ml_ob.get('bids') or not ml_ob.get('asks'):
+            raise HTTPException(
+                status_code=400,
+                detail=f"AI Filter Error: Empty L2 Orderbook for {symbol}."
+            )
+
+        predictor.bullish_threshold = bull_t
+        predictor.bearish_threshold = bear_t
+
+        if hasattr(predictor, 'update_l2_memory'):
+            try:
+                predictor.update_l2_memory(ml_ob)
+            except Exception as mem_err:
+                logger.debug(f"ManualTrade ML update_l2_memory warning: {mem_err}")
+
+        out_sl = None
+        out_tp = None
+        if exec_mode_lower == 'advanced':
+            from types import SimpleNamespace
+            adv_setup = await predictor.predict_advanced(ml_ob, mid_p, side, SimpleNamespace(indicators={}))
+            is_ai_valid = bool(adv_setup and adv_setup.get("is_valid"))
+            if is_ai_valid:
+                if adv_setup.get("sl_price") and float(adv_setup.get("sl_price")) > 0:
+                    out_sl = float(adv_setup["sl_price"])
+                if adv_setup.get("tp_price") and float(adv_setup.get("tp_price")) > 0:
+                    out_tp = float(adv_setup["tp_price"])
+        else:
+            is_ai_valid = await predictor.predict(ml_ob, mid_p, side)
+
+        raw_score = float(getattr(predictor, 'last_prediction_score', 0.5))
+        model_label = getattr(predictor, 'model_name', None) or getattr(predictor, 'model_type', 'AI Model')
+        is_prob_model = (
+            predictor.prediction_target in ["classification", "advanced_setup"]
+            or predictor.model_type in ["PPO-RL", "SAC-RL", "A2C-RL", "DQN-RL"]
+        )
+
+        if not is_ai_valid:
+            if is_buy_side:
+                if is_prob_model:
+                    conf_str = f"Bullish Score: {raw_score * 100:.1f}% < Threshold {predictor.bullish_threshold * 100:.0f}%"
+                else:
+                    conf_str = f"Predicted: {raw_score:.4f} <= Price: {mid_p:.4f}"
+                logger.info(f"🚫 [ManualTrade AI Filter] Denied BUY on {symbol} by {model_label} ({conf_str})")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"🚫 AI Filter Denied BUY: '{model_label}' predicts unfavorable/bearish condition ({conf_str})."
+                )
+            else:
+                if is_prob_model:
+                    bearish_pct = (1.0 - raw_score) * 100
+                    conf_str = f"Bearish Score: {bearish_pct:.1f}% < Threshold {predictor.bearish_threshold * 100:.0f}%"
+                else:
+                    conf_str = f"Predicted: {raw_score:.4f} >= Price: {mid_p:.4f}"
+                logger.info(f"🚫 [ManualTrade AI Filter] Denied SELL on {symbol} by {model_label} ({conf_str})")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"🚫 AI Filter Denied SELL: '{model_label}' predicts unfavorable/bullish condition ({conf_str})."
+                )
+        else:
+            if is_buy_side:
+                ai_filter_info = (
+                    f"{model_label} Bullish {raw_score * 100:.1f}% (≥{predictor.bullish_threshold * 100:.0f}%)"
+                    if is_prob_model else f"{model_label} Bullish ({raw_score:.4f})"
+                )
+            else:
+                bearish_pct = (1.0 - raw_score) * 100
+                ai_filter_info = (
+                    f"{model_label} Bearish {bearish_pct:.1f}% (≥{predictor.bearish_threshold * 100:.0f}%)"
+                    if is_prob_model else f"{model_label} Bearish ({raw_score:.4f})"
+                )
+            if out_sl and out_tp:
+                ai_filter_info += f" | Dynamic TP: {out_tp:.5f}, SL: {out_sl:.5f}"
+            logger.info(f"🤖 ✅ [ManualTrade AI Filter] Permitted {side.upper()} on {symbol} | {ai_filter_info}")
+            return {"ai_filter_info": ai_filter_info, "sl_price": out_sl, "tp_price": out_tp}
+
+    @staticmethod
     async def place_manual_trade(db: Session, user_id: int, order_req, start_time: float = 0.0) -> dict:
         """
         Exchange Connection Pool ব্যবহার করে ultra-fast order execution।
@@ -624,6 +854,53 @@ class ManualTradeService:
             # Leverage and Margin Mode (Futures)
             params = getattr(order_req, 'params', {}) or {}
             ex_params = {} # arguments passed to create_order
+
+            # --- L2 Machine Learning Filter Gatekeeper ---
+            ai_filter_info = None
+            enable_ml_filter = bool(getattr(order_req, 'enable_ml_filter', False) or params.get('enableMlFilter', False))
+            ml_model_id = getattr(order_req, 'ml_model_id', None) or params.get('mlModelId', None)
+            ml_exec_mode = getattr(order_req, 'ml_execution_mode', None) or params.get('mlExecutionMode', 'basic')
+            is_reduce_only_check = bool(params.get('reduceOnly', False)) if is_futures else False
+
+            if enable_ml_filter and not is_reduce_only_check:
+                bullish_thresh = getattr(order_req, 'ml_bullish_threshold', None)
+                if bullish_thresh is None:
+                    bullish_thresh = params.get('mlBullishThreshold', 0.50)
+                bearish_thresh = getattr(order_req, 'ml_bearish_threshold', None)
+                if bearish_thresh is None:
+                    bearish_thresh = params.get('mlBearishThreshold', 0.50)
+
+                eval_p = getattr(order_req, 'price', None) if str(getattr(order_req, 'type', '')).lower() == 'limit' else None
+                ml_res = await ManualTradeService._validate_with_ml_filter(
+                    exchange=exchange,
+                    symbol=order_req.symbol,
+                    side=order_req.side,
+                    ml_model_id=ml_model_id,
+                    bullish_thresh=bullish_thresh,
+                    bearish_thresh=bearish_thresh,
+                    execution_mode=ml_exec_mode,
+                    eval_price_override=eval_p
+                )
+                ai_filter_info = ml_res.get("ai_filter_info")
+                if str(ml_exec_mode or 'basic').lower() == 'advanced':
+                    if ml_res.get("tp_price") and float(ml_res["tp_price"]) > 0:
+                        safe_tp = bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, float(ml_res["tp_price"]))
+                        if getattr(order_req, 'attached_tp', None) is not None:
+                            order_req.attached_tp.enabled = True
+                            order_req.attached_tp.mode = 'absolute'
+                            order_req.attached_tp.value = safe_tp
+                        else:
+                            from app.api.v1.endpoints.trading import AttachedTPConfig
+                            order_req.attached_tp = AttachedTPConfig(enabled=True, mode='absolute', value=safe_tp)
+                    if ml_res.get("sl_price") and float(ml_res["sl_price"]) > 0:
+                        safe_sl = bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, float(ml_res["sl_price"]))
+                        if getattr(order_req, 'attached_sl', None) is not None:
+                            order_req.attached_sl.enabled = True
+                            order_req.attached_sl.mode = 'absolute'
+                            order_req.attached_sl.value = safe_sl
+                        else:
+                            from app.api.v1.endpoints.trading import AttachedSLConfig
+                            order_req.attached_sl = AttachedSLConfig(enabled=True, mode='absolute', value=safe_sl)
 
             if is_futures:
                 leverage = params.get('leverage')
@@ -824,7 +1101,8 @@ class ManualTradeService:
                         is_futures=is_futures,
                         max_dev=max_dev,
                         contract_size=contract_size,
-                        is_inverse=is_inverse
+                        is_inverse=is_inverse,
+                        ai_filter_info=ai_filter_info
                     )
                 )
 
@@ -835,6 +1113,7 @@ class ManualTradeService:
                     "side": order_req.side.lower(),
                     "amount": order_req.amount,
                     "type": "smart_peg",
+                    "ai_filter_info": ai_filter_info,
                     "message": f"⚡ Smart Peg Entry initiated for {order_req.symbol} ({order_req.side.upper()})"
                 }
 
@@ -1155,7 +1434,8 @@ class ManualTradeService:
                         margin_mode=params.get('marginMode') if is_futures else None,
                         is_futures=is_futures,
                         contract_size=contract_size,
-                        is_inverse=is_inverse
+                        is_inverse=is_inverse,
+                        ai_filter_info=ai_filter_info
                     )
                 )
             except Exception as notify_err:
@@ -1197,6 +1477,7 @@ class ManualTradeService:
                 "side": response.get('side'),
                 "amount": response.get('amount'),
                 "price": response.get('price') or response.get('average') or req_price,
+                "ai_filter_info": ai_filter_info,
                 "message": "Order placed successfully"
             }
 
@@ -1448,6 +1729,11 @@ class ManualTradeService:
         target_order_id: str = None,
         target_order_amount: float = None,
         target_order_mode: str = None,
+        enable_ml_filter: bool = False,
+        ml_model_id: str = None,
+        ml_execution_mode: str = 'basic',
+        ml_bullish_threshold: float = 0.50,
+        ml_bearish_threshold: float = 0.50,
         start_time: float = None
     ) -> dict:
         """
@@ -1499,6 +1785,51 @@ class ManualTradeService:
             cancelled_open_orders = 0
             resolved_specific_amt = float(target_order_amount or 0.0)
             is_exit_order = str(target_order_mode or '').upper() in ('TP', 'STOP', 'SL', 'SMART_CHASE', 'TRAILING', 'TRAILING_CHASE', 'FIXED')
+            ai_filter_info = None
+
+            # --- L2 Machine Learning Filter Gatekeeper (Before cancelling open orders) ---
+            if enable_ml_filter and not reduce_only and not is_exit_order:
+                is_closing_opp_pos = False
+                if is_futures:
+                    try:
+                        p_chk = await ManualTradeService.get_active_position(db, user_id, api_key_id, symbol)
+                        p_amt = float((p_chk or {}).get('amount') or 0.0)
+                        p_side = str((p_chk or {}).get('side') or 'none').lower()
+                        if p_amt > 0 and ((p_side == 'long' and side_lower == 'sell') or (p_side == 'short' and side_lower == 'buy')):
+                            is_closing_opp_pos = True
+                    except Exception:
+                        pass
+
+                if not is_closing_opp_pos:
+                    ml_res = await ManualTradeService._validate_with_ml_filter(
+                        exchange=exchange,
+                        symbol=symbol,
+                        side=side_lower,
+                        ml_model_id=ml_model_id,
+                        bullish_thresh=ml_bullish_threshold,
+                        bearish_thresh=ml_bearish_threshold,
+                        execution_mode=ml_execution_mode
+                    )
+                    ai_filter_info = ml_res.get("ai_filter_info")
+                    if str(ml_execution_mode or 'basic').lower() == 'advanced':
+                        if ml_res.get("tp_price") and float(ml_res["tp_price"]) > 0:
+                            safe_tp = bracket_order_service._safe_price_to_precision(exchange, symbol, float(ml_res["tp_price"]))
+                            if attached_tp is not None:
+                                attached_tp.enabled = True
+                                attached_tp.mode = 'absolute'
+                                attached_tp.value = safe_tp
+                            else:
+                                from app.api.v1.endpoints.trading import AttachedTPConfig
+                                attached_tp = AttachedTPConfig(enabled=True, mode='absolute', value=safe_tp)
+                        if ml_res.get("sl_price") and float(ml_res["sl_price"]) > 0:
+                            safe_sl = bracket_order_service._safe_price_to_precision(exchange, symbol, float(ml_res["sl_price"]))
+                            if attached_sl is not None:
+                                attached_sl.enabled = True
+                                attached_sl.mode = 'absolute'
+                                attached_sl.value = safe_sl
+                            else:
+                                from app.api.v1.endpoints.trading import AttachedSLConfig
+                                attached_sl = AttachedSLConfig(enabled=True, mode='absolute', value=safe_sl)
 
             if specific_oid:
                 # --- TARGETED SINGLE ORDER / BRACKET CANCELLATION ---
@@ -1831,7 +2162,8 @@ class ManualTradeService:
                         is_futures=is_futures,
                         max_dev=10.0,
                         contract_size=contract_size,
-                        is_inverse=is_inverse
+                        is_inverse=is_inverse,
+                        ai_filter_info=ai_filter_info
                     )
                 )
 
@@ -1902,7 +2234,8 @@ class ManualTradeService:
                     margin_mode=margin_mode if is_futures else None,
                     is_futures=is_futures,
                     contract_size=contract_size,
-                    is_inverse=is_inverse
+                    is_inverse=is_inverse,
+                    ai_filter_info=ai_filter_info
                 )
             )
 

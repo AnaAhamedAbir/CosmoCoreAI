@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 _MODEL_CACHE = {}
 _SCALER_CACHE = {}
 _METADATA_CACHE = {}
+_MODEL_TYPE_CACHE = {}
+_PRED_TARGET_CACHE = {}
+_MODEL_NAME_CACHE = {}
+_DATASET_TYPE_CACHE = {}
+_INDICATORS_CACHE = {}
 # -------------------------------------------------
 
 class MLL2Predictor:
@@ -36,6 +41,9 @@ class MLL2Predictor:
         self.ai_model_id = ai_model_id
         self.model = None
         self.model_type = None
+        self.model_name = None
+        self.dataset_type = None
+        self.indicators = []
         self.prediction_target = "classification"  # default
         self.model_features = None
         self.is_loaded = False
@@ -68,6 +76,7 @@ class MLL2Predictor:
             return
         from app.strategies.helpers.background_feature_engine import BackgroundFeatureEngine
         self.bg_engine = BackgroundFeatureEngine(symbol, self.model_features)
+        await self.bg_engine.prefill_once()
         await self.bg_engine.start()
 
     async def stop_background_engine(self):
@@ -85,6 +94,11 @@ class MLL2Predictor:
             self.model = _MODEL_CACHE[self.ai_model_id]
             self.scaler = _SCALER_CACHE.get(self.ai_model_id)
             self.model_features = _METADATA_CACHE.get(self.ai_model_id)
+            self.model_type = _MODEL_TYPE_CACHE.get(self.ai_model_id)
+            self.prediction_target = _PRED_TARGET_CACHE.get(self.ai_model_id, "classification")
+            self.model_name = _MODEL_NAME_CACHE.get(self.ai_model_id)
+            self.dataset_type = _DATASET_TYPE_CACHE.get(self.ai_model_id)
+            self.indicators = _INDICATORS_CACHE.get(self.ai_model_id, [])
             self.is_loaded = True
             logger.info(f"⚡ [Cache Hit] Loaded L2 AI Model {self.ai_model_id} from RAM instantly.")
             return
@@ -102,6 +116,7 @@ class MLL2Predictor:
                 return
 
             self.model_type = db_model.model_type
+            self.model_name = db_model.name
             file_path = db_version.file_path
             
             # Fix DB bug where file_path points to scaler instead of model
@@ -123,13 +138,21 @@ class MLL2Predictor:
             
             # Attempt to load metadata (features list and prediction target)
             self.model_features = None
-            metadata_path = file_path.replace(".zip", ".json").replace(".pkl", ".json").replace(".pt", ".json")
-            if os.path.exists(metadata_path):
+            model_dir = os.path.dirname(file_path)
+            candidate_meta_paths = [
+                getattr(db_version, "metadata_path", None),
+                file_path.replace(".zip", ".json").replace(".pkl", ".json").replace(".pt", ".json"),
+                os.path.join(model_dir, "metadata.json")
+            ]
+            metadata_path = next((p for p in candidate_meta_paths if p and os.path.exists(p)), None)
+            if metadata_path:
                 import json
                 try:
                     with open(metadata_path, "r") as f:
                         meta = json.load(f)
                         self.model_features = meta.get("features")
+                        self.dataset_type = meta.get("dataset_type")
+                        self.indicators = meta.get("indicators", [])
                         # Override prediction target if specified in metadata
                         if "prediction_target" in meta:
                             self.prediction_target = meta.get("prediction_target")
@@ -139,7 +162,6 @@ class MLL2Predictor:
                     logger.warning(f"MLL2Predictor: Failed to load metadata: {e}")
 
             # Attempt to load scaler
-            model_dir = os.path.dirname(file_path)
             model_basename = os.path.basename(file_path)
             base_name_without_ext = os.path.splitext(model_basename)[0]
             
@@ -148,15 +170,18 @@ class MLL2Predictor:
             potential_scalers = [
                 os.path.join(model_dir, f"scaler_train_{timestamp}.pkl"),
                 os.path.join(model_dir, f"{base_name_without_ext}.scaler"),
-                os.path.join(model_dir, "scaler.pkl")
+                os.path.join(model_dir, "scaler.pkl"),
+                os.path.join(model_dir, "model.scaler")
             ]
             
             scaler_path = next((p for p in potential_scalers if os.path.exists(p)), None)
             
             if scaler_path:
                 try:
-                    self.scaler = joblib.load(scaler_path)
-                    logger.info(f"MLL2Predictor: Scaler loaded successfully from {scaler_path}.")
+                    loaded_scaler = joblib.load(scaler_path)
+                    self.scaler = None if (isinstance(loaded_scaler, str) and loaded_scaler == "none") else loaded_scaler
+                    if self.scaler is not None:
+                        logger.info(f"MLL2Predictor: Scaler loaded successfully from {scaler_path}.")
                 except Exception as e:
                     logger.warning(f"MLL2Predictor: Failed to load scaler from {scaler_path}: {e}")
 
@@ -215,6 +240,11 @@ class MLL2Predictor:
                 _MODEL_CACHE[self.ai_model_id] = self.model
                 _SCALER_CACHE[self.ai_model_id] = self.scaler
                 _METADATA_CACHE[self.ai_model_id] = self.model_features
+                _MODEL_TYPE_CACHE[self.ai_model_id] = self.model_type
+                _PRED_TARGET_CACHE[self.ai_model_id] = self.prediction_target
+                _MODEL_NAME_CACHE[self.ai_model_id] = self.model_name
+                _DATASET_TYPE_CACHE[self.ai_model_id] = self.dataset_type
+                _INDICATORS_CACHE[self.ai_model_id] = self.indicators
                 logger.info(f"✅ L2 AI Model {self.model_type} loaded successfully and cached.")
                 
         except Exception as e:
@@ -504,7 +534,13 @@ class MLL2Predictor:
                     self._last_tp_dist = float(preds[2])
                 elif self.prediction_target == "classification" and hasattr(self.model, "predict_proba"):
                     try:
-                        pred = float(self.model.predict_proba(features)[0][1])
+                        probas = self.model.predict_proba(features)[0]
+                        if len(probas) == 3:
+                            # 3-class Triple Barrier: [0]=SELL (Bearish), [1]=HOLD, [2]=BUY (Bullish)
+                            is_long_req = (side.lower() in ("long", "buy"))
+                            pred = float(probas[2]) if is_long_req else (1.0 - float(probas[0]))
+                        else:
+                            pred = float(probas[1])
                     except Exception:
                         pred = float(self.model.predict(features)[0])
                 else:

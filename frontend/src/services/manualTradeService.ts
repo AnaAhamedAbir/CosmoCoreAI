@@ -46,6 +46,11 @@ export interface OrderPayload {
   };
   use_native_tp_sl?: boolean;
   iceberg_qty?: number;
+  enable_ml_filter?: boolean;
+  ml_model_id?: string;
+  ml_execution_mode?: 'basic' | 'advanced';
+  ml_bullish_threshold?: number;
+  ml_bearish_threshold?: number;
 }
 
 export interface ApiKey {
@@ -172,6 +177,11 @@ export const manualTradeService = {
     reduceOnly?: boolean;
     attached_tp?: OrderPayload['attached_tp'];
     attached_sl?: OrderPayload['attached_sl'];
+    enable_ml_filter?: boolean;
+    ml_model_id?: string;
+    ml_execution_mode?: 'basic' | 'advanced';
+    ml_bullish_threshold?: number;
+    ml_bearish_threshold?: number;
   }) => {
     const response = await api.post('/trading/emergency-force-order', {
       api_key_id: payload.apiKeyId,
@@ -187,7 +197,12 @@ export const manualTradeService = {
       margin_mode: payload.marginMode,
       reduce_only: Boolean(payload.reduceOnly),
       attached_tp: payload.attached_tp,
-      attached_sl: payload.attached_sl
+      attached_sl: payload.attached_sl,
+      enable_ml_filter: Boolean(payload.enable_ml_filter),
+      ml_model_id: payload.ml_model_id,
+      ml_execution_mode: payload.ml_execution_mode || 'basic',
+      ml_bullish_threshold: payload.ml_bullish_threshold,
+      ml_bearish_threshold: payload.ml_bearish_threshold
     });
     return response.data;
   }

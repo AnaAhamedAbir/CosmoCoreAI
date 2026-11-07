@@ -54,6 +54,11 @@ class OrderRequest(BaseModel):
     attached_sl: Optional[AttachedSLConfig] = None
     use_native_tp_sl: Optional[bool] = False
     iceberg_qty: Optional[float] = None
+    enable_ml_filter: Optional[bool] = False
+    ml_model_id: Optional[str] = None
+    ml_execution_mode: Optional[str] = 'basic'
+    ml_bullish_threshold: Optional[float] = 0.50
+    ml_bearish_threshold: Optional[float] = 0.50
 
 class ConnectionTestRequest(BaseModel):
     exchange_id: str
@@ -513,6 +518,11 @@ class EmergencyForceOrderRequest(BaseModel):
     reduce_only: Optional[bool] = False
     attached_tp: Optional[AttachedTPConfig] = None
     attached_sl: Optional[AttachedSLConfig] = None
+    enable_ml_filter: Optional[bool] = False
+    ml_model_id: Optional[str] = None
+    ml_execution_mode: Optional[str] = 'basic'
+    ml_bullish_threshold: Optional[float] = 0.50
+    ml_bearish_threshold: Optional[float] = 0.50
 
 @router.post("/emergency-force-order")
 async def emergency_force_order_endpoint(
@@ -546,6 +556,11 @@ async def emergency_force_order_endpoint(
             reduce_only=bool(req.reduce_only),
             attached_tp=req.attached_tp,
             attached_sl=req.attached_sl,
+            enable_ml_filter=bool(req.enable_ml_filter),
+            ml_model_id=req.ml_model_id,
+            ml_execution_mode=req.ml_execution_mode or 'basic',
+            ml_bullish_threshold=req.ml_bullish_threshold if req.ml_bullish_threshold is not None else 0.50,
+            ml_bearish_threshold=req.ml_bearish_threshold if req.ml_bearish_threshold is not None else 0.50,
             start_time=start_time
         )
     except HTTPException as he:

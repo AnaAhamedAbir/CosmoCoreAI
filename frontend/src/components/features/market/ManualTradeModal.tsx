@@ -5,6 +5,8 @@ import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square
 import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
 import { notificationService } from '../../../services/notification';
+import { mlModelsService } from '../../../services/mlModelsService';
+import { CustomMLModel } from '../../../types';
 
 const MotionButton = motion.button as any;
 const MotionDiv = motion.div as any;
@@ -161,6 +163,42 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [icebergMode, setIcebergMode] = useState<'percent' | 'qty'>('percent');
   const [icebergPercent, setIcebergPercent] = useState<string>('20');
   const [icebergCustomQty, setIcebergCustomQty] = useState<string>('');
+
+  // L2 Machine Learning Filter state (from ML Registry)
+  const [mlModels, setMlModels] = useState<CustomMLModel[]>([]);
+  const [isLoadingMlModels, setIsLoadingMlModels] = useState<boolean>(false);
+  const [mlFilterConfig, setMlFilterConfig] = useState({
+    enabled: false,
+    modelId: '',
+    executionMode: 'basic' as 'basic' | 'advanced',
+    bullishThreshold: 0.50,
+    bearishThreshold: 0.50
+  });
+
+  const fetchMlModels = React.useCallback(async () => {
+    setIsLoadingMlModels(true);
+    try {
+      const models = await mlModelsService.getModels();
+      const list = models || [];
+      setMlModels(list);
+      if (list.length > 0) {
+        setMlFilterConfig(prev => ({
+          ...prev,
+          modelId: prev.modelId && list.some(m => m.id === prev.modelId) ? prev.modelId : list[0].id
+        }));
+      }
+    } catch {
+      // ignore silently
+    } finally {
+      setIsLoadingMlModels(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      fetchMlModels();
+    }
+  }, [isOpen, fetchMlModels]);
 
   // Poll active software brackets and open exchange orders
   const fetchActiveBrackets = React.useCallback(async (forceOpenOrders = false) => {
@@ -430,7 +468,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         marginMode: isFutures ? marginMode : undefined,
         reduceOnly: isFutures ? reduceOnly : false,
         attached_tp: attachedTpPayload,
-        attached_sl: attachedSlPayload
+        attached_sl: attachedSlPayload,
+        enable_ml_filter: Boolean(mlFilterConfig.enabled && mlFilterConfig.modelId && !(isFutures && reduceOnly)),
+        ml_model_id: mlFilterConfig.enabled ? mlFilterConfig.modelId : undefined,
+        ml_execution_mode: mlFilterConfig.executionMode,
+        ml_bullish_threshold: mlFilterConfig.bullishThreshold,
+        ml_bearish_threshold: mlFilterConfig.bearishThreshold
       });
 
       toast.success(
@@ -622,7 +665,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       window.cancelAnimationFrame(rafId);
       window.removeEventListener('resize', enforceBounds);
     };
-  }, [isOpen, isMinimized, modalLeft, tpConfig.enabled, slConfig.enabled, isIceberg, clampModalOffset]);
+  }, [isOpen, isMinimized, modalLeft, tpConfig.enabled, slConfig.enabled, mlFilterConfig.enabled, isIceberg, clampModalOffset]);
 
   // Ultra-Smooth 120fps GPU Mouse & Touch Drag Handler (Zero React re-renders & zero layout thrashing during drag)
   const handleStartDrag = React.useCallback((e: React.MouseEvent | React.TouchEvent) => {
@@ -1121,6 +1164,14 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       return;
     }
 
+    if (mlFilterConfig.enabled && !(isFutures && reduceOnly)) {
+      if (!mlFilterConfig.modelId) {
+        toast.error('🤖 Please select a trained ML Model from Registry for the L2 ML Filter, or turn off the filter.');
+        setIsMinimized(false);
+        return;
+      }
+    }
+
     const refEntryPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
 
     if (tpConfig.enabled) {
@@ -1318,8 +1369,21 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         }
       }
 
-      await manualTradeService.placeOrder(payload);
-      toast.success(orderType === 'SmartPeg' ? `⚡ ${side} Smart Peg Entry active for ${activeSymbol}` : `✅ ${side} ${orderType} order placed for ${activeSymbol}`);
+      if (mlFilterConfig.enabled && mlFilterConfig.modelId && !(isFutures && reduceOnly)) {
+        payload.enable_ml_filter = true;
+        payload.ml_model_id = mlFilterConfig.modelId;
+        payload.ml_execution_mode = mlFilterConfig.executionMode;
+        payload.ml_bullish_threshold = mlFilterConfig.bullishThreshold;
+        payload.ml_bearish_threshold = mlFilterConfig.bearishThreshold;
+      }
+
+      const orderRes = await manualTradeService.placeOrder(payload);
+      const aiNote = orderRes?.ai_filter_info ? ` [🤖 ${orderRes.ai_filter_info}]` : '';
+      toast.success(
+        orderType === 'SmartPeg'
+          ? `⚡ ${side} Smart Peg Entry active for ${activeSymbol}${aiNote}`
+          : `✅ ${side} ${orderType} order placed for ${activeSymbol}${aiNote}`
+      );
 
       // Auto-refresh balance & open orders immediately after order placement, followed by staggered syncs
       fetchActiveBrackets(true);
@@ -1335,7 +1399,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     } catch (error: any) {
       // BUG-02 fix: Read FastAPI detail message if available
       const errMsg = error?.response?.data?.detail || error?.message || 'Unknown error occurred';
-      toast.error(`❌ Order failed: ${errMsg}`);
+      if (typeof errMsg === 'string' && errMsg.includes('AI Filter')) {
+        toast.error(errMsg, { duration: 5000 });
+      } else {
+        toast.error(`❌ Order failed: ${errMsg}`);
+      }
     } finally {
       // BUG-02 fix: Always reset submitting state regardless of outcome
       setIsSubmitting(false);
@@ -1517,6 +1585,14 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                         {slConfig.enabled && (
                           <span className="text-[8px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono font-bold leading-tight">
                             SL
+                          </span>
+                        )}
+                        {mlFilterConfig.enabled && (
+                          <span
+                            className="text-[8px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight"
+                            title="L2 Machine Learning Entry Filter Active"
+                          >
+                            AI
                           </span>
                         )}
                       </div>
@@ -1701,6 +1777,90 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           title={`Order Size: ${sliderPercentValue}%`}
                         />
                       </div>
+                    </div>
+
+                    {/* Row 2.5: Compact AI ML Filter & Model Selector Bar in Minimized HUD */}
+                    <div
+                      data-no-drag="true"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className={`flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg border transition-all ${
+                        mlFilterConfig.enabled
+                          ? 'bg-blue-950/40 border-blue-500/45 shadow-[0_0_10px_rgba(59,130,246,0.15)]'
+                          : 'bg-white/[0.02] border-white/10'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMlFilterConfig(prev => ({
+                            ...prev,
+                            enabled: !prev.enabled,
+                            modelId: !prev.enabled && !prev.modelId && mlModels.length > 0 ? mlModels[0].id : prev.modelId
+                          }));
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className={`px-1.5 py-0.5 rounded text-[8.5px] font-mono font-extrabold uppercase tracking-wider border transition-all cursor-pointer shrink-0 flex items-center gap-1 ${
+                          mlFilterConfig.enabled
+                            ? 'bg-blue-600/30 border-blue-400 text-blue-200 shadow-[0_0_8px_rgba(59,130,246,0.4)]'
+                            : 'bg-black/40 border-white/15 text-gray-400 hover:text-white'
+                        }`}
+                        title="Toggle L2 / Training Studio Machine Learning Entry Filter"
+                      >
+                        <span>🤖 AI {mlFilterConfig.enabled ? 'ON' : 'OFF'}</span>
+                      </button>
+
+                      <div className="relative flex-1 min-w-0">
+                        <select
+                          value={mlFilterConfig.modelId}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const val = e.target.value;
+                            setMlFilterConfig(prev => ({
+                              ...prev,
+                              modelId: val,
+                              enabled: Boolean(val) ? true : prev.enabled
+                            }));
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="w-full appearance-none bg-[#050811]/95 hover:bg-[#080d1a] text-blue-200 font-mono text-[9px] font-bold rounded border border-blue-500/30 focus:border-blue-400 pl-1.5 pr-4 py-0.5 truncate cursor-pointer focus:outline-none transition-colors"
+                          title="Select Trained ML Model from ML Registry"
+                        >
+                          <option value="" className="bg-[#070b14] text-gray-400">
+                            {mlModels.length === 0 ? 'No ML Registry Models' : '-- Select ML Model --'}
+                          </option>
+                          {mlModels.map((m) => (
+                            <option key={m.id} value={m.id} className="bg-[#070b14] text-white font-mono">
+                              {`${m.name} (${m.modelType})`}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-2.5 h-2.5 text-blue-400 pointer-events-none absolute right-1 top-1/2 -translate-y-1/2" />
+                      </div>
+
+                      {mlFilterConfig.enabled && (
+                        <span
+                          className="text-[8px] font-mono font-bold px-1 py-0.5 rounded bg-black/50 border border-blue-500/30 text-blue-300 shrink-0"
+                          title="Bullish BUY Threshold / Bearish SELL Threshold"
+                        >
+                          B:{(mlFilterConfig.bullishThreshold * 100).toFixed(0)}% S:{(mlFilterConfig.bearishThreshold * 100).toFixed(0)}%
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fetchMlModels();
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="p-0.5 rounded bg-white/[0.04] hover:bg-white/10 border border-white/10 text-gray-400 hover:text-blue-300 transition-colors cursor-pointer shrink-0"
+                        title="Refresh ML Models from Registry"
+                      >
+                        <RefreshCw className={`w-2.5 h-2.5 ${isLoadingMlModels ? 'animate-spin text-blue-400' : ''}`} />
+                      </button>
                     </div>
 
                     {/* Row 3: Sleek Single-Line Quick Buy & Sell Execution Buttons */}
@@ -2751,6 +2911,187 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                 </div>
               )}
 
+              {/* L2 / Training Studio Machine Learning Filter Panel (Prominent Top Placement) */}
+              <div className={`space-y-2.5 p-3 rounded-lg border transition-all ${mlFilterConfig.enabled ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.12)]' : 'bg-black/30 border-blue-500/20'}`}>
+                <div
+                  className="flex justify-between items-center cursor-pointer group"
+                  onClick={() =>
+                    setMlFilterConfig(prev => ({
+                      ...prev,
+                      enabled: !prev.enabled,
+                      modelId: !prev.enabled && !prev.modelId && mlModels.length > 0 ? mlModels[0].id : prev.modelId
+                    }))
+                  }
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500/25 text-blue-300 border border-blue-400/50' : 'bg-white/5 text-blue-400/70'}`}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                      </svg>
+                    </div>
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-gray-200 group-hover:text-white transition-colors">
+                          L2 Machine Learning Filter
+                        </span>
+                        <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${mlFilterConfig.enabled ? 'bg-blue-500/30 text-blue-200 border border-blue-400/40' : 'bg-white/5 text-gray-400'}`}>
+                          {mlFilterConfig.enabled ? 'ACTIVE' : 'OFF'}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-gray-400">
+                        🤖 Filter {tradeSide.toUpperCase()} entry using Training Studio / ML Registry model
+                      </span>
+                    </div>
+                  </div>
+                  <div className={`relative w-8 h-4 rounded-full transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500' : 'bg-gray-600'}`}>
+                    <MotionDiv
+                      className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                      animate={{ x: mlFilterConfig.enabled ? 16 : 0 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    />
+                  </div>
+                </div>
+
+                {/* Always-Visible ML Registry Model Selector Dropdown */}
+                <div className="bg-black/45 p-2 rounded-lg border border-blue-500/25 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                      Select Trained Model (ML Registry)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fetchMlModels();
+                      }}
+                      className="p-1 rounded bg-white/5 hover:bg-blue-500/20 text-gray-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1 text-[9px]"
+                      title="Refresh Models from ML Registry"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isLoadingMlModels ? 'animate-spin text-blue-400' : ''}`} />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
+
+                  {mlModels.length === 0 ? (
+                    <p className="text-[10px] text-amber-400/90 italic py-1">
+                      No models found in ML Registry. Train & save a model in Training Studio first.
+                    </p>
+                  ) : (
+                    <select
+                      className="w-full bg-black border border-blue-500/30 rounded-lg py-1.5 px-2.5 text-white outline-none focus:border-blue-400 text-xs font-bold cursor-pointer"
+                      value={mlFilterConfig.modelId}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setMlFilterConfig(prev => ({
+                          ...prev,
+                          modelId: val,
+                          enabled: Boolean(val) ? true : prev.enabled
+                        }));
+                      }}
+                    >
+                      <option value="">-- Select a Model from ML Registry --</option>
+                      {mlModels.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.modelType}) - v{m.versions?.find(v => v.id === m.activeVersionId)?.version || '1.0'}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <AnimatePresence>
+                  {mlFilterConfig.enabled && (
+                    <MotionDiv
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="space-y-2.5 overflow-hidden pt-1 border-t border-white/5"
+                    >
+                      {/* Execution Mode Selector (Signal Only vs Dynamic Setup, matching WallHunterModal) */}
+                      <div className="bg-black/40 p-2 rounded-lg border border-white/5 space-y-1.5">
+                        <label className="text-[10px] font-bold text-blue-400 uppercase tracking-wider block">
+                          Execution Mode
+                        </label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'basic' }))}
+                            className={`py-1.5 px-2 rounded-lg font-bold text-[10px] transition-all border cursor-pointer ${
+                              mlFilterConfig.executionMode === 'basic'
+                                ? 'bg-blue-600/25 border-blue-500 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
+                                : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
+                            }`}
+                          >
+                            Signal Only (Filter Entry)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'advanced' }))}
+                            className={`py-1.5 px-2 rounded-lg font-bold text-[10px] transition-all border cursor-pointer ${
+                              mlFilterConfig.executionMode === 'advanced'
+                                ? 'bg-purple-600/25 border-purple-500 text-purple-300 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+                                : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
+                            }`}
+                          >
+                            Dynamic Setup (AI TP/SL)
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Bullish Threshold (Active for BUY orders) */}
+                      <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Buy' ? 'bg-emerald-950/25 border-emerald-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="text-[10px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
+                            <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Buy' ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`}></span>
+                            <span>BUY Filter: Bullish Threshold</span>
+                          </label>
+                          <span className="text-xs font-mono font-bold text-emerald-400">
+                            {(mlFilterConfig.bullishThreshold * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.1"
+                          max="0.9"
+                          step="0.01"
+                          value={mlFilterConfig.bullishThreshold}
+                          onChange={(e) => setMlFilterConfig(prev => ({ ...prev, bullishThreshold: parseFloat(e.target.value) }))}
+                          className="w-full accent-emerald-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
+                        />
+                        <p className="text-[9px] text-gray-400 mt-1 leading-tight">
+                          For <span className="text-emerald-400 font-semibold">BUY</span> orders: AI must predict ≥{(mlFilterConfig.bullishThreshold * 100).toFixed(0)}% Bullish probability to permit entry, otherwise it denies the trade.
+                        </p>
+                      </div>
+
+                      {/* Bearish Threshold (Active for SELL orders — Spot Hold Currency Sell High & Futures Short) */}
+                      <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Sell' ? 'bg-rose-950/25 border-rose-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="text-[10px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
+                            <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Sell' ? 'bg-rose-400 animate-pulse' : 'bg-gray-500'}`}></span>
+                            <span>SELL Filter: Bearish Threshold</span>
+                          </label>
+                          <span className="text-xs font-mono font-bold text-rose-400">
+                            {(mlFilterConfig.bearishThreshold * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.1"
+                          max="0.9"
+                          step="0.01"
+                          value={mlFilterConfig.bearishThreshold}
+                          onChange={(e) => setMlFilterConfig(prev => ({ ...prev, bearishThreshold: parseFloat(e.target.value) }))}
+                          className="w-full accent-rose-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
+                        />
+                        <p className="text-[9px] text-gray-400 mt-1 leading-tight">
+                          For <span className="text-rose-400 font-semibold">SELL</span> orders (Spot Hold Sell High → Low TP Buy Back, or Short): AI must predict ≥{(mlFilterConfig.bearishThreshold * 100).toFixed(0)}% Bearish probability to permit selling.
+                        </p>
+                      </div>
+                    </MotionDiv>
+                  )}
+                </AnimatePresence>
+              </div>
+
               {/* Native Binance TP/SL Toggle */}
               {(tpConfig.enabled || slConfig.enabled) && !isFutures && (
                 <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${!isNativeTpSlSupported ? 'opacity-40 pointer-events-none' : ''}`}>
@@ -3522,6 +3863,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                      )}
                   </AnimatePresence>
               </div>
+
               {/* Futures Options Panel */}
               {isFutures && (
                 <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-white/5">

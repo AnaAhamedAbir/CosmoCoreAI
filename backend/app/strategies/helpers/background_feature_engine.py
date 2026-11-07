@@ -67,6 +67,28 @@ class BackgroundFeatureEngine:
         # Fast non-blocking read since it's just a dict reference update in Python
         return self.latest_features_cache
 
+    async def prefill_once(self, exchange=None):
+        """Synchronously prefills latest_features_cache once via REST if currently empty."""
+        if self.latest_features_cache or (not self.needs_trade_features and not self.needs_plp_features):
+            return
+        try:
+            if exchange is None:
+                import ccxt.pro as ccxt_pro
+                exchange_id = 'binanceusdm' if self.is_futures else 'binance'
+                async with BackgroundFeatureEngine._shared_lock:
+                    if exchange_id not in BackgroundFeatureEngine._shared_exchanges:
+                        exchange_class = getattr(ccxt_pro, exchange_id)
+                        BackgroundFeatureEngine._shared_exchanges[exchange_id] = exchange_class({'enableRateLimit': True})
+                    exchange = BackgroundFeatureEngine._shared_exchanges[exchange_id]
+            initial = await exchange.fetch_trades(self.symbol, limit=500)
+            if initial:
+                last_row = await asyncio.to_thread(self._calculate_features_sync, initial)
+                if last_row is not None:
+                    async with self._lock:
+                        self.latest_features_cache = last_row
+        except Exception as e:
+            logger.debug(f"BackgroundFeatureEngine: prefill_once skipped for {self.symbol}: {e}")
+
     async def _cache_loop(self):
         import ccxt.pro as ccxt_pro
         exchange_id = 'binanceusdm' if self.is_futures else 'binance'
@@ -85,6 +107,10 @@ class BackgroundFeatureEngine:
             initial = await exchange.fetch_trades(self.symbol, limit=1000)
             if initial:
                 trades_cache.extend(initial)
+                initial_row = await asyncio.to_thread(self._calculate_features_sync, trades_cache)
+                if initial_row is not None:
+                    async with self._lock:
+                        self.latest_features_cache = initial_row
         except Exception as e:
             logger.warning(f"BackgroundFeatureEngine: fetch_trades prefill failed: {e}")
 

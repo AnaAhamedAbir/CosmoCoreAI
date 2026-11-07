@@ -134,6 +134,23 @@ async def place_order(
         logger.warning(f"⚠️ Order placement rejected: {e}")
         raise HTTPException(status_code=400, detail=f"Exchange Error: {str(e)}")
 
+
+class MLFilterWarmupRequest(BaseModel):
+    symbol: str
+    ml_model_id: str
+
+
+@router.post("/ml-filter-warmup")
+async def warmup_ml_filter_endpoint(
+    req: MLFilterWarmupRequest,
+    background_tasks: BackgroundTasks,
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """Pre-warms the ML model and live feature cache in RAM for 0ms manual trade execution."""
+    from app.services.manual_trade_service import ManualTradeService
+    background_tasks.add_task(ManualTradeService.warmup_ml_filter, req.symbol, req.ml_model_id)
+    return {"status": "warming_up", "symbol": req.symbol, "ml_model_id": req.ml_model_id}
+
 class EditOrderRequest(BaseModel):
     symbol: str
     side: str

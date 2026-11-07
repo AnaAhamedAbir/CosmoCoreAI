@@ -162,6 +162,18 @@ export const manualTradeService = {
     return response.data;
   },
 
+  warmupMlFilter: async (symbol: string, mlModelId: string) => {
+    try {
+      const response = await api.post('/trading/ml-filter-warmup', {
+        symbol,
+        ml_model_id: mlModelId
+      });
+      return response.data;
+    } catch {
+      return null;
+    }
+  },
+
   emergencyForceOrder: async (payload: {
     apiKeyId: number;
     symbol: string;

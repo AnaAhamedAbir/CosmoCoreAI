@@ -200,6 +200,19 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     }
   }, [isOpen, fetchMlModels]);
 
+  // Pre-warm ML model + live features in backend RAM so BUY/SELL order execution is instant (<5ms)
+  React.useEffect(() => {
+    if (!isOpen || !mlFilterConfig.modelId || !activeSymbol) return;
+    manualTradeService.warmupMlFilter(activeSymbol, mlFilterConfig.modelId);
+    if (!mlFilterConfig.enabled) return;
+    const warmupInterval = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        manualTradeService.warmupMlFilter(activeSymbol, mlFilterConfig.modelId);
+      }
+    }, 12000);
+    return () => clearInterval(warmupInterval);
+  }, [isOpen, mlFilterConfig.enabled, mlFilterConfig.modelId, activeSymbol]);
+
   // Poll active software brackets and open exchange orders
   const fetchActiveBrackets = React.useCallback(async (forceOpenOrders = false) => {
     if (!selectedApi) return;

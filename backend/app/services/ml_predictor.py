@@ -25,6 +25,8 @@ Flow:
 
 import os
 import json
+import time
+import threading
 import numpy as np
 import pandas as pd
 import joblib
@@ -34,129 +36,296 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 
-# ─── Constants ───────────────────────────────────────────────────────────────
+# ─── Constants & In-Memory Caches ────────────────────────────────────────────
 
 DEEP_LEARNING_ALGOS = {"LSTM", "GRU", "1D-CNN", "DeepLOB", "Transformer", "TCN", "TabNet", "Auto-Encoder"}
 SKLEARN_ALGOS       = {"Random Forest", "XGBoost", "LightGBM", "CatBoost", "Custom Ensemble", "Ensemble"}
 NEXT_GEN_ALGOS      = {"Mamba SSM", "KAN Network", "JEPA World Model", "Time-LLM", "TTFT", "GNN-RL", "SNN Liquid", "Sparse MoE Router"}
 
+_MODEL_RAM_CACHE = {}       # { model_path: loaded_model }
+_SCALER_RAM_CACHE = {}      # { scaler_path: loaded_scaler }
+_PCA_RAM_CACHE = {}         # { pca_path: loaded_pca_dict }
+_META_RAM_CACHE = {}        # { meta_path: parsed_json_dict }
+_DB_MODEL_INFO_CACHE = {}   # { model_id: (model_path, algorithm, metadata_path, explainability, ts) }
+_SHARED_CCXT_CLIENTS = {}   # { "binance" | "binanceusdm": ccxt_instance }
+_FEATURE_ROW_CACHE = {}     # { f"{model_id}_{symbol}": {"df_tail": pd.DataFrame, "timestamp": float, "refreshing": bool} }
+_THREAD_LOCAL = threading.local()
+
+
+def _get_shared_ccxt_exchange(symbol: str):
+    """Returns a singleton CCXT instance to avoid socket/file-descriptor leaks."""
+    import ccxt
+    key = "binanceusdm" if ":" in str(symbol or "") else "binance"
+    ex = _SHARED_CCXT_CLIENTS.get(key)
+    if ex is None:
+        if key == "binanceusdm":
+            ex = ccxt.binanceusdm({'enableRateLimit': True})
+        else:
+            ex = ccxt.binance({'enableRateLimit': True})
+        _SHARED_CCXT_CLIENTS[key] = ex
+    return ex
+
+
+def _build_pre_pca_feature_df(
+    symbol: str,
+    timeframe: str,
+    dataset_type: str,
+    indicators: list,
+    plp_features: list,
+    features: list,
+    db: Optional[Session] = None,
+    sequence_length: Optional[int] = None,
+    fast_limit: bool = False
+) -> pd.DataFrame:
+    """
+    Fetches live OHLCV / L2 data and computes technical indicators, PLP, Forex, and Trade tick features
+    (all steps prior to PCA and final scaling).
+    """
+    if dataset_type in ("l2_orderbook", "hybrid_deep", "hybrid"):
+        if db is None:
+            from app.db.session import SessionLocal
+            tmp_db = SessionLocal()
+            try:
+                df = _fetch_live_l2_data(symbol, tmp_db, sequence_length=sequence_length)
+            finally:
+                tmp_db.close()
+        else:
+            df = _fetch_live_l2_data(symbol, db, sequence_length=sequence_length)
+        if df is None or df.empty:
+            raise RuntimeError(f"Live L2 data is currently unavailable for {symbol}. Cannot generate a valid prediction for an L2-trained model.")
+    else:
+        df = _fetch_live_ohlcv(symbol, timeframe, dataset_type, limit=250 if fast_limit else 1000)
+
+    if df is None or df.empty:
+        raise RuntimeError(f"Could not fetch live data for {symbol}.")
+
+    # Calculate Indicators & PLP
+    if dataset_type not in ("l2_orderbook", "hybrid_deep"):
+        df = _calculate_indicators(df, indicators)
+
+    if plp_features:
+        try:
+            from app.services.predatory_liquidity_pipeline import calculate_plp_features
+            plp_df = calculate_plp_features(df, plp_features)
+            for col in plp_df.columns:
+                if col not in df.columns:
+                    df[col] = plp_df[col]
+        except Exception as e:
+            print(f"[ml_predictor] Failed to calculate PLP features: {e}")
+
+    # Fetch Forex Features
+    if dataset_type == 'forex' or '_' in symbol or len(symbol) == 7 and '/' in symbol and not symbol.endswith('USDT'):
+        try:
+            from app.services.ml.forex_feature_engine import generate_ohlcv_features
+            forex_feats_to_calc = plp_features if plp_features else [f for f in features if f in ["session_features", "macro_calendar", "cot_data", "order_flow_imbalance", "liquidity_voids", "retail_sentiment"]]
+            forex_feats_to_calc = list(set(forex_feats_to_calc + features))
+            if forex_feats_to_calc:
+                df = generate_ohlcv_features(df, forex_feats_to_calc)
+        except Exception as e:
+            print(f"[ml_predictor] Failed to calculate Forex features: {e}")
+
+    # Fetch Recent Trades for Hybrid/Trade features
+    trade_features = {'cvd', 'buy_volume', 'sell_volume', 'trade_count', 'aggressor_ratio', 'large_trade_flag', 'vwap_deviation', 'trade_imbalance_ratio', 'tick_speed', 'price_impact', 'rolling_cvd_5', 'rolling_cvd_20'}
+    missing_trade_feats = [f for f in features if f in trade_features and f not in df.columns]
+
+    if missing_trade_feats:
+        try:
+            exchange = _get_shared_ccxt_exchange(symbol)
+            trades = exchange.fetch_trades(symbol, limit=300 if fast_limit else 1000)
+            if trades:
+                t_data = []
+                for t in trades:
+                    t_data.append({
+                        'timestamp': pd.to_datetime(t['timestamp'], unit='ms'),
+                        'price': float(t['price']),
+                        'qty': float(t['amount']),
+                        'is_buyer_maker': t['side'] == 'sell'
+                    })
+                df_trades = pd.DataFrame(t_data)
+                df_trades.set_index('timestamp', inplace=True)
+
+                from app.services.hybrid_deep_pipeline import calculate_trade_tick_features
+                df_trades = calculate_trade_tick_features(df_trades, missing_trade_feats)
+
+                last_trade_row = df_trades.iloc[-1]
+                for col in missing_trade_feats:
+                    if col in df_trades.columns:
+                        df[col] = last_trade_row[col]
+        except Exception as e:
+            print(f"[ml_predictor] Failed to fetch live trades: {e}")
+
+    return df
+
+
+def _trigger_bg_feature_refresh(
+    cache_key: str,
+    symbol: str,
+    timeframe: str,
+    dataset_type: str,
+    indicators: list,
+    plp_features: list,
+    features: list,
+    seq_len: int
+):
+    """Non-blocking background refresh of _FEATURE_ROW_CACHE so fast_mode predictions stay <5ms."""
+    def _worker():
+        try:
+            df_fresh = _build_pre_pca_feature_df(
+                symbol=symbol,
+                timeframe=timeframe,
+                dataset_type=dataset_type,
+                indicators=indicators,
+                plp_features=plp_features,
+                features=features,
+                db=None,
+                sequence_length=seq_len,
+                fast_limit=True
+            )
+            if df_fresh is not None and not df_fresh.empty:
+                _FEATURE_ROW_CACHE[cache_key] = {
+                    "df_tail": df_fresh.tail(max(seq_len, 5)).copy(),
+                    "timestamp": time.time(),
+                    "refreshing": False
+                }
+        except Exception as e:
+            print(f"[ml_predictor] Background feature refresh warning for {cache_key}: {e}")
+            if cache_key in _FEATURE_ROW_CACHE:
+                _FEATURE_ROW_CACHE[cache_key]["refreshing"] = False
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+
+def warmup_model_and_features(model_id: str, symbol: str) -> bool:
+    """Pre-loads the model into RAM and populates _FEATURE_ROW_CACHE for 0ms manual trade execution."""
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        predict(
+            model_id=str(model_id),
+            symbol_override=symbol,
+            db=db,
+            fast_mode=True
+        )
+        return True
+    except Exception as e:
+        print(f"[ml_predictor] Warmup warning for model {model_id} on {symbol}: {e}")
+        return False
+    finally:
+        db.close()
 
 
 # ─── Public Entry Point ───────────────────────────────────────────────────────
 
-def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence_length: Optional[int] = None, price_point: Optional[float] = None) -> dict:
+def predict(
+    model_id: str,
+    symbol_override: Optional[str],
+    db: Session,
+    sequence_length: Optional[int] = None,
+    price_point: Optional[float] = None,
+    fast_mode: bool = False
+) -> dict:
     """
     Generate a live prediction signal for the given model.
     
     Returns:
         {
-          "signal":     "BUY" | "SELL" | "HOLD",
-          "confidence": 0.73,
-          "price":      67250.0,
-          "symbol":     "BTC/USDT",
-          "algorithm":  "Random Forest",
-          "timestamp":  "2026-05-14T12:00:00Z"
+          "signal":       "BUY" | "SELL" | "HOLD",
+          "confidence":   0.73,
+          "bullish_prob": 0.73,
+          "bearish_prob": 0.27,
+          "price":        67250.0,
+          "symbol":       "BTC/USDT",
+          "algorithm":    "Random Forest",
+          "timestamp":    "2026-05-14T12:00:00Z"
         }
     """
     from app import models as db_models
-    import time
 
     start_time = time.time()
 
-    # ── 1. Load model from Registry ─────────────────────────────────────────
-    db_model = db.query(db_models.CustomMLModel).filter(db_models.CustomMLModel.id == model_id).first()
-    if not db_model:
-        raise ValueError(f"Model '{model_id}' not found in Registry.")
+    # ── 1. Load model from Registry (with RAM cache for fast_mode) ──────────
+    cached_db_info = _DB_MODEL_INFO_CACHE.get(model_id)
+    if fast_mode and cached_db_info and (start_time - cached_db_info[4] < 120.0) and os.path.exists(cached_db_info[0]):
+        model_path, algorithm, version_meta_path, version_explainability, _ = cached_db_info
+    else:
+        db_model = db.query(db_models.CustomMLModel).filter(db_models.CustomMLModel.id == model_id).first()
+        if not db_model:
+            raise ValueError(f"Model '{model_id}' not found in Registry.")
 
-    if not db_model.active_version_id:
-        raise ValueError(f"Model '{model_id}' has no active version.")
+        if not db_model.active_version_id:
+            raise ValueError(f"Model '{model_id}' has no active version.")
 
-    version = db.query(db_models.ModelVersion).filter(db_models.ModelVersion.id == db_model.active_version_id).first()
-    if not version:
-        raise ValueError("Active version record not found.")
+        version = db.query(db_models.ModelVersion).filter(db_models.ModelVersion.id == db_model.active_version_id).first()
+        if not version:
+            raise ValueError("Active version record not found.")
 
-    if version.status != db_models.ModelStatus.READY:
-        raise ValueError("Model is not in READY state.")
+        if version.status != db_models.ModelStatus.READY:
+            raise ValueError("Model is not in READY state.")
 
-    model_path = version.file_path
-    if model_path:
-        if "scaler_train_" in model_path:
-            model_path = model_path.replace("scaler_train_", "model_train_")
-        if "pca_train_" in model_path:
-            model_path = model_path.replace("pca_train_", "model_train_")
+        model_path = version.file_path
+        if model_path:
+            if "scaler_train_" in model_path:
+                model_path = model_path.replace("scaler_train_", "model_train_")
+            if "pca_train_" in model_path:
+                model_path = model_path.replace("pca_train_", "model_train_")
 
-        m_dir = os.path.dirname(model_path)
-        if (
-            not os.path.exists(model_path)
-            or os.path.basename(model_path).lower().startswith(("pca", "scaler"))
-        ) and os.path.isdir(m_dir):
-            for f in sorted(os.listdir(m_dir)):
-                fl = f.lower()
-                if (
-                    f.endswith((".pkl", ".pt", ".zip"))
-                    and not fl.startswith(("pca", "scaler", "checkpoint", "replay"))
-                    and "scaler" not in fl
-                    and "pca" not in fl
-                ):
-                    model_path = os.path.join(m_dir, f)
-                    if fl.startswith("model"):
-                        break
+            m_dir = os.path.dirname(model_path)
+            if (
+                not os.path.exists(model_path)
+                or os.path.basename(model_path).lower().startswith(("pca", "scaler"))
+            ) and os.path.isdir(m_dir):
+                for f in sorted(os.listdir(m_dir)):
+                    fl = f.lower()
+                    if (
+                        f.endswith((".pkl", ".pt", ".zip"))
+                        and not fl.startswith(("pca", "scaler", "checkpoint", "replay"))
+                        and "scaler" not in fl
+                        and "pca" not in fl
+                    ):
+                        model_path = os.path.join(m_dir, f)
+                        if fl.startswith("model"):
+                            break
 
-        if model_path != version.file_path and os.path.exists(model_path):
-            try:
-                version.file_path = model_path
-                db.commit()
-            except Exception:
-                db.rollback()
+            if model_path != version.file_path and os.path.exists(model_path):
+                try:
+                    version.file_path = model_path
+                    db.commit()
+                except Exception:
+                    db.rollback()
 
-    if model_path and not os.path.exists(model_path) and os.path.exists(model_path.replace(".pkl", ".pt")):
-        model_path = model_path.replace(".pkl", ".pt")
-        
-    if not model_path or not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found: {model_path}")
+        if model_path and not os.path.exists(model_path) and os.path.exists(model_path.replace(".pkl", ".pt")):
+            model_path = model_path.replace(".pkl", ".pt")
+            
+        if not model_path or not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}")
 
-    algorithm = db_model.model_type
+        algorithm = db_model.model_type
+        version_meta_path = version.metadata_path
+        version_explainability = version.explainability
+        _DB_MODEL_INFO_CACHE[model_id] = (model_path, algorithm, version_meta_path, version_explainability, start_time)
 
-    # ── 2. Load metadata (features, dataset_type, indicators, symbol) ────────
-    # Priority order:
-    #   1. version.metadata_path from DB (set by our fixed upload pipeline)
-    #   2. metadata.json in the same directory as the model file
-    #   3. Old naming convention: <model_name>.json (legacy)
-    #   4. Hardcoded fallback (no metadata at all)
+    # ── 2. Load metadata (cached in RAM) ────────────────────────────────────
     metadata = None
-
-    # Priority 1: DB-stored path (most reliable)
-    if version.metadata_path and os.path.exists(version.metadata_path):
-        try:
-            with open(version.metadata_path, "r") as f:
-                metadata = json.load(f)
-            print(f"[ml_predictor] Loaded metadata from DB path: {version.metadata_path}")
-        except Exception as e:
-            print(f"[ml_predictor] Failed to read DB metadata_path: {e}")
-
-    # Priority 2: metadata.json in the same folder as the weight file
-    if metadata is None:
-        meta_in_dir = os.path.join(os.path.dirname(model_path), "metadata.json")
-        if os.path.exists(meta_in_dir):
+    candidate_meta_paths = [
+        version_meta_path,
+        os.path.join(os.path.dirname(model_path), "metadata.json"),
+        model_path.replace(".pkl", ".json").replace(".pt", ".json").replace(".zip", ".json")
+    ]
+    for mp in candidate_meta_paths:
+        if mp and mp in _META_RAM_CACHE:
+            metadata = _META_RAM_CACHE[mp]
+            break
+        if mp and os.path.exists(mp):
             try:
-                with open(meta_in_dir, "r") as f:
+                with open(mp, "r") as f:
                     metadata = json.load(f)
-                print(f"[ml_predictor] Loaded metadata from directory: {meta_in_dir}")
+                _META_RAM_CACHE[mp] = metadata
+                print(f"[ml_predictor] Loaded metadata from path: {mp}")
+                break
             except Exception as e:
-                print(f"[ml_predictor] Failed to read directory metadata.json: {e}")
+                print(f"[ml_predictor] Failed to read metadata from {mp}: {e}")
 
-    # Priority 3: Legacy naming (model_name.json beside the weight file)
-    if metadata is None:
-        legacy_path = model_path.replace(".pkl", ".json").replace(".pt", ".json").replace(".zip", ".json")
-        if os.path.exists(legacy_path):
-            try:
-                with open(legacy_path, "r") as f:
-                    metadata = json.load(f)
-                print(f"[ml_predictor] Loaded metadata from legacy path: {legacy_path}")
-            except Exception as e:
-                print(f"[ml_predictor] Failed to read legacy metadata: {e}")
-
-    # Priority 4: Hardcoded fallback — use model's known symbol from DB if available
     if metadata is None:
         fallback_symbol = symbol_override or "BTC/USDT"
         print(f"[ml_predictor] No metadata found for model {model_id}. Using fallback symbol: {fallback_symbol}")
@@ -169,8 +338,6 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
             "prediction_target": "classification"
         }
 
-
-
     features     = metadata.get("features", [])
     dataset_type = metadata.get("dataset_type", "ohlcv")
     indicators   = metadata.get("indicators", [])
@@ -182,7 +349,7 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
     if not features:
         raise ValueError("No features found in model metadata.")
 
-    # ── 3. Load Scaler ───────────────────────────────────────────────────────
+    # ── 3. Load Scaler & PCA (cached in RAM — zero file descriptor leaks) ───
     model_dir = os.path.dirname(model_path)
     base_name = os.path.splitext(os.path.basename(model_path))[0]
     ts_suffix = base_name.split('_')[-1] if '_' in base_name else ''
@@ -201,22 +368,28 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
     scaler_x = None
     scaler_path_found = next((p for p in candidate_scalers if p and os.path.exists(p)), None)
     if scaler_path_found:
-        scaler_x = joblib.load(scaler_path_found)
+        if scaler_path_found not in _SCALER_RAM_CACHE:
+            _SCALER_RAM_CACHE[scaler_path_found] = joblib.load(scaler_path_found)
+        scaler_x = _SCALER_RAM_CACHE[scaler_path_found]
 
     scaler_y_path = model_path.replace(".pkl", ".scaler_y").replace(".pt", ".scaler_y").replace(".zip", ".scaler_y")
     scaler_y = None
     if os.path.exists(scaler_y_path):
-        scaler_y = joblib.load(scaler_y_path)
+        if scaler_y_path not in _SCALER_RAM_CACHE:
+            _SCALER_RAM_CACHE[scaler_y_path] = joblib.load(scaler_y_path)
+        scaler_y = _SCALER_RAM_CACHE[scaler_y_path]
     else:
         scaler_y_path_fallback = os.path.join(model_dir, "model.scaler_y")
         if os.path.exists(scaler_y_path_fallback):
-            scaler_y = joblib.load(scaler_y_path_fallback)
+            if scaler_y_path_fallback not in _SCALER_RAM_CACHE:
+                _SCALER_RAM_CACHE[scaler_y_path_fallback] = joblib.load(scaler_y_path_fallback)
+            scaler_y = _SCALER_RAM_CACHE[scaler_y_path_fallback]
             
     # Handle explicit 'none' string saved by our new pipeline
     if isinstance(scaler_x, str) and scaler_x == "none":
         scaler_x = None
 
-    # Load PCA Model (Fix)
+    # Load PCA Model (cached in RAM)
     candidate_pcas = [
         model_path.replace(".pkl", ".pca").replace(".pt", ".pca").replace(".zip", ".pca"),
         os.path.join(model_dir, f"pca_train_{ts_suffix}.pkl"),
@@ -231,86 +404,85 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
     pca_model_data = None
     pca_path_found = next((p for p in candidate_pcas if p and os.path.exists(p)), None)
     if pca_path_found:
-        loaded_pca = joblib.load(pca_path_found)
-        if isinstance(loaded_pca, dict) and "pca" in loaded_pca and "to_compress" in loaded_pca:
-            pca_model_data = loaded_pca
+        if pca_path_found not in _PCA_RAM_CACHE:
+            loaded_pca = joblib.load(pca_path_found)
+            if isinstance(loaded_pca, dict) and "pca" in loaded_pca and "to_compress" in loaded_pca:
+                _PCA_RAM_CACHE[pca_path_found] = loaded_pca
+            else:
+                _PCA_RAM_CACHE[pca_path_found] = None
+        pca_model_data = _PCA_RAM_CACHE.get(pca_path_found)
 
-    # ── 4. Fetch Live Data ───────────────────────────────────────────────────
-    if dataset_type in ("l2_orderbook", "hybrid_deep", "hybrid"):
-        df = _fetch_live_l2_data(symbol, db, sequence_length=sequence_length)
-        if df is None or df.empty:
-            raise RuntimeError(f"Live L2 data is currently unavailable for {symbol}. Cannot generate a valid prediction for an L2-trained model.")
+    # ── 4 & 5. Fetch Live Data & Compute Features (RAM-Cached in fast_mode) ─
+    seq_len = sequence_length if sequence_length and sequence_length > 1 else 1
+    cache_key = f"{model_id}_{symbol}"
+    df = None
+
+    if fast_mode:
+        cached_entry = _FEATURE_ROW_CACHE.get(cache_key)
+        now_ts = time.time()
+        if cached_entry and cached_entry.get("df_tail") is not None and (now_ts - cached_entry.get("timestamp", 0)) < 300.0:
+            df = cached_entry["df_tail"].copy()
+            # Trigger non-blocking background refresh if older than 8 seconds
+            if (now_ts - cached_entry.get("timestamp", 0)) > 8.0 and not cached_entry.get("refreshing", False):
+                cached_entry["refreshing"] = True
+                _trigger_bg_feature_refresh(
+                    cache_key=cache_key,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    dataset_type=dataset_type,
+                    indicators=indicators,
+                    plp_features=plp_features,
+                    features=features,
+                    seq_len=seq_len
+                )
+        else:
+            df_full = _build_pre_pca_feature_df(
+                symbol=symbol,
+                timeframe=timeframe,
+                dataset_type=dataset_type,
+                indicators=indicators,
+                plp_features=plp_features,
+                features=features,
+                db=db,
+                sequence_length=seq_len,
+                fast_limit=True
+            )
+            df_tail = df_full.tail(max(seq_len, 5)).copy()
+            _FEATURE_ROW_CACHE[cache_key] = {
+                "df_tail": df_tail,
+                "timestamp": time.time(),
+                "refreshing": False
+            }
+            df = df_tail.copy()
     else:
-        df = _fetch_live_ohlcv(symbol, timeframe, dataset_type)
+        df = _build_pre_pca_feature_df(
+            symbol=symbol,
+            timeframe=timeframe,
+            dataset_type=dataset_type,
+            indicators=indicators,
+            plp_features=plp_features,
+            features=features,
+            db=db,
+            sequence_length=seq_len,
+            fast_limit=False
+        )
+        _FEATURE_ROW_CACHE[cache_key] = {
+            "df_tail": df.tail(max(seq_len, 5)).copy(),
+            "timestamp": time.time(),
+            "refreshing": False
+        }
 
-    if df is None or df.empty:
-        raise RuntimeError(f"Could not fetch live data for {symbol}.")
-
-    # ── 5. Calculate Indicators & PLP ────────────────────────────────────────
-    if dataset_type not in ("l2_orderbook", "hybrid_deep"):
-        df = _calculate_indicators(df, indicators)
-        
-    if plp_features:
-        try:
-            from app.services.predatory_liquidity_pipeline import calculate_plp_features
-            plp_df = calculate_plp_features(df, plp_features)
-            for col in plp_df.columns:
-                if col not in df.columns:
-                    df[col] = plp_df[col]
-        except Exception as e:
-            print(f"[ml_predictor] Failed to calculate PLP features: {e}")
-
-    # ── 5.1 Fetch Forex Features ─────────────────────────────────────────────
-    if dataset_type == 'forex' or '_' in symbol or len(symbol) == 7 and '/' in symbol and not symbol.endswith('USDT'):
-        try:
-            # We already have plp_features which includes forex features, but we should make sure we use the forex engine
-            from app.services.ml.forex_feature_engine import generate_ohlcv_features
-            
-            # The features list for forex models usually contains strings like "session_features", "macro_calendar"
-            # We will use the ones stored in plp_features or features
-            forex_feats_to_calc = plp_features if plp_features else [f for f in features if f in ["session_features", "macro_calendar", "cot_data", "order_flow_imbalance", "liquidity_voids", "retail_sentiment"]]
-            
-            # Plus include any feature that generate_ohlcv_features can calculate
-            # (which is just the entire feature list since the function handles it gracefully)
-            forex_feats_to_calc = list(set(forex_feats_to_calc + features))
-            
-            if forex_feats_to_calc:
-                print(f"[ml_predictor] Applying Forex Feature Engine for: {forex_feats_to_calc}")
-                df = generate_ohlcv_features(df, forex_feats_to_calc)
-        except Exception as e:
-            print(f"[ml_predictor] Failed to calculate Forex features: {e}")
-
-    # ── 5.5 Fetch Recent Trades for Hybrid/Trade features ─────────────────────
-    trade_features = {'cvd', 'buy_volume', 'sell_volume', 'trade_count', 'aggressor_ratio', 'large_trade_flag', 'vwap_deviation', 'trade_imbalance_ratio', 'tick_speed', 'price_impact', 'rolling_cvd_5', 'rolling_cvd_20'}
-    missing_trade_feats = [f for f in features if f in trade_features and f not in df.columns]
-    
-    if missing_trade_feats:
-        try:
-            import ccxt
-            exchange = ccxt.binance({'enableRateLimit': True})
-            trades = exchange.fetch_trades(symbol, limit=1000)
-            if trades:
-                t_data = []
-                for t in trades:
-                    t_data.append({
-                        'timestamp': pd.to_datetime(t['timestamp'], unit='ms'),
-                        'price': float(t['price']),
-                        'qty': float(t['amount']),
-                        'is_buyer_maker': t['side'] == 'sell'
-                    })
-                df_trades = pd.DataFrame(t_data)
-                df_trades.set_index('timestamp', inplace=True)
-                
-                from app.services.hybrid_deep_pipeline import calculate_trade_tick_features
-                df_trades = calculate_trade_tick_features(df_trades, missing_trade_feats)
-                
-                # Take the last row of the engineered trade features and append to our main df
-                last_trade_row = df_trades.iloc[-1]
-                for col in missing_trade_feats:
-                    if col in df_trades.columns:
-                        df[col] = last_trade_row[col]
-        except Exception as e:
-            print(f"[ml_predictor] Failed to fetch live trades: {e}")
+    # Apply price_point override prior to PCA so PCA components also reflect the live entry price
+    if price_point is not None and float(price_point) > 0:
+        pp = float(price_point)
+        if 'Close' in df.columns:
+            df.iloc[-1, df.columns.get_loc('Close')] = pp
+        elif 'close' in df.columns:
+            df.iloc[-1, df.columns.get_loc('close')] = pp
+        if 'High' in df.columns and pp > float(df['High'].iloc[-1]):
+            df.iloc[-1, df.columns.get_loc('High')] = pp
+        if 'Low' in df.columns and pp < float(df['Low'].iloc[-1]):
+            df.iloc[-1, df.columns.get_loc('Low')] = pp
 
     # ── 5.6 Apply PCA (if applicable) ────────────────────────────────────────
     if pca_model_data is not None:
@@ -331,7 +503,8 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
             # Add PCA columns to df
             for col in pca_cols:
                 df[col] = df_pca[col]
-            print(f"[ml_predictor] Applied PCA compression on {len(to_compress)} features.")
+            if not fast_mode:
+                print(f"[ml_predictor] Applied PCA compression on {len(to_compress)} features.")
         except Exception as e:
             print(f"[ml_predictor] Failed to apply live PCA: {e}")
 
@@ -343,14 +516,13 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
     df[available_features] = df[available_features].ffill().fillna(0)
 
     current_price = float(df['Close'].iloc[-1]) if 'Close' in df.columns else float(df['close'].iloc[-1])
-    if price_point is not None:
+    if price_point is not None and float(price_point) > 0:
         current_price = float(price_point)
-        # Override the most recent candle's close so model uses this hypothetical price
         if 'Close' in df.columns:
             df.iloc[-1, df.columns.get_loc('Close')] = float(price_point)
         elif 'close' in df.columns:
             df.iloc[-1, df.columns.get_loc('close')] = float(price_point)
-    seq_len = sequence_length if sequence_length and sequence_length > 1 else 1
+
     # Extract last `seq_len` rows
     sequence_data = df[available_features].tail(seq_len).values.astype(float)
 
@@ -369,8 +541,9 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
         padding = np.repeat(sequence_data[0:1], padding_needed, axis=0)
         sequence_data = np.vstack([padding, sequence_data])
 
-    # ── 5. Run Inference ─────────────────────────────────────────────────────
+    # ── 7. Run Inference ─────────────────────────────────────────────────────
     sl_price, tp_price, raw_return = None, None, None
+    bullish_prob, bearish_prob = 0.0, 0.0
     try:
         X = sequence_data  # Shape: (seq_len, features)
         
@@ -380,11 +553,14 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
 
         # Extract anomaly threshold for Auto-Encoder
         anomaly_threshold = None
-        if version.explainability and isinstance(version.explainability, dict):
-            anomaly_threshold = version.explainability.get("anomaly_threshold")
+        if version_explainability and isinstance(version_explainability, dict):
+            anomaly_threshold = version_explainability.get("anomaly_threshold")
 
+        _THREAD_LOCAL.bullish_prob = None
+        _THREAD_LOCAL.bearish_prob = None
         inference_result = _run_inference(model_path, algorithm, X, prediction_target, features, anomaly_threshold, current_price, scaler_y=scaler_y)
-        print(f"[ml_predictor DEBUG] _run_inference returned: {inference_result}")
+        if not fast_mode:
+            print(f"[ml_predictor DEBUG] _run_inference returned: {inference_result}")
         if len(inference_result) == 5:
             signal_str, confidence, sl_price, tp_price, raw_return = inference_result
         elif len(inference_result) == 4:
@@ -405,10 +581,26 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
                 signal_str = "ANOMALY"
         elif algorithm == "Auto-Encoder":
             signal_str = "NORMAL"
+
+        tl_bull = getattr(_THREAD_LOCAL, "bullish_prob", None)
+        tl_bear = getattr(_THREAD_LOCAL, "bearish_prob", None)
+        if tl_bull is not None and tl_bear is not None:
+            bullish_prob = float(tl_bull)
+            bearish_prob = float(tl_bear)
+        elif signal_str in ("BUY", "PUMP RISK"):
+            bullish_prob = float(confidence)
+            bearish_prob = max(0.0, 1.0 - float(confidence))
+        elif signal_str in ("SELL", "CRASH RISK"):
+            bearish_prob = float(confidence)
+            bullish_prob = max(0.0, 1.0 - float(confidence))
+        else:
+            bullish_prob = 0.0
+            bearish_prob = 0.0
             
     except Exception as e:
         print(f"[ml_predictor] Inference error: {e}")
         signal_str, confidence = "HOLD", 0.0
+        bullish_prob, bearish_prob = 0.0, 0.0
 
     latency = time.time() - start_time
     try:
@@ -418,34 +610,38 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
     except Exception as e:
         print(f"[ml_predictor] Metrics error: {e}")
 
-    # Save to PredictionLog for Drift Monitoring
-    try:
-        from app.models.prediction_log import PredictionLog
-        log_entry = PredictionLog(
-            model_id=model_id,
-            symbol=symbol,
-            timeframe=timeframe,
-            predicted_signal=signal_str,
-            confidence=round(confidence, 4),
-            predicted_price=current_price,
-            timestamp=datetime.utcnow(),
-            metadata_json={"dataset_type": dataset_type, "features_used": len(available_features)}
-        )
-        db.add(log_entry)
-        db.commit()
-    except Exception as e:
-        print(f"[ml_predictor] Failed to save prediction log: {e}")
-        db.rollback()
+    # Save to PredictionLog for Drift Monitoring (skip synchronous DB write in fast_mode)
+    if not fast_mode:
+        try:
+            from app.models.prediction_log import PredictionLog
+            log_entry = PredictionLog(
+                model_id=model_id,
+                symbol=symbol,
+                timeframe=timeframe,
+                predicted_signal=signal_str,
+                confidence=round(confidence, 4),
+                predicted_price=current_price,
+                timestamp=datetime.utcnow(),
+                metadata_json={"dataset_type": dataset_type, "features_used": len(available_features)}
+            )
+            db.add(log_entry)
+            db.commit()
+        except Exception as e:
+            print(f"[ml_predictor] Failed to save prediction log: {e}")
+            db.rollback()
 
     res = {
-        "signal":     signal_str,
-        "confidence": round(confidence, 4),
-        "price":      current_price,
-        "symbol":     symbol,
-        "algorithm":  algorithm,
-        "timestamp":  datetime.utcnow().isoformat() + "Z",
+        "signal":        signal_str,
+        "confidence":    round(confidence, 4),
+        "bullish_prob":  round(bullish_prob, 4),
+        "bearish_prob":  round(bearish_prob, 4),
+        "price":         current_price,
+        "symbol":        symbol,
+        "algorithm":     algorithm,
+        "timestamp":     datetime.utcnow().isoformat() + "Z",
         "features_used": len(available_features),
-        "dataset_type":  dataset_type
+        "dataset_type":  dataset_type,
+        "latency_ms":    round(latency * 1000, 2)
     }
     if sl_price is not None:
         res["sl"] = sl_price
@@ -458,8 +654,8 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
 
 # ─── Internal Helpers ─────────────────────────────────────────────────────────
 
-def _fetch_live_ohlcv(symbol: str, timeframe: str, dataset_type: str = "ohlcv") -> Optional[pd.DataFrame]:
-    """Fetch the last 1000 candles via CCXT or OANDA for Forex."""
+def _fetch_live_ohlcv(symbol: str, timeframe: str, dataset_type: str = "ohlcv", limit: int = 1000) -> Optional[pd.DataFrame]:
+    """Fetch the last `limit` candles via CCXT or OANDA for Forex."""
     try:
         if dataset_type == 'forex' or '_' in symbol or len(symbol) == 7 and '/' in symbol and not symbol.endswith('USDT'):
             # It's likely a Forex pair
@@ -531,21 +727,15 @@ def _fetch_live_ohlcv(symbol: str, timeframe: str, dataset_type: str = "ohlcv") 
                 return None
             return df
 
-        # Default Crypto CCXT logic
-        import ccxt
+        # Default Crypto CCXT logic (reuse singleton CCXT client)
         tf_map = {
             "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
             "1h": "1h", "4h": "4h", "1d": "1d"
         }
         tf = tf_map.get(timeframe, "1h")
 
-        # Futures symbols contain ':' (e.g. DOGE/USDT:USDT)
-        if ":" in symbol:
-            exchange = ccxt.binanceusdm({'enableRateLimit': True})
-        else:
-            exchange = ccxt.binance({'enableRateLimit': True})
-
-        ohlcv = exchange.fetch_ohlcv(symbol, tf, limit=1000)
+        exchange = _get_shared_ccxt_exchange(symbol)
+        ohlcv = exchange.fetch_ohlcv(symbol, tf, limit=limit)
         if not ohlcv:
             return None
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
@@ -605,7 +795,6 @@ def _fetch_live_l2_data(symbol: str, db: Session, sequence_length: Optional[int]
     then append the latest API call for exact real-time ending.
     """
     from app.services.auto_feature_selector import calculate_l2_advanced_features
-    import ccxt
     
     seq_len = sequence_length if sequence_length and sequence_length > 1 else 1
     
@@ -650,11 +839,7 @@ def _fetch_live_l2_data(symbol: str, db: Session, sequence_length: Optional[int]
 
     print(f"[ml_predictor] Fetching LIVE L2 Orderbook directly from Binance API for {symbol}...")
     try:
-        if ":" in symbol:
-            exchange = ccxt.binanceusdm({'enableRateLimit': True})
-        else:
-            exchange = ccxt.binance({'enableRateLimit': True})
-        
+        exchange = _get_shared_ccxt_exchange(symbol)
         ob = exchange.fetch_order_book(symbol, limit=20)
         obi, spread, microprice = _compute_micro_features_from_raw(ob.get('bids', []), ob.get('asks', []))
         
@@ -873,7 +1058,10 @@ def _infer_rl(model_path: str, algorithm: str, X: np.ndarray, prediction_target:
         if not model_class:
             return "HOLD", 0.5
 
-        model = model_class.load(model_path)
+        model = _MODEL_RAM_CACHE.get(model_path)
+        if model is None:
+            model = model_class.load(model_path)
+            _MODEL_RAM_CACHE[model_path] = model
         
         # The training environment (AdvancedTradingEnv) only uses `features` for observations.
         # It does not manually append `current_price` if `Close` is omitted.
@@ -886,7 +1074,6 @@ def _infer_rl(model_path: str, algorithm: str, X: np.ndarray, prediction_target:
         
         # ── Handle Advanced Setup (Continuous Box Action Space with 3 outputs: [direction, sl, tp]) ──
         if prediction_target == "advanced_setup" and isinstance(action[0], (np.ndarray, list)) and len(action[0]) >= 3:
-            print(f"[ml_predictor DEBUG] _infer_rl advanced_setup triggered! action[0] = {action[0]}")
             direction = float(action[0][0])
             # Map from [-1, 1] to positive distances (up to 10% price movement) as in AdvancedTradingEnv
             sl_dist = max(0.001, (float(action[0][1]) + 1.0) / 2.0 * 0.1 * current_price)
@@ -902,11 +1089,9 @@ def _infer_rl(model_path: str, algorithm: str, X: np.ndarray, prediction_target:
                 sl_price = current_price + sl_dist
                 tp_price = current_price - tp_dist
                 
-            print(f"[ml_predictor DEBUG] Returning: {signal_str}, {confidence}, {sl_price}, {tp_price}")
             return signal_str, confidence, sl_price, tp_price
             
         action_val = action[0] if isinstance(action, (np.ndarray, list)) and len(action) > 0 else action
-        print(f"[ml_predictor DEBUG] _infer_rl fallback triggered. action_val={action_val}, is_continuous={algorithm in ['SAC-RL', 'DDPG-RL', 'TD3-RL']}")
 
         # Map to Signal
         is_continuous = algorithm in ["SAC-RL", "DDPG-RL", "TD3-RL"]
@@ -934,37 +1119,37 @@ def _infer_rl(model_path: str, algorithm: str, X: np.ndarray, prediction_target:
 
 
 def _infer_sklearn(model_path: str, X: np.ndarray, prediction_target: str, features: list = None, current_price: float = 0.0, scaler_y=None):
-    """Inference for sklearn-compatible models."""
+    """Inference for sklearn-compatible models (RAM-cached, zero file descriptor leaks)."""
     import os
-    # Limit OpenBLAS/MKL threads to avoid thread bombs during inference
     os.environ["OMP_NUM_THREADS"] = "1"
     os.environ["MKL_NUM_THREADS"] = "1"
     os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
-    # Use memory mapping (copy-on-write) for large models to avoid OOM and read-only errors
-    model = joblib.load(model_path, mmap_mode='c')
-    if isinstance(model, dict):
-        model = model.get("model") or model.get("estimator") or model
-
-    if hasattr(model, 'n_jobs'):
-        model.n_jobs = 1
-    if hasattr(model, 'estimators_'):
-        for est in model.estimators_:
-            if hasattr(est, 'n_jobs'):
-                est.n_jobs = 1
+    # Load model into RAM cache WITHOUT mmap_mode='c' so we never leak file descriptors ([Errno 24])
+    model = _MODEL_RAM_CACHE.get(model_path)
+    if model is None or isinstance(model, dict):
+        loaded_model = joblib.load(model_path)
+        if isinstance(loaded_model, dict):
+            loaded_model = loaded_model.get("model") or loaded_model.get("estimator") or loaded_model
+        if hasattr(loaded_model, 'n_jobs'):
+            loaded_model.n_jobs = 1
+        if hasattr(loaded_model, 'estimators_'):
+            for est in loaded_model.estimators_:
+                if hasattr(est, 'n_jobs'):
+                    est.n_jobs = 1
+        _MODEL_RAM_CACHE[model_path] = loaded_model
+        model = loaded_model
 
     # ── Wrap X in DataFrame with feature names to suppress sklearn warning ─────
-    # sklearn warns when model was fitted with feature names but gets a numpy array
     if features is not None:
         try:
             X_input = pd.DataFrame(X, columns=features[:X.shape[1]])
         except Exception:
-            X_input = X  # Fallback to numpy if column count mismatch
+            X_input = X
     else:
         X_input = X
 
     # Sklearn expects 2D array, we extract the last row if sequence was requested
-    # because standard sklearn doesn't support 3D sequences.
     X_input = X_input[-1:] if isinstance(X_input, (np.ndarray, pd.DataFrame)) else X_input
 
     with joblib.parallel_backend('threading', n_jobs=1):
@@ -984,17 +1169,14 @@ def _infer_sklearn(model_path: str, X: np.ndarray, prediction_target: str, featu
                         pred[1:] = scaler_y.inverse_transform([pred[1:]])[0]
                     except Exception:
                         pass
-                # pred is [Target_Direction, Target_TP, Target_SL]
                 direction = pred[0]
                 tp_dist = abs(pred[1])
                 sl_dist = abs(pred[2])
             signal_str = "BUY" if direction > 0.5 else "SELL"
-            confidence = 0.95 # Advanced setup implies high confidence in the exact bounds
-            
-            # We need current_price to convert distances to absolute prices
-            # _infer_sklearn doesn't get current_price currently, we will pass it!
-            # But wait, python scope trick: kwargs? We will modify _infer_sklearn signature below.
-            # So we just assume we have current_price.
+            confidence = 0.95
+            _THREAD_LOCAL.bullish_prob = float(direction) if 0.0 <= float(direction) <= 1.0 else (0.95 if signal_str == "BUY" else 0.05)
+            _THREAD_LOCAL.bearish_prob = 1.0 - _THREAD_LOCAL.bullish_prob
+
             if signal_str == "BUY":
                 sl_price = current_price * (1 - sl_dist)
                 tp_price = current_price * (1 + tp_dist)
@@ -1010,6 +1192,13 @@ def _infer_sklearn(model_path: str, X: np.ndarray, prediction_target: str, featu
                     proba = model.predict_proba(X_input)[0]
                     label = int(np.argmax(proba))
                     confidence = float(proba[label])
+                    if len(proba) == 3:
+                        # 3-class Triple Barrier: [0]=SELL (Bearish), [1]=HOLD, [2]=BUY (Bullish)
+                        _THREAD_LOCAL.bearish_prob = float(proba[0])
+                        _THREAD_LOCAL.bullish_prob = float(proba[2])
+                    elif len(proba) >= 2:
+                        _THREAD_LOCAL.bearish_prob = float(proba[0])
+                        _THREAD_LOCAL.bullish_prob = float(proba[1])
                 else:
                     label = int(model.predict(X_input)[0])
                     confidence = 0.6
@@ -1038,7 +1227,6 @@ def _infer_sklearn(model_path: str, X: np.ndarray, prediction_target: str, featu
                     pass
             
             if current_price and current_price > 0:
-                # Heuristic: if pred is within 50% of current_price, it's an exact price.
                 if abs((pred - current_price) / current_price) < 0.5:
                     pred_return = (pred - current_price) / current_price
                 else:
@@ -1084,8 +1272,6 @@ def _infer_torch(model_path: str, algorithm: str, X: np.ndarray, prediction_targ
         else:
             model = SimpleLSTM(input_size)
         
-        # If batch_first=True, expected shape is (batch, seq, feature)
-        # Our X is currently (seq, feature), so unsqueeze(0) gives (1, seq, feature)
         if len(X.shape) == 2:
             X_t = torch.FloatTensor(X).unsqueeze(0)
         else:
@@ -1128,7 +1314,7 @@ def _infer_torch(model_path: str, algorithm: str, X: np.ndarray, prediction_targ
                 return self.fc2(self.relu(self.fc1(out)))
         model = CNN1D(input_size)
         if len(X.shape) == 2:
-            X_t = torch.FloatTensor(X[-1:]).unsqueeze(0) # CNN trained on unsqueeze(1) (batch, 1, feat) fallback
+            X_t = torch.FloatTensor(X[-1:]).unsqueeze(0)
         else:
             X_t = torch.FloatTensor(X)
 
@@ -1148,7 +1334,7 @@ def _infer_torch(model_path: str, algorithm: str, X: np.ndarray, prediction_targ
                 return self.fc(out[:, -1, :])
         model = DeepLOB(input_size)
         if len(X.shape) == 2:
-            X_t = torch.FloatTensor(X[-1:]) # DeepLOB trained expecting (batch, feat)
+            X_t = torch.FloatTensor(X[-1:])
         else:
             X_t = torch.FloatTensor(X)
 
@@ -1168,7 +1354,6 @@ def _infer_torch(model_path: str, algorithm: str, X: np.ndarray, prediction_targ
         X_t = torch.FloatTensor(X[-1:])
 
     else:
-        # Transformer or unknown — simple MLP fallback
         class MLPFallback(nn.Module):
             def __init__(self, input_size):
                 super().__init__()
@@ -1182,8 +1367,11 @@ def _infer_torch(model_path: str, algorithm: str, X: np.ndarray, prediction_targ
         model = MLPFallback(input_size)
         X_t = torch.FloatTensor(X[-1:])
 
-    # Load weights (strict=False to handle minor arch differences)
-    state = torch.load(pt_path, map_location='cpu')
+    # Load weights from RAM cache if available
+    state = _MODEL_RAM_CACHE.get(pt_path)
+    if state is None:
+        state = torch.load(pt_path, map_location='cpu')
+        _MODEL_RAM_CACHE[pt_path] = state
     model.load_state_dict(state, strict=False)
     model.eval()
 
@@ -1195,7 +1383,9 @@ def _infer_torch(model_path: str, algorithm: str, X: np.ndarray, prediction_targ
             out = model(X_t)
             if prediction_target == "multi_task":
                 class_logits, reg_value = out
-                prob = torch.sigmoid(class_logits).numpy().flatten()[0]
+                prob = float(torch.sigmoid(class_logits).numpy().flatten()[0])
+                _THREAD_LOCAL.bullish_prob = prob
+                _THREAD_LOCAL.bearish_prob = 1.0 - prob
                 raw = reg_value.numpy().flatten()[0]
                 if scaler_y is not None:
                     try:
@@ -1240,16 +1430,17 @@ def _infer_torch(model_path: str, algorithm: str, X: np.ndarray, prediction_targ
                     raw = out.numpy().flatten()[0]
 
     if algorithm == "Auto-Encoder":
-        # Check against threshold
         if anomaly_threshold is not None and raw > anomaly_threshold:
             signal_str = "Market can sudden crash"
-            confidence = min(0.99, float(raw / (anomaly_threshold + 1e-9))) # Scale confidence
+            confidence = min(0.99, float(raw / (anomaly_threshold + 1e-9)))
         else:
             signal_str = "Market can pump heavily"
-            confidence = 0.5  # Normal market has neutral confidence in this context
+            confidence = 0.5
     else:
         if prediction_target == "classification":
             prob = float(1 / (1 + np.exp(-raw)))
+            _THREAD_LOCAL.bullish_prob = prob
+            _THREAD_LOCAL.bearish_prob = 1.0 - prob
             signal_str = "BUY" if prob >= 0.5 else "SELL"
             confidence = prob if prob >= 0.5 else 1 - prob
         else:
@@ -1287,13 +1478,14 @@ def _infer_nextgen(model_path: str, algorithm: str, X: np.ndarray, prediction_ta
         
     try:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model = torch.load(model_path, map_location=device, weights_only=False)
+        model = _MODEL_RAM_CACHE.get(model_path)
+        if model is None:
+            model = torch.load(model_path, map_location=device, weights_only=False)
+            _MODEL_RAM_CACHE[model_path] = model
         
-        # Ensure device is correct for the current environment
         if hasattr(model, 'device'):
             model.device = device
             
-        # Some NextGen models expect predict() to return arrays or single values
         preds = model.predict(X)
         
         if len(preds.shape) > 0:
@@ -1328,6 +1520,8 @@ def _infer_nextgen(model_path: str, algorithm: str, X: np.ndarray, prediction_ta
                 
         elif prediction_target == "classification":
             prob = float(1 / (1 + np.exp(-raw)))
+            _THREAD_LOCAL.bullish_prob = prob
+            _THREAD_LOCAL.bearish_prob = 1.0 - prob
             signal_str = "BUY" if prob >= 0.5 else "SELL"
             confidence = prob if prob >= 0.5 else 1 - prob
         else:

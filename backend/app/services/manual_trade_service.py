@@ -595,6 +595,43 @@ class ManualTradeService:
             raise HTTPException(status_code=500, detail=f"Open Orders Error: {str(e)}")
 
     @staticmethod
+    async def warmup_ml_filter(symbol: str, ml_model_id: str) -> dict:
+        """
+        Pre-warms the ML model, scalers, PCA, and live feature cache in RAM
+        so that subsequent BUY/SELL clicks execute in <5ms with zero lag.
+        """
+        if not ml_model_id or not symbol:
+            return {"status": "skipped"}
+        try:
+            from app.strategies.helpers.ml_l2_predictor import MLL2Predictor
+            from app.services import ml_predictor
+
+            predictor_key = f"{ml_model_id}_{symbol}"
+            predictor = ManualTradeService._ML_PREDICTOR_CACHE.get(predictor_key)
+            if (
+                predictor is None
+                or not getattr(predictor, 'is_loaded', False)
+                or isinstance(getattr(predictor, 'model', None), dict)
+            ):
+                predictor = await asyncio.to_thread(MLL2Predictor, str(ml_model_id))
+                if getattr(predictor, 'is_loaded', False) and not isinstance(getattr(predictor, 'model', None), dict):
+                    ManualTradeService._ML_PREDICTOR_CACHE[predictor_key] = predictor
+
+            dataset_type = getattr(predictor, 'dataset_type', None)
+            if dataset_type in ('l2_orderbook', 'hybrid_deep', 'hybrid') and getattr(predictor, 'is_loaded', False):
+                try:
+                    await predictor.start_background_engine(symbol)
+                except Exception:
+                    pass
+            else:
+                await asyncio.to_thread(ml_predictor.warmup_model_and_features, str(ml_model_id), symbol)
+
+            return {"status": "warmed", "model_id": str(ml_model_id), "symbol": symbol}
+        except Exception as e:
+            logger.debug(f"ManualTrade ML warmup non-fatal warning: {e}")
+            return {"status": "warning", "detail": str(e)}
+
+    @staticmethod
     async def _validate_with_ml_filter(
         exchange,
         symbol: str,
@@ -609,7 +646,7 @@ class ManualTradeService:
         Universal AI Entry Gatekeeper for Manual Trade & Emergency Force Orders.
         Supports:
           1) L2 Orderbook / Hybrid Deep / RL models via MLL2Predictor
-          2) OHLCV / Technical Indicator / Next-Gen models trained in Training Studio via ml_predictor.predict
+          2) OHLCV / Technical Indicator / Next-Gen models trained in Training Studio via ml_predictor.predict (fast_mode=True, <5ms RAM-cached)
         Validates BUY orders against bullish_thresh and SELL orders (Spot Hold Sell or Futures Short) against bearish_thresh.
         """
         if not ml_model_id:
@@ -658,43 +695,28 @@ class ManualTradeService:
         bull_t = float(bullish_thresh if bullish_thresh is not None else 0.50)
         bear_t = float(bearish_thresh if bearish_thresh is not None else 0.50)
 
-        # Fetch live L2 orderbook for live mid_price (and L2 features if L2 model)
-        ml_ob = None
         mid_p = float(eval_price_override) if (eval_price_override and float(eval_price_override) > 0) else 0.0
-        try:
-            ml_ob = await exchange.fetch_order_book(symbol, limit=20)
-            if ml_ob and ml_ob.get('bids') and ml_ob.get('asks'):
-                best_bid_p = float(ml_ob['bids'][0][0])
-                best_ask_p = float(ml_ob['asks'][0][0])
-                if mid_p <= 0:
-                    mid_p = (best_bid_p + best_ask_p) / 2.0
-        except Exception as ob_err:
-            if not use_ohlcv_predictor:
-                logger.error(f"ManualTrade ML Filter failed to fetch orderbook for {symbol}: {ob_err}")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"AI Filter Error: Could not fetch live L2 Orderbook for {symbol}."
-                )
 
-        # --- Route A: OHLCV / Indicator / Next-Gen Model from Training Studio ---
+        # --- Route A: OHLCV / Indicator / Next-Gen Model from Training Studio (<5ms RAM-Cached Fast Mode) ---
         if use_ohlcv_predictor:
             from app.services import ml_predictor
             from app.db.session import SessionLocal
 
-            def _run_ohlcv_sync():
+            def _run_ohlcv_fast():
                 t_db = SessionLocal()
                 try:
                     return ml_predictor.predict(
                         model_id=str(ml_model_id),
                         symbol_override=symbol,
                         db=t_db,
-                        price_point=mid_p if mid_p > 0 else None
+                        price_point=mid_p if mid_p > 0 else None,
+                        fast_mode=True
                     )
                 finally:
                     t_db.close()
 
             try:
-                pred_res = await asyncio.to_thread(_run_ohlcv_sync)
+                pred_res = await asyncio.to_thread(_run_ohlcv_fast)
             except Exception as pred_err:
                 logger.error(f"ManualTrade OHLCV ML Filter failed for {symbol}: {pred_err}")
                 raise HTTPException(
@@ -704,30 +726,62 @@ class ManualTradeService:
 
             sig = str(pred_res.get("signal", "HOLD")).upper()
             conf = float(pred_res.get("confidence", 0.0))
+            bull_prob = pred_res.get("bullish_prob")
+            bear_prob = pred_res.get("bearish_prob")
+            if mid_p <= 0 and pred_res.get("price"):
+                mid_p = float(pred_res["price"])
             model_label = getattr(predictor, 'model_name', None) or str(pred_res.get("algorithm", "AI Model"))
             ai_sl = pred_res.get("sl")
             ai_tp = pred_res.get("tp")
 
             if is_buy_side:
-                is_valid = sig in ("BUY", "PUMP RISK") and conf >= bull_t
-                if not is_valid:
-                    conf_str = f"Signal: {sig} ({conf * 100:.1f}%) | Required BUY ≥ {bull_t * 100:.0f}%"
-                    logger.info(f"🚫 [ManualTrade AI Filter] Denied BUY on {symbol} by {model_label} ({conf_str})")
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"🚫 AI Filter Denied BUY: '{model_label}' predicts unfavorable condition ({conf_str})."
-                    )
-                ai_filter_info = f"{model_label} BUY {conf * 100:.1f}% (≥{bull_t * 100:.0f}%)"
+                if bull_prob is not None:
+                    buy_p = float(bull_prob)
+                    sell_p = float(bear_prob or 0.0)
+                    is_valid = buy_p >= bull_t
+                    if not is_valid:
+                        conf_str = f"Bullish Prob: {buy_p * 100:.1f}% < Threshold {bull_t * 100:.0f}% [Bearish: {sell_p * 100:.1f}%]"
+                        logger.info(f"🚫 [ManualTrade AI Filter] Denied BUY on {symbol} by {model_label} ({conf_str})")
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"🚫 AI Filter Denied BUY: '{model_label}' predicts unfavorable condition ({conf_str})."
+                        )
+                    ai_filter_info = f"{model_label} Bullish {buy_p * 100:.1f}% (≥{bull_t * 100:.0f}%)"
+                    conf = buy_p
+                else:
+                    is_valid = sig in ("BUY", "PUMP RISK") and conf >= bull_t
+                    if not is_valid:
+                        conf_str = f"Signal: {sig} ({conf * 100:.1f}%) | Required BUY ≥ {bull_t * 100:.0f}%"
+                        logger.info(f"🚫 [ManualTrade AI Filter] Denied BUY on {symbol} by {model_label} ({conf_str})")
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"🚫 AI Filter Denied BUY: '{model_label}' predicts unfavorable condition ({conf_str})."
+                        )
+                    ai_filter_info = f"{model_label} BUY {conf * 100:.1f}% (≥{bull_t * 100:.0f}%)"
             else:
-                is_valid = sig in ("SELL", "CRASH RISK") and conf >= bear_t
-                if not is_valid:
-                    conf_str = f"Signal: {sig} ({conf * 100:.1f}%) | Required SELL ≥ {bear_t * 100:.0f}%"
-                    logger.info(f"🚫 [ManualTrade AI Filter] Denied SELL on {symbol} by {model_label} ({conf_str})")
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"🚫 AI Filter Denied SELL: '{model_label}' predicts unfavorable condition ({conf_str})."
-                    )
-                ai_filter_info = f"{model_label} SELL {conf * 100:.1f}% (≥{bear_t * 100:.0f}%)"
+                if bear_prob is not None:
+                    sell_p = float(bear_prob)
+                    buy_p = float(bull_prob or 0.0)
+                    is_valid = sell_p >= bear_t
+                    if not is_valid:
+                        conf_str = f"Bearish Prob: {sell_p * 100:.1f}% < Threshold {bear_t * 100:.0f}% [Bullish: {buy_p * 100:.1f}%]"
+                        logger.info(f"🚫 [ManualTrade AI Filter] Denied SELL on {symbol} by {model_label} ({conf_str})")
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"🚫 AI Filter Denied SELL: '{model_label}' predicts unfavorable condition ({conf_str})."
+                        )
+                    ai_filter_info = f"{model_label} Bearish {sell_p * 100:.1f}% (≥{bear_t * 100:.0f}%)"
+                    conf = sell_p
+                else:
+                    is_valid = sig in ("SELL", "CRASH RISK") and conf >= bear_t
+                    if not is_valid:
+                        conf_str = f"Signal: {sig} ({conf * 100:.1f}%) | Required SELL ≥ {bear_t * 100:.0f}%"
+                        logger.info(f"🚫 [ManualTrade AI Filter] Denied SELL on {symbol} by {model_label} ({conf_str})")
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"🚫 AI Filter Denied SELL: '{model_label}' predicts unfavorable condition ({conf_str})."
+                        )
+                    ai_filter_info = f"{model_label} SELL {conf * 100:.1f}% (≥{bear_t * 100:.0f}%)"
 
             out_sl = float(ai_sl) if (exec_mode_lower == 'advanced' and ai_sl and float(ai_sl) > 0) else None
             out_tp = float(ai_tp) if (exec_mode_lower == 'advanced' and ai_tp and float(ai_tp) > 0) else None
@@ -747,6 +801,21 @@ class ManualTradeService:
             return {"ai_filter_info": ai_filter_info, "sl_price": out_sl, "tp_price": out_tp}
 
         # --- Route B: L2 Orderbook / Hybrid Deep / RL Model via MLL2Predictor ---
+        ml_ob = None
+        try:
+            ml_ob = await exchange.fetch_order_book(symbol, limit=20)
+            if ml_ob and ml_ob.get('bids') and ml_ob.get('asks'):
+                best_bid_p = float(ml_ob['bids'][0][0])
+                best_ask_p = float(ml_ob['asks'][0][0])
+                if mid_p <= 0:
+                    mid_p = (best_bid_p + best_ask_p) / 2.0
+        except Exception as ob_err:
+            logger.error(f"ManualTrade ML Filter failed to fetch orderbook for {symbol}: {ob_err}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"AI Filter Error: Could not fetch live L2 Orderbook for {symbol}."
+            )
+
         try:
             await predictor.start_background_engine(symbol)
         except Exception as bg_err:

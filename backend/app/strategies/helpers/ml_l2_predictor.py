@@ -76,6 +76,12 @@ class MLL2Predictor:
         """Starts the background engine if complex features are needed."""
         if not self.model_features and not self.pca_model_data:
             return
+        if (
+            self.bg_engine is not None
+            and getattr(self.bg_engine, "symbol", None) == symbol
+            and (getattr(self.bg_engine, "is_running", False) or bool(getattr(self.bg_engine, "latest_features_cache", None)))
+        ):
+            return
         from app.strategies.helpers.background_feature_engine import BackgroundFeatureEngine
         req_feats = list(self.model_features or [])
         if isinstance(self.pca_model_data, dict) and self.pca_model_data.get("to_compress"):
@@ -244,6 +250,12 @@ class MLL2Predictor:
 
             if self.model_type in ["Random Forest", "XGBoost", "LightGBM", "CatBoost", "Ensemble"]:
                 self.model = joblib.load(file_path)
+                if hasattr(self.model, 'n_jobs'):
+                    self.model.n_jobs = 1
+                if hasattr(self.model, 'estimators_'):
+                    for est in self.model.estimators_:
+                        if hasattr(est, 'n_jobs'):
+                            est.n_jobs = 1
                 self.is_loaded = True
             elif self.model_type in ["LSTM", "GRU", "1D-CNN", "DeepLOB", "Transformer"]:
                 # Determine input size

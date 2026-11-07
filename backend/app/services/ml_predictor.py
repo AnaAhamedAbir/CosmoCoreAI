@@ -79,6 +79,36 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
         raise ValueError("Model is not in READY state.")
 
     model_path = version.file_path
+    if model_path:
+        if "scaler_train_" in model_path:
+            model_path = model_path.replace("scaler_train_", "model_train_")
+        if "pca_train_" in model_path:
+            model_path = model_path.replace("pca_train_", "model_train_")
+
+        m_dir = os.path.dirname(model_path)
+        if (
+            not os.path.exists(model_path)
+            or os.path.basename(model_path).lower().startswith(("pca", "scaler"))
+        ) and os.path.isdir(m_dir):
+            for f in sorted(os.listdir(m_dir)):
+                fl = f.lower()
+                if (
+                    f.endswith((".pkl", ".pt", ".zip"))
+                    and not fl.startswith(("pca", "scaler", "checkpoint", "replay"))
+                    and "scaler" not in fl
+                    and "pca" not in fl
+                ):
+                    model_path = os.path.join(m_dir, f)
+                    if fl.startswith("model"):
+                        break
+
+        if model_path != version.file_path and os.path.exists(model_path):
+            try:
+                version.file_path = model_path
+                db.commit()
+            except Exception:
+                db.rollback()
+
     if model_path and not os.path.exists(model_path) and os.path.exists(model_path.replace(".pkl", ".pt")):
         model_path = model_path.replace(".pkl", ".pt")
         
@@ -153,22 +183,32 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
         raise ValueError("No features found in model metadata.")
 
     # ── 3. Load Scaler ───────────────────────────────────────────────────────
-    scaler_path = model_path.replace(".pkl", ".scaler").replace(".pt", ".scaler").replace(".zip", ".scaler")
+    model_dir = os.path.dirname(model_path)
+    base_name = os.path.splitext(os.path.basename(model_path))[0]
+    ts_suffix = base_name.split('_')[-1] if '_' in base_name else ''
+
+    candidate_scalers = [
+        model_path.replace(".pkl", ".scaler").replace(".pt", ".scaler").replace(".zip", ".scaler"),
+        os.path.join(model_dir, f"scaler_train_{ts_suffix}.pkl"),
+        os.path.join(model_dir, "model.scaler"),
+        os.path.join(model_dir, "scaler.pkl")
+    ]
+    if os.path.isdir(model_dir):
+        for f in os.listdir(model_dir):
+            if f.lower().startswith("scaler") and f.lower().endswith((".pkl", ".scaler")) and not f.lower().endswith(".scaler_y"):
+                candidate_scalers.append(os.path.join(model_dir, f))
+
     scaler_x = None
-    if os.path.exists(scaler_path):
-        scaler_x = joblib.load(scaler_path)
-    else:
-        # Fallback: try to load from metadata path dir
-        scaler_path_fallback = os.path.join(os.path.dirname(model_path), "model.scaler")
-        if os.path.exists(scaler_path_fallback):
-            scaler_x = joblib.load(scaler_path_fallback)
+    scaler_path_found = next((p for p in candidate_scalers if p and os.path.exists(p)), None)
+    if scaler_path_found:
+        scaler_x = joblib.load(scaler_path_found)
 
     scaler_y_path = model_path.replace(".pkl", ".scaler_y").replace(".pt", ".scaler_y").replace(".zip", ".scaler_y")
     scaler_y = None
     if os.path.exists(scaler_y_path):
         scaler_y = joblib.load(scaler_y_path)
     else:
-        scaler_y_path_fallback = os.path.join(os.path.dirname(model_path), "model.scaler_y")
+        scaler_y_path_fallback = os.path.join(model_dir, "model.scaler_y")
         if os.path.exists(scaler_y_path_fallback):
             scaler_y = joblib.load(scaler_y_path_fallback)
             
@@ -177,14 +217,23 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
         scaler_x = None
 
     # Load PCA Model (Fix)
-    pca_path = model_path.replace(".pkl", ".pca").replace(".pt", ".pca").replace(".zip", ".pca")
+    candidate_pcas = [
+        model_path.replace(".pkl", ".pca").replace(".pt", ".pca").replace(".zip", ".pca"),
+        os.path.join(model_dir, f"pca_train_{ts_suffix}.pkl"),
+        os.path.join(model_dir, "model.pca"),
+        os.path.join(model_dir, "pca.pkl")
+    ]
+    if os.path.isdir(model_dir):
+        for f in os.listdir(model_dir):
+            if f.lower().startswith("pca") and f.lower().endswith((".pkl", ".pca")):
+                candidate_pcas.append(os.path.join(model_dir, f))
+
     pca_model_data = None
-    if os.path.exists(pca_path):
-        pca_model_data = joblib.load(pca_path)
-    else:
-        pca_path_fallback = os.path.join(os.path.dirname(model_path), "model.pca")
-        if os.path.exists(pca_path_fallback):
-            pca_model_data = joblib.load(pca_path_fallback)
+    pca_path_found = next((p for p in candidate_pcas if p and os.path.exists(p)), None)
+    if pca_path_found:
+        loaded_pca = joblib.load(pca_path_found)
+        if isinstance(loaded_pca, dict) and "pca" in loaded_pca and "to_compress" in loaded_pca:
+            pca_model_data = loaded_pca
 
     # ── 4. Fetch Live Data ───────────────────────────────────────────────────
     if dataset_type in ("l2_orderbook", "hybrid_deep", "hybrid"):
@@ -321,6 +370,7 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
         sequence_data = np.vstack([padding, sequence_data])
 
     # ── 5. Run Inference ─────────────────────────────────────────────────────
+    sl_price, tp_price, raw_return = None, None, None
     try:
         X = sequence_data  # Shape: (seq_len, features)
         
@@ -335,7 +385,6 @@ def predict(model_id: str, symbol_override: Optional[str], db: Session, sequence
 
         inference_result = _run_inference(model_path, algorithm, X, prediction_target, features, anomaly_threshold, current_price, scaler_y=scaler_y)
         print(f"[ml_predictor DEBUG] _run_inference returned: {inference_result}")
-        sl_price, tp_price, raw_return = None, None, None
         if len(inference_result) == 5:
             signal_str, confidence, sl_price, tp_price, raw_return = inference_result
         elif len(inference_result) == 4:
@@ -894,6 +943,8 @@ def _infer_sklearn(model_path: str, X: np.ndarray, prediction_target: str, featu
 
     # Use memory mapping (copy-on-write) for large models to avoid OOM and read-only errors
     model = joblib.load(model_path, mmap_mode='c')
+    if isinstance(model, dict):
+        model = model.get("model") or model.get("estimator") or model
 
     if hasattr(model, 'n_jobs'):
         model.n_jobs = 1

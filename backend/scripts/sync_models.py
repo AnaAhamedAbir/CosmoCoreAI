@@ -40,13 +40,21 @@ def sync_directory(dir_path, db, user):
     json_file = None
     model_file = None
 
-    for file in os.listdir(dir_path):
-        if file.endswith(".json") and not file.startswith("replay") and not file.startswith("training_state") and file != "metadata.json":
+    for file in sorted(os.listdir(dir_path)):
+        fl = file.lower()
+        if file.endswith(".json") and not fl.startswith("replay") and not fl.startswith("training_state") and file != "metadata.json":
             json_file = os.path.join(dir_path, file)
         elif file == "metadata.json":
             json_file = os.path.join(dir_path, file)
-        elif file.endswith((".zip", ".pkl", ".pt", ".onnx", ".h5")) and "checkpoint" not in file and not file.startswith("scaler"):
-            model_file = os.path.join(dir_path, file)
+        elif (
+            file.endswith((".zip", ".pkl", ".pt", ".onnx", ".h5"))
+            and "checkpoint" not in fl
+            and not fl.startswith(("scaler", "pca"))
+            and "scaler" not in fl
+            and "pca" not in fl
+        ):
+            if model_file is None or fl.startswith("model"):
+                model_file = os.path.join(dir_path, file)
 
     # fallback for metadata.json if exists
     if not json_file and os.path.exists(os.path.join(dir_path, "metadata.json")):

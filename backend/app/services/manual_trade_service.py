@@ -622,29 +622,36 @@ class ManualTradeService:
 
         predictor_key = f"{ml_model_id}_{symbol}"
         predictor = ManualTradeService._ML_PREDICTOR_CACHE.get(predictor_key)
-        if predictor is None:
+        if (
+            predictor is None
+            or not getattr(predictor, 'is_loaded', False)
+            or isinstance(getattr(predictor, 'model', None), dict)
+        ):
             predictor = MLL2Predictor(str(ml_model_id))
-            if getattr(predictor, 'is_loaded', False):
+            if getattr(predictor, 'is_loaded', False) and not isinstance(getattr(predictor, 'model', None), dict):
                 ManualTradeService._ML_PREDICTOR_CACHE[predictor_key] = predictor
-
-        l2_supported_features = {
-            'obi', 'spread', 'microprice', 'obi_ema_5', 'obi_std_20',
-            'spread_mean_10', 'micro_momentum_5', 'vwap_dist_20',
-            'trade_imbalance_1m', 'cvd_5m', 'vwap_deviation', 'vpin_proxy',
-            'price_impact', 'absorption_ratio', 'tape_speed_tps', 'large_lot_filter'
-        }
 
         dataset_type = getattr(predictor, 'dataset_type', None)
         indicators = getattr(predictor, 'indicators', None) or []
         model_features = getattr(predictor, 'model_features', None) or []
-        has_non_l2_features = bool(model_features) and any(f not in l2_supported_features for f in model_features)
 
-        use_ohlcv_predictor = (
+        if dataset_type in ('l2_orderbook', 'hybrid_deep', 'hybrid') and getattr(predictor, 'is_loaded', False):
+            use_ohlcv_predictor = False
+        elif (
             not getattr(predictor, 'is_loaded', False)
             or dataset_type in ('ohlcv', 'historical_trades', 'forex')
             or bool(indicators)
-            or has_non_l2_features
-        )
+        ):
+            use_ohlcv_predictor = True
+        else:
+            ohlcv_indicator_prefixes = (
+                'Open', 'High', 'Low', 'Volume', 'RSI', 'MACD', 'EMA', 'SMA',
+                'BB_', 'ATR', 'ADX', 'Stoch', 'CCI', 'OBV', 'MFI', 'WillR', 'ROC'
+            )
+            use_ohlcv_predictor = bool(model_features) and any(
+                any(str(f).startswith(pref) for pref in ohlcv_indicator_prefixes)
+                for f in model_features
+            )
 
         is_buy_side = str(side or 'buy').strip().lower() in ('buy', 'long')
         exec_mode_lower = str(execution_mode or 'basic').strip().lower()

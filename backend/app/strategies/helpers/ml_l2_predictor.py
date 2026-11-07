@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # --- Global Caches for Singleton Model Pattern ---
 _MODEL_CACHE = {}
 _SCALER_CACHE = {}
+_PCA_CACHE = {}
 _METADATA_CACHE = {}
 _MODEL_TYPE_CACHE = {}
 _PRED_TARGET_CACHE = {}
@@ -63,6 +64,7 @@ class MLL2Predictor:
         self.bullish_threshold = 0.5
         self.bearish_threshold = 0.5
         self.scaler = None
+        self.pca_model_data = None
         self._dynamic_features_history = []
         self.last_features_list = []
         self.sequence_length = 15
@@ -72,10 +74,15 @@ class MLL2Predictor:
 
     async def start_background_engine(self, symbol: str):
         """Starts the background engine if complex features are needed."""
-        if not self.model_features:
+        if not self.model_features and not self.pca_model_data:
             return
         from app.strategies.helpers.background_feature_engine import BackgroundFeatureEngine
-        self.bg_engine = BackgroundFeatureEngine(symbol, self.model_features)
+        req_feats = list(self.model_features or [])
+        if isinstance(self.pca_model_data, dict) and self.pca_model_data.get("to_compress"):
+            for f in self.pca_model_data["to_compress"]:
+                if f not in req_feats:
+                    req_feats.append(f)
+        self.bg_engine = BackgroundFeatureEngine(symbol, req_feats)
         await self.bg_engine.prefill_once()
         await self.bg_engine.start()
 
@@ -89,10 +96,11 @@ class MLL2Predictor:
             logger.error("MLL2Predictor: No ai_model_id provided.")
             return
 
-        # Check Cache First
-        if self.ai_model_id in _MODEL_CACHE:
+        # Check Cache First (evict if cached object is a dict from legacy pca_train_ bug)
+        if self.ai_model_id in _MODEL_CACHE and not isinstance(_MODEL_CACHE[self.ai_model_id], dict):
             self.model = _MODEL_CACHE[self.ai_model_id]
             self.scaler = _SCALER_CACHE.get(self.ai_model_id)
+            self.pca_model_data = _PCA_CACHE.get(self.ai_model_id)
             self.model_features = _METADATA_CACHE.get(self.ai_model_id)
             self.model_type = _MODEL_TYPE_CACHE.get(self.ai_model_id)
             self.prediction_target = _PRED_TARGET_CACHE.get(self.ai_model_id, "classification")
@@ -119,9 +127,36 @@ class MLL2Predictor:
             self.model_name = db_model.name
             file_path = db_version.file_path
             
-            # Fix DB bug where file_path points to scaler instead of model
+            # Fix DB bug where file_path points to scaler or pca instead of model
             if "scaler_train_" in file_path:
                 file_path = file_path.replace("scaler_train_", "model_train_")
+            if "pca_train_" in file_path:
+                file_path = file_path.replace("pca_train_", "model_train_")
+
+            model_dir_chk = os.path.dirname(file_path)
+            if (
+                not os.path.exists(file_path)
+                or os.path.basename(file_path).lower().startswith(("pca", "scaler"))
+            ) and os.path.isdir(model_dir_chk):
+                for f in sorted(os.listdir(model_dir_chk)):
+                    fl = f.lower()
+                    if (
+                        f.endswith((".pkl", ".pt", ".zip"))
+                        and not fl.startswith(("pca", "scaler", "checkpoint", "replay"))
+                        and "scaler" not in fl
+                        and "pca" not in fl
+                    ):
+                        file_path = os.path.join(model_dir_chk, f)
+                        if fl.startswith("model"):
+                            break
+
+            if file_path != db_version.file_path and os.path.exists(file_path):
+                try:
+                    db_version.file_path = file_path
+                    db.commit()
+                    logger.info(f"🔧 Auto-repaired ModelVersion.file_path to {file_path}")
+                except Exception:
+                    db.rollback()
             
             # L2 Predictor defaults to classification for spoofing detection
             self.prediction_target = "classification"
@@ -185,6 +220,28 @@ class MLL2Predictor:
                 except Exception as e:
                     logger.warning(f"MLL2Predictor: Failed to load scaler from {scaler_path}: {e}")
 
+            # Attempt to load PCA model data if model was trained with PCA collinearity compression
+            potential_pcas = [
+                os.path.join(model_dir, f"pca_train_{timestamp}.pkl"),
+                os.path.join(model_dir, f"{base_name_without_ext}.pca"),
+                os.path.join(model_dir, "pca.pkl"),
+                os.path.join(model_dir, "model.pca")
+            ]
+            if os.path.isdir(model_dir):
+                for f in os.listdir(model_dir):
+                    if f.lower().startswith("pca") and f.lower().endswith((".pkl", ".pca")):
+                        potential_pcas.append(os.path.join(model_dir, f))
+
+            pca_path = next((p for p in potential_pcas if os.path.exists(p)), None)
+            if pca_path:
+                try:
+                    loaded_pca = joblib.load(pca_path)
+                    if isinstance(loaded_pca, dict) and "pca" in loaded_pca and "to_compress" in loaded_pca:
+                        self.pca_model_data = loaded_pca
+                        logger.info(f"MLL2Predictor: PCA model loaded successfully from {pca_path}.")
+                except Exception as e:
+                    logger.warning(f"MLL2Predictor: Failed to load PCA from {pca_path}: {e}")
+
             if self.model_type in ["Random Forest", "XGBoost", "LightGBM", "CatBoost", "Ensemble"]:
                 self.model = joblib.load(file_path)
                 self.is_loaded = True
@@ -239,6 +296,7 @@ class MLL2Predictor:
                 # Save to cache
                 _MODEL_CACHE[self.ai_model_id] = self.model
                 _SCALER_CACHE[self.ai_model_id] = self.scaler
+                _PCA_CACHE[self.ai_model_id] = self.pca_model_data
                 _METADATA_CACHE[self.ai_model_id] = self.model_features
                 _MODEL_TYPE_CACHE[self.ai_model_id] = self.model_type
                 _PRED_TARGET_CACHE[self.ai_model_id] = self.prediction_target
@@ -424,7 +482,10 @@ class MLL2Predictor:
                     
                 # Advanced L2 Features integration
                 adv_l2_features = {}
-                if getattr(self, 'model_features', None) and any("WAP" in f or "Distance" in f or "Proxy" in f for f in self.model_features):
+                all_needed_feats = list(self.model_features or [])
+                if isinstance(self.pca_model_data, dict) and self.pca_model_data.get("to_compress"):
+                    all_needed_feats.extend(self.pca_model_data["to_compress"])
+                if any("WAP" in f or "Distance" in f or "Proxy" in f or "Slope" in f or "Imbalance" in f for f in all_needed_feats):
                     if len(self.l2_history) >= 2:
                         df_hist = pd.DataFrame(self.l2_history)
                         try:
@@ -437,7 +498,22 @@ class MLL2Predictor:
 
                 # Merge: L2 calculated takes precedence over background for overlapping ones
                 merged_features = {**bg_features, **calculated_features, **adv_l2_features}
-                
+
+                # Apply PCA orthogonalization if model was trained with PCA
+                if isinstance(self.pca_model_data, dict) and "pca" in self.pca_model_data and "to_compress" in self.pca_model_data:
+                    try:
+                        to_compress = self.pca_model_data["to_compress"]
+                        pca_cols = self.pca_model_data["pca_cols"]
+                        comp_row = {c: float(merged_features.get(c, 0.0) or 0.0) for c in to_compress}
+                        X_comp = pd.DataFrame([comp_row], columns=to_compress).fillna(0.0)
+                        X_scaled_full = self.pca_model_data["scaler"].transform(X_comp)
+                        X_pca_full = self.pca_model_data["pca"].transform(X_scaled_full)
+                        for idx, col in enumerate(pca_cols):
+                            if idx < X_pca_full.shape[1]:
+                                merged_features[col] = float(X_pca_full[0, idx])
+                    except Exception as pca_err:
+                        logger.warning(f"MLL2Predictor: Failed to apply live PCA: {pca_err}")
+
                 features_list = [merged_features.get(f, 0.0) for f in self.model_features]
                 
                 # Calculate feature health (non-zero features)

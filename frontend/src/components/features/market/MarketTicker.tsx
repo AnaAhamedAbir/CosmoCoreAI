@@ -74,8 +74,10 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
     useEffect(() => {
         let socket: WebSocket | null = null;
         let retryTimeout: NodeJS.Timeout;
+        let isUnmounted = false;
 
         const connect = () => {
+            if (isUnmounted) return;
             // Robust WebSocket URL construction
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             // Robust WebSocket URL construction: Use window.location.host to leverage the Vite proxy (port 3000)
@@ -84,10 +86,15 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
             socket = new WebSocket(wsUrl);
 
             socket.onopen = () => {
+                if (isUnmounted) {
+                    socket?.close();
+                    return;
+                }
                 console.log('✅ Market Ticker connected to Global WS');
             };
 
             socket.onmessage = (event) => {
+                if (isUnmounted) return;
                 try {
                     const message = JSON.parse(event.data);
 
@@ -110,21 +117,36 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
             };
 
             socket.onclose = () => {
+                if (isUnmounted) return;
                 // console.log('Ticker WS closed, retrying...');
                 retryTimeout = setTimeout(connect, 3000);
             };
 
-            socket.onerror = (err) => {
+            socket.onerror = () => {
+                if (isUnmounted) return;
                 // console.error("Ticker WS Error:", err);
-                socket?.close();
+                if (socket?.readyState === WebSocket.OPEN) {
+                    socket.close();
+                }
             };
         };
 
         connect();
 
         return () => {
+            isUnmounted = true;
             clearTimeout(retryTimeout);
-            if (socket) socket.close();
+            if (socket) {
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.close();
+                } else if (socket.readyState === WebSocket.CONNECTING) {
+                    const pendingSocket = socket;
+                    pendingSocket.onopen = () => pendingSocket.close();
+                    pendingSocket.onmessage = null;
+                    pendingSocket.onerror = null;
+                    pendingSocket.onclose = null;
+                }
+            }
         };
     }, []);
 

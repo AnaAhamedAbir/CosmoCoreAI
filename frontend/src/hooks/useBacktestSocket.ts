@@ -15,25 +15,39 @@ interface SocketMessage {
 }
 
 export const useBacktestSocket = () => {
-    const [socket, setSocket] = useState<WebSocket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [lastMessage, setLastMessage] = useState<SocketMessage | null>(null);
+    const socketRef = useRef<WebSocket | null>(null);
     const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
+    const isUnmountedRef = useRef(false);
 
     // Connection Logic
     const connect = useCallback(() => {
+        if (isUnmountedRef.current) return;
         // Prevent multiple connections
-        if (socket?.readyState === WebSocket.OPEN) return;
+        if (
+            socketRef.current &&
+            (socketRef.current.readyState === WebSocket.OPEN ||
+                socketRef.current.readyState === WebSocket.CONNECTING)
+        ) {
+            return;
+        }
 
         console.log("🔌 Connecting to Backtest WebSocket...");
         const ws = new WebSocket(WS_URL);
+        socketRef.current = ws;
 
         ws.onopen = () => {
+            if (isUnmountedRef.current) {
+                ws.close();
+                return;
+            }
             console.log('✅ Backtest WS Connected');
             setIsConnected(true);
         };
 
         ws.onmessage = (event) => {
+            if (isUnmountedRef.current) return;
             try {
                 const data: SocketMessage = JSON.parse(event.data);
                 // Payload might be in 'data' or 'payload' key based on backend implementation
@@ -48,9 +62,12 @@ export const useBacktestSocket = () => {
         };
 
         ws.onclose = () => {
+            if (socketRef.current === ws) {
+                socketRef.current = null;
+            }
+            if (isUnmountedRef.current) return;
             console.log('❌ Backtest WS Disconnected. Reconnecting in 3s...');
             setIsConnected(false);
-            setSocket(null);
 
             // Clear existing timeout if any
             if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
@@ -58,20 +75,34 @@ export const useBacktestSocket = () => {
         };
 
         ws.onerror = (err) => {
+            if (isUnmountedRef.current) return;
             console.error("Backtest WS Error:", err);
-            ws.close(); // Trigger onclose
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.close(); // Trigger onclose
+            }
         };
-
-        setSocket(ws);
-    }, [socket]); // socket dependency handles the check
+    }, []);
 
     useEffect(() => {
+        isUnmountedRef.current = false;
         connect();
         return () => {
+            isUnmountedRef.current = true;
             if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-            socket?.close();
+            const ws = socketRef.current;
+            socketRef.current = null;
+            if (ws) {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.close();
+                } else if (ws.readyState === WebSocket.CONNECTING) {
+                    ws.onopen = () => ws.close();
+                    ws.onmessage = null;
+                    ws.onerror = null;
+                    ws.onclose = null;
+                }
+            }
         };
-    }, []); // Run once on mount
+    }, [connect]);
 
     return { isConnected, lastMessage };
 };

@@ -13,6 +13,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const containerRef = useRef<HTMLDivElement>(null);
+    const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
 
     // ক্লিক বাইরে হলে ড্রপডাউন বন্ধ করা
     useEffect(() => {

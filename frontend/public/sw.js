@@ -1,5 +1,5 @@
 // CosmoQuantAI PWA Service Worker
-const CACHE_NAME = 'cosmoquant-cache-v1';
+const CACHE_NAME = 'cosmoquant-cache-v2';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -50,8 +50,22 @@ self.addEventListener('fetch', (event) => {
       .then((networkResponse) => {
         return networkResponse;
       })
-      .catch(() => {
-        return caches.match(event.request);
+      .catch(async () => {
+        const cachedResponse = await caches.match(event.request);
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        if (event.request.mode === 'navigate') {
+          const fallbackIndex = (await caches.match('/index.html')) || (await caches.match('/'));
+          if (fallbackIndex) {
+            return fallbackIndex;
+          }
+        }
+        return new Response('Network error occurred', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'text/plain' }
+        });
       })
   );
 });

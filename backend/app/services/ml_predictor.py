@@ -1431,7 +1431,12 @@ def _calculate_indicators(df: pd.DataFrame, indicators: list) -> pd.DataFrame:
             elif ind in INDICATOR_MAP:
                 res = INDICATOR_MAP[ind](df)
                 if isinstance(res, pd.DataFrame):
-                    df = res
+                    if 'Close' in res.columns or 'close' in res.columns:
+                        df = res
+                    else:
+                        for col in res.columns:
+                            if col not in df.columns:
+                                df[col] = res[col]
         except Exception:
             pass
 

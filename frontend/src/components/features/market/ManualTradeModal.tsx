@@ -172,7 +172,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     modelId: '',
     executionMode: 'basic' as 'basic' | 'advanced',
     bullishThreshold: 0.50,
-    bearishThreshold: 0.50
+    bearishThreshold: 0.50,
+    autoThreshold: true
   });
   const [aiRejectNotice, setAiRejectNotice] = useState<{
     side: string;
@@ -376,6 +377,41 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     );
   }, [activeSymbol]);
 
+  const getModelOptimalThresholds = React.useCallback((modelId: string) => {
+    const model = mlModels.find(m => m.id === modelId);
+    if (!model || !model.versions || model.versions.length === 0) {
+      return { bullish: 0.50, bearish: 0.50, isImbalanced: false, note: 'Balanced 50/50' };
+    }
+    const activeVer = model.versions.find(v => v.id === model.activeVersionId) || model.versions[0];
+    const cm = activeVer?.explainability?.confusionMatrix;
+    if (cm && Array.isArray(cm.matrix) && cm.matrix.length === 2) {
+      const r0 = (Number(cm.matrix[0][0]) || 0) + (Number(cm.matrix[0][1]) || 0);
+      const r1 = (Number(cm.matrix[1][0]) || 0) + (Number(cm.matrix[1][1]) || 0);
+      const tot = r0 + r1;
+      if (tot > 0) {
+        const p0 = r0 / tot;
+        const p1 = r1 / tot;
+        if (p0 >= 0.70) {
+          // Class 0 majority (e.g. 90% Class 0 down/flat, 10% Class 1 pump)
+          return {
+            bullish: 0.42,
+            bearish: 0.48,
+            isImbalanced: true,
+            note: `Auto-Aligned: BUY ≥ 42% | SELL ≥ 48% (${Math.round(p0 * 100)}% base)`
+          };
+        } else if (p1 >= 0.70) {
+          return {
+            bullish: 0.48,
+            bearish: 0.42,
+            isImbalanced: true,
+            note: `Auto-Aligned: BUY ≥ 48% | SELL ≥ 42% (${Math.round(p1 * 100)}% base)`
+          };
+        }
+      }
+    }
+    return { bullish: 0.50, bearish: 0.50, isImbalanced: false, note: 'Balanced 50/50' };
+  }, [mlModels]);
+
   const fetchMlModels = React.useCallback(async () => {
     setIsLoadingMlModels(true);
     try {
@@ -383,17 +419,23 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       const list = models || [];
       setMlModels(list);
       if (list.length > 0) {
-        setMlFilterConfig(prev => ({
-          ...prev,
-          modelId: prev.modelId && list.some(m => m.id === prev.modelId) ? prev.modelId : list[0].id
-        }));
+        setMlFilterConfig(prev => {
+          const chosenId = prev.modelId && list.some(m => m.id === prev.modelId) ? prev.modelId : list[0].id;
+          const opt = getModelOptimalThresholds(chosenId);
+          return {
+            ...prev,
+            modelId: chosenId,
+            bullishThreshold: prev.autoThreshold ? opt.bullish : prev.bullishThreshold,
+            bearishThreshold: prev.autoThreshold ? opt.bearish : prev.bearishThreshold
+          };
+        });
       }
     } catch {
       // ignore silently
     } finally {
       setIsLoadingMlModels(false);
     }
-  }, []);
+  }, [getModelOptimalThresholds]);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -3214,10 +3256,13 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                       value={mlFilterConfig.modelId}
                       onChange={(e) => {
                         const val = e.target.value;
+                        const opt = getModelOptimalThresholds(val);
                         setMlFilterConfig(prev => ({
                           ...prev,
                           modelId: val,
-                          enabled: Boolean(val) ? true : prev.enabled
+                          enabled: Boolean(val) ? true : prev.enabled,
+                          bullishThreshold: prev.autoThreshold ? opt.bullish : prev.bullishThreshold,
+                          bearishThreshold: prev.autoThreshold ? opt.bearish : prev.bearishThreshold
                         }));
                       }}
                     >
@@ -3270,6 +3315,50 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                         </div>
                       </div>
 
+                      {/* Smart Auto-Align to Model Toggle */}
+                      {(() => {
+                        const opt = getModelOptimalThresholds(mlFilterConfig.modelId);
+                        return (
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-black/45 border border-blue-500/25">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Zap className={`w-3.5 h-3.5 shrink-0 ${mlFilterConfig.autoThreshold ? 'text-amber-400 fill-amber-400' : 'text-gray-500'}`} />
+                              <div className="flex flex-col min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-bold text-gray-200">
+                                    Smart Auto-Align to Model
+                                  </span>
+                                  <span className={`text-[8.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase border ${mlFilterConfig.autoThreshold ? 'bg-amber-500/20 text-amber-300 border-amber-500/35 shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-gray-400 border-white/5'}`}>
+                                    {mlFilterConfig.autoThreshold ? 'AUTO ON' : 'MANUAL'}
+                                  </span>
+                                </div>
+                                <span className="text-[9px] text-gray-400 font-mono truncate">
+                                  {opt.note}
+                                </span>
+                              </div>
+                            </div>
+                            <div
+                              className={`relative w-7 h-3.5 rounded-full transition-colors cursor-pointer shrink-0 ${mlFilterConfig.autoThreshold ? 'bg-amber-500' : 'bg-gray-700'}`}
+                              onClick={() => {
+                                const newAuto = !mlFilterConfig.autoThreshold;
+                                setMlFilterConfig(prev => ({
+                                  ...prev,
+                                  autoThreshold: newAuto,
+                                  bullishThreshold: newAuto ? opt.bullish : prev.bullishThreshold,
+                                  bearishThreshold: newAuto ? opt.bearish : prev.bearishThreshold
+                                }));
+                              }}
+                              title={mlFilterConfig.autoThreshold ? "Click to set custom manual thresholds" : "Click to auto-tune thresholds to model"}
+                            >
+                              <MotionDiv
+                                className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
+                                animate={{ x: mlFilterConfig.autoThreshold ? 14 : 0 }}
+                                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {/* Bullish Threshold (Active for BUY orders) */}
                       <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Buy' ? 'bg-emerald-950/25 border-emerald-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
                         <div className="flex justify-between items-center mb-1">
@@ -3287,7 +3376,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           max="0.9"
                           step="0.01"
                           value={mlFilterConfig.bullishThreshold}
-                          onChange={(e) => setMlFilterConfig(prev => ({ ...prev, bullishThreshold: parseFloat(e.target.value) }))}
+                          onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bullishThreshold: parseFloat(e.target.value) }))}
                           className="w-full accent-emerald-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
                         />
                         <p className="text-[9px] text-gray-400 mt-1 leading-tight">
@@ -3312,7 +3401,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           max="0.9"
                           step="0.01"
                           value={mlFilterConfig.bearishThreshold}
-                          onChange={(e) => setMlFilterConfig(prev => ({ ...prev, bearishThreshold: parseFloat(e.target.value) }))}
+                          onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bearishThreshold: parseFloat(e.target.value) }))}
                           className="w-full accent-rose-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
                         />
                         <p className="text-[9px] text-gray-400 mt-1 leading-tight">

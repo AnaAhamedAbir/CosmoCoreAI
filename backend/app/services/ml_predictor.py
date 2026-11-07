@@ -941,16 +941,36 @@ def predict(
                     pass
 
             if is_imbalanced_binary and 0.01 < pi1 < 0.99 and 0.01 < pi0 < 0.99:
-                gamma = 0.85
-                w1 = bullish_prob / (pi1 ** gamma)
-                w0 = bearish_prob / (pi0 ** gamma)
+                # ── Adaptive High-Conviction Scaling ──
+                # If model has strong directional conviction (> 52%), dampening exponent gamma smoothly scales down
+                # and raw model conviction is preserved so real chart trends & candlestick patterns are not suppressed!
+                raw_conviction = max(raw_bullish_prob, raw_bearish_prob)
+                conviction_strength = min(1.0, max(0.0, (raw_conviction - 0.52) / 0.22))
+                effective_gamma = float(0.65 * (1.0 - 0.75 * conviction_strength))
+
+                w1 = bullish_prob / (pi1 ** effective_gamma)
+                w0 = bearish_prob / (pi0 ** effective_gamma)
                 cal_bull = w1 / (w1 + w0) if (w1 + w0) > 0 else bullish_prob
                 cal_bear = 1.0 - cal_bull
 
-                flow_b = microstructure.get("flow_bullish_score", 0.5)
-                flow_s = microstructure.get("flow_bearish_score", 0.5)
-                bullish_prob = float(np.clip(0.75 * cal_bull + 0.25 * flow_b, 0.01, 0.99))
-                bearish_prob = float(np.clip(0.75 * cal_bear + 0.25 * flow_s, 0.01, 0.99))
+                flow_b = float(microstructure.get("flow_bullish_score", 0.5))
+                flow_s = float(microstructure.get("flow_bearish_score", 0.5))
+
+                # Weighting: Blend calibrated probability, live microstructure flow, and raw model conviction
+                # When model conviction is high, raw conviction gets direct authority
+                alpha_raw = 0.50 * conviction_strength
+                alpha_cal = 0.35 * (1.0 - 0.5 * conviction_strength)
+                alpha_flow = 1.0 - alpha_raw - alpha_cal
+
+                # Extra boost if model conviction and live trade orderflow agree in direction
+                flow_agrees = (raw_bullish_prob > 0.55 and flow_b > 0.52) or (raw_bearish_prob > 0.55 and flow_s > 0.52)
+                if flow_agrees and conviction_strength > 0.3:
+                    alpha_raw = min(0.65, alpha_raw + 0.10)
+                    alpha_flow = min(0.35, alpha_flow + 0.05)
+                    alpha_cal = max(0.05, 1.0 - alpha_raw - alpha_flow)
+
+                bullish_prob = float(np.clip(alpha_cal * cal_bull + alpha_flow * flow_b + alpha_raw * raw_bullish_prob, 0.01, 0.99))
+                bearish_prob = float(np.clip(alpha_cal * cal_bear + alpha_flow * flow_s + alpha_raw * raw_bearish_prob, 0.01, 0.99))
             elif dataset_type == "historical_trades" and microstructure:
                 flow_b = microstructure.get("flow_bullish_score", 0.5)
                 flow_s = microstructure.get("flow_bearish_score", 0.5)

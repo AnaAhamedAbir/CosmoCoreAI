@@ -377,8 +377,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     );
   }, [activeSymbol]);
 
-  const getModelOptimalThresholds = React.useCallback((modelId: string) => {
-    const model = mlModels.find(m => m.id === modelId);
+  const getModelOptimalThresholds = React.useCallback((modelId: string, customModels?: any[]) => {
+    const list = customModels || mlModels;
+    const model = list.find(m => m.id === modelId);
     if (!model || !model.versions || model.versions.length === 0) {
       return { bullish: 0.50, bearish: 0.50, isImbalanced: false, note: 'Balanced 50/50' };
     }
@@ -421,7 +422,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       if (list.length > 0) {
         setMlFilterConfig(prev => {
           const chosenId = prev.modelId && list.some(m => m.id === prev.modelId) ? prev.modelId : list[0].id;
-          const opt = getModelOptimalThresholds(chosenId);
+          const opt = getModelOptimalThresholds(chosenId, list);
           return {
             ...prev,
             modelId: chosenId,
@@ -2091,10 +2092,13 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           onChange={(e) => {
                             e.stopPropagation();
                             const val = e.target.value;
+                            const opt = getModelOptimalThresholds(val);
                             setMlFilterConfig(prev => ({
                               ...prev,
                               modelId: val,
-                              enabled: Boolean(val) ? true : prev.enabled
+                              enabled: Boolean(val) ? true : prev.enabled,
+                              bullishThreshold: prev.autoThreshold ? opt.bullish : prev.bullishThreshold,
+                              bearishThreshold: prev.autoThreshold ? opt.bearish : prev.bearishThreshold
                             }));
                           }}
                           onMouseDown={(e) => e.stopPropagation()}

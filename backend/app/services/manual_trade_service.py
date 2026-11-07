@@ -124,6 +124,20 @@ class ManualTradeService:
     _HEDGE_MODE_CACHE = {}  # { cache_key: (is_hedge, expire_timestamp) }
     _LEVERAGE_CACHE = {}    # { cache_key: (leverage, expire_timestamp) }
     _ML_PREDICTOR_CACHE = {}  # { f"{model_id}_{symbol}": MLL2Predictor }
+    _OPEN_ORDERS_CACHE = {}  # { (api_key_id, symbol): (timestamp, result_dict) }
+
+    @staticmethod
+    def invalidate_open_orders_cache(api_key_id: int = None, symbol: str = None):
+        """Invalidates cached open orders on order placement, cancellation or force trade."""
+        if api_key_id is None:
+            ManualTradeService._OPEN_ORDERS_CACHE.clear()
+        elif symbol is None:
+            for k in list(ManualTradeService._OPEN_ORDERS_CACHE.keys()):
+                if k[0] == int(api_key_id):
+                    ManualTradeService._OPEN_ORDERS_CACHE.pop(k, None)
+        else:
+            cache_key = (int(api_key_id), str(symbol).strip().upper())
+            ManualTradeService._OPEN_ORDERS_CACHE.pop(cache_key, None)
 
     @staticmethod
     async def _get_exchange(api_key_record: models.ApiKey, is_futures: bool):
@@ -480,11 +494,19 @@ class ManualTradeService:
         return 0.0
 
     @staticmethod
-    async def get_open_limit_orders(db: Session, user_id: int, api_key_id: int, symbol: str) -> dict:
+    async def get_open_limit_orders(db: Session, user_id: int, api_key_id: int, symbol: str, force_refresh: bool = False) -> dict:
         """
         ওই exchange এর চলমান Open Limit Orders ফেচ করে chart overlay এর জন্য।
         শুধুমাত্র 'open' status এবং 'limit' type এর orders return করে।
+        Binance Rate Limit (429) থেকে সম্পূর্ণ সুরক্ষার জন্য 2.5s RAM-cache যুক্ত।
         """
+        cache_key = (int(api_key_id), str(symbol).strip().upper())
+        now_ts = time.time()
+        if not force_refresh and cache_key in ManualTradeService._OPEN_ORDERS_CACHE:
+            cached_ts, cached_res = ManualTradeService._OPEN_ORDERS_CACHE[cache_key]
+            if (now_ts - cached_ts) < 2.5:
+                return cached_res
+
         api_key_record = db.query(models.ApiKey).filter(
             models.ApiKey.id == api_key_id,
             models.ApiKey.user_id == user_id,
@@ -586,7 +608,9 @@ class ManualTradeService:
                         'icebergQty': raw_iceberg_qty if raw_iceberg_qty > 0 else None
                     })
 
-            return {"orders": orders, "symbol": symbol, "exchange": api_key_record.exchange}
+            res = {"orders": orders, "symbol": symbol, "exchange": api_key_record.exchange}
+            ManualTradeService._OPEN_ORDERS_CACHE[cache_key] = (now_ts, res)
+            return res
 
         except HTTPException:
             raise
@@ -1451,6 +1475,7 @@ class ManualTradeService:
                     )
                 )
 
+                ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
                 return {
                     "id": peg_cid,
                     "symbol": order_req.symbol,
@@ -1815,6 +1840,7 @@ class ManualTradeService:
                     )
                 )
 
+            ManualTradeService.invalidate_open_orders_cache(api_key_record.id, order_req.symbol)
             return {
                 "id": response.get('id'),
                 "symbol": response.get('symbol'),
@@ -2025,6 +2051,7 @@ class ManualTradeService:
             except Exception as notify_err:
                 logger.warning(f"Failed to trigger telegram notification on edit: {notify_err}")
 
+            ManualTradeService.invalidate_open_orders_cache(api_key_record.id, symbol)
             return {
                 "id": response.get('id'),
                 "symbol": response.get('symbol') or symbol,
@@ -2516,6 +2543,7 @@ class ManualTradeService:
                     )
                 )
 
+                ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
                 return {
                     "id": peg_cid,
                     "symbol": symbol,
@@ -2588,6 +2616,7 @@ class ManualTradeService:
                 )
             )
 
+            ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
             return {
                 "id": (response or {}).get('id'),
                 "symbol": symbol,

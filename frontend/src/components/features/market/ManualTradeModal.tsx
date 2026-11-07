@@ -377,8 +377,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     );
   }, [activeSymbol]);
 
+  const mlModelsRef = React.useRef(mlModels);
+  mlModelsRef.current = mlModels;
+
   const getModelOptimalThresholds = React.useCallback((modelId: string, customModels?: any[]) => {
-    const list = customModels || mlModels;
+    const list = customModels || mlModelsRef.current;
     const model = list.find(m => m.id === modelId);
     if (!model || !model.versions || model.versions.length === 0) {
       return { bullish: 0.50, bearish: 0.50, isImbalanced: false, note: 'Balanced 50/50' };
@@ -411,7 +414,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       }
     }
     return { bullish: 0.50, bearish: 0.50, isImbalanced: false, note: 'Balanced 50/50' };
-  }, [mlModels]);
+  }, []);
 
   const fetchMlModels = React.useCallback(async () => {
     setIsLoadingMlModels(true);
@@ -442,7 +445,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     if (isOpen) {
       fetchMlModels();
     }
-  }, [isOpen, fetchMlModels]);
+  }, [isOpen]);
 
   // Pre-warm ML model + live features in backend RAM so BUY/SELL order execution is instant (<5ms)
   React.useEffect(() => {
@@ -458,14 +461,22 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   }, [isOpen, mlFilterConfig.enabled, mlFilterConfig.modelId, activeSymbol]);
 
   // Poll active software brackets and open exchange orders
+  const lastOpenOrdersFetchRef = React.useRef<number>(0);
+  const isOpenRef = React.useRef(isOpen);
+  isOpenRef.current = isOpen;
+
   const fetchActiveBrackets = React.useCallback(async (forceOpenOrders = false) => {
     if (!selectedApi) return;
     try {
+      const now = Date.now();
+      const isVisible = typeof document === 'undefined' || document.visibilityState === 'visible';
+      const timeSinceLast = now - lastOpenOrdersFetchRef.current;
+      // Only query exchange open orders if forced, or if at least 4.5 seconds have elapsed and modal is open & tab visible
       const shouldFetchOpenOrders =
-        forceOpenOrders || (isOpen && openOrdersPollTickRef.current % 2 === 0);
-      openOrdersPollTickRef.current += 1;
+        forceOpenOrders || (isOpenRef.current && isVisible && timeSinceLast >= 4500);
 
       if (shouldFetchOpenOrders) {
+        lastOpenOrdersFetchRef.current = now;
         const [bracketsRes, openOrdersRes] = await Promise.all([
           manualTradeService.getActiveSoftwareBrackets(Number(selectedApi), activeSymbol).catch(() => []),
           manualTradeService.getOpenLimitOrders(Number(selectedApi), activeSymbol).catch(() => ({ orders: [] }))
@@ -480,14 +491,18 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     } catch (err) {
       // silent background check
     }
-  }, [selectedApi, activeSymbol, isOpen]);
+  }, [selectedApi, activeSymbol]);
 
   React.useEffect(() => {
-    if (!selectedApi) return;
+    if (!selectedApi || !isOpen) return;
     fetchActiveBrackets(true);
-    const interval = setInterval(() => fetchActiveBrackets(false), 1500);
+    const interval = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        fetchActiveBrackets(false);
+      }
+    }, 3000);
     return () => clearInterval(interval);
-  }, [selectedApi, activeSymbol, fetchActiveBrackets]);
+  }, [selectedApi, activeSymbol, isOpen, fetchActiveBrackets]);
 
   // Unified list of selectable open orders & software brackets for Emergency Force Buy/Sell
   const forceOrderTargets = React.useMemo(() => {

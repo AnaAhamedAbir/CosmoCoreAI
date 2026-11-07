@@ -286,7 +286,7 @@ def _build_pre_pca_feature_df(
         or any(f in ADVANCED_TICK_FEATURES for f in all_required_cols)
     )
 
-    if dataset_type in ("l2_orderbook", "hybrid_deep", "hybrid"):
+    if dataset_type in ("l2_orderbook", "hybrid_deep"):
         if db is None:
             from app.db.session import SessionLocal
             tmp_db = SessionLocal()
@@ -304,7 +304,8 @@ def _build_pre_pca_feature_df(
             fallback_tf = timeframe if timeframe in ("1m", "5m", "15m") else "1m"
             df = _fetch_live_ohlcv(symbol, fallback_tf, "ohlcv", limit=260 if fast_limit else 500)
     else:
-        df = _fetch_live_ohlcv(symbol, timeframe, dataset_type, limit=250 if fast_limit else 1000)
+        # Standard OHLCV or Hybrid (OHLCV + L2)
+        df = _fetch_live_ohlcv(symbol, timeframe, "ohlcv" if dataset_type == "hybrid" else dataset_type, limit=250 if fast_limit else 1000)
 
     if df is None or df.empty:
         raise RuntimeError(f"Could not fetch live data for {symbol}.")
@@ -322,6 +323,48 @@ def _build_pre_pca_feature_df(
                     df[col] = plp_df[col]
         except Exception as e:
             print(f"[ml_predictor] Failed to calculate PLP features: {e}")
+
+    # Fetch L2 features for Hybrid (OHLCV + L2) or any model requiring orderbook features
+    KNOWN_L2_FEATURES = {
+        'obi', 'spread', 'microprice', 'Effective_Spread', 'Spread_ROC', 'Mid_Price_Acceleration',
+        'Spread_Asymmetry', 'WAP_Top_5', 'WAP_Top_10', 'Multi_Level_Imbalance_Top5',
+        'Multi_Level_Imbalance_Top10', 'Depth_Ratio', 'Ask_Wall_Distance', 'Bid_Wall_Distance',
+        'Order_Book_Skewness', 'Level_1_Imbalance', 'Imbalance_Momentum', 'Order_Flow_Imbalance',
+        'OFI_Acceleration', 'CVD_Proxy', 'CVD_Acceleration', 'Realized_Micro_Volatility', 'Tick_Test_Roll'
+    }
+    missing_l2_feats = [f for f in all_required_cols if f in KNOWN_L2_FEATURES and f not in df.columns]
+    if missing_l2_feats or dataset_type == "hybrid":
+        try:
+            exchange = _get_shared_ccxt_exchange(symbol)
+            ob = exchange.fetch_order_book(symbol, limit=20)
+            if ob and ob.get('bids') and ob.get('asks'):
+                obi, spread, microprice = _compute_micro_features_from_raw(ob['bids'], ob['asks'])
+                ref_c = float(df['Close'].iloc[-1]) if 'Close' in df.columns else 0.0
+                if 'obi' in all_required_cols and 'obi' not in df.columns:
+                    df['obi'] = obi if obi is not None else 0.0
+                if 'spread' in all_required_cols and 'spread' not in df.columns:
+                    df['spread'] = spread if spread is not None else 0.0
+                if 'microprice' in all_required_cols and 'microprice' not in df.columns:
+                    df['microprice'] = microprice if microprice is not None else ref_c
+
+                from app.services.auto_feature_selector import calculate_l2_advanced_features
+                df_l2_single = pd.DataFrame([{
+                    "timestamp": pd.to_datetime(exchange.milliseconds(), unit='ms', utc=True),
+                    "Close": microprice or ref_c,
+                    "obi": obi or 0.0,
+                    "spread": spread or 0.0,
+                    "microprice": microprice or ref_c,
+                    "bids": ob.get('bids', []),
+                    "asks": ob.get('asks', [])
+                }])
+                df_l2_feats, _ = calculate_l2_advanced_features(df_l2_single)
+                if df_l2_feats is not None and not df_l2_feats.empty:
+                    last_l2_row = df_l2_feats.iloc[-1]
+                    for col in missing_l2_feats:
+                        if col in df_l2_feats.columns:
+                            df[col] = last_l2_row[col]
+        except Exception as l2_err:
+            print(f"[ml_predictor] Failed to calculate L2 features for hybrid: {l2_err}")
 
     # Fetch Forex Features
     if dataset_type == 'forex' or '_' in symbol or len(symbol) == 7 and '/' in symbol and not symbol.endswith('USDT'):

@@ -618,7 +618,8 @@ class ManualTradeService:
                     ManualTradeService._ML_PREDICTOR_CACHE[predictor_key] = predictor
 
             dataset_type = getattr(predictor, 'dataset_type', None)
-            if dataset_type in ('l2_orderbook', 'hybrid_deep', 'hybrid') and getattr(predictor, 'is_loaded', False):
+            indicators = getattr(predictor, 'indicators', None) or []
+            if dataset_type in ('l2_orderbook', 'hybrid_deep') and getattr(predictor, 'is_loaded', False) and not bool(indicators):
                 try:
                     await predictor.start_background_engine(symbol)
                 except Exception:
@@ -722,11 +723,11 @@ class ManualTradeService:
         indicators = getattr(predictor, 'indicators', None) or []
         model_features = getattr(predictor, 'model_features', None) or []
 
-        if dataset_type in ('l2_orderbook', 'hybrid_deep', 'hybrid') and getattr(predictor, 'is_loaded', False):
+        if dataset_type in ('l2_orderbook', 'hybrid_deep') and getattr(predictor, 'is_loaded', False) and not bool(indicators):
             use_ohlcv_predictor = False
         elif (
             not getattr(predictor, 'is_loaded', False)
-            or dataset_type in ('ohlcv', 'historical_trades', 'forex')
+            or dataset_type in ('ohlcv', 'historical_trades', 'hybrid', 'forex')
             or bool(indicators)
         ):
             use_ohlcv_predictor = True

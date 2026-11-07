@@ -174,6 +174,207 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     bullishThreshold: 0.50,
     bearishThreshold: 0.50
   });
+  const [aiRejectNotice, setAiRejectNotice] = useState<{
+    side: string;
+    symbol: string;
+    modelName: string;
+    directionLabel: string;
+    calibratedProb: number;
+    rawProb?: number | null;
+    threshold: number;
+    oppositeLabel: string;
+    oppositeProb: number;
+    flowLabel?: string | null;
+    flowPct?: number | null;
+    l2Label?: string | null;
+    l2Pct?: number | null;
+    tpHitEst?: number | null;
+    reason: string;
+    summary: string;
+    timestamp: string;
+  } | null>(null);
+
+  const triggerAiShieldRejection = React.useCallback((rawObjOrMsg: any, fallbackSide: string = 'BUY') => {
+    let notice: NonNullable<typeof aiRejectNotice>;
+    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    if (rawObjOrMsg && typeof rawObjOrMsg === 'object' && (rawObjOrMsg.rejected_by_ai || rawObjOrMsg.status === 'rejected_by_ai')) {
+      const sideStr = String(rawObjOrMsg.side || fallbackSide).toUpperCase();
+      notice = {
+        side: sideStr,
+        symbol: String(rawObjOrMsg.symbol || activeSymbol),
+        modelName: String(rawObjOrMsg.model_name || 'AI Filter Model'),
+        directionLabel: String(rawObjOrMsg.direction_label || (sideStr === 'BUY' ? 'Bullish' : 'Bearish')),
+        calibratedProb: Number(rawObjOrMsg.calibrated_prob ?? 0),
+        rawProb: rawObjOrMsg.raw_prob !== undefined && rawObjOrMsg.raw_prob !== null ? Number(rawObjOrMsg.raw_prob) : null,
+        threshold: Number(rawObjOrMsg.threshold ?? 50),
+        oppositeLabel: String(rawObjOrMsg.opposite_label || (sideStr === 'BUY' ? 'Bearish' : 'Bullish')),
+        oppositeProb: Number(rawObjOrMsg.opposite_prob ?? 0),
+        flowLabel: rawObjOrMsg.flow_label || null,
+        flowPct: rawObjOrMsg.flow_pct !== undefined && rawObjOrMsg.flow_pct !== null ? Number(rawObjOrMsg.flow_pct) : null,
+        l2Label: rawObjOrMsg.l2_label || null,
+        l2Pct: rawObjOrMsg.l2_pct !== undefined && rawObjOrMsg.l2_pct !== null ? Number(rawObjOrMsg.l2_pct) : null,
+        tpHitEst: rawObjOrMsg.tp_hit_est !== undefined && rawObjOrMsg.tp_hit_est !== null ? Number(rawObjOrMsg.tp_hit_est) : null,
+        reason: String(rawObjOrMsg.reason || 'Unfavorable market microstructure detected'),
+        summary: String(rawObjOrMsg.summary || rawObjOrMsg.message || ''),
+        timestamp: nowStr
+      };
+    } else {
+      const msg = String(rawObjOrMsg || '');
+      const sideMatch = msg.match(/Denied\s+(BUY|SELL)/i);
+      const sideStr = sideMatch ? sideMatch[1].toUpperCase() : fallbackSide.toUpperCase();
+      const modelMatch = msg.match(/'([^']+)'/);
+      const calMatch = msg.match(/(?:Calibrated\s+)?(Bullish|Bearish|Score):\s*([\d.]+)%/i);
+      const rawMatch = msg.match(/Raw(?:\s+Uncalibrated)?:\s*([\d.]+)%/i);
+      const threshMatch = msg.match(/Threshold\s*([\d.]+)%/i);
+      const oppMatch = msg.match(/\[(Bullish|Bearish):\s*([\d.]+)%/i);
+      const flowMatch = msg.match(/(Flow\s+(?:Bull|Bear)):\s*([\d.]+)%/i);
+      const l2Match = msg.match(/(L2\s+(?:Bid|Ask)):\s*([\d.]+)%/i);
+      const tpHitMatch = msg.match(/TP\s+Hit\s+Est:\s*([\d.]+)%/i);
+      const reasonParts = msg.split('|').map(s => s.trim());
+      const lastReason = reasonParts.length > 1 ? reasonParts[reasonParts.length - 1].replace(/\)\.?$/, '').replace(/\]\.?$/, '') : msg;
+
+      const calVal = calMatch ? parseFloat(calMatch[2]) : 0;
+      const oppVal = oppMatch ? parseFloat(oppMatch[2]) : Math.max(0, Number((100 - calVal).toFixed(1)));
+
+      notice = {
+        side: sideStr,
+        symbol: activeSymbol,
+        modelName: modelMatch ? modelMatch[1] : 'AI Filter Model',
+        directionLabel: calMatch ? calMatch[1] : (sideStr === 'BUY' ? 'Bullish' : 'Bearish'),
+        calibratedProb: calVal,
+        rawProb: rawMatch ? parseFloat(rawMatch[1]) : null,
+        threshold: threshMatch ? parseFloat(threshMatch[1]) : 50,
+        oppositeLabel: oppMatch ? oppMatch[1] : (sideStr === 'BUY' ? 'Bearish' : 'Bullish'),
+        oppositeProb: oppVal,
+        flowLabel: flowMatch ? flowMatch[1] : null,
+        flowPct: flowMatch ? parseFloat(flowMatch[2]) : null,
+        l2Label: l2Match ? l2Match[1] : null,
+        l2Pct: l2Match ? parseFloat(l2Match[2]) : null,
+        tpHitEst: tpHitMatch ? parseFloat(tpHitMatch[1]) : null,
+        reason: lastReason,
+        summary: msg,
+        timestamp: nowStr
+      };
+    }
+
+    setAiRejectNotice(notice);
+
+    toast.custom(
+      (t) => (
+        <div
+          className={`${
+            t.visible ? 'animate-enter' : 'animate-leave'
+          } max-w-[390px] w-full bg-[#0b101b]/95 backdrop-blur-xl border border-amber-500/45 rounded-xl shadow-[0_14px_45px_rgba(0,0,0,0.85),0_0_25px_rgba(245,158,11,0.18)] p-3.5 text-white pointer-events-auto`}
+        >
+          <div className="flex items-start justify-between gap-2 pb-2 border-b border-white/10">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 shrink-0">
+                <ShieldAlert className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
+                    AI Trade Shield
+                  </span>
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase border ${
+                      notice.side === 'BUY'
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                    }`}
+                  >
+                    {notice.side} Blocked
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400 font-mono truncate max-w-[240px]">
+                  {notice.symbol} • {notice.modelName}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => toast.dismiss(t.id)}
+              className="text-gray-500 hover:text-white p-1 rounded hover:bg-white/5 transition-colors cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="mt-2.5 space-y-2">
+            {/* Probability vs Threshold Bar */}
+            <div className="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] font-mono">
+                <span className="text-gray-300">
+                  Calibrated {notice.directionLabel}:{' '}
+                  <strong className="text-amber-300">{notice.calibratedProb.toFixed(1)}%</strong>
+                  {notice.rawProb !== null && notice.rawProb !== undefined && Math.abs(notice.rawProb - notice.calibratedProb) > 3 && (
+                    <span className="text-[9px] text-gray-500 ml-1">(Raw: {notice.rawProb.toFixed(1)}%)</span>
+                  )}
+                </span>
+                <span className="text-cyan-300 font-bold">
+                  Req: ≥{notice.threshold.toFixed(0)}%
+                </span>
+              </div>
+
+              <div className="relative h-2 w-full bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    notice.side === 'BUY'
+                      ? 'bg-gradient-to-r from-emerald-600 to-amber-400'
+                      : 'bg-gradient-to-r from-rose-600 to-amber-400'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.max(4, notice.calibratedProb))}%` }}
+                />
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-cyan-300 shadow-[0_0_6px_#22d3ee]"
+                  style={{ left: `${Math.min(98, Math.max(2, notice.threshold))}%` }}
+                  title={`Required Threshold: ${notice.threshold}%`}
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-[9.5px] font-mono text-gray-400">
+                <span>
+                  Opposite ({notice.oppositeLabel}):{' '}
+                  <strong className="text-white">{notice.oppositeProb.toFixed(1)}%</strong>
+                </span>
+                {notice.tpHitEst !== null && notice.tpHitEst !== undefined && (
+                  <span>
+                    TP Hit Est: <strong className="text-amber-300">{notice.tpHitEst.toFixed(0)}%</strong>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Microstructure Telemetry Badges */}
+            {(notice.flowPct !== null || notice.l2Pct !== null) && (
+              <div className="grid grid-cols-2 gap-1.5 text-[9.5px] font-mono">
+                {notice.flowPct !== null && notice.flowPct !== undefined && (
+                  <div className="bg-white/5 px-2 py-1 rounded border border-white/5 flex items-center justify-between">
+                    <span className="text-gray-400">{notice.flowLabel || 'Tick Flow'}:</span>
+                    <span className="text-white font-bold">{notice.flowPct.toFixed(0)}%</span>
+                  </div>
+                )}
+                {notice.l2Pct !== null && notice.l2Pct !== undefined && (
+                  <div className="bg-white/5 px-2 py-1 rounded border border-white/5 flex items-center justify-between">
+                    <span className="text-gray-400">{notice.l2Label || 'L2 Book'}:</span>
+                    <span className="text-white font-bold">{notice.l2Pct.toFixed(0)}%</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Protection Reason */}
+            <div className="bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-1.5 text-[10px] text-amber-200/95 leading-snug flex items-start gap-1.5">
+              <span className="text-amber-400 shrink-0 mt-0.5">⚡</span>
+              <span>{notice.reason}</span>
+            </div>
+          </div>
+        </div>
+      ),
+      { id: 'ai-trade-shield-toast', duration: 6500 }
+    );
+  }, [activeSymbol]);
 
   const fetchMlModels = React.useCallback(async () => {
     setIsLoadingMlModels(true);
@@ -489,6 +690,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         ml_bearish_threshold: mlFilterConfig.bearishThreshold
       });
 
+      if (res?.rejected_by_ai || res?.status === 'rejected_by_ai') {
+        triggerAiShieldRejection(res, side);
+        return;
+      }
+      setAiRejectNotice(null);
+
       toast.success(
         res.message ||
           (emergencyMode === 'limit_maker'
@@ -507,7 +714,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       }, 2200);
     } catch (err: any) {
       const errMsg = err?.response?.data?.detail || err?.message || 'Emergency Force Order failed';
-      toast.error(`❌ ${errMsg}`);
+      if (typeof errMsg === 'string' && errMsg.includes('AI Filter Denied')) {
+        triggerAiShieldRejection(errMsg, side);
+      } else {
+        toast.error(`❌ ${errMsg}`);
+      }
     } finally {
       setIsEmergencySubmitting(false);
       setEmergencySubmittingSide(null);
@@ -1391,6 +1602,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       }
 
       const orderRes = await manualTradeService.placeOrder(payload);
+      if (orderRes?.rejected_by_ai || orderRes?.status === 'rejected_by_ai') {
+        triggerAiShieldRejection(orderRes, side);
+        return;
+      }
+      setAiRejectNotice(null);
+
       const aiNote = orderRes?.ai_filter_info ? ` [🤖 ${orderRes.ai_filter_info}]` : '';
       toast.success(
         orderType === 'SmartPeg'
@@ -1412,7 +1629,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     } catch (error: any) {
       // BUG-02 fix: Read FastAPI detail message if available
       const errMsg = error?.response?.data?.detail || error?.message || 'Unknown error occurred';
-      if (typeof errMsg === 'string' && errMsg.includes('AI Filter')) {
+      if (typeof errMsg === 'string' && errMsg.includes('AI Filter Denied')) {
+        triggerAiShieldRejection(errMsg, side);
+      } else if (typeof errMsg === 'string' && errMsg.includes('AI Filter')) {
         toast.error(errMsg, { duration: 5000 });
       } else {
         toast.error(`❌ Order failed: ${errMsg}`);
@@ -3923,6 +4142,95 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
               )}
 
               </div> {/* End Scrollable Content */}
+
+              {/* Inline AI Trade Shield Rejection Card (Sticky above Execute button) */}
+              <AnimatePresence>
+                {aiRejectNotice && (
+                  <MotionDiv
+                    initial={{ height: 0, opacity: 0, y: 6 }}
+                    animate={{ height: 'auto', opacity: 1, y: 0 }}
+                    exit={{ height: 0, opacity: 0, y: 6 }}
+                    className="overflow-hidden mt-2"
+                  >
+                    <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-950/60 via-[#0d1424] to-black border border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)] space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-amber-300">
+                            AI Shield Protected ({aiRejectNotice.side} Blocked)
+                          </span>
+                          <span className="text-[9px] text-gray-500 font-mono">
+                            {aiRejectNotice.timestamp}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAiRejectNotice(null)}
+                          className="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                          title="Dismiss AI Shield Notice"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Score vs Threshold Progress Bar */}
+                      <div className="space-y-1 bg-black/50 p-2 rounded-lg border border-white/5">
+                        <div className="flex items-center justify-between text-[9.5px] font-mono">
+                          <span className="text-gray-300">
+                            {aiRejectNotice.directionLabel}:{' '}
+                            <strong className="text-amber-300">{aiRejectNotice.calibratedProb.toFixed(1)}%</strong>
+                            {aiRejectNotice.rawProb !== null && aiRejectNotice.rawProb !== undefined && Math.abs(aiRejectNotice.rawProb - aiRejectNotice.calibratedProb) > 3 && (
+                              <span className="text-[8.5px] text-gray-500 ml-1">(Raw {aiRejectNotice.rawProb.toFixed(1)}%)</span>
+                            )}
+                          </span>
+                          <span className="text-cyan-300 font-bold">
+                            Req ≥{aiRejectNotice.threshold.toFixed(0)}% • {aiRejectNotice.oppositeLabel} {aiRejectNotice.oppositeProb.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="relative h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              aiRejectNotice.side === 'BUY'
+                                ? 'bg-gradient-to-r from-emerald-500 to-amber-400'
+                                : 'bg-gradient-to-r from-rose-500 to-amber-400'
+                            }`}
+                            style={{ width: `${Math.min(100, Math.max(4, aiRejectNotice.calibratedProb))}%` }}
+                          />
+                          <div
+                            className="absolute top-0 bottom-0 w-0.5 bg-cyan-300"
+                            style={{ left: `${Math.min(98, Math.max(2, aiRejectNotice.threshold))}%` }}
+                          />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[8.5px] font-mono text-gray-300">
+                          <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                            Model: <strong className="text-blue-300">{aiRejectNotice.modelName}</strong>
+                          </span>
+                          {aiRejectNotice.flowPct !== null && aiRejectNotice.flowPct !== undefined && (
+                            <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                              {aiRejectNotice.flowLabel || 'Flow'}: <strong className="text-white">{aiRejectNotice.flowPct.toFixed(0)}%</strong>
+                            </span>
+                          )}
+                          {aiRejectNotice.l2Pct !== null && aiRejectNotice.l2Pct !== undefined && (
+                            <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                              {aiRejectNotice.l2Label || 'L2'}: <strong className="text-white">{aiRejectNotice.l2Pct.toFixed(0)}%</strong>
+                            </span>
+                          )}
+                          {aiRejectNotice.tpHitEst !== null && aiRejectNotice.tpHitEst !== undefined && (
+                            <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                              TP Hit Est: <strong className="text-amber-300">{aiRejectNotice.tpHitEst.toFixed(0)}%</strong>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-[9.5px] text-amber-200/95 leading-tight flex items-start gap-1.5 px-1">
+                        <span className="text-amber-400 shrink-0">⚡</span>
+                        <span>{aiRejectNotice.reason}</span>
+                      </div>
+                    </div>
+                  </MotionDiv>
+                )}
+              </AnimatePresence>
 
               {/* Action Buttons */}
               <div className="flex space-x-3 pt-3 mt-2 border-t border-white/10">

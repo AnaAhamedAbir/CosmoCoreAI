@@ -874,10 +874,12 @@ class ManualTradeService:
 
                 # Estimate TP-before-SL hit probability when both TP and SL are attached
                 tp_hit_note = ""
+                est_tp_hit_val = None
                 if tp_dist_pct > 0 and sl_dist_pct > 0:
                     dir_edge = (buy_p - 0.50) if is_buy_side else (sell_p - 0.50)
                     base_rw = sl_dist_pct / (tp_dist_pct + sl_dist_pct)
                     est_tp_hit = min(0.98, max(0.02, base_rw + dir_edge * 0.85))
+                    est_tp_hit_val = round(est_tp_hit * 100, 0)
                     tp_hit_note = f" | TP Hit Est: {est_tp_hit*100:.0f}%"
                     # If SL is >= 1.6x larger than TP (negative R:R scalp) AND directional probability is < 52%, block bad R:R drift!
                     if (sl_dist_pct / max(1e-6, tp_dist_pct)) >= 1.6 and ((is_buy_side and buy_p < max(bull_t, 0.52)) or ((not is_buy_side) and sell_p < max(bear_t, 0.52))):
@@ -895,10 +897,28 @@ class ManualTradeService:
                         reason_sfx = f" | {scalp_penalty_reason}" if scalp_penalty_reason else ""
                         conf_str = f"Calibrated Bullish: {buy_p * 100:.1f}%{raw_note} < Threshold {req_t * 100:.0f}% [Bearish: {sell_p * 100:.1f}%{flow_note}{tp_hit_note}{reason_sfx}]"
                         logger.info(f"🚫 [ManualTrade AI Filter] Denied BUY on {symbol} by {model_label} ({conf_str})")
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"🚫 AI Filter Denied BUY: '{model_label}' predicts unfavorable condition ({conf_str})."
-                        )
+                        return {
+                            "rejected": True,
+                            "rejected_by_ai": True,
+                            "status": "rejected_by_ai",
+                            "side": "BUY",
+                            "symbol": symbol,
+                            "model_name": model_label,
+                            "direction_label": "Bullish",
+                            "calibrated_prob": round(buy_p * 100, 1),
+                            "raw_prob": round(float(raw_bull) * 100, 1) if raw_bull is not None else None,
+                            "threshold": round(req_t * 100, 0),
+                            "opposite_label": "Bearish",
+                            "opposite_prob": round(sell_p * 100, 1),
+                            "flow_label": "Flow Bull",
+                            "flow_pct": round(flow_bull * 100, 0),
+                            "l2_label": "L2 Bid",
+                            "l2_pct": round(l2_bid_share * 100, 0),
+                            "tp_hit_est": est_tp_hit_val,
+                            "reason": scalp_penalty_reason or f"Bullish probability ({buy_p*100:.1f}%) is below required {req_t*100:.0f}% threshold",
+                            "summary": conf_str,
+                            "message": f"🛡️ AI Trade Shield blocked BUY on {symbol} ({conf_str})"
+                        }
                     ai_filter_info = f"{model_label} Bullish {buy_p * 100:.1f}% (≥{req_t * 100:.0f}%) | Flow {flow_bull*100:.0f}% | L2 Bid {l2_bid_share*100:.0f}%{tp_hit_note}"
                     conf = buy_p
                 else:
@@ -910,10 +930,28 @@ class ManualTradeService:
                         reason_sfx = f" | {scalp_penalty_reason}" if scalp_penalty_reason else ""
                         conf_str = f"Calibrated Bearish: {sell_p * 100:.1f}%{raw_note} < Threshold {req_t * 100:.0f}% [Bullish: {buy_p * 100:.1f}%{flow_note}{tp_hit_note}{reason_sfx}]"
                         logger.info(f"🚫 [ManualTrade AI Filter] Denied SELL on {symbol} by {model_label} ({conf_str})")
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"🚫 AI Filter Denied SELL: '{model_label}' predicts unfavorable condition ({conf_str})."
-                        )
+                        return {
+                            "rejected": True,
+                            "rejected_by_ai": True,
+                            "status": "rejected_by_ai",
+                            "side": "SELL",
+                            "symbol": symbol,
+                            "model_name": model_label,
+                            "direction_label": "Bearish",
+                            "calibrated_prob": round(sell_p * 100, 1),
+                            "raw_prob": round(float(raw_bear) * 100, 1) if raw_bear is not None else None,
+                            "threshold": round(req_t * 100, 0),
+                            "opposite_label": "Bullish",
+                            "opposite_prob": round(buy_p * 100, 1),
+                            "flow_label": "Flow Bear",
+                            "flow_pct": round(flow_bear * 100, 0),
+                            "l2_label": "L2 Ask",
+                            "l2_pct": round((1.0 - l2_bid_share) * 100, 0),
+                            "tp_hit_est": est_tp_hit_val,
+                            "reason": scalp_penalty_reason or f"Bearish probability ({sell_p*100:.1f}%) is below required {req_t*100:.0f}% threshold",
+                            "summary": conf_str,
+                            "message": f"🛡️ AI Trade Shield blocked SELL on {symbol} ({conf_str})"
+                        }
                     ai_filter_info = f"{model_label} Bearish {sell_p * 100:.1f}% (≥{req_t * 100:.0f}%) | Flow {flow_bear*100:.0f}% | L2 Ask {(1.0-l2_bid_share)*100:.0f}%{tp_hit_note}"
                     conf = sell_p
             else:
@@ -922,20 +960,56 @@ class ManualTradeService:
                     if not is_valid:
                         conf_str = f"Signal: {sig} ({conf * 100:.1f}%) | Required BUY ≥ {bull_t * 100:.0f}%"
                         logger.info(f"🚫 [ManualTrade AI Filter] Denied BUY on {symbol} by {model_label} ({conf_str})")
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"🚫 AI Filter Denied BUY: '{model_label}' predicts unfavorable condition ({conf_str})."
-                        )
+                        return {
+                            "rejected": True,
+                            "rejected_by_ai": True,
+                            "status": "rejected_by_ai",
+                            "side": "BUY",
+                            "symbol": symbol,
+                            "model_name": model_label,
+                            "direction_label": "Bullish",
+                            "calibrated_prob": round(conf * 100, 1),
+                            "raw_prob": None,
+                            "threshold": round(bull_t * 100, 0),
+                            "opposite_label": "Signal",
+                            "opposite_prob": round((1.0 - conf) * 100, 1),
+                            "flow_label": "Flow Bull",
+                            "flow_pct": round(flow_bull * 100, 0),
+                            "l2_label": "L2 Bid",
+                            "l2_pct": round(l2_bid_share * 100, 0),
+                            "tp_hit_est": None,
+                            "reason": f"Model signal is {sig} ({conf*100:.1f}%), requiring BUY ≥ {bull_t*100:.0f}%",
+                            "summary": conf_str,
+                            "message": f"🛡️ AI Trade Shield blocked BUY on {symbol} ({conf_str})"
+                        }
                     ai_filter_info = f"{model_label} BUY {conf * 100:.1f}% (≥{bull_t * 100:.0f}%)"
                 else:
                     is_valid = sig in ("SELL", "CRASH RISK") and conf >= bear_t
                     if not is_valid:
                         conf_str = f"Signal: {sig} ({conf * 100:.1f}%) | Required SELL ≥ {bear_t * 100:.0f}%"
                         logger.info(f"🚫 [ManualTrade AI Filter] Denied SELL on {symbol} by {model_label} ({conf_str})")
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"🚫 AI Filter Denied SELL: '{model_label}' predicts unfavorable condition ({conf_str})."
-                        )
+                        return {
+                            "rejected": True,
+                            "rejected_by_ai": True,
+                            "status": "rejected_by_ai",
+                            "side": "SELL",
+                            "symbol": symbol,
+                            "model_name": model_label,
+                            "direction_label": "Bearish",
+                            "calibrated_prob": round(conf * 100, 1),
+                            "raw_prob": None,
+                            "threshold": round(bear_t * 100, 0),
+                            "opposite_label": "Signal",
+                            "opposite_prob": round((1.0 - conf) * 100, 1),
+                            "flow_label": "Flow Bear",
+                            "flow_pct": round(flow_bear * 100, 0),
+                            "l2_label": "L2 Ask",
+                            "l2_pct": round((1.0 - l2_bid_share) * 100, 0),
+                            "tp_hit_est": None,
+                            "reason": f"Model signal is {sig} ({conf*100:.1f}%), requiring SELL ≥ {bear_t*100:.0f}%",
+                            "summary": conf_str,
+                            "message": f"🛡️ AI Trade Shield blocked SELL on {symbol} ({conf_str})"
+                        }
                     ai_filter_info = f"{model_label} SELL {conf * 100:.1f}% (≥{bear_t * 100:.0f}%)"
 
             out_sl = float(ai_sl) if (exec_mode_lower == 'advanced' and ai_sl and float(ai_sl) > 0) else None
@@ -1019,21 +1093,57 @@ class ManualTradeService:
                 else:
                     conf_str = f"Predicted: {raw_score:.4f} <= Price: {mid_p:.4f}"
                 logger.info(f"🚫 [ManualTrade AI Filter] Denied BUY on {symbol} by {model_label} ({conf_str})")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"🚫 AI Filter Denied BUY: '{model_label}' predicts unfavorable/bearish condition ({conf_str})."
-                )
+                return {
+                    "rejected": True,
+                    "rejected_by_ai": True,
+                    "status": "rejected_by_ai",
+                    "side": "BUY",
+                    "symbol": symbol,
+                    "model_name": model_label,
+                    "direction_label": "Bullish",
+                    "calibrated_prob": round(raw_score * 100, 1) if is_prob_model else 0.0,
+                    "raw_prob": None,
+                    "threshold": round(predictor.bullish_threshold * 100, 0),
+                    "opposite_label": "Bearish",
+                    "opposite_prob": round((1.0 - raw_score) * 100, 1) if is_prob_model else 0.0,
+                    "flow_label": None,
+                    "flow_pct": None,
+                    "l2_label": None,
+                    "l2_pct": None,
+                    "tp_hit_est": None,
+                    "reason": f"L2 AI Model predicts unfavorable/bearish condition ({conf_str})",
+                    "summary": conf_str,
+                    "message": f"🛡️ AI Trade Shield blocked BUY on {symbol} ({conf_str})"
+                }
             else:
+                bearish_pct = (1.0 - raw_score) * 100
                 if is_prob_model:
-                    bearish_pct = (1.0 - raw_score) * 100
                     conf_str = f"Bearish Score: {bearish_pct:.1f}% < Threshold {predictor.bearish_threshold * 100:.0f}%"
                 else:
                     conf_str = f"Predicted: {raw_score:.4f} >= Price: {mid_p:.4f}"
                 logger.info(f"🚫 [ManualTrade AI Filter] Denied SELL on {symbol} by {model_label} ({conf_str})")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"🚫 AI Filter Denied SELL: '{model_label}' predicts unfavorable/bullish condition ({conf_str})."
-                )
+                return {
+                    "rejected": True,
+                    "rejected_by_ai": True,
+                    "status": "rejected_by_ai",
+                    "side": "SELL",
+                    "symbol": symbol,
+                    "model_name": model_label,
+                    "direction_label": "Bearish",
+                    "calibrated_prob": round(bearish_pct, 1) if is_prob_model else 0.0,
+                    "raw_prob": None,
+                    "threshold": round(predictor.bearish_threshold * 100, 0),
+                    "opposite_label": "Bullish",
+                    "opposite_prob": round(raw_score * 100, 1) if is_prob_model else 0.0,
+                    "flow_label": None,
+                    "flow_pct": None,
+                    "l2_label": None,
+                    "l2_pct": None,
+                    "tp_hit_est": None,
+                    "reason": f"L2 AI Model predicts unfavorable/bullish condition ({conf_str})",
+                    "summary": conf_str,
+                    "message": f"🛡️ AI Trade Shield blocked SELL on {symbol} ({conf_str})"
+                }
         else:
             if is_buy_side:
                 ai_filter_info = (
@@ -1114,6 +1224,8 @@ class ManualTradeService:
                     attached_tp=getattr(order_req, 'attached_tp', None),
                     attached_sl=getattr(order_req, 'attached_sl', None)
                 )
+                if ml_res.get("rejected"):
+                    return ml_res
                 ai_filter_info = ml_res.get("ai_filter_info")
                 if str(ml_exec_mode or 'basic').lower() == 'advanced':
                     if ml_res.get("tp_price") and float(ml_res["tp_price"]) > 0:
@@ -2045,6 +2157,8 @@ class ManualTradeService:
                         attached_tp=attached_tp,
                         attached_sl=attached_sl
                     )
+                    if ml_res.get("rejected"):
+                        return ml_res
                     ai_filter_info = ml_res.get("ai_filter_info")
                     if str(ml_execution_mode or 'basic').lower() == 'advanced':
                         if ml_res.get("tp_price") and float(ml_res["tp_price"]) > 0:

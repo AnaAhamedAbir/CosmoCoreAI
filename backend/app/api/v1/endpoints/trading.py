@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Body, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Body, Depends, Query
 from typing import Optional
 from datetime import datetime  # BUG-01 fix: was missing, caused NameError in /sor/execute
 import ccxt.async_support as ccxt
@@ -78,6 +78,14 @@ class StopSmartChaseRequest(BaseModel):
     api_key_id: Optional[int] = None
     symbol: str
     sl_id: Optional[str] = None
+
+class CancelAllOrdersRequest(BaseModel):
+    api_key_id: int
+    symbol: str
+
+class ClosePositionRequest(BaseModel):
+    api_key_id: int
+    symbol: str
 
 # --- Endpoints ---
 
@@ -585,6 +593,78 @@ async def emergency_force_order_endpoint(
     except Exception as e:
         logger.error(f"Emergency Force Order failed: {e}")
         raise HTTPException(status_code=400, detail=f"Emergency Force Order Failed: {str(e)}")
+
+@router.delete("/order/{api_key_id}/{order_id}")
+async def cancel_order_endpoint(
+    api_key_id: int,
+    order_id: str,
+    symbol: str = Query(..., description="Trading pair symbol e.g. BTC/USDT or DOGE/USDT:USDT"),
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """
+    Cancel a specific open limit order or software bracket for the symbol.
+    """
+    try:
+        from app.services.manual_trade_service import manual_trade_service
+        return await manual_trade_service.cancel_manual_order(
+            db=db,
+            user_id=current_user.id,
+            api_key_id=api_key_id,
+            order_id=order_id,
+            symbol=symbol
+        )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Cancel order endpoint error: {e}")
+        raise HTTPException(status_code=400, detail=f"Cancel Order Failed: {str(e)}")
+
+@router.post("/cancel-all-orders")
+async def cancel_all_orders_endpoint(
+    req: CancelAllOrdersRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """
+    Cancel ALL open orders and active brackets for the specified symbol.
+    """
+    try:
+        from app.services.manual_trade_service import manual_trade_service
+        return await manual_trade_service.cancel_all_manual_orders(
+            db=db,
+            user_id=current_user.id,
+            api_key_id=req.api_key_id,
+            symbol=req.symbol
+        )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Cancel all orders endpoint error: {e}")
+        raise HTTPException(status_code=400, detail=f"Cancel All Orders Failed: {str(e)}")
+
+@router.post("/close-position")
+async def close_position_endpoint(
+    req: ClosePositionRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """
+    Immediately closes an open Futures position or Spot holding for the symbol at Market price.
+    """
+    try:
+        from app.services.manual_trade_service import manual_trade_service
+        return await manual_trade_service.close_active_position(
+            db=db,
+            user_id=current_user.id,
+            api_key_id=req.api_key_id,
+            symbol=req.symbol
+        )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Close position endpoint error: {e}")
+        raise HTTPException(status_code=400, detail=f"Close Position Failed: {str(e)}")
 
 @router.post("/sor/preview")
 async def preview_sor_order(

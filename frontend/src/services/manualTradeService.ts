@@ -217,6 +217,27 @@ export const manualTradeService = {
       ml_bearish_threshold: payload.ml_bearish_threshold
     });
     return response.data;
+  },
+
+  cancelOrder: async (apiKeyId: number, orderId: string, symbol: string) => {
+    const response = await api.delete(`/trading/order/${apiKeyId}/${orderId}?symbol=${encodeURIComponent(symbol)}`);
+    return response.data;
+  },
+
+  cancelAllOrders: async (apiKeyId: number, symbol: string) => {
+    const response = await api.post('/trading/cancel-all-orders', {
+      api_key_id: apiKeyId,
+      symbol
+    });
+    return response.data;
+  },
+
+  closePosition: async (apiKeyId: number, symbol: string) => {
+    const response = await api.post('/trading/close-position', {
+      api_key_id: apiKeyId,
+      symbol
+    });
+    return response.data;
   }
 };
 

@@ -3131,15 +3131,45 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                             </div>
 
                             {/* Modal Actions */}
-                            <div className="flex items-center gap-3 pt-3 border-t border-white/10">
+                            <div className="flex items-center gap-2 pt-3 border-t border-white/10">
                                 <button
                                     type="button"
                                     disabled={isModifyingOrder}
                                     onClick={() => cancelOrderModification(pendingModification)}
-                                    className="flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-all disabled:opacity-50 cursor-pointer"
+                                    className="py-2.5 px-3 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-all disabled:opacity-50 cursor-pointer"
+                                    title="Keep order unchanged"
                                 >
                                     Cancel
                                 </button>
+                                {selectedApiKeyId && (
+                                    <button
+                                        type="button"
+                                        disabled={isModifyingOrder}
+                                        onClick={async () => {
+                                            if (!selectedApiKeyId || !pendingModification) return;
+                                            setIsModifyingOrder(true);
+                                            try {
+                                                await manualTradeService.cancelOrder(parseInt(selectedApiKeyId), pendingModification.orderId, pendingModification.symbol);
+                                                const key = `order-${pendingModification.orderId}`;
+                                                const line = wallLinesRef.current.get(key);
+                                                if (line) {
+                                                    try { candlestickSeriesRef.current?.removePriceLine(line); } catch {}
+                                                    wallLinesRef.current.delete(key);
+                                                }
+                                                cancelOrderModification(pendingModification);
+                                                toast.success(`🛑 Order #${pendingModification.orderId} cancelled.`);
+                                            } catch (err: any) {
+                                                toast.error('Failed to cancel order: ' + (err.response?.data?.detail || err.message));
+                                            } finally {
+                                                setIsModifyingOrder(false);
+                                            }
+                                        }}
+                                        className="py-2.5 px-3 rounded-xl text-xs font-semibold bg-rose-500/20 hover:bg-rose-500 border border-rose-500/40 text-rose-200 hover:text-white transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1"
+                                        title="Cancel this order completely from exchange"
+                                    >
+                                        <span>✕ Delete Order</span>
+                                    </button>
+                                )}
                                 <button
                                     type="button"
                                     disabled={isModifyingOrder}

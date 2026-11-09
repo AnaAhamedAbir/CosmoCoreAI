@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle, Minus, Maximize2, GripVertical } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle, Minus, Maximize2, GripVertical, Trash2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
 import { notificationService } from '../../../services/notification';
@@ -144,6 +144,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const openOrdersPollTickRef = React.useRef<number>(0);
   const [isStoppingChase, setIsStoppingChase] = useState(false);
   const [isStoppingPeg, setIsStoppingPeg] = useState(false);
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+  const [isCancellingAll, setIsCancellingAll] = useState(false);
+  const [isClosingPosition, setIsClosingPosition] = useState(false);
   const [emergencyMode, setEmergencyMode] = useState<'limit_maker' | 'market'>('limit_maker');
   const [isEmergencySubmitting, setIsEmergencySubmitting] = useState(false);
   const [emergencySubmittingSide, setEmergencySubmittingSide] = useState<'Buy' | 'Sell' | null>(null);
@@ -494,13 +497,14 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   }, [selectedApi, activeSymbol]);
 
   React.useEffect(() => {
-    if (!selectedApi || !isOpen) return;
+    if (!selectedApi) return;
     fetchActiveBrackets(true);
+    const pollInterval = isOpen ? 3000 : 7000;
     const interval = setInterval(() => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        fetchActiveBrackets(false);
+        fetchActiveBrackets(isOpen);
       }
-    }, 3000);
+    }, pollInterval);
     return () => clearInterval(interval);
   }, [selectedApi, activeSymbol, isOpen, fetchActiveBrackets]);
 
@@ -660,6 +664,51 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to stop Smart Peg Entry');
     } finally {
       setIsStoppingPeg(false);
+    }
+  };
+
+  const handleCancelOrder = async (orderId: string) => {
+    if (!selectedApi) return;
+    setCancellingOrderId(orderId);
+    try {
+      const res = await manualTradeService.cancelOrder(Number(selectedApi), orderId, activeSymbol);
+      toast.success(res?.message || `🛑 Order #${orderId} cancelled.`);
+      fetchActiveBrackets(true);
+      fetchBalance(true);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || err?.message || 'Failed to cancel order');
+    } finally {
+      setCancellingOrderId(null);
+    }
+  };
+
+  const handleCancelAllOrders = async () => {
+    if (!selectedApi) return;
+    setIsCancellingAll(true);
+    try {
+      const res = await manualTradeService.cancelAllOrders(Number(selectedApi), activeSymbol);
+      toast.success(res?.message || `🛑 All open orders on ${activeSymbol} cancelled.`);
+      fetchActiveBrackets(true);
+      fetchBalance(true);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || err?.message || 'Failed to cancel all orders');
+    } finally {
+      setIsCancellingAll(false);
+    }
+  };
+
+  const handleClosePosition = async () => {
+    if (!selectedApi) return;
+    setIsClosingPosition(true);
+    try {
+      const res = await manualTradeService.closePosition(Number(selectedApi), activeSymbol);
+      toast.success(res?.message || `🚨 Position closed successfully at Market price.`);
+      fetchActiveBrackets(true);
+      fetchBalance(true);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || err?.message || 'Failed to close position');
+    } finally {
+      setIsClosingPosition(false);
     }
   };
 
@@ -1666,11 +1715,65 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       }
       setAiRejectNotice(null);
 
+      const createdOrderId = orderRes?.id;
       const aiNote = orderRes?.ai_filter_info ? ` [🤖 ${orderRes.ai_filter_info}]` : '';
-      toast.success(
-        orderType === 'SmartPeg'
-          ? `⚡ ${side} Smart Peg Entry active for ${activeSymbol}${aiNote}`
-          : `✅ ${side} ${orderType} order placed for ${activeSymbol}${aiNote}`
+
+      toast.custom(
+        (t) => (
+          <div
+            className={`${
+              t.visible ? 'animate-enter' : 'animate-leave'
+            } max-w-sm w-full bg-[#070b14]/95 backdrop-blur-xl border border-cyan-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.85)] p-3 text-white pointer-events-auto flex items-center justify-between gap-3`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="text-base shrink-0">{orderType === 'SmartPeg' ? '⚡' : '✅'}</span>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-bold truncate">
+                  {side} {orderType} Placed {aiNote}
+                </span>
+                <span className="text-[10px] text-gray-400 font-mono truncate">
+                  {activeSymbol} {createdOrderId ? `• #${createdOrderId}` : ''}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {createdOrderId && orderType !== 'Market' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toast.dismiss(t.id);
+                    handleCancelOrder(String(createdOrderId));
+                  }}
+                  className="px-2 py-1 rounded bg-rose-500/25 hover:bg-rose-500 border border-rose-500/40 text-rose-200 hover:text-white text-[10px] font-mono font-bold uppercase transition-all cursor-pointer active:scale-95"
+                  title="Immediately cancel this order"
+                >
+                  ✕ Cancel
+                </button>
+              )}
+              {orderType === 'Market' && isFutures && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toast.dismiss(t.id);
+                    handleClosePosition();
+                  }}
+                  className="px-2 py-1 rounded bg-rose-500/25 hover:bg-rose-500 border border-rose-500/40 text-rose-200 hover:text-white text-[10px] font-mono font-bold uppercase transition-all cursor-pointer active:scale-95"
+                  title="Immediately close this position at Market"
+                >
+                  ⚡ Close
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => toast.dismiss(t.id)}
+                className="p-1 text-gray-400 hover:text-white rounded hover:bg-white/10 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        ),
+        { duration: 6000 }
       );
 
       // Auto-refresh balance & open orders immediately after order placement, followed by staggered syncs
@@ -1734,6 +1837,14 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
               <span className="absolute -top-1 -right-1 flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500 border border-white"></span>
+              </span>
+            )}
+            {!activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging') && openLimitOrders.length > 0 && (
+              <span
+                className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 rounded-full bg-amber-500 text-[9px] font-black font-mono text-slate-950 items-center justify-center border border-white shadow-md animate-pulse"
+                title={`${openLimitOrders.length} Open Orders active`}
+              >
+                {openLimitOrders.length}
               </span>
             )}
           </MotionButton>
@@ -1883,6 +1994,30 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                             title="L2 Machine Learning Entry Filter Active"
                           >
                             AI
+                          </span>
+                        )}
+                        {openLimitOrders.length > 0 && (
+                          <span
+                            className="text-[8px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse"
+                            title={`${openLimitOrders.length} open limit orders active. Click to view and cancel.`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsMinimized(false);
+                            }}
+                          >
+                            {openLimitOrders.length} OPEN
+                          </span>
+                        )}
+                        {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
+                          <span
+                            className={`text-[8px] px-1 py-0.2 rounded font-mono font-black leading-tight border ${
+                              positionData.side.toLowerCase() === 'long'
+                                ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/50'
+                                : 'bg-rose-500/25 text-rose-300 border-rose-400/50'
+                            }`}
+                            title={`Active Position: ${positionData.side.toUpperCase()} ${positionData.amount} ${baseCurrency}`}
+                          >
+                            POS:{positionData.side.toUpperCase()}
                           </span>
                         )}
                       </div>
@@ -2274,6 +2409,30 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                         >
                           <RefreshCw className="w-2.5 h-2.5" />
                         </button>
+
+                        {forceOrderTargets.length > 0 && (
+                          <button
+                            type="button"
+                            disabled={cancellingOrderId !== null || isCancellingAll}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (selectedForceOrderId !== 'all') {
+                                handleCancelOrder(selectedForceOrderId);
+                              } else {
+                                handleCancelAllOrders();
+                              }
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500 border border-rose-500/40 text-rose-200 hover:text-white text-[8px] font-mono font-black uppercase tracking-tight transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50"
+                            title={selectedForceOrderId !== 'all' ? `Cancel Selected Order #${selectedForceOrderId}` : 'Cancel ALL Open Orders'}
+                          >
+                            {cancellingOrderId || isCancellingAll ? (
+                              <RefreshCw className="w-2 h-2 animate-spin" />
+                            ) : (
+                              <span>✕ {selectedForceOrderId !== 'all' ? 'Cancel' : 'Cancel All'}</span>
+                            )}
+                          </button>
+                        )}
                       </div>
 
                       {/* Sub-Row 4B: Execution Mode (1. Limit Maker 0% Fee | 2. Market) + Force Buy & Force Sell Triggers */}
@@ -2326,6 +2485,22 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
                         {/* Right: Instant Emergency Force Buy & Force Sell Triggers (+ Stop button if Peg/Chase active) */}
                         <div className="flex items-center gap-1 flex-1 justify-end">
+                          {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
+                            <button
+                              type="button"
+                              disabled={isClosingPosition}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleClosePosition();
+                              }}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              className="px-1.5 py-1 rounded bg-rose-600 hover:bg-rose-500 border border-rose-400 text-white font-mono text-[8px] font-black uppercase tracking-tight transition-all cursor-pointer active:scale-95 shrink-0 shadow-[0_0_8px_rgba(244,63,94,0.4)] disabled:opacity-50"
+                              title={`Instant Market Close Active ${positionData.side.toUpperCase()} Position (${positionData.amount} ${baseCurrency})`}
+                            >
+                              {isClosingPosition ? <RefreshCw className="w-2 h-2 animate-spin" /> : <span>⚡ CLOSE</span>}
+                            </button>
+                          )}
+
                           {activeBrackets.some((b) => b.status === 'pegging' || b.status === 'chasing') && (
                             <button
                               type="button"
@@ -2700,6 +2875,113 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
                 return null;
               })()}
+
+              {/* ACTIVE POSITION LIVE STATUS & QUICK MARKET CLOSE */}
+              {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
+                <div className="p-2.5 rounded-xl bg-gradient-to-r from-[#170a14] via-[#0e101d] to-[#0a1518] border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)] flex items-center justify-between gap-2 animate-fadeIn mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]'} animate-pulse`} />
+                    <div className="flex flex-col text-left min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-extrabold text-white uppercase tracking-tight">Active Position:</span>
+                        <span className={`text-[9px] font-mono font-black px-1.5 py-0.2 rounded border ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'}`}>
+                          {positionData.side.toUpperCase()}
+                        </span>
+                        <span className="text-[10px] font-mono font-bold text-gray-200">
+                          {isInverseFutures && positionData.contracts ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(2)} ${baseCurrency})` : `${positionData.amount} ${baseCurrency}`}
+                        </span>
+                      </div>
+                      <span className="text-[8.5px] text-gray-400 font-mono">
+                        Instant Market Exit / Flatten
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isClosingPosition}
+                    onClick={handleClosePosition}
+                    className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-mono text-[10px] font-black uppercase tracking-wider shadow-[0_0_12px_rgba(244,63,94,0.35)] transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
+                    title="Close active position immediately at Market price"
+                  >
+                    {isClosingPosition ? (
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Zap className="w-3 h-3 fill-current" />
+                    )}
+                    <span>{isClosingPosition ? 'Closing...' : 'Close Pos'}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* OPEN LIMIT ORDERS LIST & CANCEL ACTIONS */}
+              {openLimitOrders && openLimitOrders.length > 0 && (
+                <div className="p-2.5 rounded-xl bg-[#070b14]/90 border border-white/10 shadow-sm flex flex-col gap-2 animate-fadeIn mb-2">
+                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
+                    <div className="flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                      <span className="text-[11px] font-bold text-gray-200 uppercase tracking-wide">
+                        Open Orders ({openLimitOrders.length})
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isCancellingAll}
+                      onClick={handleCancelAllOrders}
+                      className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[9.5px] font-mono font-bold tracking-wider transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      title="Cancel all open orders on this symbol"
+                    >
+                      {isCancellingAll ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Trash2 className="w-2.5 h-2.5" />}
+                      <span>{isCancellingAll ? 'Cancelling...' : 'Cancel All'}</span>
+                    </button>
+                  </div>
+
+                  <div className="max-h-36 overflow-y-auto space-y-1.5 pr-0.5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
+                    {openLimitOrders.map((ord: any) => {
+                      const isBuy = String(ord.side).toLowerCase() === 'buy';
+                      const mode = ord.mode || 'LIMIT';
+                      const isCancelling = cancellingOrderId === String(ord.id);
+                      return (
+                        <div
+                          key={ord.id}
+                          className="p-1.5 rounded-lg bg-black/40 border border-white/5 flex items-center justify-between text-[10px] font-mono"
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className={`px-1 py-0.2 rounded text-[8px] font-bold uppercase ${
+                                isBuy
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              }`}
+                            >
+                              {isBuy ? 'BUY' : 'SELL'}
+                            </span>
+                            <span className="text-[8px] text-gray-400 uppercase font-bold">[{mode}]</span>
+                            <span className="text-gray-200 truncate">
+                              {Number(ord.amount || ord.remaining || 0).toFixed(2)} @{' '}
+                              <strong className="text-white">${formatDisplayPrice(ord.price)}</strong>
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={isCancelling}
+                            onClick={() => handleCancelOrder(String(ord.id))}
+                            className="p-1 rounded hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-transparent hover:border-rose-500/30 transition-all cursor-pointer disabled:opacity-50 shrink-0 ml-1"
+                            title={`Cancel Order #${ord.id}`}
+                          >
+                            {isCancelling ? (
+                              <RefreshCw className="w-3 h-3 animate-spin text-rose-400" />
+                            ) : (
+                              <X className="w-3 h-3" />
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Buy / Sell Tabs */}
               <div className="flex p-1 rounded-lg bg-black/40 border border-white/5 mb-2">

@@ -2635,4 +2635,370 @@ class ManualTradeService:
             logger.error(f"Emergency force order error ({symbol}): {e}")
             raise HTTPException(status_code=400, detail=f"Emergency Force {side.upper()} Failed: {str(e)}")
 
+    @staticmethod
+    async def cancel_manual_order(
+        db: Session,
+        user_id: int,
+        api_key_id: int,
+        order_id: str,
+        symbol: str
+    ) -> dict:
+        """
+        Cancels a specific open order or active software bracket/peg/chase for the given symbol.
+        """
+        from app.services.manual_smart_chase_executor import stop_smart_chase, ACTIVE_SMART_CHASES
+        from app.services.smart_peg_entry_executor import stop_smart_peg, ACTIVE_SMART_PEGS
+
+        api_key_record = db.query(models.ApiKey).filter(
+            models.ApiKey.id == api_key_id,
+            models.ApiKey.user_id == user_id,
+            models.ApiKey.is_enabled == True
+        ).first()
+
+        if not api_key_record:
+            raise HTTPException(status_code=404, detail="API Key not found or inactive")
+
+        is_futures = ':' in symbol
+        specific_oid = str(order_id).strip()
+
+        try:
+            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
+
+            # 1. In-memory Smart Peg Check
+            if specific_oid in ACTIVE_SMART_PEGS:
+                await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id, peg_id=specific_oid)
+                ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+                return {
+                    "success": True,
+                    "order_id": specific_oid,
+                    "type": "smart_peg",
+                    "message": f"Smart Peg Entry {specific_oid} stopped."
+                }
+
+            # 2. In-memory Smart Chase Check
+            if specific_oid in ACTIVE_SMART_CHASES:
+                cdata = ACTIVE_SMART_CHASES.get(specific_oid) or {}
+                tp_oid = cdata.get('tp_order_id')
+                if tp_oid:
+                    try:
+                        await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
+                    except Exception:
+                        pass
+                await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id, chase_id=specific_oid)
+                ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+                return {
+                    "success": True,
+                    "order_id": specific_oid,
+                    "type": "smart_chase",
+                    "message": f"Smart Chase SL {specific_oid} stopped."
+                }
+
+            # 3. Check Software SL Brackets
+            for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
+                key_match = (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == int(api_key_id))
+                if not key_match:
+                    continue
+                if (
+                    str(sl_id) == specific_oid
+                    or str(sdata.get('tp_order_id') or '') == specific_oid
+                    or str(sdata.get('disaster_sl_order_id') or '') == specific_oid
+                    or str(sdata.get('entry_order_id') or '') == specific_oid
+                ):
+                    sdata['cancelled'] = True
+                    tp_oid = sdata.get('tp_order_id')
+                    dis_oid = sdata.get('disaster_sl_order_id')
+                    if tp_oid:
+                        try:
+                            await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
+                        except Exception:
+                            pass
+                    if dis_oid:
+                        try:
+                            await bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol)
+                        except Exception:
+                            pass
+
+            # 4. Check Entry Brackets
+            for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
+                key_match = (eb_data.get('api_key_id') is None or int(eb_data.get('api_key_id')) == int(api_key_id))
+                if not key_match:
+                    continue
+                if str(eb_id) == specific_oid or str(eb_data.get('tp_order_id') or '') == specific_oid:
+                    eb_data['cancelled'] = True
+                    tp_oid = eb_data.get('tp_order_id')
+                    if tp_oid:
+                        try:
+                            await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
+                        except Exception:
+                            pass
+
+            # 5. Check Entry Monitors
+            if specific_oid in bracket_order_service.ACTIVE_ENTRY_MONITORS:
+                bracket_order_service.ACTIVE_ENTRY_MONITORS[specific_oid]['cancelled'] = True
+
+            # 6. Cancel order on exchange
+            try:
+                await bracket_order_service._cancel_futures_order_universal(exchange, specific_oid, symbol)
+            except Exception as ex_err:
+                logger.warning(f"Failed to cancel order {specific_oid} on {symbol}: {ex_err}")
+                pass
+
+            ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+            return {
+                "success": True,
+                "order_id": specific_oid,
+                "symbol": symbol,
+                "message": f"Order {specific_oid} cancelled successfully."
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error cancelling order {specific_oid} ({symbol}): {e}")
+            raise HTTPException(status_code=400, detail=f"Failed to cancel order: {str(e)}")
+
+    @staticmethod
+    async def cancel_all_manual_orders(
+        db: Session,
+        user_id: int,
+        api_key_id: int,
+        symbol: str
+    ) -> dict:
+        """
+        Cancels ALL open limit orders and active software brackets/pegs/chases for the symbol.
+        """
+        from app.services.manual_smart_chase_executor import stop_smart_chase
+        from app.services.smart_peg_entry_executor import stop_smart_peg
+
+        api_key_record = db.query(models.ApiKey).filter(
+            models.ApiKey.id == api_key_id,
+            models.ApiKey.user_id == user_id,
+            models.ApiKey.is_enabled == True
+        ).first()
+
+        if not api_key_record:
+            raise HTTPException(status_code=404, detail="API Key not found or inactive")
+
+        is_futures = ':' in symbol
+
+        def _sym_matches(sa: str, sb: str) -> bool:
+            s1 = str(sa or '').strip()
+            s2 = str(sb or '').strip()
+            if (':' in s1) != (':' in s2):
+                return False
+            return s1.split(':')[0].upper() == s2.split(':')[0].upper()
+
+        try:
+            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
+
+            # 1. Stop Smart Pegs & Smart Chases
+            stopped_pegs = await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
+            stopped_chases = await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
+
+            # 2. Cancel in-memory monitors & brackets
+            for em_id, em_data in list(bracket_order_service.ACTIVE_ENTRY_MONITORS.items()):
+                key_match = (em_data.get('api_key_id') is None or int(em_data.get('api_key_id')) == int(api_key_id))
+                if key_match and _sym_matches(em_data.get('symbol', ''), symbol):
+                    em_data['cancelled'] = True
+
+            cancelled_brackets = 0
+            for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
+                key_match = (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == int(api_key_id))
+                if key_match and _sym_matches(sdata.get('symbol', ''), symbol) and not sdata.get('cancelled'):
+                    sdata['cancelled'] = True
+                    cancelled_brackets += 1
+                    tp_oid = sdata.get('tp_order_id')
+                    dis_oid = sdata.get('disaster_sl_order_id')
+                    if tp_oid:
+                        try:
+                            await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
+                        except Exception:
+                            pass
+                    if dis_oid:
+                        try:
+                            await bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol)
+                        except Exception:
+                            pass
+
+            for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
+                key_match = (eb_data.get('api_key_id') is None or int(eb_data.get('api_key_id')) == int(api_key_id))
+                if key_match and _sym_matches(eb_data.get('symbol', ''), symbol) and not eb_data.get('cancelled'):
+                    eb_data['cancelled'] = True
+                    tp_oid = eb_data.get('tp_order_id')
+                    if tp_oid:
+                        try:
+                            await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
+                        except Exception:
+                            pass
+
+            # 3. Exchange open orders cancel
+            cancelled_open_orders = 0
+            try:
+                if hasattr(exchange, 'cancel_all_orders'):
+                    await exchange.cancel_all_orders(symbol)
+                    cancelled_open_orders += 1
+            except Exception as e:
+                logger.debug(f"cancel_all_orders on exchange notice: {e}")
+
+            try:
+                open_orders_res = await ManualTradeService.get_open_limit_orders(db, user_id, api_key_id, symbol, force_refresh=True)
+                open_orders_list = open_orders_res.get('orders', []) if isinstance(open_orders_res, dict) else (open_orders_res or [])
+                for o in open_orders_list:
+                    oid = o.get('id') if isinstance(o, dict) else None
+                    if oid:
+                        try:
+                            await bracket_order_service._cancel_futures_order_universal(exchange, str(oid), symbol)
+                            cancelled_open_orders += 1
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+            total = cancelled_open_orders + stopped_pegs + stopped_chases + cancelled_brackets
+            return {
+                "success": True,
+                "symbol": symbol,
+                "cleared_count": total,
+                "message": f"Successfully cancelled all open orders & brackets on {symbol}."
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error cancelling all orders ({symbol}): {e}")
+            raise HTTPException(status_code=400, detail=f"Failed to cancel all orders: {str(e)}")
+
+    @staticmethod
+    async def close_active_position(
+        db: Session,
+        user_id: int,
+        api_key_id: int,
+        symbol: str
+    ) -> dict:
+        """
+        Immediately closes an active position (Market Flatten):
+        - Futures: Cancels open bracket orders on the symbol and sends a Market reduceOnly order
+          matching the exact open position size and opposite side.
+        - Spot: Cancels open sell orders and market sells 100% of free base token balance back to quote.
+        """
+        from app.services.manual_smart_chase_executor import stop_smart_chase
+        from app.services.smart_peg_entry_executor import stop_smart_peg
+
+        api_key_record = db.query(models.ApiKey).filter(
+            models.ApiKey.id == api_key_id,
+            models.ApiKey.user_id == user_id,
+            models.ApiKey.is_enabled == True
+        ).first()
+
+        if not api_key_record:
+            raise HTTPException(status_code=404, detail="API Key not found or inactive")
+
+        is_futures = ':' in symbol
+
+        try:
+            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
+            meta = ManualTradeService._get_contract_meta(exchange, symbol)
+            is_inverse = meta["is_inverse"]
+            contract_size = meta["contract_size"]
+
+            if is_futures:
+                # 1. Fetch current position
+                pos_info = await ManualTradeService.get_active_position(db, user_id, api_key_id, symbol)
+                pos_amt = float((pos_info or {}).get('amount') or 0.0)
+                pos_side = str((pos_info or {}).get('side') or 'none').lower()
+                pos_contracts = int((pos_info or {}).get('contracts') or 0)
+
+                if pos_amt <= 0 or pos_side not in ('long', 'short'):
+                    raise HTTPException(status_code=400, detail=f"No active position to close on {symbol}.")
+
+                # 2. Cancel conflicting brackets/orders first
+                await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
+                await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
+
+                for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
+                    if (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == int(api_key_id)) and not sdata.get('cancelled'):
+                        if str(sdata.get('symbol', '')).split(':')[0].upper() == symbol.split(':')[0].upper():
+                            sdata['cancelled'] = True
+                            tp_oid = sdata.get('tp_order_id')
+                            if tp_oid:
+                                try:
+                                    await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
+                                except Exception:
+                                    pass
+
+                # 3. Determine market order params
+                exit_side = 'sell' if pos_side == 'long' else 'buy'
+                ex_params = {'reduceOnly': True}
+
+                is_hedge = await ManualTradeService._is_binance_hedge_mode(exchange, symbol, is_inverse)
+                if is_hedge:
+                    ex_params['positionSide'] = 'LONG' if pos_side == 'long' else 'SHORT'
+
+                order_amount = pos_contracts if (is_inverse and pos_contracts > 0) else bracket_order_service._safe_amount_to_precision(exchange, symbol, pos_amt)
+
+                logger.info(f"🚨 Quick Market Close Position for {symbol}: side={exit_side}, amount={order_amount}, params={ex_params}")
+                res = await exchange.create_market_order(symbol, exit_side, order_amount, params=ex_params)
+
+                # Send Telegram notification
+                asyncio.create_task(
+                    _send_trade_fired_notification(
+                        user_id=user_id,
+                        exchange_name=api_key_record.exchange,
+                        symbol=symbol,
+                        side=exit_side,
+                        order_type='MarketClose',
+                        amount=pos_amt,
+                        is_futures=True,
+                        contract_size=contract_size,
+                        is_inverse=is_inverse
+                    )
+                )
+
+                ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+                return {
+                    "success": True,
+                    "symbol": symbol,
+                    "side": exit_side,
+                    "closed_amount": pos_amt,
+                    "order_id": (res or {}).get('id'),
+                    "message": f"Successfully closed {pos_side.upper()} position ({pos_amt} {symbol}) at Market price."
+                }
+            else:
+                # Spot market position exit: cancel open sell orders and sell base coin to quote currency
+                bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta)
+                base_free = float(bal.get('base_free') or 0.0)
+
+                # If there are open orders, cancel them to unlock base tokens
+                if float(bal.get('base_used') or 0.0) > 0:
+                    try:
+                        if hasattr(exchange, 'cancel_all_orders'):
+                            await exchange.cancel_all_orders(symbol)
+                    except Exception:
+                        pass
+                    bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta)
+                    base_free = float(bal.get('base_free') or 0.0)
+
+                if base_free <= 0:
+                    raise HTTPException(status_code=400, detail=f"No {meta.get('base', 'base coin')} balance available to close on {symbol}.")
+
+                safe_amt = bracket_order_service._safe_amount_to_precision(exchange, symbol, base_free)
+                res = await exchange.create_market_order(symbol, 'sell', safe_amt)
+
+                ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+                return {
+                    "success": True,
+                    "symbol": symbol,
+                    "side": "sell",
+                    "closed_amount": safe_amt,
+                    "order_id": (res or {}).get('id'),
+                    "message": f"Successfully sold {safe_amt} {meta.get('base')} at Market price."
+                }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error closing position ({symbol}): {e}")
+            raise HTTPException(status_code=400, detail=f"Failed to close position: {str(e)}")
+
 manual_trade_service = ManualTradeService()

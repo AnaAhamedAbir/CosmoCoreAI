@@ -92,7 +92,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     return val.toFixed(6);
   };
 
-  const [orderType, setOrderType] = useState<'Market' | 'Limit' | 'SmartPeg'>('SmartPeg');
+  const [orderType, setOrderType] = useState<'Market' | 'Limit' | 'SmartPeg'>('Limit');
   const [smartPegMaxDev, setSmartPegMaxDev] = useState<number>(5.0);
   const [size, setSize] = useState<string>('');
   const [selectedPercent, setSelectedPercent] = useState<string | null>('100%');
@@ -103,7 +103,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [balanceData, setBalanceData] = useState<FastBalanceResponse | null>(null);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [tradeSide, setTradeSide] = useState<'Buy' | 'Sell'>('Buy');
+  const [tradeSide, setTradeSide] = useState<'Buy' | 'Sell'>('Sell');
   const [marginMode, setMarginMode] = useState<'cross' | 'isolated'>('isolated');
   const [reduceOnly, setReduceOnly] = useState<boolean>(false);
   const [isAutoLimit, setIsAutoLimit] = useState<boolean>(true);
@@ -447,6 +447,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   React.useEffect(() => {
     if (isOpen) {
       fetchMlModels();
+      setTradeSide('Sell');
+      setIsIceberg(true);
+      setIcebergMode('qty');
+      setIcebergCustomQty((prev) => (!prev || prev === '0' ? '250' : prev));
     }
   }, [isOpen]);
 
@@ -868,7 +872,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     setSize('');
     setSizeMode('base');
     setBalanceData(null);
-    setIcebergCustomQty('');
+    setIcebergCustomQty('250');
   }, [activeSymbol]);
 
   const isFetchingBalanceRef = React.useRef(false);
@@ -1454,6 +1458,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         setOrderType('Limit');
         setIsAutoLimit(false); // Disable auto best limit since user manually picked a price
         setLimitPrice(clickedPrice.toString());
+        setTradeSide('Sell');
         setIsOpen(true); // Auto-open modal if closed
         setIsMinimized(false);
       }
@@ -1829,6 +1834,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             onClick={() => {
               setIsOpen(true);
               setIsMinimized(false);
+              setTradeSide('Sell');
             }}
             className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center border text-white backdrop-blur-md z-[999] transition-all focus:outline-none group ${
               activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging')
@@ -1921,6 +1927,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                 onClick={() => {
                   setIsOpen(true);
                   setIsMinimized(false);
+                  setTradeSide('Sell');
                 }}
                 className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white text-[10px] font-bold uppercase transition-all cursor-pointer"
               >
@@ -3413,7 +3420,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => setIcebergMode('qty')}
+                              onClick={() => {
+                                setIcebergMode('qty');
+                                if (!icebergCustomQty || icebergCustomQty === '0') {
+                                  setIcebergCustomQty('250');
+                                }
+                              }}
                               className={`px-2 py-0.5 text-[10px] rounded transition-colors ${
                                 icebergMode === 'qty' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
                               }`}
@@ -3443,6 +3455,26 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           </div>
                         )}
 
+                        {/* Base Coin Qty Quick Buttons */}
+                        {icebergMode === 'qty' && (
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {['100', '250', '500', '1000'].map((q) => (
+                              <button
+                                key={q}
+                                type="button"
+                                onClick={() => setIcebergCustomQty(q)}
+                                className={`py-1 text-[10px] font-mono rounded border transition-all ${
+                                  icebergCustomQty === q
+                                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
+                                    : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
+                                }`}
+                              >
+                                {q} {baseCurrency}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
                         {/* Input Field */}
                         <div className="relative">
                           <input 
@@ -3456,7 +3488,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                                 setIcebergCustomQty(e.target.value);
                               }
                             }}
-                            placeholder={icebergMode === 'percent' ? 'e.g. 20' : `e.g. 100 ${baseCurrency}`}
+                            placeholder={icebergMode === 'percent' ? 'e.g. 20' : '250'}
                             className="w-full bg-black/40 border border-cyan-500/30 rounded py-1.5 px-3 pr-14 text-white text-xs font-mono focus:outline-none focus:border-cyan-400 transition-colors"
                           />
                           <span className="absolute right-3 top-1.5 text-[10px] text-cyan-400 font-bold font-mono">

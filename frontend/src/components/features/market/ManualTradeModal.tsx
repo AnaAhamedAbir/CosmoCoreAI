@@ -111,16 +111,16 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [isLoadingPosition, setIsLoadingPosition] = useState(false);
   const [tpConfig, setTpConfig] = useState({
     enabled: true,
-    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
-    value: '1.5',
+    mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
+    value: '0.00005',
     orderType: 'Limit' as 'Limit' | 'Market',
     timeoutMins: 0
   });
   const [slConfig, setSlConfig] = useState({
     enabled: true,
-    type: 'fixed' as 'fixed' | 'trailing' | 'smart_chase' | 'trailing_chase',
-    mode: 'percentage' as 'percentage' | 'price' | 'absolute' | 'atr',
-    value: '1.0',
+    type: 'smart_chase' as 'fixed' | 'trailing' | 'smart_chase' | 'trailing_chase',
+    mode: 'price' as 'percentage' | 'price' | 'absolute' | 'atr',
+    value: '0.0002',
     atrPeriod: 10,
     atrMultiplier: 2.0,
     atrTimeframe: '15m',
@@ -162,10 +162,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   }, []);
 
   // Binance Native Iceberg state (Spot Limit only)
-  const [isIceberg, setIsIceberg] = useState<boolean>(false);
-  const [icebergMode, setIcebergMode] = useState<'percent' | 'qty'>('percent');
+  const [isIceberg, setIsIceberg] = useState<boolean>(true);
+  const [icebergMode, setIcebergMode] = useState<'percent' | 'qty'>('qty');
   const [icebergPercent, setIcebergPercent] = useState<string>('20');
-  const [icebergCustomQty, setIcebergCustomQty] = useState<string>('');
+  const [icebergCustomQty, setIcebergCustomQty] = useState<string>('250');
 
   // L2 Machine Learning Filter state (from ML Registry)
   const [mlModels, setMlModels] = useState<CustomMLModel[]>([]);

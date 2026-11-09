@@ -726,6 +726,19 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
           ? forceOrderTargets.find((t) => t.id === selectedForceOrderId)
           : undefined;
 
+      if (targetObj) {
+        if (targetObj.side === 'buy' && side === 'Sell') {
+          toast.error('Cannot Force Sell a pending BUY order. Wait for fill or cancel order.');
+          setIsEmergencySubmitting(false);
+          return;
+        }
+        if (targetObj.side === 'sell' && side === 'Buy') {
+          toast.error('Cannot Force Buy a pending SELL / Exit order.');
+          setIsEmergencySubmitting(false);
+          return;
+        }
+      }
+
       const hasCustomTypedSize = !targetObj && !selectedPercent && Boolean(size) && Number(size) > 0;
       const effectivePct = targetObj
         ? selectedPercent
@@ -2524,33 +2537,45 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
                           <button
                             type="button"
-                            disabled={isEmergencySubmitting}
+                            disabled={isEmergencySubmitting || selectedForceTarget?.side === 'sell'}
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (selectedForceTarget?.side === 'sell') return;
                               handleEmergencyForceTrade('Buy');
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
-                            className={`flex-1 py-1 px-1.5 rounded bg-gradient-to-r from-emerald-600/35 to-cyan-600/35 hover:from-emerald-500 hover:to-cyan-500 border hover:border-white text-emerald-200 hover:text-slate-950 font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:shadow-[0_0_14px_rgba(16,185,129,0.6)] transition-all cursor-pointer active:scale-95 disabled:opacity-50 ${
-                              selectedForceTarget?.side === 'buy'
-                                ? 'border-emerald-300 ring-1 ring-emerald-400/50'
-                                : 'border-emerald-400/60'
+                            className={`flex-1 py-1 px-1.5 rounded font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${
+                              selectedForceTarget?.side === 'sell'
+                                ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed select-none'
+                                : `bg-gradient-to-r from-emerald-600/35 to-cyan-600/35 hover:from-emerald-500 hover:to-cyan-500 border hover:border-white text-emerald-200 hover:text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:shadow-[0_0_14px_rgba(16,185,129,0.6)] cursor-pointer active:scale-95 disabled:opacity-50 ${
+                                    selectedForceTarget?.side === 'buy'
+                                      ? 'border-emerald-300 ring-1 ring-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.45)]'
+                                      : 'border-emerald-400/60'
+                                  }`
                             }`}
                             title={
-                              selectedForceTarget
-                                ? `Force BUY Selected Order (${selectedForceTarget.label}) via ${
-                                    emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                  }`
-                                : `Emergency Force BUY (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
-                                    emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                  }`
+                              selectedForceTarget?.side === 'sell'
+                                ? 'Cannot Force Buy: Selected order is a SELL / Exit order'
+                                : selectedForceTarget
+                                  ? `Force BUY Selected Order (${selectedForceTarget.label}) via ${
+                                      emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                    }`
+                                  : `Emergency Force BUY (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
+                                      emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                    }`
                             }
                           >
                             {isEmergencySubmitting && emergencySubmittingSide === 'Buy' ? (
                               <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
                             ) : (
-                              <Zap className="w-2.5 h-2.5 fill-current shrink-0" />
+                              <Zap className={`w-2.5 h-2.5 shrink-0 ${selectedForceTarget?.side === 'sell' ? 'opacity-30' : 'fill-current'}`} />
                             )}
                             <span>FORCE BUY</span>
+                            {selectedForceTarget?.side === 'buy' && (
+                              <span className="text-[7.5px] font-black text-emerald-300 bg-emerald-950/80 px-1 py-0.2 rounded border border-emerald-500/50 leading-none">
+                                FILL
+                              </span>
+                            )}
                             <span className="text-[8px] opacity-90">
                               {selectedForceTarget
                                 ? `${Number(selectedForceTarget.amount.toFixed(1))}`
@@ -2562,33 +2587,45 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
                           <button
                             type="button"
-                            disabled={isEmergencySubmitting}
+                            disabled={isEmergencySubmitting || selectedForceTarget?.side === 'buy'}
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (selectedForceTarget?.side === 'buy') return;
                               handleEmergencyForceTrade('Sell');
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
-                            className={`flex-1 py-1 px-1.5 rounded bg-gradient-to-r from-rose-600/40 to-amber-600/35 hover:from-rose-500 hover:to-amber-500 border hover:border-white text-rose-200 hover:text-white font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(244,63,94,0.25)] hover:shadow-[0_0_14px_rgba(244,63,94,0.65)] transition-all cursor-pointer active:scale-95 disabled:opacity-50 ${
-                              selectedForceTarget?.side === 'sell'
-                                ? 'border-rose-300 ring-1 ring-rose-400/50'
-                                : 'border-rose-400/60'
+                            className={`flex-1 py-1 px-1.5 rounded font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${
+                              selectedForceTarget?.side === 'buy'
+                                ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed select-none'
+                                : `bg-gradient-to-r from-rose-600/40 to-amber-600/35 hover:from-rose-500 hover:to-amber-500 border hover:border-white text-rose-200 hover:text-white shadow-[0_0_10px_rgba(244,63,94,0.25)] hover:shadow-[0_0_14px_rgba(244,63,94,0.65)] cursor-pointer active:scale-95 disabled:opacity-50 ${
+                                    selectedForceTarget?.side === 'sell'
+                                      ? 'border-rose-300 ring-1 ring-rose-400/60 shadow-[0_0_12px_rgba(244,63,94,0.45)]'
+                                      : 'border-rose-400/60'
+                                  }`
                             }`}
                             title={
-                              selectedForceTarget
-                                ? `Force SELL Selected Order (${selectedForceTarget.label}) via ${
-                                    emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                  }`
-                                : `Emergency Force SELL (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
-                                    emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                  }`
+                              selectedForceTarget?.side === 'buy'
+                                ? 'Cannot Force Sell: Selected pending order is a BUY (Entry not filled yet)'
+                                : selectedForceTarget
+                                  ? `Force SELL Selected Order (${selectedForceTarget.label}) via ${
+                                      emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                    }`
+                                  : `Emergency Force SELL (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
+                                      emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                    }`
                             }
                           >
                             {isEmergencySubmitting && emergencySubmittingSide === 'Sell' ? (
                               <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
                             ) : (
-                              <Zap className="w-2.5 h-2.5 fill-current shrink-0" />
+                              <Zap className={`w-2.5 h-2.5 shrink-0 ${selectedForceTarget?.side === 'buy' ? 'opacity-30' : 'fill-current'}`} />
                             )}
                             <span>FORCE SELL</span>
+                            {selectedForceTarget?.side === 'sell' && (
+                              <span className="text-[7.5px] font-black text-rose-300 bg-rose-950/80 px-1 py-0.2 rounded border border-rose-500/50 leading-none">
+                                EXIT
+                              </span>
+                            )}
                             <span className="text-[8px] opacity-90">
                               {selectedForceTarget
                                 ? `${Number(selectedForceTarget.amount.toFixed(1))}`

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { DEFAULT_EMA_TIMEFRAMES } from '../../../utils/indicators';
 
 export interface SessionSettings {
     show: boolean;
@@ -32,6 +33,9 @@ export interface IndicatorSettings {
     liquidationSmartMoneyBias?: boolean;
     liquidationShowSmartMoneyHUD?: boolean;
     emaPeriod: number;
+    emaTimeframes?: string[];
+    emaRenderMode?: 'smooth' | 'stepped';
+    emaCustomColors?: Record<string, string>;
     bbPeriod: number;
     bbStdDev: number;
     rsiPeriod: number;
@@ -343,31 +347,139 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-[#000000] border border-gray-200 dark:border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
-                    <div className="p-3 border-b border-gray-200 dark:border-white/10">
+                <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-[#000000] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
+                    <div className="p-3 border-b border-gray-200 dark:border-white/10 flex items-center justify-between">
                         <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Technical Indicators</h3>
+                        <span className="text-[10px] text-brand-primary font-bold">Pro Multi-Engine</span>
                     </div>
-                    <div className="p-2 flex flex-col gap-1 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                        <div className="flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg transition-colors group">
-                            <label className="flex items-center cursor-pointer flex-1">
-                                <input
-                                    type="checkbox"
-                                    checked={settings.showEMA}
-                                    onChange={() => toggleIndicator('showEMA')}
-                                    className="w-4 h-4 text-brand-primary bg-gray-100 border-gray-300 rounded focus:ring-brand-primary dark:focus:ring-brand-primary dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                                />
-                                <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-200 group-hover:text-brand-primary transition-colors">EMA</span>
-                            </label>
-                            <div className="flex items-center gap-1 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">
-                                <span className="text-xs text-gray-500">P:</span>
-                                <input
-                                    type="number"
-                                    value={settings.emaPeriod}
-                                    onChange={(e) => updateSetting('emaPeriod', Number(e.target.value))}
-                                    className="w-10 text-xs bg-transparent text-gray-700 dark:text-gray-300 focus:outline-none focus:text-brand-primary"
-                                    min={1} max={500}
-                                />
+                    <div className="p-2 flex flex-col gap-1 max-h-[75vh] overflow-y-auto custom-scrollbar">
+                        {/* ── Multi-Timeframe EMA Section ── */}
+                        <div className="flex flex-col bg-gray-50/50 dark:bg-white/[0.02] border border-gray-200/60 dark:border-white/5 rounded-xl p-2.5 transition-all">
+                            <div className="flex items-center justify-between">
+                                <label className="flex items-center cursor-pointer flex-1">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings.showEMA}
+                                        onChange={() => toggleIndicator('showEMA')}
+                                        className="w-4 h-4 text-brand-primary bg-gray-100 border-gray-300 rounded focus:ring-brand-primary dark:focus:ring-brand-primary dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                                    />
+                                    <div className="ml-3 flex items-center gap-1.5">
+                                        <span className="text-sm font-bold text-gray-900 dark:text-gray-100 group-hover:text-brand-primary transition-colors">EMA</span>
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">MTF</span>
+                                    </div>
+                                </label>
+                                <div className="flex items-center gap-1 bg-white dark:bg-white/10 px-2 py-0.5 rounded-lg border border-gray-200 dark:border-white/10 shadow-sm">
+                                    <span className="text-[10px] font-bold text-gray-400">P:</span>
+                                    <input
+                                        type="number"
+                                        value={settings.emaPeriod}
+                                        onChange={(e) => updateSetting('emaPeriod', Number(e.target.value))}
+                                        className="w-9 text-xs bg-transparent text-gray-800 dark:text-gray-200 text-center font-bold focus:outline-none focus:text-brand-primary"
+                                        min={1} max={500}
+                                        title="Global EMA Period (e.g. 7, 20, 50, 200)"
+                                    />
+                                </div>
                             </div>
+
+                            {/* MTF Timeframe Selector Pills & Options */}
+                            {settings.showEMA && (
+                                <div className="mt-2.5 pt-2 border-t border-gray-200/60 dark:border-white/10 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                            Active Timeframes ({(settings.emaTimeframes && settings.emaTimeframes.length > 0 ? settings.emaTimeframes : ['1m']).length})
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => onSettingsChange({
+                                                ...settings,
+                                                emaRenderMode: settings.emaRenderMode === 'stepped' ? 'smooth' : 'stepped'
+                                            })}
+                                            className="text-[9px] px-1.5 py-0.5 rounded font-mono font-medium bg-black/40 border border-white/10 text-gray-300 hover:text-white transition-colors"
+                                            title="Toggle between Smooth curve and Stepped horizontal levels"
+                                        >
+                                            Mode: <span className="text-amber-400 font-bold uppercase">{settings.emaRenderMode || 'smooth'}</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Timeframe Pills Grid */}
+                                    <div className="grid grid-cols-4 gap-1.5">
+                                        {Object.entries(DEFAULT_EMA_TIMEFRAMES).map(([tf, tfStyle]) => {
+                                            const activeList = settings.emaTimeframes && settings.emaTimeframes.length > 0 ? settings.emaTimeframes : ['1m'];
+                                            const isActive = activeList.includes(tf);
+                                            return (
+                                                <button
+                                                    key={tf}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        let next: string[];
+                                                        if (isActive) {
+                                                            next = activeList.filter(t => t !== tf);
+                                                            if (next.length === 0) next = [tf]; // Minimum 1 timeframe active
+                                                        } else {
+                                                            next = [...activeList, tf];
+                                                        }
+                                                        onSettingsChange({
+                                                            ...settings,
+                                                            emaTimeframes: next
+                                                        });
+                                                    }}
+                                                    className={`flex items-center justify-center gap-1.5 py-1 px-1.5 rounded-lg text-xs font-mono font-bold transition-all border ${
+                                                        isActive
+                                                            ? 'bg-black/60 text-white shadow-sm'
+                                                            : 'bg-white/5 text-gray-400 border-transparent hover:bg-white/10 hover:text-gray-200'
+                                                    }`}
+                                                    style={{
+                                                        borderColor: isActive ? tfStyle.color : 'transparent',
+                                                        boxShadow: isActive ? `0 0 10px ${tfStyle.color}25` : undefined
+                                                    }}
+                                                    title={`Toggle EMA ${settings.emaPeriod} on ${tf}`}
+                                                >
+                                                    <span
+                                                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                                                        style={{ backgroundColor: tfStyle.color }}
+                                                    />
+                                                    <span>{tfStyle.label}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Presets Row */}
+                                    <div className="flex items-center justify-between pt-1 text-[9px] text-gray-400">
+                                        <span className="font-semibold text-gray-500">Presets:</span>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => onSettingsChange({ ...settings, emaTimeframes: ['1m', '3m', '5m'] })}
+                                                className="px-1.5 py-0.5 rounded bg-black/40 hover:bg-white/10 hover:text-white border border-white/5 transition-colors"
+                                            >
+                                                Scalp
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => onSettingsChange({ ...settings, emaTimeframes: ['5m', '15m', '1h'] })}
+                                                className="px-1.5 py-0.5 rounded bg-black/40 hover:bg-white/10 hover:text-white border border-white/5 transition-colors"
+                                            >
+                                                Intraday
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => onSettingsChange({ ...settings, emaTimeframes: ['1h', '4h', '1d'] })}
+                                                className="px-1.5 py-0.5 rounded bg-black/40 hover:bg-white/10 hover:text-white border border-white/5 transition-colors"
+                                            >
+                                                Swing
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => onSettingsChange({ ...settings, emaTimeframes: Object.keys(DEFAULT_EMA_TIMEFRAMES) })}
+                                                className="px-1.5 py-0.5 rounded bg-black/40 hover:bg-white/10 hover:text-white border border-white/5 transition-colors"
+                                            >
+                                                All
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg transition-colors group">

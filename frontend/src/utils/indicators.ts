@@ -102,6 +102,126 @@ export const calculateEMA = (data: { time: any; close: number }[], period: numbe
     return result;
 };
 
+// ── Multi-Timeframe (MTF) EMA Configurations & Calculation ──
+export interface EmaTimeframeStyle {
+    timeframe: string;
+    label: string;
+    color: string;
+    lineWidth: number;
+}
+
+export const DEFAULT_EMA_TIMEFRAMES: Record<string, EmaTimeframeStyle> = {
+    '1m':  { timeframe: '1m',  label: '1m',  color: '#f59e0b', lineWidth: 1 }, // Amber
+    '3m':  { timeframe: '3m',  label: '3m',  color: '#06b6d4', lineWidth: 1 }, // Cyan
+    '5m':  { timeframe: '5m',  label: '5m',  color: '#10b981', lineWidth: 1 }, // Emerald
+    '15m': { timeframe: '15m', label: '15m', color: '#3b82f6', lineWidth: 2 }, // Blue
+    '30m': { timeframe: '30m', label: '30m', color: '#8b5cf6', lineWidth: 2 }, // Violet
+    '1h':  { timeframe: '1h',  label: '1h',  color: '#ec4899', lineWidth: 2 }, // Pink
+    '4h':  { timeframe: '4h',  label: '4h',  color: '#f97316', lineWidth: 2 }, // Orange
+    '1d':  { timeframe: '1d',  label: '1D',  color: '#ef4444', lineWidth: 2 }, // Red
+};
+
+export const intervalToSeconds = (interval: string): number => {
+    if (!interval) return 60;
+    const str = interval.toLowerCase().trim();
+    const val = parseInt(str) || 1;
+    if (str.endsWith('s')) return val;
+    if (str.endsWith('m')) return val * 60;
+    if (str.endsWith('h')) return val * 3600;
+    if (str.endsWith('d')) return val * 86400;
+    if (str.endsWith('w')) return val * 86400 * 7;
+    return val * 60;
+};
+
+export const resampleCandles = (
+    candles: { time: any; open: number; high: number; low: number; close: number; volume?: number }[],
+    targetIntervalSec: number
+): { time: number; open: number; high: number; low: number; close: number; volume: number }[] => {
+    if (!candles || candles.length === 0 || targetIntervalSec <= 0) return [];
+    const buckets = new Map<number, { time: number; open: number; high: number; low: number; close: number; volume: number }>();
+
+    for (const c of candles) {
+        const t = Number(c.time);
+        if (isNaN(t)) continue;
+        const bucketTime = Math.floor(t / targetIntervalSec) * targetIntervalSec;
+        const existing = buckets.get(bucketTime);
+        if (!existing) {
+            buckets.set(bucketTime, {
+                time: bucketTime,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+                volume: c.volume || 0
+            });
+        } else {
+            existing.high = Math.max(existing.high, c.high);
+            existing.low = Math.min(existing.low, c.low);
+            existing.close = c.close;
+            existing.volume += (c.volume || 0);
+        }
+    }
+    return Array.from(buckets.values()).sort((a, b) => a.time - b.time);
+};
+
+export const calculateMTFEMA = (
+    chartCandles: { time: any; open?: number; high?: number; low?: number; close: number }[],
+    chartInterval: string,
+    targetTf: string,
+    period: number = 7,
+    mode: 'smooth' | 'stepped' = 'smooth',
+    htfCandles?: { time: any; open: number; high: number; low: number; close: number }[] | null
+): IndicatorDataPoint[] => {
+    if (!chartCandles || chartCandles.length === 0) return [];
+    const p = Math.max(1, Math.floor(Number(period) || 7));
+    const secChart = intervalToSeconds(chartInterval);
+    const secTarget = intervalToSeconds(targetTf);
+
+    // If target is same or lower than chart timeframe, calculate directly on chart candles
+    if (secTarget <= secChart) {
+        return calculateEMA(chartCandles, p);
+    }
+
+    // Use authentic HTF candles if available with sufficient history, otherwise resample locally
+    const baseHtf = (htfCandles && htfCandles.length >= p)
+        ? htfCandles
+        : resampleCandles(chartCandles as any, secTarget);
+
+    if (!baseHtf || baseHtf.length < p) return [];
+
+    const htfEma = calculateEMA(baseHtf, p);
+    if (htfEma.length === 0) return [];
+
+    // Map HTF EMA values to chart candles timestamps
+    const result: IndicatorDataPoint[] = [];
+    let htfIdx = 0;
+
+    for (let i = 0; i < chartCandles.length; i++) {
+        const cTime = Number(chartCandles[i].time);
+        while (htfIdx < htfEma.length - 1 && Number(htfEma[htfIdx + 1].time) <= cTime) {
+            htfIdx++;
+        }
+
+        const curr = htfEma[htfIdx];
+        if (!curr || cTime < Number(curr.time)) continue;
+
+        if (mode === 'stepped') {
+            result.push({ time: chartCandles[i].time, value: curr.value });
+        } else {
+            const next = htfIdx < htfEma.length - 1 ? htfEma[htfIdx + 1] : null;
+            if (next) {
+                const span = Number(next.time) - Number(curr.time);
+                const progress = span > 0 ? (cTime - Number(curr.time)) / span : 0;
+                const interpolated = curr.value + progress * (next.value - curr.value);
+                result.push({ time: chartCandles[i].time, value: interpolated });
+            } else {
+                result.push({ time: chartCandles[i].time, value: curr.value });
+            }
+        }
+    }
+    return result;
+};
+
 // Bollinger Bands
 // Returns { time, upper, middle, lower }
 export const calculateBollingerBands = (data: { time: any; close: number }[], period: number = 20, stdDev: number = 2): BollingerBandsDataPoint[] => {

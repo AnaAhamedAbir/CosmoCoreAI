@@ -16,7 +16,12 @@ export const sanitizeIndicatorSettings = (settings: IndicatorSettings): Indicato
     if (!settings) return settings;
     return {
         ...settings,
-        emaPeriod: Math.max(1, Math.floor(Number(settings.emaPeriod) || 20)),
+        emaPeriod: Math.max(1, Math.floor(Number(settings.emaPeriod) || 7)),
+        emaTimeframes: Array.isArray(settings.emaTimeframes) && settings.emaTimeframes.length > 0
+            ? settings.emaTimeframes
+            : ['1m', '5m', '15m'],
+        emaRenderMode: (settings.emaRenderMode === 'stepped' ? 'stepped' : 'smooth') as 'smooth' | 'stepped',
+        emaCustomColors: settings.emaCustomColors || {},
         bbPeriod: Math.max(1, Math.floor(Number(settings.bbPeriod) || 20)),
         bbStdDev: Number.isFinite(Number(settings.bbStdDev)) && Number(settings.bbStdDev) > 0 ? Number(settings.bbStdDev) : 2,
         rsiPeriod: Math.max(1, Math.floor(Number(settings.rsiPeriod) || 14)),
@@ -66,7 +71,10 @@ export const useBotStore = create<BotState>()(
         aetherOrderBlocks: false,
         aether3BarReversal: false,
         aetherAutoFibo: false,
-        emaPeriod: 20,
+        emaPeriod: 7,
+        emaTimeframes: ['1m', '5m', '15m'],
+        emaRenderMode: 'smooth',
+        emaCustomColors: {},
         bbPeriod: 20,
         bbStdDev: 2,
         rsiPeriod: 14,

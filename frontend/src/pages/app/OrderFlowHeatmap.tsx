@@ -27,7 +27,7 @@ import { calculateQuantumAi, QuantumAiResult } from '../../utils/quantumAi';
 import { calculateGodModeSignal } from '../../utils/godModeSignal';
 import { IndicatorSelector, IndicatorSettings } from '../../components/features/market/IndicatorSelector';
 import { MACDRenderer } from '../../components/features/market/MACDRenderer';
-import { calculateEMA, calculateBollingerBands, BollingerBandsDataPoint, calculateMACD, calculateRSI, updateEMA, updateBollingerBands, updateRSI, calculateIchimoku, IchimokuDataPoint, calculateAdaptiveTrendFinder, TrendFinderResult, calculateUTBotAlerts, UTBotDataPoint, calculateSessions, SessionData, calculateSupertrend, SupertrendDataPoint, calculateMsbOb, MsbObResult, calculateWickRejectionSR, WickSRResult, calculateVWAPSD, VWAPSDDataPoint } from '../../utils/indicators';
+import { calculateEMA, calculateBollingerBands, BollingerBandsDataPoint, calculateMACD, calculateRSI, updateEMA, updateBollingerBands, updateRSI, calculateIchimoku, IchimokuDataPoint, calculateAdaptiveTrendFinder, TrendFinderResult, calculateUTBotAlerts, UTBotDataPoint, calculateSessions, SessionData, calculateSupertrend, SupertrendDataPoint, calculateMsbOb, MsbObResult, calculateWickRejectionSR, WickSRResult, calculateVWAPSD, VWAPSDDataPoint, calculateMTFEMA, DEFAULT_EMA_TIMEFRAMES, intervalToSeconds } from '../../utils/indicators';
 import { TrendFinderRenderer } from '../../components/features/market/TrendFinderRenderer';
 import { SessionsRenderer } from '../../components/features/market/SessionsRenderer';
 import { SupertrendRenderer } from '../../components/features/market/SupertrendRenderer';
@@ -101,6 +101,9 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
     const quickTradeGhostLineRef = useRef<any>(null);
     const emaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const emaSeriesMapRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+    const htfCandlesCacheRef = useRef<Record<string, { candles: any[]; lastFetch: number }>>({});
+    const [mtfEmaValues, setMtfEmaValues] = useState<Record<string, number>>({});
     const bbUpperSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const bbMiddleSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const bbLowerSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
@@ -467,9 +470,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         const bbDev = Number.isFinite(Number(indicatorSettings.bbStdDev)) && Number(indicatorSettings.bbStdDev) > 0 ? Number(indicatorSettings.bbStdDev) : 2;
                         const rsiP = Math.max(1, Math.floor(Number(indicatorSettings.rsiPeriod) || 14));
 
-                        if (indicatorSettings.showEMA && emaSeriesRef.current) {
-                            emaSeriesRef.current.setData(calculateEMA(candles, emaP) as any);
-                        }
+                        syncMtfEma(candles);
                         if (indicatorSettings.showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current) {
                             const bbResult = calculateBollingerBands(candles, bbP, bbDev);
                             bbUpperSeriesRef.current.setData(bbResult.map((d: any) => ({ time: d.time, value: d.upper })) as any);
@@ -655,6 +656,12 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             wallLinesRef.current.clear();
             lastCandleRef.current = null;
             allCandlesRef.current = [];
+            if (chartRef.current) {
+                emaSeriesMapRef.current.forEach((series) => {
+                    try { chartRef.current.removeSeries(series); } catch {}
+                });
+            }
+            emaSeriesMapRef.current.clear();
             emaSeriesRef.current = null;
             bbUpperSeriesRef.current = null;
             bbMiddleSeriesRef.current = null;
@@ -680,13 +687,123 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
     }, [showCrosshairAIPredict]);
 
+    // ── Multi-Timeframe EMA Synchronizer ──
+    const syncMtfEma = useCallback(async (customCandles?: any[]) => {
+        if (!chartRef.current) return;
+        const chart = chartRef.current;
+        const candles = customCandles || allCandlesRef.current;
+        if (!candles || candles.length === 0) return;
+
+        const showEMA = indicatorSettings.showEMA;
+        const activeTfs = indicatorSettings.emaTimeframes && indicatorSettings.emaTimeframes.length > 0
+            ? indicatorSettings.emaTimeframes
+            : ['1m'];
+        const period = Math.max(1, Math.floor(Number(indicatorSettings.emaPeriod) || 7));
+        const mode = indicatorSettings.emaRenderMode || 'smooth';
+
+        if (!showEMA) {
+            emaSeriesMapRef.current.forEach((series) => {
+                try { series.applyOptions({ visible: false, lastValueVisible: false }); } catch {}
+            });
+            if (emaSeriesRef.current) {
+                try { emaSeriesRef.current.applyOptions({ visible: false, lastValueVisible: false }); } catch {}
+            }
+            setMtfEmaValues({});
+            return;
+        }
+
+        if (emaSeriesRef.current) {
+            try { emaSeriesRef.current.applyOptions({ visible: false, lastValueVisible: false }); } catch {}
+        }
+
+        // Clean up series for removed timeframes
+        emaSeriesMapRef.current.forEach((series, tf) => {
+            if (!activeTfs.includes(tf)) {
+                try { chart.removeSeries(series); } catch {}
+                emaSeriesMapRef.current.delete(tf);
+            }
+        });
+
+        const newLatestValues: Record<string, number> = {};
+
+        for (const tf of activeTfs) {
+            const tfStyle = DEFAULT_EMA_TIMEFRAMES[tf] || { timeframe: tf, label: tf, color: '#f59e0b', lineWidth: 1 };
+            const color = (indicatorSettings.emaCustomColors && indicatorSettings.emaCustomColors[tf]) || tfStyle.color;
+
+            let series = emaSeriesMapRef.current.get(tf);
+            if (!series) {
+                series = chart.addSeries(LineSeries, {
+                    color,
+                    lineWidth: (tfStyle.lineWidth || 1) as any,
+                    priceScaleId: 'right',
+                    title: `EMA ${period} (${tf})`,
+                    lastValueVisible: true,
+                    priceLineVisible: false,
+                    crosshairMarkerVisible: true,
+                    visible: true,
+                });
+                emaSeriesMapRef.current.set(tf, series);
+            } else {
+                series.applyOptions({
+                    color,
+                    lineWidth: (tfStyle.lineWidth || 1) as any,
+                    title: `EMA ${period} (${tf})`,
+                    visible: true,
+                    lastValueVisible: true,
+                });
+            }
+
+            let htfData: any[] | null = null;
+            const secChart = intervalToSeconds(interval);
+            const secTf = intervalToSeconds(tf);
+
+            if (secTf > secChart) {
+                const cached = htfCandlesCacheRef.current[tf];
+                const now = Date.now();
+                if (cached && now - cached.lastFetch < 30000 && cached.candles.length >= period) {
+                    htfData = cached.candles;
+                } else {
+                    marketDepthService.getOHLCV(symbol.toUpperCase(), exchange, tf, 300)
+                        .then((fetched) => {
+                            if (Array.isArray(fetched) && fetched.length > 0) {
+                                const formatted = fetched.map((k: any) => ({
+                                    time: k.time,
+                                    open: parseFloat(k.open),
+                                    high: parseFloat(k.high),
+                                    low: parseFloat(k.low),
+                                    close: parseFloat(k.close),
+                                    volume: parseFloat(k.volume || 100),
+                                }));
+                                htfCandlesCacheRef.current[tf] = { candles: formatted, lastFetch: Date.now() };
+                                const refinedPts = calculateMTFEMA(allCandlesRef.current, interval, tf, period, mode, formatted);
+                                const s = emaSeriesMapRef.current.get(tf);
+                                if (s && refinedPts.length > 0) {
+                                    s.setData(refinedPts as any);
+                                    setMtfEmaValues(prev => ({ ...prev, [tf]: refinedPts[refinedPts.length - 1].value }));
+                                }
+                            }
+                        })
+                        .catch(() => {});
+                }
+            }
+
+            const pts = calculateMTFEMA(candles, interval, tf, period, mode, htfData);
+            if (pts.length > 0) {
+                series.setData(pts as any);
+                newLatestValues[tf] = pts[pts.length - 1].value;
+            }
+        }
+
+        setMtfEmaValues(prev => ({ ...prev, ...newLatestValues }));
+    }, [interval, symbol, exchange, indicatorSettings]);
+
     // Update Indicators
     useEffect(() => {
         if (!emaSeriesRef.current || !bbUpperSeriesRef.current || !bbMiddleSeriesRef.current || !bbLowerSeriesRef.current || !rsiSeriesRef.current) return;
 
         const data = allCandlesRef.current;
 
-        emaSeriesRef.current.applyOptions({ visible: indicatorSettings.showEMA, priceLineVisible: false, lastValueVisible: false });
+        syncMtfEma(data);
         const showBB = indicatorSettings.showBB;
         bbUpperSeriesRef.current.applyOptions({ visible: showBB, priceLineVisible: false, lastValueVisible: false });
         bbMiddleSeriesRef.current.applyOptions({ visible: showBB, priceLineVisible: false, lastValueVisible: false });
@@ -704,14 +821,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
         if (data.length === 0) return;
 
-        const emaP = Math.max(1, Math.floor(Number(indicatorSettings.emaPeriod) || 20));
         const bbP = Math.max(1, Math.floor(Number(indicatorSettings.bbPeriod) || 20));
         const bbDev = Number.isFinite(Number(indicatorSettings.bbStdDev)) && Number(indicatorSettings.bbStdDev) > 0 ? Number(indicatorSettings.bbStdDev) : 2;
         const rsiP = Math.max(1, Math.floor(Number(indicatorSettings.rsiPeriod) || 14));
 
-        if (indicatorSettings.showEMA && emaSeriesRef.current) {
-            emaSeriesRef.current.setData(calculateEMA(data, emaP) as any);
-        }
         if (showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current) {
             const bbResult = calculateBollingerBands(data, bbP, bbDev);
             bbUpperSeriesRef.current.setData(bbResult.map(d => ({ time: d.time, value: d.upper })) as any);
@@ -1452,9 +1565,28 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     const bbDev = Number.isFinite(Number(indicatorSettings.bbStdDev)) && Number(indicatorSettings.bbStdDev) > 0 ? Number(indicatorSettings.bbStdDev) : 2;
                     const rsiP = Math.max(1, Math.floor(Number(indicatorSettings.rsiPeriod) || 14));
 
-                    if (indicatorSettings.showEMA && emaSeriesRef.current) {
-                        const emaData = calculateEMA(curData, emaP);
-                        if (emaData.length > 0) emaSeriesRef.current.update(emaData[emaData.length - 1] as any);
+                    if (indicatorSettings.showEMA && emaSeriesMapRef.current.size > 0) {
+                        const activeTfs = indicatorSettings.emaTimeframes && indicatorSettings.emaTimeframes.length > 0
+                            ? indicatorSettings.emaTimeframes
+                            : ['1m'];
+                        const period = Math.max(1, Math.floor(Number(indicatorSettings.emaPeriod) || 7));
+                        const mode = indicatorSettings.emaRenderMode || 'smooth';
+                        const newLatestValues: Record<string, number> = {};
+
+                        activeTfs.forEach((tf) => {
+                            const series = emaSeriesMapRef.current.get(tf);
+                            if (!series) return;
+                            const cached = htfCandlesCacheRef.current[tf]?.candles;
+                            const pts = calculateMTFEMA(curData, interval, tf, period, mode, cached);
+                            if (pts.length > 0) {
+                                const lastPt = pts[pts.length - 1];
+                                series.update(lastPt as any);
+                                newLatestValues[tf] = lastPt.value;
+                            }
+                        });
+                        if (Object.keys(newLatestValues).length > 0) {
+                            setMtfEmaValues(prev => ({ ...prev, ...newLatestValues }));
+                        }
                     }
                     if (indicatorSettings.showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current) {
                         const bbData = calculateBollingerBands(curData, bbP, bbDev);
@@ -2789,6 +2921,30 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                             </div>
                         );
                     })()}
+                    {/* ── Multi-Timeframe EMA HUD Overlay ── */}
+                    {indicatorSettings.showEMA && Object.keys(mtfEmaValues).length > 0 && (
+                        <div className="absolute top-2 right-14 z-[10] flex items-center gap-2 px-2.5 py-1 bg-black/75 backdrop-blur-md rounded-lg border border-white/10 select-none shadow-lg">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                EMA {indicatorSettings.emaPeriod}:
+                            </span>
+                            <div className="flex items-center gap-2 font-mono text-[10px] font-bold">
+                                {(indicatorSettings.emaTimeframes && indicatorSettings.emaTimeframes.length > 0 ? indicatorSettings.emaTimeframes : ['1m']).map((tf) => {
+                                    const val = mtfEmaValues[tf];
+                                    if (val === undefined) return null;
+                                    const tfStyle = DEFAULT_EMA_TIMEFRAMES[tf] || { color: '#f59e0b', label: tf, timeframe: tf, lineWidth: 1 };
+                                    const color = (indicatorSettings.emaCustomColors && indicatorSettings.emaCustomColors[tf]) || tfStyle.color;
+                                    return (
+                                        <div key={tf} className="flex items-center gap-1">
+                                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                                            <span className="text-gray-400 font-normal">{tfStyle.label}:</span>
+                                            <span style={{ color }}>{val < 1 ? val.toFixed(4) : val.toFixed(2)}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                     {indicatorSettings.showSupertrend && (
                         <SupertrendRenderer
                             chart={chartRef.current}

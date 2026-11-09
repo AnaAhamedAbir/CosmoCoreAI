@@ -133,6 +133,12 @@ export const intervalToSeconds = (interval: string): number => {
     return val * 60;
 };
 
+export const normalizeTimeSec = (time: any): number => {
+    const n = Number(time);
+    if (isNaN(n) || n <= 0) return 0;
+    return n > 1e11 ? Math.floor(n / 1000) : Math.floor(n);
+};
+
 export const resampleCandles = (
     candles: { time: any; open: number; high: number; low: number; close: number; volume?: number }[],
     targetIntervalSec: number
@@ -141,9 +147,9 @@ export const resampleCandles = (
     const buckets = new Map<number, { time: number; open: number; high: number; low: number; close: number; volume: number }>();
 
     for (const c of candles) {
-        const t = Number(c.time);
-        if (isNaN(t)) continue;
-        const bucketTime = Math.floor(t / targetIntervalSec) * targetIntervalSec;
+        const tSec = normalizeTimeSec(c.time);
+        if (!tSec) continue;
+        const bucketTime = Math.floor(tSec / targetIntervalSec) * targetIntervalSec;
         const existing = buckets.get(bucketTime);
         if (!existing) {
             buckets.set(bucketTime, {
@@ -177,41 +183,47 @@ export const calculateMTFEMA = (
     const secChart = intervalToSeconds(chartInterval);
     const secTarget = intervalToSeconds(targetTf);
 
-    // If target is same or lower than chart timeframe, calculate directly on chart candles
-    if (secTarget <= secChart) {
+    if (secTarget === secChart && !htfCandles) {
         return calculateEMA(chartCandles, p);
     }
 
-    // Use authentic HTF candles if available with sufficient history, otherwise resample locally
-    const baseHtf = (htfCandles && htfCandles.length >= p)
-        ? htfCandles
-        : resampleCandles(chartCandles as any, secTarget);
+    // Determine the source candles for the target timeframe
+    let baseCandles = (htfCandles && htfCandles.length >= p) ? htfCandles : null;
+    if (!baseCandles) {
+        if (secTarget > secChart) {
+            // Resample from chart candles to higher timeframe
+            baseCandles = resampleCandles(chartCandles as any, secTarget);
+        } else {
+            // Target is lower timeframe, but no lower candles provided yet
+            return [];
+        }
+    }
 
-    if (!baseHtf || baseHtf.length < p) return [];
+    if (!baseCandles || baseCandles.length < p) return [];
 
-    const htfEma = calculateEMA(baseHtf, p);
-    if (htfEma.length === 0) return [];
+    const tfEma = calculateEMA(baseCandles, p);
+    if (tfEma.length === 0) return [];
 
-    // Map HTF EMA values to chart candles timestamps
+    // Map the target timeframe EMA to the chart candles timestamps
     const result: IndicatorDataPoint[] = [];
-    let htfIdx = 0;
+    let tfIdx = 0;
 
     for (let i = 0; i < chartCandles.length; i++) {
-        const cTime = Number(chartCandles[i].time);
-        while (htfIdx < htfEma.length - 1 && Number(htfEma[htfIdx + 1].time) <= cTime) {
-            htfIdx++;
+        const cTime = normalizeTimeSec(chartCandles[i].time);
+        while (tfIdx < tfEma.length - 1 && normalizeTimeSec(tfEma[tfIdx + 1].time) <= cTime) {
+            tfIdx++;
         }
 
-        const curr = htfEma[htfIdx];
-        if (!curr || cTime < Number(curr.time)) continue;
+        const curr = tfEma[tfIdx];
+        if (!curr || cTime < normalizeTimeSec(curr.time)) continue;
 
-        if (mode === 'stepped') {
+        if (mode === 'stepped' || secTarget <= secChart) {
             result.push({ time: chartCandles[i].time, value: curr.value });
         } else {
-            const next = htfIdx < htfEma.length - 1 ? htfEma[htfIdx + 1] : null;
+            const next = tfIdx < tfEma.length - 1 ? tfEma[tfIdx + 1] : null;
             if (next) {
-                const span = Number(next.time) - Number(curr.time);
-                const progress = span > 0 ? (cTime - Number(curr.time)) / span : 0;
+                const span = normalizeTimeSec(next.time) - normalizeTimeSec(curr.time);
+                const progress = span > 0 ? (cTime - normalizeTimeSec(curr.time)) / span : 0;
                 const interpolated = curr.value + progress * (next.value - curr.value);
                 result.push({ time: chartCandles[i].time, value: interpolated });
             } else {

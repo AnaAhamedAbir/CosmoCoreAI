@@ -753,41 +753,49 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 });
             }
 
-            let htfData: any[] | null = null;
-            const secChart = intervalToSeconds(interval);
-            const secTf = intervalToSeconds(tf);
-
-            if (secTf > secChart) {
-                const cached = htfCandlesCacheRef.current[tf];
-                const now = Date.now();
-                if (cached && now - cached.lastFetch < 30000 && cached.candles.length >= period) {
-                    htfData = cached.candles;
-                } else {
-                    marketDepthService.getOHLCV(symbol.toUpperCase(), exchange, tf, 300)
-                        .then((fetched) => {
-                            if (Array.isArray(fetched) && fetched.length > 0) {
-                                const formatted = fetched.map((k: any) => ({
-                                    time: k.time,
-                                    open: parseFloat(k.open),
-                                    high: parseFloat(k.high),
-                                    low: parseFloat(k.low),
-                                    close: parseFloat(k.close),
-                                    volume: parseFloat(k.volume || 100),
-                                }));
-                                htfCandlesCacheRef.current[tf] = { candles: formatted, lastFetch: Date.now() };
-                                const refinedPts = calculateMTFEMA(allCandlesRef.current, interval, tf, period, mode, formatted);
-                                const s = emaSeriesMapRef.current.get(tf);
-                                if (s && refinedPts.length > 0) {
-                                    s.setData(refinedPts as any);
-                                    setMtfEmaValues(prev => ({ ...prev, [tf]: refinedPts[refinedPts.length - 1].value }));
-                                }
-                            }
-                        })
-                        .catch(() => {});
+            // If tf matches current chart interval, calculate directly
+            if (tf === interval) {
+                const pts = calculateEMA(candles, period);
+                if (pts.length > 0) {
+                    series.setData(pts as any);
+                    newLatestValues[tf] = pts[pts.length - 1].value;
                 }
+                continue;
             }
 
-            const pts = calculateMTFEMA(candles, interval, tf, period, mode, htfData);
+            // If tf is different from chart interval, check cached authentic candles
+            const cached = htfCandlesCacheRef.current[tf];
+            const now = Date.now();
+            let tfCandles = (cached && now - cached.lastFetch < 30000 && cached.candles.length >= period)
+                ? cached.candles
+                : null;
+
+            // Fetch authentic candles for tf whenever needed
+            if (!tfCandles) {
+                marketDepthService.getOHLCV(symbol.toUpperCase(), exchange, tf, 300)
+                    .then((fetched) => {
+                        if (Array.isArray(fetched) && fetched.length > 0) {
+                            const formatted = fetched.map((k: any) => ({
+                                time: k.time,
+                                open: parseFloat(k.open),
+                                high: parseFloat(k.high),
+                                low: parseFloat(k.low),
+                                close: parseFloat(k.close),
+                                volume: parseFloat(k.volume || 100),
+                            }));
+                            htfCandlesCacheRef.current[tf] = { candles: formatted, lastFetch: Date.now() };
+                            const refinedPts = calculateMTFEMA(allCandlesRef.current, interval, tf, period, mode, formatted);
+                            const s = emaSeriesMapRef.current.get(tf);
+                            if (s && refinedPts.length > 0) {
+                                s.setData(refinedPts as any);
+                                setMtfEmaValues(prev => ({ ...prev, [tf]: refinedPts[refinedPts.length - 1].value }));
+                            }
+                        }
+                    })
+                    .catch(() => {});
+            }
+
+            const pts = calculateMTFEMA(candles, interval, tf, period, mode, tfCandles);
             if (pts.length > 0) {
                 series.setData(pts as any);
                 newLatestValues[tf] = pts[pts.length - 1].value;
@@ -1576,12 +1584,21 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         activeTfs.forEach((tf) => {
                             const series = emaSeriesMapRef.current.get(tf);
                             if (!series) return;
-                            const cached = htfCandlesCacheRef.current[tf]?.candles;
-                            const pts = calculateMTFEMA(curData, interval, tf, period, mode, cached);
-                            if (pts.length > 0) {
-                                const lastPt = pts[pts.length - 1];
-                                series.update(lastPt as any);
-                                newLatestValues[tf] = lastPt.value;
+                            if (tf === interval) {
+                                const pts = calculateEMA(curData, period);
+                                if (pts.length > 0) {
+                                    const lastPt = pts[pts.length - 1];
+                                    series.update(lastPt as any);
+                                    newLatestValues[tf] = lastPt.value;
+                                }
+                            } else {
+                                const cached = htfCandlesCacheRef.current[tf]?.candles;
+                                const pts = calculateMTFEMA(curData, interval, tf, period, mode, cached);
+                                if (pts.length > 0) {
+                                    const lastPt = pts[pts.length - 1];
+                                    series.update(lastPt as any);
+                                    newLatestValues[tf] = lastPt.value;
+                                }
                             }
                         });
                         if (Object.keys(newLatestValues).length > 0) {

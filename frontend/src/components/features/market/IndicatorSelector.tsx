@@ -36,6 +36,7 @@ export interface IndicatorSettings {
     emaTimeframes?: string[];
     emaRenderMode?: 'smooth' | 'stepped';
     emaCustomColors?: Record<string, string>;
+    emaShowPriceLabels?: boolean;
     bbPeriod: number;
     bbStdDev: number;
     rsiPeriod: number;
@@ -477,6 +478,27 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                                 All
                                             </button>
                                         </div>
+                                    </div>
+
+                                    {/* Show Price Column Labels Checkbox */}
+                                    <div className="flex items-center justify-between pt-2 border-t border-gray-200/60 dark:border-white/10">
+                                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={settings.emaShowPriceLabels !== false}
+                                                onChange={(e) => onSettingsChange({
+                                                    ...settings,
+                                                    emaShowPriceLabels: e.target.checked
+                                                })}
+                                                className="w-3.5 h-3.5 text-brand-primary bg-gray-100 border-gray-300 rounded focus:ring-brand-primary dark:focus:ring-brand-primary dark:ring-offset-gray-800 focus:ring-1 dark:bg-gray-700 dark:border-gray-600 cursor-pointer"
+                                            />
+                                            <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">
+                                                Show Price Column Labels
+                                            </span>
+                                        </label>
+                                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${settings.emaShowPriceLabels !== false ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20' : 'text-gray-500 bg-white/5 border border-white/5'}`}>
+                                            {settings.emaShowPriceLabels !== false ? 'ON' : 'OFF'}
+                                        </span>
                                     </div>
                                 </div>
                             )}

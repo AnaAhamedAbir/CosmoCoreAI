@@ -736,6 +736,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             }
         });
 
+        const showPriceLabels = indicatorSettings.emaShowPriceLabels !== false;
         const newLatestValues: Record<string, number> = {};
 
         for (const tf of activeTfs) {
@@ -749,7 +750,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     lineWidth: 1,
                     priceScaleId: 'right',
                     title: `EMA ${period} (${tf})`,
-                    lastValueVisible: true,
+                    lastValueVisible: showPriceLabels,
                     priceLineVisible: false,
                     crosshairMarkerVisible: true,
                     visible: true,
@@ -766,7 +767,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     lineWidth: 1,
                     title: `EMA ${period} (${tf})`,
                     visible: true,
-                    lastValueVisible: true,
+                    lastValueVisible: showPriceLabels,
                 });
             }
 

@@ -734,7 +734,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             if (!series) {
                 series = chart.addSeries(LineSeries, {
                     color,
-                    lineWidth: (tfStyle.lineWidth || 1) as any,
+                    lineWidth: 1,
                     priceScaleId: 'right',
                     title: `EMA ${period} (${tf})`,
                     lastValueVisible: true,
@@ -746,7 +746,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             } else {
                 series.applyOptions({
                     color,
-                    lineWidth: (tfStyle.lineWidth || 1) as any,
+                    lineWidth: 1,
                     title: `EMA ${period} (${tf})`,
                     visible: true,
                     lastValueVisible: true,

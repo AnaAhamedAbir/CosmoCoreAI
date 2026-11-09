@@ -114,11 +114,11 @@ export const DEFAULT_EMA_TIMEFRAMES: Record<string, EmaTimeframeStyle> = {
     '1m':  { timeframe: '1m',  label: '1m',  color: '#f59e0b', lineWidth: 1 }, // Amber
     '3m':  { timeframe: '3m',  label: '3m',  color: '#06b6d4', lineWidth: 1 }, // Cyan
     '5m':  { timeframe: '5m',  label: '5m',  color: '#10b981', lineWidth: 1 }, // Emerald
-    '15m': { timeframe: '15m', label: '15m', color: '#3b82f6', lineWidth: 2 }, // Blue
-    '30m': { timeframe: '30m', label: '30m', color: '#8b5cf6', lineWidth: 2 }, // Violet
-    '1h':  { timeframe: '1h',  label: '1h',  color: '#ec4899', lineWidth: 2 }, // Pink
-    '4h':  { timeframe: '4h',  label: '4h',  color: '#f97316', lineWidth: 2 }, // Orange
-    '1d':  { timeframe: '1d',  label: '1D',  color: '#ef4444', lineWidth: 2 }, // Red
+    '15m': { timeframe: '15m', label: '15m', color: '#3b82f6', lineWidth: 1 }, // Blue
+    '30m': { timeframe: '30m', label: '30m', color: '#8b5cf6', lineWidth: 1 }, // Violet
+    '1h':  { timeframe: '1h',  label: '1h',  color: '#ec4899', lineWidth: 1 }, // Pink
+    '4h':  { timeframe: '4h',  label: '4h',  color: '#f97316', lineWidth: 1 }, // Orange
+    '1d':  { timeframe: '1d',  label: '1D',  color: '#ef4444', lineWidth: 1 }, // Red
 };
 
 export const intervalToSeconds = (interval: string): number => {

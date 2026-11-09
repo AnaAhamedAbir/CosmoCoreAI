@@ -2479,13 +2479,12 @@ class ManualTradeService:
                         free_base = float(bal.get(base_part, {}).get('free', 0.0)) or (
                             float(bal.get('free', {}).get(base_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0
                         )
-                        used_base = float(bal.get(base_part, {}).get('used', 0.0)) or (
-                            float(bal.get('used', {}).get(base_part, 0.0)) if isinstance(bal.get('used'), dict) else 0.0
-                        )
                         total_base = float(bal.get(base_part, {}).get('total', 0.0)) or (
-                            float(bal.get('total', {}).get(base_part, 0.0)) if isinstance(bal.get('total'), dict) else (free_base + used_base)
+                            float(bal.get('total', {}).get(base_part, 0.0)) if isinstance(bal.get('total'), dict) else free_base
                         )
-                        effective_base = max(free_base, total_base * 0.99) if has_cancelled_orders else free_base
+                        approx_rel_base = (resolved_specific_amt * pct_ratio) if (specific_oid and resolved_specific_amt > 0) else 0.0
+                        effective_base = min(free_base + approx_rel_base, total_base * 0.99) if has_cancelled_orders else free_base
+                        effective_base = max(effective_base, free_base)
                         if effective_base <= 0:
                             raise HTTPException(status_code=400, detail=f"No free {base_part} margin available for Emergency {side.upper()}.")
                         total_notional_usd = effective_base * 0.985 * ref_price * lev
@@ -2498,13 +2497,12 @@ class ManualTradeService:
                         free_quote = float(bal.get(quote_part, {}).get('free', 0.0)) or (
                             float(bal.get('free', {}).get(quote_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0
                         )
-                        used_quote = float(bal.get(quote_part, {}).get('used', 0.0)) or (
-                            float(bal.get('used', {}).get(quote_part, 0.0)) if isinstance(bal.get('used'), dict) else 0.0
-                        )
                         total_quote = float(bal.get(quote_part, {}).get('total', 0.0)) or (
-                            float(bal.get('total', {}).get(quote_part, 0.0)) if isinstance(bal.get('total'), dict) else (free_quote + used_quote)
+                            float(bal.get('total', {}).get(quote_part, 0.0)) if isinstance(bal.get('total'), dict) else free_quote
                         )
-                        effective_quote = max(free_quote, total_quote * 0.99) if has_cancelled_orders else free_quote
+                        approx_rel_quote = (resolved_specific_amt * pct_ratio * ref_price) / lev if (specific_oid and resolved_specific_amt > 0) else 0.0
+                        effective_quote = min(free_quote + approx_rel_quote, total_quote * 0.99) if has_cancelled_orders else free_quote
+                        effective_quote = max(effective_quote, free_quote)
                         if effective_quote <= 0:
                             raise HTTPException(status_code=400, detail=f"No free {quote_part} margin available for Emergency {side.upper()}.")
                         safety = 0.985 if mode_lower == 'market' else 0.992
@@ -2521,13 +2519,12 @@ class ManualTradeService:
                     free_base = float(bal.get(base_part, {}).get('free', 0.0)) or (
                         float(bal.get('free', {}).get(base_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0
                     )
-                    used_base = float(bal.get(base_part, {}).get('used', 0.0)) or (
-                        float(bal.get('used', {}).get(base_part, 0.0)) if isinstance(bal.get('used'), dict) else 0.0
-                    )
                     total_base = float(bal.get(base_part, {}).get('total', 0.0)) or (
-                        float(bal.get('total', {}).get(base_part, 0.0)) if isinstance(bal.get('total'), dict) else (free_base + used_base)
+                        float(bal.get('total', {}).get(base_part, 0.0)) if isinstance(bal.get('total'), dict) else free_base
                     )
-                    effective_base = max(free_base, total_base * 0.9995) if has_cancelled_orders else free_base
+                    approx_rel_base = (resolved_specific_amt * pct_ratio) if (specific_oid and resolved_specific_amt > 0) else 0.0
+                    effective_base = min(free_base + approx_rel_base, total_base * 0.9995) if has_cancelled_orders else free_base
+                    effective_base = max(effective_base, free_base)
                     if effective_base <= 0:
                         raise HTTPException(status_code=400, detail=f"Insufficient {base_part} balance (0 available) for Emergency Force Sell.")
                     if specific_oid and resolved_specific_amt > 0:
@@ -2540,14 +2537,12 @@ class ManualTradeService:
                     free_quote = float(bal.get(quote_part, {}).get('free', 0.0)) or (
                         float(bal.get('free', {}).get(quote_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0
                     )
-                    used_quote = float(bal.get(quote_part, {}).get('used', 0.0)) or (
-                        float(bal.get('used', {}).get(quote_part, 0.0)) if isinstance(bal.get('used'), dict) else 0.0
-                    )
                     total_quote = float(bal.get(quote_part, {}).get('total', 0.0)) or (
-                        float(bal.get('total', {}).get(quote_part, 0.0)) if isinstance(bal.get('total'), dict) else (free_quote + used_quote)
+                        float(bal.get('total', {}).get(quote_part, 0.0)) if isinstance(bal.get('total'), dict) else free_quote
                     )
-                    # If orders were cancelled, total_quote contains the funds from the cancelled order(s) even if exchange API lag still shows some in 'used'
-                    effective_quote = max(free_quote, total_quote * 0.992) if has_cancelled_orders else free_quote
+                    approx_rel_quote = (resolved_specific_amt * pct_ratio * ref_price) if (specific_oid and resolved_specific_amt > 0) else 0.0
+                    effective_quote = min(free_quote + approx_rel_quote, total_quote * 0.992) if has_cancelled_orders else free_quote
+                    effective_quote = max(effective_quote, free_quote)
                     if effective_quote <= 0:
                         raise HTTPException(status_code=400, detail=f"Insufficient {quote_part} balance (0 available) for Emergency Force Buy.")
                     safety = 0.992 if mode_lower == 'market' else 0.998

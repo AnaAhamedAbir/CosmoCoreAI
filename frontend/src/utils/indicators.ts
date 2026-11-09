@@ -183,7 +183,7 @@ export const calculateMTFEMA = (
     const secChart = intervalToSeconds(chartInterval);
     const secTarget = intervalToSeconds(targetTf);
 
-    if (secTarget === secChart && !htfCandles) {
+    if (secTarget === secChart && (!htfCandles || htfCandles.length === 0)) {
         return calculateEMA(chartCandles, p);
     }
 
@@ -207,27 +207,60 @@ export const calculateMTFEMA = (
     // Map the target timeframe EMA to the chart candles timestamps
     const result: IndicatorDataPoint[] = [];
     let tfIdx = 0;
+    const firstTfTime = normalizeTimeSec(tfEma[0].time);
+    const lastTfEmaVal = tfEma[tfEma.length - 1].value;
+    const lastChartIdx = chartCandles.length - 1;
 
     for (let i = 0; i < chartCandles.length; i++) {
         const cTime = normalizeTimeSec(chartCandles[i].time);
-        while (tfIdx < tfEma.length - 1 && normalizeTimeSec(tfEma[tfIdx + 1].time) <= cTime) {
-            tfIdx++;
+        if (!cTime) continue;
+
+        // If this is the active/latest candle on the chart, use the latest known EMA for this timeframe
+        if (i === lastChartIdx) {
+            result.push({ time: chartCandles[i].time, value: lastTfEmaVal });
+            continue;
         }
 
-        const curr = tfEma[tfIdx];
-        if (!curr || cTime < normalizeTimeSec(curr.time)) continue;
+        if (secTarget <= secChart) {
+            // Target is lower or equal timeframe (e.g. 1m target on 15m chart)
+            const nextCandleTime = (i + 1 < chartCandles.length)
+                ? normalizeTimeSec(chartCandles[i + 1].time)
+                : (cTime + secChart);
+            const targetCutoff = nextCandleTime > cTime ? nextCandleTime - 1 : cTime;
 
-        if (mode === 'stepped' || secTarget <= secChart) {
+            if (targetCutoff < firstTfTime) continue;
+
+            while (tfIdx < tfEma.length - 1 && normalizeTimeSec(tfEma[tfIdx + 1].time) <= targetCutoff) {
+                tfIdx++;
+            }
+
+            const curr = tfEma[tfIdx];
+            if (!curr) continue;
+
             result.push({ time: chartCandles[i].time, value: curr.value });
         } else {
-            const next = tfIdx < tfEma.length - 1 ? tfEma[tfIdx + 1] : null;
-            if (next) {
-                const span = normalizeTimeSec(next.time) - normalizeTimeSec(curr.time);
-                const progress = span > 0 ? (cTime - normalizeTimeSec(curr.time)) / span : 0;
-                const interpolated = curr.value + progress * (next.value - curr.value);
-                result.push({ time: chartCandles[i].time, value: interpolated });
-            } else {
+            // Target is higher timeframe (e.g. 1h target on 15m chart)
+            if (cTime < firstTfTime) continue;
+
+            while (tfIdx < tfEma.length - 1 && normalizeTimeSec(tfEma[tfIdx + 1].time) <= cTime) {
+                tfIdx++;
+            }
+
+            const curr = tfEma[tfIdx];
+            if (!curr) continue;
+
+            if (mode === 'stepped') {
                 result.push({ time: chartCandles[i].time, value: curr.value });
+            } else {
+                const next = tfIdx < tfEma.length - 1 ? tfEma[tfIdx + 1] : null;
+                if (next) {
+                    const span = normalizeTimeSec(next.time) - normalizeTimeSec(curr.time);
+                    const progress = span > 0 ? (cTime - normalizeTimeSec(curr.time)) / span : 0;
+                    const interpolated = curr.value + progress * (next.value - curr.value);
+                    result.push({ time: chartCandles[i].time, value: interpolated });
+                } else {
+                    result.push({ time: chartCandles[i].time, value: curr.value });
+                }
             }
         }
     }

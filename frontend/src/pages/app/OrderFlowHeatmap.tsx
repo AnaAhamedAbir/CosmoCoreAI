@@ -94,6 +94,17 @@ const parseIntervalToMs = (interval: string): number => {
     }
 };
 
+const formatDisplayPrice = (price: number | undefined | null): string => {
+    if (price === undefined || price === null || !Number.isFinite(price)) return '---';
+    if (price < 0.000001) return price.toFixed(12);
+    if (price < 0.00001) return price.toFixed(10);
+    if (price < 0.0001) return price.toFixed(8);
+    if (price < 0.001) return price.toFixed(7);
+    if (price < 1) return price.toFixed(5);
+    if (price < 10) return price.toFixed(4);
+    return price.toFixed(2);
+};
+
 // Chart Component
 const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean }> = ({ exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -302,7 +313,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             }
         });
 
-        const emaSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceScaleId: 'right', visible: indicatorSettings.showEMA });
+        const emaSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceScaleId: 'right', visible: false });
         const bbUpperSeries = chart.addSeries(LineSeries, { color: '#22c55e', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
         const bbMiddleSeries = chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
         const bbLowerSeries = chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
@@ -663,6 +674,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             }
             emaSeriesMapRef.current.clear();
             emaSeriesRef.current = null;
+            htfCandlesCacheRef.current = {};
             bbUpperSeriesRef.current = null;
             bbMiddleSeriesRef.current = null;
             bbLowerSeriesRef.current = null;
@@ -741,6 +753,11 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     priceLineVisible: false,
                     crosshairMarkerVisible: true,
                     visible: true,
+                    priceFormat: {
+                        type: 'custom',
+                        minMove: 0.0000000001,
+                        formatter: formatDisplayPrice,
+                    },
                 });
                 emaSeriesMapRef.current.set(tf, series);
             } else {
@@ -764,16 +781,20 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             }
 
             // If tf is different from chart interval, check cached authentic candles
-            const cached = htfCandlesCacheRef.current[tf];
+            const cacheKey = `${exchange}:${symbol.toUpperCase()}:${tf}`;
+            const cached = htfCandlesCacheRef.current[cacheKey];
             const now = Date.now();
             let tfCandles = (cached && now - cached.lastFetch < 30000 && cached.candles.length >= period)
                 ? cached.candles
                 : null;
 
             // Fetch authentic candles for tf whenever needed
+            const currentSymbol = symbol.toUpperCase();
+            const currentExchange = exchange;
             if (!tfCandles) {
-                marketDepthService.getOHLCV(symbol.toUpperCase(), exchange, tf, 300)
+                marketDepthService.getOHLCV(currentSymbol, currentExchange, tf, 300)
                     .then((fetched) => {
+                        if (symbol.toUpperCase() !== currentSymbol || exchange !== currentExchange) return;
                         if (Array.isArray(fetched) && fetched.length > 0) {
                             const formatted = fetched.map((k: any) => ({
                                 time: k.time,
@@ -783,12 +804,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                                 close: parseFloat(k.close),
                                 volume: parseFloat(k.volume || 100),
                             }));
-                            htfCandlesCacheRef.current[tf] = { candles: formatted, lastFetch: Date.now() };
+                            htfCandlesCacheRef.current[cacheKey] = { candles: formatted, lastFetch: Date.now() };
                             const refinedPts = calculateMTFEMA(allCandlesRef.current, interval, tf, period, mode, formatted);
                             const s = emaSeriesMapRef.current.get(tf);
                             if (s && refinedPts.length > 0) {
                                 s.setData(refinedPts as any);
-                                setMtfEmaValues(prev => ({ ...prev, [tf]: refinedPts[refinedPts.length - 1].value }));
+                                const lastVal = refinedPts[refinedPts.length - 1].value;
+                                setMtfEmaValues(prev => ({ ...prev, [tf]: lastVal }));
                             }
                         }
                     })
@@ -802,7 +824,17 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             }
         }
 
-        setMtfEmaValues(prev => ({ ...prev, ...newLatestValues }));
+        setMtfEmaValues(prev => {
+            const next: Record<string, number> = {};
+            activeTfs.forEach(t => {
+                if (newLatestValues[t] !== undefined) {
+                    next[t] = newLatestValues[t];
+                } else if (prev[t] !== undefined) {
+                    next[t] = prev[t];
+                }
+            });
+            return next;
+        });
     }, [interval, symbol, exchange, indicatorSettings]);
 
     // Update Indicators
@@ -1592,7 +1624,15 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                                     newLatestValues[tf] = lastPt.value;
                                 }
                             } else {
-                                const cached = htfCandlesCacheRef.current[tf]?.candles;
+                                const cacheKey = `${exchange}:${symbol.toUpperCase()}:${tf}`;
+                                const cachedEntry = htfCandlesCacheRef.current[cacheKey];
+                                const cached = cachedEntry?.candles;
+                                if (cached && cached.length > 0 && lastCandle?.close) {
+                                    const lastCached = cached[cached.length - 1];
+                                    lastCached.close = lastCandle.close;
+                                    if (lastCandle.close > lastCached.high) lastCached.high = lastCandle.close;
+                                    if (lastCandle.close < lastCached.low) lastCached.low = lastCandle.close;
+                                }
                                 const pts = calculateMTFEMA(curData, interval, tf, period, mode, cached);
                                 if (pts.length > 0) {
                                     const lastPt = pts[pts.length - 1];
@@ -1602,7 +1642,17 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                             }
                         });
                         if (Object.keys(newLatestValues).length > 0) {
-                            setMtfEmaValues(prev => ({ ...prev, ...newLatestValues }));
+                            setMtfEmaValues(prev => {
+                                const next: Record<string, number> = {};
+                                activeTfs.forEach(t => {
+                                    if (newLatestValues[t] !== undefined) {
+                                        next[t] = newLatestValues[t];
+                                    } else if (prev[t] !== undefined) {
+                                        next[t] = prev[t];
+                                    }
+                                });
+                                return next;
+                            });
                         }
                     }
                     if (indicatorSettings.showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current) {
@@ -2955,7 +3005,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                                         <div key={tf} className="flex items-center gap-1">
                                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
                                             <span className="text-gray-400 font-normal">{tfStyle.label}:</span>
-                                            <span style={{ color }}>{val < 1 ? val.toFixed(4) : val.toFixed(2)}</span>
+                                            <span style={{ color }}>{formatDisplayPrice(val)}</span>
                                         </div>
                                     );
                                 })}
@@ -3748,17 +3798,6 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
     );
 };
 
-// Helper to format prices dynamically
-const formatDisplayPrice = (price: number | undefined | null) => {
-    if (price === undefined || price === null || isNaN(price)) return '---';
-    if (price < 0.000001) return price.toFixed(12);
-    if (price < 0.00001) return price.toFixed(10);
-    if (price < 0.0001) return price.toFixed(8);
-    if (price < 0.001) return price.toFixed(6);
-    if (price < 1) return price.toFixed(5);
-    if (price < 10) return price.toFixed(4);
-    return price.toFixed(2);
-};
 
 interface ChartConfig {
     id: string;

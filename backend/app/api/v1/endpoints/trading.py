@@ -430,6 +430,14 @@ async def place_drag_bracket_endpoint(
                     if req.sl_config.get('mode'):
                         sl_meta['mode'] = str(req.sl_config.get('type') or sl_meta.get('mode')).upper()
 
+                    sl_meta['max_attempts'] = int(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_max_attempts', 'smartChaseMaxAttempts', sl_meta.get('max_attempts', 15)))
+                    sl_meta['chase_delay_ms'] = int(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_delay_ms', 'smartChaseDelayMs', sl_meta.get('chase_delay_ms', 1500)))
+                    sl_meta['max_deviation_pct'] = float(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_deviation_pct', 'smartChaseDeviationPct', sl_meta.get('max_deviation_pct', 1.0)))
+                    sl_meta['chase_mode'] = str(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_mode', 'smartChaseMode', sl_meta.get('chase_mode', 'dynamic_bbo'))).lower()
+                    sl_meta['trigger_source'] = str(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_trigger_source', 'smartChaseTriggerSource', sl_meta.get('trigger_source', 'last'))).lower()
+                    sl_meta['peg_strategy'] = str(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_peg_strategy', 'smartChasePegStrategy', sl_meta.get('peg_strategy', 'bbo'))).lower()
+                    sl_meta['wall_multiplier'] = float(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_wall_multiplier', 'smartChaseWallMultiplier', sl_meta.get('wall_multiplier', 2.5)))
+
                 await BracketOrderService.update_software_bracket(
                     sl_id=target_sl_id,
                     new_price=final_price,

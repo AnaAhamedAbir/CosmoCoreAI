@@ -29,6 +29,18 @@ class BracketOrderService:
     ACTIVE_ENTRY_MONITORS = {}  # { entry_order_id: { symbol, api_key_id, cancelled } }
 
     @staticmethod
+    def _get_sl_param(sl_config: dict, snake_key: str, camel_key: str, default_val):
+        if not sl_config or not isinstance(sl_config, dict):
+            return default_val
+        val = sl_config.get(snake_key)
+        if val is not None and val != '':
+            return val
+        val = sl_config.get(camel_key)
+        if val is not None and val != '':
+            return val
+        return default_val
+
+    @staticmethod
     def _safe_amount_to_precision(exchange, symbol: str, amount: float) -> float:
         """Safely formats amount using exchange market precision, with fallback if markets are unloaded."""
         try:
@@ -1401,16 +1413,21 @@ class BracketOrderService:
                 sl_mode = sl_config.get('mode', 'percentage')
                 sl_val  = float(sl_config.get('value', 0))
                 
-                atr_period = int(sl_config.get('atr_period', 10))
-                atr_multiplier = float(sl_config.get('atr_multiplier', 2.0))
-                atr_timeframe = sl_config.get('atr_timeframe', '15m')
+                atr_period = int(BracketOrderService._get_sl_param(sl_config, 'atr_period', 'atrPeriod', 10))
+                atr_multiplier = float(BracketOrderService._get_sl_param(sl_config, 'atr_multiplier', 'atrMultiplier', 2.0))
+                atr_timeframe = str(BracketOrderService._get_sl_param(sl_config, 'atr_timeframe', 'atrTimeframe', '15m'))
 
                 is_trailing_chase = (sl_type == 'trailing_chase')
-                peg_strategy = str(sl_config.get('smart_chase_peg_strategy') or 'bbo').lower()
-                wall_multiplier = float(sl_config.get('smart_chase_wall_multiplier') or 2.5)
-                auto_breakeven_enabled = bool(sl_config.get('auto_breakeven_enabled') or False)
-                auto_breakeven_trigger_pct = float(sl_config.get('auto_breakeven_trigger_pct') or 1.0)
-                auto_breakeven_buffer_pct = float(sl_config.get('auto_breakeven_buffer_pct') or 0.05)
+                peg_strategy = str(BracketOrderService._get_sl_param(sl_config, 'smart_chase_peg_strategy', 'smartChasePegStrategy', 'bbo')).lower()
+                wall_multiplier = float(BracketOrderService._get_sl_param(sl_config, 'smart_chase_wall_multiplier', 'smartChaseWallMultiplier', 2.5))
+                auto_breakeven_enabled = bool(BracketOrderService._get_sl_param(sl_config, 'auto_breakeven_enabled', 'autoBreakevenEnabled', False))
+                auto_breakeven_trigger_pct = float(BracketOrderService._get_sl_param(sl_config, 'auto_breakeven_trigger_pct', 'autoBreakevenTriggerPct', 1.0))
+                auto_breakeven_buffer_pct = float(BracketOrderService._get_sl_param(sl_config, 'auto_breakeven_buffer_pct', 'autoBreakevenBufferPct', 0.05))
+                max_dev = float(BracketOrderService._get_sl_param(sl_config, 'smart_chase_deviation_pct', 'smartChaseDeviationPct', 1.0))
+                chase_delay = int(BracketOrderService._get_sl_param(sl_config, 'smart_chase_delay_ms', 'smartChaseDelayMs', 1500))
+                max_attempts = int(BracketOrderService._get_sl_param(sl_config, 'smart_chase_max_attempts', 'smartChaseMaxAttempts', 15))
+                chase_mode = str(BracketOrderService._get_sl_param(sl_config, 'smart_chase_mode', 'smartChaseMode', 'dynamic_bbo')).lower()
+                trigger_source = str(BracketOrderService._get_sl_param(sl_config, 'smart_chase_trigger_source', 'smartChaseTriggerSource', 'last')).lower()
 
                 if sl_type in ['trailing', 'trailing_chase']:
                     placed_native = False
@@ -1496,11 +1513,11 @@ class BracketOrderService:
                                 atr_timeframe=atr_timeframe,
                                 tp_order_id=tp_order_id,
                                 is_smart_chase_exit=is_trailing_chase,
-                                max_deviation_pct=float(sl_config.get('smart_chase_deviation_pct') or 1.0),
-                                chase_delay_ms=int(sl_config.get('smart_chase_delay_ms') or 1500),
-                                max_attempts=int(sl_config.get('smart_chase_max_attempts') or 15),
-                                chase_mode=str(sl_config.get('smart_chase_mode') or 'dynamic_bbo').lower(),
-                                trigger_source=str(sl_config.get('smart_chase_trigger_source') or 'last').lower(),
+                                max_deviation_pct=max_dev,
+                                chase_delay_ms=chase_delay,
+                                max_attempts=max_attempts,
+                                chase_mode=chase_mode,
+                                trigger_source=trigger_source,
                                 peg_strategy=peg_strategy,
                                 wall_multiplier=wall_multiplier,
                                 auto_breakeven_enabled=auto_breakeven_enabled,
@@ -1520,12 +1537,6 @@ class BracketOrderService:
                         sl_price = average_price - sl_val if opposite_side == 'sell' else average_price + sl_val
 
                     final_sl_price = BracketOrderService._safe_price_to_precision(exchange, symbol, sl_price)
-
-                    max_dev = float(sl_config.get('smart_chase_deviation_pct') or 1.0)
-                    chase_delay = int(sl_config.get('smart_chase_delay_ms') or 1500)
-                    max_attempts = int(sl_config.get('smart_chase_max_attempts') or 15)
-                    chase_mode = str(sl_config.get('smart_chase_mode') or 'dynamic_bbo').lower()
-                    trigger_source = str(sl_config.get('smart_chase_trigger_source') or 'last').lower()
 
                     disaster_sl_order_id = None
                     if is_futures:
@@ -1746,6 +1757,8 @@ class BracketOrderService:
             'auto_breakeven_enabled': auto_breakeven_enabled,
             'breakeven_activated': False,
             'max_deviation_pct': max_deviation_pct,
+            'max_attempts': max_attempts,
+            'chase_delay_ms': chase_delay_ms,
             'tp_order_id': str(tp_order_id) if tp_order_id else None
         }
 
@@ -2283,6 +2296,8 @@ class BracketOrderService:
             'trigger_source': trigger_source,
             'peg_strategy': peg_strategy,
             'wall_multiplier': wall_multiplier,
+            'max_attempts': max_attempts,
+            'chase_delay_ms': chase_delay_ms,
             'price': sl_price,
             'trigger_price': sl_price,
             'entry_price': entry_price,
@@ -2323,6 +2338,20 @@ class BracketOrderService:
                 disaster_sl_order_id = sl_meta['disaster_sl_order_id']
             curr_amount = float(sl_meta.get('amount') if (sl_meta and sl_meta.get('amount') is not None) else amount)
             curr_sl_price = float(sl_meta.get('trigger_price') if (sl_meta and sl_meta.get('trigger_price') is not None) else sl_price)
+            if sl_meta.get('max_attempts'):
+                max_attempts = int(sl_meta['max_attempts'])
+            if sl_meta.get('chase_delay_ms'):
+                chase_delay_ms = int(sl_meta['chase_delay_ms'])
+            if sl_meta.get('trigger_source'):
+                trigger_source = str(sl_meta['trigger_source']).lower()
+            if sl_meta.get('chase_mode'):
+                chase_mode = str(sl_meta['chase_mode']).lower()
+            if sl_meta.get('peg_strategy'):
+                peg_strategy = str(sl_meta['peg_strategy']).lower()
+            if sl_meta.get('max_deviation_pct'):
+                max_deviation_pct = float(sl_meta['max_deviation_pct'])
+            if sl_meta.get('wall_multiplier'):
+                wall_multiplier = float(sl_meta['wall_multiplier'])
 
             try:
                 # ── PRIORITY 1: FETCH TICKER FIRST FOR ULTRA-FAST SL DETECTION ──

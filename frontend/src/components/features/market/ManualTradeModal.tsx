@@ -1735,6 +1735,28 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
           }
         }
 
+        const attachedSlPayload = {
+          ...slConfig,
+          enabled: true,
+          type: slConfig.type,
+          mode: slConfig.mode,
+          value: dropPrice,
+          atr_period: slConfig.atrPeriod,
+          atr_multiplier: slConfig.atrMultiplier,
+          atr_timeframe: slConfig.atrTimeframe,
+          timeout_mins: slConfig.timeoutMins,
+          smart_chase_deviation_pct: slConfig.smartChaseDeviationPct,
+          smart_chase_delay_ms: slConfig.smartChaseDelayMs,
+          smart_chase_max_attempts: slConfig.smartChaseMaxAttempts,
+          smart_chase_mode: slConfig.smartChaseMode,
+          smart_chase_trigger_source: slConfig.smartChaseTriggerSource,
+          smart_chase_peg_strategy: slConfig.smartChasePegStrategy,
+          smart_chase_wall_multiplier: slConfig.smartChaseWallMultiplier,
+          auto_breakeven_enabled: slConfig.autoBreakevenEnabled,
+          auto_breakeven_trigger_pct: slConfig.autoBreakevenTriggerPct,
+          auto_breakeven_buffer_pct: slConfig.autoBreakevenBufferPct
+        };
+
         const res = await manualTradeService.placeDragBracket({
           apiKeyId: Number(selectedApi),
           symbol: activeSymbol,
@@ -1744,7 +1766,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
           isFutures: isFutures,
           side: targetSide,
           tpConfig: tpConfig,
-          slConfig: slConfig,
+          slConfig: attachedSlPayload,
           targetOrderId: targetOrderId,
         });
 

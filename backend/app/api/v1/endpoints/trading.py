@@ -360,16 +360,29 @@ async def place_drag_bracket_endpoint(
                 entry_side = 'buy' if final_price < current_px else 'sell'
 
             if amount <= 0:
-                if entry_side == 'sell':
-                    if quote_free > 0 and final_price > 0:
-                        amount = quote_free / final_price
-                    elif base_free > 0:
-                        amount = base_free
-                else:
-                    if base_free > 0:
-                        amount = base_free
-                    elif quote_free > 0 and final_price > 0:
-                        amount = quote_free / final_price
+                # Check if we are updating an existing active bracket or order
+                if req.target_order_id and str(req.target_order_id) in BracketOrderService.ACTIVE_ENTRY_BRACKETS:
+                    amount = float(BracketOrderService.ACTIVE_ENTRY_BRACKETS[str(req.target_order_id)].get('amount') or 0.0)
+                if amount <= 0 and bracket_type == 'sl':
+                    for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+                        if sdata.get('cancelled') or sdata.get('status') != 'monitoring':
+                            continue
+                        if str(sdata.get('symbol', '')).strip().upper() == req.symbol.strip().upper():
+                            if sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == req.api_key_id:
+                                amount = float(sdata.get('amount') or 0.0)
+                                if amount > 0:
+                                    break
+                if amount <= 0:
+                    if entry_side == 'sell':
+                        if quote_free > 0 and final_price > 0:
+                            amount = quote_free / final_price
+                        elif base_free > 0:
+                            amount = base_free
+                    else:
+                        if base_free > 0:
+                            amount = base_free
+                        elif quote_free > 0 and final_price > 0:
+                            amount = quote_free / final_price
 
         # 4. Format amount with exchange precision
         final_amount = BracketOrderService._safe_amount_to_precision(exchange, req.symbol, amount)
@@ -379,31 +392,126 @@ async def place_drag_bracket_endpoint(
                 detail=f"No active position or balance found for {req.symbol} to place bracket. Please check your wallet balance or size."
             )
 
-        # 6. Clean up any existing bracket of the same type for this symbol if active
+        # 5. Handle Bracket Placement / Update
         opposite_side = 'sell' if entry_side == 'buy' else 'buy'
+
         if bracket_type == 'sl':
+            # Check if there is an existing active software SL to update directly
+            target_sl_id = None
             for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
                 if sdata.get('cancelled') or sdata.get('status') != 'monitoring':
                     continue
-                if str(sdata.get('symbol', '')).strip().upper() == req.symbol.strip().upper():
-                    if sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == req.api_key_id:
-                        logger.info(f"Replacing existing SL {sid} with new drag SL at {final_price}")
-                        sdata['cancelled'] = True
-                        sdata['status'] = 'cancelled'
+                key_match = (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == req.api_key_id)
+                sym_match = (str(sdata.get('symbol', '')).strip().upper() == req.symbol.strip().upper())
+                if key_match and sym_match:
+                    if req.target_order_id:
+                        if (
+                            str(sdata.get('entry_order_id') or '') == str(req.target_order_id)
+                            or str(sdata.get('tp_order_id') or '') == str(req.target_order_id)
+                            or str(sid) == str(req.target_order_id)
+                        ):
+                            target_sl_id = sid
+                            break
+                    else:
+                        target_sl_id = sid
+                        break
+
+            if target_sl_id:
+                logger.info(f"🛡️ Updating existing active software SL {target_sl_id} to new price {final_price}")
+                sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL[target_sl_id]
+                sl_meta['trigger_price'] = final_price
+                sl_meta['price'] = final_price
+                sl_meta['manual_trigger_override'] = final_price
+                if final_amount > 0:
+                    sl_meta['amount'] = final_amount
+                if req.sl_config:
+                    if req.sl_config.get('type'):
+                        sl_meta['type'] = req.sl_config.get('type')
+                    if req.sl_config.get('mode'):
+                        sl_meta['mode'] = str(req.sl_config.get('type') or sl_meta.get('mode')).upper()
+
+                await BracketOrderService.update_software_bracket(
+                    sl_id=target_sl_id,
+                    new_price=final_price,
+                    api_key_id=req.api_key_id,
+                    user_id=current_user.id
+                )
+
+                manual_trade_service.invalidate_open_orders_cache(api_key_record.id, req.symbol)
+                sl_mode_label = str(sl_meta.get('type', 'smart_chase')).replace('_', ' ').title()
+                return {
+                    "status": "success",
+                    "bracket_type": "sl",
+                    "price": final_price,
+                    "amount": sl_meta.get('amount', final_amount),
+                    "entry_side": entry_side,
+                    "message": f"🛡️ {sl_mode_label} Stop-Loss updated to {final_price} for {sl_meta.get('amount', final_amount)} {req.symbol}"
+                }
+            else:
+                # No active SL exists yet — spawn a new software SL without iceberg chunk addition
+                sl_cfg = dict(req.sl_config or {})
+                sl_cfg['enabled'] = True
+                sl_cfg['mode'] = 'absolute'
+                sl_cfg['value'] = final_price
+                if 'type' not in sl_cfg:
+                    sl_cfg['type'] = 'smart_chase'
+
+                asyncio.create_task(
+                    BracketOrderService._spawn_bracket_for_amount(
+                        exchange=exchange,
+                        symbol=req.symbol,
+                        side=entry_side,
+                        filled_amount=final_amount,
+                        average_price=current_px,
+                        is_futures=is_futures,
+                        tp_config=None,
+                        sl_config=sl_cfg,
+                        user_id=current_user.id,
+                        api_key_record=api_key_record,
+                        entry_order_id=req.target_order_id,
+                        is_consolidation_chunk=False
+                    )
+                )
+                sl_mode_label = str(sl_cfg.get('type', 'smart_chase')).replace('_', ' ').title()
+                msg = f"🛡️ {sl_mode_label} Stop-Loss placed at {final_price} for {final_amount} {req.symbol}"
+
         elif bracket_type == 'tp':
+            # Clean up prior TP order on exchange before placing replacement
             try:
                 for eb_id, eb_data in list(BracketOrderService.ACTIVE_ENTRY_BRACKETS.items()):
-                    if str(eb_data.get('symbol', '')).strip().upper() == req.symbol.strip().upper():
+                    sym_match = (str(eb_data.get('symbol', '')).strip().upper() == req.symbol.strip().upper())
+                    key_match = (eb_data.get('api_key_id') is None or int(eb_data.get('api_key_id')) == req.api_key_id)
+                    id_match = (not req.target_order_id or str(eb_id) == str(req.target_order_id))
+                    if sym_match and key_match and id_match:
                         old_tp_id = eb_data.get('tp_order_id')
                         if old_tp_id:
                             logger.info(f"Cancelling prior bracket TP {old_tp_id} before setting new drag TP")
                             await BracketOrderService._cancel_futures_order_universal(exchange, old_tp_id, req.symbol) if is_futures else await exchange.cancel_order(old_tp_id, req.symbol)
                             eb_data['tp_order_id'] = None
+                            await asyncio.sleep(0.15)
             except Exception as tp_c_err:
                 logger.debug(f"Non-fatal prior TP cleanup notice: {tp_c_err}")
 
-        # 6. Execute / Spawn Bracket
-        if bracket_type == 'tp':
+            try:
+                for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+                    if sdata.get('cancelled') or sdata.get('status') != 'monitoring':
+                        continue
+                    sym_match = (str(sdata.get('symbol', '')).strip().upper() == req.symbol.strip().upper())
+                    key_match = (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == req.api_key_id)
+                    id_match = (not req.target_order_id or str(sdata.get('entry_order_id') or '') == str(req.target_order_id) or str(sdata.get('tp_order_id') or '') == str(req.target_order_id))
+                    if sym_match and key_match and id_match:
+                        sl_old_tp = sdata.get('tp_order_id')
+                        if sl_old_tp:
+                            try:
+                                logger.info(f"Cancelling SL-linked TP {sl_old_tp} before setting new drag TP")
+                                await BracketOrderService._cancel_futures_order_universal(exchange, sl_old_tp, req.symbol) if is_futures else await exchange.cancel_order(sl_old_tp, req.symbol)
+                                sdata['tp_order_id'] = None
+                                await asyncio.sleep(0.15)
+                            except Exception:
+                                pass
+            except Exception as sl_tp_err:
+                logger.debug(f"Non-fatal SL-linked TP cleanup notice: {sl_tp_err}")
+
             tp_cfg = dict(req.tp_config or {})
             tp_cfg['enabled'] = True
             tp_cfg['mode'] = 'absolute'
@@ -413,7 +521,7 @@ async def place_drag_bracket_endpoint(
             if 'order_type' not in tp_cfg:
                 tp_cfg['order_type'] = 'Limit'
 
-            # Spawn TP via BracketOrderService
+            # Spawn TP via BracketOrderService without iceberg chunk addition
             asyncio.create_task(
                 BracketOrderService._spawn_bracket_for_amount(
                     exchange=exchange,
@@ -426,35 +534,11 @@ async def place_drag_bracket_endpoint(
                     sl_config=None,
                     user_id=current_user.id,
                     api_key_record=api_key_record,
-                    entry_order_id=req.target_order_id
+                    entry_order_id=req.target_order_id,
+                    is_consolidation_chunk=False
                 )
             )
             msg = f"🎯 Take Profit placed at {final_price} for {final_amount} {req.symbol}"
-        else:  # sl
-            sl_cfg = dict(req.sl_config or {})
-            sl_cfg['enabled'] = True
-            sl_cfg['mode'] = 'absolute'
-            sl_cfg['value'] = final_price
-            if 'type' not in sl_cfg:
-                sl_cfg['type'] = 'smart_chase'
-
-            asyncio.create_task(
-                BracketOrderService._spawn_bracket_for_amount(
-                    exchange=exchange,
-                    symbol=req.symbol,
-                    side=entry_side,
-                    filled_amount=final_amount,
-                    average_price=current_px,
-                    is_futures=is_futures,
-                    tp_config=None,
-                    sl_config=sl_cfg,
-                    user_id=current_user.id,
-                    api_key_record=api_key_record,
-                    entry_order_id=req.target_order_id
-                )
-            )
-            sl_mode_label = str(sl_cfg.get('type', 'smart_chase')).replace('_', ' ').title()
-            msg = f"🛡️ {sl_mode_label} Stop-Loss placed at {final_price} for {final_amount} {req.symbol}"
 
         manual_trade_service.invalidate_open_orders_cache(api_key_record.id, req.symbol)
 

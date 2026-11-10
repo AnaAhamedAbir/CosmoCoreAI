@@ -977,7 +977,8 @@ class BracketOrderService:
     async def _spawn_bracket_for_amount(
         exchange, symbol: str, side: str, filled_amount: float, average_price: float,
         is_futures: bool, tp_config: dict, sl_config: dict, user_id: int, api_key_record,
-        entry_order_id: str = None
+        entry_order_id: str = None,
+        is_consolidation_chunk: bool = True
     ):
         entry_lock = None
         if entry_order_id:
@@ -1051,18 +1052,23 @@ class BracketOrderService:
                         existing_sl = eb_cand
 
             if existing_sl is not None:
-                prev_amt = float(existing_sl.get('amount') or 0.0)
-                raw_total = prev_amt + final_amount
-                new_total_amt = BracketOrderService._safe_amount_to_precision(exchange, symbol, raw_total)
-                prev_entry = float(existing_sl.get('entry_price') or average_price)
-                weighted_entry = ((prev_amt * prev_entry) + (final_amount * average_price)) / raw_total if raw_total > 0 else average_price
+                if is_consolidation_chunk:
+                    prev_amt = float(existing_sl.get('amount') or 0.0)
+                    raw_total = prev_amt + final_amount
+                    new_total_amt = BracketOrderService._safe_amount_to_precision(exchange, symbol, raw_total)
+                    prev_entry = float(existing_sl.get('entry_price') or average_price)
+                    weighted_entry = ((prev_amt * prev_entry) + (final_amount * average_price)) / raw_total if raw_total > 0 else average_price
+                else:
+                    new_total_amt = BracketOrderService._safe_amount_to_precision(exchange, symbol, final_amount)
+                    weighted_entry = float(existing_sl.get('entry_price') or average_price)
+
                 existing_sl['amount'] = new_total_amt
                 existing_sl['entry_price'] = weighted_entry
                 if entry_order_id and str(entry_order_id) in BracketOrderService.ACTIVE_ENTRY_BRACKETS:
                     BracketOrderService.ACTIVE_ENTRY_BRACKETS[str(entry_order_id)]['amount'] = new_total_amt
                     BracketOrderService.ACTIVE_ENTRY_BRACKETS[str(entry_order_id)]['entry_price'] = weighted_entry
 
-                # Consolidate TP order if configured
+                # Consolidate or replace TP order if configured
                 if tp_config:
                     old_tp_id = existing_sl.get('tp_order_id')
                     tp_target_amt = new_total_amt
@@ -1081,9 +1087,12 @@ class BracketOrderService:
                         except Exception:
                             pass
                         if not old_tp_already_closed:
-                            await BracketOrderService._cancel_futures_order_universal(exchange, old_tp_id, symbol)
-                            await asyncio.sleep(0.1)
-                        if old_tp_filled > 0:
+                            if is_futures:
+                                await BracketOrderService._cancel_futures_order_universal(exchange, old_tp_id, symbol)
+                            else:
+                                await exchange.cancel_order(old_tp_id, symbol)
+                            await asyncio.sleep(0.15)
+                        if old_tp_filled > 0 and is_consolidation_chunk:
                             tp_target_amt = BracketOrderService._safe_amount_to_precision(
                                 exchange, symbol, max(final_amount, raw_total - old_tp_filled)
                             )
@@ -1130,15 +1139,22 @@ class BracketOrderService:
                                 ex_params_gtc['timeInForce'] = 'GTC'
                                 tp_res = await exchange.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_gtc)
                         if tp_res and tp_res.get('id'):
-                            existing_sl['tp_order_id'] = str(tp_res.get('id'))
+                            new_tp_id = str(tp_res.get('id'))
+                            existing_sl['tp_order_id'] = new_tp_id
                             if entry_order_id and str(entry_order_id) in BracketOrderService.ACTIVE_ENTRY_BRACKETS:
-                                BracketOrderService.ACTIVE_ENTRY_BRACKETS[str(entry_order_id)]['tp_order_id'] = str(tp_res.get('id'))
-                            BracketOrderService.KNOWN_TP_ORDER_IDS.add(str(tp_res.get('id')))
-                            logger.info(f"🔄 Consolidated Bracket TP to {tp_target_amt} at {final_tp_price} (ID: {tp_res.get('id')})")
+                                BracketOrderService.ACTIVE_ENTRY_BRACKETS[str(entry_order_id)]['tp_order_id'] = new_tp_id
+                            BracketOrderService.KNOWN_TP_ORDER_IDS.add(new_tp_id)
+                            # Link to any active software SL
+                            for _, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+                                if str(sdata.get('symbol', '')).strip().upper() == str(symbol).strip().upper():
+                                    if not sdata.get('cancelled') and sdata.get('status') == 'monitoring':
+                                        if entry_order_id and str(sdata.get('entry_order_id') or '') == str(entry_order_id):
+                                            sdata['tp_order_id'] = new_tp_id
+                            logger.info(f"🔄 Consolidated Bracket TP to {tp_target_amt} at {final_tp_price} (ID: {new_tp_id})")
                     except Exception as tp_cons_err:
                         logger.warning(f"Failed to replace consolidated TP order: {tp_cons_err}")
 
-                # Consolidate Futures disaster SL if present
+                # Consolidate / Update Futures disaster SL if present
                 old_dis_id = existing_sl.get('disaster_sl_order_id')
                 if old_dis_id and is_futures and existing_sl.get('id'):
                     try:
@@ -1151,11 +1167,38 @@ class BracketOrderService:
                     except Exception as dis_cons_err:
                         logger.debug(f"Consolidate disaster SL notice: {dis_cons_err}")
 
-                logger.info(
-                    f"🔄 [Bracket Monitor] Consolidated partial fill chunk (+{final_amount} -> total {new_total_amt}) "
-                    f"into active bracket for entry #{entry_order_id} on {symbol}"
-                )
-                return
+                # Check if an active software SL monitor is running for this bracket
+                has_active_sl_loop = False
+                for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+                    if not sdata.get('cancelled') and sdata.get('status') == 'monitoring':
+                        if entry_order_id and str(sdata.get('entry_order_id') or '') == str(entry_order_id):
+                            has_active_sl_loop = True
+                            if sl_config:
+                                new_sl_val = float(sl_config.get('value', 0.0))
+                                if new_sl_val > 0:
+                                    prec_sl = BracketOrderService._safe_price_to_precision(exchange, symbol, new_sl_val)
+                                    sdata['trigger_price'] = prec_sl
+                                    sdata['price'] = prec_sl
+                                    sdata['manual_trigger_override'] = prec_sl
+                            break
+
+                # If sl_config was requested but NO software SL monitor is running yet,
+                # we must NOT return early — we must proceed down to start the SL monitor loop!
+                if sl_config and not has_active_sl_loop:
+                    logger.info(f"Bracket entry #{entry_order_id} has no active software SL monitor. Proceeding to spawn SL monitor...")
+                    tp_order_id = existing_sl.get('tp_order_id')
+                else:
+                    if is_consolidation_chunk:
+                        logger.info(
+                            f"🔄 [Bracket Monitor] Consolidated partial fill chunk (+{final_amount} -> total {new_total_amt}) "
+                            f"into active bracket for entry #{entry_order_id} on {symbol}"
+                        )
+                    else:
+                        logger.info(
+                            f"🎯 [Bracket Update] Bracket updated to {new_total_amt} "
+                            f"for entry #{entry_order_id} on {symbol}"
+                        )
+                    return
 
             # --- Binance Spot OCO handling ---
             sl_type = sl_config.get('type', 'fixed') if sl_config else None

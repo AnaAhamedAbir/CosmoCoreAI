@@ -331,8 +331,15 @@ async def place_drag_bracket_endpoint(
             # Spot balance check
             bal = await manual_trade_service.get_fast_balance(db, current_user.id, req.api_key_id, req.symbol)
             base_free = float(bal.get('base_free') or 0.0)
-            if amount <= 0 and base_free > 0:
-                amount = base_free
+            quote_free = float(bal.get('quote_free') or 0.0)
+            if amount <= 0:
+                final_px = float(req.price or 0.0)
+                if entry_side == 'sell' and quote_free > 0 and final_px > 0:
+                    amount = quote_free / final_px
+                elif base_free > 0:
+                    amount = base_free
+                elif quote_free > 0 and final_px > 0:
+                    amount = quote_free / final_px
 
         # 3. Format amount & price with precision
         final_amount = BracketOrderService._safe_amount_to_precision(exchange, req.symbol, amount)

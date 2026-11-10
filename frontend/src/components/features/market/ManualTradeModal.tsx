@@ -1712,9 +1712,14 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         } else if (size && Number(size) > 0) {
           targetAmount = sizeMode === 'quote' && effectiveOrderPrice > 0 ? Number(size) / effectiveOrderPrice : Number(size);
           targetSide = tradeSide === 'Buy' ? 'buy' : 'sell';
-        } else if (!isFutures && balanceData && balanceData.base_free > 0) {
-          targetAmount = balanceData.base_free;
-          targetSide = 'buy';
+        } else if (!isFutures && balanceData) {
+          if (tradeSide === 'Sell' && (balanceData.quote_free || 0) > 0 && dropPrice > 0) {
+            targetAmount = balanceData.quote_free / dropPrice;
+            targetSide = 'sell';
+          } else if ((balanceData.base_free || 0) > 0) {
+            targetAmount = balanceData.base_free;
+            targetSide = 'buy';
+          }
         }
 
         const res = await manualTradeService.placeDragBracket({

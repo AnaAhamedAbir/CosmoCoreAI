@@ -111,6 +111,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     const chartRef = useRef<any>(null);
     const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
     const quickTradeGhostLineRef = useRef<any>(null);
+    const chartBracketGhostLineRef = useRef<any>(null);
     const emaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const emaSeriesMapRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
     const htfCandlesCacheRef = useRef<Record<string, { candles: any[]; lastFetch: number }>>({});
@@ -634,10 +635,83 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             }
         };
 
-        // Attach handlers to window for access inside QuickTradeToolbar
+        // Attach handlers to window for access inside QuickTradeToolbar and ManualTradeModal
         (window as any)._handleQuickTradeDragStart = handleQuickTradeDragStart;
         (window as any)._handleQuickTradeDragMove = handleQuickTradeDragMove;
         (window as any)._handleQuickTradeDragEnd = handleQuickTradeDragEnd;
+
+        const handleChartDragBracketStart = (type: 'tp' | 'sl') => {
+            if (chartBracketGhostLineRef.current && candlestickSeriesRef.current) {
+                try { candlestickSeriesRef.current.removePriceLine(chartBracketGhostLineRef.current); } catch {}
+                chartBracketGhostLineRef.current = null;
+            }
+        };
+
+        const handleChartDragBracketMove = (type: 'tp' | 'sl', clientX: number, clientY: number): number | null => {
+            if (!candlestickSeriesRef.current || !chartContainerRef.current) return null;
+            const rect = chartContainerRef.current.getBoundingClientRect();
+            const coordinate = clientY - rect.top;
+
+            if (coordinate < 0 || coordinate > rect.height || clientX < rect.left || clientX > rect.right) {
+                if (chartBracketGhostLineRef.current && candlestickSeriesRef.current) {
+                    try { candlestickSeriesRef.current.removePriceLine(chartBracketGhostLineRef.current); } catch {}
+                    chartBracketGhostLineRef.current = null;
+                }
+                return null;
+            }
+
+            const rawPrice = candlestickSeriesRef.current.coordinateToPrice(coordinate as any);
+            const price = typeof rawPrice === 'number' ? rawPrice : parseFloat(rawPrice as any);
+            if (isNaN(price) || price <= 0) return null;
+
+            const isTP = type === 'tp';
+            const color = isTP ? '#22c55e' : '#ef4444';
+            const formattedPrice = price < 1 ? price.toFixed(6) : price.toFixed(4);
+            const title = isTP ? `🎯 DROP TO SET TP (${formattedPrice})` : `🛡️ DROP TO SET SL (${formattedPrice})`;
+
+            if (!chartBracketGhostLineRef.current) {
+                chartBracketGhostLineRef.current = candlestickSeriesRef.current.createPriceLine({
+                    price: price,
+                    color: color,
+                    lineWidth: 2,
+                    lineStyle: LineStyle.Dashed,
+                    axisLabelVisible: true,
+                    title: title,
+                });
+            } else {
+                chartBracketGhostLineRef.current.applyOptions({
+                    price: price,
+                    color: color,
+                    title: title,
+                });
+            }
+            return price;
+        };
+
+        const handleChartDragBracketEnd = (type: 'tp' | 'sl', clientX: number, clientY: number): { inChart: boolean; price: number | null } => {
+            if (chartBracketGhostLineRef.current && candlestickSeriesRef.current) {
+                try { candlestickSeriesRef.current.removePriceLine(chartBracketGhostLineRef.current); } catch {}
+                chartBracketGhostLineRef.current = null;
+            }
+
+            if (!candlestickSeriesRef.current || !chartContainerRef.current) return { inChart: false, price: null };
+            const rect = chartContainerRef.current.getBoundingClientRect();
+            const coordinate = clientY - rect.top;
+
+            if (coordinate < 0 || coordinate > rect.height || clientX < rect.left || clientX > rect.right) {
+                return { inChart: false, price: null };
+            }
+
+            const rawPrice = candlestickSeriesRef.current.coordinateToPrice(coordinate as any);
+            const price = typeof rawPrice === 'number' ? rawPrice : parseFloat(rawPrice as any);
+            if (isNaN(price) || price <= 0) return { inChart: false, price: null };
+
+            return { inChart: true, price };
+        };
+
+        (window as any)._handleChartDragBracketStart = handleChartDragBracketStart;
+        (window as any)._handleChartDragBracketMove = handleChartDragBracketMove;
+        (window as any)._handleChartDragBracketEnd = handleChartDragBracketEnd;
 
         fetchKlines();
 
@@ -655,6 +729,11 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             isMounted = false;
             resizeObserver.disconnect();
             chart.remove();
+
+            delete (window as any)._handleChartDragBracketStart;
+            delete (window as any)._handleChartDragBracketMove;
+            delete (window as any)._handleChartDragBracketEnd;
+            chartBracketGhostLineRef.current = null;
 
             // Cleanup refs so they respawn on the newly created chart instance
             candlestickSeriesRef.current = null;
@@ -4461,6 +4540,9 @@ const OrderFlowHeatmap: React.FC = () => {
                                             setManualTradePrice(null);
                                             setManualTradeTrigger(0);
                                         }}
+                                        onChartDragBracketStart={(type) => (window as any)._handleChartDragBracketStart?.(type)}
+                                        onChartDragBracketMove={(type, x, y) => (window as any)._handleChartDragBracketMove?.(type, x, y) ?? null}
+                                        onChartDragBracketEnd={(type, x, y) => (window as any)._handleChartDragBracketEnd?.(type, x, y) ?? { inChart: false, price: null }}
                                     />
                                 </div>
     

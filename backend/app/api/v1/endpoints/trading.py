@@ -87,6 +87,17 @@ class ClosePositionRequest(BaseModel):
     api_key_id: int
     symbol: str
 
+class PlaceDragBracketRequest(BaseModel):
+    api_key_id: int
+    symbol: str
+    bracket_type: str  # 'tp' or 'sl'
+    price: float  # Absolute target price dropped on chart
+    amount: Optional[float] = None
+    is_futures: Optional[bool] = False
+    side: Optional[str] = None  # Entry side: 'buy' (Long) or 'sell' (Short)
+    tp_config: Optional[dict] = None
+    sl_config: Optional[dict] = None
+
 # --- Endpoints ---
 
 @router.get("/news")
@@ -276,6 +287,167 @@ async def update_software_bracket_endpoint(
     except Exception as e:
         logger.error(f"Software SL edit failed: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to update Stop-Loss: {str(e)}")
+
+@router.post("/place-drag-bracket")
+async def place_drag_bracket_endpoint(
+    req: PlaceDragBracketRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """
+    Places an Attached Take Profit or Stop Loss for an active position/balance 
+    via Drag & Drop on the chart. Uses user's configured settings from the modal.
+    """
+    try:
+        from app.services.manual_trade_service import manual_trade_service
+        from app.services.bracket_order_service import BracketOrderService
+        import asyncio
+
+        # 1. Fetch API Key record
+        api_key_record = db.query(models.ApiKey).filter(
+            models.ApiKey.id == req.api_key_id,
+            models.ApiKey.user_id == current_user.id,
+            models.ApiKey.is_enabled == True
+        ).first()
+        if not api_key_record:
+            raise HTTPException(status_code=404, detail="Active API Key not found.")
+
+        is_futures = bool(req.is_futures or (':' in req.symbol))
+        exchange = await manual_trade_service._get_exchange(api_key_record, is_futures)
+
+        # 2. Resolve amount and entry side
+        amount = req.amount or 0.0
+        entry_side = req.side.lower() if req.side else None
+
+        if is_futures:
+            pos_info = await manual_trade_service.get_active_position(db, current_user.id, req.api_key_id, req.symbol)
+            pos_amt = float(pos_info.get('amount') or 0.0)
+            if pos_amt > 0:
+                if amount <= 0:
+                    amount = pos_amt
+                if not entry_side:
+                    entry_side = 'buy' if str(pos_info.get('side', '')).lower() == 'long' else 'sell'
+        else:
+            # Spot balance check
+            bal = await manual_trade_service.get_fast_balance(db, current_user.id, req.api_key_id, req.symbol)
+            base_free = float(bal.get('base_free') or 0.0)
+            if amount <= 0 and base_free > 0:
+                amount = base_free
+            if not entry_side:
+                entry_side = 'buy'  # Spot holder is long base asset
+
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail=f"No active position or balance found for {req.symbol} to place bracket.")
+
+        if not entry_side:
+            entry_side = 'buy'
+
+        # 3. Format amount & price with precision
+        final_amount = BracketOrderService._safe_amount_to_precision(exchange, req.symbol, amount)
+        final_price = BracketOrderService._safe_price_to_precision(exchange, req.symbol, req.price)
+
+        if final_price <= 0:
+            raise HTTPException(status_code=400, detail="Invalid price level.")
+
+        # 4. Fetch current market price to validate price direction
+        current_px = 0.0
+        try:
+            ticker = await exchange.fetch_ticker(req.symbol)
+            current_px = float(ticker.get('last') or ticker.get('close') or req.price)
+        except Exception:
+            current_px = req.price
+
+        bracket_type = req.bracket_type.lower()
+        if entry_side == 'buy':  # LONG position / holding base coin
+            if bracket_type == 'tp' and final_price <= current_px:
+                raise HTTPException(status_code=400, detail=f"For a Long/Spot position, Take Profit price ({final_price}) must be above current price ({current_px}).")
+            if bracket_type == 'sl' and final_price >= current_px:
+                raise HTTPException(status_code=400, detail=f"For a Long/Spot position, Stop Loss price ({final_price}) must be below current price ({current_px}).")
+        else:  # SHORT position
+            if bracket_type == 'tp' and final_price >= current_px:
+                raise HTTPException(status_code=400, detail=f"For a Short position, Take Profit price ({final_price}) must be below current price ({current_px}).")
+            if bracket_type == 'sl' and final_price <= current_px:
+                raise HTTPException(status_code=400, detail=f"For a Short position, Stop Loss price ({final_price}) must be above current price ({current_px}).")
+
+        # 5. Clean up any existing bracket of the same type for this symbol if active
+        opposite_side = 'sell' if entry_side == 'buy' else 'buy'
+        if bracket_type == 'sl':
+            for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+                if sdata.get('cancelled') or sdata.get('status') != 'monitoring':
+                    continue
+                if str(sdata.get('symbol', '')).strip().upper() == req.symbol.strip().upper():
+                    if sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == req.api_key_id:
+                        logger.info(f"Replacing existing SL {sid} with new drag SL at {final_price}")
+                        sdata['cancelled'] = True
+                        sdata['status'] = 'cancelled'
+
+        # 6. Execute / Spawn Bracket
+        if bracket_type == 'tp':
+            tp_cfg = dict(req.tp_config or {})
+            tp_cfg['enabled'] = True
+            tp_cfg['mode'] = 'absolute'
+            tp_cfg['value'] = final_price
+            if 'orderType' in tp_cfg:
+                tp_cfg['order_type'] = tp_cfg['orderType']
+            if 'order_type' not in tp_cfg:
+                tp_cfg['order_type'] = 'Limit'
+
+            # Spawn TP via BracketOrderService
+            asyncio.create_task(
+                BracketOrderService._spawn_bracket_for_amount(
+                    exchange=exchange,
+                    symbol=req.symbol,
+                    side=entry_side,
+                    filled_amount=final_amount,
+                    average_price=current_px,
+                    is_futures=is_futures,
+                    tp_config=tp_cfg,
+                    sl_config=None,
+                    user_id=current_user.id,
+                    api_key_record=api_key_record
+                )
+            )
+            msg = f"🎯 Take Profit placed at {final_price} for {final_amount} {req.symbol}"
+        else:  # sl
+            sl_cfg = dict(req.sl_config or {})
+            sl_cfg['enabled'] = True
+            sl_cfg['mode'] = 'absolute'
+            sl_cfg['value'] = final_price
+            if 'type' not in sl_cfg:
+                sl_cfg['type'] = 'smart_chase'
+
+            asyncio.create_task(
+                BracketOrderService._spawn_bracket_for_amount(
+                    exchange=exchange,
+                    symbol=req.symbol,
+                    side=entry_side,
+                    filled_amount=final_amount,
+                    average_price=current_px,
+                    is_futures=is_futures,
+                    tp_config=None,
+                    sl_config=sl_cfg,
+                    user_id=current_user.id,
+                    api_key_record=api_key_record
+                )
+            )
+            sl_mode_label = str(sl_cfg.get('type', 'smart_chase')).replace('_', ' ').title()
+            msg = f"🛡️ {sl_mode_label} Stop-Loss placed at {final_price} for {final_amount} {req.symbol}"
+
+        manual_trade_service.invalidate_open_orders_cache(api_key_record.id, req.symbol)
+
+        return {
+            "status": "success",
+            "bracket_type": bracket_type,
+            "price": final_price,
+            "amount": final_amount,
+            "entry_side": entry_side,
+            "message": msg
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to place drag bracket: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Failed to place {req.bracket_type.upper()}: {str(e)}")
 
 @router.get("/api-key-balance/{api_key_id}")
 async def get_api_key_balance(

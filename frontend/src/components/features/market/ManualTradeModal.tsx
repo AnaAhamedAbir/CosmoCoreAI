@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle, Minus, Maximize2, GripVertical, Trash2 } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle, Minus, Maximize2, GripVertical, Trash2, Target, MoveVertical } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
 import { notificationService } from '../../../services/notification';
@@ -29,6 +29,9 @@ interface ManualTradeModalProps {
   openTrigger?: number;
   buttonSize?: 'sm' | 'md';
   onClose?: () => void;
+  onChartDragBracketStart?: (type: 'tp' | 'sl') => void;
+  onChartDragBracketMove?: (type: 'tp' | 'sl', clientX: number, clientY: number) => number | null;
+  onChartDragBracketEnd?: (type: 'tp' | 'sl', clientX: number, clientY: number) => { inChart: boolean; price: number | null };
 }
 
 export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ 
@@ -40,7 +43,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   clickedPrice, 
   openTrigger, 
   buttonSize = 'md', 
-  onClose 
+  onClose,
+  onChartDragBracketStart,
+  onChartDragBracketMove,
+  onChartDragBracketEnd
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -63,6 +69,19 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     maxY: 92
   });
   const modalContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Interactive Drag-to-Chart TP / SL State (for Touch & Mouse)
+  const [activeDragLine, setActiveDragLine] = useState<{
+    type: 'tp' | 'sl';
+    currentPrice: number;
+    pointerPos: { x: number; y: number };
+  } | null>(null);
+
+  const activeDragLineRef = React.useRef<{
+    type: 'tp' | 'sl';
+    pointerId: number;
+    isDragging: boolean;
+  } | null>(null);
 
   // Sync internal activeSymbol whenever parent symbol prop updates
   React.useEffect(() => {
@@ -1474,6 +1493,116 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     }
   }, [effectiveCurrentPrice, orderType, limitPrice]);
 
+  // Handle Dragging TP / SL Line from Minimized HUD onto the Chart
+  const startLineDrag = React.useCallback((e: React.PointerEvent, type: 'tp' | 'sl') => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!selectedApi) {
+      toast.error('Please select an API Key first.');
+      return;
+    }
+
+    const pointerId = e.pointerId;
+    const targetEl = e.currentTarget as HTMLElement;
+    try {
+      targetEl.setPointerCapture(pointerId);
+    } catch {}
+
+    activeDragLineRef.current = {
+      type,
+      pointerId,
+      isDragging: true
+    };
+
+    const startFn = onChartDragBracketStart || (typeof window !== 'undefined' ? (window as any)._handleChartDragBracketStart : null);
+    startFn?.(type);
+
+    setActiveDragLine({
+      type,
+      currentPrice: effectiveCurrentPrice || 0,
+      pointerPos: { x: e.clientX, y: e.clientY }
+    });
+
+    const onPointerMove = (ev: PointerEvent) => {
+      if (!activeDragLineRef.current?.isDragging) return;
+      const moveFn = onChartDragBracketMove || (typeof window !== 'undefined' ? (window as any)._handleChartDragBracketMove : null);
+      const livePrice = moveFn ? moveFn(type, ev.clientX, ev.clientY) : null;
+
+      setActiveDragLine({
+        type,
+        currentPrice: livePrice !== null && livePrice > 0 ? livePrice : (effectiveCurrentPrice || 0),
+        pointerPos: { x: ev.clientX, y: ev.clientY }
+      });
+    };
+
+    const onPointerUp = async (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+
+      try {
+        targetEl.releasePointerCapture(pointerId);
+      } catch {}
+
+      const wasDragging = activeDragLineRef.current?.isDragging;
+      activeDragLineRef.current = null;
+      setActiveDragLine(null);
+
+      if (!wasDragging) return;
+
+      const endFn = onChartDragBracketEnd || (typeof window !== 'undefined' ? (window as any)._handleChartDragBracketEnd : null);
+      const result = endFn ? endFn(type, ev.clientX, ev.clientY) : { inChart: false, price: null };
+
+      if (!result.inChart || !result.price || result.price <= 0) {
+        toast('Drag cancelled (released outside chart)', { icon: '↩️' });
+        return;
+      }
+
+      const dropPrice = result.price;
+      const toastId = toast.loading(`Placing ${type.toUpperCase()} at ${dropPrice < 1 ? dropPrice.toFixed(6) : dropPrice.toFixed(4)}...`);
+
+      try {
+        let targetAmount: number | undefined = undefined;
+        let targetSide: string | undefined = undefined;
+
+        if (isFutures && positionData && positionData.amount > 0) {
+          targetAmount = positionData.amount;
+          targetSide = positionData.side.toLowerCase() === 'long' ? 'buy' : 'sell';
+        } else if (!isFutures && balanceData && balanceData.base_free > 0) {
+          targetAmount = balanceData.base_free;
+          targetSide = 'buy';
+        } else if (size && Number(size) > 0) {
+          targetAmount = sizeMode === 'quote' && effectiveOrderPrice > 0 ? Number(size) / effectiveOrderPrice : Number(size);
+          targetSide = tradeSide === 'Buy' ? 'buy' : 'sell';
+        }
+
+        const res = await manualTradeService.placeDragBracket({
+          apiKeyId: Number(selectedApi),
+          symbol: activeSymbol,
+          bracketType: type,
+          price: dropPrice,
+          amount: targetAmount,
+          isFutures: isFutures,
+          side: targetSide,
+          tpConfig: tpConfig,
+          slConfig: slConfig,
+        });
+
+        toast.success(res.message || `✅ ${type.toUpperCase()} placed at ${dropPrice < 1 ? dropPrice.toFixed(6) : dropPrice.toFixed(4)}`, { id: toastId });
+
+        fetchBalance(true);
+        fetchActiveBrackets(true);
+      } catch (err: any) {
+        toast.error(err?.response?.data?.detail || err?.message || `Failed to place ${type.toUpperCase()}`, { id: toastId });
+      }
+    };
+
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+  }, [selectedApi, onChartDragBracketStart, onChartDragBracketMove, onChartDragBracketEnd, effectiveCurrentPrice, isFutures, positionData, balanceData, size, sizeMode, effectiveOrderPrice, tradeSide, activeSymbol, tpConfig, slConfig, fetchBalance, fetchActiveBrackets]);
+
   const handleTrade = async (side: 'Buy' | 'Sell') => {
     if (!selectedApi) {
       toast.error('Please select an API Key to execute the trade.');
@@ -2362,6 +2491,52 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           </span>
                         )}
                       </button>
+                    </div>
+
+                    {/* Row 3.5: Interactive Drag-to-Chart TP / SL Quick Protector Bar */}
+                    <div
+                      data-no-drag="true"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className="grid grid-cols-2 gap-1.5"
+                    >
+                      {/* Drag TP Handle */}
+                      <div
+                        onPointerDown={(e) => startLineDrag(e, 'tp')}
+                        style={{ touchAction: 'none' }}
+                        className="py-1 px-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 border border-emerald-400/40 hover:border-emerald-300 flex items-center justify-between cursor-grab active:cursor-grabbing text-emerald-300 font-mono text-[9px] font-black select-none transition-all shadow-[0_0_10px_rgba(16,185,129,0.12)] active:scale-95 group"
+                        title="Touch or drag onto chart to place Take Profit at your target price level"
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <Target className="w-3 h-3 text-emerald-400 group-hover:scale-110 transition-transform shrink-0" />
+                          <span className="uppercase tracking-wider">Drag TP</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[7.5px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-400/30 uppercase">
+                            {tpConfig.orderType}
+                          </span>
+                          <MoveVertical className="w-3 h-3 text-emerald-400/70" />
+                        </div>
+                      </div>
+
+                      {/* Drag SL Handle */}
+                      <div
+                        onPointerDown={(e) => startLineDrag(e, 'sl')}
+                        style={{ touchAction: 'none' }}
+                        className="py-1 px-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 border border-rose-400/40 hover:border-rose-300 flex items-center justify-between cursor-grab active:cursor-grabbing text-rose-300 font-mono text-[9px] font-black select-none transition-all shadow-[0_0_10px_rgba(244,63,94,0.12)] active:scale-95 group"
+                        title="Touch or drag onto chart to place Stop Loss (Smart Chase) at your target price level"
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <ShieldAlert className="w-3 h-3 text-rose-400 group-hover:scale-110 transition-transform shrink-0" />
+                          <span className="uppercase tracking-wider">Drag SL</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[7.5px] px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 font-bold border border-rose-400/30 uppercase">
+                            {slConfig.type === 'smart_chase' ? '⚡Chase' : slConfig.type === 'trailing' ? 'Trail' : 'Fixed'}
+                          </span>
+                          <MoveVertical className="w-3 h-3 text-rose-400/70" />
+                        </div>
+                      </div>
                     </div>
 
                     {/* Row 4: Ultra-Slim Emergency Force Buy / Sell Panel with Target Order Selector */}
@@ -4751,6 +4926,44 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       </AnimatePresence>,
       document.body
     )}
+
+      {/* Floating Drag-to-Chart Price Badge (follows finger/mouse over chart) */}
+      {activeDragLine && typeof document !== 'undefined' && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: activeDragLine.pointerPos.x + 16,
+            top: activeDragLine.pointerPos.y - 34,
+            pointerEvents: 'none',
+            zIndex: 999999,
+          }}
+          className={`px-2.5 py-1 rounded-lg border font-mono text-[11px] font-black shadow-2xl backdrop-blur-md flex items-center gap-2 select-none animate-fadeIn ${
+            activeDragLine.type === 'tp'
+              ? 'bg-emerald-950/95 border-emerald-400 text-emerald-300 shadow-[0_0_18px_rgba(16,185,129,0.55)]'
+              : 'bg-rose-950/95 border-rose-400 text-rose-300 shadow-[0_0_18px_rgba(244,63,94,0.55)]'
+          }`}
+        >
+          {activeDragLine.type === 'tp' ? (
+            <Target className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          ) : (
+            <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+          )}
+          <span>
+            {activeDragLine.type === 'tp' ? 'TP' : 'SL'} @ ${formatDisplayPrice(activeDragLine.currentPrice)}
+          </span>
+          {effectiveCurrentPrice > 0 && activeDragLine.currentPrice > 0 && (
+            <span
+              className={`text-[9px] font-extrabold ${
+                activeDragLine.currentPrice >= effectiveCurrentPrice ? 'text-emerald-400' : 'text-rose-400'
+              }`}
+            >
+              ({(((activeDragLine.currentPrice - effectiveCurrentPrice) / effectiveCurrentPrice) * 100) >= 0 ? '+' : ''}
+              {(((activeDragLine.currentPrice - effectiveCurrentPrice) / effectiveCurrentPrice) * 100).toFixed(2)}%)
+            </span>
+          )}
+        </div>,
+        document.body
+      )}
     </>
   );
 };

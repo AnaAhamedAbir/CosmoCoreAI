@@ -134,6 +134,31 @@ export const manualTradeService = {
     return response.data;
   },
 
+  placeDragBracket: async (payload: {
+    apiKeyId: number;
+    symbol: string;
+    bracketType: 'tp' | 'sl';
+    price: number;
+    amount?: number;
+    isFutures?: boolean;
+    side?: string;
+    tpConfig?: any;
+    slConfig?: any;
+  }) => {
+    const response = await api.post('/trading/place-drag-bracket', {
+      api_key_id: payload.apiKeyId,
+      symbol: payload.symbol,
+      bracket_type: payload.bracketType,
+      price: payload.price,
+      amount: payload.amount,
+      is_futures: payload.isFutures,
+      side: payload.side,
+      tp_config: payload.tpConfig,
+      sl_config: payload.slConfig,
+    });
+    return response.data;
+  },
+
   getActiveSoftwareBrackets: async (apiKeyId: number, symbol: string) => {
     const response = await api.get(`/trading/active-software-brackets/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`);
     return response.data;

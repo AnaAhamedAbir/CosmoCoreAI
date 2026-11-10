@@ -437,6 +437,9 @@ async def place_drag_bracket_endpoint(
                     sl_meta['trigger_source'] = str(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_trigger_source', 'smartChaseTriggerSource', sl_meta.get('trigger_source', 'bid_ask'))).lower()
                     sl_meta['peg_strategy'] = str(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_peg_strategy', 'smartChasePegStrategy', sl_meta.get('peg_strategy', 'bbo'))).lower()
                     sl_meta['wall_multiplier'] = float(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_wall_multiplier', 'smartChaseWallMultiplier', sl_meta.get('wall_multiplier', 2.5)))
+                    sl_meta['auto_breakeven_enabled'] = bool(BracketOrderService._get_sl_param(req.sl_config, 'auto_breakeven_enabled', 'autoBreakevenEnabled', sl_meta.get('auto_breakeven_enabled', False)))
+                    sl_meta['auto_breakeven_trigger_pct'] = float(BracketOrderService._get_sl_param(req.sl_config, 'auto_breakeven_trigger_pct', 'autoBreakevenTriggerPct', sl_meta.get('auto_breakeven_trigger_pct', 1.0)))
+                    sl_meta['auto_breakeven_buffer_pct'] = float(BracketOrderService._get_sl_param(req.sl_config, 'auto_breakeven_buffer_pct', 'autoBreakevenBufferPct', sl_meta.get('auto_breakeven_buffer_pct', 0.05)))
 
                 await BracketOrderService.update_software_bracket(
                     sl_id=target_sl_id,
@@ -467,6 +470,16 @@ async def place_drag_bracket_endpoint(
                     sl_cfg['smart_chase_max_attempts'] = 10000
                 if 'smart_chase_trigger_source' not in sl_cfg and 'smartChaseTriggerSource' not in sl_cfg:
                     sl_cfg['smart_chase_trigger_source'] = 'bid_ask'
+                if 'smart_chase_mode' not in sl_cfg and 'smartChaseMode' not in sl_cfg:
+                    sl_cfg['smart_chase_mode'] = 'dynamic_bbo'
+                if 'smart_chase_peg_strategy' not in sl_cfg and 'smartChasePegStrategy' not in sl_cfg:
+                    sl_cfg['smart_chase_peg_strategy'] = 'bbo'
+                if 'smart_chase_wall_multiplier' not in sl_cfg and 'smartChaseWallMultiplier' not in sl_cfg:
+                    sl_cfg['smart_chase_wall_multiplier'] = 2.5
+                if 'smart_chase_deviation_pct' not in sl_cfg and 'smartChaseDeviationPct' not in sl_cfg:
+                    sl_cfg['smart_chase_deviation_pct'] = 5.0
+                if 'smart_chase_delay_ms' not in sl_cfg and 'smartChaseDelayMs' not in sl_cfg:
+                    sl_cfg['smart_chase_delay_ms'] = 1500
 
                 asyncio.create_task(
                     BracketOrderService._spawn_bracket_for_amount(

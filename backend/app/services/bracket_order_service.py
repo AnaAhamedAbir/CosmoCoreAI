@@ -1757,6 +1757,8 @@ class BracketOrderService:
             'peg_strategy': peg_strategy,
             'wall_multiplier': wall_multiplier,
             'auto_breakeven_enabled': auto_breakeven_enabled,
+            'auto_breakeven_trigger_pct': auto_breakeven_trigger_pct,
+            'auto_breakeven_buffer_pct': auto_breakeven_buffer_pct,
             'breakeven_activated': False,
             'max_deviation_pct': max_deviation_pct,
             'max_attempts': max_attempts,
@@ -1794,9 +1796,29 @@ class BracketOrderService:
                     del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
                 return
 
-            # Keep dynamic TP and disaster order IDs synchronized
+            # Keep dynamic TP, settings, and disaster order IDs synchronized
             if sl_meta.get('tp_order_id'):
                 tp_order_id = sl_meta['tp_order_id']
+            if sl_meta.get('max_attempts') is not None:
+                max_attempts = int(sl_meta['max_attempts'])
+            if sl_meta.get('chase_delay_ms'):
+                chase_delay_ms = int(sl_meta['chase_delay_ms'])
+            if sl_meta.get('trigger_source'):
+                trigger_source = str(sl_meta['trigger_source']).lower()
+            if sl_meta.get('chase_mode'):
+                chase_mode = str(sl_meta['chase_mode']).lower()
+            if sl_meta.get('peg_strategy'):
+                peg_strategy = str(sl_meta['peg_strategy']).lower()
+            if sl_meta.get('max_deviation_pct'):
+                max_deviation_pct = float(sl_meta['max_deviation_pct'])
+            if sl_meta.get('wall_multiplier'):
+                wall_multiplier = float(sl_meta['wall_multiplier'])
+            if 'auto_breakeven_enabled' in sl_meta:
+                auto_breakeven_enabled = bool(sl_meta['auto_breakeven_enabled'])
+            if sl_meta.get('auto_breakeven_trigger_pct'):
+                auto_breakeven_trigger_pct = float(sl_meta['auto_breakeven_trigger_pct'])
+            if sl_meta.get('auto_breakeven_buffer_pct'):
+                auto_breakeven_buffer_pct = float(sl_meta['auto_breakeven_buffer_pct'])
 
             try:
                 # Security Check: Ensure position is still open to prevent accidental reverse trades
@@ -2315,13 +2337,15 @@ class BracketOrderService:
             'exchange': exchange,
             'status': 'monitoring',
             'auto_breakeven_enabled': auto_breakeven_enabled,
+            'auto_breakeven_trigger_pct': auto_breakeven_trigger_pct,
+            'auto_breakeven_buffer_pct': auto_breakeven_buffer_pct,
             'breakeven_activated': False,
             'tp_order_id': str(tp_order_id) if tp_order_id else None
         }
 
         logger.info(
             f"🏁 Smart Chase Monitor started for {symbol} | Trigger: {sl_price} | Strategy: {peg_strategy.upper()} | "
-            f"Source: {trigger_source.upper()} | Entry: {entry_price}"
+            f"Mode: {chase_mode.upper()} | Source: {trigger_source.upper()} | Entry: {entry_price}"
         )
         sl_triggered = False
         loop_tick = 0
@@ -2346,7 +2370,7 @@ class BracketOrderService:
                 disaster_sl_order_id = sl_meta['disaster_sl_order_id']
             curr_amount = float(sl_meta.get('amount') if (sl_meta and sl_meta.get('amount') is not None) else amount)
             curr_sl_price = float(sl_meta.get('trigger_price') if (sl_meta and sl_meta.get('trigger_price') is not None) else sl_price)
-            if sl_meta.get('max_attempts'):
+            if sl_meta.get('max_attempts') is not None:
                 max_attempts = int(sl_meta['max_attempts'])
             if sl_meta.get('chase_delay_ms'):
                 chase_delay_ms = int(sl_meta['chase_delay_ms'])
@@ -2360,6 +2384,12 @@ class BracketOrderService:
                 max_deviation_pct = float(sl_meta['max_deviation_pct'])
             if sl_meta.get('wall_multiplier'):
                 wall_multiplier = float(sl_meta['wall_multiplier'])
+            if 'auto_breakeven_enabled' in sl_meta:
+                auto_breakeven_enabled = bool(sl_meta['auto_breakeven_enabled'])
+            if sl_meta.get('auto_breakeven_trigger_pct'):
+                auto_breakeven_trigger_pct = float(sl_meta['auto_breakeven_trigger_pct'])
+            if sl_meta.get('auto_breakeven_buffer_pct'):
+                auto_breakeven_buffer_pct = float(sl_meta['auto_breakeven_buffer_pct'])
 
             try:
                 # ── PRIORITY 1: FETCH TICKER FIRST FOR ULTRA-FAST SL DETECTION ──

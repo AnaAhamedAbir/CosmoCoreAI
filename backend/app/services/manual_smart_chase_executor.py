@@ -347,10 +347,15 @@ async def execute_manual_smart_chase(
     min_notional = _get_min_notional(exchange, symbol)
     ob_depth_limit = 20 if peg_strategy == 'wall_aware' else 5
 
+    exec_info = (
+        f"Real-Time BBO Shadowing (FIFO resting: {max(1.2, min(chase_delay_sec, 2.5)):.1f}s)"
+        if chase_mode == 'dynamic_bbo'
+        else f"Interval Timer ({chase_delay_ms}ms throttle)"
+    )
     logger.info(
         f"🛡️ [Manual Smart Chase] Starting for {symbol} ({exit_side.upper()}) | Mode: {chase_mode.upper()} | "
         f"Strategy: {peg_strategy.upper()} | Amount: {sell_amount_raw} | SL Trigger: {original_sl} | "
-        f"Max Dev: {max_deviation_pct}% | Delay: {chase_delay_ms}ms | MinNotional: ${min_notional:.2f}"
+        f"Max Dev: {max_deviation_pct}% | Execution: {exec_info} | MinNotional: ${min_notional:.2f}"
     )
 
     # Detect Binance Hedge Mode on Futures to avoid -4061 rejection
@@ -765,8 +770,9 @@ async def execute_manual_smart_chase(
             break
 
         # 4. Prepare params & Place Post-Only Maker Order
+        attempt_max_str = str(max_attempts) if max_attempts > 0 else '∞ (Continuous)'
         logger.info(
-            f"⚡ [Manual Smart Chase] Attempt {attempts}/{max_attempts}: Sending Post-Only {exit_side.upper()} "
+            f"⚡ [Manual Smart Chase] Attempt {attempts}/{attempt_max_str}: Sending Post-Only {exit_side.upper()} "
             f"for {remaining_amount} at {target_maker_price} (Orderbook: Bid={best_bid}, Ask={best_ask})"
         )
         ex_params = {'postOnly': True}

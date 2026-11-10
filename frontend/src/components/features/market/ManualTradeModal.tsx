@@ -1700,8 +1700,19 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       try {
         let targetAmount: number | undefined = undefined;
         let targetSide: string | undefined = undefined;
+        let targetOrderId: string | undefined = undefined;
 
-        if (isFutures && positionData && positionData.amount > 0) {
+        // 1. If user has a specific order selected in the HUD dropdown (Row 4), use that order's exact amount!
+        if (selectedForceTarget && selectedForceTarget.amount > 0) {
+          targetAmount = selectedForceTarget.amount;
+          targetOrderId = selectedForceTarget.id;
+          targetSide = selectedForceTarget.side === 'buy' ? 'buy' : 'sell';
+        } else if (forceOrderTargets.length > 0 && selectedForceOrderId === 'all' && forceOrderTargets[0].amount > 0) {
+          // If there is an active open order and user hasn't specified another, use that order's exact amount
+          targetAmount = forceOrderTargets[0].amount;
+          targetOrderId = forceOrderTargets[0].id;
+          targetSide = forceOrderTargets[0].side === 'buy' ? 'buy' : 'sell';
+        } else if (isFutures && positionData && positionData.amount > 0) {
           targetAmount = positionData.amount;
           targetSide = positionData.side.toLowerCase() === 'long' ? 'buy' : 'sell';
         } else {
@@ -1734,6 +1745,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
           side: targetSide,
           tpConfig: tpConfig,
           slConfig: slConfig,
+          targetOrderId: targetOrderId,
         });
 
         toast.success(res.message || `✅ ${type.toUpperCase()} placed at ${dropPrice < 1 ? dropPrice.toFixed(6) : dropPrice.toFixed(4)}`, { id: toastId });
@@ -1751,7 +1763,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     window.addEventListener('pointermove', onPointerMove, { passive: true });
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerUp);
-  }, [selectedApi, onChartDragBracketStart, onChartDragBracketMove, onChartDragBracketEnd, effectiveCurrentPrice, isFutures, positionData, balanceData, size, sizeMode, effectiveOrderPrice, tradeSide, activeSymbol, tpConfig, slConfig, fetchBalance, fetchActiveBrackets, hasLivePendingOrPosition]);
+  }, [selectedApi, onChartDragBracketStart, onChartDragBracketMove, onChartDragBracketEnd, effectiveCurrentPrice, isFutures, positionData, balanceData, size, sizeMode, effectiveOrderPrice, tradeSide, activeSymbol, tpConfig, slConfig, fetchBalance, fetchActiveBrackets, hasLivePendingOrPosition, selectedForceTarget, forceOrderTargets, selectedForceOrderId]);
 
   const handleTrade = async (side: 'Buy' | 'Sell') => {
     if (!selectedApi) {

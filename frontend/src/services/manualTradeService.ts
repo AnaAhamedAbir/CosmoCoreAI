@@ -144,6 +144,7 @@ export const manualTradeService = {
     side?: string;
     tpConfig?: any;
     slConfig?: any;
+    targetOrderId?: string;
   }) => {
     const response = await api.post('/trading/place-drag-bracket', {
       api_key_id: payload.apiKeyId,
@@ -155,6 +156,7 @@ export const manualTradeService = {
       side: payload.side,
       tp_config: payload.tpConfig,
       sl_config: payload.slConfig,
+      target_order_id: payload.targetOrderId,
     });
     return response.data;
   },

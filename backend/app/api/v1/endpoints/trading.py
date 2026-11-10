@@ -97,6 +97,7 @@ class PlaceDragBracketRequest(BaseModel):
     side: Optional[str] = None  # Entry side: 'buy' (Long) or 'sell' (Short)
     tp_config: Optional[dict] = None
     sl_config: Optional[dict] = None
+    target_order_id: Optional[str] = None
 
 # --- Endpoints ---
 
@@ -424,7 +425,8 @@ async def place_drag_bracket_endpoint(
                     tp_config=tp_cfg,
                     sl_config=None,
                     user_id=current_user.id,
-                    api_key_record=api_key_record
+                    api_key_record=api_key_record,
+                    entry_order_id=req.target_order_id
                 )
             )
             msg = f"🎯 Take Profit placed at {final_price} for {final_amount} {req.symbol}"
@@ -447,7 +449,8 @@ async def place_drag_bracket_endpoint(
                     tp_config=None,
                     sl_config=sl_cfg,
                     user_id=current_user.id,
-                    api_key_record=api_key_record
+                    api_key_record=api_key_record,
+                    entry_order_id=req.target_order_id
                 )
             )
             sl_mode_label = str(sl_cfg.get('type', 'smart_chase')).replace('_', ' ').title()

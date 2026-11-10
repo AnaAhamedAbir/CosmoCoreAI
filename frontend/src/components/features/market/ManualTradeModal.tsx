@@ -1633,11 +1633,6 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     e.preventDefault();
     e.stopPropagation();
 
-    if (!hasLivePendingOrPosition) {
-      toast('No live pending order or active position detected to attach TP/SL.', { icon: 'ℹ️' });
-      return;
-    }
-
     if (!selectedApi) {
       toast.error('Please select an API Key first.');
       return;
@@ -2648,53 +2643,51 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                       </button>
                     </div>
 
-                    {/* Row 3.5: Interactive Drag-to-Chart TP / SL Quick Protector Bar (Auto-appears only when live orders/positions are detected) */}
-                    {hasLivePendingOrPosition && (
+                    {/* Row 3.5: Interactive Drag-to-Chart TP / SL Quick Protector Bar (Always available for Pending & Executed Trades) */}
+                    <div
+                      data-no-drag="true"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className="grid grid-cols-2 gap-1.5"
+                    >
+                      {/* Drag TP Handle */}
                       <div
-                        data-no-drag="true"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onTouchStart={(e) => e.stopPropagation()}
-                        className="grid grid-cols-2 gap-1.5 animate-in fade-in slide-in-from-top-1 duration-200"
+                        onPointerDown={(e) => startLineDrag(e, 'tp')}
+                        style={{ touchAction: 'none' }}
+                        className="py-1 px-2 rounded-lg border border-emerald-400/40 hover:border-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-300 flex items-center justify-between font-mono text-[9px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(16,185,129,0.12)] active:scale-95 group"
+                        title="Touch or drag onto chart to place Take Profit at your target price level"
                       >
-                        {/* Drag TP Handle */}
-                        <div
-                          onPointerDown={(e) => startLineDrag(e, 'tp')}
-                          style={{ touchAction: 'none' }}
-                          className="py-1 px-2 rounded-lg border border-emerald-400/40 hover:border-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-300 flex items-center justify-between font-mono text-[9px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(16,185,129,0.12)] active:scale-95 group"
-                          title="Touch or drag onto chart to place Take Profit at your target price level"
-                        >
-                          <div className="flex items-center gap-1.5 truncate">
-                            <Target className="w-3 h-3 text-emerald-400 group-hover:scale-110 transition-transform shrink-0" />
-                            <span className="uppercase tracking-wider">Drag TP</span>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <span className="text-[7.5px] px-1 py-0.2 rounded font-bold uppercase border bg-emerald-500/20 text-emerald-300 border-emerald-400/30">
-                              {tpConfig.orderType}
-                            </span>
-                            <MoveVertical className="w-3 h-3 text-emerald-400/70" />
-                          </div>
+                        <div className="flex items-center gap-1.5 truncate">
+                          <Target className="w-3 h-3 text-emerald-400 group-hover:scale-110 transition-transform shrink-0" />
+                          <span className="uppercase tracking-wider">Drag TP</span>
                         </div>
-
-                        {/* Drag SL Handle */}
-                        <div
-                          onPointerDown={(e) => startLineDrag(e, 'sl')}
-                          style={{ touchAction: 'none' }}
-                          className="py-1 px-2 rounded-lg border border-rose-400/40 hover:border-rose-300 bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 text-rose-300 flex items-center justify-between font-mono text-[9px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(244,63,94,0.12)] active:scale-95 group"
-                          title="Touch or drag onto chart to place Stop Loss (Smart Chase) at your target price level"
-                        >
-                          <div className="flex items-center gap-1.5 truncate">
-                            <ShieldAlert className="w-3 h-3 text-rose-400 group-hover:scale-110 transition-transform shrink-0" />
-                            <span className="uppercase tracking-wider">Drag SL</span>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <span className="text-[7.5px] px-1 py-0.2 rounded font-bold uppercase border bg-rose-500/20 text-rose-300 border-rose-400/30">
-                              {slConfig.type === 'smart_chase' ? '⚡Chase' : slConfig.type === 'trailing' ? 'Trail' : 'Fixed'}
-                            </span>
-                            <MoveVertical className="w-3 h-3 text-rose-400/70" />
-                          </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[7.5px] px-1 py-0.2 rounded font-bold uppercase border bg-emerald-500/20 text-emerald-300 border-emerald-400/30">
+                            {tpConfig.orderType}
+                          </span>
+                          <MoveVertical className="w-3 h-3 text-emerald-400/70" />
                         </div>
                       </div>
-                    )}
+
+                      {/* Drag SL Handle */}
+                      <div
+                        onPointerDown={(e) => startLineDrag(e, 'sl')}
+                        style={{ touchAction: 'none' }}
+                        className="py-1 px-2 rounded-lg border border-rose-400/40 hover:border-rose-300 bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 text-rose-300 flex items-center justify-between font-mono text-[9px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(244,63,94,0.12)] active:scale-95 group"
+                        title="Touch or drag onto chart to place Stop Loss (Smart Chase) at your target price level"
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <ShieldAlert className="w-3 h-3 text-rose-400 group-hover:scale-110 transition-transform shrink-0" />
+                          <span className="uppercase tracking-wider">Drag SL</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[7.5px] px-1 py-0.2 rounded font-bold uppercase border bg-rose-500/20 text-rose-300 border-rose-400/30">
+                            {slConfig.type === 'smart_chase' ? '⚡Chase' : slConfig.type === 'trailing' ? 'Trail' : 'Fixed'}
+                          </span>
+                          <MoveVertical className="w-3 h-3 text-rose-400/70" />
+                        </div>
+                      </div>
+                    </div>
 
                     {/* Row 4: Ultra-Slim Emergency Force Buy / Sell Panel with Target Order Selector */}
                     <div

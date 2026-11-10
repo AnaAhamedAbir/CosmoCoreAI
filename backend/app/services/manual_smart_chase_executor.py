@@ -338,7 +338,7 @@ async def execute_manual_smart_chase(
     disaster_sl_order_id: Optional[str] = None,
     chase_id: Optional[str] = None,
     chase_mode: str = 'dynamic_bbo',  # 'dynamic_bbo' for real-time orderbook shadowing, 'interval' for timer
-    trigger_source: str = 'last',
+    trigger_source: str = 'bid_ask',
     peg_strategy: str = 'bbo',        # 'bbo', 'inside_spread', or 'wall_aware'
     wall_multiplier: float = 2.5
 ) -> Optional[Dict[str, Any]]:

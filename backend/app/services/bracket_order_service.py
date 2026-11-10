@@ -1425,9 +1425,9 @@ class BracketOrderService:
                 auto_breakeven_buffer_pct = float(BracketOrderService._get_sl_param(sl_config, 'auto_breakeven_buffer_pct', 'autoBreakevenBufferPct', 0.05))
                 max_dev = float(BracketOrderService._get_sl_param(sl_config, 'smart_chase_deviation_pct', 'smartChaseDeviationPct', 1.0))
                 chase_delay = int(BracketOrderService._get_sl_param(sl_config, 'smart_chase_delay_ms', 'smartChaseDelayMs', 1500))
-                max_attempts = int(BracketOrderService._get_sl_param(sl_config, 'smart_chase_max_attempts', 'smartChaseMaxAttempts', 15))
+                max_attempts = int(BracketOrderService._get_sl_param(sl_config, 'smart_chase_max_attempts', 'smartChaseMaxAttempts', 10000))
                 chase_mode = str(BracketOrderService._get_sl_param(sl_config, 'smart_chase_mode', 'smartChaseMode', 'dynamic_bbo')).lower()
-                trigger_source = str(BracketOrderService._get_sl_param(sl_config, 'smart_chase_trigger_source', 'smartChaseTriggerSource', 'last')).lower()
+                trigger_source = str(BracketOrderService._get_sl_param(sl_config, 'smart_chase_trigger_source', 'smartChaseTriggerSource', 'bid_ask')).lower()
 
                 if sl_type in ['trailing', 'trailing_chase']:
                     placed_native = False
@@ -1721,9 +1721,9 @@ class BracketOrderService:
         is_smart_chase_exit: bool = False,
         max_deviation_pct: float = 1.0,
         chase_delay_ms: int = 1500,
-        max_attempts: int = 15,
+        max_attempts: int = 10000,
         chase_mode: str = 'dynamic_bbo',
-        trigger_source: str = 'last',
+        trigger_source: str = 'bid_ask',
         peg_strategy: str = 'bbo',
         wall_multiplier: float = 2.5,
         auto_breakeven_enabled: bool = False,
@@ -1752,6 +1752,8 @@ class BracketOrderService:
             'is_futures': is_futures,
             'exchange': exchange,
             'status': 'monitoring',
+            'chase_mode': chase_mode,
+            'trigger_source': trigger_source,
             'peg_strategy': peg_strategy,
             'wall_multiplier': wall_multiplier,
             'auto_breakeven_enabled': auto_breakeven_enabled,
@@ -1846,7 +1848,13 @@ class BracketOrderService:
                         logger.debug(f"Position check non-fatal error: {pos_e}")
 
                 ticker = await exchange.fetch_ticker(symbol)
-                current_price = ticker.get('last')
+                last_price = float(ticker.get('last') or 0.0)
+                best_bid = float(ticker.get('bid') or last_price)
+                best_ask = float(ticker.get('ask') or last_price)
+                if trigger_source in ['bid_ask', 'bbo']:
+                    current_price = best_bid if opposite_side == 'sell' else best_ask
+                else:
+                    current_price = last_price
                 if not current_price:
                     continue
 
@@ -2273,7 +2281,7 @@ class BracketOrderService:
         user_id: int, api_key_record,
         tp_order_id: str = None, disaster_sl_order_id: str = None,
         chase_mode: str = 'dynamic_bbo',
-        trigger_source: str = 'last',
+        trigger_source: str = 'bid_ask',
         peg_strategy: str = 'bbo',
         wall_multiplier: float = 2.5,
         auto_breakeven_enabled: bool = False,

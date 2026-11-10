@@ -30,9 +30,9 @@ class AttachedSLConfig(BaseModel):
     atr_timeframe: Optional[str] = '15m'
     smart_chase_deviation_pct: Optional[float] = 1.0
     smart_chase_delay_ms: Optional[int] = 1500
-    smart_chase_max_attempts: Optional[int] = 15
+    smart_chase_max_attempts: Optional[int] = 10000
     smart_chase_mode: Optional[str] = 'dynamic_bbo'  # 'dynamic_bbo' or 'interval'
-    smart_chase_trigger_source: Optional[str] = 'last'  # 'last' or 'bid_ask'
+    smart_chase_trigger_source: Optional[str] = 'bid_ask'  # 'last' or 'bid_ask'
     smart_chase_peg_strategy: Optional[str] = 'bbo'  # 'bbo', 'inside_spread', or 'wall_aware'
     smart_chase_wall_multiplier: Optional[float] = 2.5  # Multiplier over avg depth volume
     auto_breakeven_enabled: Optional[bool] = False
@@ -430,11 +430,11 @@ async def place_drag_bracket_endpoint(
                     if req.sl_config.get('mode'):
                         sl_meta['mode'] = str(req.sl_config.get('type') or sl_meta.get('mode')).upper()
 
-                    sl_meta['max_attempts'] = int(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_max_attempts', 'smartChaseMaxAttempts', sl_meta.get('max_attempts', 15)))
+                    sl_meta['max_attempts'] = int(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_max_attempts', 'smartChaseMaxAttempts', sl_meta.get('max_attempts', 10000)))
                     sl_meta['chase_delay_ms'] = int(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_delay_ms', 'smartChaseDelayMs', sl_meta.get('chase_delay_ms', 1500)))
                     sl_meta['max_deviation_pct'] = float(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_deviation_pct', 'smartChaseDeviationPct', sl_meta.get('max_deviation_pct', 1.0)))
                     sl_meta['chase_mode'] = str(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_mode', 'smartChaseMode', sl_meta.get('chase_mode', 'dynamic_bbo'))).lower()
-                    sl_meta['trigger_source'] = str(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_trigger_source', 'smartChaseTriggerSource', sl_meta.get('trigger_source', 'last'))).lower()
+                    sl_meta['trigger_source'] = str(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_trigger_source', 'smartChaseTriggerSource', sl_meta.get('trigger_source', 'bid_ask'))).lower()
                     sl_meta['peg_strategy'] = str(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_peg_strategy', 'smartChasePegStrategy', sl_meta.get('peg_strategy', 'bbo'))).lower()
                     sl_meta['wall_multiplier'] = float(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_wall_multiplier', 'smartChaseWallMultiplier', sl_meta.get('wall_multiplier', 2.5)))
 
@@ -463,6 +463,10 @@ async def place_drag_bracket_endpoint(
                 sl_cfg['value'] = final_price
                 if 'type' not in sl_cfg:
                     sl_cfg['type'] = 'smart_chase'
+                if 'smart_chase_max_attempts' not in sl_cfg and 'smartChaseMaxAttempts' not in sl_cfg:
+                    sl_cfg['smart_chase_max_attempts'] = 10000
+                if 'smart_chase_trigger_source' not in sl_cfg and 'smartChaseTriggerSource' not in sl_cfg:
+                    sl_cfg['smart_chase_trigger_source'] = 'bid_ask'
 
                 asyncio.create_task(
                     BracketOrderService._spawn_bracket_for_amount(
@@ -655,7 +659,7 @@ async def get_active_software_brackets(
                     'entry_price': float(data.get('entry_price') or 0.0),
                     'is_futures': bool(data.get('is_futures', False)),
                     'chase_mode': data.get('chase_mode', 'dynamic_bbo'),
-                    'trigger_source': data.get('trigger_source', 'last'),
+                    'trigger_source': data.get('trigger_source', 'bid_ask'),
                     'peg_strategy': data.get('peg_strategy', 'bbo'),
                     'wall_multiplier': float(data.get('wall_multiplier', 2.5)),
                     'auto_breakeven_enabled': bool(data.get('auto_breakeven_enabled', False)),
@@ -683,7 +687,7 @@ async def get_active_software_brackets(
                     'mode': 'SMART_CHASE',
                     'status': 'chasing',
                     'chase_mode': cdata.get('chase_mode', 'dynamic_bbo'),
-                    'trigger_source': cdata.get('trigger_source', 'last'),
+                    'trigger_source': cdata.get('trigger_source', 'bid_ask'),
                     'price': float(price_val),
                     'trigger_price': float(cdata.get('original_sl') or price_val),
                     'current_attempt': cdata.get('current_attempt', 0),

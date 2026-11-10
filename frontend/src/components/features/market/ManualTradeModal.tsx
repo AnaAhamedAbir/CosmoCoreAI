@@ -1617,7 +1617,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     }
   }, [effectiveCurrentPrice, orderType, limitPrice]);
 
-  // Check if there is any live pending order (limit order, smart bracket) or active position/balance to protect
+  // Check if there is any live pending order (limit order, smart bracket) or active futures position to protect
   const hasLivePendingOrPosition = React.useMemo(() => {
     if (openLimitOrders.length > 0 || forceOrderTargets.length > 0 || activeBrackets.length > 0) {
       return true;
@@ -1625,8 +1625,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     if (isFutures) {
       return Boolean(positionData && positionData.amount > 0 && positionData.side !== 'none');
     }
-    return Boolean(balanceData && (balanceData.base_free || 0) > 0);
-  }, [openLimitOrders.length, forceOrderTargets.length, activeBrackets.length, isFutures, positionData, balanceData]);
+    return false;
+  }, [openLimitOrders.length, forceOrderTargets.length, activeBrackets.length, isFutures, positionData]);
 
   // Handle Dragging TP / SL Line from Minimized HUD onto the Chart
   const startLineDrag = React.useCallback((e: React.PointerEvent, type: 'tp' | 'sl') => {
@@ -2636,75 +2636,53 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                       </button>
                     </div>
 
-                    {/* Row 3.5: Interactive Drag-to-Chart TP / SL Quick Protector Bar */}
-                    <div
-                      data-no-drag="true"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onTouchStart={(e) => e.stopPropagation()}
-                      className="grid grid-cols-2 gap-1.5"
-                    >
-                      {/* Drag TP Handle */}
+                    {/* Row 3.5: Interactive Drag-to-Chart TP / SL Quick Protector Bar (Auto-appears only when live orders/positions are detected) */}
+                    {hasLivePendingOrPosition && (
                       <div
-                        onPointerDown={hasLivePendingOrPosition ? (e) => startLineDrag(e, 'tp') : undefined}
-                        style={{ touchAction: hasLivePendingOrPosition ? 'none' : 'auto' }}
-                        className={`py-1 px-2 rounded-lg border flex items-center justify-between font-mono text-[9px] font-black select-none transition-all ${
-                          hasLivePendingOrPosition
-                            ? 'bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 border-emerald-400/40 hover:border-emerald-300 text-emerald-300 cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(16,185,129,0.12)] active:scale-95 group'
-                            : 'bg-white/[0.02] border-white/5 text-gray-500/60 cursor-not-allowed opacity-40 shadow-none'
-                        }`}
-                        title={
-                          hasLivePendingOrPosition
-                            ? 'Touch or drag onto chart to place Take Profit at your target price level'
-                            : 'Drag TP inactive — no live pending buy/sell order or active position detected'
-                        }
+                        data-no-drag="true"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="grid grid-cols-2 gap-1.5 animate-in fade-in slide-in-from-top-1 duration-200"
                       >
-                        <div className="flex items-center gap-1.5 truncate">
-                          <Target className={`w-3 h-3 shrink-0 ${hasLivePendingOrPosition ? 'text-emerald-400 group-hover:scale-110 transition-transform' : 'text-gray-600'}`} />
-                          <span className="uppercase tracking-wider">Drag TP</span>
+                        {/* Drag TP Handle */}
+                        <div
+                          onPointerDown={(e) => startLineDrag(e, 'tp')}
+                          style={{ touchAction: 'none' }}
+                          className="py-1 px-2 rounded-lg border border-emerald-400/40 hover:border-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-300 flex items-center justify-between font-mono text-[9px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(16,185,129,0.12)] active:scale-95 group"
+                          title="Touch or drag onto chart to place Take Profit at your target price level"
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            <Target className="w-3 h-3 text-emerald-400 group-hover:scale-110 transition-transform shrink-0" />
+                            <span className="uppercase tracking-wider">Drag TP</span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-[7.5px] px-1 py-0.2 rounded font-bold uppercase border bg-emerald-500/20 text-emerald-300 border-emerald-400/30">
+                              {tpConfig.orderType}
+                            </span>
+                            <MoveVertical className="w-3 h-3 text-emerald-400/70" />
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className={`text-[7.5px] px-1 py-0.2 rounded font-bold uppercase border ${
-                            hasLivePendingOrPosition
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
-                              : 'bg-white/5 text-gray-500 border-white/5'
-                          }`}>
-                            {hasLivePendingOrPosition ? tpConfig.orderType : 'IDLE'}
-                          </span>
-                          <MoveVertical className={`w-3 h-3 ${hasLivePendingOrPosition ? 'text-emerald-400/70' : 'text-gray-600'}`} />
-                        </div>
-                      </div>
 
-                      {/* Drag SL Handle */}
-                      <div
-                        onPointerDown={hasLivePendingOrPosition ? (e) => startLineDrag(e, 'sl') : undefined}
-                        style={{ touchAction: hasLivePendingOrPosition ? 'none' : 'auto' }}
-                        className={`py-1 px-2 rounded-lg border flex items-center justify-between font-mono text-[9px] font-black select-none transition-all ${
-                          hasLivePendingOrPosition
-                            ? 'bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 border-rose-400/40 hover:border-rose-300 text-rose-300 cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(244,63,94,0.12)] active:scale-95 group'
-                            : 'bg-white/[0.02] border-white/5 text-gray-500/60 cursor-not-allowed opacity-40 shadow-none'
-                        }`}
-                        title={
-                          hasLivePendingOrPosition
-                            ? 'Touch or drag onto chart to place Stop Loss (Smart Chase) at your target price level'
-                            : 'Drag SL inactive — no live pending buy/sell order or active position detected'
-                        }
-                      >
-                        <div className="flex items-center gap-1.5 truncate">
-                          <ShieldAlert className={`w-3 h-3 shrink-0 ${hasLivePendingOrPosition ? 'text-rose-400 group-hover:scale-110 transition-transform' : 'text-gray-600'}`} />
-                          <span className="uppercase tracking-wider">Drag SL</span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className={`text-[7.5px] px-1 py-0.2 rounded font-bold uppercase border ${
-                            hasLivePendingOrPosition
-                              ? 'bg-rose-500/20 text-rose-300 border-rose-400/30'
-                              : 'bg-white/5 text-gray-500 border-white/5'
-                          }`}>
-                            {hasLivePendingOrPosition ? (slConfig.type === 'smart_chase' ? '⚡Chase' : slConfig.type === 'trailing' ? 'Trail' : 'Fixed') : 'IDLE'}
-                          </span>
-                          <MoveVertical className={`w-3 h-3 ${hasLivePendingOrPosition ? 'text-rose-400/70' : 'text-gray-600'}`} />
+                        {/* Drag SL Handle */}
+                        <div
+                          onPointerDown={(e) => startLineDrag(e, 'sl')}
+                          style={{ touchAction: 'none' }}
+                          className="py-1 px-2 rounded-lg border border-rose-400/40 hover:border-rose-300 bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 text-rose-300 flex items-center justify-between font-mono text-[9px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(244,63,94,0.12)] active:scale-95 group"
+                          title="Touch or drag onto chart to place Stop Loss (Smart Chase) at your target price level"
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            <ShieldAlert className="w-3 h-3 text-rose-400 group-hover:scale-110 transition-transform shrink-0" />
+                            <span className="uppercase tracking-wider">Drag SL</span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-[7.5px] px-1 py-0.2 rounded font-bold uppercase border bg-rose-500/20 text-rose-300 border-rose-400/30">
+                              {slConfig.type === 'smart_chase' ? '⚡Chase' : slConfig.type === 'trailing' ? 'Trail' : 'Fixed'}
+                            </span>
+                            <MoveVertical className="w-3 h-3 text-rose-400/70" />
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Row 4: Ultra-Slim Emergency Force Buy / Sell Panel with Target Order Selector */}
                     <div

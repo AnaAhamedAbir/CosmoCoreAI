@@ -554,13 +554,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 quickTradeGhostLineRef.current = candlestickSeriesRef.current.createPriceLine({
                     price: price,
                     color: '#6366f1', // Indigo color for drag
-                    lineWidth: 2,
+                    lineWidth: 1,
                     lineStyle: LineStyle.Dashed,
                     axisLabelVisible: true,
                     title: 'DROP TO LIMIT',
                 });
             } else {
-                quickTradeGhostLineRef.current.applyOptions({ price: price });
+                quickTradeGhostLineRef.current.applyOptions({ price: price, lineWidth: 1 });
             }
         };
 
@@ -673,7 +673,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 chartBracketGhostLineRef.current = candlestickSeriesRef.current.createPriceLine({
                     price: price,
                     color: color,
-                    lineWidth: 2,
+                    lineWidth: 1,
                     lineStyle: LineStyle.Dashed,
                     axisLabelVisible: true,
                     title: title,
@@ -683,6 +683,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     price: price,
                     color: color,
                     title: title,
+                    lineWidth: 1,
                 });
             }
             return price;

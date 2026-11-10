@@ -54,7 +54,43 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const [activeSymbol, setActiveSymbol] = useState<string>(symbol);
 
   // Floating Modal Drag Position State (Zero-React-Re-render Direct GPU Transform Pattern)
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Dedicated independent positions for Minimized Quick-Trade Cyber-HUD and Full Terminal Modal
+  const [hudPos, setHudPos] = useState<{ x: number; y: number }>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('cosmo_manual_trade_hud_pos_v2');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') return parsed;
+        }
+      } catch {}
+    }
+    const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+    return { x: 20, y: Math.max(8, winH - 104 - 180) };
+  });
+
+  const [modalPos, setModalPos] = useState<{ x: number; y: number }>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('cosmo_manual_trade_full_pos_v2');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') return parsed;
+        }
+      } catch {}
+    }
+    const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+    return { x: 20, y: Math.max(16, winH - 104 - 620) };
+  });
+
+  const hasUserDraggedHudRef = React.useRef<boolean>(
+    typeof window !== 'undefined' ? Boolean(localStorage.getItem('cosmo_manual_trade_hud_pos_v2')) : false
+  );
+
+  const hasUserDraggedModalRef = React.useRef<boolean>(
+    typeof window !== 'undefined' ? Boolean(localStorage.getItem('cosmo_manual_trade_full_pos_v2')) : false
+  );
+
   const dragRef = React.useRef({
     isDragging: false,
     startX: 0,
@@ -63,10 +99,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     originY: 0,
     currentX: 0,
     currentY: 0,
-    minX: -100,
+    minX: 6,
     maxX: 1500,
-    minY: -800,
-    maxY: 92
+    minY: 4,
+    maxY: 1000
   });
   const modalContainerRef = React.useRef<HTMLDivElement>(null);
 
@@ -976,11 +1012,27 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     if (!isOpen || typeof document === 'undefined') return;
     const updatePosition = () => {
       const aside = document.querySelector('aside');
-      if (aside) {
+      let targetLeft = 20;
+      if (aside && aside.offsetWidth > 60) {
         const rightEdge = Math.round(aside.getBoundingClientRect().right);
-        setModalLeft(Math.max(20, rightEdge + 20));
+        targetLeft = Math.max(20, rightEdge + 20);
+        setModalLeft(targetLeft);
       } else {
         setModalLeft(20);
+      }
+
+      const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+      if (!hasUserDraggedModalRef.current) {
+        setModalPos(prev => ({
+          x: targetLeft,
+          y: Math.max(16, winH - 104 - 620)
+        }));
+      }
+      if (!hasUserDraggedHudRef.current) {
+        setHudPos(prev => ({
+          x: targetLeft,
+          y: Math.max(8, winH - 104 - 180)
+        }));
       }
     };
     updatePosition();
@@ -988,51 +1040,107 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     return () => window.removeEventListener('resize', updatePosition);
   }, [isOpen]);
 
-  // Clamp drag offset using actual rendered modal dimensions so header never goes off-screen
-  const clampModalOffset = React.useCallback((rawX: number, rawY: number) => {
+  // Clamp screen position using actual rendered dimensions so modal/HUD never breaches screen bounds
+  const clampPos = React.useCallback((
+    rawX: number,
+    rawY: number,
+    isMin: boolean,
+    elOverride?: HTMLElement | null
+  ) => {
     const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
-    const modalEl = modalContainerRef.current;
-    const modalW = modalEl?.offsetWidth || (isMinimized ? 380 : 320);
-    const modalH = modalEl?.offsetHeight || (isMinimized ? 96 : 580);
+    const modalEl = elOverride || modalContainerRef.current;
+    const modalW = modalEl?.offsetWidth || (isMin ? 395 : 320);
+    const modalH = modalEl?.offsetHeight || (isMin ? 180 : 620);
 
-    const minX = -modalLeft + 6;
-    const maxX = Math.max(minX, winW - modalLeft - modalW - 6);
+    const leftMargin = 6;
+    const rightMargin = 6;
+    // Minimized HUD can sit right against the top screen border (top >= 4px)
+    const topMargin = isMin ? 4 : 12;
+    const bottomMargin = isMin ? 8 : 16;
 
-    // Modal base position is `bottom: 104px` + `translate3d(x, y, 0)` => top = winH - (104 - y) - modalH
-    // Allow minimized HUD to be pushed all the way up to the top toolbar/ML Indicators level (top >= 2px)
-    const topMargin = isMinimized ? 2 : 12;
-    const minY = -Math.max(0, winH - 104 - modalH - topMargin);
-    const maxY = 96;
+    const minX = leftMargin;
+    const maxX = Math.max(minX, winW - modalW - rightMargin);
+
+    const minY = topMargin;
+    const maxY = Math.max(minY, winH - modalH - bottomMargin);
 
     return {
-      x: Math.max(minX, Math.min(maxX, rawX)),
-      y: Math.max(minY, Math.min(maxY, rawY))
+      x: Math.max(minX, Math.min(maxX, Math.round(rawX))),
+      y: Math.max(minY, Math.min(maxY, Math.round(rawY)))
     };
-  }, [modalLeft, isMinimized]);
+  }, []);
 
-  // Re-clamp modal position whenever it expands/collapses, toggles sections, or window resizes
+  // Synchronize modal position and observe live DOM dimension changes (e.g., when orders appear or accordions toggle)
   React.useEffect(() => {
     if (!isOpen || typeof window === 'undefined') return;
-    const enforceBounds = () => {
+    const modalEl = modalContainerRef.current;
+    if (!modalEl) return;
+
+    const currentPos = isMinimized ? hudPos : modalPos;
+    const clamped = clampPos(currentPos.x, currentPos.y, isMinimized, modalEl);
+
+    // Apply clamped transform directly
+    modalEl.style.transform = `translate3d(${clamped.x}px, ${clamped.y}px, 0)`;
+    dragRef.current.currentX = clamped.x;
+    dragRef.current.currentY = clamped.y;
+
+    if (clamped.x !== currentPos.x || clamped.y !== currentPos.y) {
+      if (isMinimized) {
+        setHudPos(clamped);
+      } else {
+        setModalPos(clamped);
+      }
+    }
+
+    // Dynamic ResizeObserver ensures that when order option detects active order or height increases,
+    // top position remains stable and never exceeds boundary!
+    const resizeObserver = new ResizeObserver((entries) => {
       if (dragRef.current.isDragging) return;
-      setDragOffset(prev => {
-        const next = clampModalOffset(prev.x, prev.y);
-        dragRef.current.currentX = next.x;
-        dragRef.current.currentY = next.y;
-        if (modalContainerRef.current) {
-          modalContainerRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0)`;
+      for (const entry of entries) {
+        const targetEl = entry.target as HTMLElement;
+        const active = isMinimized ? hudPos : modalPos;
+        const nextClamped = clampPos(active.x, active.y, isMinimized, targetEl);
+        if (nextClamped.x !== active.x || nextClamped.y !== active.y) {
+          targetEl.style.transform = `translate3d(${nextClamped.x}px, ${nextClamped.y}px, 0)`;
+          dragRef.current.currentX = nextClamped.x;
+          dragRef.current.currentY = nextClamped.y;
+          if (isMinimized) {
+            setHudPos(nextClamped);
+          } else {
+            setModalPos(nextClamped);
+          }
         }
-        return (next.x !== prev.x || next.y !== prev.y) ? next : prev;
-      });
+      }
+    });
+
+    resizeObserver.observe(modalEl);
+
+    const onWindowResize = () => {
+      if (dragRef.current.isDragging) return;
+      const active = isMinimized ? hudPos : modalPos;
+      const nextClamped = clampPos(active.x, active.y, isMinimized, modalContainerRef.current);
+      if (modalContainerRef.current) {
+        modalContainerRef.current.style.transform = `translate3d(${nextClamped.x}px, ${nextClamped.y}px, 0)`;
+      }
+      dragRef.current.currentX = nextClamped.x;
+      dragRef.current.currentY = nextClamped.y;
+      if (nextClamped.x !== active.x || nextClamped.y !== active.y) {
+        if (isMinimized) {
+          setHudPos(nextClamped);
+        } else {
+          setModalPos(nextClamped);
+        }
+      }
     };
-    const rafId = window.requestAnimationFrame(enforceBounds);
-    window.addEventListener('resize', enforceBounds);
+
+    window.addEventListener('resize', onWindowResize);
+
     return () => {
-      window.cancelAnimationFrame(rafId);
-      window.removeEventListener('resize', enforceBounds);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', onWindowResize);
     };
-  }, [isOpen, isMinimized, modalLeft, tpConfig.enabled, slConfig.enabled, mlFilterConfig.enabled, isIceberg, clampModalOffset]);
+  }, [isOpen, isMinimized, clampPos]);
 
   // Ultra-Smooth 120fps GPU Mouse & Touch Drag Handler (Zero React re-renders & zero layout thrashing during drag)
   const handleStartDrag = React.useCallback((e: React.MouseEvent | React.TouchEvent) => {
@@ -1059,22 +1167,24 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     const modalEl = modalContainerRef.current;
     const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
-    const modalW = modalEl?.offsetWidth || (isMinimized ? 380 : 320);
-    const modalH = modalEl?.offsetHeight || (isMinimized ? 96 : 580);
-    const topMargin = isMinimized ? 2 : 12;
+    const modalW = modalEl?.offsetWidth || (isMinimized ? 395 : 320);
+    const modalH = modalEl?.offsetHeight || (isMinimized ? 180 : 620);
+    const topMargin = isMinimized ? 4 : 12;
+    const bottomMargin = isMinimized ? 8 : 16;
 
+    const currentPos = isMinimized ? hudPos : modalPos;
     const drag = dragRef.current;
     drag.isDragging = true;
     drag.startX = startClientX;
     drag.startY = startClientY;
-    drag.originX = dragOffset.x;
-    drag.originY = dragOffset.y;
-    drag.currentX = dragOffset.x;
-    drag.currentY = dragOffset.y;
-    drag.minX = -modalLeft + 6;
-    drag.maxX = Math.max(drag.minX, winW - modalLeft - modalW - 6);
-    drag.minY = -Math.max(0, winH - 104 - modalH - topMargin);
-    drag.maxY = 96;
+    drag.originX = currentPos.x;
+    drag.originY = currentPos.y;
+    drag.currentX = currentPos.x;
+    drag.currentY = currentPos.y;
+    drag.minX = 6;
+    drag.maxX = Math.max(drag.minX, winW - modalW - 6);
+    drag.minY = topMargin;
+    drag.maxY = Math.max(drag.minY, winH - modalH - bottomMargin);
 
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'grabbing';
@@ -1133,7 +1243,21 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         modalContainerRef.current.style.transition = '';
       }
 
-      setDragOffset({ x: drag.currentX, y: drag.currentY });
+      const finalPos = { x: drag.currentX, y: drag.currentY };
+      if (isMinimized) {
+        hasUserDraggedHudRef.current = true;
+        setHudPos(finalPos);
+        try {
+          localStorage.setItem('cosmo_manual_trade_hud_pos_v2', JSON.stringify(finalPos));
+        } catch {}
+      } else {
+        hasUserDraggedModalRef.current = true;
+        setModalPos(finalPos);
+        try {
+          localStorage.setItem('cosmo_manual_trade_full_pos_v2', JSON.stringify(finalPos));
+        } catch {}
+      }
+
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onUp);
       window.removeEventListener('touchmove', onTouchMove);
@@ -1148,7 +1272,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     window.addEventListener('touchend', onUp);
     window.addEventListener('touchcancel', onUp);
     window.addEventListener('blur', onUp);
-  }, [dragOffset.x, dragOffset.y, modalLeft, isMinimized]);
+  }, [hudPos, modalPos, isMinimized]);
 
   // Safety cleanup: ensure body styles are always restored if modal closes or unmounts mid-drag
   React.useEffect(() => {
@@ -2078,15 +2202,15 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             <div
               ref={modalContainerRef}
               style={{
-                left: `${modalLeft}px`,
-                bottom: '104px',
-                transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : dragOffset.x}px, ${dragRef.current.isDragging ? dragRef.current.currentY : dragOffset.y}px, 0)`,
+                left: 0,
+                top: 0,
+                transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : (isMinimized ? hudPos.x : modalPos.x)}px, ${dragRef.current.isDragging ? dragRef.current.currentY : (isMinimized ? hudPos.y : modalPos.y)}px, 0)`,
                 willChange: 'transform'
               }}
               className={`fixed rounded-xl ${
                 isMinimized
-                  ? 'w-[385px] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/98 to-[#05070d]/98 border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)]'
-                  : 'w-80 rounded-2xl bg-[#000000]/80 border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)]'
+                  ? 'w-[395px] max-w-[calc(100vw-12px)] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/98 to-[#05070d]/98 border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)]'
+                  : 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#000000]/80 border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)]'
               } backdrop-blur-xl border z-[99999] overflow-hidden transition-colors duration-200 select-none`}
             >
               {isMinimized ? (
@@ -2112,9 +2236,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                       <div className="flex items-center gap-1 min-w-0 pointer-events-none flex-wrap">
                         <GripVertical className="w-3 h-3 text-cyan-400/80 shrink-0" />
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse shrink-0" />
-                        <span className="font-black text-white text-[11px] tracking-tight truncate">{activeSymbol}</span>
+                        <span className="font-black text-white text-[11px] tracking-tight truncate max-w-[85px]">{activeSymbol}</span>
                         <span
-                          className={`text-[8px] uppercase px-1 py-0.2 rounded font-mono font-extrabold border leading-tight ${
+                          className={`text-[8px] uppercase px-1 py-0.2 rounded font-mono font-extrabold border leading-tight shrink-0 ${
                             isFutures
                               ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
                               : 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
@@ -2123,26 +2247,26 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           {isFutures ? `${leverage}x` : 'SPOT'}
                         </span>
                         {effectiveCurrentPrice > 0 && (
-                          <span className="text-emerald-400 font-mono text-[10px] font-bold tracking-tight">
+                          <span className="text-emerald-400 font-mono text-[10px] font-bold tracking-tight shrink-0">
                             ${formatDisplayPrice(effectiveCurrentPrice)}
                           </span>
                         )}
-                        <span className="text-[8px] px-1 py-0.2 rounded bg-white/[0.06] border border-white/10 text-gray-300 font-mono font-bold uppercase leading-tight">
+                        <span className="text-[8px] px-1 py-0.2 rounded bg-white/[0.06] border border-white/10 text-gray-300 font-mono font-bold uppercase leading-tight shrink-0">
                           {orderType === 'SmartPeg' ? '⚡PEG' : orderType === 'Market' ? 'MKT' : 'LMT'}
                         </span>
                         {tpConfig.enabled && (
-                          <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold leading-tight">
+                          <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold leading-tight shrink-0">
                             TP
                           </span>
                         )}
                         {slConfig.enabled && (
-                          <span className="text-[8px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono font-bold leading-tight">
+                          <span className="text-[8px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono font-bold leading-tight shrink-0">
                             SL
                           </span>
                         )}
                         {mlFilterConfig.enabled && (
                           <span
-                            className="text-[8px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight"
+                            className="text-[8px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight shrink-0"
                             title="L2 Machine Learning Entry Filter Active"
                           >
                             AI
@@ -2150,7 +2274,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                         )}
                         {openLimitOrders.length > 0 && (
                           <span
-                            className="text-[8px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse"
+                            className="text-[8px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse shrink-0 pointer-events-auto"
                             title={`${openLimitOrders.length} open limit orders active. Click to view and cancel.`}
                             onClick={(e) => {
                               e.stopPropagation();
@@ -2162,7 +2286,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                         )}
                         {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
                           <span
-                            className={`text-[8px] px-1 py-0.2 rounded font-mono font-black leading-tight border ${
+                            className={`text-[8px] px-1 py-0.2 rounded font-mono font-black leading-tight border shrink-0 ${
                               positionData.side.toLowerCase() === 'long'
                                 ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/50'
                                 : 'bg-rose-500/25 text-rose-300 border-rose-400/50'
@@ -2175,7 +2299,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-[8px] font-mono text-gray-400 hidden sm:inline">
+                        <span className="text-[8px] font-mono text-gray-400 hidden xl:inline max-w-[65px] truncate">
                           {balanceData
                             ? isInverseFutures
                               ? `${(balanceData.base_free || 0).toFixed(1)} ${baseCurrency}`

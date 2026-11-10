@@ -88,6 +88,15 @@ export const useOpenOrders = (
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [fetchOrders]);
 
+  // Immediate refresh on custom event (e.g. after drag bracket order placement)
+  useEffect(() => {
+    const handleRefresh = () => {
+      fetchOrders();
+    };
+    window.addEventListener('refreshOpenOrders', handleRefresh);
+    return () => window.removeEventListener('refreshOpenOrders', handleRefresh);
+  }, [fetchOrders]);
+
   // Polling loop with proper mount guard
   useEffect(() => {
     isMountedRef.current = true; // BUG-05: mark mounted on (re)run

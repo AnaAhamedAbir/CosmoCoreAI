@@ -1569,12 +1569,12 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         if (isFutures && positionData && positionData.amount > 0) {
           targetAmount = positionData.amount;
           targetSide = positionData.side.toLowerCase() === 'long' ? 'buy' : 'sell';
-        } else if (!isFutures && balanceData && balanceData.base_free > 0) {
-          targetAmount = balanceData.base_free;
-          targetSide = 'buy';
         } else if (size && Number(size) > 0) {
           targetAmount = sizeMode === 'quote' && effectiveOrderPrice > 0 ? Number(size) / effectiveOrderPrice : Number(size);
           targetSide = tradeSide === 'Buy' ? 'buy' : 'sell';
+        } else if (!isFutures && balanceData && balanceData.base_free > 0) {
+          targetAmount = balanceData.base_free;
+          targetSide = 'buy';
         }
 
         const res = await manualTradeService.placeDragBracket({
@@ -1593,6 +1593,9 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
         fetchBalance(true);
         fetchActiveBrackets(true);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+        }
       } catch (err: any) {
         toast.error(err?.response?.data?.detail || err?.message || `Failed to place ${type.toUpperCase()}`, { id: toastId });
       }
@@ -4932,8 +4935,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         <div
           style={{
             position: 'fixed',
-            left: activeDragLine.pointerPos.x + 16,
-            top: activeDragLine.pointerPos.y - 34,
+            left: Math.min((typeof window !== 'undefined' ? window.innerWidth : 1000) - 190, Math.max(10, activeDragLine.pointerPos.x + 16)),
+            top: Math.max(10, activeDragLine.pointerPos.y - 42),
             pointerEvents: 'none',
             zIndex: 999999,
           }}

@@ -333,14 +333,6 @@ async def place_drag_bracket_endpoint(
             base_free = float(bal.get('base_free') or 0.0)
             if amount <= 0 and base_free > 0:
                 amount = base_free
-            if not entry_side:
-                entry_side = 'buy'  # Spot holder is long base asset
-
-        if amount <= 0:
-            raise HTTPException(status_code=400, detail=f"No active position or balance found for {req.symbol} to place bracket.")
-
-        if not entry_side:
-            entry_side = 'buy'
 
         # 3. Format amount & price with precision
         final_amount = BracketOrderService._safe_amount_to_precision(exchange, req.symbol, amount)
@@ -358,6 +350,20 @@ async def place_drag_bracket_endpoint(
             current_px = req.price
 
         bracket_type = req.bracket_type.lower()
+
+        # 5. Smart Infer entry_side if not bound by an explicit active Futures position
+        if not entry_side:
+            if req.side:
+                entry_side = req.side.lower()
+            else:
+                if bracket_type == 'tp':
+                    entry_side = 'buy' if final_price > current_px else 'sell'
+                else:
+                    entry_side = 'buy' if final_price < current_px else 'sell'
+
+        if final_amount <= 0:
+            raise HTTPException(status_code=400, detail=f"No active position or balance found for {req.symbol} to place bracket.")
+
         if entry_side == 'buy':  # LONG position / holding base coin
             if bracket_type == 'tp' and final_price <= current_px:
                 raise HTTPException(status_code=400, detail=f"For a Long/Spot position, Take Profit price ({final_price}) must be above current price ({current_px}).")
@@ -369,7 +375,7 @@ async def place_drag_bracket_endpoint(
             if bracket_type == 'sl' and final_price <= current_px:
                 raise HTTPException(status_code=400, detail=f"For a Short position, Stop Loss price ({final_price}) must be above current price ({current_px}).")
 
-        # 5. Clean up any existing bracket of the same type for this symbol if active
+        # 6. Clean up any existing bracket of the same type for this symbol if active
         opposite_side = 'sell' if entry_side == 'buy' else 'buy'
         if bracket_type == 'sl':
             for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
@@ -380,6 +386,17 @@ async def place_drag_bracket_endpoint(
                         logger.info(f"Replacing existing SL {sid} with new drag SL at {final_price}")
                         sdata['cancelled'] = True
                         sdata['status'] = 'cancelled'
+        elif bracket_type == 'tp':
+            try:
+                for eb_id, eb_data in list(BracketOrderService.ACTIVE_ENTRY_BRACKETS.items()):
+                    if str(eb_data.get('symbol', '')).strip().upper() == req.symbol.strip().upper():
+                        old_tp_id = eb_data.get('tp_order_id')
+                        if old_tp_id:
+                            logger.info(f"Cancelling prior bracket TP {old_tp_id} before setting new drag TP")
+                            await BracketOrderService._cancel_futures_order_universal(exchange, old_tp_id, req.symbol) if is_futures else await exchange.cancel_order(old_tp_id, req.symbol)
+                            eb_data['tp_order_id'] = None
+            except Exception as tp_c_err:
+                logger.debug(f"Non-fatal prior TP cleanup notice: {tp_c_err}")
 
         # 6. Execute / Spawn Bracket
         if bracket_type == 'tp':

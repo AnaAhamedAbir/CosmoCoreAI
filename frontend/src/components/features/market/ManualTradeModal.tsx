@@ -1709,16 +1709,23 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         if (isFutures && positionData && positionData.amount > 0) {
           targetAmount = positionData.amount;
           targetSide = positionData.side.toLowerCase() === 'long' ? 'buy' : 'sell';
-        } else if (size && Number(size) > 0) {
-          targetAmount = sizeMode === 'quote' && effectiveOrderPrice > 0 ? Number(size) / effectiveOrderPrice : Number(size);
-          targetSide = tradeSide === 'Buy' ? 'buy' : 'sell';
-        } else if (!isFutures && balanceData) {
-          if (tradeSide === 'Sell' && (balanceData.quote_free || 0) > 0 && dropPrice > 0) {
-            targetAmount = balanceData.quote_free / dropPrice;
-            targetSide = 'sell';
-          } else if ((balanceData.base_free || 0) > 0) {
-            targetAmount = balanceData.base_free;
-            targetSide = 'buy';
+        } else {
+          // Spot or no active futures position: infer side from chart drop price
+          const currentPx = effectiveCurrentPrice || 0;
+          if (type === 'tp') {
+            targetSide = dropPrice > currentPx ? 'buy' : 'sell';
+          } else {
+            targetSide = dropPrice < currentPx ? 'buy' : 'sell';
+          }
+
+          if (size && Number(size) > 0) {
+            targetAmount = sizeMode === 'quote' && dropPrice > 0 ? Number(size) / dropPrice : Number(size);
+          } else if (balanceData) {
+            if (targetSide === 'sell' && (balanceData.quote_free || 0) > 0 && dropPrice > 0) {
+              targetAmount = balanceData.quote_free / dropPrice;
+            } else if ((balanceData.base_free || 0) > 0) {
+              targetAmount = balanceData.base_free;
+            }
           }
         }
 

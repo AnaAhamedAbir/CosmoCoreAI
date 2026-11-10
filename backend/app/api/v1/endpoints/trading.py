@@ -315,40 +315,11 @@ async def place_drag_bracket_endpoint(
         is_futures = bool(req.is_futures or (':' in req.symbol))
         exchange = await manual_trade_service._get_exchange(api_key_record, is_futures)
 
-        # 2. Resolve amount and entry side
-        amount = req.amount or 0.0
-        entry_side = req.side.lower() if req.side else None
-
-        if is_futures:
-            pos_info = await manual_trade_service.get_active_position(db, current_user.id, req.api_key_id, req.symbol)
-            pos_amt = float(pos_info.get('amount') or 0.0)
-            if pos_amt > 0:
-                if amount <= 0:
-                    amount = pos_amt
-                if not entry_side:
-                    entry_side = 'buy' if str(pos_info.get('side', '')).lower() == 'long' else 'sell'
-        else:
-            # Spot balance check
-            bal = await manual_trade_service.get_fast_balance(db, current_user.id, req.api_key_id, req.symbol)
-            base_free = float(bal.get('base_free') or 0.0)
-            quote_free = float(bal.get('quote_free') or 0.0)
-            if amount <= 0:
-                final_px = float(req.price or 0.0)
-                if entry_side == 'sell' and quote_free > 0 and final_px > 0:
-                    amount = quote_free / final_px
-                elif base_free > 0:
-                    amount = base_free
-                elif quote_free > 0 and final_px > 0:
-                    amount = quote_free / final_px
-
-        # 3. Format amount & price with precision
-        final_amount = BracketOrderService._safe_amount_to_precision(exchange, req.symbol, amount)
+        # 2. Fetch current market price and format price
         final_price = BracketOrderService._safe_price_to_precision(exchange, req.symbol, req.price)
-
         if final_price <= 0:
             raise HTTPException(status_code=400, detail="Invalid price level.")
 
-        # 4. Fetch current market price to validate price direction
         current_px = 0.0
         try:
             ticker = await exchange.fetch_ticker(req.symbol)
@@ -357,30 +328,55 @@ async def place_drag_bracket_endpoint(
             current_px = req.price
 
         bracket_type = req.bracket_type.lower()
+        amount = req.amount or 0.0
+        entry_side = None
 
-        # 5. Smart Infer entry_side if not bound by an explicit active Futures position
-        if not entry_side:
-            if req.side:
-                entry_side = req.side.lower()
+        # 3. Resolve entry side and amount based on market context and chart drop position
+        if is_futures:
+            pos_info = await manual_trade_service.get_active_position(db, current_user.id, req.api_key_id, req.symbol)
+            pos_amt = float(pos_info.get('amount') or 0.0)
+            if pos_amt > 0:
+                if amount <= 0:
+                    amount = pos_amt
+                entry_side = 'buy' if str(pos_info.get('side', '')).lower() == 'long' else 'sell'
             else:
                 if bracket_type == 'tp':
                     entry_side = 'buy' if final_price > current_px else 'sell'
                 else:
                     entry_side = 'buy' if final_price < current_px else 'sell'
+        else:
+            # Spot balance check & intelligent chart drop direction inference
+            bal = await manual_trade_service.get_fast_balance(db, current_user.id, req.api_key_id, req.symbol)
+            base_free = float(bal.get('base_free') or 0.0)
+            quote_free = float(bal.get('quote_free') or 0.0)
 
+            # Chart drop position determines trade intent:
+            # TP above market = Sell TP (Long) | TP below market = Buy TP (Dip Buy-Back)
+            # SL below market = Sell SL (Long) | SL above market = Buy SL (Smart Chase Buy-Back)
+            if bracket_type == 'tp':
+                entry_side = 'buy' if final_price > current_px else 'sell'
+            else:
+                entry_side = 'buy' if final_price < current_px else 'sell'
+
+            if amount <= 0:
+                if entry_side == 'sell':
+                    if quote_free > 0 and final_price > 0:
+                        amount = quote_free / final_price
+                    elif base_free > 0:
+                        amount = base_free
+                else:
+                    if base_free > 0:
+                        amount = base_free
+                    elif quote_free > 0 and final_price > 0:
+                        amount = quote_free / final_price
+
+        # 4. Format amount with exchange precision
+        final_amount = BracketOrderService._safe_amount_to_precision(exchange, req.symbol, amount)
         if final_amount <= 0:
-            raise HTTPException(status_code=400, detail=f"No active position or balance found for {req.symbol} to place bracket.")
-
-        if entry_side == 'buy':  # LONG position / holding base coin
-            if bracket_type == 'tp' and final_price <= current_px:
-                raise HTTPException(status_code=400, detail=f"For a Long/Spot position, Take Profit price ({final_price}) must be above current price ({current_px}).")
-            if bracket_type == 'sl' and final_price >= current_px:
-                raise HTTPException(status_code=400, detail=f"For a Long/Spot position, Stop Loss price ({final_price}) must be below current price ({current_px}).")
-        else:  # SHORT position
-            if bracket_type == 'tp' and final_price >= current_px:
-                raise HTTPException(status_code=400, detail=f"For a Short position, Take Profit price ({final_price}) must be below current price ({current_px}).")
-            if bracket_type == 'sl' and final_price <= current_px:
-                raise HTTPException(status_code=400, detail=f"For a Short position, Stop Loss price ({final_price}) must be above current price ({current_px}).")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"No active position or balance found for {req.symbol} to place bracket. Please check your wallet balance or size."
+            )
 
         # 6. Clean up any existing bracket of the same type for this symbol if active
         opposite_side = 'sell' if entry_side == 'buy' else 'buy'

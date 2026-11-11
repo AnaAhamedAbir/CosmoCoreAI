@@ -501,6 +501,8 @@ async def execute_manual_smart_chase(
 
     # Format initial amount
     remaining_amount = sell_amount_raw
+    attempts = 0
+    attempt_max_str = str(max_attempts) if max_attempts > 0 else '∞ (Continuous)'
     if hasattr(exchange, 'amount_to_precision'):
         try:
             remaining_amount = float(exchange.amount_to_precision(symbol, remaining_amount))

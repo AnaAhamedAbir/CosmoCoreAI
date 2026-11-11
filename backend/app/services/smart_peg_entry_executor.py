@@ -94,13 +94,20 @@ async def execute_smart_peg_entry(
     max_attempts: int = 0,      # 0 = unlimited
     peg_id: Optional[str] = None,
     reduce_only: bool = False,
-    urgent_mode: bool = False
+    urgent_mode: bool = False,
+    start_time: float = 0.0,
+    leverage: Optional[int] = None,
+    margin_mode: Optional[str] = None,
+    ai_filter_info: Optional[str] = None,
+    contract_size: float = 1.0,
 ) -> Optional[Dict[str, Any]]:
     """
     Executes a continuous Dynamic BBO Maker Peg Entry.
     Shadows Best Bid (Buy) or Best Ask (Sell) at top-of-book until fully filled,
     then automatically spawns Attached TP / SL brackets.
     """
+    t_peg_start = time.perf_counter()
+
     # ── STEP 0: Upgrade to dedicated unthrottled order exchange pool instance (purpose='order') ──
     if api_key_record:
         try:
@@ -452,6 +459,37 @@ async def execute_smart_peg_entry(
 
         logger.info(f"✅ [Smart Peg Entry] Order #{order_id} ACTIVE at {target_maker_price} (Queue Priority Active)")
 
+        # Send Telegram notification for first Smart Peg order placed (with accurate latency_ms)
+        if attempts == 1 and user_id:
+            try:
+                from app.services.manual_trade_service import _send_trade_fired_notification
+                t_placed = time.perf_counter()
+                t_base = start_time if start_time > 0 else t_peg_start
+                first_order_latency_ms = max(1, int((t_placed - t_base) * 1000))
+                asyncio.create_task(
+                    _send_trade_fired_notification(
+                        user_id=user_id,
+                        exchange_name=exchange_name,
+                        symbol=symbol,
+                        side=side,
+                        order_type='SmartPeg',
+                        amount=remaining_amount,
+                        fill_price=target_maker_price,
+                        latency_ms=first_order_latency_ms,
+                        attached_tp=tp_config,
+                        attached_sl=sl_config,
+                        leverage=leverage,
+                        margin_mode=margin_mode,
+                        is_futures=is_futures,
+                        max_dev=max_chase_deviation_pct,
+                        contract_size=contract_size,
+                        is_inverse=is_inverse,
+                        ai_filter_info=ai_filter_info
+                    )
+                )
+            except Exception as notify_first_err:
+                logger.warning(f"Failed to send Smart Peg trade fired notification: {notify_first_err}")
+
         # 5. Dynamic BBO Peg Watch Loop (180ms in urgent_mode, 250ms standard)
         peg_poll_interval = 0.18 if urgent_mode else 0.25
         poll_count = 0
@@ -781,14 +819,16 @@ async def execute_smart_peg_entry(
                         )
                     )
 
+                fill_duration_ms = max(1, int((time.perf_counter() - t_peg_start) * 1000))
                 msg = (
                     f"🎯 *Smart Peg Entry Filled!*\n"
                     f"Exchange: {exchange_name}\n"
                     f"Pair: `{symbol}`\n"
                     f"Side: {side.upper()} (Maker Entry ⚡)\n"
                     f"Filled Amount: `{total_filled}`\n"
-                    f"Price: `{exec_price}`\n"
+                    f"Price: `${exec_price:,.4f}`\n"
                     f"Attempts: {attempts}\n"
+                    f"⏱ Fill Duration: `{fill_duration_ms} ms` ({fill_duration_ms / 1000:.2f}s) ⚡\n"
                     f"Time: `{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}`"
                 )
                 await _send_notify(msg)
@@ -841,14 +881,16 @@ async def execute_smart_peg_entry(
                                         entry_order_id=cid
                                     )
                                 )
+                            fill_duration_ms = max(1, int((time.perf_counter() - t_peg_start) * 1000))
                             msg = (
                                 f"🎯 *Smart Peg Entry Filled!*\n"
                                 f"Exchange: {exchange_name}\n"
                                 f"Pair: `{symbol}`\n"
                                 f"Side: {side.upper()} (Maker Entry ⚡)\n"
                                 f"Filled Amount: `{total_filled}`\n"
-                                f"Price: `{exec_price}`\n"
+                                f"Price: `${exec_price:,.4f}`\n"
                                 f"Attempts: {attempts}\n"
+                                f"⏱ Fill Duration: `{fill_duration_ms} ms` ({fill_duration_ms / 1000:.2f}s) ⚡\n"
                                 f"Time: `{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}`"
                             )
                             await _send_notify(msg)

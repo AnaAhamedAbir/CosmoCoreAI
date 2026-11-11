@@ -1127,6 +1127,7 @@ class BracketOrderService:
     ):
         lock_key = str(entry_order_id) if entry_order_id else (f"tp:{linked_tp_order_id}" if linked_tp_order_id else None)
         entry_lock = None
+        t_spawn_start = time.perf_counter()
         if lock_key:
             entry_lock = BracketOrderService.ENTRY_BRACKET_LOCKS.setdefault(lock_key, asyncio.Lock())
             await entry_lock.acquire()
@@ -1266,6 +1267,7 @@ class BracketOrderService:
                         tp_price = weighted_entry + val if opposite_side == 'sell' else weighted_entry - val
 
                     final_tp_price = BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price)
+                    t_cons_tp_start = time.perf_counter()
                     ex_params = await BracketOrderService._apply_futures_exit_params(exchange, symbol, opposite_side) if is_futures else {}
                     try:
                         tp_res = None
@@ -1295,6 +1297,7 @@ class BracketOrderService:
                                 ex_params_gtc.pop('postOnly', None)
                                 ex_params_gtc['timeInForce'] = 'GTC'
                                 tp_res = await exchange.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_gtc)
+                        cons_tp_ms = max(1, int((time.perf_counter() - t_cons_tp_start) * 1000))
                         if tp_res and tp_res.get('id'):
                             new_tp_id = str(tp_res.get('id'))
                             tp_order_id = new_tp_id
@@ -1320,7 +1323,28 @@ class BracketOrderService:
                                     ):
                                         sdata['tp_order_id'] = new_tp_id
                                         sdata['tp_price'] = resolved_tp_price
-                            logger.info(f"🔄 Consolidated Bracket TP to {tp_target_amt} at {final_tp_price} (ID: {new_tp_id})")
+                            logger.info(f"🔄 Consolidated Bracket TP to {tp_target_amt} at {final_tp_price} in {cons_tp_ms}ms (ID: {new_tp_id})")
+                            if user_id:
+                                try:
+                                    from app.db.session import SessionLocal
+                                    db = SessionLocal()
+                                    try:
+                                        exchange_display = api_key_record.exchange.capitalize() if api_key_record else "Exchange"
+                                        msg = (
+                                            f"🔄 *CONSOLIDATED TP UPDATED*\n"
+                                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                                            f"• Exchange: `{exchange_display}`\n"
+                                            f"• Pair: `{symbol}`\n"
+                                            f"• TP Side: *{opposite_side.upper()}*\n"
+                                            f"• Consolidated Amount: `{tp_target_amt}`\n"
+                                            f"• TP Target Price: `${final_tp_price}`\n"
+                                            f"⏱ Placement Speed: `{cons_tp_ms} ms` ⚡"
+                                        )
+                                        await NotificationService.send_message(db, user_id, msg, parse_mode="Markdown", alert_type="alert_manual_trade")
+                                    finally:
+                                        db.close()
+                                except Exception as notify_cons_err:
+                                    logger.debug(f"Consolidated TP notification notice: {notify_cons_err}")
                     except Exception as tp_cons_err:
                         logger.warning(f"Failed to replace consolidated TP order: {tp_cons_err}")
 
@@ -1447,12 +1471,14 @@ class BracketOrderService:
                         payload['belowType'] = 'LIMIT_MAKER'
                         payload['belowPrice'] = str(BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price))
                         
+                    t_oco_start = time.perf_counter()
                     raw_res = await exchange.private_post_orderlist_oco(payload)
+                    oco_placement_ms = max(1, int((time.perf_counter() - t_oco_start) * 1000))
                     if isinstance(raw_res, dict):
                         for rep in (raw_res.get('orderReports') or []):
                             if str(rep.get('type', '')).upper() in ('LIMIT_MAKER', 'LIMIT') and rep.get('orderId'):
                                 BracketOrderService.KNOWN_TP_ORDER_IDS.add(str(rep.get('orderId')))
-                    logger.info(f"✅ Native Binance OCO placed successfully! ID: {raw_res.get('orderListId')}")
+                    logger.info(f"✅ Native Binance OCO placed successfully in {oco_placement_ms}ms! ID: {raw_res.get('orderListId')}")
                     
                     if user_id:
                         try:
@@ -1460,14 +1486,16 @@ class BracketOrderService:
                             db = SessionLocal()
                             try:
                                 msg = (
-                                    f"✅ *Native OCO Executed (Market)*\n"
-                                    f"Exchange: Binance Spot\n"
-                                    f"Pair: `{symbol}`\n"
-                                    f"Amount: `{final_amount}`\n"
-                                    f"TP Price: `{BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price)}`\n"
-                                    f"SL Price: `{BracketOrderService._safe_price_to_precision(exchange, symbol, sl_price)}`"
+                                    f"✅ *NATIVE OCO PLACED (SPOT)*\n"
+                                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                                    f"• Exchange: Binance Spot\n"
+                                    f"• Pair: `{symbol}`\n"
+                                    f"• Amount: `{final_amount}`\n"
+                                    f"• TP Target Price: `${BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price)}`\n"
+                                    f"• SL Trigger Price: `${BracketOrderService._safe_price_to_precision(exchange, symbol, sl_price)}`\n"
+                                    f"⏱ Placement Speed: `{oco_placement_ms} ms` ⚡"
                                 )
-                                await NotificationService.send_message(db, user_id, msg)
+                                await NotificationService.send_message(db, user_id, msg, parse_mode="Markdown", alert_type="alert_manual_trade")
                             finally:
                                 db.close()
                         except Exception:
@@ -1494,6 +1522,7 @@ class BracketOrderService:
     
                 final_tp_price = BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price)
     
+                t_tp_start = time.perf_counter()
                 ex_params = await BracketOrderService._apply_futures_exit_params(exchange, symbol, opposite_side) if is_futures else {}
                 try:
                     tp_res = None
@@ -1545,29 +1574,36 @@ class BracketOrderService:
                             )
                             logger.info(f"✅ Bracket Monitor: Spot Limit TP placed at {final_tp_price}! ID: {tp_res.get('id')}")
     
+                    tp_placement_ms = max(1, int((time.perf_counter() - t_tp_start) * 1000))
                     if tp_res:
                         tp_order_id = tp_res.get('id')
                         resolved_tp_price = float(final_tp_price)
                         if tp_order_id:
                             BracketOrderService.KNOWN_TP_ORDER_IDS.add(str(tp_order_id))
 
-                    logger.info(f"✅ Bracket Monitor: TP placed! ID: {tp_res.get('id') if tp_res else 'N/A'}")
+                    logger.info(f"✅ Bracket Monitor: TP placed in {tp_placement_ms}ms! ID: {tp_res.get('id') if tp_res else 'N/A'}")
     
                     if user_id and tp_res:
                         try:
                             from app.db.session import SessionLocal
                             db = SessionLocal()
                             try:
+                                tp_type_label = "Post-Only Maker" if tp_order_type == 'limit' else ("Conditional Market" if is_futures else "Limit")
+                                exchange_display = api_key_record.exchange.capitalize() if api_key_record else "Exchange"
                                 msg = (
-                                    f"🎯 *Bracket TP Executed (Chunk)*\n"
-                                    f"Exchange: {api_key_record.exchange.capitalize()}\n"
-                                    f"Pair: `{symbol}`\n"
-                                    f"TP Side: {opposite_side.upper()}\n"
-                                    f"Amount: `{final_amount}`\n"
-                                    f"TP Price: `{final_tp_price}`\n"
-                                    f"Mode: {mode} ({val}{'%' if mode == 'percentage' else '$'})"
+                                    f"🎯 *TAKE-PROFIT ORDER PLACED*\n"
+                                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                                    f"• Exchange: `{exchange_display}`\n"
+                                    f"• Pair: `{symbol}`\n"
+                                    f"• TP Side: *{opposite_side.upper()}*\n"
+                                    f"• Amount: `{final_amount}`\n"
+                                    f"• TP Target Price: `${final_tp_price}`\n"
+                                    f"• Mode: `{mode}` ({val}{'%' if mode == 'percentage' else '$'})\n"
+                                    f"• Order Type: `{tp_type_label}`\n"
+                                    f"• Status: `Resting in Orderbook 🎯`\n"
+                                    f"⏱ Placement Speed: `{tp_placement_ms} ms` ⚡"
                                 )
-                                await NotificationService.send_message(db, user_id, msg)
+                                await NotificationService.send_message(db, user_id, msg, parse_mode="Markdown", alert_type="alert_manual_trade")
                             finally:
                                 db.close()
                         except Exception as notify_err:

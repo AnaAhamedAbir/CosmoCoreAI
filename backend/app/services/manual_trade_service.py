@@ -87,19 +87,27 @@ async def _send_trade_fired_notification(
             price_line = f"• Limit Price: `${fill_price:,.4f}`\n• Status: `Pending in Orderbook ⏳`\n" if fill_price else "• Status: `Pending in Orderbook ⏳`\n"
 
         tp_text = ""
-        if attached_tp and getattr(attached_tp, 'enabled', False):
-            val = getattr(attached_tp, 'value', '')
-            mode = getattr(attached_tp, 'mode', '')
-            unit = "%" if mode == "percentage" else "$"
-            tp_text = f"🎯 Attached TP: `{val}{unit}`\n"
+        if attached_tp:
+            is_tp_enabled = getattr(attached_tp, 'enabled', None)
+            if is_tp_enabled is None and isinstance(attached_tp, dict):
+                is_tp_enabled = attached_tp.get('enabled', False)
+            if is_tp_enabled:
+                val = getattr(attached_tp, 'value', None) if not isinstance(attached_tp, dict) else attached_tp.get('value', '')
+                mode = getattr(attached_tp, 'mode', None) if not isinstance(attached_tp, dict) else attached_tp.get('mode', '')
+                unit = "%" if mode == "percentage" else "$"
+                tp_text = f"🎯 Attached TP: `{val}{unit}`\n"
 
         sl_text = ""
-        if attached_sl and getattr(attached_sl, 'enabled', False):
-            val = getattr(attached_sl, 'value', '')
-            sl_type = getattr(attached_sl, 'type', 'fixed')
-            mode = getattr(attached_sl, 'mode', '')
-            unit = "%" if mode == "percentage" else "$"
-            sl_text = f"🛡️ Attached SL: `{val}{unit}` ({sl_type.replace('_', ' ').capitalize()})\n"
+        if attached_sl:
+            is_sl_enabled = getattr(attached_sl, 'enabled', None)
+            if is_sl_enabled is None and isinstance(attached_sl, dict):
+                is_sl_enabled = attached_sl.get('enabled', False)
+            if is_sl_enabled:
+                val = getattr(attached_sl, 'value', None) if not isinstance(attached_sl, dict) else attached_sl.get('value', '')
+                sl_type = (getattr(attached_sl, 'type', 'fixed') if not isinstance(attached_sl, dict) else attached_sl.get('type', 'fixed')) or 'fixed'
+                mode = getattr(attached_sl, 'mode', None) if not isinstance(attached_sl, dict) else attached_sl.get('mode', '')
+                unit = "%" if mode == "percentage" else "$"
+                sl_text = f"🛡️ Attached SL: `{val}{unit}` ({str(sl_type).replace('_', ' ').capitalize()})\n"
 
         ai_text = f"🤖 AI Filter: `{ai_filter_info}` ✅\n" if ai_filter_info else ""
         speed_text = f"⏱ Execution Speed: `{latency_ms} ms` ⚡\n" if latency_ms > 0 else ""
@@ -1521,6 +1529,7 @@ class ManualTradeService:
                 if isinstance(order_req.params, dict) and order_req.params.get('reduceOnly'):
                     is_reduce_only = True
 
+                t_origin = start_time if start_time > 0 else t_req_origin
                 asyncio.create_task(
                     execute_smart_peg_entry(
                         exchange=exchange,
@@ -1534,30 +1543,12 @@ class ManualTradeService:
                         sl_config=order_req.attached_sl.dict() if (not is_reduce_only and getattr(order_req, 'attached_sl', None) and order_req.attached_sl.enabled) else None,
                         max_chase_deviation_pct=max_dev,
                         peg_id=peg_cid,
-                        reduce_only=is_reduce_only
-                    )
-                )
-
-                # Send Telegram Notification for Smart Peg Entry initiation
-                asyncio.create_task(
-                    _send_trade_fired_notification(
-                        user_id=user_id,
-                        exchange_name=api_key_record.exchange,
-                        symbol=order_req.symbol,
-                        side=order_req.side,
-                        order_type='SmartPeg',
-                        amount=order_req.amount,
-                        fill_price=getattr(order_req, 'price', 0.0) or req_price,
-                        latency_ms=0,
-                        attached_tp=order_req.attached_tp,
-                        attached_sl=order_req.attached_sl,
+                        reduce_only=is_reduce_only,
+                        start_time=t_origin,
                         leverage=params.get('leverage') if is_futures else None,
                         margin_mode=params.get('marginMode') if is_futures else None,
-                        is_futures=is_futures,
-                        max_dev=max_dev,
-                        contract_size=contract_size,
-                        is_inverse=is_inverse,
-                        ai_filter_info=ai_filter_info
+                        ai_filter_info=ai_filter_info,
+                        contract_size=contract_size
                     )
                 )
 

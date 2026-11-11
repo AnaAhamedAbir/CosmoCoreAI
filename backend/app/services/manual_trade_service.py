@@ -17,7 +17,10 @@ from app.services.notification import NotificationService
 from app.services.bracket_order_service import bracket_order_service
 from app.db.session import SessionLocal
 from fastapi import HTTPException
-import ccxt.async_support as ccxt
+try:
+    import ccxt.pro as ccxt
+except ImportError:
+    import ccxt.async_support as ccxt
 
 logger = logging.getLogger(__name__)
 
@@ -1357,37 +1360,29 @@ class ManualTradeService:
 
             # Prepare Limit Order parameters if needed (Moved before margin check)
             if order_req.type.lower() == 'limit':
-                if params.get('autoBestLimit'):
-                    try:
-                        ob = await exchange.fetch_order_book(order_req.symbol, limit=5)
-                        if order_req.side.lower() == 'buy':
-                            if not ob.get('bids'): raise ValueError("No bids found in orderbook.")
-                            order_req.price = ob['bids'][0][0]
-                        else:
-                            if not ob.get('asks'): raise ValueError("No asks found in orderbook.")
-                            order_req.price = ob['asks'][0][0]
-                        ex_params['postOnly'] = True
-                    except Exception as e:
-                        logger.error(f"Failed to auto-detect best limit price: {e}")
-                        raise HTTPException(status_code=500, detail=f"Failed to auto-fetch best limit price: {e}")
-
                 time_in_force = params.get('timeInForce', '')
                 if time_in_force.lower() in ('postonly', 'post_only', 'post-only'):
                     ex_params['postOnly'] = True
                     logger.info(f"PostOnly flag set for {order_req.symbol} {order_req.side} limit order")
 
-                if not getattr(order_req, 'price', None) or order_req.price <= 0:
+                if params.get('autoBestLimit'):
+                    ex_params['postOnly'] = True
+                elif not getattr(order_req, 'price', None) or order_req.price <= 0:
                     raise HTTPException(status_code=400, detail="Price is required for limit orders")
 
             # --- Amount Conversion for Inverse / COIN-M Contracts ---
             # CCXT expects amount in integer contracts for Binance COIN-M (e.g. DOGE/USD:DOGE)
             req_price = getattr(order_req, 'price', 0)
             if not req_price or req_price <= 0:
-                try:
-                    ticker = await exchange.fetch_ticker(order_req.symbol)
-                    req_price = ticker.get('last', 0)
-                except Exception:
-                    req_price = 0
+                raw_lp = params.get('lastPrice') or params.get('price')
+                if raw_lp and float(raw_lp) > 0:
+                    req_price = float(raw_lp)
+                elif is_inverse:
+                    try:
+                        ticker = await exchange.fetch_ticker(order_req.symbol)
+                        req_price = ticker.get('last', 0)
+                    except Exception:
+                        req_price = 0
 
             if is_inverse:
                 explicit_contracts = params.get('contracts')

@@ -12,7 +12,10 @@ CCXT Exchange অবজেক্টগুলো মেমোরিতে Cache �
 import asyncio
 import time
 import logging
-import ccxt.async_support as ccxt
+try:
+    import ccxt.pro as ccxt
+except ImportError:
+    import ccxt.async_support as ccxt
 from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -143,21 +146,47 @@ async def get_or_create_exchange(
 
         exchange = exchange_class(config)
 
-        # Markets লোড করে রাখুন — পরবর্তী রিকোয়েস্টে আর লাগবে না
-        try:
-            await asyncio.wait_for(exchange.load_markets(), timeout=10.0)
-            logger.info(f"[ExchangePool] ✅ Markets loaded for {exchange_name} key={api_key_id} purpose={purpose}")
-        except Exception as e:
-            logger.warning(f"[ExchangePool] ⚠️ Market load warning for {exchange_name}: {e}")
-            if is_futures and exchange_name.lower() == 'binance':
-                try:
-                    exchange.options['fetchMarkets'] = {'types': ['linear']}
-                    await asyncio.wait_for(exchange.load_markets(), timeout=8.0)
-                    logger.info(f"[ExchangePool] ✅ Linear Futures markets loaded via fallback for {exchange_name} key={api_key_id}")
-                except Exception as lin_e:
-                    logger.warning(f"[ExchangePool] ⚠️ Linear fallback market load warning: {lin_e}")
+        # Markets লোড করে রাখুন — general instance এর markets থাকলে 0ms এ দ্রুত কপি করে নিন
+        general_key = _make_cache_key(api_key_id, is_futures, purpose="general")
+        if general_key in _pool and getattr(_pool[general_key][0], 'markets', None):
+            gen_ex = _pool[general_key][0]
+            exchange.markets = gen_ex.markets
+            exchange.symbols = getattr(gen_ex, 'symbols', list(gen_ex.markets.keys()))
+            exchange.currencies = getattr(gen_ex, 'currencies', {})
+            exchange.ids = getattr(gen_ex, 'ids', list(gen_ex.markets.keys()))
+            exchange.markets_by_id = getattr(gen_ex, 'markets_by_id', {})
+            exchange.currencies_by_id = getattr(gen_ex, 'currencies_by_id', {})
+            logger.info(f"[ExchangePool] ⚡ Copied pre-loaded markets from general instance for key={api_key_id} purpose={purpose} (0ms)")
+        else:
+            try:
+                await asyncio.wait_for(exchange.load_markets(), timeout=10.0)
+                logger.info(f"[ExchangePool] ✅ Markets loaded for {exchange_name} key={api_key_id} purpose={purpose}")
+            except Exception as e:
+                logger.warning(f"[ExchangePool] ⚠️ Market load warning for {exchange_name}: {e}")
+                if is_futures and exchange_name.lower() == 'binance':
+                    try:
+                        exchange.options['fetchMarkets'] = {'types': ['linear']}
+                        await asyncio.wait_for(exchange.load_markets(), timeout=8.0)
+                        logger.info(f"[ExchangePool] ✅ Linear Futures markets loaded via fallback for {exchange_name} key={api_key_id}")
+                    except Exception as lin_e:
+                        logger.warning(f"[ExchangePool] ⚠️ Linear fallback market load warning: {lin_e}")
 
         _pool[cache_key] = (exchange, time.time())
+
+        # If general instance was created, pre-warm the dedicated order instance in the background
+        if purpose == "general":
+            asyncio.create_task(
+                get_or_create_exchange(
+                    api_key_id=api_key_id,
+                    exchange_name=exchange_name,
+                    decrypted_api_key=decrypted_api_key,
+                    decrypted_secret=decrypted_secret,
+                    is_futures=is_futures,
+                    passphrase=passphrase,
+                    purpose="order"
+                )
+            )
+
         return exchange
 
 

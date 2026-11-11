@@ -594,15 +594,56 @@ async def execute_smart_peg_entry(
                                             target_maker_price = new_maker
                                             attempts += 1
 
+                                            # Check if there was a partial fill on the cancelled order during atomic cancelReplace (Spot)
+                                            cancel_info = edit_res.get('info', {}).get('cancelResponse', {}) if isinstance(edit_res, dict) else {}
+                                            if cancel_info:
+                                                c_raw_filled = float(cancel_info.get('executedQty') or 0.0)
+                                                chunk = max(0.0, c_raw_filled - order_processed_filled)
+                                                if chunk > 0:
+                                                    total_filled += chunk
+                                                    exec_p = float(cancel_info.get('price') or target_maker_price)
+                                                    accumulated_cost += (chunk * exec_p)
+                                                    remaining_amount = max(0.0, remaining_amount - chunk)
+                                                    logger.info(f"🔄 [Smart Peg Entry] Captured partial fill during atomic cancelReplace: {chunk} at {exec_p}")
+                                                    if (tp_config or sl_config) and not reduce_only:
+                                                        from app.services.bracket_order_service import BracketOrderService
+                                                        asyncio.create_task(
+                                                            BracketOrderService._spawn_bracket_for_amount(
+                                                                exchange=exchange,
+                                                                symbol=symbol,
+                                                                side=side.lower(),
+                                                                filled_amount=chunk,
+                                                                average_price=exec_p,
+                                                                is_futures=is_futures,
+                                                                tp_config=tp_config,
+                                                                sl_config=sl_config,
+                                                                user_id=user_id,
+                                                                api_key_record=api_key_record,
+                                                                entry_order_id=cid
+                                                            )
+                                                        )
+
+                                            # If a new order ID was generated (e.g. Spot cancelReplace), reset order_processed_filled for the new order lifecycle
+                                            if old_oid != order_id:
+                                                order_processed_filled = 0.0
+
                                             if cid in ACTIVE_SMART_PEGS:
                                                 ACTIVE_SMART_PEGS[cid]['current_order_id'] = order_id
                                                 ACTIVE_SMART_PEGS[cid]['current_maker_price'] = target_maker_price
                                                 ACTIVE_SMART_PEGS[cid]['current_attempt'] = attempts
+                                                ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
+                                                ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
 
                                             logger.info(
                                                 f"⚡ [Smart Peg Entry] Native atomic re-peg SUCCESS in {repeg_ms}ms! ⚡ "
                                                 f"Order #{old_oid} ➜ #{order_id} at {target_maker_price} (Attempt {attempts}/{attempt_max_str})"
                                             )
+
+                                            # Check if the new order was immediately filled upon replacement
+                                            if str(edit_res.get('status', '')).lower() in ('closed', 'filled'):
+                                                logger.info(f"🎯 [Smart Peg Entry] New order #{order_id} filled immediately upon replacement!")
+                                                latest_order_chk = edit_res
+                                                break
 
                                             poll_count = 0
                                             native_repeg_ok = True

@@ -1064,6 +1064,12 @@ async def execute_manual_smart_chase(
                                                 f"Order #{old_oid} ➜ #{order_id} at {target_maker_price} (Attempt {attempts}/{attempt_max_str})"
                                             )
 
+                                            # Check if the new order was immediately filled upon replacement
+                                            if str(edit_res.get('status', '')).lower() in ('closed', 'filled'):
+                                                logger.info(f"🎯 [Dynamic BBO Peg] New order #{order_id} filled immediately upon replacement!")
+                                                latest_order_chk = edit_res
+                                                break
+
                                             start_watch_time = asyncio.get_event_loop().time()
                                             poll_count = 0
                                             native_repeg_ok = True

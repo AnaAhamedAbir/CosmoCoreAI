@@ -27,6 +27,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         const winW = typeof window !== 'undefined' ? (window.visualViewport?.width || window.innerWidth) : 1920;
         const winH = typeof window !== 'undefined' ? (window.visualViewport?.height || window.innerHeight) : 1080;
         const isTabletOrSmall = winH < 920 || winW < 1200;
+        const modalTargetW = Math.min(430, winW - 12);
 
         if (typeof window !== 'undefined') {
             try {
@@ -34,15 +35,15 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 if (saved) {
                     const parsed = JSON.parse(saved);
                     if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
-                        // On tablets/smaller viewports (e.g. Redmi Pad Chrome), keep top offset compact so full modal + footer fit cleanly
+                        // On tablets/smaller viewports (e.g. Redmi Pad Chrome), keep top offset compact so compact modal + margin fit cleanly
                         if (isTabletOrSmall) {
                             return {
-                                x: Math.max(6, Math.min(parsed.x, winW - Math.min(600, winW - 12))),
-                                y: Math.max(6, Math.min(parsed.y, 14))
+                                x: Math.max(6, Math.min(parsed.x, winW - modalTargetW - 6)),
+                                y: Math.max(8, Math.min(parsed.y, Math.max(12, winH - 515)))
                             };
                         }
                         return {
-                            x: Math.max(6, Math.min(parsed.x, winW - 320)),
+                            x: Math.max(6, Math.min(parsed.x, winW - modalTargetW - 6)),
                             y: Math.max(6, Math.min(parsed.y, winH - 250))
                         };
                     }
@@ -51,8 +52,12 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         }
 
         return {
-            x: isTabletOrSmall ? Math.max(6, Math.round((winW - Math.min(600, winW - 16)) / 2)) : Math.max(20, Math.min(winW - 610, Math.round(winW * 0.35))),
-            y: isTabletOrSmall ? 8 : Math.max(16, Math.round(winH * 0.05))
+            x: isTabletOrSmall
+                ? Math.max(6, Math.round((winW - modalTargetW) / 2))
+                : Math.max(20, Math.min(winW - 445, Math.round(winW * 0.38))),
+            y: isTabletOrSmall
+                ? Math.max(10, Math.round((winH - Math.min(500, winH - 24)) * 0.25))
+                : Math.max(20, Math.min(Math.round(winH * 0.14), Math.max(20, winH - 560)))
         };
     });
 
@@ -602,8 +607,8 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         const winW = typeof window !== 'undefined' ? (window.visualViewport?.width || window.innerWidth) : 1920;
         const winH = typeof window !== 'undefined' ? (window.visualViewport?.height || window.innerHeight) : 1080;
         const modalEl = elOverride || modalContainerRef.current;
-        const modalW = modalEl?.offsetWidth || Math.min(600, winW - 12);
-        const modalH = modalEl?.offsetHeight || 600;
+        const modalW = modalEl?.offsetWidth || Math.min(430, winW - 12);
+        const modalH = modalEl?.offsetHeight || 520;
 
         const leftMargin = 6;
         const rightMargin = 6;
@@ -637,9 +642,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             const winH = window.visualViewport?.height || window.innerHeight;
             const isTabletOrSmall = winH < 920 || winW < 1200;
             const bottomMargin = isTabletOrSmall ? 8 : 14;
+            const compactMaxCap = isTabletOrSmall ? 500 : 540;
 
             const clamped = clampPos(modalPos.x, modalPos.y, modalEl);
-            const maxH = Math.max(260, Math.round(winH - clamped.y - bottomMargin));
+            const maxH = Math.max(260, Math.min(compactMaxCap, Math.round(winH - clamped.y - bottomMargin)));
 
             modalEl.style.transform = `translate3d(${clamped.x}px, ${clamped.y}px, 0)`;
             modalEl.style.maxHeight = `${maxH}px`;
@@ -698,11 +704,12 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         const modalEl = modalContainerRef.current;
         const winW = typeof window !== 'undefined' ? (window.visualViewport?.width || window.innerWidth) : 1920;
         const winH = typeof window !== 'undefined' ? (window.visualViewport?.height || window.innerHeight) : 1080;
-        const modalW = modalEl?.offsetWidth || Math.min(600, winW - 12);
-        const modalH = modalEl?.offsetHeight || 600;
+        const modalW = modalEl?.offsetWidth || Math.min(430, winW - 12);
+        const modalH = modalEl?.offsetHeight || 520;
         const isTabletOrSmall = winH < 920 || winW < 1200;
         const topMargin = isTabletOrSmall ? 6 : 10;
         const bottomMargin = isTabletOrSmall ? 8 : 14;
+        const compactMaxCap = isTabletOrSmall ? 500 : 540;
 
         const minUsableH = 260;
         const effectiveH = Math.min(modalH, Math.max(minUsableH, winH - minUsableH));
@@ -745,7 +752,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
             if (modalContainerRef.current) {
                 const currentWinH = window.visualViewport?.height || window.innerHeight;
-                const dynamicMaxH = Math.max(260, Math.round(currentWinH - clampedY - bottomMargin));
+                const dynamicMaxH = Math.max(260, Math.min(compactMaxCap, Math.round(currentWinH - clampedY - bottomMargin)));
                 modalContainerRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
                 modalContainerRef.current.style.maxHeight = `${dynamicMaxH}px`;
             }
@@ -1358,54 +1365,61 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 top: 0,
                 transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : modalPos.x}px, ${dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y}px, 0)`,
                 maxHeight: typeof window !== 'undefined'
-                    ? `${Math.max(260, Math.round((window.visualViewport?.height || window.innerHeight) - (dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y) - (((window.visualViewport?.height || window.innerHeight) < 920 || (window.visualViewport?.width || window.innerWidth) < 1200) ? 8 : 14)))}px`
-                    : '90vh',
+                    ? (() => {
+                        const vh = window.visualViewport?.height || window.innerHeight;
+                        const vw = window.visualViewport?.width || window.innerWidth;
+                        const isSmall = vh < 920 || vw < 1200;
+                        const cap = isSmall ? 500 : 540;
+                        const y = dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y;
+                        return `${Math.max(260, Math.min(cap, Math.round(vh - y - (isSmall ? 8 : 14))))}px`;
+                    })()
+                    : '540px',
                 willChange: 'transform'
             }}
-            className="fixed w-[600px] max-w-[calc(100vw-12px)] rounded-2xl bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/98 to-[#050811]/98 border border-amber-500/40 shadow-[0_16px_48px_rgba(0,0,0,0.85),0_0_25px_rgba(245,158,11,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col"
+            className="fixed w-[430px] max-w-[calc(100vw-12px)] rounded-xl bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/98 to-[#050811]/98 border border-amber-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_20px_rgba(245,158,11,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col"
         >
             {/* Top Neon Horizon Accent Line */}
-            <div className="h-[2px] w-full bg-gradient-to-r from-transparent via-amber-400 to-orange-500 opacity-85 shrink-0" />
+            <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-amber-400 to-orange-500 opacity-85 shrink-0" />
 
             {/* Header (Draggable Handle matching ManualTradeModal) */}
             <div
                 onMouseDown={handleStartDrag}
                 onTouchStart={handleStartDrag}
                 style={{ touchAction: 'none' }}
-                className="flex items-center justify-between px-4 sm:px-5 py-2.5 sm:py-3.5 border-b border-white/10 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0"
+                className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0"
                 title="Drag to move modal"
             >
-                <div className="flex items-center gap-2 sm:gap-2.5 pointer-events-none min-w-0">
-                    <GripVertical className="w-4 h-4 text-amber-400/80 shrink-0" />
-                    <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.9)] animate-pulse shrink-0" />
-                    <div className="flex flex-col text-left truncate">
-                        <div className="flex items-center gap-1.5 sm:gap-2">
-                            <span className="font-black text-white text-sm sm:text-base tracking-tight truncate max-w-[140px] sm:max-w-[200px]">
-                                {form.botName || form.symbol || symbol || 'WallHunter Sniper'}
+                <div className="flex items-center gap-1.5 pointer-events-none min-w-0 flex-1 overflow-hidden">
+                    <GripVertical className="w-3.5 h-3.5 text-amber-400/80 shrink-0" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.9)] animate-pulse shrink-0" />
+                    <div className="flex flex-col text-left min-w-0 flex-1 overflow-hidden">
+                        <div className="flex items-center gap-1 min-w-0">
+                            <span className="font-black text-white text-xs tracking-tight truncate max-w-[115px]">
+                                {form.botName || form.symbol || symbol || 'WallHunter'}
                             </span>
-                            <span className={`text-[8.5px] sm:text-[9px] uppercase px-1.5 py-0.5 rounded font-mono font-black border leading-tight ${
+                            <span className={`text-[7.5px] uppercase px-1 py-0.2 rounded font-mono font-black border leading-tight shrink-0 whitespace-nowrap ${
                                 tradingMode === 'futures'
                                     ? 'bg-orange-500/20 border-orange-400/40 text-orange-300'
                                     : 'bg-amber-500/20 border-amber-400/40 text-amber-300'
                             }`}>
-                                {tradingMode === 'futures' ? `${form.leverage || 5}x FUTURES` : 'SPOT'}
+                                {tradingMode === 'futures' ? `${form.leverage || 5}x FUT` : 'SPOT'}
                             </span>
-                            <span className="text-[8.5px] sm:text-[9px] uppercase px-1.5 py-0.5 rounded font-mono font-bold border bg-white/[0.05] border-white/10 text-gray-300 leading-tight">
+                            <span className="text-[7.5px] uppercase px-1 py-0.2 rounded font-mono font-bold border bg-white/[0.05] border-white/10 text-gray-300 leading-tight shrink-0 truncate max-w-[64px]">
                                 {form.exchange?.toUpperCase() || exchange?.toUpperCase()}
                             </span>
                             {currentPrice > 0 && (
-                                <span className="text-emerald-400 font-mono text-[10px] sm:text-[11px] font-bold tracking-tight shrink-0 hidden sm:inline">
+                                <span className="text-emerald-400 font-mono text-[9.5px] font-bold tracking-tight shrink-0 hidden sm:inline">
                                     ${currentPrice >= 1 ? currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : currentPrice}
                                 </span>
                             )}
                         </div>
-                        <span className="text-[9px] sm:text-[10px] text-gray-400 font-medium tracking-wide">
-                            Level 2 Order Book Sniper Bot • {tradeDirection.toUpperCase()}
+                        <span className="text-[8.5px] text-gray-400 font-medium tracking-wide truncate">
+                            L2 Order Book Sniper • {tradeDirection.toUpperCase()}
                         </span>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                     <button
                         type="button"
                         onClick={(e) => {
@@ -1413,10 +1427,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             handleAutoDetect();
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 px-2 sm:px-2.5 py-1 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.15)] active:scale-95"
+                        className="flex items-center gap-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 px-1.5 py-0.5 rounded-md text-[8.5px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-[0_0_8px_rgba(245,158,11,0.15)] active:scale-95"
                         title="Auto-detect best sniper parameters from current order book walls"
                     >
-                        <Sparkles className="w-3 h-3 text-amber-400" />
+                        <Sparkles className="w-2.5 h-2.5 text-amber-400" />
                         AUTO DETECT
                     </button>
                     <button
@@ -1426,23 +1440,23 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             onClose();
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className="p-1 rounded-lg bg-white/[0.04] hover:bg-rose-500/20 border border-white/[0.08] hover:border-rose-500/40 text-gray-400 hover:text-rose-300 transition-all cursor-pointer"
+                        className="p-1 rounded-md bg-white/[0.04] hover:bg-rose-500/20 border border-white/[0.08] hover:border-rose-500/40 text-gray-400 hover:text-rose-300 transition-all cursor-pointer"
                         title="Close"
                     >
-                        <X className="w-4 h-4" />
+                        <X className="w-3.5 h-3.5" />
                     </button>
                 </div>
             </div>
 
             {/* --- MAIN TRADING MODE TOGGLE --- */}
-            <div className="px-4 sm:px-5 pt-2 sm:pt-3 shrink-0">
-                <div className="flex bg-black/50 p-1 rounded-xl border border-white/10">
+            <div className="px-3 pt-1.5 shrink-0">
+                <div className="flex bg-black/50 p-0.5 rounded-lg border border-white/10">
                     <button
                         type="button"
                         onClick={() => setTradingMode('spot')}
-                        className={`flex-1 py-1.5 text-xs font-black uppercase rounded-lg transition-all ${
+                        className={`flex-1 py-1 text-[10px] font-black uppercase rounded-md transition-all ${
                             tradingMode === 'spot'
-                                ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.4)]'
+                                ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 shadow-[0_0_12px_rgba(245,158,11,0.4)]'
                                 : 'text-gray-400 hover:text-white hover:bg-white/5'
                         }`}
                     >
@@ -1451,26 +1465,26 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     <button
                         type="button"
                         onClick={() => setTradingMode('futures')}
-                        className={`flex-1 py-1.5 text-xs font-black uppercase rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                        className={`flex-1 py-1 text-[10px] font-black uppercase rounded-md transition-all flex items-center justify-center gap-1 ${
                             tradingMode === 'futures'
-                                ? 'bg-orange-500 text-white shadow-[0_0_15px_rgba(249,115,22,0.4)]'
+                                ? 'bg-orange-500 text-white shadow-[0_0_12px_rgba(249,115,22,0.4)]'
                                 : 'text-gray-400 hover:text-white hover:bg-white/5'
                         }`}
                     >
-                        <Zap className="w-3.5 h-3.5" />
+                        <Zap className="w-3 h-3" />
                         FUTURE TRADING BOT ⚡
                     </button>
                 </div>
             </div>
 
             {/* --- TABS NAVIGATION --- */}
-            <div className="flex gap-1.5 px-4 sm:px-5 pt-2 pb-1.5 border-b border-white/10 overflow-x-auto shrink-0 hide-scrollbar">
+            <div className="flex gap-1 px-3 pt-1.5 pb-1 border-b border-white/10 overflow-x-auto shrink-0 hide-scrollbar">
                 <button
                     type="button"
                     onClick={() => setActiveTab('basic')}
-                    className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    className={`px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap ${
                         activeTab === 'basic'
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                     }`}
                 >
@@ -1479,9 +1493,9 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 <button
                     type="button"
                     onClick={() => setActiveTab('triggers')}
-                    className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    className={`px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap ${
                         activeTab === 'triggers'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                     }`}
                 >
@@ -1490,9 +1504,9 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 <button
                     type="button"
                     onClick={() => setActiveTab('risk')}
-                    className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    className={`px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap ${
                         activeTab === 'risk'
-                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-[0_0_12px_rgba(59,130,246,0.2)]'
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                     }`}
                 >
@@ -1501,9 +1515,9 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 <button
                     type="button"
                     onClick={() => setActiveTab('advanced')}
-                    className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    className={`px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap ${
                         activeTab === 'advanced'
-                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_12px_rgba(168,85,247,0.2)]'
+                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                     }`}
                 >
@@ -1514,99 +1528,96 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             {/* --- TABS CONTENT --- */}
             <div
                 style={{ touchAction: 'pan-y' }}
-                className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-5 py-3 sm:py-4 custom-scrollbar space-y-3.5 sm:space-y-4"
+                className="flex-1 min-h-0 overflow-y-auto px-3 py-2.5 custom-scrollbar space-y-2.5"
             >
                     {activeTab === 'basic' && (
-                        <div className="animate-fadeIn space-y-4">
-                            <div className="flex gap-4">
-                                <div className="space-y-1 flex-1">
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase">Bot Name (Optional)</label>
+                        <div className="animate-fadeIn space-y-2.5">
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-0.5">
+                                    <label className="text-[9px] text-gray-500 font-bold uppercase block">Bot Name (Optional)</label>
                                     <input
-                                        className="w-full bg-white/5 p-2 rounded-xl text-yellow-500 outline-none border border-transparent focus:border-brand-primary focus:bg-black/40 text-sm transition-all font-mono"
-                                        placeholder="Auto-generated if left empty"
+                                        className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-yellow-500 outline-none border border-transparent focus:border-brand-primary focus:bg-black/40 text-xs transition-all font-mono h-[32px]"
+                                        placeholder="Auto-generated if empty"
                                         value={form.botName}
                                         onChange={(e) => handleFormChange('botName', e.target.value)}
                                         maxLength={50}
                                     />
                                 </div>
-                            </div>
-                            <div className="flex gap-4">
-                                <div className={`space-y-1 ${form.selectedStrategy === 'cascading_bb' ? 'w-[30%]' : 'w-1/2'}`}>
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase">Trading Strategy</label>
-                                    <div className="flex bg-black/40 rounded-xl p-1 border border-white/10 h-[36px]">
+                                <div className="space-y-0.5">
+                                    <label className="text-[9px] text-gray-500 font-bold uppercase block">Trading Strategy</label>
+                                    <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/10 h-[32px]">
                                         <button
                                             onClick={() => handleFormChange('selectedStrategy', 'wall_hunter')}
-                                            className={`flex-1 h-full text-[10px] font-bold uppercase rounded-lg transition-all ${form.selectedStrategy === 'wall_hunter' ? 'bg-brand-primary text-white shadow-[0_0_10px_rgba(59,130,246,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+                                            className={`flex-1 h-full text-[9px] font-bold uppercase rounded-md transition-all ${form.selectedStrategy === 'wall_hunter' ? 'bg-brand-primary text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
                                         >
                                             L2 Scalping
                                         </button>
                                         <button
                                             onClick={() => handleFormChange('selectedStrategy', 'cascading_bb')}
-                                            className={`flex-1 h-full text-[10px] font-bold uppercase rounded-lg transition-all ${form.selectedStrategy === 'cascading_bb' ? 'bg-purple-600 text-white shadow-[0_0_10px_rgba(147,51,234,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+                                            className={`flex-1 h-full text-[9px] font-bold uppercase rounded-md transition-all ${form.selectedStrategy === 'cascading_bb' ? 'bg-purple-600 text-white shadow-[0_0_8px_rgba(147,51,234,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
                                         >
                                             Cascading BB
                                         </button>
                                     </div>
                                 </div>
-                                {form.selectedStrategy === 'cascading_bb' && (
-                                    <>
-                                        <div className="space-y-1 w-[20%]">
-                                            <label className="text-[10px] text-gray-500 font-bold uppercase whitespace-nowrap">Break (%)</label>
-                                            <input
-                                                type="number"
-                                                step="0.1"
-                                                className="w-full bg-white/5 p-2 rounded-xl text-yellow-500 outline-none border border-transparent focus:border-brand-primary text-sm font-mono"
-                                                value={form.breakPercentage}
-                                                onChange={(e) => handleFormChange('breakPercentage', parseFloat(e.target.value) || 0)}
-                                            />
-                                        </div>
-                                        <div className="space-y-1 w-[20%]">
-                                            <label className="text-[10px] text-gray-500 font-bold uppercase whitespace-nowrap">Tolerance</label>
-                                            <input
-                                                type="number"
-                                                step="0.05"
-                                                className="w-full bg-white/5 p-2 rounded-xl text-yellow-500 outline-none border border-transparent focus:border-brand-primary text-sm font-mono"
-                                                value={form.bandTolerance}
-                                                onChange={(e) => handleFormChange('bandTolerance', parseFloat(e.target.value) || 0)}
-                                            />
-                                        </div>
-                                        <div className="space-y-1 w-[30%]">
-                                            <label className="text-[10px] text-gray-500 font-bold uppercase whitespace-nowrap">TP Mode</label>
-                                            <select
-                                                className="w-full bg-white/5 p-2 rounded-xl text-white outline-none text-sm border border-transparent focus:border-brand-primary"
-                                                value={form.cascadingTpMode}
-                                                onChange={(e) => handleFormChange('cascadingTpMode', e.target.value)}
-                                            >
-                                                <option className="bg-[#000000] text-white" value="dynamic">Dynamic BB</option>
-                                                <option className="bg-[#000000] text-white" value="middle">Middle Band</option>
-                                                <option className="bg-[#000000] text-white" value="fixed">Fixed Spread</option>
-                                            </select>
-                                        </div>
-                                    </>
-                                )}
                             </div>
 
-                            {form.selectedStrategy === 'cascading_bb' && tradingMode === 'futures' && (
-                                <div className="flex gap-4 animate-fadeIn">
-                                    <div className="space-y-1 w-full">
-                                        <label className="text-[10px] text-brand-primary font-bold uppercase">Accumulation Mode</label>
-                                        <div className="flex bg-black/40 rounded-lg p-1 border border-white/10">
-                                            <button onClick={() => setStrategyMode('long')} className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded transition-all ${strategyMode === 'long' ? 'bg-brand-primary text-white shadow-[0_0_10px_rgba(59,130,246,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Long Only</button>
-                                            <button onClick={() => setStrategyMode('short')} className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 ${strategyMode === 'short' ? 'bg-red-600 text-white shadow-[0_0_10px_rgba(220,38,38,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Short Only</button>
-                                            <button onClick={() => setStrategyMode('auto')} className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 ${strategyMode === 'auto' ? 'bg-purple-600 text-white shadow-[0_0_10px_rgba(147,51,234,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Auto (Ping-Pong)</button>
-                                        </div>
+                            {form.selectedStrategy === 'cascading_bb' && (
+                                <div className="grid grid-cols-3 gap-2 animate-fadeIn">
+                                    <div className="space-y-0.5">
+                                        <label className="text-[9px] text-gray-500 font-bold uppercase whitespace-nowrap block">Break (%)</label>
+                                        <input
+                                            type="number"
+                                            step="0.1"
+                                            className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-yellow-500 outline-none border border-transparent focus:border-brand-primary text-xs font-mono"
+                                            value={form.breakPercentage}
+                                            onChange={(e) => handleFormChange('breakPercentage', parseFloat(e.target.value) || 0)}
+                                        />
+                                    </div>
+                                    <div className="space-y-0.5">
+                                        <label className="text-[9px] text-gray-500 font-bold uppercase whitespace-nowrap block">Tolerance</label>
+                                        <input
+                                            type="number"
+                                            step="0.05"
+                                            className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-yellow-500 outline-none border border-transparent focus:border-brand-primary text-xs font-mono"
+                                            value={form.bandTolerance}
+                                            onChange={(e) => handleFormChange('bandTolerance', parseFloat(e.target.value) || 0)}
+                                        />
+                                    </div>
+                                    <div className="space-y-0.5">
+                                        <label className="text-[9px] text-gray-500 font-bold uppercase whitespace-nowrap block">TP Mode</label>
+                                        <select
+                                            className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-white outline-none text-xs border border-transparent focus:border-brand-primary"
+                                            value={form.cascadingTpMode}
+                                            onChange={(e) => handleFormChange('cascadingTpMode', e.target.value)}
+                                        >
+                                            <option className="bg-[#000000] text-white" value="dynamic">Dynamic BB</option>
+                                            <option className="bg-[#000000] text-white" value="middle">Middle Band</option>
+                                            <option className="bg-[#000000] text-white" value="fixed">Fixed Spread</option>
+                                        </select>
                                     </div>
                                 </div>
                             )}
-                            <div className="flex gap-4">
-                                <div className="space-y-1 w-1/3">
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase">Asset</label>
-                                    <input className="w-full bg-white/5 p-2 rounded-xl text-yellow-500 font-mono outline-none border border-transparent text-sm" value={form.symbol} readOnly />
+
+                            {form.selectedStrategy === 'cascading_bb' && tradingMode === 'futures' && (
+                                <div className="animate-fadeIn space-y-0.5">
+                                    <label className="text-[9px] text-brand-primary font-bold uppercase block">Accumulation Mode</label>
+                                    <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/10">
+                                        <button onClick={() => setStrategyMode('long')} className={`flex-1 py-1 text-[9.5px] font-bold uppercase rounded transition-all ${strategyMode === 'long' ? 'bg-brand-primary text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Long Only</button>
+                                        <button onClick={() => setStrategyMode('short')} className={`flex-1 py-1 text-[9.5px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 ${strategyMode === 'short' ? 'bg-red-600 text-white shadow-[0_0_8px_rgba(220,38,38,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Short Only</button>
+                                        <button onClick={() => setStrategyMode('auto')} className={`flex-1 py-1 text-[9.5px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 ${strategyMode === 'auto' ? 'bg-purple-600 text-white shadow-[0_0_8px_rgba(147,51,234,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Auto (Ping-Pong)</button>
+                                    </div>
                                 </div>
-                                <div className="space-y-1 w-1/3">
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase">Exchange</label>
+                            )}
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="space-y-0.5">
+                                    <label className="text-[9px] text-gray-500 font-bold uppercase block">Asset</label>
+                                    <input className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-yellow-500 font-mono outline-none border border-transparent text-xs" value={form.symbol} readOnly />
+                                </div>
+                                <div className="space-y-0.5">
+                                    <label className="text-[9px] text-gray-500 font-bold uppercase block">Exchange</label>
                                     <select
-                                        className="w-full bg-white/5 p-2 rounded-xl text-white outline-none text-sm"
+                                        className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-white outline-none text-xs"
                                         value={form.exchange}
                                         onChange={(e) => setForm({ ...form, exchange: e.target.value })}
                                     >
@@ -1626,11 +1637,11 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                         )}
                                     </select>
                                 </div>
-                                <div className="w-1/3 space-y-1">
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase">
+                                <div className="space-y-0.5">
+                                    <label className="text-[9px] text-gray-500 font-bold uppercase block truncate">
                                         {tradingMode === 'spot' && strategyMode === 'short' ? 'Sell Order (Entry)' : 'Sell Order (TP)'}
                                     </label>
-                                    <select className="w-full bg-white/5 border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-brand-primary text-sm font-bold" value={form.sellOrderType} onChange={(e) => handleFormChange('sellOrderType', e.target.value)}>
+                                    <select className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white outline-none focus:border-brand-primary text-xs font-bold" value={form.sellOrderType} onChange={(e) => handleFormChange('sellOrderType', e.target.value)}>
                                         <option className="bg-[#000000] text-white" value="market">Market (Normal)</option>
                                         <option className="bg-[#000000] text-white" value="limit">Limit (Maker)</option>
                                         <option className="bg-[#000000] text-white" value="marketable_limit">Marketable Limit (MEXC)</option>
@@ -1640,31 +1651,31 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
                             {/* --- NEW: SPOT STRATEGY MODE / BASE ACCUMULATION FLAG --- */}
                             {tradingMode === 'spot' && (
-                                <div className="flex flex-col gap-4 p-3 bg-white/5 border border-white/10 rounded-2xl animate-fadeIn">
-                                    <div className="flex flex-col w-full space-y-2">
+                                <div className="flex flex-col gap-2 p-2 bg-white/5 border border-white/10 rounded-xl animate-fadeIn">
+                                    <div className="flex flex-col w-full space-y-1">
                                         <div className="flex justify-between items-center">
-                                            <label className="text-[10px] text-brand-primary font-black uppercase">Spot Strategy Mode</label>
+                                            <label className="text-[9px] text-brand-primary font-black uppercase">Spot Strategy Mode</label>
                                         </div>
-                                        <div className="flex bg-black/40 rounded-lg p-1 border border-white/10 gap-1">
-                                            <button onClick={() => setStrategyMode('long')} className={`flex-1 py-1.5 text-[9px] font-bold uppercase rounded transition-all ${strategyMode === 'long' ? 'bg-brand-primary text-white shadow-[0_0_10px_rgba(59,130,246,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Long (Quote)</button>
-                                            <button onClick={() => setStrategyMode('short')} className={`flex-1 py-1.5 text-[9px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 ${strategyMode === 'short' ? 'bg-yellow-600 text-white shadow-[0_0_10px_rgba(202,138,4,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                                        <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/10 gap-1">
+                                            <button onClick={() => setStrategyMode('long')} className={`flex-1 py-1 px-1 text-[9px] font-bold uppercase rounded transition-all whitespace-nowrap ${strategyMode === 'long' ? 'bg-brand-primary text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Long (Quote)</button>
+                                            <button onClick={() => setStrategyMode('short')} className={`flex-1 py-1 px-1 text-[9px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 whitespace-nowrap ${strategyMode === 'short' ? 'bg-yellow-600 text-white shadow-[0_0_8px_rgba(202,138,4,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+                                                <svg className="w-2.5 h-2.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
                                                 Short (Base)
                                             </button>
-                                            <button onClick={() => setStrategyMode('auto')} className={`flex-1 py-1.5 text-[9px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 ${strategyMode === 'auto' ? 'bg-purple-600 text-white shadow-[0_0_10px_rgba(147,51,234,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                                            <button onClick={() => setStrategyMode('auto')} className={`flex-1 py-1 px-1 text-[9px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 whitespace-nowrap ${strategyMode === 'auto' ? 'bg-purple-600 text-white shadow-[0_0_8px_rgba(147,51,234,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+                                                <svg className="w-2.5 h-2.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
                                                 Bi-Directional
                                             </button>
                                         </div>
                                     </div>
                                     {strategyMode === 'auto' && (
-                                        <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl flex gap-3 items-start animate-fadeIn">
-                                            <div className="bg-purple-500/20 p-2 rounded-lg mt-0.5">
-                                                <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        <div className="p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg flex gap-2 items-start animate-fadeIn">
+                                            <div className="bg-purple-500/20 p-1.5 rounded-md mt-0.5 shrink-0">
+                                                <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                             </div>
                                             <div>
-                                                <h4 className="text-xs font-bold text-purple-400 mb-1">Bi-Directional (Auto) Mode</h4>
-                                                <p className="text-[10px] text-gray-400 leading-relaxed">
+                                                <h4 className="text-[10.5px] font-bold text-purple-400 mb-0.5">Bi-Directional (Auto) Mode</h4>
+                                                <p className="text-[9.5px] text-gray-400 leading-snug">
                                                     Requires both USDT (Quote) and {form.symbol ? form.symbol.split('/')[0] : 'Base Token'} balances. The bot will automatically Accumulate from Buy Walls and Distribute from Sell Walls based on ML Filter predictions.
                                                 </p>
                                             </div>
@@ -1674,13 +1685,13 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             )}
 
                             {/* --- NEW: BUY ORDER TYPE & TIMEOUT --- */}
-                            <div className="flex gap-4 p-3 bg-white/5 border border-white/10 rounded-2xl">
-                                <div className="flex-1 space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-black uppercase">
+                            <div className="flex gap-2 p-2 bg-white/5 border border-white/10 rounded-xl">
+                                <div className="flex-1 space-y-0.5">
+                                    <label className="text-[9px] text-gray-400 font-black uppercase block">
                                         {tradingMode === 'spot' && strategyMode === 'short' ? 'Buy Order (TP)' : 'Buy Order Type'}
                                     </label>
                                     <select
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-brand-primary text-sm font-bold truncate"
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-white outline-none focus:border-brand-primary text-xs font-bold truncate"
                                         value={form.buyOrderType}
                                         onChange={(e) => handleFormChange('buyOrderType', e.target.value)}
                                     >
@@ -1690,45 +1701,45 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                     </select>
                                 </div>
                                 {(form.buyOrderType === 'marketable_limit' || form.sellOrderType === 'marketable_limit') && (
-                                    <div className="w-1/4 space-y-1 animate-fadeIn">
-                                        <label className="text-[10px] text-orange-400 font-black uppercase">Buffer %</label>
+                                    <div className="w-[72px] space-y-0.5 animate-fadeIn">
+                                        <label className="text-[9px] text-orange-400 font-black uppercase block">Buffer %</label>
                                         <input
                                             type="number"
                                             step="0.01"
-                                            className="w-full bg-orange-500/10 border border-orange-500/30 rounded-xl p-2.5 text-orange-400 outline-none text-center font-mono font-bold"
+                                            className="w-full bg-orange-500/10 border border-orange-500/30 rounded-lg px-1.5 py-1.5 text-orange-400 outline-none text-center font-mono font-bold text-xs"
                                             value={form.limitBuffer}
                                             onChange={(e) => handleFormChange('limitBuffer', parseFloat(e.target.value))}
                                         />
                                     </div>
                                 )}
-                                <div className="w-1/4 space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-black uppercase" title="Max wait time before cancelling an unfilled LIMIT entry order.">
+                                <div className="w-[76px] space-y-0.5">
+                                    <label className="text-[9px] text-gray-400 font-black uppercase block truncate" title="Max wait time before cancelling an unfilled LIMIT entry order.">
                                         Timeout (s)
                                     </label>
                                     <input
                                         type="number"
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-brand-primary font-mono font-bold text-center"
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-1.5 py-1.5 text-white outline-none focus:border-brand-primary font-mono font-bold text-center text-xs"
                                         value={form.entryOrderTimeout}
                                         onChange={(e) => handleFormChange('entryOrderTimeout', parseFloat(e.target.value) || 0)}
                                     />
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className={`p-2 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${form.isPaper ? 'bg-green-500/10 border-green-500' : 'bg-white/5 border-white/10'}`} onClick={() => setForm({ ...form, isPaper: true })}>
-                                    <p className="text-xs font-bold text-white">Paper Trading <span className="text-[10px] text-green-500 ml-1">(SIM)</span></p>
-                                    {form.isPaper && <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>}
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className={`px-2.5 py-1.5 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${form.isPaper ? 'bg-green-500/10 border-green-500' : 'bg-white/5 border-white/10'}`} onClick={() => setForm({ ...form, isPaper: true })}>
+                                    <p className="text-[11px] font-bold text-white">Paper Trading <span className="text-[9px] text-green-500 ml-0.5">(SIM)</span></p>
+                                    {form.isPaper && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>}
                                 </div>
-                                <div className={`p-2 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${!form.isPaper ? 'bg-red-500/10 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-white/5 border-white/10'}`} onClick={() => setForm({ ...form, isPaper: false })}>
-                                    <p className="text-xs font-bold text-white">Live Market <span className="text-[10px] text-red-500 ml-1">(REAL)</span></p>
-                                    {!form.isPaper && <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>}
+                                <div className={`px-2.5 py-1.5 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${!form.isPaper ? 'bg-red-500/10 border-red-500 shadow-[0_0_12px_rgba(239,68,68,0.3)]' : 'bg-white/5 border-white/10'}`} onClick={() => setForm({ ...form, isPaper: false })}>
+                                    <p className="text-[11px] font-bold text-white">Live Market <span className="text-[9px] text-red-500 ml-0.5">(REAL)</span></p>
+                                    {!form.isPaper && <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>}
                                 </div>
                             </div>
 
                             {!form.isPaper && (
                                 <div className="flex flex-col">
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase mb-1">Select API Config</label>
-                                    <select className="w-full bg-yellow-500/10 border border-yellow-500/20 p-2.5 rounded-xl text-white outline-none text-sm" value={form.apiKeyId} onChange={(e) => setForm({ ...form, apiKeyId: e.target.value })}>
+                                    <label className="text-[9px] text-gray-500 font-bold uppercase mb-0.5">Select API Config</label>
+                                    <select className="w-full bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-1.5 rounded-lg text-white outline-none text-xs" value={form.apiKeyId} onChange={(e) => setForm({ ...form, apiKeyId: e.target.value })}>
                                         <option className="bg-[#000000] text-white" value="">-- Choose Saved Key --</option>
                                         {savedKeys.filter(k => k.exchange === form.exchange).map(k => (
                                             <option className="bg-[#000000] text-white" key={k.id} value={k.id}>{k.name}</option>
@@ -1739,27 +1750,27 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
                             {/* --- FUTURES SPECIFIC SETTINGS IN BASIC TAB --- */}
                             {tradingMode === 'futures' && (
-                                <div className="animate-fadeIn bg-orange-500/5 border border-orange-500/20 p-4 rounded-xl space-y-4">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <h3 className="text-xs font-black text-orange-400 uppercase tracking-wider flex items-center gap-2">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                <div className="animate-fadeIn bg-orange-500/5 border border-orange-500/20 p-2.5 rounded-xl space-y-2.5">
+                                    <div className="flex justify-between items-center">
+                                        <h3 className="text-[10.5px] font-black text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                                             Futures Configuration
                                         </h3>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] text-gray-400 font-bold uppercase">Margin Mode</label>
-                                            <div className="flex bg-black/40 rounded-lg p-1 border border-white/10">
-                                                <button onClick={() => handleFormChange('marginMode', 'cross')} className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded ${form.marginMode === 'cross' ? 'bg-orange-500 text-white' : 'text-gray-500'}`}>Cross</button>
-                                                <button onClick={() => handleFormChange('marginMode', 'isolated')} className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded ${form.marginMode === 'isolated' ? 'bg-orange-500 text-white' : 'text-gray-500'}`}>Isolated</button>
+                                    <div className="grid grid-cols-2 gap-2.5">
+                                        <div className="space-y-0.5">
+                                            <label className="text-[9px] text-gray-400 font-bold uppercase block">Margin Mode</label>
+                                            <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/10">
+                                                <button onClick={() => handleFormChange('marginMode', 'cross')} className={`flex-1 py-1 text-[9.5px] font-bold uppercase rounded ${form.marginMode === 'cross' ? 'bg-orange-500 text-white' : 'text-gray-500'}`}>Cross</button>
+                                                <button onClick={() => handleFormChange('marginMode', 'isolated')} className={`flex-1 py-1 text-[9.5px] font-bold uppercase rounded ${form.marginMode === 'isolated' ? 'bg-orange-500 text-white' : 'text-gray-500'}`}>Isolated</button>
                                             </div>
                                         </div>
                                         {form.selectedStrategy !== 'cascading_bb' && (
-                                            <div className="space-y-1">
-                                                <label className="text-[10px] text-gray-400 font-bold uppercase">Position Direction</label>
+                                            <div className="space-y-0.5">
+                                                <label className="text-[9px] text-gray-400 font-bold uppercase block">Position Direction</label>
                                                 <select
-                                                    className="w-full bg-black/40 border border-white/10 p-2.5 rounded-lg text-white outline-none text-sm"
+                                                    className="w-full bg-black/40 border border-white/10 px-2 py-1.5 rounded-lg text-white outline-none text-xs"
                                                     value={form.positionDirection}
                                                     onChange={(e) => {
                                                         const val = e.target.value;
@@ -1776,12 +1787,12 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                     </div>
 
                                     {form.selectedStrategy !== 'cascading_bb' && form.positionDirection === 'auto' && (
-                                        <div className="animate-fadeIn bg-black/40 border border-orange-500/30 p-3 rounded-xl">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <label className="text-[10px] font-bold text-orange-400 uppercase tracking-tighter">Heatmap Imbalance Ratio</label>
-                                                <span className="text-xs font-mono font-bold text-white">{form.obImbalanceRatio}x</span>
+                                        <div className="animate-fadeIn bg-black/40 border border-orange-500/30 p-2 rounded-lg">
+                                            <div className="flex justify-between items-center mb-0.5">
+                                                <label className="text-[9px] font-bold text-orange-400 uppercase tracking-tighter">Heatmap Imbalance Ratio</label>
+                                                <span className="text-[11px] font-mono font-bold text-white">{form.obImbalanceRatio}x</span>
                                             </div>
-                                            <div className="flex gap-3 items-center">
+                                            <div className="flex gap-2 items-center">
                                                 <input
                                                     type="range"
                                                     min="1.1"
@@ -1794,23 +1805,23 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 <input
                                                     type="number"
                                                     step="0.1"
-                                                    className="w-16 bg-black/40 border border-white/10 rounded-lg p-1 text-white text-center font-mono text-xs"
+                                                    className="w-14 bg-black/40 border border-white/10 rounded-md p-1 text-white text-center font-mono text-[11px]"
                                                     value={form.obImbalanceRatio}
                                                     onChange={(e) => handleFormChange('obImbalanceRatio', parseFloat(e.target.value))}
                                                 />
                                             </div>
-                                            <p className="text-[9px] text-gray-500 mt-1 italic">Bot will only enter if one side has {form.obImbalanceRatio}x more volume than the other.</p>
+                                            <p className="text-[8.5px] text-gray-500 mt-0.5 italic">Bot will only enter if one side has {form.obImbalanceRatio}x more volume than the other.</p>
                                         </div>
                                     )}
 
                                     <div>
-                                        <div className="flex justify-between items-end mb-1">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase">Leverage (Max 125x)</label>
-                                            <span className={`text-xs font-mono font-bold ${form.leverage > 20 ? 'text-red-500' : 'text-orange-400'}`}>{form.leverage}x</span>
+                                        <div className="flex justify-between items-end mb-0.5">
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase">Leverage (Max 125x)</label>
+                                            <span className={`text-[11px] font-mono font-bold ${form.leverage > 20 ? 'text-red-500' : 'text-orange-400'}`}>{form.leverage}x</span>
                                         </div>
-                                        <div className="flex gap-3 items-center">
-                                            <input type="range" min="1" max="125" step="1" className={`flex-1 h-2 rounded-lg appearance-none cursor-pointer ${form.leverage > 20 ? 'accent-red-500' : 'accent-orange-500'} bg-white/10`} value={form.leverage} onChange={(e) => handleFormChange('leverage', parseInt(e.target.value))} />
-                                            <input type="number" min="1" max="125" className="w-20 bg-black/40 border border-white/10 rounded-xl p-1.5 text-white outline-none focus:border-orange-500 text-center font-mono text-sm" value={form.leverage} onChange={(e) => handleFormChange('leverage', parseInt(e.target.value))} />
+                                        <div className="flex gap-2 items-center">
+                                            <input type="range" min="1" max="125" step="1" className={`flex-1 h-1.5 rounded-lg appearance-none cursor-pointer ${form.leverage > 20 ? 'accent-red-500' : 'accent-orange-500'} bg-white/10`} value={form.leverage} onChange={(e) => handleFormChange('leverage', parseInt(e.target.value))} />
+                                            <input type="number" min="1" max="125" className="w-16 bg-black/40 border border-white/10 rounded-lg p-1 text-white outline-none focus:border-orange-500 text-center font-mono text-xs" value={form.leverage} onChange={(e) => handleFormChange('leverage', parseInt(e.target.value))} />
                                         </div>
                                     </div>
                                 </div>
@@ -1818,25 +1829,25 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
                             <div className={form.mlExecutionMode === 'advanced' ? 'opacity-30 pointer-events-none select-none relative grayscale transition-all' : ''}>
                                 <div>
-                                    <div className="flex justify-between items-end mb-1">
-                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Target Spread Profit</label>
-                                        <span className="text-xs font-mono font-bold text-brand-primary">{form.spread.toString().includes('e') ? form.spread.toFixed(12).replace(/\.?0+$/, '') : form.spread}</span>
+                                    <div className="flex justify-between items-end mb-0.5">
+                                        <label className="text-[9px] font-bold text-gray-500 uppercase">Target Spread Profit</label>
+                                        <span className="text-[11px] font-mono font-bold text-brand-primary">{form.spread.toString().includes('e') ? form.spread.toFixed(12).replace(/\.?0+$/, '') : form.spread}</span>
                                     </div>
-                                    <div className="flex gap-3 items-center">
-                                        <input type="range" min="0" max={dynamicMax} step={dynamicStep} className="flex-1 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-primary" value={form.spread} onChange={(e) => setForm({ ...form, spread: parseFloat(e.target.value) || 0 })} />
-                                        <input type="number" min="0" step={dynamicStep} className="w-24 bg-black/40 border border-white/10 rounded-xl p-1.5 text-white outline-none focus:border-brand-primary text-center font-mono text-sm" value={form.spread.toString().includes('e') ? form.spread.toFixed(12).replace(/\.?0+$/, '') : form.spread} onChange={(e) => setForm({ ...form, spread: e.target.value === '' ? 0 : parseFloat(e.target.value) })} />
+                                    <div className="flex gap-2 items-center">
+                                        <input type="range" min="0" max={dynamicMax} step={dynamicStep} className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-primary" value={form.spread} onChange={(e) => setForm({ ...form, spread: parseFloat(e.target.value) || 0 })} />
+                                        <input type="number" min="0" step={dynamicStep} className="w-20 bg-black/40 border border-white/10 rounded-lg p-1 text-white outline-none focus:border-brand-primary text-center font-mono text-xs" value={form.spread.toString().includes('e') ? form.spread.toFixed(12).replace(/\.?0+$/, '') : form.spread} onChange={(e) => setForm({ ...form, spread: e.target.value === '' ? 0 : parseFloat(e.target.value) })} />
                                     </div>
                                 </div>
                             </div>
                             {tradingMode === 'spot' && strategyMode === 'auto' ? (
-                                <div className="flex gap-4">
-                                    <div className="flex-1">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="min-w-0">
                                         <InputField label={`Margin Allocation (${form.symbol ? form.symbol.split('/')[1] || 'USDT' : 'USDT'})`} value={form.amount} onChange={(v: number) => setForm({ ...form, amount: v })} step={10} />
                                     </div>
-                                    <div className="flex-1 relative group">
+                                    <div className="min-w-0">
                                         <InputField label={`Margin Allocation (${form.symbol ? form.symbol.split('/')[0] : 'Base'})`} value={form.amount_base} onChange={(v: any) => setForm({ ...form, amount_base: v === '' ? '' : String(v) })} step={1} />
                                         {!form.amount_base && (
-                                            <div className="absolute top-0 right-0 -mt-2 -mr-2 text-[8px] text-gray-500 italic bg-black/60 px-1.5 py-0.5 rounded">
+                                            <div className="mt-0.5 text-[7.5px] text-gray-500 italic text-right">
                                                 Auto Calculate
                                             </div>
                                         )}
@@ -1848,14 +1859,14 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
                             {/* --- NATIVE TOKEN FEE TOGGLE --- */}
                             {(form.exchange === 'binance' || form.exchange === 'mexc' || form.exchange === 'kucoin') && (
-                                <div className="flex items-center gap-2 mt-4 px-1">
+                                <div className="flex items-center gap-2 pt-0.5 px-0.5">
                                     <button
                                         onClick={() => setUseNativeTokenFee(!useNativeTokenFee)}
-                                        className={`w-4 h-4 flex-shrink-0 rounded border flex items-center justify-center transition-colors ${useNativeTokenFee ? 'bg-brand-primary border-brand-primary' : 'border-gray-500'}`}
+                                        className={`w-3.5 h-3.5 flex-shrink-0 rounded border flex items-center justify-center transition-colors ${useNativeTokenFee ? 'bg-brand-primary border-brand-primary' : 'border-gray-500'}`}
                                     >
-                                        {useNativeTokenFee && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
+                                        {useNativeTokenFee && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
                                     </button>
-                                    <span className="text-xs font-bold text-gray-400 cursor-pointer select-none" onClick={() => setUseNativeTokenFee(!useNativeTokenFee)}>
+                                    <span className="text-[11px] font-bold text-gray-400 cursor-pointer select-none" onClick={() => setUseNativeTokenFee(!useNativeTokenFee)}>
                                         Pay fees in {form.exchange === 'binance' ? 'BNB (25% Discount)' : form.exchange === 'mexc' ? 'MX (20% Discount)' : 'KCS (20% Discount)'}
                                     </span>
                                 </div>
@@ -1863,41 +1874,41 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
                             {/* --- ESTIMATED PROFIT ANALYSIS --- */}
                             {form.mlExecutionMode !== 'advanced' ? (
-                                <div className="mt-4 bg-[#000000] p-4 rounded-xl border border-brand-primary/20 shadow-[0_0_15px_rgba(59,130,246,0.05)]">
-                                    <h4 className="text-[10px] font-black uppercase text-gray-500 mb-3 flex items-center gap-2">
+                                <div className="bg-[#000000] p-2.5 rounded-lg border border-brand-primary/20 shadow-[0_0_12px_rgba(59,130,246,0.05)]">
+                                    <h4 className="text-[9px] font-black uppercase text-gray-500 mb-1.5 flex items-center gap-1.5">
                                         <svg className="w-3 h-3 text-brand-primary" fill="currentColor" viewBox="0 0 20 20"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" /></svg>
                                         Estimated Profit Analysis
                                     </h4>
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between items-center text-xs">
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between items-center text-[11px]">
                                             <span className="text-gray-400">Trade Value {isFutures && '(Leveraged)'}</span>
                                             <span className="font-mono text-gray-300">{currencyPrefix}{tradeValue.toFixed(isShortMode ? Math.max(2, displayDigits - 2) : 2)}{currencySuffix}</span>
                                         </div>
-                                        <div className="flex justify-between items-center text-xs">
+                                        <div className="flex justify-between items-center text-[11px]">
                                             <span className="text-gray-400">Gross Profit ({(spreadPct * 100).toFixed(2)}%)</span>
                                             <span className="font-mono text-green-400">+{currencyPrefix}{grossProfitUSD.toFixed(isShortMode ? Math.max(2, displayDigits) : 2)}{currencySuffix}</span>
                                         </div>
-                                        <div className="flex justify-between items-center text-xs">
+                                        <div className="flex justify-between items-center text-[11px]">
                                             <span className="text-gray-400">
                                                 Estimated Fees ({(feeRate * 100).toFixed(3)}%)
-                                                {liveFeeRate !== null && <span className="ml-1 text-[9px] text-green-400 border border-green-500/30 bg-green-500/10 px-1 py-0.5 rounded cursor-help" title="Live VIP/Account fee fetched directly from exchange.">API TIER</span>}
+                                                {liveFeeRate !== null && <span className="ml-1 text-[8px] text-green-400 border border-green-500/30 bg-green-500/10 px-1 py-0.2 rounded cursor-help" title="Live VIP/Account fee fetched directly from exchange.">API TIER</span>}
                                             </span>
                                             <span className="font-mono text-red-400">-{currencyPrefix}{feeUSD.toFixed(isShortMode ? Math.max(3, displayDigits + 1) : 3)}{currencySuffix}</span>
                                         </div>
-                                        <div className="pt-2 border-t border-white/5 flex justify-between items-center">
-                                            <span className="text-sm font-bold text-gray-300">Net Profit</span>
-                                            <span className={`text-sm font-mono font-bold ${netProfitUSD > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                        <div className="pt-1 border-t border-white/5 flex justify-between items-center">
+                                            <span className="text-xs font-bold text-gray-300">Net Profit</span>
+                                            <span className={`text-xs font-mono font-bold ${netProfitUSD > 0 ? 'text-green-500' : 'text-red-500'}`}>
                                                 {netProfitUSD > 0 ? '+' : ''}{currencyPrefix}{netProfitUSD.toFixed(isShortMode ? Math.max(2, displayDigits) : 2)}{currencySuffix} ({netProfitPct > 0 ? '+' : ''}{netProfitPct.toFixed(2)}%)
                                             </span>
                                         </div>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="mt-4 bg-purple-500/5 p-4 rounded-xl border border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.05)]">
-                                    <h4 className="text-[10px] font-black uppercase text-purple-400 mb-2 flex items-center gap-2">
-                                        <div className="text-sm animate-pulse">🤖</div> AI Managed Trade
+                                <div className="bg-purple-500/5 p-2.5 rounded-lg border border-purple-500/20 shadow-[0_0_12px_rgba(168,85,247,0.05)]">
+                                    <h4 className="text-[9.5px] font-black uppercase text-purple-400 mb-1 flex items-center gap-1.5">
+                                        <div className="text-xs animate-pulse">🤖</div> AI Managed Trade
                                     </h4>
-                                    <p className="text-xs text-gray-400 leading-relaxed">
+                                    <p className="text-[11px] text-gray-400 leading-snug">
                                         Fixed profit projection is hidden because the ML model will dynamically enforce TP/SL exits based on real-time order flow and structural volatility.
                                     </p>
                                 </div>
@@ -1906,14 +1917,14 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     )}
 
                     {activeTab === 'triggers' && (
-                        <div className="animate-fadeIn space-y-4">
+                        <div className="animate-fadeIn space-y-2">
                             {/* --- NEW: TRADING SESSION FILTER --- */}
-                            <div className="bg-black/20 p-4 rounded-xl border border-white/10 space-y-3 relative overflow-hidden">
-                                <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 rounded-l-xl"></div>
-                                <div className="flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2">
+                            <div className="bg-black/20 p-2.5 rounded-lg border border-white/10 space-y-1.5 relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-0.5 h-full bg-blue-500 rounded-l-lg"></div>
+                                <div className="flex justify-between items-center text-[9px] font-bold text-gray-400 uppercase tracking-widest pl-1.5">
                                     <span>Trading Session (UTC)</span>
                                 </div>
-                                <div className="pl-2 space-y-2">
+                                <div className="pl-1.5 space-y-1">
                                     {[
                                         { id: 'None', label: '24/7 (Ignore Sessions)' },
                                         { id: 'Sydney', label: '🇦🇺 Sydney (22:00 - 07:00 UTC)' },
@@ -1943,13 +1954,13 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     handleFormChange('tradingSessions', updated);
                                                 }}
                                             />
-                                            <label htmlFor={`session_${session.id}`} className="text-xs text-gray-300 font-semibold cursor-pointer select-none">
+                                            <label htmlFor={`session_${session.id}`} className="text-[11px] text-gray-300 font-semibold cursor-pointer select-none">
                                                 {session.label}
                                             </label>
                                         </div>
                                     ))}
 
-                                    <div className="flex items-center space-x-2 pt-1">
+                                    <div className="flex items-center space-x-2 pt-0.5">
                                         <input
                                             type="checkbox"
                                             id="session_custom"
@@ -1966,16 +1977,16 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 handleFormChange('tradingSessions', updated);
                                             }}
                                         />
-                                        <label htmlFor="session_custom" className="text-xs text-gray-300 font-semibold cursor-pointer select-none">
+                                        <label htmlFor="session_custom" className="text-[11px] text-gray-300 font-semibold cursor-pointer select-none">
                                             Custom Time (UTC)
                                         </label>
                                     </div>
 
                                     {form.tradingSessions.some(s => s.startsWith('Custom|')) && (
-                                        <div className="pl-5 pt-1">
+                                        <div className="pl-5 pt-0.5">
                                             <input
                                                 type="text"
-                                                className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white outline-none focus:border-brand-primary text-xs font-mono"
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-brand-primary text-[11px] font-mono"
                                                 placeholder="e.g. 14:30-16:00"
                                                 value={form.tradingSessions.find(s => s.startsWith('Custom|'))?.split('|')[1] || ''}
                                                 onChange={(e) => {
@@ -1985,99 +1996,100 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     handleFormChange('tradingSessions', updated);
                                                 }}
                                             />
-                                            <p className="text-[9px] text-gray-500 mt-1">Format: HH:MM-HH:MM (24-hour UTC time)</p>
+                                            <p className="text-[8px] text-gray-500 mt-0.5">Format: HH:MM-HH:MM (24-hour UTC time)</p>
                                         </div>
                                     )}
                                 </div>
-                                <p className="text-[8px] text-gray-500 italic mt-1 leading-tight pl-2">If any selected session is active, the bot takes entries. If all end, the bot will auto-shutdown and send a Telegram alert.</p>
+                                <p className="text-[8px] text-gray-500 italic mt-0.5 leading-tight pl-1.5">If any selected session is active, the bot takes entries. If all end, the bot will auto-shutdown and send a Telegram alert.</p>
                             </div>
 
                             {/* Triggers remain untouched */}
-                            <p className="text-[10px] text-gray-400 mb-2 uppercase tracking-wider">Select the conditions that will trigger an entry order.</p>
+                            <p className="text-[9px] text-gray-400 uppercase tracking-wider">Select the conditions that will trigger an entry order.</p>
 
-                            <div className={`border rounded-xl p-4 transition-colors cursor-pointer ${form.enableWallTrigger ? 'bg-white/5 border-brand-primary/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableWallTrigger', !form.enableWallTrigger)}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 flex items-center ${form.enableWallTrigger ? 'bg-brand-primary' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableWallTrigger ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                            <div className={`border rounded-lg p-2.5 transition-colors cursor-pointer ${form.enableWallTrigger ? 'bg-white/5 border-brand-primary/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableWallTrigger', !form.enableWallTrigger)}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${form.enableWallTrigger ? 'bg-brand-primary' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableWallTrigger ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <span className="text-sm font-black text-white uppercase tracking-wider">Orderbook Wall</span>
+                                        <span className="text-xs font-black text-white uppercase tracking-wider">Orderbook Wall</span>
                                     </div>
                                 </div>
                                 {form.enableWallTrigger && (
-                                    <div className="mt-3 pl-1 space-y-4" onClick={e => e.stopPropagation()}>
+                                    <div className="mt-2.5 pl-0.5 space-y-2.5" onClick={e => e.stopPropagation()}>
                                         <div>
                                             <div className="flex justify-between items-end mb-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase">Volume Wall Threshold</label>
-                                                <span className="text-xs font-mono font-bold text-brand-primary">{form.vol.toLocaleString()}</span>
+                                                <label className="text-[9px] font-bold text-gray-400 uppercase">Volume Wall Threshold</label>
+                                                <span className="text-[11px] font-mono font-bold text-brand-primary">{form.vol.toLocaleString()}</span>
                                             </div>
-                                            <div className="flex gap-3 items-center">
-                                                <input type="range" min="0" max="10000000" step="1000" className="flex-1 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-primary" value={form.vol} onChange={(e) => setForm({ ...form, vol: parseFloat(e.target.value) || 0 })} />
-                                                <input type="number" min="0" className="w-28 bg-black/40 border border-white/10 rounded-xl p-1.5 text-white outline-none focus:border-brand-primary text-center font-mono text-sm" value={form.vol} onChange={(e) => setForm({ ...form, vol: parseFloat(e.target.value) || 0 })} />
+                                            <div className="flex gap-2 items-center">
+                                                <input type="range" min="0" max="10000000" step="1000" className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-primary" value={form.vol} onChange={(e) => setForm({ ...form, vol: parseFloat(e.target.value) || 0 })} />
+                                                <input type="number" min="0" className="w-24 bg-black/40 border border-white/10 rounded-lg p-1 text-white outline-none focus:border-brand-primary text-center font-mono text-xs" value={form.vol} onChange={(e) => setForm({ ...form, vol: parseFloat(e.target.value) || 0 })} />
                                             </div>
                                         </div>
-                                        <div className="bg-black/20 p-3 rounded-lg border border-white/5">
+                                        <div className="bg-black/20 p-2 rounded-lg border border-white/5">
                                             <div className="flex justify-between items-end mb-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase">Max Wall Distance (%)</label>
-                                                <span className="text-xs font-mono font-bold text-brand-primary">{form.maxWallDistancePct}%</span>
+                                                <label className="text-[9px] font-bold text-gray-400 uppercase">Max Wall Distance (%)</label>
+                                                <span className="text-[11px] font-mono font-bold text-brand-primary">{form.maxWallDistancePct}%</span>
                                             </div>
-                                            <div className="flex gap-3 items-center">
-                                                <input type="range" min="0.1" max="10.0" step="0.1" className="flex-1 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-primary" value={form.maxWallDistancePct} onChange={(e) => setForm({ ...form, maxWallDistancePct: parseFloat(e.target.value) })} />
-                                                <input type="number" min="0.1" max="100" step="0.1" className="w-20 bg-black/40 border border-white/10 rounded-xl p-1.5 text-white outline-none focus:border-brand-primary text-center font-mono text-sm" value={form.maxWallDistancePct} onChange={(e) => setForm({ ...form, maxWallDistancePct: parseFloat(e.target.value) })} />
+                                            <div className="flex gap-2 items-center">
+                                                <input type="range" min="0.1" max="10.0" step="0.1" className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-primary" value={form.maxWallDistancePct} onChange={(e) => setForm({ ...form, maxWallDistancePct: parseFloat(e.target.value) })} />
+                                                <input type="number" min="0.1" max="100" step="0.1" className="w-16 bg-black/40 border border-white/10 rounded-lg p-1 text-white outline-none focus:border-brand-primary text-center font-mono text-xs" value={form.maxWallDistancePct} onChange={(e) => setForm({ ...form, maxWallDistancePct: parseFloat(e.target.value) })} />
                                             </div>
                                         </div>
 
                                         {/* --- NEW: PROXY ORDERBOOK ROUTING --- */}
-                                        <div className={`mt-3 p-3 rounded-lg border transition-all ${form.enableProxyWall ? 'bg-indigo-500/10 border-indigo-500/50' : 'bg-black/20 border-white/5'}`}>
+                                        <div className={`p-2 rounded-lg border transition-all ${form.enableProxyWall ? 'bg-indigo-500/10 border-indigo-500/50' : 'bg-black/20 border-white/5'}`}>
                                             <div className="flex items-center justify-between cursor-pointer" onClick={() => handleFormChange('enableProxyWall', !form.enableProxyWall)}>
                                                 <div className="flex items-center gap-2">
-                                                    <div className={`w-10 h-5 rounded-full p-1 transition-colors flex items-center ${form.enableProxyWall ? 'bg-indigo-500' : 'bg-gray-700'}`}>
-                                                        <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableProxyWall ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${form.enableProxyWall ? 'bg-indigo-500' : 'bg-gray-700'}`}>
+                                                        <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableProxyWall ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                     </div>
-                                                    <span className="text-[11px] font-black text-white uppercase tracking-wider flex items-center gap-1">
+                                                    <span className="text-[10px] font-black text-white uppercase tracking-wider flex items-center gap-1">
                                                         Proxy Orderbook Routing (Lead-Lag)
                                                     </span>
                                                 </div>
                                             </div>
                                             {form.enableProxyWall && (
-                                                <div className="mt-3 space-y-3 animate-fadeIn">
-                                                    <div className="space-y-2">
+                                                <div className="mt-2 space-y-2 animate-fadeIn">
+                                                    <div className="space-y-1.5">
                                                         <div className="flex flex-col gap-1 z-[100] relative">
                                                             <HeatmapSymbolSelector
+                                                                compact
                                                                 exchange={form.proxyExchange}
                                                                 symbol={form.proxySymbol || (form.symbol ? form.symbol.split('/')[0] + '/USDT' : 'BTC/USDT')}
                                                                 onExchangeChange={(ex) => handleFormChange('proxyExchange', ex)}
                                                                 onSymbolChange={(sym) => handleFormChange('proxySymbol', sym)}
                                                             />
                                                         </div>
-                                                        <p className="text-[8px] text-gray-500 mt-1 italic leading-tight">Detects massive walls on the Proxy Market ({form.proxyExchange}) but executes trades on the Native Asset {form.symbol} ({form.exchange}). Multi-exchange tracking enables institutional arbitrage setups.</p>
+                                                        <p className="text-[8px] text-gray-500 italic leading-tight">Detects massive walls on the Proxy Market ({form.proxyExchange}) but executes trades on the Native Asset {form.symbol} ({form.exchange}). Multi-exchange tracking enables institutional arbitrage setups.</p>
                                                     </div>
                                                 </div>
                                             )}
                                         </div>
 
                                         {/* --- NEW: OIB FILTER INTEGRATION --- */}
-                                        <div className={`mt-3 p-3 rounded-lg border transition-all ${form.enableOibFilter ? 'bg-amber-500/10 border-amber-500/50' : 'bg-black/20 border-white/5'}`}>
+                                        <div className={`p-2 rounded-lg border transition-all ${form.enableOibFilter ? 'bg-amber-500/10 border-amber-500/50' : 'bg-black/20 border-white/5'}`}>
                                             <div className="flex items-center justify-between cursor-pointer" onClick={() => handleFormChange('enableOibFilter', !form.enableOibFilter)}>
                                                 <div className="flex items-center gap-2">
-                                                    <div className={`w-10 h-5 rounded-full p-1 transition-colors flex items-center ${form.enableOibFilter ? 'bg-amber-500' : 'bg-gray-700'}`}>
-                                                        <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableOibFilter ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${form.enableOibFilter ? 'bg-amber-500' : 'bg-gray-700'}`}>
+                                                        <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableOibFilter ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                     </div>
-                                                    <span className="text-[11px] font-black text-white uppercase tracking-wider flex items-center gap-1">
+                                                    <span className="text-[10px] font-black text-white uppercase tracking-wider flex items-center gap-1">
                                                         Orderbook Imbalance (OIB) Filter
                                                     </span>
                                                 </div>
                                             </div>
                                             {form.enableOibFilter && (
-                                                <div className="mt-3 space-y-3 animate-fadeIn">
+                                                <div className="mt-2 space-y-2 animate-fadeIn">
                                                     <div>
                                                         <div className="flex justify-between items-end mb-1">
                                                             <label className="text-[9px] font-bold text-gray-400 uppercase">Min L2 Dominance</label>
-                                                            <span className="text-xs font-mono font-bold text-amber-400">{Math.round(form.minOibThreshold * 100)}%</span>
+                                                            <span className="text-[11px] font-mono font-bold text-amber-400">{Math.round(form.minOibThreshold * 100)}%</span>
                                                         </div>
-                                                        <div className="flex gap-3 items-center">
+                                                        <div className="flex gap-2 items-center">
                                                             <input type="range" min="0.5" max="0.95" step="0.05" className="flex-1 h-1.5 accent-amber-500 bg-white/10 rounded-lg appearance-none cursor-pointer" value={form.minOibThreshold} onChange={(e) => handleFormChange('minOibThreshold', parseFloat(e.target.value) || 0)} />
-                                                            <input type="number" min="0.5" max="0.95" step="0.01" className="w-20 bg-black/40 border border-white/10 rounded-xl p-1.5 text-white outline-none focus:border-amber-500 text-center font-mono text-sm" value={form.minOibThreshold} onChange={(e) => handleFormChange('minOibThreshold', parseFloat(e.target.value) || 0)} />
+                                                            <input type="number" min="0.5" max="0.95" step="0.01" className="w-16 bg-black/40 border border-white/10 rounded-lg p-1 text-white outline-none focus:border-amber-500 text-center font-mono text-xs" value={form.minOibThreshold} onChange={(e) => handleFormChange('minOibThreshold', parseFloat(e.target.value) || 0)} />
                                                         </div>
                                                         <p className="text-[8px] text-gray-500 mt-1 italic leading-tight">Blocks "Trap" entries. Validates if your entry direction controls at least {Math.round(form.minOibThreshold * 100)}% of the Top 10 Limit Order volumes compared to the opposing side.</p>
                                                     </div>
@@ -2086,17 +2098,17 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                         </div>
 
                                         {/* CVD ABSORPTION CONFIRMATION */}
-                                        <div className={`mt-3 p-3 rounded-lg border transition-all ${form.enableAbsorption ? 'bg-cyan-500/10 border-cyan-500/50' : 'bg-black/20 border-white/5'}`}>
+                                        <div className={`p-2 rounded-lg border transition-all ${form.enableAbsorption ? 'bg-cyan-500/10 border-cyan-500/50' : 'bg-black/20 border-white/5'}`}>
                                             <div className="flex items-center justify-between cursor-pointer" onClick={() => handleFormChange('enableAbsorption', !form.enableAbsorption)}>
                                                 <div className="flex items-center gap-2">
-                                                    <div className={`w-10 h-5 rounded-full p-1 transition-colors flex items-center ${form.enableAbsorption ? 'bg-cyan-500' : 'bg-gray-700'}`}>
-                                                        <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableAbsorption ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${form.enableAbsorption ? 'bg-cyan-500' : 'bg-gray-700'}`}>
+                                                        <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableAbsorption ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                     </div>
-                                                    <span className="text-[11px] font-black text-white uppercase tracking-wider flex items-center gap-1">
+                                                    <span className="text-[10px] font-black text-white uppercase tracking-wider flex items-center gap-1">
                                                         CVD Absorption Meta-Confirmation
                                                         <div className="group relative">
                                                             <svg className="w-3 h-3 text-gray-400 cursor-help" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>
-                                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-black border border-white/10 rounded-lg text-[9px] text-gray-300 hidden group-hover:block z-50 shadow-xl backdrop-blur-md">
+                                                            <div className="absolute bottom-full right-0 mb-1.5 w-44 p-2 bg-black border border-white/10 rounded-lg text-[8.5px] text-gray-300 hidden group-hover:block z-50 shadow-xl backdrop-blur-md">
                                                                 Triggers ONLY if high market volume (Delta) hits the wall but fails to break it. High probability reversal signal.
                                                             </div>
                                                         </div>
@@ -2104,21 +2116,21 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 </div>
                                             </div>
                                             {form.enableAbsorption && (
-                                                <div className="mt-3 space-y-3 animate-fadeIn">
+                                                <div className="mt-2 space-y-2 animate-fadeIn">
                                                     <div>
                                                         <div className="flex justify-between items-end mb-1">
                                                             <label className="text-[9px] font-bold text-gray-400 uppercase">Min. Delta to Absorb ($)</label>
-                                                            <span className="text-xs font-mono font-bold text-cyan-400">${form.absorptionThreshold.toLocaleString()}</span>
+                                                            <span className="text-[11px] font-mono font-bold text-cyan-400">${form.absorptionThreshold.toLocaleString()}</span>
                                                         </div>
-                                                        <div className="flex gap-3 items-center">
+                                                        <div className="flex gap-2 items-center">
                                                             <input type="range" min="1000" max="1000000" step="1000" className="flex-1 h-1.5 accent-cyan-500 bg-white/10 rounded-lg appearance-none cursor-pointer" value={form.absorptionThreshold} onChange={(e) => handleFormChange('absorptionThreshold', parseFloat(e.target.value) || 0)} />
-                                                            <input type="number" min="0" className="w-28 bg-black/40 border border-white/10 rounded-xl p-1.5 text-white outline-none focus:border-cyan-500 text-center font-mono text-sm" value={form.absorptionThreshold} onChange={(e) => handleFormChange('absorptionThreshold', parseFloat(e.target.value) || 0)} />
+                                                            <input type="number" min="0" className="w-24 bg-black/40 border border-white/10 rounded-lg p-1 text-white outline-none focus:border-cyan-500 text-center font-mono text-xs" value={form.absorptionThreshold} onChange={(e) => handleFormChange('absorptionThreshold', parseFloat(e.target.value) || 0)} />
                                                         </div>
                                                     </div>
                                                     <div>
                                                         <div className="flex justify-between items-end mb-1">
                                                             <label className="text-[9px] font-bold text-gray-400 uppercase">Analysis Window (sec)</label>
-                                                            <span className="text-xs font-mono font-bold text-cyan-400">{form.absorptionWindow}s</span>
+                                                            <span className="text-[11px] font-mono font-bold text-cyan-400">{form.absorptionWindow}s</span>
                                                         </div>
                                                         <input type="range" min="1" max="60" className="w-full h-1.5 accent-cyan-500 bg-white/10 rounded-lg appearance-none cursor-pointer" value={form.absorptionWindow} onChange={(e) => handleFormChange('absorptionWindow', parseInt(e.target.value))} />
                                                     </div>
@@ -2130,23 +2142,23 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             </div>
 
                             {/* VWAP SD SNIPE TRIGGER */}
-                            <div className={`mt-3 p-3 rounded-lg border transition-all ${form.enableVWAPSDSnipe ? 'bg-pink-500/10 border-pink-500/50' : 'bg-black/20 border-white/5'}`}>
+                            <div className={`p-2.5 rounded-lg border transition-all ${form.enableVWAPSDSnipe ? 'bg-pink-500/10 border-pink-500/50' : 'bg-black/20 border-white/5'}`}>
                                 <div className="flex items-center justify-between cursor-pointer" onClick={() => handleFormChange('enableVWAPSDSnipe', !form.enableVWAPSDSnipe)}>
                                     <div className="flex items-center gap-2">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors flex items-center ${form.enableVWAPSDSnipe ? 'bg-pink-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableVWAPSDSnipe ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${form.enableVWAPSDSnipe ? 'bg-pink-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableVWAPSDSnipe ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <span className="text-[11px] font-black text-white uppercase tracking-wider flex items-center gap-1">
+                                        <span className="text-[10px] font-black text-white uppercase tracking-wider flex items-center gap-1">
                                             🎯 VWAP SD Confluence Snipe
                                         </span>
                                     </div>
                                 </div>
                                 {form.enableVWAPSDSnipe && (
-                                    <div className="mt-3 space-y-3 animate-fadeIn">
+                                    <div className="mt-2 space-y-2 animate-fadeIn">
                                         <p className="text-[8px] text-gray-400 italic">Snipes extremely oversold/overbought prices at the 3rd SD band if an orderbook wall confluence exists.</p>
                                         <div className="flex gap-2">
                                             <div className="flex-1">
-                                                <div className="flex justify-between items-end mb-1">
+                                                <div className="flex justify-between items-end mb-0.5">
                                                     <label className="text-[9px] font-bold text-gray-400 uppercase">Anchor</label>
                                                 </div>
                                                 <select className="w-full bg-black/40 border border-white/10 p-1 rounded text-white text-xs" value={form.vwapSDAnchor} onChange={(e) => handleFormChange('vwapSDAnchor', e.target.value)}>
@@ -2156,7 +2168,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 </select>
                                             </div>
                                             <div className="flex-1">
-                                                <div className="flex justify-between items-end mb-1">
+                                                <div className="flex justify-between items-end mb-0.5">
                                                     <label className="text-[9px] font-bold text-gray-400 uppercase">Multiplier</label>
                                                     <span className="text-[10px] font-mono text-pink-400">{form.vwapSDMultiplier}x</span>
                                                 </div>
@@ -2164,7 +2176,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                             </div>
                                         </div>
                                         <div>
-                                            <div className="flex justify-between items-end mb-1">
+                                            <div className="flex justify-between items-end mb-0.5">
                                                 <label className="text-[9px] font-bold text-gray-400 uppercase">Min. Confluence Wall ($)</label>
                                                 <span className="text-[10px] font-mono text-pink-400">${form.vwapSDMinWall.toLocaleString()}</span>
                                             </div>
@@ -2175,46 +2187,46 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             </div>
 
                             {/* ICEBERG / HIDDEN WALL TRIGGER */}
-                            <div className={`mt-3 p-3 rounded-lg border transition-all ${form.enableIcebergTrigger ? 'bg-purple-500/10 border-purple-500/50' : 'bg-black/20 border-white/5'}`}>
+                            <div className={`p-2.5 rounded-lg border transition-all ${form.enableIcebergTrigger ? 'bg-purple-500/10 border-purple-500/50' : 'bg-black/20 border-white/5'}`}>
                                 <div className="flex items-center justify-between cursor-pointer" onClick={() => handleFormChange('enableIcebergTrigger', !form.enableIcebergTrigger)}>
                                     <div className="flex items-center gap-2">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors flex items-center ${form.enableIcebergTrigger ? 'bg-purple-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableIcebergTrigger ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${form.enableIcebergTrigger ? 'bg-purple-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableIcebergTrigger ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <span className="text-[11px] font-black text-white uppercase tracking-wider flex items-center gap-1">
+                                        <span className="text-[10px] font-black text-white uppercase tracking-wider flex items-center gap-1">
                                             💎 Iceberg / Hidden Wall Trigger
                                             <div className="group relative">
                                                 <svg className="w-3 h-3 text-gray-400 cursor-help" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>
-                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 p-2 bg-black border border-white/10 rounded-lg text-[9px] text-gray-300 hidden group-hover:block z-50 shadow-xl backdrop-blur-md">
+                                                <div className="absolute bottom-full right-0 mb-1.5 w-44 p-2 bg-black border border-white/10 rounded-lg text-[8.5px] text-gray-300 hidden group-hover:block z-50 shadow-xl backdrop-blur-md">
                                                     Detects hidden institutional limit orders ("Reloading Walls") by correlating high trade tape volume against persistent orderbook depth. Bypasses standard volume rules for highest-priority entry.
                                                 </div>
                                             </div>
                                         </span>
                                     </div>
                                     {form.enableIcebergTrigger && (
-                                        <span className="text-[9px] font-bold text-purple-400 bg-purple-500/20 px-2 py-0.5 rounded-full">HIGH PRIORITY</span>
+                                        <span className="text-[8px] font-bold text-purple-400 bg-purple-500/20 px-1.5 py-0.5 rounded-full">HIGH PRIORITY</span>
                                     )}
                                 </div>
                                 {form.enableIcebergTrigger && (
-                                    <div className="mt-3 space-y-3 animate-fadeIn">
+                                    <div className="mt-2 space-y-2 animate-fadeIn">
                                         <div>
                                             <div className="flex justify-between items-end mb-1">
                                                 <label className="text-[9px] font-bold text-gray-400 uppercase">Min. Absorbed Volume ($)</label>
-                                                <span className="text-xs font-mono font-bold text-purple-400">${form.icebergMinAbsorbedVol.toLocaleString()}</span>
+                                                <span className="text-[11px] font-mono font-bold text-purple-400">${form.icebergMinAbsorbedVol.toLocaleString()}</span>
                                             </div>
-                                            <div className="flex gap-3 items-center">
+                                            <div className="flex gap-2 items-center">
                                                 <input type="range" min="5000" max="2000000" step="5000" className="flex-1 h-1.5 accent-purple-500 bg-white/10 rounded-lg appearance-none cursor-pointer" value={form.icebergMinAbsorbedVol} onChange={(e) => handleFormChange('icebergMinAbsorbedVol', parseFloat(e.target.value) || 0)} />
-                                                <input type="number" min="0" className="w-28 bg-black/40 border border-white/10 rounded-xl p-1.5 text-white outline-none focus:border-purple-500 text-center font-mono text-sm" value={form.icebergMinAbsorbedVol} onChange={(e) => handleFormChange('icebergMinAbsorbedVol', parseFloat(e.target.value) || 0)} />
+                                                <input type="number" min="0" className="w-24 bg-black/40 border border-white/10 rounded-lg p-1 text-white outline-none focus:border-purple-500 text-center font-mono text-xs" value={form.icebergMinAbsorbedVol} onChange={(e) => handleFormChange('icebergMinAbsorbedVol', parseFloat(e.target.value) || 0)} />
                                             </div>
-                                            <p className="text-[8px] text-gray-500 mt-1">Total trade $ that must hit a price level before confirming the hidden wall.</p>
+                                            <p className="text-[8px] text-gray-500 mt-0.5">Total trade $ that must hit a price level before confirming the hidden wall.</p>
                                         </div>
                                         <div>
                                             <div className="flex justify-between items-end mb-1">
                                                 <label className="text-[9px] font-bold text-gray-400 uppercase">Detection Window (sec)</label>
-                                                <span className="text-xs font-mono font-bold text-purple-400">{form.icebergTimeWindowSecs}s</span>
+                                                <span className="text-[11px] font-mono font-bold text-purple-400">{form.icebergTimeWindowSecs}s</span>
                                             </div>
                                             <input type="range" min="2" max="60" step="1" className="w-full h-1.5 accent-purple-500 bg-white/10 rounded-lg appearance-none cursor-pointer" value={form.icebergTimeWindowSecs} onChange={(e) => handleFormChange('icebergTimeWindowSecs', parseInt(e.target.value))} />
-                                            <p className="text-[8px] text-gray-500 mt-1">Rolling time window to accumulate and analyse trade tape data.</p>
+                                            <p className="text-[8px] text-gray-500 mt-0.5">Rolling time window to accumulate and analyse trade tape data.</p>
                                         </div>
                                     </div>
                                 )}
@@ -2227,41 +2239,41 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                 onChange={handleFormChange}
                             />
 
-                            <div className={`border rounded-xl p-4 transition-colors cursor-pointer ${form.enableLiqTrigger ? 'bg-rose-500/5 border-rose-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableLiqTrigger', !form.enableLiqTrigger)}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 flex items-center ${form.enableLiqTrigger ? 'bg-rose-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableLiqTrigger ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                            <div className={`border rounded-lg p-2.5 transition-colors cursor-pointer ${form.enableLiqTrigger ? 'bg-rose-500/5 border-rose-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableLiqTrigger', !form.enableLiqTrigger)}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${form.enableLiqTrigger ? 'bg-rose-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableLiqTrigger ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <span className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">Liquidation Sniping</span>
+                                        <span className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">Liquidation Sniping</span>
                                     </div>
                                 </div>
                                 {form.enableLiqTrigger && (
-                                    <div className="mt-3 pl-1 space-y-4" onClick={e => e.stopPropagation()}>
-                                        <div className="bg-black/20 p-3 rounded-lg border border-white/5 space-y-2">
-                                            <div className="flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase">
+                                    <div className="mt-2.5 pl-0.5 space-y-2.5" onClick={e => e.stopPropagation()}>
+                                        <div className="bg-black/20 p-2 rounded-lg border border-white/5 space-y-1.5">
+                                            <div className="flex justify-between items-center text-[9px] font-bold text-gray-400 uppercase">
                                                 <span>Target Liquidation Side</span>
                                             </div>
-                                            <div className="flex bg-black/40 rounded-lg p-1 border border-white/10">
-                                                <button onClick={() => handleFormChange('liqTargetSide', 'auto')} className={`flex-1 py-1.5 text-[9px] font-bold uppercase rounded transition-all ${form.liqTargetSide === 'auto' ? 'bg-brand-primary text-white' : 'text-gray-500 hover:text-white'}`}>Auto</button>
-                                                <button onClick={() => handleFormChange('liqTargetSide', 'long')} className={`flex-1 py-1.5 text-[9px] font-bold uppercase rounded transition-all ${form.liqTargetSide === 'long' ? 'bg-red-500 text-white' : 'text-gray-500 hover:text-white'}`}>Long (Dump)</button>
-                                                <button onClick={() => handleFormChange('liqTargetSide', 'short')} className={`flex-1 py-1.5 text-[9px] font-bold uppercase rounded transition-all ${form.liqTargetSide === 'short' ? 'bg-green-500 text-white' : 'text-gray-500 hover:text-white'}`}>Short (Pump)</button>
+                                            <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/10">
+                                                <button onClick={() => handleFormChange('liqTargetSide', 'auto')} className={`flex-1 py-1 text-[9px] font-bold uppercase rounded transition-all ${form.liqTargetSide === 'auto' ? 'bg-brand-primary text-white' : 'text-gray-500 hover:text-white'}`}>Auto</button>
+                                                <button onClick={() => handleFormChange('liqTargetSide', 'long')} className={`flex-1 py-1 text-[9px] font-bold uppercase rounded transition-all ${form.liqTargetSide === 'long' ? 'bg-red-500 text-white' : 'text-gray-500 hover:text-white'}`}>Long (Dump)</button>
+                                                <button onClick={() => handleFormChange('liqTargetSide', 'short')} className={`flex-1 py-1 text-[9px] font-bold uppercase rounded transition-all ${form.liqTargetSide === 'short' ? 'bg-green-500 text-white' : 'text-gray-500 hover:text-white'}`}>Short (Pump)</button>
                                             </div>
-                                            <p className="text-[8px] text-gray-500 italic mt-1 leading-tight">Auto: Normal mode snipes Short liqs (pumps). Accumulate Mode snipes Long liqs (dumps).</p>
+                                            <p className="text-[8px] text-gray-500 italic mt-0.5 leading-tight">Auto: Normal mode snipes Short liqs (pumps). Accumulate Mode snipes Long liqs (dumps).</p>
                                         </div>
 
                                         <div className={form.followBtcLiq ? 'opacity-30 pointer-events-none grayscale transition-all' : 'transition-all'}>
                                             <div className="flex justify-between items-end mb-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase">Local Asset Liq. Threshold ($) {form.followBtcLiq && '(Ignored)'}</label>
-                                                <span className="text-xs font-mono font-bold text-rose-500">${form.liqThreshold.toLocaleString()}</span>
+                                                <label className="text-[9px] font-bold text-gray-400 uppercase">Local Asset Liq. Threshold ($) {form.followBtcLiq && '(Ignored)'}</label>
+                                                <span className="text-[11px] font-mono font-bold text-rose-500">${form.liqThreshold.toLocaleString()}</span>
                                             </div>
-                                            <div className="flex gap-3 items-center">
+                                            <div className="flex gap-2 items-center">
                                                 <input
                                                     type="range"
                                                     min="1000"
                                                     max="1000000"
                                                     step="1000"
-                                                    className="flex-1 h-2 rounded-lg appearance-none cursor-pointer accent-rose-500 bg-white/10"
+                                                    className="flex-1 h-1.5 rounded-lg appearance-none cursor-pointer accent-rose-500 bg-white/10"
                                                     value={form.liqThreshold}
                                                     disabled={form.followBtcLiq}
                                                     onChange={(e) => setForm({ ...form, liqThreshold: parseFloat(e.target.value) || 0 })}
@@ -2269,7 +2281,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 <input
                                                     type="number"
                                                     min="0"
-                                                    className="w-28 bg-black/40 border border-white/10 rounded-xl p-1.5 text-white outline-none focus:border-rose-500 text-center font-mono text-sm"
+                                                    className="w-24 bg-black/40 border border-white/10 rounded-lg p-1 text-white outline-none focus:border-rose-500 text-center font-mono text-xs"
                                                     value={form.liqThreshold}
                                                     disabled={form.followBtcLiq}
                                                     onChange={(e) => setForm({ ...form, liqThreshold: parseFloat(e.target.value) || 0 })}
@@ -2278,33 +2290,33 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                         </div>
 
                                         {/* BTC Follower */}
-                                        <div className="bg-black/20 p-3 rounded-lg border border-white/5 space-y-3">
+                                        <div className="bg-black/20 p-2 rounded-lg border border-white/5 space-y-2">
                                             <div className="flex items-center justify-between cursor-pointer" onClick={() => handleFormChange('followBtcLiq', !form.followBtcLiq)}>
                                                 <div className="flex items-center gap-2">
-                                                    <div className={`w-10 h-5 rounded-full p-1 transition-colors flex items-center ${form.followBtcLiq ? 'bg-orange-500' : 'bg-gray-700'}`}>
-                                                        <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.followBtcLiq ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${form.followBtcLiq ? 'bg-orange-500' : 'bg-gray-700'}`}>
+                                                        <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.followBtcLiq ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                     </div>
-                                                    <span className="text-[11px] font-black text-white uppercase tracking-wider">Follow BTC Liquidation Flux</span>
+                                                    <span className="text-[10px] font-black text-white uppercase tracking-wider">Follow BTC Liquidation Flux</span>
                                                 </div>
                                             </div>
                                             {form.followBtcLiq && (
-                                                <div className="animate-fadeIn pt-1">
+                                                <div className="animate-fadeIn pt-0.5">
                                                     <div className="flex justify-between items-end mb-1">
-                                                        <label className="text-[10px] font-bold text-gray-400 uppercase">BTC Threshold ($)</label>
-                                                        <span className="text-xs font-mono font-bold text-orange-400">${form.btcLiqThreshold.toLocaleString()}</span>
+                                                        <label className="text-[9px] font-bold text-gray-400 uppercase">BTC Threshold ($)</label>
+                                                        <span className="text-[11px] font-mono font-bold text-orange-400">${form.btcLiqThreshold.toLocaleString()}</span>
                                                     </div>
-                                                    <div className="flex gap-3 items-center">
+                                                    <div className="flex gap-2 items-center">
                                                         <input type="range" min="10000" max="5000000" step="10000" className="flex-1 h-1.5 rounded-lg appearance-none cursor-pointer accent-orange-500 bg-white/10" value={form.btcLiqThreshold} onChange={(e) => handleFormChange('btcLiqThreshold', parseFloat(e.target.value))} />
-                                                        <input type="number" step="10000" className="w-24 bg-black/40 border border-white/10 rounded-lg p-1 text-white text-center font-mono text-xs" value={form.btcLiqThreshold} onChange={(e) => handleFormChange('btcLiqThreshold', parseFloat(e.target.value))} />
+                                                        <input type="number" step="10000" className="w-20 bg-black/40 border border-white/10 rounded-lg p-1 text-white text-center font-mono text-xs" value={form.btcLiqThreshold} onChange={(e) => handleFormChange('btcLiqThreshold', parseFloat(e.target.value))} />
                                                     </div>
                                                 </div>
                                             )}
                                         </div>
 
                                         {/* Cascade & Dynamic */}
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div className={`bg-black/20 p-3 rounded-lg border cursor-pointer transition-colors ${form.enableLiqCascade ? 'border-rose-500/30 bg-rose-500/5' : 'border-white/5'}`} onClick={() => handleFormChange('enableLiqCascade', !form.enableLiqCascade)}>
-                                                <span className="text-[10px] font-bold text-white uppercase block mb-2">Cascade Detection</span>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className={`bg-black/20 p-2 rounded-lg border cursor-pointer transition-colors ${form.enableLiqCascade ? 'border-rose-500/30 bg-rose-500/5' : 'border-white/5'}`} onClick={() => handleFormChange('enableLiqCascade', !form.enableLiqCascade)}>
+                                                <span className="text-[9px] font-bold text-white uppercase block mb-1">Cascade Detection</span>
                                                 {form.enableLiqCascade ? (
                                                     <div onClick={e => e.stopPropagation()}>
                                                         <div className="flex justify-between text-[9px] mb-1">
@@ -2314,12 +2326,12 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                         <input type="range" min="1" max="60" className="w-full h-1 accent-rose-500" value={form.liqCascadeWindow} onChange={(e) => handleFormChange('liqCascadeWindow', parseInt(e.target.value))} />
                                                     </div>
                                                 ) : (
-                                                    <span className="text-[9px] text-gray-500">Enable to detect liquidations in series</span>
+                                                    <span className="text-[8px] text-gray-500">Enable to detect liquidations in series</span>
                                                 )}
                                             </div>
 
-                                            <div className={`bg-black/20 p-3 rounded-lg border cursor-pointer transition-colors ${form.enableDynamicLiq ? 'border-cyan-500/30 bg-cyan-500/5' : 'border-white/5'}`} onClick={() => handleFormChange('enableDynamicLiq', !form.enableDynamicLiq)}>
-                                                <span className="text-[10px] font-bold text-white uppercase block mb-2">Dynamic Adapt</span>
+                                            <div className={`bg-black/20 p-2 rounded-lg border cursor-pointer transition-colors ${form.enableDynamicLiq ? 'border-cyan-500/30 bg-cyan-500/5' : 'border-white/5'}`} onClick={() => handleFormChange('enableDynamicLiq', !form.enableDynamicLiq)}>
+                                                <span className="text-[9px] font-bold text-white uppercase block mb-1">Dynamic Adapt</span>
                                                 {form.enableDynamicLiq ? (
                                                     <div onClick={e => e.stopPropagation()}>
                                                         <div className="flex justify-between text-[9px] mb-1">
@@ -2329,16 +2341,16 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                         <input type="range" min="0.5" max="5.0" step="0.1" className="w-full h-1 accent-cyan-500" value={form.dynamicLiqMultiplier} onChange={(e) => handleFormChange('dynamicLiqMultiplier', parseFloat(e.target.value))} />
                                                     </div>
                                                 ) : (
-                                                    <span className="text-[9px] text-gray-500">Auto-adjust threshold based on volatility</span>
+                                                    <span className="text-[8px] text-gray-500">Auto-adjust threshold based on volatility</span>
                                                 )}
                                             </div>
                                         </div>
 
                                         {/* Imbalance Filter for Liquidation */}
-                                        <div className={`bg-black/20 p-3 rounded-lg border cursor-pointer transition-colors ${form.enableObImbalance ? 'border-amber-500/30 bg-amber-500/5' : 'border-white/5'}`} onClick={() => handleFormChange('enableObImbalance', !form.enableObImbalance)}>
-                                            <div className="flex justify-between items-center mb-2">
-                                                <span className="text-[10px] font-bold text-white uppercase">Bid/Ask Imbalance Filter</span>
-                                                {form.enableObImbalance && <span className="text-xs font-mono font-bold text-amber-500">{form.obImbalanceRatio}x</span>}
+                                        <div className={`bg-black/20 p-2 rounded-lg border cursor-pointer transition-colors ${form.enableObImbalance ? 'border-amber-500/30 bg-amber-500/5' : 'border-white/5'}`} onClick={() => handleFormChange('enableObImbalance', !form.enableObImbalance)}>
+                                            <div className="flex justify-between items-center mb-1">
+                                                <span className="text-[9px] font-bold text-white uppercase">Bid/Ask Imbalance Filter</span>
+                                                {form.enableObImbalance && <span className="text-[11px] font-mono font-bold text-amber-500">{form.obImbalanceRatio}x</span>}
                                             </div>
                                             {form.enableObImbalance && (
                                                 <div onClick={e => e.stopPropagation()} className="animate-fadeIn">
@@ -2352,35 +2364,35 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             </div>
 
                             {/* --- L2 MACHINE LEARNING FILTER --- */}
-                            <div className={`border rounded-xl p-4 transition-colors cursor-pointer mb-4 ${form.enableMlFilter ? 'bg-blue-500/5 border-blue-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableMlFilter', !form.enableMlFilter)}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 flex items-center ${form.enableMlFilter ? 'bg-blue-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableMlFilter ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                            <div className={`border rounded-lg p-2.5 transition-colors cursor-pointer ${form.enableMlFilter ? 'bg-blue-500/5 border-blue-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableMlFilter', !form.enableMlFilter)}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${form.enableMlFilter ? 'bg-blue-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableMlFilter ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <div className="flex items-center gap-3 ml-2">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${form.enableMlFilter ? 'bg-blue-500/20 text-blue-400' : 'bg-white/5 text-gray-500'}`}>
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" /></svg>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${form.enableMlFilter ? 'bg-blue-500/20 text-blue-400' : 'bg-white/5 text-gray-500'}`}>
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" /></svg>
                                             </div>
                                             <div>
-                                                <h4 className="text-sm font-black text-white uppercase tracking-wider">L2 Machine Learning Filter</h4>
-                                                <p className="text-[10px] text-gray-400">Validate Orderbook Walls with Pre-Trained AI Models</p>
+                                                <h4 className="text-xs font-black text-white uppercase tracking-wider">L2 Machine Learning Filter</h4>
+                                                <p className="text-[9px] text-gray-400">Validate Orderbook Walls with Pre-Trained AI Models</p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
                                 {form.enableMlFilter && (
-                                    <div className="mt-4 animate-fadeIn" onClick={e => e.stopPropagation()}>
-                                        <div className="bg-black/40 p-3 rounded-xl border border-blue-500/20">
-                                            <label className="text-[10px] font-bold text-blue-400 uppercase mb-2 flex items-center gap-2">
+                                    <div className="mt-2.5 animate-fadeIn" onClick={e => e.stopPropagation()}>
+                                        <div className="bg-black/40 p-2.5 rounded-lg border border-blue-500/20">
+                                            <label className="text-[9px] font-bold text-blue-400 uppercase mb-1 flex items-center gap-2">
                                                 Select L2 Trained Model
                                             </label>
                                             {mlModels.length === 0 ? (
-                                                <p className="text-xs text-gray-500 italic">No models found in Registry. Train an AI model first.</p>
+                                                <p className="text-[11px] text-gray-500 italic">No models found in Registry. Train an AI model first.</p>
                                             ) : (
                                                 <select
-                                                    className="w-full bg-[#000000] border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-blue-500 text-sm font-bold"
+                                                    className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-blue-500 text-xs font-bold"
                                                     value={form.mlModelId}
                                                     onChange={(e) => handleFormChange('mlModelId', e.target.value)}
                                                 >
@@ -2394,37 +2406,37 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                             )}
 
                                             {/* ML Execution Mode Selector */}
-                                            <div className="mt-3 bg-black/60 p-3 rounded-lg border border-white/5">
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <label className="text-[10px] font-bold text-gray-300 uppercase">
+                                            <div className="mt-2 bg-black/60 p-2 rounded-lg border border-white/5">
+                                                <div className="flex justify-between items-center mb-1.5">
+                                                    <label className="text-[9px] font-bold text-gray-300 uppercase">
                                                         Execution Mode
                                                     </label>
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-2">
+                                                <div className="grid grid-cols-2 gap-1.5">
                                                     <div
-                                                        className={`p-2 rounded-lg cursor-pointer border text-center transition-all ${form.mlExecutionMode === 'basic' ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-black/40 border-white/10 text-gray-400 hover:border-white/20'}`}
+                                                        className={`p-1.5 rounded-lg cursor-pointer border text-center transition-all ${form.mlExecutionMode === 'basic' ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-black/40 border-white/10 text-gray-400 hover:border-white/20'}`}
                                                         onClick={() => handleFormChange('mlExecutionMode', 'basic')}
                                                     >
-                                                        <p className="text-xs font-bold uppercase">Signal Only</p>
-                                                        <p className="text-[9px] mt-1 opacity-70 leading-tight">Bot handles SL/TP based on Spread/Wick config.</p>
+                                                        <p className="text-[10px] font-bold uppercase">Signal Only</p>
+                                                        <p className="text-[8px] mt-0.5 opacity-70 leading-tight">Bot handles SL/TP based on Spread/Wick config.</p>
                                                     </div>
                                                     <div
-                                                        className={`p-2 rounded-lg cursor-pointer border text-center transition-all ${form.mlExecutionMode === 'advanced' ? 'bg-fuchsia-500/20 border-fuchsia-500/50 text-fuchsia-400 shadow-[0_0_10px_rgba(217,70,239,0.2)]' : 'bg-black/40 border-white/10 text-gray-400 hover:border-white/20'}`}
+                                                        className={`p-1.5 rounded-lg cursor-pointer border text-center transition-all ${form.mlExecutionMode === 'advanced' ? 'bg-fuchsia-500/20 border-fuchsia-500/50 text-fuchsia-400 shadow-[0_0_10px_rgba(217,70,239,0.2)]' : 'bg-black/40 border-white/10 text-gray-400 hover:border-white/20'}`}
                                                         onClick={() => handleFormChange('mlExecutionMode', 'advanced')}
                                                     >
-                                                        <p className="text-xs font-bold uppercase">Dynamic Setup</p>
-                                                        <p className="text-[9px] mt-1 opacity-70 leading-tight">AI enforces optimal SL/TP directly from Multi-Output models or falls back to ATR/Confidence rules.</p>
+                                                        <p className="text-[10px] font-bold uppercase">Dynamic Setup</p>
+                                                        <p className="text-[8px] mt-0.5 opacity-70 leading-tight">AI enforces optimal SL/TP directly from Multi-Output models or falls back to ATR/Confidence rules.</p>
                                                     </div>
                                                 </div>
                                             </div>
 
                                             {(tradingMode === 'spot' ? strategyMode !== 'short' : form.positionDirection !== 'short') && (
-                                                <div className="mt-3 bg-black/60 p-3 rounded-lg border border-white/5">
+                                                <div className="mt-2 bg-black/60 p-2 rounded-lg border border-white/5">
                                                     <div className="flex justify-between items-center mb-1">
-                                                        <label className="text-[10px] font-bold text-gray-300 uppercase">
+                                                        <label className="text-[9px] font-bold text-gray-300 uppercase">
                                                             Bullish Probability Threshold
                                                         </label>
-                                                        <span className="text-xs font-mono text-blue-400">{(form.mlBullishThreshold * 100).toFixed(0)}%</span>
+                                                        <span className="text-[11px] font-mono text-blue-400">{(form.mlBullishThreshold * 100).toFixed(0)}%</span>
                                                     </div>
                                                     <input
                                                         type="range"
@@ -2433,19 +2445,19 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                         onChange={(e) => handleFormChange('mlBullishThreshold', parseFloat(e.target.value))}
                                                         className="w-full accent-blue-500"
                                                     />
-                                                    <p className="text-[9px] text-gray-500 mt-1 leading-tight">
+                                                    <p className="text-[8px] text-gray-500 mt-0.5 leading-tight">
                                                         Lowering this (e.g. 0.40) makes the bot take Longs more easily. Higher (e.g. 0.60) makes it stricter. Defaults to 0.50.
                                                     </p>
                                                 </div>
                                             )}
 
                                             {(tradingMode === 'spot' ? strategyMode === 'short' : form.positionDirection !== 'long') && (
-                                                <div className="mt-3 bg-black/60 p-3 rounded-lg border border-white/5">
+                                                <div className="mt-2 bg-black/60 p-2 rounded-lg border border-white/5">
                                                     <div className="flex justify-between items-center mb-1">
-                                                        <label className="text-[10px] font-bold text-gray-300 uppercase">
+                                                        <label className="text-[9px] font-bold text-gray-300 uppercase">
                                                             Bearish Probability Threshold
                                                         </label>
-                                                        <span className="text-xs font-mono text-fuchsia-400">{(form.mlBearishThreshold * 100).toFixed(0)}%</span>
+                                                        <span className="text-[11px] font-mono text-fuchsia-400">{(form.mlBearishThreshold * 100).toFixed(0)}%</span>
                                                     </div>
                                                     <input
                                                         type="range"
@@ -2454,13 +2466,13 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                         onChange={(e) => handleFormChange('mlBearishThreshold', parseFloat(e.target.value))}
                                                         className="w-full accent-fuchsia-500"
                                                     />
-                                                    <p className="text-[9px] text-gray-500 mt-1 leading-tight">
+                                                    <p className="text-[8px] text-gray-500 mt-0.5 leading-tight">
                                                         Higher this (e.g. 0.60) makes the bot take Shorts more easily. Lower (e.g. 0.40) makes it stricter. Defaults to 0.50.
                                                     </p>
                                                 </div>
                                             )}
 
-                                            <p className="text-[9px] text-gray-500 mt-2 italic leading-tight">
+                                            <p className="text-[8px] text-gray-500 mt-1.5 italic leading-tight">
                                                 When enabled, the WallHunter will extract L2 state features (Bids/Asks, Imbalance, Spread) and pass them to your Custom AI. It will only fire if the AI predicts "BULLISH" for Longs or "BEARISH" for Shorts. This is the ultimate defense against spoofed walls.
                                             </p>
                                         </div>
@@ -2469,64 +2481,64 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             </div>
 
                             {/* --- UT BOT ALERTS INTEGRATION --- */}
-                            <div className={`border rounded-xl p-4 transition-colors cursor-pointer ${form.enableUtBot ? 'bg-fuchsia-500/5 border-fuchsia-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableUtBot', !form.enableUtBot)}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 flex items-center ${form.enableUtBot ? 'bg-fuchsia-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableUtBot ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                            <div className={`border rounded-lg p-2.5 transition-colors cursor-pointer ${form.enableUtBot ? 'bg-fuchsia-500/5 border-fuchsia-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableUtBot', !form.enableUtBot)}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${form.enableUtBot ? 'bg-fuchsia-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableUtBot ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <div className="flex items-center gap-3 ml-2">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${form.enableUtBot ? 'bg-fuchsia-500/20 text-fuchsia-400' : 'bg-white/5 text-gray-500'}`}>
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${form.enableUtBot ? 'bg-fuchsia-500/20 text-fuchsia-400' : 'bg-white/5 text-gray-500'}`}>
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                                             </div>
                                             <div>
-                                                <h4 className="text-sm font-black text-white uppercase tracking-wider">UT Bot Alerts (PineScript)</h4>
-                                                <p className="text-[10px] text-gray-400">Advanced algorithmic signals based on ATR and RMA</p>
+                                                <h4 className="text-xs font-black text-white uppercase tracking-wider">UT Bot Alerts (PineScript)</h4>
+                                                <p className="text-[9px] text-gray-400">Advanced algorithmic signals based on ATR and RMA</p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
                                 {form.enableUtBot && (
-                                    <div className="mt-4 animate-fadeIn" onClick={e => e.stopPropagation()}>
-                                        <div className="grid grid-cols-2 gap-4 mb-4">
-                                            <div className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${form.enableUtTrendFilter ? 'bg-fuchsia-500/20 border-fuchsia-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableUtTrendFilter', !form.enableUtTrendFilter)}>
-                                                <p className="text-xs font-bold text-white uppercase">Trend Filter</p>
-                                                <div className={`w-3 h-3 rounded-full ${form.enableUtTrendFilter ? 'bg-fuchsia-400 shadow-[0_0_10px_rgba(232,121,249,0.8)]' : 'bg-gray-600'}`}></div>
+                                    <div className="mt-2.5 animate-fadeIn" onClick={e => e.stopPropagation()}>
+                                        <div className="grid grid-cols-2 gap-2 mb-2.5">
+                                            <div className={`p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${form.enableUtTrendFilter ? 'bg-fuchsia-500/20 border-fuchsia-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableUtTrendFilter', !form.enableUtTrendFilter)}>
+                                                <p className="text-[10px] font-bold text-white uppercase">Trend Filter</p>
+                                                <div className={`w-2.5 h-2.5 rounded-full ${form.enableUtTrendFilter ? 'bg-fuchsia-400 shadow-[0_0_10px_rgba(232,121,249,0.8)]' : 'bg-gray-600'}`}></div>
                                             </div>
-                                            <div className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${form.enableUtEntryTrigger ? 'bg-fuchsia-500/20 border-fuchsia-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableUtEntryTrigger', !form.enableUtEntryTrigger)}>
-                                                <p className="text-xs font-bold text-white uppercase">Entry Trigger</p>
-                                                <div className={`w-3 h-3 rounded-full ${form.enableUtEntryTrigger ? 'bg-fuchsia-400 shadow-[0_0_10px_rgba(232,121,249,0.8)]' : 'bg-gray-600'}`}></div>
+                                            <div className={`p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${form.enableUtEntryTrigger ? 'bg-fuchsia-500/20 border-fuchsia-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableUtEntryTrigger', !form.enableUtEntryTrigger)}>
+                                                <p className="text-[10px] font-bold text-white uppercase">Entry Trigger</p>
+                                                <div className={`w-2.5 h-2.5 rounded-full ${form.enableUtEntryTrigger ? 'bg-fuchsia-400 shadow-[0_0_10px_rgba(232,121,249,0.8)]' : 'bg-gray-600'}`}></div>
                                             </div>
-                                            <div className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between col-span-2 ${form.enableUtTrailingSl ? 'bg-fuchsia-500/20 border-fuchsia-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableUtTrailingSl', !form.enableUtTrailingSl)}>
-                                                <p className="text-xs font-bold text-white uppercase">Dynamic Trailing SL</p>
-                                                <div className={`w-3 h-3 rounded-full ${form.enableUtTrailingSl ? 'bg-fuchsia-400 shadow-[0_0_10px_rgba(232,121,249,0.8)]' : 'bg-gray-600'}`}></div>
+                                            <div className={`p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between col-span-2 ${form.enableUtTrailingSl ? 'bg-fuchsia-500/20 border-fuchsia-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableUtTrailingSl', !form.enableUtTrailingSl)}>
+                                                <p className="text-[10px] font-bold text-white uppercase">Dynamic Trailing SL</p>
+                                                <div className={`w-2.5 h-2.5 rounded-full ${form.enableUtTrailingSl ? 'bg-fuchsia-400 shadow-[0_0_10px_rgba(232,121,249,0.8)]' : 'bg-gray-600'}`}></div>
                                             </div>
                                         </div>
 
                                         {form.enableUtEntryTrigger && (
-                                            <div className="mb-4 animate-fadeIn">
-                                                <div className={`p-3 rounded-xl border cursor-pointer transition-all ${form.enableUtTrendUnlockMode ? 'bg-fuchsia-500/20 border-fuchsia-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableUtTrendUnlockMode', !form.enableUtTrendUnlockMode)}>
+                                            <div className="mb-2.5 animate-fadeIn">
+                                                <div className={`p-2 rounded-lg border cursor-pointer transition-all ${form.enableUtTrendUnlockMode ? 'bg-fuchsia-500/20 border-fuchsia-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableUtTrendUnlockMode', !form.enableUtTrendUnlockMode)}>
                                                     <div className="flex items-center justify-between">
-                                                        <p className="text-xs font-bold text-white uppercase flex items-center gap-2">
-                                                            <svg className="w-4 h-4 text-fuchsia-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
+                                                        <p className="text-[10px] font-bold text-white uppercase flex items-center gap-1.5">
+                                                            <svg className="w-3.5 h-3.5 text-fuchsia-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
                                                             Trend Unlock Mode
                                                         </p>
                                                         <div className={`w-8 h-4 rounded-full p-0.5 flex items-center transition-colors duration-200 ${form.enableUtTrendUnlockMode ? 'bg-fuchsia-500' : 'bg-gray-700'}`}>
                                                             <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableUtTrendUnlockMode ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                         </div>
                                                     </div>
-                                                    <p className="text-[10px] text-gray-400 mt-2">Unlocks multiple execution signals during an active UT Bot trend after the initial crossover. Recommended for Wave Riding along Orderbook Walls.</p>
+                                                    <p className="text-[9px] text-gray-400 mt-1">Unlocks multiple execution signals during an active UT Bot trend after the initial crossover. Recommended for Wave Riding along Orderbook Walls.</p>
                                                 </div>
                                             </div>
                                         )}
 
                                         {(form.enableUtTrendFilter || form.enableUtEntryTrigger || form.enableUtTrailingSl) && (
-                                            <div className="grid grid-cols-2 gap-4 animate-fadeIn bg-black/40 p-3 rounded-xl border border-fuchsia-500/20">
+                                            <div className="grid grid-cols-2 gap-2 animate-fadeIn bg-black/40 p-2.5 rounded-lg border border-fuchsia-500/20">
                                                 <div className="col-span-2">
-                                                    <label className="text-[10px] font-bold text-fuchsia-400 uppercase mb-1 block">UT Timeframe</label>
+                                                    <label className="text-[9px] font-bold text-fuchsia-400 uppercase mb-1 block">UT Timeframe</label>
                                                     <select
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-fuchsia-500 text-sm font-bold text-center"
+                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-fuchsia-500 text-xs font-bold text-center"
                                                         value={form.utBotTimeframe}
                                                         onChange={(e) => handleFormChange('utBotTimeframe', e.target.value)}
                                                     >
@@ -2541,10 +2553,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Sensitivity (Key)</label>
+                                                    <label className="text-[9px] font-bold text-gray-400 uppercase mb-1 block">Sensitivity (Key)</label>
                                                     <input
                                                         type="number"
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-fuchsia-500 text-sm font-bold text-center font-mono"
+                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-fuchsia-500 text-xs font-bold text-center font-mono"
                                                         value={form.utBotSensitivity}
                                                         onChange={(e) => handleFormChange('utBotSensitivity', parseFloat(e.target.value))}
                                                         min={0.1}
@@ -2552,18 +2564,18 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">ATR Period</label>
+                                                    <label className="text-[9px] font-bold text-gray-400 uppercase mb-1 block">ATR Period</label>
                                                     <input
                                                         type="number"
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-fuchsia-500 text-sm font-bold text-center font-mono"
+                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-fuchsia-500 text-xs font-bold text-center font-mono"
                                                         value={form.utBotAtrPeriod}
                                                         onChange={(e) => handleFormChange('utBotAtrPeriod', parseInt(e.target.value))}
                                                         min={1}
                                                         step={1}
                                                     />
                                                 </div>
-                                                <div className="col-span-2 flex items-center justify-between bg-white/5 p-2 rounded-lg cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleFormChange('utBotUseHeikinAshi', !form.utBotUseHeikinAshi)}>
-                                                    <span className="text-[10px] font-black text-white uppercase tracking-wider">Use Heikin Ashi Candles</span>
+                                                <div className="col-span-2 flex items-center justify-between bg-white/5 p-1.5 rounded-lg cursor-pointer hover:bg-white/10 transition-colors" onClick={() => handleFormChange('utBotUseHeikinAshi', !form.utBotUseHeikinAshi)}>
+                                                    <span className="text-[9px] font-black text-white uppercase tracking-wider">Use Heikin Ashi Candles</span>
                                                     <div className={`w-8 h-4 rounded-full p-0.5 flex items-center ${form.utBotUseHeikinAshi ? 'bg-fuchsia-500' : 'bg-gray-700'}`}>
                                                         <div className={`w-3 h-3 bg-white rounded-full transform transition-transform ${form.utBotUseHeikinAshi ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                     </div>
@@ -2572,41 +2584,41 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                         )}
 
                                         {form.enableUtEntryTrigger && (
-                                            <div className="mt-4 bg-black/40 border border-fuchsia-500/20 rounded-xl p-4 shadow-lg animate-fadeIn">
-                                                <h5 className="text-[11px] font-black text-fuchsia-400 uppercase tracking-widest mb-3 border-b border-fuchsia-500/20 pb-2">Entry Fakeout Protection</h5>
+                                            <div className="mt-2.5 bg-black/40 border border-fuchsia-500/20 rounded-lg p-2.5 shadow-lg animate-fadeIn">
+                                                <h5 className="text-[10px] font-black text-fuchsia-400 uppercase tracking-widest mb-2 border-b border-fuchsia-500/20 pb-1.5">Entry Fakeout Protection</h5>
 
-                                                <div className="space-y-4">
+                                                <div className="space-y-2.5">
                                                     <div className="flex items-center justify-between cursor-pointer group" onClick={() => handleFormChange('utBotCandleClose', !form.utBotCandleClose)}>
                                                         <div>
-                                                            <span className="text-[10px] font-bold text-gray-200 uppercase block tracking-wider">Wait for Candle Close</span>
-                                                            <span className="text-[9px] text-gray-500 mt-0.5 block">Wait until timeframe candle fully prints</span>
+                                                            <span className="text-[9px] font-bold text-gray-200 uppercase block tracking-wider">Wait for Candle Close</span>
+                                                            <span className="text-[8px] text-gray-500 block">Wait until timeframe candle fully prints</span>
                                                         </div>
-                                                        <div className={`w-10 h-5 rounded-full p-1 flex items-center transition-colors duration-200 ${form.utBotCandleClose ? 'bg-fuchsia-500' : 'bg-gray-700'}`}>
-                                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.utBotCandleClose ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center transition-colors duration-200 shrink-0 ${form.utBotCandleClose ? 'bg-fuchsia-500' : 'bg-gray-700'}`}>
+                                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.utBotCandleClose ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                         </div>
                                                     </div>
 
                                                     {!form.utBotCandleClose && (
-                                                        <div className="animate-fadeIn bg-black/20 p-3 rounded-lg border border-white/5">
-                                                            <div className="flex justify-between items-center mb-2">
-                                                                <span className="text-[10px] font-bold text-gray-300 uppercase">Sustain Validation</span>
-                                                                <span className="text-xs font-mono font-bold text-fuchsia-400">{form.utBotValidationSecs}s</span>
+                                                        <div className="animate-fadeIn bg-black/20 p-2 rounded-lg border border-white/5">
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <span className="text-[9px] font-bold text-gray-300 uppercase">Sustain Validation</span>
+                                                                <span className="text-[11px] font-mono font-bold text-fuchsia-400">{form.utBotValidationSecs}s</span>
                                                             </div>
                                                             <input type="range" min="0" max="300" step="5" className="w-full h-1.5 accent-fuchsia-500 bg-white/10 rounded-lg appearance-none cursor-pointer" value={form.utBotValidationSecs} onChange={(e) => handleFormChange('utBotValidationSecs', parseInt(e.target.value))} />
-                                                            <span className="text-[8px] text-gray-500 block mt-2 leading-tight">Wait time before executing to ensure signal doesn't vanish. Set to 0 for instant execution.</span>
+                                                            <span className="text-[8px] text-gray-500 block mt-1 leading-tight">Wait time before executing to ensure signal doesn't vanish. Set to 0 for instant execution.</span>
                                                         </div>
                                                     )}
 
-                                                    <div className="flex items-center justify-between cursor-pointer group pt-3 border-t border-white/10 mt-2" onClick={() => handleFormChange('utBotRetestSnipe', !form.utBotRetestSnipe)}>
+                                                    <div className="flex items-center justify-between cursor-pointer group pt-2 border-t border-white/10" onClick={() => handleFormChange('utBotRetestSnipe', !form.utBotRetestSnipe)}>
                                                         <div>
-                                                            <span className="text-[10px] font-bold text-gray-200 uppercase block tracking-wider flex items-center gap-1.5">
+                                                            <span className="text-[9px] font-bold text-gray-200 uppercase block tracking-wider flex items-center gap-1.5">
                                                                 Retest Snipe Limit
-                                                                <span className="bg-fuchsia-500/20 text-fuchsia-400 text-[8px] px-1.5 py-0.5 rounded">Pro</span>
+                                                                <span className="bg-fuchsia-500/20 text-fuchsia-400 text-[8px] px-1 py-0.5 rounded">Pro</span>
                                                             </span>
-                                                            <span className="text-[9px] text-gray-500 mt-0.5 block">Place Limit order exactly at UT Support/Resistance</span>
+                                                            <span className="text-[8px] text-gray-500 block">Place Limit order exactly at UT Support/Resistance</span>
                                                         </div>
-                                                        <div className={`w-10 h-5 rounded-full p-1 flex items-center transition-colors duration-200 ${form.utBotRetestSnipe ? 'bg-fuchsia-500' : 'bg-gray-700'}`}>
-                                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.utBotRetestSnipe ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center transition-colors duration-200 shrink-0 ${form.utBotRetestSnipe ? 'bg-fuchsia-500' : 'bg-gray-700'}`}>
+                                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.utBotRetestSnipe ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -2617,54 +2629,54 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             </div>
 
                             {/* --- MODULAR SUPERTREND INTEGRATION --- */}
-                            <div className={`border rounded-xl p-4 transition-colors cursor-pointer ${form.enableSupertrendBot ? 'bg-sky-500/5 border-sky-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableSupertrendBot', !form.enableSupertrendBot)}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 flex items-center ${form.enableSupertrendBot ? 'bg-sky-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableSupertrendBot ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                            <div className={`border rounded-lg p-2.5 transition-colors cursor-pointer ${form.enableSupertrendBot ? 'bg-sky-500/5 border-sky-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableSupertrendBot', !form.enableSupertrendBot)}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${form.enableSupertrendBot ? 'bg-sky-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableSupertrendBot ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <div className="flex items-center gap-3 ml-2">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${form.enableSupertrendBot ? 'bg-sky-500/20 text-sky-400' : 'bg-white/5 text-gray-500'}`}>
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${form.enableSupertrendBot ? 'bg-sky-500/20 text-sky-400' : 'bg-white/5 text-gray-500'}`}>
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
                                             </div>
                                             <div>
-                                                <h4 className="text-sm font-black text-white uppercase tracking-wider">Supertrend (PineScript)</h4>
-                                                <p className="text-[10px] text-gray-400">Trend following signals based on ATR</p>
+                                                <h4 className="text-xs font-black text-white uppercase tracking-wider">Supertrend (PineScript)</h4>
+                                                <p className="text-[9px] text-gray-400">Trend following signals based on ATR</p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
                                 {form.enableSupertrendBot && (
-                                    <div className="mt-4 animate-fadeIn" onClick={e => e.stopPropagation()}>
-                                        <div className="grid grid-cols-2 gap-4 mb-4">
-                                            <div className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${form.enableSupertrendTrendFilter ? 'bg-sky-500/20 border-sky-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableSupertrendTrendFilter', !form.enableSupertrendTrendFilter)}>
-                                                <p className="text-xs font-bold text-white uppercase">Trend Filter</p>
-                                                <div className={`w-3 h-3 rounded-full ${form.enableSupertrendTrendFilter ? 'bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.8)]' : 'bg-gray-600'}`}></div>
+                                    <div className="mt-2.5 animate-fadeIn" onClick={e => e.stopPropagation()}>
+                                        <div className="grid grid-cols-2 gap-2 mb-2.5">
+                                            <div className={`p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${form.enableSupertrendTrendFilter ? 'bg-sky-500/20 border-sky-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableSupertrendTrendFilter', !form.enableSupertrendTrendFilter)}>
+                                                <p className="text-[10px] font-bold text-white uppercase">Trend Filter</p>
+                                                <div className={`w-2.5 h-2.5 rounded-full ${form.enableSupertrendTrendFilter ? 'bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.8)]' : 'bg-gray-600'}`}></div>
                                             </div>
-                                            <div className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${form.enableSupertrendEntryTrigger ? 'bg-sky-500/20 border-sky-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableSupertrendEntryTrigger', !form.enableSupertrendEntryTrigger)}>
-                                                <p className="text-xs font-bold text-white uppercase">Entry Trigger</p>
-                                                <div className={`w-3 h-3 rounded-full ${form.enableSupertrendEntryTrigger ? 'bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.8)]' : 'bg-gray-600'}`}></div>
+                                            <div className={`p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${form.enableSupertrendEntryTrigger ? 'bg-sky-500/20 border-sky-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableSupertrendEntryTrigger', !form.enableSupertrendEntryTrigger)}>
+                                                <p className="text-[10px] font-bold text-white uppercase">Entry Trigger</p>
+                                                <div className={`w-2.5 h-2.5 rounded-full ${form.enableSupertrendEntryTrigger ? 'bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.8)]' : 'bg-gray-600'}`}></div>
                                             </div>
-                                            <div className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${form.enableSupertrendTrailingSl ? 'bg-sky-500/20 border-sky-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableSupertrendTrailingSl', !form.enableSupertrendTrailingSl)}>
-                                                <p className="text-xs font-bold text-white uppercase">Dynamic Trailing SL</p>
-                                                <div className={`w-3 h-3 rounded-full ${form.enableSupertrendTrailingSl ? 'bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.8)]' : 'bg-gray-600'}`}></div>
+                                            <div className={`p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${form.enableSupertrendTrailingSl ? 'bg-sky-500/20 border-sky-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableSupertrendTrailingSl', !form.enableSupertrendTrailingSl)}>
+                                                <p className="text-[10px] font-bold text-white uppercase">Dynamic Trailing SL</p>
+                                                <div className={`w-2.5 h-2.5 rounded-full ${form.enableSupertrendTrailingSl ? 'bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.8)]' : 'bg-gray-600'}`}></div>
                                             </div>
-                                            <div className={`p-3 rounded-xl border cursor-pointer transition-all ${form.enableSupertrendExit ? 'bg-red-500/20 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.15)]' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableSupertrendExit', !form.enableSupertrendExit)}>
+                                            <div className={`p-2 rounded-lg border cursor-pointer transition-all ${form.enableSupertrendExit ? 'bg-red-500/20 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.15)]' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableSupertrendExit', !form.enableSupertrendExit)}>
                                                 <div className="flex items-center justify-between">
-                                                    <p className="text-xs font-bold text-white uppercase">Reversal Dual-Exit</p>
-                                                    <div className={`w-3 h-3 rounded-full ${form.enableSupertrendExit ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]' : 'bg-gray-600'}`}></div>
+                                                    <p className="text-[10px] font-bold text-white uppercase">Reversal Dual-Exit</p>
+                                                    <div className={`w-2.5 h-2.5 rounded-full ${form.enableSupertrendExit ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]' : 'bg-gray-600'}`}></div>
                                                 </div>
-                                                <p className="text-[9px] text-gray-400 mt-1 leading-tight">Fallback to Market if Post-Only Exit unfills in time.</p>
+                                                <p className="text-[8px] text-gray-400 mt-0.5 leading-tight">Fallback to Market if Post-Only Exit unfills in time.</p>
                                             </div>
                                         </div>
 
                                         {form.enableSupertrendExit && (
-                                            <div className="mb-4 animate-fadeIn bg-red-500/5 p-3 rounded-xl border border-red-500/20">
+                                            <div className="mb-2.5 animate-fadeIn bg-red-500/5 p-2 rounded-lg border border-red-500/20">
                                                 <div className="flex justify-between items-end mb-1">
-                                                    <label className="text-[10px] font-bold text-red-400 uppercase tracking-wider flex justify-between w-full">
+                                                    <label className="text-[9px] font-bold text-red-400 uppercase tracking-wider flex justify-between w-full">
                                                         <span>Maker-to-Taker Exit Timeout</span>
-                                                        <span className="text-xs font-mono text-white">{form.supertrendExitTimeout} Sec</span>
+                                                        <span className="text-[11px] font-mono text-white">{form.supertrendExitTimeout} Sec</span>
                                                     </label>
                                                 </div>
                                                 <input
@@ -2680,28 +2692,28 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                         )}
 
                                         {form.enableSupertrendEntryTrigger && (
-                                            <div className="mb-4 animate-fadeIn">
-                                                <div className={`p-3 rounded-xl border cursor-pointer transition-all ${form.enableSupertrendTrendUnlockMode ? 'bg-sky-500/20 border-sky-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableSupertrendTrendUnlockMode', !form.enableSupertrendTrendUnlockMode)}>
+                                            <div className="mb-2.5 animate-fadeIn">
+                                                <div className={`p-2 rounded-lg border cursor-pointer transition-all ${form.enableSupertrendTrendUnlockMode ? 'bg-sky-500/20 border-sky-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('enableSupertrendTrendUnlockMode', !form.enableSupertrendTrendUnlockMode)}>
                                                     <div className="flex items-center justify-between">
-                                                        <p className="text-xs font-bold text-white uppercase flex items-center gap-2">
-                                                            <svg className="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
+                                                        <p className="text-[10px] font-bold text-white uppercase flex items-center gap-1.5">
+                                                            <svg className="w-3.5 h-3.5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
                                                             Trend Unlock Mode
                                                         </p>
                                                         <div className={`w-8 h-4 rounded-full p-0.5 flex items-center transition-colors duration-200 ${form.enableSupertrendTrendUnlockMode ? 'bg-sky-500' : 'bg-gray-700'}`}>
                                                             <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableSupertrendTrendUnlockMode ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                         </div>
                                                     </div>
-                                                    <p className="text-[10px] text-gray-400 mt-2">Unlocks multiple execution signals during an active Supertrend trend after the initial crossover. Recommended for Wave Riding along Orderbook Walls.</p>
+                                                    <p className="text-[9px] text-gray-400 mt-1">Unlocks multiple execution signals during an active Supertrend trend after the initial crossover. Recommended for Wave Riding along Orderbook Walls.</p>
                                                 </div>
                                             </div>
                                         )}
 
                                         {(form.enableSupertrendTrendFilter || form.enableSupertrendEntryTrigger || form.enableSupertrendTrailingSl) && (
-                                            <div className="grid grid-cols-2 gap-4 animate-fadeIn bg-black/40 p-3 rounded-xl border border-sky-500/20">
+                                            <div className="grid grid-cols-2 gap-2 animate-fadeIn bg-black/40 p-2.5 rounded-lg border border-sky-500/20">
                                                 <div className="col-span-2">
-                                                    <label className="text-[10px] font-bold text-sky-400 uppercase mb-1 block">Supertrend Timeframe</label>
+                                                    <label className="text-[9px] font-bold text-sky-400 uppercase mb-1 block">Supertrend Timeframe</label>
                                                     <select
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-sky-500 text-sm font-bold text-center"
+                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-sky-500 text-xs font-bold text-center"
                                                         value={form.supertrendTimeframe}
                                                         onChange={(e) => handleFormChange('supertrendTimeframe', e.target.value)}
                                                     >
@@ -2716,10 +2728,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">ATR Period</label>
+                                                    <label className="text-[9px] font-bold text-gray-400 uppercase mb-1 block">ATR Period</label>
                                                     <input
                                                         type="number"
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-sky-500 text-sm font-bold text-center font-mono"
+                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-sky-500 text-xs font-bold text-center font-mono"
                                                         value={form.supertrendPeriod}
                                                         onChange={(e) => handleFormChange('supertrendPeriod', parseInt(e.target.value))}
                                                         min={1}
@@ -2727,20 +2739,20 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">ATR Multiplier</label>
+                                                    <label className="text-[9px] font-bold text-gray-400 uppercase mb-1 block">ATR Multiplier</label>
                                                     <input
                                                         type="number"
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-sky-500 text-sm font-bold text-center font-mono"
+                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-sky-500 text-xs font-bold text-center font-mono"
                                                         value={form.supertrendMultiplier}
                                                         onChange={(e) => handleFormChange('supertrendMultiplier', parseFloat(e.target.value))}
                                                         min={0.1}
                                                         step={0.1}
                                                     />
                                                 </div>
-                                                <div className="col-span-2 flex items-center justify-between bg-white/5 p-2 rounded-lg cursor-pointer hover:bg-white/10 transition-colors mt-2 border-t border-white/10" onClick={() => handleFormChange('supertrendCandleClose', !form.supertrendCandleClose)}>
+                                                <div className="col-span-2 flex items-center justify-between bg-white/5 p-1.5 rounded-lg cursor-pointer hover:bg-white/10 transition-colors mt-1 border-t border-white/10" onClick={() => handleFormChange('supertrendCandleClose', !form.supertrendCandleClose)}>
                                                     <div>
-                                                        <span className="text-[10px] font-black text-white uppercase tracking-wider block">Wait for Candle Close</span>
-                                                        <span className="text-[9px] text-gray-500 mt-0.5 block">Wait until timeframe candle fully prints</span>
+                                                        <span className="text-[9px] font-black text-white uppercase tracking-wider block">Wait for Candle Close</span>
+                                                        <span className="text-[8px] text-gray-500 block">Wait until timeframe candle fully prints</span>
                                                     </div>
                                                     <div className={`w-8 h-4 rounded-full p-0.5 flex items-center transition-colors duration-200 ${form.supertrendCandleClose ? 'bg-sky-500' : 'bg-gray-700'}`}>
                                                         <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.supertrendCandleClose ? 'translate-x-4' : 'translate-x-0'}`}></div>
@@ -2753,28 +2765,28 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             </div>
 
                             {/* --- SMART WICK S/R MODULE --- */}
-                            <div className={`border rounded-xl p-4 transition-colors cursor-pointer ${form.enableWickSr ? 'bg-emerald-500/5 border-emerald-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableWickSr', !form.enableWickSr)}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 flex items-center ${form.enableWickSr ? 'bg-emerald-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableWickSr ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                            <div className={`border rounded-lg p-2.5 transition-colors cursor-pointer ${form.enableWickSr ? 'bg-emerald-500/5 border-emerald-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableWickSr', !form.enableWickSr)}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${form.enableWickSr ? 'bg-emerald-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableWickSr ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <div className="flex items-center gap-3 ml-2">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${form.enableWickSr ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-gray-500'}`}>
-                                                <span className="text-xl">🔥</span>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${form.enableWickSr ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-gray-500'}`}>
+                                                <span className="text-sm">🔥</span>
                                             </div>
                                             <div>
-                                                <h4 className="text-sm font-black text-white uppercase tracking-wider">Smart Support/Resistance</h4>
-                                                <p className="text-[10px] text-gray-400">Institutional Wick Rejection Confluence</p>
+                                                <h4 className="text-xs font-black text-white uppercase tracking-wider">Smart Support/Resistance</h4>
+                                                <p className="text-[9px] text-gray-400">Institutional Wick Rejection Confluence</p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
                                 {form.enableWickSr && (
-                                    <div className="mt-4 animate-fadeIn" onClick={e => e.stopPropagation()}>
+                                    <div className="mt-2.5 animate-fadeIn" onClick={e => e.stopPropagation()}>
                                         {/* Modes Selection */}
-                                        <div className="grid grid-cols-4 gap-2 mb-4">
+                                        <div className="grid grid-cols-4 gap-1.5 mb-2.5">
                                             {[
                                                 { id: 'bounce', label: 'Bounce', color: 'text-emerald-400', border: 'border-emerald-500/50', bg: 'bg-emerald-500/20' },
                                                 { id: 'breakout', label: 'Breakout', color: 'text-blue-400', border: 'border-blue-500/50', bg: 'bg-blue-500/20' },
@@ -2784,7 +2796,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 const isSelected = form.wickSrModes.includes(mode.id);
                                                 return (
                                                     <div key={mode.id}
-                                                        className={`p-2 rounded-xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${isSelected ? `${mode.bg} ${mode.border}` : 'bg-black/20 border-white/10'}`}
+                                                        className={`p-1.5 rounded-lg border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${isSelected ? `${mode.bg} ${mode.border}` : 'bg-black/20 border-white/10'}`}
                                                         onClick={() => {
                                                             const newModes = isSelected
                                                                 ? form.wickSrModes.filter(m => m !== mode.id)
@@ -2792,18 +2804,18 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                             handleFormChange('wickSrModes', newModes.length ? newModes : ['bounce']);
                                                         }}
                                                     >
-                                                        <p className="text-[10px] font-bold text-white uppercase">{mode.label}</p>
-                                                        <div className={`w-3 h-3 rounded-full ${isSelected ? mode.color.replace('text-', 'bg-') + ' shadow-[0_0_10px_currentColor]' : 'bg-gray-600'}`}></div>
+                                                        <p className="text-[9px] font-bold text-white uppercase">{mode.label}</p>
+                                                        <div className={`w-2 h-2 rounded-full ${isSelected ? mode.color.replace('text-', 'bg-') + ' shadow-[0_0_10px_currentColor]' : 'bg-gray-600'}`}></div>
                                                     </div>
                                                 );
                                             })}
                                         </div>
 
-                                        <div className="grid grid-cols-2 gap-4 animate-fadeIn bg-black/40 p-3 rounded-xl border border-emerald-500/20">
+                                        <div className="grid grid-cols-2 gap-2 animate-fadeIn bg-black/40 p-2.5 rounded-lg border border-emerald-500/20">
                                             <div className="col-span-2">
-                                                <label className="text-[10px] font-bold text-emerald-400 uppercase mb-1 block">Calculation Timeframe</label>
+                                                <label className="text-[9px] font-bold text-emerald-400 uppercase mb-1 block">Calculation Timeframe</label>
                                                 <select
-                                                    className="w-full bg-[#000000] border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-emerald-500 text-sm font-bold text-center"
+                                                    className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-emerald-500 text-xs font-bold text-center"
                                                     value={form.wickSrTimeframe}
                                                     onChange={(e) => handleFormChange('wickSrTimeframe', e.target.value)}
                                                 >
@@ -2816,10 +2828,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                             </div>
 
                                             {form.wickSrModes.includes('sweep') && (
-                                                <div className="col-span-2 bg-orange-500/5 p-2 rounded-lg border border-orange-500/20 mt-1">
+                                                <div className="col-span-2 bg-orange-500/5 p-2 rounded-lg border border-orange-500/20">
                                                     <div className="flex justify-between items-end mb-1">
-                                                        <label className="text-[10px] font-bold text-orange-400 uppercase">Sweep Fakeout Tolerance</label>
-                                                        <span className="text-xs font-mono font-bold text-white">{form.wickSrSweepThreshold} Candles</span>
+                                                        <label className="text-[9px] font-bold text-orange-400 uppercase">Sweep Fakeout Tolerance</label>
+                                                        <span className="text-[11px] font-mono font-bold text-white">{form.wickSrSweepThreshold} Candles</span>
                                                     </div>
                                                     <input
                                                         type="range"
@@ -2831,30 +2843,30 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 </div>
                                             )}
 
-                                            <div className="col-span-2 grid grid-cols-2 gap-3 mt-2 pt-2 border-t border-white/10">
-                                                <div className="bg-black/20 border border-white/10 rounded-lg p-2 flex items-center justify-between">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase">LB</label>
+                                            <div className="col-span-2 grid grid-cols-2 gap-2 pt-1.5 border-t border-white/10">
+                                                <div className="bg-black/20 border border-white/10 rounded-lg p-1.5 flex items-center justify-between">
+                                                    <label className="text-[9px] font-bold text-gray-400 uppercase">LB</label>
                                                     <input type="number" className="w-16 bg-transparent text-right text-white font-mono text-xs outline-none focus:text-emerald-400" value={form.wickSrLookback} onChange={(e) => handleFormChange('wickSrLookback', parseInt(e.target.value))} min={50} max={1000} step={10} />
                                                 </div>
-                                                <div className="bg-black/20 border border-white/10 rounded-lg p-2 flex items-center justify-between">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase">Min</label>
+                                                <div className="bg-black/20 border border-white/10 rounded-lg p-1.5 flex items-center justify-between">
+                                                    <label className="text-[9px] font-bold text-gray-400 uppercase">Min</label>
                                                     <input type="number" className="w-16 bg-transparent text-right text-white font-mono text-xs outline-none focus:text-emerald-400" value={form.wickSrMinTouches} onChange={(e) => handleFormChange('wickSrMinTouches', parseInt(e.target.value))} min={3} step={1} />
                                                 </div>
-                                                <div className="bg-black/20 border border-white/10 rounded-lg p-2 flex items-center justify-between">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase">ATR P</label>
+                                                <div className="bg-black/20 border border-white/10 rounded-lg p-1.5 flex items-center justify-between">
+                                                    <label className="text-[9px] font-bold text-gray-400 uppercase">ATR P</label>
                                                     <input type="number" className="w-16 bg-transparent text-right text-white font-mono text-xs outline-none focus:text-emerald-400" value={form.wickSrAtrPeriod} onChange={(e) => handleFormChange('wickSrAtrPeriod', parseInt(e.target.value))} min={1} step={1} />
                                                 </div>
-                                                <div className="bg-black/20 border border-white/10 rounded-lg p-2 flex items-center justify-between">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase">ATRx</label>
+                                                <div className="bg-black/20 border border-white/10 rounded-lg p-1.5 flex items-center justify-between">
+                                                    <label className="text-[9px] font-bold text-gray-400 uppercase">ATRx</label>
                                                     <input type="number" step="0.1" className="w-16 bg-transparent text-right text-white font-mono text-xs outline-none focus:text-emerald-400" value={form.wickSrAtrMultiplier} onChange={(e) => handleFormChange('wickSrAtrMultiplier', parseFloat(e.target.value))} min={0.1} />
                                                 </div>
                                             </div>
 
                                             {/* OIB Confluence integration */}
-                                            <div className={`col-span-2 flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors mt-2 ${form.enableWickSrOib ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-white/5 border border-white/10'}`} onClick={() => handleFormChange('enableWickSrOib', !form.enableWickSrOib)}>
+                                            <div className={`col-span-2 flex items-center justify-between p-1.5 rounded-lg cursor-pointer transition-colors ${form.enableWickSrOib ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-white/5 border border-white/10'}`} onClick={() => handleFormChange('enableWickSrOib', !form.enableWickSrOib)}>
                                                 <div>
-                                                    <span className="text-[10px] font-black text-white uppercase tracking-wider block text-amber-400">Orderbook Flow Confluence</span>
-                                                    <span className="text-[9px] text-gray-500 mt-0.5 block">Require OIB filter verification on entry</span>
+                                                    <span className="text-[9px] font-black text-white uppercase tracking-wider block text-amber-400">Orderbook Flow Confluence</span>
+                                                    <span className="text-[8px] text-gray-500 block">Require OIB filter verification on entry</span>
                                                 </div>
                                                 <div className={`w-8 h-4 rounded-full p-0.5 flex items-center transition-colors duration-200 ${form.enableWickSrOib ? 'bg-amber-500' : 'bg-gray-700'}`}>
                                                     <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableWickSrOib ? 'translate-x-4' : 'translate-x-0'}`}></div>
@@ -2862,10 +2874,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                             </div>
 
                                             {/* Dynamic TP Level-to-Level */}
-                                            <div className={`col-span-2 flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors mt-2 ${form.enableDynamicWickTp ? 'bg-cyan-500/10 border border-cyan-500/30' : 'bg-white/5 border border-white/10'}`} onClick={() => handleFormChange('enableDynamicWickTp', !form.enableDynamicWickTp)}>
+                                            <div className={`col-span-2 flex items-center justify-between p-1.5 rounded-lg cursor-pointer transition-colors ${form.enableDynamicWickTp ? 'bg-cyan-500/10 border border-cyan-500/30' : 'bg-white/5 border border-white/10'}`} onClick={() => handleFormChange('enableDynamicWickTp', !form.enableDynamicWickTp)}>
                                                 <div>
-                                                    <span className="text-[10px] font-black text-white uppercase tracking-wider block text-cyan-400">🎯 Dynamic TP (Level-to-Level)</span>
-                                                    <span className="text-[9px] text-gray-500 mt-0.5 block">Ignore fixed spread. Use next SR zone as TP target</span>
+                                                    <span className="text-[9px] font-black text-white uppercase tracking-wider block text-cyan-400">🎯 Dynamic TP (Level-to-Level)</span>
+                                                    <span className="text-[8px] text-gray-500 block">Ignore fixed spread. Use next SR zone as TP target</span>
                                                 </div>
                                                 <div className={`w-8 h-4 rounded-full p-0.5 flex items-center transition-colors duration-200 ${form.enableDynamicWickTp ? 'bg-cyan-500' : 'bg-gray-700'}`}>
                                                     <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableDynamicWickTp ? 'translate-x-4' : 'translate-x-0'}`}></div>
@@ -2874,14 +2886,14 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
                                             {/* Front-Run % input shown only when Dynamic TP is ON */}
                                             {form.enableDynamicWickTp && (
-                                                <div className="col-span-2 flex items-center justify-between p-2 rounded-lg bg-cyan-500/5 border border-cyan-500/20 mt-1">
+                                                <div className="col-span-2 flex items-center justify-between p-1.5 rounded-lg bg-cyan-500/5 border border-cyan-500/20">
                                                     <div>
-                                                        <span className="text-[10px] font-black text-white uppercase tracking-wider block text-cyan-300">TP Front-Run %</span>
-                                                        <span className="text-[9px] text-gray-500 mt-0.5 block">Take profit this % before the zone (0 = exactly at zone)</span>
+                                                        <span className="text-[9px] font-black text-white uppercase tracking-wider block text-cyan-300">TP Front-Run %</span>
+                                                        <span className="text-[8px] text-gray-500 block">Take profit this % before the zone (0 = exactly at zone)</span>
                                                     </div>
                                                     <input
                                                         type="number"
-                                                        className="w-20 bg-[#000000] border border-cyan-500/30 rounded-lg p-1.5 text-cyan-300 outline-none focus:border-cyan-400 text-sm font-bold text-center font-mono"
+                                                        className="w-16 bg-[#000000] border border-cyan-500/30 rounded-lg p-1 text-cyan-300 outline-none focus:border-cyan-400 text-xs font-bold text-center font-mono"
                                                         value={form.dynamicTpFrontrunPct}
                                                         onChange={(e) => handleFormChange('dynamicTpFrontrunPct', parseFloat(e.target.value) || 0)}
                                                         min={0} max={5} step={0.05}
@@ -2895,31 +2907,31 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                 )}
                             </div>
 
-                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 hover:border-yellow-500/30 transition-colors shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
+                            <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 hover:border-yellow-500/30 transition-colors shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
                                 <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); handleFormChange('enableDualEngine', !form.enableDualEngine); }}>
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${form.enableDualEngine ? 'bg-yellow-500/20 text-yellow-400' : 'bg-white/5 text-gray-500'}`}>
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${form.enableDualEngine ? 'bg-yellow-500/20 text-yellow-400' : 'bg-white/5 text-gray-500'}`}>
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                                         </div>
                                         <div>
-                                            <h4 className="text-sm font-black text-white uppercase tracking-wider">⚡ Dual Engine Command Center</h4>
-                                            <p className="text-[10px] text-gray-400">Advanced multi-indicator confluence filters</p>
+                                            <h4 className="text-xs font-black text-white uppercase tracking-wider">⚡ Dual Engine Command Center</h4>
+                                            <p className="text-[9px] text-gray-400">Advanced multi-indicator confluence filters</p>
                                         </div>
                                     </div>
-                                    <div className={`w-12 h-6 rounded-full p-1 flex items-center transition-colors duration-300 ${form.enableDualEngine ? 'bg-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.5)]' : 'bg-gray-700'}`}>
-                                        <div className={`w-4 h-4 bg-white rounded-full transform transition-transform duration-300 ${form.enableDualEngine ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                    <div className={`w-9 h-5 rounded-full p-0.5 flex items-center transition-colors duration-300 shrink-0 ${form.enableDualEngine ? 'bg-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.5)]' : 'bg-gray-700'}`}>
+                                        <div className={`w-4 h-4 bg-white rounded-full transform transition-transform duration-300 ${form.enableDualEngine ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                     </div>
                                 </div>
 
                                 {form.enableDualEngine && (
-                                    <div className="mt-4 animate-fadeIn" onClick={e => e.stopPropagation()}>
-                                        <div className="flex justify-between items-center gap-2 mb-4">
-                                            <div className="flex items-center gap-2 p-1 bg-black/20 rounded-lg border border-white/5 flex-1">
+                                    <div className="mt-2.5 animate-fadeIn" onClick={e => e.stopPropagation()}>
+                                        <div className="flex justify-between items-center gap-1.5 mb-2.5">
+                                            <div className="flex items-center gap-1 p-0.5 bg-black/20 rounded-lg border border-white/5 flex-1">
                                                 {(['Classic', 'Hybrid', 'Legacy'] as const).map(mode => (
                                                     <button
                                                         key={mode}
                                                         onClick={() => handleFormChange('dualEngineMode', mode)}
-                                                        className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded transition-all ${form.dualEngineMode === mode ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                                        className={`flex-1 py-1 text-[9px] font-bold uppercase rounded transition-all ${form.dualEngineMode === mode ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                                                     >
                                                         {mode}
                                                     </button>
@@ -2928,7 +2940,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                             <select
                                                 value={form.dualEngineTimeframe}
                                                 onChange={e => handleFormChange('dualEngineTimeframe', e.target.value)}
-                                                className="bg-black/50 border border-white/10 text-yellow-500 font-mono text-[10px] rounded px-2 py-1.5 focus:border-yellow-500 outline-none w-20 text-center"
+                                                className="bg-black/50 border border-white/10 text-yellow-500 font-mono text-[10px] rounded px-1.5 py-1 focus:border-yellow-500 outline-none w-16 text-center"
                                                 title="Dual Engine Timeframe"
                                             >
                                                 <option value="1s">1s</option>
@@ -2941,138 +2953,138 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                         </div>
                                         {form.dualEngineMode === 'Classic' ? (
                                             <>
-                                                <div className="flex justify-between items-center mb-3 bg-yellow-500/10 border border-yellow-500/30 p-2 rounded-lg cursor-pointer" onClick={() => handleFormChange('dualEngineConfluenceMode', !form.dualEngineConfluenceMode)}>
+                                                <div className="flex justify-between items-center mb-2 bg-yellow-500/10 border border-yellow-500/30 p-1.5 rounded-lg cursor-pointer" onClick={() => handleFormChange('dualEngineConfluenceMode', !form.dualEngineConfluenceMode)}>
                                                     <div>
-                                                        <span className="text-[10px] font-bold text-yellow-500 uppercase block">Majority Vote Confluence</span>
-                                                        <span className="text-[9px] text-gray-400">Trigger if min. required active filters align</span>
+                                                        <span className="text-[9px] font-bold text-yellow-500 uppercase block">Majority Vote Confluence</span>
+                                                        <span className="text-[8px] text-gray-400">Trigger if min. required active filters align</span>
                                                     </div>
-                                                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                                                         {form.dualEngineConfluenceMode && (
-                                                            <input type="number" min="1" max="8" className="bg-black/50 text-center text-yellow-400 font-mono text-[10px] w-10 border border-yellow-500/30 rounded py-1 outline-none" value={form.dualEngineMinConfluence} onChange={(e) => handleFormChange('dualEngineMinConfluence', parseInt(e.target.value))} title="Min Confluence Count" />
+                                                            <input type="number" min="1" max="8" className="bg-black/50 text-center text-yellow-400 font-mono text-[10px] w-9 border border-yellow-500/30 rounded py-0.5 outline-none" value={form.dualEngineMinConfluence} onChange={(e) => handleFormChange('dualEngineMinConfluence', parseInt(e.target.value))} title="Min Confluence Count" />
                                                         )}
                                                         <div className={`w-8 h-4 rounded-full p-0.5 flex items-center transition-colors duration-200 ${form.dualEngineConfluenceMode ? 'bg-yellow-500' : 'bg-gray-700'}`} onClick={() => handleFormChange('dualEngineConfluenceMode', !form.dualEngineConfluenceMode)}>
                                                             <div className={`w-3 h-3 bg-white rounded-full transform transition-transform duration-200 ${form.dualEngineConfluenceMode ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-4">
-                                                    <div className={`p-2 rounded-xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineEmaFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineEmaFilter', !form.dualEngineEmaFilter)}>
-                                                        <p className="text-[9px] font-bold text-white uppercase text-center xl:whitespace-nowrap">SMA 100</p>
-                                                        <div className={`w-2.5 h-2.5 rounded-full ${form.dualEngineEmaFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
+                                                <div className="grid grid-cols-4 gap-1.5 mb-2.5">
+                                                    <div className={`p-1.5 rounded-lg border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineEmaFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineEmaFilter', !form.dualEngineEmaFilter)}>
+                                                        <p className="text-[9px] font-bold text-white uppercase text-center whitespace-nowrap">SMA 100</p>
+                                                        <div className={`w-2 h-2 rounded-full ${form.dualEngineEmaFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
                                                     </div>
-                                                    <div className={`p-2 rounded-xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineTripleEmaFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineTripleEmaFilter', !form.dualEngineTripleEmaFilter)}>
-                                                        <p className="text-[9px] font-bold text-white uppercase text-center xl:whitespace-nowrap">Triple EMA</p>
-                                                        <div className={`w-2.5 h-2.5 rounded-full ${form.dualEngineTripleEmaFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
+                                                    <div className={`p-1.5 rounded-lg border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineTripleEmaFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineTripleEmaFilter', !form.dualEngineTripleEmaFilter)}>
+                                                        <p className="text-[9px] font-bold text-white uppercase text-center whitespace-nowrap">Triple EMA</p>
+                                                        <div className={`w-2 h-2 rounded-full ${form.dualEngineTripleEmaFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
                                                     </div>
-                                                    <div className={`p-2 rounded-xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineRsiFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineRsiFilter', !form.dualEngineRsiFilter)}>
-                                                        <p className="text-[9px] font-bold text-white uppercase text-center xl:whitespace-nowrap">RSI Mom</p>
-                                                        <div className={`w-2.5 h-2.5 rounded-full ${form.dualEngineRsiFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
+                                                    <div className={`p-1.5 rounded-lg border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineRsiFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineRsiFilter', !form.dualEngineRsiFilter)}>
+                                                        <p className="text-[9px] font-bold text-white uppercase text-center whitespace-nowrap">RSI Mom</p>
+                                                        <div className={`w-2 h-2 rounded-full ${form.dualEngineRsiFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
                                                     </div>
-                                                    <div className={`p-2 rounded-xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineMacdFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineMacdFilter', !form.dualEngineMacdFilter)}>
-                                                        <p className="text-[9px] font-bold text-white uppercase text-center xl:whitespace-nowrap">MACD Cross</p>
-                                                        <div className={`w-2.5 h-2.5 rounded-full ${form.dualEngineMacdFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
+                                                    <div className={`p-1.5 rounded-lg border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineMacdFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineMacdFilter', !form.dualEngineMacdFilter)}>
+                                                        <p className="text-[9px] font-bold text-white uppercase text-center whitespace-nowrap">MACD Cross</p>
+                                                        <div className={`w-2 h-2 rounded-full ${form.dualEngineMacdFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
                                                     </div>
-                                                    <div className={`p-2 rounded-xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineAdxFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineAdxFilter', !form.dualEngineAdxFilter)}>
-                                                        <p className="text-[9px] font-bold text-white uppercase text-center xl:whitespace-nowrap">ADX Trend</p>
-                                                        <div className={`w-2.5 h-2.5 rounded-full ${form.dualEngineAdxFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
+                                                    <div className={`p-1.5 rounded-lg border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineAdxFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineAdxFilter', !form.dualEngineAdxFilter)}>
+                                                        <p className="text-[9px] font-bold text-white uppercase text-center whitespace-nowrap">ADX Trend</p>
+                                                        <div className={`w-2 h-2 rounded-full ${form.dualEngineAdxFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
                                                     </div>
-                                                    <div className={`p-2 rounded-xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineVolFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineVolFilter', !form.dualEngineVolFilter)}>
-                                                        <p className="text-[9px] font-bold text-white uppercase text-center xl:whitespace-nowrap">Volume</p>
-                                                        <div className={`w-2.5 h-2.5 rounded-full ${form.dualEngineVolFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
+                                                    <div className={`p-1.5 rounded-lg border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineVolFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineVolFilter', !form.dualEngineVolFilter)}>
+                                                        <p className="text-[9px] font-bold text-white uppercase text-center whitespace-nowrap">Volume</p>
+                                                        <div className={`w-2 h-2 rounded-full ${form.dualEngineVolFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
                                                     </div>
-                                                    <div className={`p-2 rounded-xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineSqueezeFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineSqueezeFilter', !form.dualEngineSqueezeFilter)}>
-                                                        <p className="text-[9px] font-bold text-white uppercase text-center xl:whitespace-nowrap">Squeeze</p>
-                                                        <div className={`w-2.5 h-2.5 rounded-full ${form.dualEngineSqueezeFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
+                                                    <div className={`p-1.5 rounded-lg border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineSqueezeFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineSqueezeFilter', !form.dualEngineSqueezeFilter)}>
+                                                        <p className="text-[9px] font-bold text-white uppercase text-center whitespace-nowrap">Squeeze</p>
+                                                        <div className={`w-2 h-2 rounded-full ${form.dualEngineSqueezeFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
                                                     </div>
-                                                    <div className={`p-2 rounded-xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineCandleFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineCandleFilter', !form.dualEngineCandleFilter)}>
-                                                        <p className="text-[9px] font-bold text-white uppercase text-center xl:whitespace-nowrap">Candles</p>
-                                                        <div className={`w-2.5 h-2.5 rounded-full ${form.dualEngineCandleFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
+                                                    <div className={`p-1.5 rounded-lg border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${form.dualEngineCandleFilter ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-black/20 border-white/10'}`} onClick={() => handleFormChange('dualEngineCandleFilter', !form.dualEngineCandleFilter)}>
+                                                        <p className="text-[9px] font-bold text-white uppercase text-center whitespace-nowrap">Candles</p>
+                                                        <div className={`w-2 h-2 rounded-full ${form.dualEngineCandleFilter ? 'bg-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.8)]' : 'bg-gray-600'}`}></div>
                                                     </div>
                                                 </div>
 
                                                 {/* Settings Parameters Panel */}
-                                                <div className="space-y-3 bg-black/30 p-4 rounded-xl border border-white/5">
+                                                <div className="space-y-1.5 bg-black/30 p-2.5 rounded-lg border border-white/5">
                                                     {form.dualEngineEmaFilter && (
-                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-2 px-3 border border-yellow-500/10">
-                                                            <span className="text-[10px] font-bold text-gray-300 uppercase">EMA Length</span>
-                                                            <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-16 outline-none" value={form.dualEngineEmaLength} onChange={(e) => handleFormChange('dualEngineEmaLength', e.target.value)} />
+                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
+                                                            <span className="text-[9px] font-bold text-gray-300 uppercase">EMA Length</span>
+                                                            <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-14 outline-none" value={form.dualEngineEmaLength} onChange={(e) => handleFormChange('dualEngineEmaLength', e.target.value)} />
                                                         </div>
                                                     )}
                                                     {form.dualEngineRsiFilter && (
-                                                        <div className="flex gap-2">
-                                                            <div className="flex-1 flex justify-between items-center bg-white/5 rounded-lg p-2 px-3 border border-yellow-500/10">
-                                                                <span className="text-[10px] font-bold text-gray-300 uppercase">RSI Len</span>
-                                                                <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-12 outline-none" value={form.dualEngineRsiLength} onChange={(e) => handleFormChange('dualEngineRsiLength', e.target.value)} />
+                                                        <div className="flex gap-1.5">
+                                                            <div className="flex-1 flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2 border border-yellow-500/10">
+                                                                <span className="text-[9px] font-bold text-gray-300 uppercase">RSI Len</span>
+                                                                <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-10 outline-none" value={form.dualEngineRsiLength} onChange={(e) => handleFormChange('dualEngineRsiLength', e.target.value)} />
                                                             </div>
-                                                            <div className="flex-1 flex justify-between items-center bg-white/5 rounded-lg p-2 px-3 border border-yellow-500/10">
-                                                                <span className="text-[10px] font-bold text-gray-300 uppercase">OB/OS</span>
+                                                            <div className="flex-1 flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2 border border-yellow-500/10">
+                                                                <span className="text-[9px] font-bold text-gray-300 uppercase">OB/OS</span>
                                                                 <div className="flex items-center gap-1">
-                                                                    <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineRsiOb} onChange={(e) => handleFormChange('dualEngineRsiOb', e.target.value)} />
-                                                                    <span className="text-gray-500 text-[10px]">/</span>
-                                                                    <input type="number" className="bg-transparent text-left text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineRsiOs} onChange={(e) => handleFormChange('dualEngineRsiOs', e.target.value)} />
+                                                                    <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineRsiOb} onChange={(e) => handleFormChange('dualEngineRsiOb', e.target.value)} />
+                                                                    <span className="text-gray-500 text-[9px]">/</span>
+                                                                    <input type="number" className="bg-transparent text-left text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineRsiOs} onChange={(e) => handleFormChange('dualEngineRsiOs', e.target.value)} />
                                                                 </div>
                                                             </div>
                                                         </div>
                                                     )}
                                                     {form.dualEngineMacdFilter && (
-                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-2 px-3 border border-yellow-500/10">
-                                                            <span className="text-[10px] font-bold text-gray-300 uppercase">MACD Fast / Slow / Signal</span>
-                                                            <div className="flex items-center gap-2">
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineMacdFast} onChange={(e) => handleFormChange('dualEngineMacdFast', e.target.value)} />
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineMacdSlow} onChange={(e) => handleFormChange('dualEngineMacdSlow', e.target.value)} />
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineMacdSignal} onChange={(e) => handleFormChange('dualEngineMacdSignal', e.target.value)} />
+                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
+                                                            <span className="text-[9px] font-bold text-gray-300 uppercase">MACD Fast / Slow / Signal</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineMacdFast} onChange={(e) => handleFormChange('dualEngineMacdFast', e.target.value)} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineMacdSlow} onChange={(e) => handleFormChange('dualEngineMacdSlow', e.target.value)} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineMacdSignal} onChange={(e) => handleFormChange('dualEngineMacdSignal', e.target.value)} />
                                                             </div>
                                                         </div>
                                                     )}
                                                     {form.dualEngineSqueezeFilter && (
-                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-2 px-3 border border-yellow-500/10">
-                                                            <span className="text-[10px] font-bold text-gray-300 uppercase">Squeeze Len / BB / KC</span>
-                                                            <div className="flex items-center gap-2">
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineSqueezeLength} onChange={(e) => handleFormChange('dualEngineSqueezeLength', e.target.value)} />
-                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-10 outline-none" value={form.dualEngineSqueezeBbMult} onChange={(e) => handleFormChange('dualEngineSqueezeBbMult', e.target.value)} />
-                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-10 outline-none" value={form.dualEngineSqueezeKcMult} onChange={(e) => handleFormChange('dualEngineSqueezeKcMult', e.target.value)} />
+                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
+                                                            <span className="text-[9px] font-bold text-gray-300 uppercase">Squeeze Len / BB / KC</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineSqueezeLength} onChange={(e) => handleFormChange('dualEngineSqueezeLength', e.target.value)} />
+                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-9 outline-none" value={form.dualEngineSqueezeBbMult} onChange={(e) => handleFormChange('dualEngineSqueezeBbMult', e.target.value)} />
+                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-9 outline-none" value={form.dualEngineSqueezeKcMult} onChange={(e) => handleFormChange('dualEngineSqueezeKcMult', e.target.value)} />
                                                             </div>
                                                         </div>
                                                     )}
                                                     {form.dualEngineTripleEmaFilter && (
-                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-2 px-3 border border-yellow-500/10">
-                                                            <span className="text-[10px] font-bold text-gray-300 uppercase">Fast / Med / Slow</span>
-                                                            <div className="flex items-center gap-2">
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineEmaFast} onChange={(e) => handleFormChange('dualEngineEmaFast', e.target.value)} />
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineEmaMed} onChange={(e) => handleFormChange('dualEngineEmaMed', e.target.value)} />
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineEmaSlow} onChange={(e) => handleFormChange('dualEngineEmaSlow', e.target.value)} />
+                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
+                                                            <span className="text-[9px] font-bold text-gray-300 uppercase">Fast / Med / Slow</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineEmaFast} onChange={(e) => handleFormChange('dualEngineEmaFast', e.target.value)} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineEmaMed} onChange={(e) => handleFormChange('dualEngineEmaMed', e.target.value)} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineEmaSlow} onChange={(e) => handleFormChange('dualEngineEmaSlow', e.target.value)} />
                                                             </div>
                                                         </div>
                                                     )}
                                                     {form.dualEngineAdxFilter && (
-                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-2 px-3 border border-yellow-500/10">
-                                                            <span className="text-[10px] font-bold text-gray-300 uppercase">ADX Length / Threshold</span>
-                                                            <div className="flex items-center gap-2">
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineAdxLength} onChange={(e) => handleFormChange('dualEngineAdxLength', e.target.value)} />
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineAdxThreshold} onChange={(e) => handleFormChange('dualEngineAdxThreshold', e.target.value)} />
+                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
+                                                            <span className="text-[9px] font-bold text-gray-300 uppercase">ADX Length / Threshold</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineAdxLength} onChange={(e) => handleFormChange('dualEngineAdxLength', e.target.value)} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineAdxThreshold} onChange={(e) => handleFormChange('dualEngineAdxThreshold', e.target.value)} />
                                                             </div>
                                                         </div>
                                                     )}
                                                     {form.dualEngineVolFilter && (
-                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-2 px-3 border border-yellow-500/10">
-                                                            <span className="text-[10px] font-bold text-gray-300 uppercase">Vol Length / Multiplier</span>
-                                                            <div className="flex items-center gap-2">
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-8 outline-none" value={form.dualEngineVolLength} onChange={(e) => handleFormChange('dualEngineVolLength', e.target.value)} />
-                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-10 outline-none" value={form.dualEngineVolMultiplier} onChange={(e) => handleFormChange('dualEngineVolMultiplier', e.target.value)} />
+                                                        <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
+                                                            <span className="text-[9px] font-bold text-gray-300 uppercase">Vol Length / Multiplier</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineVolLength} onChange={(e) => handleFormChange('dualEngineVolLength', e.target.value)} />
+                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-9 outline-none" value={form.dualEngineVolMultiplier} onChange={(e) => handleFormChange('dualEngineVolMultiplier', e.target.value)} />
                                                             </div>
                                                         </div>
                                                     )}
                                                     {!form.dualEngineEmaFilter && !form.dualEngineTripleEmaFilter && !form.dualEngineRsiFilter && !form.dualEngineMacdFilter && !form.dualEngineAdxFilter && !form.dualEngineVolFilter && !form.dualEngineSqueezeFilter && (
-                                                        <p className="text-center text-[10px] text-gray-500 uppercase">Enable filters to see parameters</p>
+                                                        <p className="text-center text-[9px] text-gray-500 uppercase">Enable filters to see parameters</p>
                                                     )}
                                                 </div>
                                             </>
                                         ) : (
-                                            <div className="bg-cyan-500/10 border border-cyan-500/20 p-3 rounded-lg flex items-start gap-3 mt-2 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-fadeIn">
-                                                <span className="text-cyan-400 text-lg leading-none mt-0.5">🧠</span>
+                                            <div className="bg-cyan-500/10 border border-cyan-500/20 p-2.5 rounded-lg flex items-start gap-2 mt-1.5 shadow-[0_0_15px_rgba(6,182,212,0.15)] animate-fadeIn">
+                                                <span className="text-cyan-400 text-sm leading-none mt-0.5">🧠</span>
                                                 <div>
-                                                    <h4 className="text-cyan-300 text-[10px] font-bold uppercase tracking-wider mb-1">Macro Brain Active</h4>
-                                                    <p className="text-[10px] text-cyan-200/80 leading-relaxed">
+                                                    <h4 className="text-cyan-300 text-[9px] font-bold uppercase tracking-wider mb-0.5">Macro Brain Active</h4>
+                                                    <p className="text-[9px] text-cyan-200/80 leading-relaxed">
                                                         Bot will ignore Classic inputs and automatically score <strong>OBV, Market Structure, Momentum, and HTF trends</strong>. It strictly takes entries when the Overall Insight Score hits <strong>+4 or -4</strong>.
                                                     </p>
                                                 </div>
@@ -3086,13 +3098,13 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     )}
 
                     {activeTab === 'risk' && (
-                        <div className="animate-fadeIn space-y-4">
+                        <div className="animate-fadeIn space-y-2.5">
 
                             {form.mlExecutionMode === 'advanced' && (
-                                <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-3 mb-2 shadow-[0_0_20px_rgba(168,85,247,0.1)]">
-                                    <div className="text-4xl animate-bounce">🤖</div>
-                                    <h3 className="text-purple-400 font-black tracking-widest uppercase text-sm">AI Auto-Pilot Active</h3>
-                                    <p className="text-xs text-gray-400 max-w-sm leading-relaxed">
+                                <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3 flex flex-col items-center justify-center text-center space-y-1.5 mb-1 shadow-[0_0_20px_rgba(168,85,247,0.1)]">
+                                    <div className="text-2xl animate-bounce">🤖</div>
+                                    <h3 className="text-purple-400 font-black tracking-widest uppercase text-xs">AI Auto-Pilot Active</h3>
+                                    <p className="text-[10px] text-gray-400 max-w-sm leading-relaxed">
                                         The <b>Advanced ML Engine</b> is controlling your Initial SL and Final TP based on L2 order flow. Conflicting manual options below are disabled.
                                     </p>
                                 </div>
@@ -3102,13 +3114,13 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             <AdvancedRiskManager form={form} setForm={setForm} quoteAsset={form.symbol ? form.symbol.split('/')[1] || 'USDT' : 'USDT'} />
 
                             {/* --- RISK SL ORDER TYPE --- */}
-                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex gap-4 items-center mb-2 shadow-[0_4px_20px_rgba(0,0,0,0.1)]">
-                                <div className="flex-1 space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-bold uppercase">Risk Exit Execution Type (SL, TSL, Breakeven)</label>
-                                    <p className="text-[9px] text-gray-500">How should stop losses execute? Note: Market is safest.</p>
+                            <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 flex gap-2 items-center shadow-[0_4px_20px_rgba(0,0,0,0.1)]">
+                                <div className="flex-1 space-y-0.5 min-w-0">
+                                    <label className="text-[9px] text-gray-400 font-bold uppercase block">Risk Exit Execution Type (SL, TSL, Breakeven)</label>
+                                    <p className="text-[8px] text-gray-500 leading-tight">How should stop losses execute? Note: Market is safest.</p>
                                 </div>
                                 <select
-                                    className="w-[200px] bg-black/40 border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-brand-primary text-xs font-bold"
+                                    className="w-[155px] shrink-0 bg-black/40 border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-brand-primary text-[11px] font-bold"
                                     value={form.slOrderType}
                                     onChange={(e) => handleFormChange('slOrderType', e.target.value)}
                                 >
@@ -3122,73 +3134,73 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
                             {/* --- SMART CHASE OPTIONS --- */}
                             {form.slOrderType === 'smart_chase' && (
-                                <div className="bg-brand-primary/5 border border-brand-primary/20 rounded-xl p-4 flex gap-4 items-center mb-2 animate-fadeIn shadow-[0_4px_20px_rgba(0,0,0,0.1)]">
-                                    <div className="flex-1 space-y-1">
-                                        <div className="flex justify-between items-end mb-1">
-                                            <label className="text-[10px] text-brand-primary font-bold uppercase">Max Chase Deviation (%)</label>
-                                            <span className="text-xs font-mono font-bold text-brand-primary">{form.smartChaseDeviationPct}%</span>
+                                <div className="bg-brand-primary/5 border border-brand-primary/20 rounded-lg p-2.5 flex gap-2 items-center animate-fadeIn shadow-[0_4px_20px_rgba(0,0,0,0.1)]">
+                                    <div className="flex-1 space-y-0.5 min-w-0">
+                                        <div className="flex justify-between items-end mb-0.5">
+                                            <label className="text-[9px] text-brand-primary font-bold uppercase">Max Chase Deviation (%)</label>
+                                            <span className="text-[11px] font-mono font-bold text-brand-primary">{form.smartChaseDeviationPct}%</span>
                                         </div>
                                         <input type="range" min="0.1" max="5.0" step="0.1" className="w-full h-1.5 rounded-lg appearance-none cursor-pointer accent-brand-primary bg-white/10" value={form.smartChaseDeviationPct} onChange={(e) => handleFormChange('smartChaseDeviationPct', parseFloat(e.target.value))} />
-                                        <p className="text-[8.5px] text-gray-500 mt-1 leading-tight">Circuit breaker limit.</p>
+                                        <p className="text-[8px] text-gray-500 mt-0.5 leading-tight">Circuit breaker limit.</p>
                                     </div>
-                                    <div className="w-[80px] space-y-1">
-                                        <label className="text-[10px] text-brand-primary font-bold uppercase" title="Max number of retries before forcing a market sweep. Set to 0 for infinite retries.">Retries</label>
-                                        <input type="number" step="1" min="0" max="999" className="w-full bg-black/40 border border-brand-primary/30 rounded-xl p-2 text-brand-primary text-center outline-none focus:border-brand-primary text-xs font-mono" value={form.smartChaseMaxAttempts} onChange={(e) => handleFormChange('smartChaseMaxAttempts', parseInt(e.target.value))} />
-                                        <p className="text-[8.5px] text-gray-500 mt-1 text-center">0 = Infinite</p>
+                                    <div className="w-[60px] space-y-0.5 shrink-0">
+                                        <label className="text-[9px] text-brand-primary font-bold uppercase block text-center" title="Max number of retries before forcing a market sweep. Set to 0 for infinite retries.">Retries</label>
+                                        <input type="number" step="1" min="0" max="999" className="w-full bg-black/40 border border-brand-primary/30 rounded-lg p-1.5 text-brand-primary text-center outline-none focus:border-brand-primary text-xs font-mono" value={form.smartChaseMaxAttempts} onChange={(e) => handleFormChange('smartChaseMaxAttempts', parseInt(e.target.value))} />
+                                        <p className="text-[8px] text-gray-500 text-center">0 = Inf</p>
                                     </div>
-                                    <div className="w-[90px] space-y-1">
-                                        <label className="text-[10px] text-brand-primary font-bold uppercase">Delay (ms)</label>
-                                        <input type="number" step="100" min="200" max="2000" className="w-full bg-black/40 border border-brand-primary/30 rounded-xl p-2 text-brand-primary text-center outline-none focus:border-brand-primary text-xs font-mono" value={form.smartChaseDelayMs} onChange={(e) => handleFormChange('smartChaseDelayMs', parseInt(e.target.value))} />
-                                        <p className="text-[8.5px] text-gray-500 mt-1 text-center">API throttling.</p>
+                                    <div className="w-[68px] space-y-0.5 shrink-0">
+                                        <label className="text-[9px] text-brand-primary font-bold uppercase block text-center">Delay (ms)</label>
+                                        <input type="number" step="100" min="200" max="2000" className="w-full bg-black/40 border border-brand-primary/30 rounded-lg p-1.5 text-brand-primary text-center outline-none focus:border-brand-primary text-xs font-mono" value={form.smartChaseDelayMs} onChange={(e) => handleFormChange('smartChaseDelayMs', parseInt(e.target.value))} />
+                                        <p className="text-[8px] text-gray-500 text-center">Throttle</p>
                                     </div>
                                 </div>
                             )}
 
                             {/* --- FUTURES SPECIFIC RISK SETTINGS --- */}
                             {tradingMode === 'futures' && (
-                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4 space-y-4 mb-2">
+                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2.5 space-y-2.5">
                                     <div className="flex items-center justify-between cursor-pointer" onClick={() => handleFormChange('reduceOnly', !form.reduceOnly)}>
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 flex items-center ${form.reduceOnly ? 'bg-orange-500' : 'bg-gray-700'}`}>
-                                                <div className={`w-3 h-3 bg-white rounded-full transform transition-transform duration-200 ${form.reduceOnly ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${form.reduceOnly ? 'bg-orange-500' : 'bg-gray-700'}`}>
+                                                <div className={`w-3 h-3 bg-white rounded-full transform transition-transform duration-200 ${form.reduceOnly ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                             </div>
                                             <div>
-                                                <span className="text-xs font-black text-orange-400 uppercase block">Reduce-Only Orders</span>
-                                                <span className="text-[9px] text-gray-400">Prevents SL/TP from opening reverse positions</span>
+                                                <span className="text-[11px] font-black text-orange-400 uppercase block">Reduce-Only Orders</span>
+                                                <span className="text-[8.5px] text-gray-400">Prevents SL/TP from opening reverse positions</span>
                                             </div>
                                         </div>
                                     </div>
 
                                     <div>
                                         <div className="flex justify-between items-end mb-1">
-                                            <label className="text-[10px] font-bold text-orange-400/80 uppercase">Liquidation Distance Safety (%)</label>
-                                            <span className="text-xs font-mono font-bold text-orange-400">{form.liquidationSafetyPct}%</span>
+                                            <label className="text-[9px] font-bold text-orange-400/80 uppercase">Liquidation Distance Safety (%)</label>
+                                            <span className="text-[11px] font-mono font-bold text-orange-400">{form.liquidationSafetyPct}%</span>
                                         </div>
-                                        <input type="range" min="1.0" max="20.0" step="0.5" className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-orange-500 bg-white/10" value={form.liquidationSafetyPct} onChange={(e) => handleFormChange('liquidationSafetyPct', parseFloat(e.target.value))} />
-                                        <p className="text-[9px] text-gray-500 mt-1.5">Bot will not enter if liquidation price is closer than this percentage.</p>
+                                        <input type="range" min="1.0" max="20.0" step="0.5" className="w-full h-1.5 rounded-lg appearance-none cursor-pointer accent-orange-500 bg-white/10" value={form.liquidationSafetyPct} onChange={(e) => handleFormChange('liquidationSafetyPct', parseFloat(e.target.value))} />
+                                        <p className="text-[8.5px] text-gray-500 mt-1">Bot will not enter if liquidation price is closer than this percentage.</p>
                                     </div>
                                 </div>
                             )}
 
                             {/* --- NATIVE BINANCE OTO/OTOCO TOGGLE (SPOT ONLY) --- */}
                             {tradingMode === 'spot' && (form.exchange === 'binance' || exchange === 'binance') && (
-                                <div className={`flex justify-between items-center bg-brand-primary/10 p-3 rounded-xl border border-brand-primary/30 transition-all mb-3 ${
+                                <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded-lg border border-brand-primary/30 transition-all ${
                                     (form.enableTsl || form.atrEnabled || form.enableUtTrailingSl || form.enableSupertrendTrailingSl)
                                         ? 'opacity-40 pointer-events-none'
                                         : ''
                                 }`}>
-                                    <div className="flex flex-col pr-3">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-xs font-bold text-brand-primary flex items-center gap-1">
+                                    <div className="flex flex-col pr-2">
+                                        <div className="flex items-center gap-1 flex-wrap">
+                                            <span className="text-[11px] font-bold text-brand-primary flex items-center gap-1">
                                                 ⚡ Use Native Binance OTO/OTOCO (Spot)
                                             </span>
                                             {form.useNativeOtoco && !(form.enableTsl || form.atrEnabled || form.enableUtTrailingSl || form.enableSupertrendTrailingSl) && (
-                                                <span className="text-[9px] font-mono px-1.5 py-0.2 bg-brand-primary/20 text-brand-primary rounded border border-brand-primary/40">
+                                                <span className="text-[8px] font-mono px-1 py-0.2 bg-brand-primary/20 text-brand-primary rounded border border-brand-primary/40">
                                                     EXCHANGE ATOMIC
                                                 </span>
                                             )}
                                         </div>
-                                        <span className="text-[10px] text-gray-400 mt-0.5">
+                                        <span className="text-[9px] text-gray-400 mt-0.5 leading-tight">
                                             {(form.enableTsl || form.atrEnabled || form.enableUtTrailingSl || form.enableSupertrendTrailingSl)
                                                 ? '⚠️ Auto-disabled: Trailing SL / ATR SL is active (Binance requires fixed TP/SL targets)'
                                                 : 'Places atomic bracket directly on Binance matching engine. 100% server-crash proof.'}
@@ -3208,16 +3220,16 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                 </div>
                             )}
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className={`bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col justify-center shadow-[0_4px_20px_rgba(0,0,0,0.1)] ${form.mlExecutionMode === 'advanced' ? 'opacity-30 pointer-events-none select-none grayscale' : ''}`}>
-                                    <div className="flex items-center justify-between mb-3 cursor-pointer" onClick={(e) => { e.stopPropagation(); handleFormChange('enableRiskSl', !form.enableRiskSl); }}>
-                                        <label className="text-[10px] font-bold text-gray-400 uppercase">Initial Stop-Loss</label>
-                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center ${form.enableRiskSl ? 'bg-brand-primary' : 'bg-gray-700'}`}>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className={`bg-white/5 border border-white/10 rounded-lg p-2 flex flex-col justify-center shadow-[0_4px_20px_rgba(0,0,0,0.1)] ${form.mlExecutionMode === 'advanced' ? 'opacity-30 pointer-events-none select-none grayscale' : ''}`}>
+                                    <div className="flex items-center justify-between mb-1.5 cursor-pointer" onClick={(e) => { e.stopPropagation(); handleFormChange('enableRiskSl', !form.enableRiskSl); }}>
+                                        <label className="text-[9px] font-bold text-gray-400 uppercase">Initial Stop-Loss</label>
+                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center shrink-0 ${form.enableRiskSl ? 'bg-brand-primary' : 'bg-gray-700'}`}>
                                             <div className={`w-3 h-3 bg-white rounded-full transform transition-transform ${form.enableRiskSl ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
                                     </div>
                                     {form.enableRiskSl ? (
-                                        <div className="-mx-3 -mb-3 pt-2">
+                                        <div className="-mx-2 -mb-2 pt-1">
                                             <DualInput
                                                 label="Risk Distance"
                                                 valuePct={form.risk}
@@ -3228,23 +3240,23 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 precision={displayDigits}
                                             />
                                             {form.risk === 0 && (
-                                                <div className="mx-3 mt-3 mb-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                                                    <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); handleFormChange('enableZeroTolerance', !form.enableZeroTolerance); }}>
+                                                <div className="mx-2 mt-2 mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded-lg">
+                                                    <div className="flex items-center justify-between cursor-pointer gap-1" onClick={(e) => { e.stopPropagation(); handleFormChange('enableZeroTolerance', !form.enableZeroTolerance); }}>
                                                         <div>
-                                                            <p className="text-[10px] font-bold text-red-400 uppercase flex items-center gap-1">
+                                                            <p className="text-[9px] font-bold text-red-400 uppercase flex items-center gap-1">
                                                                 Zero Tolerance Breakeven
                                                             </p>
                                                             <p className="text-[8px] text-gray-400 leading-tight mt-0.5">Cancel TP & exit instantly at breakeven if price rejects.</p>
                                                         </div>
-                                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center ${form.enableZeroTolerance ? 'bg-red-500' : 'bg-gray-700'}`}>
+                                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center shrink-0 ${form.enableZeroTolerance ? 'bg-red-500' : 'bg-gray-700'}`}>
                                                             <div className={`w-3 h-3 bg-white rounded-full transform transition-transform ${form.enableZeroTolerance ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                         </div>
                                                     </div>
                                                     {form.enableZeroTolerance && (
-                                                        <div className="mt-2 pt-2 border-t border-red-500/20">
+                                                        <div className="mt-1.5 pt-1.5 border-t border-red-500/20">
                                                             <div className="flex justify-between items-end mb-1">
-                                                                <label className="text-[9px] text-gray-400">Tolerance Buffer (Ticks)</label>
-                                                                <span className="text-[10px] font-mono text-red-400">{form.zeroToleranceTicks}</span>
+                                                                <label className="text-[8px] text-gray-400">Tolerance Buffer (Ticks)</label>
+                                                                <span className="text-[9px] font-mono text-red-400">{form.zeroToleranceTicks}</span>
                                                             </div>
                                                             <input type="range" min="0" max="20" step="1" className="w-full h-1.5 rounded-lg appearance-none cursor-pointer accent-red-500 bg-white/10" value={form.zeroToleranceTicks} onChange={(e) => handleFormChange('zeroToleranceTicks', parseInt(e.target.value) || 0)} />
                                                         </div>
@@ -3253,23 +3265,23 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                             )}
                                         </div>
                                     ) : (
-                                        <div className="text-[10px] text-gray-500 text-center py-4 font-mono">Disabled</div>
+                                        <div className="text-[10px] text-gray-500 text-center py-2 font-mono">Disabled</div>
                                     )}
                                 </div>
 
-                                <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col justify-center shadow-[0_4px_20px_rgba(0,0,0,0.1)]">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <label className="text-[10px] font-bold text-gray-400 uppercase">Trailing SL</label>
-                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center cursor-pointer ${form.enableTsl ? 'bg-brand-primary' : 'bg-gray-700'}`}
+                                <div className="bg-white/5 border border-white/10 rounded-lg p-2 flex flex-col justify-center shadow-[0_4px_20px_rgba(0,0,0,0.1)]">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label className="text-[9px] font-bold text-gray-400 uppercase">Trailing SL</label>
+                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center cursor-pointer shrink-0 ${form.enableTsl ? 'bg-brand-primary' : 'bg-gray-700'}`}
                                             onClick={(e) => { e.stopPropagation(); handleFormChange('enableTsl', !form.enableTsl); }}>
                                             <div className={`w-3 h-3 bg-white rounded-full transform transition-transform ${form.enableTsl ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
                                     </div>
                                     {form.enableTsl ? (
-                                        <div className="space-y-3">
+                                        <div className="space-y-2">
                                             <div>
-                                                <label className="text-[9px] text-gray-500 uppercase tracking-tighter mb-1 block">Trail Step Distance (%)</label>
-                                                <input type="number" step="0.1" className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white outline-none focus:border-brand-primary text-center font-mono text-sm" value={form.tsl} onChange={(e) => handleFormChange('tsl', parseFloat(e.target.value))} />
+                                                <label className="text-[8.5px] text-gray-500 uppercase tracking-tighter mb-0.5 block">Trail Step Distance (%)</label>
+                                                <input type="number" step="0.1" className="w-full bg-black/40 border border-white/10 rounded-lg p-1 text-white outline-none focus:border-brand-primary text-center font-mono text-xs" value={form.tsl} onChange={(e) => handleFormChange('tsl', parseFloat(e.target.value))} />
                                             </div>
                                             <DualInput
                                                 label="Start At Profit"
@@ -3282,35 +3294,35 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                             />
                                         </div>
                                     ) : (
-                                        <div className="text-[10px] text-gray-500 text-center py-4 font-mono">Disabled</div>
+                                        <div className="text-[10px] text-gray-500 text-center py-2 font-mono">Disabled</div>
                                     )}
                                 </div>
                             </div>
 
                             {/* --- NEW: AUTO-FIBO TARGET TP --- */}
-                            <div className={`border rounded-xl p-4 transition-colors cursor-pointer mb-4 ${form.enableAutoFiboTp ? 'bg-indigo-500/10 border-indigo-500/50' : 'bg-white/5 border-white/10 hover:border-white/30'} ${form.mlExecutionMode === 'advanced' ? 'opacity-30 pointer-events-none select-none grayscale' : ''}`} onClick={() => handleFormChange('enableAutoFiboTp', !form.enableAutoFiboTp)}>
+                            <div className={`border rounded-lg p-2.5 transition-colors cursor-pointer ${form.enableAutoFiboTp ? 'bg-indigo-500/10 border-indigo-500/50' : 'bg-white/5 border-white/10 hover:border-white/30'} ${form.mlExecutionMode === 'advanced' ? 'opacity-30 pointer-events-none select-none grayscale' : ''}`} onClick={() => handleFormChange('enableAutoFiboTp', !form.enableAutoFiboTp)}>
                                 <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-12 h-6 rounded-full p-1 flex items-center transition-colors duration-200 ${form.enableAutoFiboTp ? 'bg-indigo-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableAutoFiboTp ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center transition-colors duration-200 shrink-0 ${form.enableAutoFiboTp ? 'bg-indigo-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableAutoFiboTp ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${form.enableAutoFiboTp ? 'bg-indigo-500/20 text-indigo-400' : 'bg-white/5 text-gray-500'}`}>
-                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" /></svg>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${form.enableAutoFiboTp ? 'bg-indigo-500/20 text-indigo-400' : 'bg-white/5 text-gray-500'}`}>
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" /></svg>
                                             </div>
                                             <div>
-                                                <h4 className="text-sm font-black text-white uppercase tracking-wider">Auto-Fibo Max TP</h4>
-                                                <p className="text-[10px] text-gray-400">Dynamically scale Stop-Loss & calculate Final Target based on Fibonacci Extensions.</p>
+                                                <h4 className="text-xs font-black text-white uppercase tracking-wider">Auto-Fibo Max TP</h4>
+                                                <p className="text-[9px] text-gray-400 leading-tight">Dynamically scale Stop-Loss & calculate Final Target based on Fibonacci Extensions.</p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                                 {form.enableAutoFiboTp && (
-                                    <div onClick={(e) => e.stopPropagation()} className="mt-4 pt-4 border-t border-indigo-500/20 grid grid-cols-3 gap-4">
+                                    <div onClick={(e) => e.stopPropagation()} className="mt-2 pt-2 border-t border-indigo-500/20 grid grid-cols-3 gap-2">
                                         <div>
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Timeframe</label>
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase block mb-0.5">Timeframe</label>
                                             <select
-                                                className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-indigo-500 font-mono text-sm"
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-indigo-500 font-mono text-xs"
                                                 value={form.autoFiboTimeframe}
                                                 onChange={(e) => handleFormChange('autoFiboTimeframe', e.target.value)}
                                             >
@@ -3323,20 +3335,20 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Lookback</label>
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase block mb-0.5">Lookback</label>
                                             <input
                                                 type="number"
                                                 min="10"
                                                 max="150"
-                                                className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-indigo-500 font-mono text-sm text-center"
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-indigo-500 font-mono text-xs text-center"
                                                 value={form.autoFiboLookback}
                                                 onChange={(e) => handleFormChange('autoFiboLookback', parseInt(e.target.value) || 30)}
                                             />
                                         </div>
                                         <div>
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Extension Level</label>
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase block mb-0.5">Extension Level</label>
                                             <select
-                                                className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-indigo-500 font-mono text-sm"
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-indigo-500 font-mono text-xs"
                                                 value={form.autoFiboTargetLevel}
                                                 onChange={(e) => handleFormChange('autoFiboTargetLevel', parseFloat(e.target.value))}
                                             >
@@ -3361,11 +3373,11 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                 )}
                             </div>
 
-                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 hover:border-brand-primary/30 transition-colors">
-                                <div className="flex items-center justify-between mb-4 cursor-pointer" onClick={(e) => { e.stopPropagation(); handleFormChange('enablePartialTp', !form.enablePartialTp); }}>
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-12 h-6 rounded-full p-1 flex items-center ${form.enablePartialTp ? 'bg-brand-primary' : 'bg-gray-700'}`}>
-                                            <div className={`w-4 h-4 bg-white rounded-full transform transition-transform ${form.enablePartialTp ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                            <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 hover:border-brand-primary/30 transition-colors">
+                                <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); handleFormChange('enablePartialTp', !form.enablePartialTp); }}>
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center shrink-0 ${form.enablePartialTp ? 'bg-brand-primary' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full transform transition-transform ${form.enablePartialTp ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
                                         <div>
                                             <span className="text-xs font-black text-white uppercase block">Scale-Out (Partial TP)</span>
@@ -3373,8 +3385,8 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                     </div>
                                 </div>
                                 {form.enablePartialTp && (
-                                    <div className="flex gap-4 items-center animate-fadeIn p-3 bg-black/20 rounded-xl border border-white/5">
-                                        <div className="flex-1">
+                                    <div className="mt-2 flex gap-2 items-stretch animate-fadeIn p-2 bg-black/20 rounded-lg border border-white/5">
+                                        <div className="flex-[1.5]">
                                             <DualInput
                                                 label="Scale-Out Trigger"
                                                 valuePct={form.partialTpTriggerPct}
@@ -3385,30 +3397,30 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 precision={displayDigits}
                                             />
                                         </div>
-                                        <div className="flex-1 flex flex-col justify-center bg-white/5 border border-white/10 rounded-xl p-3 shadow-[0_4px_20px_rgba(0,0,0,0.1)]">
-                                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-3 block">Sell Position Amount (%)</label>
-                                            <input type="number" step="1" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-primary text-center font-mono text-[16px] transition-all" value={form.partialTp} onChange={(e) => handleFormChange('partialTp', parseFloat(e.target.value))} />
+                                        <div className="w-[115px] flex flex-col justify-center bg-white/5 border border-white/10 rounded-lg p-2 shadow-[0_4px_20px_rgba(0,0,0,0.1)] shrink-0">
+                                            <label className="text-[9px] font-bold text-gray-500 uppercase mb-1 block">Sell Amount (%)</label>
+                                            <input type="number" step="1" className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-brand-primary text-center font-mono text-xs transition-all" value={form.partialTp} onChange={(e) => handleFormChange('partialTp', parseFloat(e.target.value))} />
                                         </div>
                                     </div>
                                 )}
                             </div>
 
                             {/* --- NEW: BREAKEVEN SL SECTION --- */}
-                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 hover:border-emerald-500/30 transition-colors mt-4">
-                                <div className="flex items-center justify-between mb-4 cursor-pointer" onClick={(e) => { e.stopPropagation(); handleFormChange('enableBreakevenSl', !form.enableBreakevenSl); }}>
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-12 h-6 rounded-full p-1 flex items-center ${form.enableBreakevenSl ? 'bg-emerald-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-4 h-4 bg-white rounded-full transform transition-transform ${form.enableBreakevenSl ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                            <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 hover:border-emerald-500/30 transition-colors">
+                                <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); handleFormChange('enableBreakevenSl', !form.enableBreakevenSl); }}>
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center shrink-0 ${form.enableBreakevenSl ? 'bg-emerald-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full transform transition-transform ${form.enableBreakevenSl ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
                                         <div>
                                             <span className="text-xs font-black text-white uppercase block">Risk-Free (SL to Breakeven)</span>
-                                            <span className="text-[9px] text-gray-500 uppercase mt-0.5 block">Moves Stop-Loss based on Profit Target</span>
+                                            <span className="text-[8.5px] text-gray-500 uppercase block">Moves Stop-Loss based on Profit Target</span>
                                         </div>
                                     </div>
                                 </div>
                                 {form.enableBreakevenSl && (
                                     <>
-                                        <div className="grid grid-cols-2 gap-4 items-center animate-fadeIn p-3 bg-black/20 rounded-xl border border-white/5">
+                                        <div className="mt-2 grid grid-cols-2 gap-2 items-center animate-fadeIn p-2 bg-black/20 rounded-lg border border-white/5">
                                             <DualInput
                                                 label="Breakeven Trigger"
                                                 valuePct={form.breakevenTriggerPct}
@@ -3435,12 +3447,12 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     )}
 
                     {activeTab === 'advanced' && (
-                        <div className="animate-fadeIn space-y-4">
-                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 hover:border-cyan-500/30 transition-colors shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
-                                <div className="flex items-center justify-between mb-4 cursor-pointer" onClick={(e) => { e.stopPropagation(); handleFormChange('enableMicroScalp', !form.enableMicroScalp); }}>
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-12 h-6 rounded-full p-1 flex items-center ${form.enableMicroScalp ? 'bg-cyan-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-4 h-4 bg-white rounded-full transform transition-transform ${form.enableMicroScalp ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                        <div className="animate-fadeIn space-y-2.5">
+                            <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 hover:border-cyan-500/30 transition-colors shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
+                                <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); handleFormChange('enableMicroScalp', !form.enableMicroScalp); }}>
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 flex items-center shrink-0 ${form.enableMicroScalp ? 'bg-cyan-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full transform transition-transform ${form.enableMicroScalp ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
                                         <div>
                                             <span className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">Micro-Scalp / Quick Bounce</span>
@@ -3448,22 +3460,22 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                     </div>
                                 </div>
                                 {form.enableMicroScalp && (
-                                    <div className="p-3 bg-black/20 rounded-xl border border-white/5 space-y-4">
-                                        <div className="flex gap-4 items-center">
+                                    <div className="mt-2 p-2 bg-black/20 rounded-lg border border-white/5 space-y-2">
+                                        <div className="flex gap-2 items-center">
                                             <div className="flex-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Static Target (Ticks)</label>
-                                                <input type="number" disabled={form.enableDynamicAtrScalp} className={`w-full border rounded-xl p-2.5 text-center transition-all outline-none ${form.enableDynamicAtrScalp ? 'bg-black/20 border-white/5 text-gray-600' : 'bg-black/40 border-white/10 text-white focus:border-cyan-500'}`} value={form.microScalpProfitTicks} onChange={(e) => handleFormChange('microScalpProfitTicks', parseInt(e.target.value))} />
+                                                <label className="text-[9px] font-bold text-gray-400 uppercase block mb-0.5">Static Target (Ticks)</label>
+                                                <input type="number" disabled={form.enableDynamicAtrScalp} className={`w-full border rounded-lg p-1.5 text-center text-xs font-mono transition-all outline-none ${form.enableDynamicAtrScalp ? 'bg-black/20 border-white/5 text-gray-600' : 'bg-black/40 border-white/10 text-white focus:border-cyan-500'}`} value={form.microScalpProfitTicks} onChange={(e) => handleFormChange('microScalpProfitTicks', parseInt(e.target.value))} />
                                             </div>
                                             <div className="flex-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Min Wall Size ($)</label>
-                                                <input type="number" step="10000" min="10000" className="w-full border rounded-xl p-2.5 text-center transition-all outline-none bg-black/40 border-white/10 text-white focus:border-cyan-500" value={form.microScalpMinWall} onChange={(e) => handleFormChange('microScalpMinWall', parseInt(e.target.value))} />
+                                                <label className="text-[9px] font-bold text-gray-400 uppercase block mb-0.5">Min Wall Size ($)</label>
+                                                <input type="number" step="10000" min="10000" className="w-full border rounded-lg p-1.5 text-center text-xs font-mono transition-all outline-none bg-black/40 border-white/10 text-white focus:border-cyan-500" value={form.microScalpMinWall} onChange={(e) => handleFormChange('microScalpMinWall', parseInt(e.target.value))} />
                                             </div>
                                         </div>
 
-                                        <div className={`p-3 rounded-lg border transition-all ${form.enableDynamicAtrScalp ? 'bg-cyan-500/10 border-cyan-500/50' : 'bg-black/40 border-white/5 hover:border-white/20'}`}>
+                                        <div className={`p-2 rounded-lg border transition-all ${form.enableDynamicAtrScalp ? 'bg-cyan-500/10 border-cyan-500/50' : 'bg-black/40 border-white/5 hover:border-white/20'}`}>
                                             <div className="flex items-center justify-between cursor-pointer" onClick={(e) => { e.stopPropagation(); handleFormChange('enableDynamicAtrScalp', !form.enableDynamicAtrScalp); }}>
                                                 <div className="flex items-center gap-2">
-                                                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center ${form.enableDynamicAtrScalp ? 'bg-cyan-500' : 'bg-gray-700'}`}>
+                                                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${form.enableDynamicAtrScalp ? 'bg-cyan-500' : 'bg-gray-700'}`}>
                                                         <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableDynamicAtrScalp ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                     </div>
                                                     <span className="text-[10px] font-black text-white uppercase tracking-wider flex items-center gap-1">
@@ -3472,13 +3484,13 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 </div>
                                             </div>
                                             {form.enableDynamicAtrScalp && (
-                                                <div className="mt-3 animate-fadeIn border-t border-white/5 pt-3 !cursor-auto" onClick={(e) => e.stopPropagation()}>
+                                                <div className="mt-2 animate-fadeIn border-t border-white/5 pt-2 !cursor-auto" onClick={(e) => e.stopPropagation()}>
                                                     <div className="flex justify-between items-end mb-1">
                                                         <label className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Take-Profit Range (ATR Multiplier)</label>
-                                                        <span className="text-xs font-mono font-bold text-cyan-400">{form.microScalpAtrMultiplier}x</span>
+                                                        <span className="text-[11px] font-mono font-bold text-cyan-400">{form.microScalpAtrMultiplier}x</span>
                                                     </div>
                                                     <input type="range" min="0.1" max="3.0" step="0.1" className="w-full h-1.5 accent-cyan-500 bg-white/10 rounded-lg appearance-none cursor-pointer" value={form.microScalpAtrMultiplier} onChange={(e) => handleFormChange('microScalpAtrMultiplier', parseFloat(e.target.value))} />
-                                                    <p className="text-[8px] text-gray-500 mt-2 italic leading-tight">
+                                                    <p className="text-[8px] text-gray-500 mt-1 italic leading-tight">
                                                         <strong className="text-cyan-500 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)] uppercase">Overrides Ticks!</strong> Target profit dynamically expands or shrinks based on {form.microScalpAtrMultiplier}x of rolling market volatility.
                                                     </p>
                                                 </div>
@@ -3488,24 +3500,24 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                 )}
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-2">
                                 <InputField label="Spoof Detect Time (Seconds)" value={form.spoofTime} onChange={(v: number) => setForm({ ...form, spoofTime: v })} step={0.5} />
 
                                 {/* TA Snapshot Configuration */}
-                                <div className="bg-black/20 border border-white/5 rounded-xl p-3">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <label className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
-                                            <span className="text-blue-400">📸</span> TA Snapshot @ Entry
+                                <div className="bg-black/20 border border-white/5 rounded-lg p-2">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label className="text-[10px] font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1">
+                                            <span className="text-blue-400">📸</span> TA Snapshot
                                         </label>
-                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 cursor-pointer ${form.enableTaSnapshot ? 'bg-blue-500' : 'bg-gray-700'}`} onClick={() => setForm({ ...form, enableTaSnapshot: !form.enableTaSnapshot })}>
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 cursor-pointer shrink-0 ${form.enableTaSnapshot ? 'bg-blue-500' : 'bg-gray-700'}`} onClick={() => setForm({ ...form, enableTaSnapshot: !form.enableTaSnapshot })}>
                                             <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableTaSnapshot ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
                                     </div>
                                     {form.enableTaSnapshot && (
                                         <div className="animate-fadeIn">
-                                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Chart Timeframe</label>
+                                            <label className="text-[9px] font-bold text-gray-500 uppercase mb-0.5 block">Chart Timeframe</label>
                                             <select
-                                                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500/50"
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500/50"
                                                 value={form.taSnapshotTimeframe}
                                                 onChange={(e) => setForm({ ...form, taSnapshotTimeframe: e.target.value })}
                                             >
@@ -3523,54 +3535,54 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             </div>
 
                             {/* --- BTC CORRELATION FILTER SECTION --- */}
-                            <div className={`border rounded-xl p-4 transition-colors cursor-pointer ${form.enableBtcCorrelation ? 'bg-orange-500/5 border-orange-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableBtcCorrelation', !form.enableBtcCorrelation)}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 flex items-center ${form.enableBtcCorrelation ? 'bg-orange-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableBtcCorrelation ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                            <div className={`border rounded-lg p-2.5 transition-colors cursor-pointer ${form.enableBtcCorrelation ? 'bg-orange-500/5 border-orange-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableBtcCorrelation', !form.enableBtcCorrelation)}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${form.enableBtcCorrelation ? 'bg-orange-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableBtcCorrelation ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <span className="text-sm font-black text-white uppercase tracking-wider">BTC Correlation Anti-Fakeout</span>
+                                        <span className="text-xs font-black text-white uppercase tracking-wider">BTC Correlation Anti-Fakeout</span>
                                     </div>
                                 </div>
                                 {form.enableBtcCorrelation && (
-                                    <div className="mt-3 pl-1 grid grid-cols-2 gap-4 animate-fadeIn" onClick={e => e.stopPropagation()}>
+                                    <div className="mt-2 pl-0.5 grid grid-cols-2 gap-2 animate-fadeIn" onClick={e => e.stopPropagation()}>
                                         <div className="col-span-2">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Correlation Threshold (Pearson)</label>
-                                            <div className="flex gap-3 items-center">
-                                                <input type="range" min="0.1" max="1.0" step="0.1" className="flex-1 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500" value={form.btcCorrelationThreshold} onChange={(e) => handleFormChange('btcCorrelationThreshold', parseFloat(e.target.value))} />
-                                                <input type="number" step="0.1" className="w-20 bg-black/40 border border-white/10 rounded-xl p-1.5 text-white text-center font-mono text-sm" value={form.btcCorrelationThreshold} onChange={(e) => handleFormChange('btcCorrelationThreshold', parseFloat(e.target.value))} />
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase mb-1 block">Correlation Threshold (Pearson)</label>
+                                            <div className="flex gap-2 items-center">
+                                                <input type="range" min="0.1" max="1.0" step="0.1" className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500" value={form.btcCorrelationThreshold} onChange={(e) => handleFormChange('btcCorrelationThreshold', parseFloat(e.target.value))} />
+                                                <input type="number" step="0.1" className="w-16 bg-black/40 border border-white/10 rounded-lg p-1 text-white text-center font-mono text-xs" value={form.btcCorrelationThreshold} onChange={(e) => handleFormChange('btcCorrelationThreshold', parseFloat(e.target.value))} />
                                             </div>
                                         </div>
                                         <div>
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Time Window (Mins)</label>
-                                            <input type="number" className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-white text-center font-mono" value={form.btcTimeWindow} onChange={(e) => handleFormChange('btcTimeWindow', parseInt(e.target.value))} />
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase mb-0.5 block">Time Window (Mins)</label>
+                                            <input type="number" className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white text-center font-mono text-xs" value={form.btcTimeWindow} onChange={(e) => handleFormChange('btcTimeWindow', parseInt(e.target.value))} />
                                         </div>
                                         <div>
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Min BTC Move (%)</label>
-                                            <input type="number" step="0.05" className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-white text-center font-mono" value={form.btcMinMovePct} onChange={(e) => handleFormChange('btcMinMovePct', parseFloat(e.target.value))} />
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase mb-0.5 block">Min BTC Move (%)</label>
+                                            <input type="number" step="0.05" className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white text-center font-mono text-xs" value={form.btcMinMovePct} onChange={(e) => handleFormChange('btcMinMovePct', parseFloat(e.target.value))} />
                                         </div>
-                                        <p className="col-span-2 text-[9px] text-gray-500 mt-1 italic">Only enter trades if BTC aligns with the target asset's direction and has moved the minimum %.</p>
+                                        <p className="col-span-2 text-[8.5px] text-gray-500 italic">Only enter trades if BTC aligns with the target asset's direction and has moved the minimum %.</p>
                                     </div>
                                 )}
                             </div>
 
                             {/* --- ADAPTIVE TREND FILTER SECTION --- */}
-                            <div className={`border rounded-xl p-4 transition-colors cursor-pointer ${form.enableTrendFilter ? 'bg-indigo-500/5 border-indigo-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableTrendFilter', !form.enableTrendFilter)}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 flex items-center ${form.enableTrendFilter ? 'bg-indigo-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableTrendFilter ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                            <div className={`border rounded-lg p-2.5 transition-colors cursor-pointer ${form.enableTrendFilter ? 'bg-indigo-500/5 border-indigo-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('enableTrendFilter', !form.enableTrendFilter)}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${form.enableTrendFilter ? 'bg-indigo-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.enableTrendFilter ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <span className="text-sm font-black text-white uppercase tracking-wider">Adaptive Trend Filter</span>
+                                        <span className="text-xs font-black text-white uppercase tracking-wider">Adaptive Trend Filter</span>
                                     </div>
                                 </div>
                                 {form.enableTrendFilter && (
-                                    <div className="mt-3 pl-1 grid grid-cols-2 gap-4 animate-fadeIn" onClick={e => e.stopPropagation()}>
+                                    <div className="mt-2 pl-0.5 grid grid-cols-2 gap-2 animate-fadeIn" onClick={e => e.stopPropagation()}>
                                         <div>
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Lookback Period</label>
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase mb-0.5 block">Lookback Period</label>
                                             <input
                                                 type="number"
-                                                className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-indigo-500 text-sm font-bold text-center font-mono"
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-indigo-500 text-xs font-bold text-center font-mono"
                                                 value={form.trendFilterLookback}
                                                 onChange={(e) => handleFormChange('trendFilterLookback', parseInt(e.target.value))}
                                                 min={20}
@@ -3579,9 +3591,9 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                             />
                                         </div>
                                         <div>
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Min. Confidence</label>
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase mb-0.5 block">Min. Confidence</label>
                                             <select
-                                                className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-white outline-none focus:border-indigo-500 text-sm font-bold"
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-indigo-500 text-xs font-bold"
                                                 value={form.trendFilterThreshold}
                                                 onChange={(e) => handleFormChange('trendFilterThreshold', e.target.value)}
                                             >
@@ -3595,18 +3607,18 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                             </select>
                                         </div>
                                         <div className="col-span-2">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Deviation Threshold</label>
-                                            <div className="flex gap-3 items-center">
-                                                <input type="range" min="0.1" max="5.0" step="0.1" className="flex-1 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-500" value={form.trendFilterDev} onChange={(e) => handleFormChange('trendFilterDev', parseFloat(e.target.value))} />
-                                                <input type="number" step="0.1" className="w-20 bg-black/40 border border-white/10 rounded-xl p-1.5 text-white text-center font-mono text-sm" value={form.trendFilterDev} onChange={(e) => handleFormChange('trendFilterDev', parseFloat(e.target.value))} />
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase mb-0.5 block">Deviation Threshold</label>
+                                            <div className="flex gap-2 items-center">
+                                                <input type="range" min="0.1" max="5.0" step="0.1" className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-500" value={form.trendFilterDev} onChange={(e) => handleFormChange('trendFilterDev', parseFloat(e.target.value))} />
+                                                <input type="number" step="0.1" className="w-16 bg-black/40 border border-white/10 rounded-lg p-1 text-white text-center font-mono text-xs" value={form.trendFilterDev} onChange={(e) => handleFormChange('trendFilterDev', parseFloat(e.target.value))} />
                                             </div>
-                                            <p className="text-[8px] text-gray-500 mt-1 italic">Maximum allowed deviation from the regression line. Higher values allow more volatility.</p>
+                                            <p className="text-[8px] text-gray-500 mt-0.5 italic">Maximum allowed deviation from the regression line. Higher values allow more volatility.</p>
                                         </div>
 
-                                        <div className={`col-span-2 p-3 rounded-lg border transition-all cursor-pointer ${form.enableTrendVolume ? 'bg-indigo-500/10 border-indigo-500/50' : 'bg-black/40 border-white/5 hover:border-white/20'}`} onClick={(e) => { e.stopPropagation(); handleFormChange('enableTrendVolume', !form.enableTrendVolume); }}>
+                                        <div className={`col-span-2 p-2 rounded-lg border transition-all cursor-pointer ${form.enableTrendVolume ? 'bg-indigo-500/10 border-indigo-500/50' : 'bg-black/40 border-white/5 hover:border-white/20'}`} onClick={(e) => { e.stopPropagation(); handleFormChange('enableTrendVolume', !form.enableTrendVolume); }}>
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
-                                                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center ${form.enableTrendVolume ? 'bg-indigo-500' : 'bg-gray-700'}`}>
+                                                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${form.enableTrendVolume ? 'bg-indigo-500' : 'bg-gray-700'}`}>
                                                         <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform ${form.enableTrendVolume ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                     </div>
                                                     <span className="text-[10px] font-black text-white uppercase tracking-wider flex items-center gap-1">
@@ -3615,65 +3627,65 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 </div>
                                             </div>
                                             {form.enableTrendVolume && (
-                                                <div className="mt-3 animate-fadeIn border-t border-white/5 pt-3 !cursor-auto" onClick={(e) => e.stopPropagation()}>
+                                                <div className="mt-2 animate-fadeIn border-t border-white/5 pt-2 !cursor-auto" onClick={(e) => e.stopPropagation()}>
                                                     <div className="flex justify-between items-end mb-1">
                                                         <label className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Volume Spike Multiplier</label>
-                                                        <span className="text-xs font-mono font-bold text-indigo-400">{form.trendVolumeMultiplier}x</span>
+                                                        <span className="text-[11px] font-mono font-bold text-indigo-400">{form.trendVolumeMultiplier}x</span>
                                                     </div>
                                                     <input type="range" min="1.0" max="5.0" step="0.1" className="w-full h-1.5 accent-indigo-500 bg-white/10 rounded-lg appearance-none cursor-pointer" value={form.trendVolumeMultiplier} onChange={(e) => handleFormChange('trendVolumeMultiplier', parseFloat(e.target.value))} />
-                                                    <p className="text-[8px] text-gray-500 mt-2 italic leading-tight">
+                                                    <p className="text-[8px] text-gray-500 mt-1 italic leading-tight">
                                                         Requires recent volume to be at least {form.trendVolumeMultiplier}x the average volume for the trend to be considered valid.
                                                     </p>
                                                 </div>
                                             )}
                                         </div>
 
-                                        <p className="col-span-2 text-[9px] text-gray-500 mt-1 italic">Only enter trades if log-scaled linear regression trend supports the trade direction.</p>
+                                        <p className="col-span-2 text-[8.5px] text-gray-500 italic">Only enter trades if log-scaled linear regression trend supports the trade direction.</p>
                                     </div>
                                 )}
                             </div>
 
                             {/* --- VPVR SECTION --- */}
-                            <div className={`border rounded-xl p-4 transition-colors cursor-pointer ${form.vpvrEnabled ? 'bg-yellow-500/5 border-yellow-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('vpvrEnabled', !form.vpvrEnabled)}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 flex items-center ${form.vpvrEnabled ? 'bg-yellow-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.vpvrEnabled ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                            <div className={`border rounded-lg p-2.5 transition-colors cursor-pointer ${form.vpvrEnabled ? 'bg-yellow-500/5 border-yellow-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('vpvrEnabled', !form.vpvrEnabled)}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${form.vpvrEnabled ? 'bg-yellow-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.vpvrEnabled ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <span className="text-sm font-black text-white uppercase tracking-wider">VPVR High Volume Node Confirmation</span>
+                                        <span className="text-xs font-black text-white uppercase tracking-wider">VPVR High Volume Node Confirmation</span>
                                     </div>
                                 </div>
                                 {form.vpvrEnabled && (
-                                    <div className="mt-3 pl-1 animate-fadeIn" onClick={e => e.stopPropagation()}>
-                                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Value Area Tolerance (%)</label>
-                                        <div className="flex gap-3 items-center">
-                                            <input type="range" min="0.05" max="2.0" step="0.05" className="flex-1 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-yellow-500" value={form.vpvrTolerance} onChange={(e) => handleFormChange('vpvrTolerance', parseFloat(e.target.value))} />
-                                            <input type="number" step="0.05" className="w-20 bg-black/40 border border-white/10 rounded-xl p-1.5 text-white text-center font-mono text-sm" value={form.vpvrTolerance} onChange={(e) => handleFormChange('vpvrTolerance', parseFloat(e.target.value))} />
+                                    <div className="mt-2 pl-0.5 animate-fadeIn" onClick={e => e.stopPropagation()}>
+                                        <label className="text-[9px] font-bold text-gray-400 uppercase mb-0.5 block">Value Area Tolerance (%)</label>
+                                        <div className="flex gap-2 items-center">
+                                            <input type="range" min="0.05" max="2.0" step="0.05" className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-yellow-500" value={form.vpvrTolerance} onChange={(e) => handleFormChange('vpvrTolerance', parseFloat(e.target.value))} />
+                                            <input type="number" step="0.05" className="w-16 bg-black/40 border border-white/10 rounded-lg p-1 text-white text-center font-mono text-xs" value={form.vpvrTolerance} onChange={(e) => handleFormChange('vpvrTolerance', parseFloat(e.target.value))} />
                                         </div>
-                                        <p className="text-[9px] text-gray-500 mt-2 italic">Only enter trades if price is within this % of the Volume Profile High Volume Node.</p>
+                                        <p className="text-[8.5px] text-gray-500 mt-1 italic">Only enter trades if price is within this % of the Volume Profile High Volume Node.</p>
                                     </div>
                                 )}
                             </div>
 
                             {/* --- ATR SECTION --- */}
-                            <div className={`border rounded-xl p-4 transition-colors cursor-pointer ${form.atrEnabled ? 'bg-blue-500/5 border-blue-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('atrEnabled', !form.atrEnabled)}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-200 flex items-center ${form.atrEnabled ? 'bg-blue-500' : 'bg-gray-700'}`}>
-                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.atrEnabled ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                            <div className={`border rounded-lg p-2.5 transition-colors cursor-pointer ${form.atrEnabled ? 'bg-blue-500/5 border-blue-500/50' : 'bg-transparent border-white/10 hover:border-white/30'}`} onClick={() => handleFormChange('atrEnabled', !form.atrEnabled)}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 flex items-center shrink-0 ${form.atrEnabled ? 'bg-blue-500' : 'bg-gray-700'}`}>
+                                            <div className={`w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-200 ${form.atrEnabled ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                         </div>
-                                        <span className="text-sm font-black text-white uppercase tracking-wider">ATR Volatility Based Stops</span>
+                                        <span className="text-xs font-black text-white uppercase tracking-wider">ATR Volatility Based Stops</span>
                                     </div>
                                 </div>
                                 {form.atrEnabled && (
-                                    <div className="mt-3 pl-1 grid grid-cols-2 gap-4 animate-fadeIn" onClick={e => e.stopPropagation()}>
+                                    <div className="mt-2 pl-0.5 grid grid-cols-2 gap-2 animate-fadeIn" onClick={e => e.stopPropagation()}>
                                         <div>
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">ATR Period</label>
-                                            <input type="number" className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-white text-center font-mono" value={form.atrPeriod} onChange={(e) => handleFormChange('atrPeriod', parseInt(e.target.value))} />
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase mb-0.5 block">ATR Period</label>
+                                            <input type="number" className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white text-center font-mono text-xs" value={form.atrPeriod} onChange={(e) => handleFormChange('atrPeriod', parseInt(e.target.value))} />
                                         </div>
                                         <div>
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Multiplier</label>
-                                            <input type="number" step="0.1" className="w-full bg-black/40 border border-white/10 rounded-xl p-2.5 text-white text-center font-mono" value={form.atrMultiplier} onChange={(e) => handleFormChange('atrMultiplier', parseFloat(e.target.value))} />
+                                            <label className="text-[9px] font-bold text-gray-400 uppercase mb-0.5 block">Multiplier</label>
+                                            <input type="number" step="0.1" className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white text-center font-mono text-xs" value={form.atrMultiplier} onChange={(e) => handleFormChange('atrMultiplier', parseFloat(e.target.value))} />
                                         </div>
                                     </div>
                                 )}
@@ -3683,24 +3695,24 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 </div>
 
                 {/* --- FOOTER ACTIONS --- */}
-                <div className="p-3 sm:p-4 border-t border-white/10 bg-black/50 shrink-0 space-y-2 sm:space-y-2.5">
+                <div className="px-3 py-2 border-t border-white/10 bg-black/50 shrink-0 space-y-1.5">
 
                     {/* --- ACTIVE BOT WARNING BANNER (Option C) --- */}
                     {existingBot && (
-                        <div className="mb-2 p-2 sm:p-2.5 rounded-xl border border-amber-500/40 bg-amber-500/5 animate-fadeIn">
-                            <div className="flex items-center gap-2 mb-1.5">
-                                <svg className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="p-2 rounded-lg border border-amber-500/40 bg-amber-500/5 animate-fadeIn">
+                            <div className="flex items-center gap-1.5 mb-1">
+                                <svg className="w-3 h-3 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                 </svg>
-                                <p className="text-[10px] font-black text-amber-400 uppercase tracking-wider">Active Bot Detected on {existingBot.market}</p>
+                                <p className="text-[9.5px] font-black text-amber-400 uppercase tracking-wider">Active Bot Detected on {existingBot.market}</p>
                             </div>
-                            <p className="text-[9.5px] text-gray-400 mb-2 pl-5.5">
+                            <p className="text-[9px] text-gray-400 mb-1.5 pl-4">
                                 <span className="text-white font-bold">"{existingBot.name}"</span> is currently <span className="text-green-400 font-bold">running</span>. Choose an action:
                             </p>
-                            <div className="flex gap-2 pl-5.5">
+                            <div className="flex gap-1.5 pl-4">
                                 <button
                                     onClick={() => setDeployMode('update')}
-                                    className={`flex-1 py-1 text-[9.5px] font-black uppercase rounded-lg transition-all border ${deployMode === 'update'
+                                    className={`flex-1 py-0.5 text-[9px] font-black uppercase rounded-md transition-all border ${deployMode === 'update'
                                             ? 'bg-blue-500/20 border-blue-500/60 text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.2)]'
                                             : 'bg-black/30 border-white/10 text-gray-500 hover:text-gray-300 hover:border-white/20'
                                         }`}
@@ -3709,7 +3721,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                 </button>
                                 <button
                                     onClick={() => setDeployMode('new')}
-                                    className={`flex-1 py-1 text-[9.5px] font-black uppercase rounded-lg transition-all border ${deployMode === 'new'
+                                    className={`flex-1 py-0.5 text-[9px] font-black uppercase rounded-md transition-all border ${deployMode === 'new'
                                             ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
                                             : 'bg-black/30 border-white/10 text-gray-500 hover:text-gray-300 hover:border-white/20'
                                         }`}
@@ -3721,17 +3733,17 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     )}
 
                     {errorMsg && (
-                        <p className={`text-xs font-bold mb-2 animate-pulse text-center py-1.5 rounded-lg ${errorMsg.includes('Success') ? 'text-green-400 bg-green-500/10' : 'text-red-500 bg-red-500/10'}`}>
+                        <p className={`text-[11px] font-bold animate-pulse text-center py-1 rounded-lg ${errorMsg.includes('Success') ? 'text-green-400 bg-green-500/10' : 'text-red-500 bg-red-500/10'}`}>
                             {errorMsg}
                         </p>
                     )}
 
-                    <div className="flex gap-2 sm:gap-2.5">
+                    <div className="flex gap-2">
                         <button
                             type="button"
                             onClick={onClose}
                             disabled={isLoading}
-                            className="w-[90px] sm:w-[100px] h-10 sm:h-11 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0"
+                            className="w-[78px] h-8 sm:h-9 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0"
                         >
                             CANCEL
                         </button>
@@ -3739,7 +3751,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             type="button"
                             onClick={handleDeploy}
                             disabled={isLoading}
-                            className={`flex-1 h-10 sm:h-11 rounded-xl font-black text-white text-xs tracking-wider uppercase transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] cursor-pointer active:scale-[0.99] ${isLoading
+                            className={`flex-1 h-8 sm:h-9 rounded-lg font-black text-white text-[11px] tracking-wider uppercase transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] cursor-pointer active:scale-[0.99] ${isLoading
                                     ? 'bg-gray-600 cursor-not-allowed opacity-70'
                                     : (existingBot && deployMode === 'update')
                                         ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:scale-[1.01]'
@@ -3760,12 +3772,12 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     </div>
 
                     {/* Footer Status Bar */}
-                    <div className="flex items-center justify-between text-[9px] text-gray-500 pt-0.5 select-none">
+                    <div className="flex items-center justify-between text-[8.5px] text-gray-500 select-none">
                         <span className="flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
                             Level 2 Sniper Engine Ready
                         </span>
-                        <span className="font-mono text-[8.5px] text-gray-400">
+                        <span className="font-mono text-[8px] text-gray-400">
                             Drag header to position anywhere
                         </span>
                     </div>
@@ -3777,8 +3789,8 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
 const InputField = ({ label, value, onChange, step = 1 }: any) => (
     <div>
-        <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">{label}</label>
-        <input type="number" step={step} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-primary" value={value} onChange={(e) => onChange(parseFloat(e.target.value))} />
+        <label className="text-[9px] font-bold text-gray-500 uppercase mb-0.5 block">{label}</label>
+        <input type="number" step={step} className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-white text-xs font-mono outline-none focus:border-brand-primary" value={value} onChange={(e) => onChange(parseFloat(e.target.value))} />
     </div>
 );
 
@@ -3857,19 +3869,19 @@ const DualInput = ({
     };
 
     return (
-        <div className="flex flex-col bg-white/5 border border-white/10 rounded-xl p-3 focus-within:border-brand-primary transition-colors hover:bg-white/10">
-            <div className="flex justify-between items-center mb-2">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter flex items-center gap-1.5">
+        <div className="flex flex-col bg-white/5 border border-white/10 rounded-lg p-2 focus-within:border-brand-primary transition-colors hover:bg-white/10">
+            <div className="flex justify-between items-center mb-1">
+                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter flex items-center gap-1">
                     {label}
-                    <span className="bg-black/40 px-1.5 py-0.5 rounded text-[8px] text-gray-500 font-mono">
+                    <span className="bg-black/40 px-1 py-0.2 rounded text-[7.5px] text-gray-500 font-mono">
                         {direction === 'long' ? 'LONG' : 'SHORT'}
                     </span>
                 </label>
             </div>
-            <div className="flex gap-2 items-center">
-                <div className="relative flex-1 group">
+            <div className="flex gap-1 items-center">
+                <div className="relative flex-1 min-w-0 group">
                     <span
-                        className="absolute z-10 left-1 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-[9px] cursor-pointer hover:text-white bg-black/50 hover:bg-black/80 px-1.5 py-1 rounded transition-all select-none border border-white/10 shadow-sm"
+                        className="absolute z-10 left-1 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-[8px] cursor-pointer hover:text-white bg-black/50 hover:bg-black/80 px-1 py-0.5 rounded transition-all select-none border border-white/10 shadow-sm"
                         onClick={toggleInputType}
                         title={`Toggle input: currently entering ${inputType === 'price' ? 'Asset Price' : 'Spread Gap'}`}
                     >
@@ -3878,18 +3890,18 @@ const DualInput = ({
                     <input
                         type="number"
                         step={1 / Math.pow(10, precision)}
-                        className={`w-full bg-black/40 border border-white/5 rounded-lg py-2 ${inputType === 'price' ? 'pl-8' : 'pl-10'} pr-2 text-white outline-none font-mono text-xs focus:border-brand-primary focus:bg-black transition-all`}
+                        className={`w-full bg-black/40 border border-white/5 rounded-md py-1 ${inputType === 'price' ? 'pl-6' : 'pl-8'} pr-1 text-white outline-none font-mono text-[11px] focus:border-brand-primary focus:bg-black transition-all`}
                         value={priceStr}
                         onChange={handlePriceChange}
-                        placeholder={inputType === 'price' ? 'Price' : 'Gap/Distance'}
+                        placeholder={inputType === 'price' ? 'Price' : 'Gap'}
                     />
                 </div>
-                <div className="text-gray-600 font-black">≈</div>
-                <div className="relative w-24 group">
+                <div className="text-gray-600 font-black text-xs shrink-0">≈</div>
+                <div className="relative w-[60px] shrink-0 group">
                     <input
                         type="number"
                         step="0.1"
-                        className="w-full bg-brand-primary/10 border border-brand-primary/30 rounded-lg py-2 pr-6 pl-2 text-brand-primary outline-none font-mono text-xs text-right focus:bg-brand-primary/20 focus:border-brand-primary transition-all"
+                        className="w-full bg-brand-primary/10 border border-brand-primary/30 rounded-md py-1 pr-4 pl-1 text-brand-primary outline-none font-mono text-[11px] text-right focus:bg-brand-primary/20 focus:border-brand-primary transition-all"
                         value={valuePct}
                         onChange={(e) => {
                             const val = parseFloat(e.target.value);
@@ -3911,7 +3923,7 @@ const DualInput = ({
                             }
                         }}
                     />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-primary font-mono text-xs group-focus-within:text-white transition-colors">%</span>
+                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-brand-primary font-mono text-[10px] group-focus-within:text-white transition-colors">%</span>
                 </div>
             </div>
         </div>

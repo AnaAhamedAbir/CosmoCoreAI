@@ -12,6 +12,7 @@ Once filled, automatically links and spawns configured Attached TP & Attached SL
 
 import asyncio
 import logging
+import time
 from typing import Optional, Dict, Any
 from datetime import datetime
 from app.services.notification import NotificationService
@@ -100,6 +101,30 @@ async def execute_smart_peg_entry(
     Shadows Best Bid (Buy) or Best Ask (Sell) at top-of-book until fully filled,
     then automatically spawns Attached TP / SL brackets.
     """
+    # ── STEP 0: Upgrade to dedicated unthrottled order exchange pool instance (purpose='order') ──
+    if api_key_record:
+        try:
+            from app.services.exchange_pool import get_or_create_exchange
+            from app.core.security import decrypt_key
+            decrypted_api_key = decrypt_key(api_key_record.api_key)
+            decrypted_secret = decrypt_key(api_key_record.secret_key)
+            raw_pp = getattr(api_key_record, 'passphrase', None)
+            passphrase = decrypt_key(raw_pp) if raw_pp else None
+            order_exchange = await get_or_create_exchange(
+                api_key_id=api_key_record.id,
+                exchange_name=api_key_record.exchange,
+                decrypted_api_key=decrypted_api_key,
+                decrypted_secret=decrypted_secret,
+                is_futures=is_futures,
+                passphrase=passphrase,
+                purpose="order"
+            )
+            if order_exchange:
+                exchange = order_exchange
+                logger.info(f"⚡ [Smart Peg Entry] Upgraded to unthrottled dedicated order exchange for {symbol}")
+        except Exception as ex_upgrade_err:
+            logger.debug(f"Smart Peg exchange upgrade fallback: {ex_upgrade_err}")
+
     exchange_name = getattr(api_key_record, 'exchange', 'exchange').capitalize() if api_key_record else 'Exchange'
     min_notional = _get_min_notional(exchange, symbol)
 
@@ -142,6 +167,8 @@ async def execute_smart_peg_entry(
 
     # Format initial amount
     remaining_amount = amount
+    attempts = 0
+    attempt_max_str = str(max_attempts) if max_attempts > 0 else '∞ (Continuous)'
     if hasattr(exchange, 'amount_to_precision'):
         try:
             remaining_amount = float(exchange.amount_to_precision(symbol, remaining_amount))
@@ -149,9 +176,13 @@ async def execute_smart_peg_entry(
             pass
 
     # Balance sync helper to avoid "insufficient balance" rejections
-    async def _sync_and_clamp_amount(price: float) -> float:
+    async def _sync_and_clamp_amount(price: float, cached_bal: Optional[dict] = None, force_refresh: bool = False) -> float:
         nonlocal remaining_amount
         if is_futures:
+            return remaining_amount
+
+        # Ultra-fast path: on subsequent re-peg attempts without balance errors, avoid 300ms REST roundtrip
+        if not force_refresh and attempts > 1 and cached_bal is None and remaining_amount > 0:
             return remaining_amount
 
         try:
@@ -526,8 +557,79 @@ async def execute_smart_peg_entry(
                             if poll_count >= min_polls_required:
                                 logger.info(
                                     f"⚡ [Smart Peg Entry] BBO shifted ({'outbid' if is_outbid else 'retreat'}): {target_maker_price} ➜ {new_maker} "
-                                    f"(Bid={l_best_bid}, Ask={l_best_ask}). Re-pegging!"
+                                    f"(Bid={l_best_bid}, Ask={l_best_ask}). Fast re-pegging to BBO..."
                                 )
+                                # ── PRICE CAP DEVIATION GUARD PRE-CHECK ON NEW_MAKER ──
+                                if max_chase_deviation_pct and max_chase_deviation_pct > 0:
+                                    if side.lower() == "buy":
+                                        max_allowed_price = initial_benchmark_price * (1 + (max_chase_deviation_pct / 100.0))
+                                        if new_maker > max_allowed_price:
+                                            logger.warning(
+                                                f"🛑 [Smart Peg Entry] New maker price {new_maker} drifted beyond max cap {max_allowed_price:.6f} "
+                                                f"(+{max_chase_deviation_pct}% from initial {initial_benchmark_price}). Stopping peg to protect capital."
+                                            )
+                                            break
+                                    else:
+                                        min_allowed_price = initial_benchmark_price * (1 - (max_chase_deviation_pct / 100.0))
+                                        if new_maker < min_allowed_price:
+                                            logger.warning(
+                                                f"🛑 [Smart Peg Entry] New maker price {new_maker} drifted below min cap {min_allowed_price:.6f} "
+                                                f"(-{max_chase_deviation_pct}% from initial {initial_benchmark_price}). Stopping peg to protect capital."
+                                            )
+                                            break
+
+                                # ── PRIORITY 1: HIGH-SPEED NATIVE ATOMIC EDIT_ORDER (cancelReplace on Spot, PUT on Futures) ──
+                                t_repeg_start = time.perf_counter()
+                                native_repeg_ok = False
+
+                                if getattr(exchange, 'has', {}).get('editOrder'):
+                                    try:
+                                        edit_res = await exchange.edit_order(
+                                            order_id, symbol, 'limit', side.lower(), remaining_amount, new_maker, ex_params
+                                        )
+                                        repeg_ms = int((time.perf_counter() - t_repeg_start) * 1000)
+                                        if edit_res and edit_res.get('id'):
+                                            old_oid = order_id
+                                            order_id = str(edit_res.get('id'))
+                                            target_maker_price = new_maker
+                                            attempts += 1
+
+                                            if cid in ACTIVE_SMART_PEGS:
+                                                ACTIVE_SMART_PEGS[cid]['current_order_id'] = order_id
+                                                ACTIVE_SMART_PEGS[cid]['current_maker_price'] = target_maker_price
+                                                ACTIVE_SMART_PEGS[cid]['current_attempt'] = attempts
+
+                                            logger.info(
+                                                f"⚡ [Smart Peg Entry] Native atomic re-peg SUCCESS in {repeg_ms}ms! ⚡ "
+                                                f"Order #{old_oid} ➜ #{order_id} at {target_maker_price} (Attempt {attempts}/{attempt_max_str})"
+                                            )
+
+                                            poll_count = 0
+                                            native_repeg_ok = True
+
+                                            if max_attempts > 0 and attempts >= max_attempts:
+                                                logger.info(f"⚠️ [Smart Peg Entry] Max attempts ({max_attempts}) reached after re-peg.")
+                                                break
+
+                                            continue  # Stay right in BBO shadow watch loop! Zero delay!
+                                    except Exception as edit_err:
+                                        err_str = str(edit_err).lower()
+                                        repeg_ms = int((time.perf_counter() - t_repeg_start) * 1000)
+
+                                        # Fast check: If exchange reports order already closed/filled
+                                        if any(kw in err_str for kw in ['filled', 'unknown order', '-2011', '-2013']):
+                                            logger.info(f"✅ [Smart Peg Entry] Order #{order_id} filled or closed during edit ({edit_err}). Verifying fill status...")
+                                            try:
+                                                chk_fill = await exchange.fetch_order(order_id, symbol)
+                                                if chk_fill.get('status', '').lower() in ['closed', 'filled']:
+                                                    latest_order_chk = chk_fill
+                                                    break
+                                            except Exception:
+                                                pass
+
+                                        logger.info(f"Native editOrder fallback notice ({edit_err}) [{repeg_ms}ms], proceeding with zero-delay cancel+create")
+
+                                # Fallback: Break to clean zero-delay cancel + create
                                 repeg_triggered = True
                                 cached_ob = latest_ob  # Pre-cache for 0ms re-peg!
                                 break
@@ -591,8 +693,16 @@ async def execute_smart_peg_entry(
 
         # Check order fill status
         try:
-            chk = latest_order_chk if (latest_order_chk and latest_order_chk.get('status', '').lower() in ['closed', 'filled']) else await exchange.fetch_order(order_id, symbol)
-            status = chk.get('status', '').lower()
+            chk = None
+            if latest_order_chk and latest_order_chk.get('status', '').lower() in ['closed', 'filled']:
+                chk = latest_order_chk
+            elif not repeg_triggered:
+                try:
+                    chk = await exchange.fetch_order(order_id, symbol)
+                except Exception as f_err:
+                    logger.debug(f"Fetch entry order check notice: {f_err}")
+
+            status = chk.get('status', '').lower() if chk else ''
 
             if status in ['closed', 'filled']:
                 raw_filled_amt = float(chk.get('filled') or (remaining_amount + order_processed_filled))
@@ -637,25 +747,79 @@ async def execute_smart_peg_entry(
                     f"Side: {side.upper()} (Maker Entry ⚡)\n"
                     f"Filled Amount: `{total_filled}`\n"
                     f"Price: `{exec_price}`\n"
-                    f"Attempts: {attempts}"
+                    f"Attempts: {attempts}\n"
+                    f"Time: `{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}`"
                 )
                 await _send_notify(msg)
                 break
             else:
-                # Cancel order to chase closer / re-peg
+                # ── PRIORITY 2: ZERO-DELAY CANCEL + RE-PEG FALLBACK ──
                 cancel_res = None
+                was_already_filled = False
                 try:
+                    t_c0 = time.perf_counter()
                     cancel_res = await exchange.cancel_order(order_id, symbol)
+                    c_ms = int((time.perf_counter() - t_c0) * 1000)
+                    logger.info(f"⚡ [Smart Peg Entry] Cancelled resting entry order #{order_id} in {c_ms}ms")
                 except Exception as c_err:
-                    logger.debug(f"Cancel entry order notice: {c_err}")
-                await asyncio.sleep(0.05)
+                    err_s = str(c_err).lower()
+                    if any(kw in err_s for kw in ['filled', 'unknown order', '-2011', '-2013']):
+                        was_already_filled = True
+                        logger.info(f"✅ [Smart Peg Entry] Order #{order_id} was already filled before cancel: {c_err}")
+                    else:
+                        logger.debug(f"Cancel entry order notice: {c_err}")
 
-                # Check partial fill
+                # If order was filled right before or during cancel:
+                if was_already_filled or (cancel_res and str(cancel_res.get('status', '')).lower() in ['closed', 'filled']):
+                    try:
+                        chk = await exchange.fetch_order(order_id, symbol)
+                        if chk.get('status', '').lower() in ['closed', 'filled']:
+                            raw_filled_amt = float(chk.get('filled') or (remaining_amount + order_processed_filled))
+                            filled_amt = max(0.0, raw_filled_amt - order_processed_filled)
+                            exec_price = float(chk.get('average') or chk.get('price') or target_maker_price)
+                            if filled_amt > 0:
+                                order_processed_filled = raw_filled_amt
+                                total_filled += filled_amt
+                                accumulated_cost += (filled_amt * exec_price)
+                                remaining_amount = max(0.0, remaining_amount - filled_amt)
+                            final_res = chk
+                            if filled_amt > 0 and (tp_config or sl_config) and not reduce_only:
+                                from app.services.bracket_order_service import BracketOrderService
+                                asyncio.create_task(
+                                    BracketOrderService._spawn_bracket_for_amount(
+                                        exchange=exchange,
+                                        symbol=symbol,
+                                        side=side.lower(),
+                                        filled_amount=filled_amt,
+                                        average_price=exec_price,
+                                        is_futures=is_futures,
+                                        tp_config=tp_config,
+                                        sl_config=sl_config,
+                                        user_id=user_id,
+                                        api_key_record=api_key_record,
+                                        entry_order_id=cid
+                                    )
+                                )
+                            msg = (
+                                f"🎯 *Smart Peg Entry Filled!*\n"
+                                f"Exchange: {exchange_name}\n"
+                                f"Pair: `{symbol}`\n"
+                                f"Side: {side.upper()} (Maker Entry ⚡)\n"
+                                f"Filled Amount: `{total_filled}`\n"
+                                f"Price: `{exec_price}`\n"
+                                f"Attempts: {attempts}\n"
+                                f"Time: `{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}`"
+                            )
+                            await _send_notify(msg)
+                            break
+                    except Exception:
+                        pass
+
+                # Check partial fill directly from atomic cancel response (0ms delay!)
                 try:
-                    raw_p_filled = float(cancel_res.get('filled') or 0.0) if isinstance(cancel_res, dict) and cancel_res.get('filled') is not None else 0.0
-                    if raw_p_filled <= 0:
-                        cancel_chk = await exchange.fetch_order(order_id, symbol)
-                        raw_p_filled = float(cancel_chk.get('filled') or 0.0)
+                    raw_p_filled = 0.0
+                    if isinstance(cancel_res, dict):
+                        raw_p_filled = float(cancel_res.get('filled') or cancel_res.get('info', {}).get('executedQty') or 0.0)
                     p_filled = max(0.0, raw_p_filled - order_processed_filled)
                     if p_filled > 0:
                         logger.info(f"🔄 [Smart Peg Entry] Partial fill on re-peg cancel: {p_filled}")

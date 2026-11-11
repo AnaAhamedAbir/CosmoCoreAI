@@ -8,6 +8,7 @@ Exchange Connection Pool ব্যবহার করে ultra-low latency order
 import logging
 import time
 import asyncio
+from typing import Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from app import models
 from app.core.security import decrypt_key
@@ -125,6 +126,24 @@ class ManualTradeService:
     _LEVERAGE_CACHE = {}    # { cache_key: (leverage, expire_timestamp) }
     _ML_PREDICTOR_CACHE = {}  # { f"{model_id}_{symbol}": MLL2Predictor }
     _OPEN_ORDERS_CACHE = {}  # { (api_key_id, symbol): (timestamp, result_dict) }
+    _WALLET_BALANCE_CACHE = {}  # { (api_key_id, is_futures): (balance_dict, timestamp) }
+
+    @staticmethod
+    def _update_wallet_balance_cache(api_key_id: int, is_futures: bool, balance: dict):
+        """Caches wallet balance for ultra-fast zero-latency pre-flight order validation."""
+        if api_key_id and isinstance(balance, dict):
+            ManualTradeService._WALLET_BALANCE_CACHE[(int(api_key_id), bool(is_futures))] = (balance, time.time())
+
+    @staticmethod
+    def _get_cached_wallet_balance(api_key_id: int, is_futures: bool, max_age_seconds: float = 15.0) -> Optional[dict]:
+        """Returns cached wallet balance if fresh (< max_age_seconds old), saving ~300-700ms on order placement."""
+        key = (int(api_key_id), bool(is_futures))
+        cached = ManualTradeService._WALLET_BALANCE_CACHE.get(key)
+        if cached:
+            bal_data, ts = cached
+            if time.time() - ts <= max_age_seconds:
+                return bal_data
+        return None
 
     @staticmethod
     def invalidate_open_orders_cache(api_key_id: int = None, symbol: str = None):
@@ -140,10 +159,11 @@ class ManualTradeService:
             ManualTradeService._OPEN_ORDERS_CACHE.pop(cache_key, None)
 
     @staticmethod
-    async def _get_exchange(api_key_record: models.ApiKey, is_futures: bool):
+    async def _get_exchange(api_key_record: models.ApiKey, is_futures: bool, purpose: str = "general"):
         """
         Exchange Pool থেকে একটি ready Exchange instance নিয়ে আসে।
         নতুন করে init করতে হয় না — cached থাকলে তাৎক্ষণিক রিটার্ন করে।
+        purpose='order' দিলে dedicated unthrottled order instance রিটার্ন করে।
         """
         decrypted_secret = decrypt_key(api_key_record.secret_key)
         decrypted_api_key = decrypt_key(api_key_record.api_key)
@@ -162,6 +182,7 @@ class ManualTradeService:
             decrypted_secret=decrypted_secret,
             is_futures=is_futures,
             passphrase=passphrase,
+            purpose=purpose,
         )
         return exchange
 
@@ -206,7 +227,7 @@ class ManualTradeService:
         }
 
     @staticmethod
-    async def _fetch_wallet_balance(exchange, symbol: str, meta: dict = None) -> dict:
+    async def _fetch_wallet_balance(exchange, symbol: str, meta: dict = None, api_key_id: int = None) -> dict:
         """
         Futures subType (linear vs inverse) onujayi sothik balance API call kore.
         Binance COIN-M (inverse) er jonno dapiPrivateGetBalance / fetch_balance({'subType': 'inverse'}) call kore.
@@ -222,11 +243,17 @@ class ManualTradeService:
                 params['subType'] = 'linear'
 
         try:
-            return await exchange.fetch_balance(params)
+            bal = await exchange.fetch_balance(params)
+            if api_key_id is not None:
+                ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
+            return bal
         except Exception as e:
             if meta.get('is_inverse'):
                 try:
-                    return await exchange.fetch_balance({'type': 'delivery'})
+                    bal = await exchange.fetch_balance({'type': 'delivery'})
+                    if api_key_id is not None:
+                        ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
+                    return bal
                 except Exception:
                     pass
             raise e
@@ -285,7 +312,7 @@ class ManualTradeService:
         try:
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
             meta = ManualTradeService._get_contract_meta(exchange, symbol)
-            balance = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta)
+            balance = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)
 
             base_part = meta["base"]
             quote_part = meta["quote"]
@@ -1201,6 +1228,9 @@ class ManualTradeService:
         Exchange Connection Pool ব্যবহার করে ultra-fast order execution।
         প্রথম অর্ডারের পরে পরবর্তী সব অর্ডার ~100-200ms এ সম্পন্ন হয়।
         """
+        t_req_origin = start_time if start_time > 0 else time.perf_counter()
+        t0 = time.perf_counter()
+
         # নির্দিষ্ট API Key খুঁজে বের করা
         query = db.query(models.ApiKey).filter(
             models.ApiKey.user_id == user_id,
@@ -1217,11 +1247,14 @@ class ManualTradeService:
         if not api_key_record:
             raise HTTPException(status_code=404, detail="Applicable active API Key not found.")
 
+        t_db = time.perf_counter()
+
         is_futures = ':' in order_req.symbol
 
         try:
-            # Pool theke Exchange newa
-            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
+            # Pool theke dedicated unthrottled order exchange newa
+            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
+            t_pool = time.perf_counter()
             meta = ManualTradeService._get_contract_meta(exchange, order_req.symbol)
             is_inverse = meta['is_inverse']
             contract_size = meta['contract_size']
@@ -1369,39 +1402,47 @@ class ManualTradeService:
 
                 order_req.amount = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, order_req.amount)
 
-            # --- Pre-flight Margin Check ---
-            try:
-                bal = await ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta)
-                base_part = meta["base"]
-                quote_part = meta["quote"]
+            # --- Pre-flight Margin Check (Zero-Latency Cached with Fresh Network Fallback) ---
+            bal = ManualTradeService._get_cached_wallet_balance(api_key_record.id, is_futures, max_age_seconds=15.0)
+            if not bal:
+                try:
+                    bal = await ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)
+                except Exception as margin_e:
+                    logger.debug(f"Pre-flight margin check fetch skipped: {margin_e}")
+                    bal = {}
 
-                if req_price and req_price > 0 and not params.get('reduceOnly'):
-                    lev = float(params.get('leverage') or 1)
-                    if is_inverse:
-                        # On Inverse Futures, margin asset is base_part (DOGE)
-                        free_base = float(bal.get(base_part, {}).get('free', 0.0)) or (float(bal.get('free', {}).get(base_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0)
-                        req_notional_usd = order_req.amount * contract_size
-                        required_margin_base = (req_notional_usd / req_price) / lev
-                        if required_margin_base >= (free_base * 0.99):
-                            if required_margin_base <= (free_base * 1.08):
-                                max_cont = max(1.0, (free_base * 0.985 * req_price * lev) // contract_size)
-                                logger.info(f"🛠️ Pre-flight Margin: Auto-adjusting inverse contracts to {max_cont} (Free: {free_base} {base_part})")
-                                order_req.amount = float(max_cont)
-                    elif is_futures or order_req.side.lower() == 'buy':
-                        free_quote = float(bal.get(quote_part, {}).get('free', 0.0)) or (float(bal.get('free', {}).get(quote_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0)
-                        notional_value = order_req.amount * req_price
-                        required_margin = notional_value / lev if is_futures else notional_value
-                        if required_margin >= (free_quote * 0.99):
-                            if required_margin <= (free_quote * 1.05):
-                                logger.info(f"🛠️ Pre-flight Margin: Auto-adjusting size (Req: {required_margin}, Free: {free_quote})")
-                                order_req.amount = order_req.amount * (free_quote / required_margin) * 0.99
-                    elif order_req.side.lower() == 'sell' and not is_futures:
-                        free_base = float(bal.get(base_part, {}).get('free', 0.0)) or (float(bal.get('free', {}).get(base_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0)
-                        if order_req.amount >= (free_base * 0.99):
-                            if order_req.amount <= (free_base * 1.05):
-                                order_req.amount = free_base * 0.999
-            except Exception as margin_e:
-                logger.debug(f"Pre-flight margin check skipped: {margin_e}")
+            if bal:
+                try:
+                    base_part = meta["base"]
+                    quote_part = meta["quote"]
+
+                    if req_price and req_price > 0 and not params.get('reduceOnly'):
+                        lev = float(params.get('leverage') or 1)
+                        if is_inverse:
+                            # On Inverse Futures, margin asset is base_part (DOGE)
+                            free_base = float(bal.get(base_part, {}).get('free', 0.0)) or (float(bal.get('free', {}).get(base_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0)
+                            req_notional_usd = order_req.amount * contract_size
+                            required_margin_base = (req_notional_usd / req_price) / lev
+                            if required_margin_base >= (free_base * 0.99):
+                                if required_margin_base <= (free_base * 1.08):
+                                    max_cont = max(1.0, (free_base * 0.985 * req_price * lev) // contract_size)
+                                    logger.info(f"🛠️ Pre-flight Margin: Auto-adjusting inverse contracts to {max_cont} (Free: {free_base} {base_part})")
+                                    order_req.amount = float(max_cont)
+                        elif is_futures or order_req.side.lower() == 'buy':
+                            free_quote = float(bal.get(quote_part, {}).get('free', 0.0)) or (float(bal.get('free', {}).get(quote_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0)
+                            notional_value = order_req.amount * req_price
+                            required_margin = notional_value / lev if is_futures else notional_value
+                            if required_margin >= (free_quote * 0.99):
+                                if required_margin <= (free_quote * 1.05):
+                                    logger.info(f"🛠️ Pre-flight Margin: Auto-adjusting size (Req: {required_margin}, Free: {free_quote})")
+                                    order_req.amount = order_req.amount * (free_quote / required_margin) * 0.99
+                        elif order_req.side.lower() == 'sell' and not is_futures:
+                            free_base = float(bal.get(base_part, {}).get('free', 0.0)) or (float(bal.get('free', {}).get(base_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0)
+                            if order_req.amount >= (free_base * 0.99):
+                                if order_req.amount <= (free_base * 1.05):
+                                    order_req.amount = free_base * 0.999
+                except Exception as margin_e:
+                    logger.debug(f"Pre-flight margin calculation notice: {margin_e}")
 
             # --- Refresh Auto-Best-Limit Price right after Margin Check so BBO is 0ms fresh ---
             if order_req.type.lower() == 'limit' and params.get('autoBestLimit'):
@@ -1421,6 +1462,8 @@ class ManualTradeService:
                     ex_params['postOnly'] = True
                 except Exception as fresh_ob_e:
                     logger.debug(f"Fresh BBO refresh notice: {fresh_ob_e}")
+
+            t_preflight = time.perf_counter()
 
             # Detached-safe snapshot of api_key_record to prevent DetachedInstanceError in background tasks
             from types import SimpleNamespace
@@ -1713,12 +1756,44 @@ class ManualTradeService:
                 except Exception as ws_e:
                     logger.warning(f"⚠️ WebSocket Order Failed ({ws_e}). Falling back to REST API.")
 
+            t_order_start = time.perf_counter()
             if not is_ws_success:
                 logger.info(f"🌐 Using REST API order execution for {order_req.symbol}...")
                 if order_req.type.lower() == 'market':
-                    response = await exchange.create_market_order(
-                        order_req.symbol, order_req.side, order_req.amount, params=ex_params
-                    )
+                    try:
+                        response = await exchange.create_market_order(
+                            order_req.symbol, order_req.side, order_req.amount, params=ex_params
+                        )
+                    except Exception as mkt_e:
+                        err_s = str(mkt_e).lower()
+                        is_insufficient = ('-2010' in err_s or 'insufficient balance' in err_s) and ('immediately match' not in err_s)
+                        if is_insufficient:
+                            try:
+                                fresh_bal = await ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)
+                                base_part = meta["base"]
+                                quote_part = meta["quote"]
+                                if order_req.side.lower() == 'buy':
+                                    free_q = float(fresh_bal.get(quote_part, {}).get('free', 0.0)) or 0.0
+                                    if free_q > 0 and req_price and req_price > 0:
+                                        adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, (free_q / req_price) * 0.99)
+                                        if float(adj_amt) < float(order_req.amount):
+                                            order_req.amount = float(adj_amt)
+                                            response = await exchange.create_market_order(
+                                                order_req.symbol, order_req.side, order_req.amount, params=ex_params
+                                            )
+                                elif order_req.side.lower() == 'sell' and not is_futures:
+                                    free_b = float(fresh_bal.get(base_part, {}).get('free', 0.0)) or 0.0
+                                    if free_b > 0:
+                                        adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, free_b * 0.999)
+                                        if float(adj_amt) < float(order_req.amount):
+                                            order_req.amount = float(adj_amt)
+                                            response = await exchange.create_market_order(
+                                                order_req.symbol, order_req.side, order_req.amount, params=ex_params
+                                            )
+                            except Exception:
+                                pass
+                        if not response:
+                            raise mkt_e
                 elif order_req.type.lower() == 'limit':
                     max_po_attempts = 4 if (params.get('autoBestLimit') and ex_params.get('postOnly')) else 1
                     for po_attempt in range(1, max_po_attempts + 1):
@@ -1735,9 +1810,39 @@ class ManualTradeService:
                             break
                         except Exception as lim_e:
                             err_s = str(lim_e).lower()
+                            # Safe auto-clamp retry on insufficient balance (e.g. 100% slider micro-deviations)
+                            is_insufficient = ('-2010' in err_s or 'insufficient balance' in err_s) and ('immediately match' not in err_s)
+                            if is_insufficient:
+                                try:
+                                    fresh_bal = await ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)
+                                    base_part = meta["base"]
+                                    quote_part = meta["quote"]
+                                    clamped = False
+                                    if order_req.side.lower() == 'buy':
+                                        free_q = float(fresh_bal.get(quote_part, {}).get('free', 0.0)) or 0.0
+                                        if free_q > 0 and float(order_req.price) > 0:
+                                            adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, (free_q / float(order_req.price)) * 0.99)
+                                            if float(adj_amt) < float(order_req.amount):
+                                                order_req.amount = float(adj_amt)
+                                                clamped = True
+                                    elif order_req.side.lower() == 'sell' and not is_futures:
+                                        free_b = float(fresh_bal.get(base_part, {}).get('free', 0.0)) or 0.0
+                                        if free_b > 0:
+                                            adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, free_b * 0.999)
+                                            if float(adj_amt) < float(order_req.amount):
+                                                order_req.amount = float(adj_amt)
+                                                clamped = True
+                                    if clamped:
+                                        logger.info(f"🔄 Retrying limit order with clamped size: {order_req.amount}")
+                                        response = await exchange.create_limit_order(
+                                            order_req.symbol, order_req.side, order_req.amount, order_req.price, ex_params
+                                        )
+                                        break
+                                except Exception as retry_e:
+                                    logger.debug(f"Clamp retry error: {retry_e}")
+
                             is_po_cross = (
                                 'immediately match' in err_s
-                                or '-2010' in err_s
                                 or '-5022' in err_s
                                 or 'post only' in err_s
                                 or 'postonly' in err_s
@@ -1780,15 +1885,21 @@ class ManualTradeService:
                 else:
                     raise HTTPException(status_code=400, detail="Invalid order type. Use 'market' or 'limit'.")
 
+            t_order_end = time.perf_counter()
+
             # Calculate Latency (using backend perf_counter to eliminate PC-Server clock drift)
-            latency_ms = 0
-            if start_time:
-                latency_ms = int((time.perf_counter() - start_time) * 1000)
-            else:
-                # Fallback if somehow not set, just assume 0 or fast
-                latency_ms = 0
-            
-            latency_msg = f"⏱ Execution Time: {latency_ms} ms ⚡\n"
+            t_origin = start_time if start_time > 0 else t_req_origin
+            latency_ms = int((t_order_end - t_origin) * 1000)
+            db_ms = int((t_db - t0) * 1000)
+            pool_ms = int((t_pool - t_db) * 1000)
+            preflight_ms = int((t_preflight - t_pool) * 1000)
+            order_api_ms = int((t_order_end - t_order_start) * 1000)
+
+            logger.info(
+                f"⚡ [EXEC TIMING] Total={latency_ms}ms | "
+                f"DB={db_ms}ms | Pool={pool_ms}ms | Preflight={preflight_ms}ms | BinanceAPI={order_api_ms}ms"
+            )
+            latency_msg = f"⏱ Execution Speed: {latency_ms} ms ⚡\n"
             
             # Send Rich Session-Safe Telegram Notification
             try:

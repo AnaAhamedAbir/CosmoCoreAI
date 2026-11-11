@@ -20,14 +20,51 @@ logger = logging.getLogger(__name__)
 # Cache entry: (exchange_instance, created_at_timestamp)
 _pool: Dict[str, Tuple[Any, float]] = {}
 _pool_lock = asyncio.Lock()
+_keepalive_task: Optional[asyncio.Task] = None
 
 # একটি Exchange Instance কতক্ষণ Cache এ থাকবে (seconds)
 CACHE_TTL_SECONDS = 3600  # ১ ঘন্টা
 
-def _make_cache_key(api_key_id: int, is_futures: bool) -> str:
-    """api_key_id এবং mode (spot/futures) দিয়ে unique key তৈরি করে।"""
+def _make_cache_key(api_key_id: int, is_futures: bool, purpose: str = "general") -> str:
+    """api_key_id, mode (spot/futures) এবং purpose দিয়ে unique key তৈরি করে।"""
     mode = "futures" if is_futures else "spot"
+    if purpose and purpose != "general":
+        return f"key_{api_key_id}_{mode}_{purpose}"
     return f"key_{api_key_id}_{mode}"
+
+
+async def _keepalive_worker():
+    """
+    প্রতি 30 সেকেন্ডে পুলের প্রতিটি Active Exchange-এ একটি হালকা public ping (fetch_time) পাঠায়।
+    এতে TCP connection এবং TLS 1.3 session উষ্ণ (warm/alive) থাকে।
+    পরবর্তী অর্ডারে 3-way handshake বা TLS renegotiation এর ~400ms নেটওয়ার্ক পেনাল্টি সম্পূর্ণ দূর হয়।
+    """
+    while True:
+        try:
+            await asyncio.sleep(30)
+            async with _pool_lock:
+                instances = [ex for (ex, _) in list(_pool.values())]
+            for ex in instances:
+                try:
+                    if hasattr(ex, 'fetch_time') and not getattr(ex, 'closed', False):
+                        await asyncio.wait_for(ex.fetch_time(), timeout=3.0)
+                except Exception:
+                    pass
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.debug(f"[ExchangePool] Keepalive ping notice: {e}")
+
+
+def _ensure_keepalive():
+    """Ensure the background keepalive ping worker is running."""
+    global _keepalive_task
+    if _keepalive_task is None or _keepalive_task.done():
+        try:
+            loop = asyncio.get_running_loop()
+            _keepalive_task = loop.create_task(_keepalive_worker())
+        except RuntimeError:
+            pass
 
 
 async def get_or_create_exchange(
@@ -37,12 +74,15 @@ async def get_or_create_exchange(
     decrypted_secret: str,
     is_futures: bool,
     passphrase: Optional[str] = None,
+    purpose: str = "general",
 ) -> Any:
     """
     Cache থেকে Exchange Instance ফেরত দেয়।
     না থাকলে নতুন তৈরি করে Cache করে রাখে।
+    purpose='order' দিলে অর্ডারের জন্য সম্পূর্ণ আলাদা unthrottled dedicated instance তৈরি হয়।
     """
-    cache_key = _make_cache_key(api_key_id, is_futures)
+    _ensure_keepalive()
+    cache_key = _make_cache_key(api_key_id, is_futures, purpose=purpose)
 
     async with _pool_lock:
         # Cache Hit — TTL চেক করুন
@@ -59,11 +99,11 @@ async def get_or_create_exchange(
                                 await asyncio.wait_for(exchange.load_markets(), timeout=8.0)
                             except Exception:
                                 pass
-                logger.debug(f"[ExchangePool] ✅ Cache HIT for key={api_key_id} mode={'futures' if is_futures else 'spot'}")
+                logger.debug(f"[ExchangePool] ✅ Cache HIT for key={api_key_id} mode={'futures' if is_futures else 'spot'} purpose={purpose}")
                 return exchange
             else:
                 # Expired — পুরনোটা বন্ধ করে নতুন তৈরি করব
-                logger.debug(f"[ExchangePool] 🔄 Cache EXPIRED for key={api_key_id}, reinitializing...")
+                logger.debug(f"[ExchangePool] 🔄 Cache EXPIRED for key={api_key_id} purpose={purpose}, reinitializing...")
                 try:
                     await exchange.close()
                 except Exception:
@@ -71,17 +111,19 @@ async def get_or_create_exchange(
                 del _pool[cache_key]
 
         # Cache Miss — নতুন Exchange তৈরি করুন
-        logger.info(f"[ExchangePool] 🆕 Cache MISS — creating new exchange instance for key={api_key_id}")
+        logger.info(f"[ExchangePool] 🆕 Cache MISS — creating new exchange instance for key={api_key_id} purpose={purpose}")
 
         exchange_class = getattr(ccxt, exchange_name.lower(), None)
         if not exchange_class:
             raise ValueError(f"Unsupported exchange: {exchange_name}")
 
+        is_order_purpose = (purpose == 'order')
         config = {
             'apiKey': decrypted_api_key,
             'secret': decrypted_secret,
-            'enableRateLimit': True,
-            'timeout': 20000,
+            # Dedicated order instance rateLimit disable kore CCXT throttle queue bypass kore
+            'enableRateLimit': False if is_order_purpose else True,
+            'timeout': 15000 if is_order_purpose else 20000,
             'options': {
                 'adjustForTimeDifference': True,
                 'recvWindow': 60000 if exchange_name.lower() == 'mexc' else 10000,
@@ -104,7 +146,7 @@ async def get_or_create_exchange(
         # Markets লোড করে রাখুন — পরবর্তী রিকোয়েস্টে আর লাগবে না
         try:
             await asyncio.wait_for(exchange.load_markets(), timeout=10.0)
-            logger.info(f"[ExchangePool] ✅ Markets loaded for {exchange_name} key={api_key_id}")
+            logger.info(f"[ExchangePool] ✅ Markets loaded for {exchange_name} key={api_key_id} purpose={purpose}")
         except Exception as e:
             logger.warning(f"[ExchangePool] ⚠️ Market load warning for {exchange_name}: {e}")
             if is_futures and exchange_name.lower() == 'binance':
@@ -140,6 +182,10 @@ async def close_all():
     """
     সব Connection বন্ধ করে। App shutdown এ call করতে হবে।
     """
+    global _keepalive_task
+    if _keepalive_task and not _keepalive_task.done():
+        _keepalive_task.cancel()
+        _keepalive_task = None
     async with _pool_lock:
         for key, (exchange, _) in list(_pool.items()):
             try:

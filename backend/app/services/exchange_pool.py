@@ -158,18 +158,33 @@ async def get_or_create_exchange(
             exchange.currencies_by_id = getattr(gen_ex, 'currencies_by_id', {})
             logger.info(f"[ExchangePool] ⚡ Copied pre-loaded markets from general instance for key={api_key_id} purpose={purpose} (0ms)")
         else:
+            # ⚡ Check ccxt_service pre-warmed markets cache (0ms)
+            copied_from_cache = False
             try:
-                await asyncio.wait_for(exchange.load_markets(), timeout=10.0)
-                logger.info(f"[ExchangePool] ✅ Markets loaded for {exchange_name} key={api_key_id} purpose={purpose}")
-            except Exception as e:
-                logger.warning(f"[ExchangePool] ⚠️ Market load warning for {exchange_name}: {e}")
-                if is_futures and exchange_name.lower() == 'binance':
-                    try:
-                        exchange.options['fetchMarkets'] = {'types': ['linear']}
-                        await asyncio.wait_for(exchange.load_markets(), timeout=8.0)
-                        logger.info(f"[ExchangePool] ✅ Linear Futures markets loaded via fallback for {exchange_name} key={api_key_id}")
-                    except Exception as lin_e:
-                        logger.warning(f"[ExchangePool] ⚠️ Linear fallback market load warning: {lin_e}")
+                from app.services.ccxt_service import ccxt_service
+                market_type = 'swap' if is_futures else 'spot'
+                cache_id = f"{exchange_name.lower()}_{market_type}"
+                prewarmed = ccxt_service._market_cache.get(cache_id)
+                if prewarmed and hasattr(exchange, 'set_markets'):
+                    exchange.set_markets(prewarmed)
+                    copied_from_cache = True
+                    logger.info(f"[ExchangePool] ⚡ Copied pre-warmed markets from ccxt_service for {cache_id} key={api_key_id} (0ms)")
+            except Exception as cache_e:
+                logger.debug(f"[ExchangePool] Pre-warmed cache copy fallback: {cache_e}")
+
+            if not copied_from_cache and not getattr(exchange, 'markets', None):
+                try:
+                    await asyncio.wait_for(exchange.load_markets(), timeout=10.0)
+                    logger.info(f"[ExchangePool] ✅ Markets loaded for {exchange_name} key={api_key_id} purpose={purpose}")
+                except Exception as e:
+                    logger.warning(f"[ExchangePool] ⚠️ Market load warning for {exchange_name}: {e}")
+                    if is_futures and exchange_name.lower() == 'binance':
+                        try:
+                            exchange.options['fetchMarkets'] = {'types': ['linear']}
+                            await asyncio.wait_for(exchange.load_markets(), timeout=8.0)
+                            logger.info(f"[ExchangePool] ✅ Linear Futures markets loaded via fallback for {exchange_name} key={api_key_id}")
+                        except Exception as lin_e:
+                            logger.warning(f"[ExchangePool] ⚠️ Linear fallback market load warning: {lin_e}")
 
         _pool[cache_key] = (exchange, time.time())
 

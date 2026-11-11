@@ -67,11 +67,28 @@ class MarketDataStreamer:
                 if not exchange_class:
                     raise ValueError(f"Exchange {exchange_id} not supported")
                 
-                exchange = exchange_class({'enableRateLimit': True})
+                options = {'enableRateLimit': True}
+                if is_futures and exchange_id.lower() == 'binance':
+                    options['options'] = {'defaultType': 'swap'}
+                exchange = exchange_class(options)
+                
+                # ⚡ Copy pre-warmed markets from ccxt_service if available (0ms)
                 try:
-                    await exchange.load_markets()
-                except Exception as e:
-                    logger.warning(f"Streamer failed to load markets for {exchange_id}: {e}")
+                    from app.services.ccxt_service import ccxt_service
+                    market_type = 'swap' if is_futures else 'spot'
+                    cache_id = f"{exchange_id.lower()}_{market_type}"
+                    prewarmed = ccxt_service._market_cache.get(cache_id)
+                    if prewarmed and hasattr(exchange, 'set_markets'):
+                        exchange.set_markets(prewarmed)
+                        logger.info(f"Streamer ⚡ Copied {len(prewarmed)} pre-warmed markets for {exchange_id} (0ms)")
+                except Exception as cp_err:
+                    logger.debug(f"Streamer pre-warmed copy fallback: {cp_err}")
+
+                if not getattr(exchange, 'markets', None):
+                    try:
+                        await exchange.load_markets()
+                    except Exception as e:
+                        logger.warning(f"Streamer failed to load markets for {exchange_id}: {e}")
                     
                 self._exchange_instances[exchange_id] = exchange
                 

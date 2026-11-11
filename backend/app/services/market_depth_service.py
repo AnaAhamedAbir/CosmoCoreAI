@@ -68,11 +68,28 @@ class MarketDepthService:
                     options['options'] = {'defaultType': 'swap'}  # 'swap' = USDⓈ-M (fapi.binance.com); 'future' = COIN-M (dapi.binance.com)
                     
                 exchange = exchange_class(options)
+                
+                # ⚡ Copy pre-warmed markets from ccxt_service if available (0ms load)
                 try:
-                    logger.info(f"Loading markets for {cache_id} at initialization...")
-                    await exchange.load_markets()
-                except Exception as e:
-                    logger.warning(f"Failed to load markets for {cache_id} during initialization: {e}")
+                    from app.services.ccxt_service import ccxt_service
+                    prewarmed = None
+                    if cache_id == 'binance':
+                        prewarmed = ccxt_service._market_cache.get('binance_spot')
+                    elif cache_id == 'binance_futures':
+                        prewarmed = ccxt_service._market_cache.get('binance_swap')
+
+                    if prewarmed and hasattr(exchange, 'set_markets'):
+                        exchange.set_markets(prewarmed)
+                        logger.info(f"⚡ [MarketDepth] Copied {len(prewarmed)} pre-warmed markets to {cache_id} (0ms)")
+                except Exception as cp_err:
+                    logger.debug(f"[MarketDepth] Pre-warmed copy skipped for {cache_id}: {cp_err}")
+
+                if not getattr(exchange, 'markets', None):
+                    try:
+                        logger.info(f"Loading markets for {cache_id} at initialization...")
+                        await exchange.load_markets()
+                    except Exception as e:
+                        logger.warning(f"Failed to load markets for {cache_id} during initialization: {e}")
                     
                 self._exchanges[cache_id] = exchange
                 
@@ -313,30 +330,45 @@ class MarketDepthService:
                     
                 symbols = sorted(symbols)
             else:
-                # 1. Fetch Spot Markets
+                # ⚡ Check ccxt_service memory cache first for 0ms instant response
+                if exchange_id.lower() == 'binance':
+                    try:
+                        from app.services.ccxt_service import ccxt_service
+                        spot_cache = ccxt_service._market_cache.get('binance_spot')
+                        swap_cache = ccxt_service._market_cache.get('binance_swap')
+                        if spot_cache and swap_cache:
+                            symbols = sorted(list(set(list(spot_cache.keys()) + list(swap_cache.keys()))))
+                            logger.info(f"⚡ [MarketDepth] Served {len(symbols)} Binance markets directly from memory cache (0ms)")
+                            if redis:
+                                await redis.setex(cache_key, 3600, json.dumps(symbols))
+                            return symbols
+                    except Exception as mem_e:
+                        logger.debug(f"[MarketDepth] Memory cache lookup fallback: {mem_e}")
+
+                # 1. Fetch Spot Markets (without redundant reload)
                 spot_exchange = await self.get_exchange_instance(exchange_id)
-                spot_markets = await spot_exchange.load_markets()
+                spot_markets = spot_exchange.markets if getattr(spot_exchange, 'markets', None) else await spot_exchange.load_markets()
                 symbols.extend(list(spot_markets.keys()))
                 logger.info(f"Fetched {len(spot_markets)} spot markets for {exchange_id}")
 
-                # 2. Fetch Futures Markets (if applicable)
+                # 2. Fetch Futures Markets (without redundant reload)
                 if exchange_id == 'binance':
                     logger.info("Fetching Binance Futures markets...")
                     futures_exchange = await self.get_exchange_instance('binance', symbol='BTC/USDT:USDT')
-                    futures_markets = await futures_exchange.load_markets()
+                    futures_markets = futures_exchange.markets if getattr(futures_exchange, 'markets', None) else await futures_exchange.load_markets()
                     symbols.extend(list(futures_markets.keys()))
                     logger.info(f"Fetched {len(futures_markets)} Binance futures markets")
                 elif exchange_id == 'kucoin':
                     logger.info("Fetching Kucoin Futures markets...")
                     futures_exchange = await self.get_exchange_instance('kucoin', symbol='BTC/USDT:USDT')
-                    futures_markets = await futures_exchange.load_markets()
+                    futures_markets = futures_exchange.markets if getattr(futures_exchange, 'markets', None) else await futures_exchange.load_markets()
                     symbols.extend(list(futures_markets.keys()))
                     logger.info(f"Fetched {len(futures_markets)} Kucoin futures markets")
                 elif exchange_id == 'kraken':
                     logger.info("Fetching Kraken Futures markets...")
                     try:
                         futures_exchange = await self.get_exchange_instance('kraken', symbol='BTC/USDT:USDT')
-                        futures_markets = await futures_exchange.load_markets()
+                        futures_markets = futures_exchange.markets if getattr(futures_exchange, 'markets', None) else await futures_exchange.load_markets()
                         symbols.extend(list(futures_markets.keys()))
                         logger.info(f"Fetched {len(futures_markets)} Kraken futures markets")
                     except Exception as e:

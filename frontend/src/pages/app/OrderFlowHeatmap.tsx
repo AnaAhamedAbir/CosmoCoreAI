@@ -433,7 +433,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     symbol.toUpperCase(),
                     exchange,
                     interval,
-                    2000
+                    1000
                 );
 
                 if (!isMounted) return;

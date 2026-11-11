@@ -24,20 +24,35 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
     // --- Floating Modal Drag Position State (Zero-React-Re-render Direct GPU Transform Pattern, matching ManualTradeModal) ---
     const [modalPos, setModalPos] = useState<{ x: number; y: number }>(() => {
+        const winW = typeof window !== 'undefined' ? (window.visualViewport?.width || window.innerWidth) : 1920;
+        const winH = typeof window !== 'undefined' ? (window.visualViewport?.height || window.innerHeight) : 1080;
+        const isTabletOrSmall = winH < 920 || winW < 1200;
+
         if (typeof window !== 'undefined') {
             try {
                 const saved = localStorage.getItem('cosmo_wallhunter_modal_pos_v2');
                 if (saved) {
                     const parsed = JSON.parse(saved);
-                    if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') return parsed;
+                    if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+                        // On tablets/smaller viewports (e.g. Redmi Pad Chrome), keep top offset compact so full modal + footer fit cleanly
+                        if (isTabletOrSmall) {
+                            return {
+                                x: Math.max(6, Math.min(parsed.x, winW - Math.min(600, winW - 12))),
+                                y: Math.max(6, Math.min(parsed.y, 14))
+                            };
+                        }
+                        return {
+                            x: Math.max(6, Math.min(parsed.x, winW - 320)),
+                            y: Math.max(6, Math.min(parsed.y, winH - 250))
+                        };
+                    }
                 }
             } catch {}
         }
-        const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
-        const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+
         return {
-            x: Math.max(20, Math.min(winW - 610, Math.round(winW * 0.35))),
-            y: Math.max(20, Math.round(winH * 0.08))
+            x: isTabletOrSmall ? Math.max(6, Math.round((winW - Math.min(600, winW - 16)) / 2)) : Math.max(20, Math.min(winW - 610, Math.round(winW * 0.35))),
+            y: isTabletOrSmall ? 8 : Math.max(16, Math.round(winH * 0.05))
         };
     });
 
@@ -584,22 +599,25 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         rawY: number,
         elOverride?: HTMLElement | null
     ) => {
-        const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
-        const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+        const winW = typeof window !== 'undefined' ? (window.visualViewport?.width || window.innerWidth) : 1920;
+        const winH = typeof window !== 'undefined' ? (window.visualViewport?.height || window.innerHeight) : 1080;
         const modalEl = elOverride || modalContainerRef.current;
-        const modalW = modalEl?.offsetWidth || 600;
-        const modalH = modalEl?.offsetHeight || 650;
+        const modalW = modalEl?.offsetWidth || Math.min(600, winW - 12);
+        const modalH = modalEl?.offsetHeight || 600;
 
         const leftMargin = 6;
         const rightMargin = 6;
-        const topMargin = 10;
-        const bottomMargin = 16;
+        const isTabletOrSmall = winH < 920 || winW < 1200;
+        const topMargin = isTabletOrSmall ? 6 : 10;
+        const bottomMargin = isTabletOrSmall ? 8 : 14;
 
         const minX = leftMargin;
         const maxX = Math.max(minX, winW - modalW - rightMargin);
 
         const minY = topMargin;
-        const maxY = Math.max(minY, winH - modalH - bottomMargin);
+        const minUsableH = 260;
+        const effectiveH = Math.min(modalH, Math.max(minUsableH, winH - minUsableH));
+        const maxY = Math.max(minY, winH - effectiveH - bottomMargin);
 
         return {
             x: Math.max(minX, Math.min(maxX, Math.round(rawX))),
@@ -613,46 +631,48 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         const modalEl = modalContainerRef.current;
         if (!modalEl) return;
 
-        const clamped = clampPos(modalPos.x, modalPos.y, modalEl);
-        modalEl.style.transform = `translate3d(${clamped.x}px, ${clamped.y}px, 0)`;
-        dragRef.current.currentX = clamped.x;
-        dragRef.current.currentY = clamped.y;
-
-        if (clamped.x !== modalPos.x || clamped.y !== modalPos.y) {
-            setModalPos(clamped);
-        }
-
-        const resizeObserver = new ResizeObserver((entries) => {
+        const syncModalPositionAndHeight = () => {
             if (dragRef.current.isDragging) return;
-            for (const entry of entries) {
-                const targetEl = entry.target as HTMLElement;
-                const nextClamped = clampPos(modalPos.x, modalPos.y, targetEl);
-                if (nextClamped.x !== modalPos.x || nextClamped.y !== modalPos.y) {
-                    targetEl.style.transform = `translate3d(${nextClamped.x}px, ${nextClamped.y}px, 0)`;
-                    dragRef.current.currentX = nextClamped.x;
-                    dragRef.current.currentY = nextClamped.y;
-                    setModalPos(nextClamped);
-                }
+            const winW = window.visualViewport?.width || window.innerWidth;
+            const winH = window.visualViewport?.height || window.innerHeight;
+            const isTabletOrSmall = winH < 920 || winW < 1200;
+            const bottomMargin = isTabletOrSmall ? 8 : 14;
+
+            const clamped = clampPos(modalPos.x, modalPos.y, modalEl);
+            const maxH = Math.max(260, Math.round(winH - clamped.y - bottomMargin));
+
+            modalEl.style.transform = `translate3d(${clamped.x}px, ${clamped.y}px, 0)`;
+            modalEl.style.maxHeight = `${maxH}px`;
+            dragRef.current.currentX = clamped.x;
+            dragRef.current.currentY = clamped.y;
+
+            if (clamped.x !== modalPos.x || clamped.y !== modalPos.y) {
+                setModalPos(clamped);
             }
+        };
+
+        syncModalPositionAndHeight();
+
+        const resizeObserver = new ResizeObserver(() => {
+            syncModalPositionAndHeight();
         });
 
         resizeObserver.observe(modalEl);
 
         const onWindowResize = () => {
-            if (dragRef.current.isDragging) return;
-            const nextClamped = clampPos(modalPos.x, modalPos.y, modalContainerRef.current);
-            if (modalContainerRef.current) {
-                modalContainerRef.current.style.transform = `translate3d(${nextClamped.x}px, ${nextClamped.y}px, 0)`;
-            }
-            dragRef.current.currentX = nextClamped.x;
-            dragRef.current.currentY = nextClamped.y;
-            setModalPos(nextClamped);
+            syncModalPositionAndHeight();
         };
 
         window.addEventListener('resize', onWindowResize);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', onWindowResize);
+        }
         return () => {
             resizeObserver.disconnect();
             window.removeEventListener('resize', onWindowResize);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', onWindowResize);
+            }
         };
     }, [isOpen, clampPos, modalPos.x, modalPos.y]);
 
@@ -676,12 +696,16 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         e.stopPropagation();
 
         const modalEl = modalContainerRef.current;
-        const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
-        const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
-        const modalW = modalEl?.offsetWidth || 600;
-        const modalH = modalEl?.offsetHeight || 650;
-        const topMargin = 10;
-        const bottomMargin = 16;
+        const winW = typeof window !== 'undefined' ? (window.visualViewport?.width || window.innerWidth) : 1920;
+        const winH = typeof window !== 'undefined' ? (window.visualViewport?.height || window.innerHeight) : 1080;
+        const modalW = modalEl?.offsetWidth || Math.min(600, winW - 12);
+        const modalH = modalEl?.offsetHeight || 600;
+        const isTabletOrSmall = winH < 920 || winW < 1200;
+        const topMargin = isTabletOrSmall ? 6 : 10;
+        const bottomMargin = isTabletOrSmall ? 8 : 14;
+
+        const minUsableH = 260;
+        const effectiveH = Math.min(modalH, Math.max(minUsableH, winH - minUsableH));
 
         const drag = dragRef.current;
         drag.isDragging = true;
@@ -694,7 +718,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         drag.minX = 6;
         drag.maxX = Math.max(drag.minX, winW - modalW - 6);
         drag.minY = topMargin;
-        drag.maxY = Math.max(drag.minY, winH - modalH - bottomMargin);
+        drag.maxY = Math.max(drag.minY, winH - effectiveH - bottomMargin);
 
         document.body.style.userSelect = 'none';
         document.body.style.cursor = 'grabbing';
@@ -720,7 +744,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             drag.currentY = clampedY;
 
             if (modalContainerRef.current) {
+                const currentWinH = window.visualViewport?.height || window.innerHeight;
+                const dynamicMaxH = Math.max(260, Math.round(currentWinH - clampedY - bottomMargin));
                 modalContainerRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
+                modalContainerRef.current.style.maxHeight = `${dynamicMaxH}px`;
             }
         };
 
@@ -1330,9 +1357,12 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 left: 0,
                 top: 0,
                 transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : modalPos.x}px, ${dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y}px, 0)`,
+                maxHeight: typeof window !== 'undefined'
+                    ? `${Math.max(260, Math.round((window.visualViewport?.height || window.innerHeight) - (dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y) - (((window.visualViewport?.height || window.innerHeight) < 920 || (window.visualViewport?.width || window.innerWidth) < 1200) ? 8 : 14)))}px`
+                    : '90vh',
                 willChange: 'transform'
             }}
-            className="fixed w-[600px] max-w-[calc(100vw-16px)] rounded-2xl bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/98 to-[#050811]/98 border border-amber-500/40 shadow-[0_16px_48px_rgba(0,0,0,0.85),0_0_25px_rgba(245,158,11,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col max-h-[calc(100vh-40px)]"
+            className="fixed w-[600px] max-w-[calc(100vw-12px)] rounded-2xl bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/98 to-[#050811]/98 border border-amber-500/40 shadow-[0_16px_48px_rgba(0,0,0,0.85),0_0_25px_rgba(245,158,11,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col"
         >
             {/* Top Neon Horizon Accent Line */}
             <div className="h-[2px] w-full bg-gradient-to-r from-transparent via-amber-400 to-orange-500 opacity-85 shrink-0" />
@@ -1342,34 +1372,34 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 onMouseDown={handleStartDrag}
                 onTouchStart={handleStartDrag}
                 style={{ touchAction: 'none' }}
-                className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0"
+                className="flex items-center justify-between px-4 sm:px-5 py-2.5 sm:py-3.5 border-b border-white/10 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0"
                 title="Drag to move modal"
             >
-                <div className="flex items-center gap-2.5 pointer-events-none min-w-0">
+                <div className="flex items-center gap-2 sm:gap-2.5 pointer-events-none min-w-0">
                     <GripVertical className="w-4 h-4 text-amber-400/80 shrink-0" />
                     <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.9)] animate-pulse shrink-0" />
                     <div className="flex flex-col text-left truncate">
-                        <div className="flex items-center gap-2">
-                            <span className="font-black text-white text-base tracking-tight truncate">
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                            <span className="font-black text-white text-sm sm:text-base tracking-tight truncate max-w-[140px] sm:max-w-[200px]">
                                 {form.botName || form.symbol || symbol || 'WallHunter Sniper'}
                             </span>
-                            <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-mono font-black border leading-tight ${
+                            <span className={`text-[8.5px] sm:text-[9px] uppercase px-1.5 py-0.5 rounded font-mono font-black border leading-tight ${
                                 tradingMode === 'futures'
                                     ? 'bg-orange-500/20 border-orange-400/40 text-orange-300'
                                     : 'bg-amber-500/20 border-amber-400/40 text-amber-300'
                             }`}>
                                 {tradingMode === 'futures' ? `${form.leverage || 5}x FUTURES` : 'SPOT'}
                             </span>
-                            <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-mono font-bold border bg-white/[0.05] border-white/10 text-gray-300 leading-tight">
+                            <span className="text-[8.5px] sm:text-[9px] uppercase px-1.5 py-0.5 rounded font-mono font-bold border bg-white/[0.05] border-white/10 text-gray-300 leading-tight">
                                 {form.exchange?.toUpperCase() || exchange?.toUpperCase()}
                             </span>
                             {currentPrice > 0 && (
-                                <span className="text-emerald-400 font-mono text-[11px] font-bold tracking-tight shrink-0 hidden sm:inline">
+                                <span className="text-emerald-400 font-mono text-[10px] sm:text-[11px] font-bold tracking-tight shrink-0 hidden sm:inline">
                                     ${currentPrice >= 1 ? currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : currentPrice}
                                 </span>
                             )}
                         </div>
-                        <span className="text-[10px] text-gray-400 font-medium tracking-wide">
+                        <span className="text-[9px] sm:text-[10px] text-gray-400 font-medium tracking-wide">
                             Level 2 Order Book Sniper Bot • {tradeDirection.toUpperCase()}
                         </span>
                     </div>
@@ -1383,7 +1413,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             handleAutoDetect();
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.15)] active:scale-95"
+                        className="flex items-center gap-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 px-2 sm:px-2.5 py-1 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.15)] active:scale-95"
                         title="Auto-detect best sniper parameters from current order book walls"
                     >
                         <Sparkles className="w-3 h-3 text-amber-400" />
@@ -1405,7 +1435,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             </div>
 
             {/* --- MAIN TRADING MODE TOGGLE --- */}
-            <div className="px-5 pt-3 shrink-0">
+            <div className="px-4 sm:px-5 pt-2 sm:pt-3 shrink-0">
                 <div className="flex bg-black/50 p-1 rounded-xl border border-white/10">
                     <button
                         type="button"
@@ -1434,11 +1464,11 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             </div>
 
             {/* --- TABS NAVIGATION --- */}
-            <div className="flex gap-1.5 px-5 pt-2.5 pb-2 border-b border-white/10 overflow-x-auto shrink-0 hide-scrollbar">
+            <div className="flex gap-1.5 px-4 sm:px-5 pt-2 pb-1.5 border-b border-white/10 overflow-x-auto shrink-0 hide-scrollbar">
                 <button
                     type="button"
                     onClick={() => setActiveTab('basic')}
-                    className={`px-3 py-1.5 text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer ${
+                    className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                         activeTab === 'basic'
                             ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
@@ -1449,7 +1479,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 <button
                     type="button"
                     onClick={() => setActiveTab('triggers')}
-                    className={`px-3 py-1.5 text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer ${
+                    className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                         activeTab === 'triggers'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
@@ -1460,7 +1490,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 <button
                     type="button"
                     onClick={() => setActiveTab('risk')}
-                    className={`px-3 py-1.5 text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer ${
+                    className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                         activeTab === 'risk'
                             ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-[0_0_12px_rgba(59,130,246,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
@@ -1471,7 +1501,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 <button
                     type="button"
                     onClick={() => setActiveTab('advanced')}
-                    className={`px-3 py-1.5 text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer ${
+                    className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                         activeTab === 'advanced'
                             ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_12px_rgba(168,85,247,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
@@ -1482,7 +1512,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             </div>
 
             {/* --- TABS CONTENT --- */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 custom-scrollbar space-y-4">
+            <div
+                style={{ touchAction: 'pan-y' }}
+                className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-5 py-3 sm:py-4 custom-scrollbar space-y-3.5 sm:space-y-4"
+            >
                     {activeTab === 'basic' && (
                         <div className="animate-fadeIn space-y-4">
                             <div className="flex gap-4">
@@ -3650,24 +3683,24 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 </div>
 
                 {/* --- FOOTER ACTIONS --- */}
-                <div className="p-5 border-t border-white/10 bg-black/40 flex-shrink-0 space-y-3">
+                <div className="p-3 sm:p-4 border-t border-white/10 bg-black/50 shrink-0 space-y-2 sm:space-y-2.5">
 
                     {/* --- ACTIVE BOT WARNING BANNER (Option C) --- */}
                     {existingBot && (
-                        <div className="mb-3 p-3 rounded-xl border border-amber-500/40 bg-amber-500/5 animate-fadeIn">
-                            <div className="flex items-center gap-2 mb-2">
-                                <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="mb-2 p-2 sm:p-2.5 rounded-xl border border-amber-500/40 bg-amber-500/5 animate-fadeIn">
+                            <div className="flex items-center gap-2 mb-1.5">
+                                <svg className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                 </svg>
                                 <p className="text-[10px] font-black text-amber-400 uppercase tracking-wider">Active Bot Detected on {existingBot.market}</p>
                             </div>
-                            <p className="text-[10px] text-gray-400 mb-2.5 pl-6">
+                            <p className="text-[9.5px] text-gray-400 mb-2 pl-5.5">
                                 <span className="text-white font-bold">"{existingBot.name}"</span> is currently <span className="text-green-400 font-bold">running</span>. Choose an action:
                             </p>
-                            <div className="flex gap-2 pl-6">
+                            <div className="flex gap-2 pl-5.5">
                                 <button
                                     onClick={() => setDeployMode('update')}
-                                    className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all border ${deployMode === 'update'
+                                    className={`flex-1 py-1 text-[9.5px] font-black uppercase rounded-lg transition-all border ${deployMode === 'update'
                                             ? 'bg-blue-500/20 border-blue-500/60 text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.2)]'
                                             : 'bg-black/30 border-white/10 text-gray-500 hover:text-gray-300 hover:border-white/20'
                                         }`}
@@ -3676,7 +3709,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                 </button>
                                 <button
                                     onClick={() => setDeployMode('new')}
-                                    className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all border ${deployMode === 'new'
+                                    className={`flex-1 py-1 text-[9.5px] font-black uppercase rounded-lg transition-all border ${deployMode === 'new'
                                             ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
                                             : 'bg-black/30 border-white/10 text-gray-500 hover:text-gray-300 hover:border-white/20'
                                         }`}
@@ -3688,17 +3721,17 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     )}
 
                     {errorMsg && (
-                        <p className={`text-xs font-bold mb-3 animate-pulse text-center py-2 rounded-lg ${errorMsg.includes('Success') ? 'text-green-400 bg-green-500/10' : 'text-red-500 bg-red-500/10'}`}>
+                        <p className={`text-xs font-bold mb-2 animate-pulse text-center py-1.5 rounded-lg ${errorMsg.includes('Success') ? 'text-green-400 bg-green-500/10' : 'text-red-500 bg-red-500/10'}`}>
                             {errorMsg}
                         </p>
                     )}
 
-                    <div className="flex gap-2.5">
+                    <div className="flex gap-2 sm:gap-2.5">
                         <button
                             type="button"
                             onClick={onClose}
                             disabled={isLoading}
-                            className="w-[100px] bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                            className="w-[90px] sm:w-[100px] h-10 sm:h-11 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0"
                         >
                             CANCEL
                         </button>
@@ -3706,7 +3739,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             type="button"
                             onClick={handleDeploy}
                             disabled={isLoading}
-                            className={`flex-1 h-11 rounded-xl font-black text-white text-xs tracking-wider uppercase transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] cursor-pointer active:scale-[0.99] ${isLoading
+                            className={`flex-1 h-10 sm:h-11 rounded-xl font-black text-white text-xs tracking-wider uppercase transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] cursor-pointer active:scale-[0.99] ${isLoading
                                     ? 'bg-gray-600 cursor-not-allowed opacity-70'
                                     : (existingBot && deployMode === 'update')
                                         ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:scale-[1.01]'
@@ -3727,7 +3760,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     </div>
 
                     {/* Footer Status Bar */}
-                    <div className="flex items-center justify-between text-[9px] text-gray-500 pt-1 select-none">
+                    <div className="flex items-center justify-between text-[9px] text-gray-500 pt-0.5 select-none">
                         <span className="flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
                             Level 2 Sniper Engine Ready

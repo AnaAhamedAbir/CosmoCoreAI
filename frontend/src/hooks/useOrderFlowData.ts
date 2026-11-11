@@ -33,11 +33,11 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
             setError(null);
 
             try {
-                const params = { symbol: symbol.toUpperCase(), exchange, interval, limit: 2000 };
+                const params = { symbol: symbol.toUpperCase(), exchange, interval, limit: 1000 };
 
                 // Fetch real historic klines and order book heatmap data
                 const [klinesRes, heatmapRes] = await Promise.all([
-                    api.get('/market-depth/ohlcv', { params: { symbol: symbol.toUpperCase(), exchange, timeframe: interval, limit: 2000 } }).catch(() => ({ data: [] })),
+                    api.get('/market-depth/ohlcv', { params: { symbol: symbol.toUpperCase(), exchange, timeframe: interval, limit: 1000 } }).catch(() => ({ data: [] })),
                     api.get('/market-depth/heatmap', { params: { symbol: symbol.toUpperCase(), exchange, bucket_size: 50.0, depth: 100 } }).catch(() => ({ data: { bids: [], asks: [] } }))
                 ]);
 

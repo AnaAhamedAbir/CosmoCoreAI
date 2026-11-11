@@ -49,12 +49,28 @@ export const HeatmapSymbolSelector: React.FC<HeatmapSymbolSelectorProps> = ({ sy
     useEffect(() => {
         const fetchMarkets = async () => {
             if (!exchange) return;
+
+            // ⚡ Check sessionStorage first for 0ms instant UI rendering
+            const cacheKey = `cached_markets_${exchange}`;
+            try {
+                const cached = sessionStorage.getItem(cacheKey);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        setMarkets(parsed);
+                    }
+                }
+            } catch {}
+
             setLoadingMarkets(true);
             try {
                 const res = await api.get('/market-depth/markets', { params: { exchange } });
-                if (res.data && Array.isArray(res.data)) {
+                if (res.data && Array.isArray(res.data) && res.data.length > 0) {
                     const allPairs = [...res.data].sort();
                     setMarkets(allPairs);
+                    try {
+                        sessionStorage.setItem(cacheKey, JSON.stringify(allPairs));
+                    } catch {}
                 }
             } catch (err) {
                 console.error(`Failed to fetch markets for ${exchange}:`, err);

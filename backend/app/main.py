@@ -594,10 +594,39 @@ async def startup_event():
         from app.services.ccxt_service import ccxt_service
         try:
             logger.info("🔥 Pre-warming Binance spot markets into memory cache...")
-            await ccxt_service.get_full_markets('binance', 'spot')
+            spot_mkts = await ccxt_service.get_full_markets('binance', 'spot')
             logger.info("🔥 Pre-warming Binance futures markets into memory cache...")
-            await ccxt_service.get_full_markets('binance', 'swap')
+            swap_mkts = await ccxt_service.get_full_markets('binance', 'swap')
             logger.info("✅ Pre-warming complete! First bot start will now take 0ms.")
+
+            # Also seed Redis cache for market_depth_service to ensure instant Order Flow chart loads
+            try:
+                from app.core.redis import redis_manager
+                import json
+                redis = redis_manager.get_redis()
+                if redis and spot_mkts and swap_mkts:
+                    all_syms = sorted(list(set(list(spot_mkts.keys()) + list(swap_mkts.keys()))))
+                    await redis.setex("markets:binance", 86400, json.dumps(all_syms))
+                    logger.info(f"✅ Pre-warmed {len(all_syms)} Binance symbols into Redis (markets:binance) for instant chart load!")
+            except Exception as re:
+                logger.warning(f"Could not seed Redis markets:binance: {re}")
+
+            # Pre-warm market_depth_service exchange instances into memory
+            try:
+                from app.services.market_depth_service import market_depth_service
+                await market_depth_service.get_exchange_instance('binance')
+                await market_depth_service.get_exchange_instance('binance', symbol='BTC/USDT:USDT')
+                logger.info("✅ MarketDepthService Binance spot & futures instances pre-warmed!")
+            except Exception as mde:
+                logger.warning(f"Could not pre-warm MarketDepthService: {mde}")
+
+            # Pre-warm market_data_streamer exchange instances into memory
+            try:
+                from app.services.market_data_streamer import market_data_streamer
+                await market_data_streamer._get_exchange_instance('binance', 'BTC/USDT:USDT')
+                logger.info("✅ MarketDataStreamer Binance futures instance pre-warmed!")
+            except Exception as mdse:
+                logger.warning(f"Could not pre-warm MarketDataStreamer: {mdse}")
         except Exception as e:
             logger.error(f"Pre-warming failed: {e}")
             

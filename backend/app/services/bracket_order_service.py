@@ -10,6 +10,7 @@ Fixes applied:
   BUG-10: Proper partial fill handling at timeout
 """
 
+import time
 import asyncio
 import logging
 from app.services.exchange_pool import get_or_create_exchange

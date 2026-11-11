@@ -555,12 +555,12 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     price: price,
                     color: '#6366f1', // Indigo color for drag
                     lineWidth: 1,
-                    lineStyle: LineStyle.Dashed,
+                    lineStyle: LineStyle.Solid,
                     axisLabelVisible: true,
                     title: 'DROP TO LIMIT',
                 });
             } else {
-                quickTradeGhostLineRef.current.applyOptions({ price: price, lineWidth: 1 });
+                quickTradeGhostLineRef.current.applyOptions({ price: price, lineWidth: 1, lineStyle: LineStyle.Solid });
             }
         };
 
@@ -673,7 +673,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 chartBracketGhostLineRef.current = candlestickSeriesRef.current.createPriceLine({
                     price: price,
                     color: color,
-                    lineWidth: 2,
+                    lineWidth: 1,
                     lineStyle: LineStyle.Solid,
                     axisLabelVisible: true,
                     title: title,
@@ -683,7 +683,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     price: price,
                     color: color,
                     title: title,
-                    lineWidth: 2,
+                    lineWidth: 1,
                     lineStyle: LineStyle.Solid,
                 });
             }
@@ -1966,8 +1966,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     const epLine = candlestickSeriesRef.current?.createPriceLine({
                         price: botStatus.entry_price,
                         color: '#f59e0b', // Golden
-                        lineWidth: 2,
-                        lineStyle: 2, // Dashed
+                        lineWidth: 1,
+                        lineStyle: LineStyle.Solid,
                         axisLabelVisible: true,
                         title: 'BOT ENTRY',
                     });
@@ -1975,7 +1975,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 } else {
                     // Update price if trailing/changed
                     const line = wallLinesRef.current.get(epKey);
-                    line.applyOptions({ price: botStatus.entry_price });
+                    line.applyOptions({ price: botStatus.entry_price, lineWidth: 1, lineStyle: LineStyle.Solid });
                 }
             }
 
@@ -1986,7 +1986,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     const tpLine = candlestickSeriesRef.current?.createPriceLine({
                         price: botStatus.tp_price,
                         color: '#22c55e', // Green
-                        lineWidth: 2,
+                        lineWidth: 1,
                         lineStyle: LineStyle.Solid, // Plain Solid Line
                         axisLabelVisible: true,
                         title: 'BOT TP',
@@ -1994,7 +1994,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     if (tpLine) wallLinesRef.current.set(tpKey, tpLine);
                 } else {
                     const line = wallLinesRef.current.get(tpKey);
-                    line.applyOptions({ price: botStatus.tp_price, lineStyle: LineStyle.Solid });
+                    line.applyOptions({ price: botStatus.tp_price, lineWidth: 1, lineStyle: LineStyle.Solid });
                 }
             }
 
@@ -2005,7 +2005,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     const slLine = candlestickSeriesRef.current?.createPriceLine({
                         price: botStatus.sl_price,
                         color: '#ef4444', // Red
-                        lineWidth: 2,
+                        lineWidth: 1,
                         lineStyle: LineStyle.Solid, // Plain Solid Line
                         axisLabelVisible: true,
                         title: 'BOT TSL',
@@ -2013,7 +2013,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     if (slLine) wallLinesRef.current.set(slKey, slLine);
                 } else {
                     const line = wallLinesRef.current.get(slKey);
-                    line.applyOptions({ price: botStatus.sl_price, lineStyle: LineStyle.Solid });
+                    line.applyOptions({ price: botStatus.sl_price, lineWidth: 1, lineStyle: LineStyle.Solid });
                 }
             }
         }
@@ -2046,7 +2046,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     mlSlLineRef.current = candlestickSeriesRef.current.createPriceLine({
                         price: mlSetup.sl_price,
                         color: '#ef4444', // Red for SL
-                        lineWidth: 2,
+                        lineWidth: 1,
                         lineStyle: LineStyle.Solid, // Plain Solid
                         axisLabelVisible: true,
                         title: `🤖 AI SL (${mlSetup.confidence * 100}%)`,
@@ -2055,7 +2055,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     mlSlLineRef.current.applyOptions({ 
                         price: mlSetup.sl_price,
                         color: '#ef4444',
-                        lineWidth: 2,
+                        lineWidth: 1,
                         lineStyle: LineStyle.Solid,
                         title: `🤖 AI SL (${mlSetup.confidence * 100}%)`
                     });
@@ -2071,7 +2071,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     mlTpLineRef.current = candlestickSeriesRef.current.createPriceLine({
                         price: mlSetup.tp_price,
                         color: '#22c55e', // Green for TP
-                        lineWidth: 2,
+                        lineWidth: 1,
                         lineStyle: LineStyle.Solid, // Plain Solid
                         axisLabelVisible: true,
                         title: `🤖 AI TP (RR: ${mlSetup.rr_ratio})`,
@@ -2080,7 +2080,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     mlTpLineRef.current.applyOptions({ 
                         price: mlSetup.tp_price,
                         color: '#22c55e',
-                        lineWidth: 2,
+                        lineWidth: 1,
                         lineStyle: LineStyle.Solid,
                         title: `🤖 AI TP (RR: ${mlSetup.rr_ratio})`
                     });
@@ -2189,20 +2189,20 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
             const isBuy = order.side === 'buy';
             let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-            let style: any = 2; // Dashed
-            let width = 1;
+            let style: any = LineStyle.Solid; // Plain Solid line for all orders including normal pending orders
+            let width = 1; // Sleek 1px line
 
             if (order.isSoftwareSL) {
                 color = '#ef4444'; // Red for SL
-                style = LineStyle.Solid; // Plain Solid line
-                width = 2; // Clean visible solid line
+                style = LineStyle.Solid;
+                width = 1;
             } else if (order.mode === 'TP') {
                 color = '#22c55e'; // Green for TP
-                style = LineStyle.Solid; // Plain Solid line
-                width = 2; // Clean visible solid line
+                style = LineStyle.Solid;
+                width = 1;
             } else if (order.isIceberg) {
                 color = isBuy ? '#06b6d4' : '#f43f5e'; // Cyan for buy iceberg, Rose for sell iceberg
-                style = 2; // Dashed
+                style = LineStyle.Solid;
                 width = 1;
             }
 
@@ -2287,16 +2287,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             // Update line on chart to new price with clean normal styling
             const isBuy = mod.targetOrder.side === 'buy';
             let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-            let style: any = 2;
-            let width = 1;
             if (mod.targetOrder.isSoftwareSL) {
                 color = '#ef4444';
-                style = LineStyle.Solid;
-                width = 2;
             } else if (mod.targetOrder.mode === 'TP') {
                 color = '#22c55e';
-                style = LineStyle.Solid;
-                width = 2;
             } else if (mod.targetOrder.isIceberg) {
                 color = isBuy ? '#06b6d4' : '#f43f5e';
             }
@@ -2305,8 +2299,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 price: mod.newPrice,
                 title: label,
                 color,
-                lineWidth: width,
-                lineStyle: style
+                lineWidth: 1,
+                lineStyle: LineStyle.Solid
             });
         } catch (err: any) {
             console.error('Edit order failed', err);
@@ -2314,16 +2308,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             // Revert modifying line on error
             const isBuy = mod.targetOrder.side === 'buy';
             let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-            let style: any = 2;
-            let width = 1;
             if (mod.targetOrder.isSoftwareSL) {
                 color = '#ef4444';
-                style = LineStyle.Solid;
-                width = 2;
             } else if (mod.targetOrder.mode === 'TP') {
                 color = '#22c55e';
-                style = LineStyle.Solid;
-                width = 2;
             } else if (mod.targetOrder.isIceberg) {
                 color = isBuy ? '#06b6d4' : '#f43f5e';
             }
@@ -2332,8 +2320,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 price: mod.originalPrice,
                 title: label,
                 color,
-                lineWidth: width,
-                lineStyle: style
+                lineWidth: 1,
+                lineStyle: LineStyle.Solid
             });
         } finally {
             pendingModificationRef.current = null;
@@ -2350,16 +2338,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         // Revert back to original price & style
         const isBuy = mod.targetOrder.side === 'buy';
         let color = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-        let style: any = 2;
-        let width = 1;
         if (mod.targetOrder.isSoftwareSL) {
             color = '#ef4444';
-            style = LineStyle.Solid;
-            width = 2;
         } else if (mod.targetOrder.mode === 'TP') {
             color = '#22c55e';
-            style = LineStyle.Solid;
-            width = 2;
         } else if (mod.targetOrder.isIceberg) {
             color = isBuy ? '#06b6d4' : '#f43f5e';
         }
@@ -2368,8 +2350,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             price: mod.originalPrice,
             title: label,
             color,
-            lineWidth: width,
-            lineStyle: style
+            lineWidth: 1,
+            lineStyle: LineStyle.Solid
         });
 
         pendingModificationRef.current = null;
@@ -2461,8 +2443,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 ghostLineRef.current = candlestickSeriesRef.current.createPriceLine({
                     price: clickedOrder.price,
                     color,
-                    lineWidth: (isSL || isTP) ? 2 : ((isTouch ? 2 : 1) as any),
-                    lineStyle: (isSL || isTP) ? LineStyle.Solid : 1,
+                    lineWidth: 1,
+                    lineStyle: LineStyle.Solid,
                     axisLabelVisible: true,
                     title: `${labelPrefix} (${clickedOrder.price < 1 ? clickedOrder.price.toFixed(6) : clickedOrder.price.toFixed(4)})`,
                 });
@@ -2575,14 +2557,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             const key = `order-${orderId}`;
             const existingLine = wallLinesRef.current.get(key);
             if (existingLine) {
-                const isSolid = Boolean(targetOrder.isSoftwareSL || targetOrder.mode === 'TP');
                 // Keep the exact same line and key in wallLinesRef; update to amber pending state
                 existingLine.applyOptions({
                     price: newPrice,
                     title: `Pending Confirmation (${newPrice < 1 ? newPrice.toFixed(6) : newPrice.toFixed(4)})...`,
                     color: '#f59e0b', // Amber/Orange
-                    lineWidth: isSolid ? 2 : 1,
-                    lineStyle: isSolid ? LineStyle.Solid : 1
+                    lineWidth: 1,
+                    lineStyle: LineStyle.Solid
                 });
             }
 

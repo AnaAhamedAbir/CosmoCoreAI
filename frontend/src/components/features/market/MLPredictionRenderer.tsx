@@ -46,7 +46,7 @@ export const MLPredictionRenderer: React.FC<MLPredictionRendererProps> = ({
             mlSlLineRef.current = series.createPriceLine({
                 price: predictionResult.sl,
                 color: '#ef4444',
-                lineWidth: 2,
+                lineWidth: 1,
                 lineStyle: LineStyle.Solid,
                 axisLabelVisible: true,
                 title: 'PRED SL',
@@ -57,7 +57,7 @@ export const MLPredictionRenderer: React.FC<MLPredictionRendererProps> = ({
             mlTpLineRef.current = series.createPriceLine({
                 price: predictionResult.tp,
                 color: '#10b981',
-                lineWidth: 2,
+                lineWidth: 1,
                 lineStyle: LineStyle.Solid,
                 axisLabelVisible: true,
                 title: 'PRED TP',

@@ -719,22 +719,68 @@ class BracketOrderService:
                 logger.debug(f"Conditional cancel notice for {order_id}: {e}")
 
     @staticmethod
+    async def _send_sl_modified_notification(
+        user_id: int, symbol: str, side: str, amount: float, new_price: float, latency_ms: int, mode_label: str = "Software Stop-Loss", exchange_name: str = "Binance"
+    ):
+        if not user_id:
+            return
+        from app.services.notification import NotificationService
+        from datetime import datetime, timezone
+        from app.db.session import SessionLocal
+        db = SessionLocal()
+        try:
+            now_utc = datetime.now(timezone.utc)
+            time_str = now_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+            action_text = "BUY 🟢" if str(side).lower() == 'buy' else "SELL 🔴"
+            speed_text = f"⏱ Execution Speed: `{latency_ms} ms` ⚡\n" if latency_ms > 0 else ""
+            msg = (
+                f"🛡️ *{mode_label.upper()} MODIFIED*\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"• Exchange: `{exchange_name.capitalize()}`\n"
+                f"• Pair: `{symbol}`\n"
+                f"• Action: *{action_text}*\n"
+                f"• Amount: `{amount}`\n"
+                f"• New Trigger Price: `${new_price:,.4f}`\n"
+                f"• Status: `Active Monitoring 🛡️`\n"
+                f"• Time: `{time_str}`\n"
+                f"{speed_text}"
+            )
+            await NotificationService.send_message(db, user_id, msg, parse_mode="Markdown", alert_type="alert_manual_trade")
+        except Exception as e:
+            logger.warning(f"Failed to send SL modified notification: {e}")
+        finally:
+            db.close()
+
+    @staticmethod
     async def update_software_bracket(sl_id: str, new_price: float, api_key_id: int = None, user_id: int = 0) -> dict:
         """
         Dynamically update the trigger price of an active software SL (Smart Chase, Trailing, Fixed).
         Safely re-calculates futures disaster stops if active.
         """
+        t0 = time.perf_counter()
         sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
         if not sl_meta:
             from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
             if sl_id in ACTIVE_SMART_CHASES:
                 ACTIVE_SMART_CHASES[sl_id]['original_sl'] = new_price
                 ACTIVE_SMART_CHASES[sl_id]['current_maker_price'] = new_price
-                logger.info(f"🎯 Updated active smart chase target for {sl_id} to {new_price}")
+                total_ms = int((time.perf_counter() - t0) * 1000)
+                logger.info(f"🎯 Updated active smart chase target for {sl_id} to {new_price} in {total_ms}ms")
+                if user_id:
+                    asyncio.create_task(BracketOrderService._send_sl_modified_notification(
+                        user_id=user_id,
+                        symbol=ACTIVE_SMART_CHASES[sl_id].get('symbol', ''),
+                        side=ACTIVE_SMART_CHASES[sl_id].get('side', ''),
+                        amount=float(ACTIVE_SMART_CHASES[sl_id].get('amount', 0.0)),
+                        new_price=new_price,
+                        latency_ms=total_ms,
+                        mode_label="Smart Chase Target"
+                    ))
                 return {
                     "status": "success",
                     "sl_id": sl_id,
                     "new_price": new_price,
+                    "execution_speed_ms": total_ms,
                     "message": f"Updated active Smart Chase target to {new_price}"
                 }
             raise HTTPException(status_code=404, detail="Software SL bracket not found or already triggered/closed.")
@@ -783,7 +829,22 @@ class BracketOrderService:
             except Exception as d_err:
                 logger.warning(f"⚠️ Failed to update native disaster SL: {d_err}")
 
-        logger.info(f"✅ Software SL [{mode}] for {symbol} ({side}) trigger price updated to {prec_price}")
+        total_ms = int((time.perf_counter() - t0) * 1000)
+        logger.info(f"✅ Software SL [{mode}] for {symbol} ({side}) trigger price updated to {prec_price} in {total_ms}ms")
+        if user_id:
+            sl_mode_label = str(mode).replace('_', ' ').title() + " Stop-Loss"
+            exch_name = str(getattr(exchange, 'id', 'Binance') if exchange else 'Binance')
+            asyncio.create_task(BracketOrderService._send_sl_modified_notification(
+                user_id=user_id,
+                symbol=symbol,
+                side=side,
+                amount=amount,
+                new_price=prec_price,
+                latency_ms=total_ms,
+                mode_label=sl_mode_label,
+                exchange_name=exch_name
+            ))
+
         return {
             "status": "success",
             "sl_id": sl_id,
@@ -791,6 +852,7 @@ class BracketOrderService:
             "side": side,
             "new_price": prec_price,
             "mode": mode,
+            "execution_speed_ms": total_ms,
             "message": f"Stop-Loss trigger price successfully updated to {prec_price}"
         }
     

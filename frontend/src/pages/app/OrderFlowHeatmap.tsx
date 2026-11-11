@@ -2256,7 +2256,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
         try {
             if (mod.isSL) {
-                await manualTradeService.updateSoftwareSL(
+                const res = await manualTradeService.updateSoftwareSL(
                     parseInt(selectedApiKeyId),
                     mod.orderId,
                     {
@@ -2266,9 +2266,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         amount: mod.targetOrder.amount
                     }
                 );
-                toast.success(`🎯 ${mod.modeName} Stop-Loss updated to ${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)}`);
+                const speedText = res?.execution_speed_ms ? ` (${res.execution_speed_ms}ms ⚡)` : '';
+                toast.success(`🎯 ${mod.modeName} Stop-Loss updated to ${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)}${speedText}`);
             } else {
-                await manualTradeService.editOrder(
+                const res = await manualTradeService.editOrder(
                     parseInt(selectedApiKeyId),
                     mod.orderId,
                     {
@@ -2278,7 +2279,8 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         new_price: mod.newPrice
                     }
                 );
-                toast.success(`Order price updated to ${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)}`);
+                const speedText = res?.execution_speed_ms ? ` (${res.execution_speed_ms}ms ⚡)` : '';
+                toast.success(`Order price updated to ${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)}${speedText}`);
             }
 
             // Optimistically update order price in state ref

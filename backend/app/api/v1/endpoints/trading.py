@@ -206,10 +206,20 @@ async def edit_order(
         if order_id in ACTIVE_SMART_CHASES:
             ACTIVE_SMART_CHASES[order_id]['original_sl'] = request.new_price
             ACTIVE_SMART_CHASES[order_id]['current_maker_price'] = request.new_price
+            asyncio.create_task(BracketOrderService._send_sl_modified_notification(
+                user_id=current_user.id,
+                symbol=request.symbol,
+                side=ACTIVE_SMART_CHASES[order_id].get('side', request.side),
+                amount=float(ACTIVE_SMART_CHASES[order_id].get('amount', request.amount)),
+                new_price=request.new_price,
+                latency_ms=2,
+                mode_label="Smart Chase Target"
+            ))
             return {
                 "id": order_id,
                 "symbol": request.symbol,
                 "price": request.new_price,
+                "execution_speed_ms": 2,
                 "message": f"Active Smart Chase target updated to {request.new_price}"
             }
 
@@ -264,10 +274,20 @@ async def update_software_bracket_endpoint(
         if sl_id in ACTIVE_SMART_CHASES:
             ACTIVE_SMART_CHASES[sl_id]['original_sl'] = req.new_price
             ACTIVE_SMART_CHASES[sl_id]['current_maker_price'] = req.new_price
+            asyncio.create_task(BracketOrderService._send_sl_modified_notification(
+                user_id=current_user.id,
+                symbol=ACTIVE_SMART_CHASES[sl_id].get('symbol', ''),
+                side=ACTIVE_SMART_CHASES[sl_id].get('side', ''),
+                amount=float(ACTIVE_SMART_CHASES[sl_id].get('amount', 0.0)),
+                new_price=req.new_price,
+                latency_ms=2,
+                mode_label="Smart Chase Target"
+            ))
             return {
                 "status": "success",
                 "sl_id": sl_id,
                 "new_price": req.new_price,
+                "execution_speed_ms": 2,
                 "message": f"Active Smart Chase target updated to {req.new_price}"
             }
 

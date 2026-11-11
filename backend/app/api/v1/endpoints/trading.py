@@ -340,7 +340,7 @@ async def _resolve_drag_tp_link(
     current_px: float,
     target_order_id: Optional[str],
 ):
-    """Resolve (linked_tp_order_id, resolved_entry_order_id) for Drag SL placement."""
+    """Resolve (linked_tp_order_id, resolved_entry_order_id, linked_tp_price) for Drag SL placement."""
     from app.services.bracket_order_service import BracketOrderService
 
     bound_tp_ids = {
@@ -356,7 +356,8 @@ async def _resolve_drag_tp_link(
         ref_str = str(target_order_id)
         eb_direct = BracketOrderService.ACTIVE_ENTRY_BRACKETS.get(ref_str)
         if eb_direct and not eb_direct.get('cancelled') and _drag_matches_scope(eb_direct, api_key_id, symbol, opposite_side):
-            return (str(eb_direct['tp_order_id']) if eb_direct.get('tp_order_id') else None), ref_str
+            tp_px = float(eb_direct.get('tp_price') or 0.0) or None
+            return (str(eb_direct['tp_order_id']) if eb_direct.get('tp_order_id') else None), ref_str, tp_px
 
         for eb_cand in list(BracketOrderService.ACTIVE_ENTRY_BRACKETS.values()):
             if (
@@ -365,7 +366,8 @@ async def _resolve_drag_tp_link(
                 and str(eb_cand.get('tp_order_id') or '') == ref_str
             ):
                 entry_id = str(eb_cand['entry_order_id']) if eb_cand.get('entry_order_id') else None
-                return ref_str, entry_id
+                tp_px = float(eb_cand.get('tp_price') or 0.0) or None
+                return ref_str, entry_id, tp_px
 
         for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
             if (
@@ -376,10 +378,11 @@ async def _resolve_drag_tp_link(
             ):
                 tp_id = str(sdata['tp_order_id']) if sdata.get('tp_order_id') else None
                 entry_id = str(sdata['entry_order_id']) if sdata.get('entry_order_id') else None
-                return tp_id, entry_id
+                tp_px = float(sdata.get('tp_price') or 0.0) or None
+                return tp_id, entry_id, tp_px
 
         if ref_str in BracketOrderService.KNOWN_TP_ORDER_IDS:
-            return ref_str, None
+            return ref_str, None, None
 
         try:
             open_orders = await exchange.fetch_open_orders(symbol)
@@ -387,11 +390,12 @@ async def _resolve_drag_tp_link(
                 if str(o.get('id') or '') == ref_str:
                     if _is_exit_tp_order(o, opposite_side, final_price, current_px, require_beyond_market=False):
                         BracketOrderService.KNOWN_TP_ORDER_IDS.add(ref_str)
-                        return ref_str, None
-                    return None, ref_str
+                        tp_px = float(o.get('price') or o.get('stopPrice') or 0.0) or None
+                        return ref_str, None, tp_px
+                    return None, ref_str, None
         except Exception:
             pass
-        return None, ref_str
+        return None, ref_str, None
 
     # No target_order_id selected: safely auto-link unlinked TP only when unambiguous
     eb_candidates = [
@@ -404,10 +408,10 @@ async def _resolve_drag_tp_link(
     amt_eb = [c for c in eb_candidates if _drag_amounts_close(float(c.get('amount') or 0.0), final_amount)]
     if len(amt_eb) == 1:
         c = amt_eb[0]
-        return str(c['tp_order_id']), (str(c['entry_order_id']) if c.get('entry_order_id') else None)
+        return str(c['tp_order_id']), (str(c['entry_order_id']) if c.get('entry_order_id') else None), (float(c.get('tp_price') or 0.0) or None)
     if not amt_eb and len(eb_candidates) == 1:
         c = eb_candidates[0]
-        return str(c['tp_order_id']), (str(c['entry_order_id']) if c.get('entry_order_id') else None)
+        return str(c['tp_order_id']), (str(c['entry_order_id']) if c.get('entry_order_id') else None), (float(c.get('tp_price') or 0.0) or None)
 
     try:
         open_orders = await exchange.fetch_open_orders(symbol)
@@ -424,10 +428,11 @@ async def _resolve_drag_tp_link(
         if chosen and chosen.get('id'):
             chosen_id = str(chosen['id'])
             BracketOrderService.KNOWN_TP_ORDER_IDS.add(chosen_id)
-            return chosen_id, None
+            tp_px = float(chosen.get('price') or chosen.get('stopPrice') or 0.0) or None
+            return chosen_id, None, tp_px
     except Exception:
         pass
-    return None, None
+    return None, None, None
 
 
 @router.post("/place-drag-bracket")
@@ -579,7 +584,7 @@ async def place_drag_bracket_endpoint(
                 if final_amount > 0:
                     sl_meta['amount'] = final_amount
                 if not sl_meta.get('tp_order_id'):
-                    linked_tp_id, resolved_entry_id = await _resolve_drag_tp_link(
+                    linked_tp_id, resolved_entry_id, linked_tp_price = await _resolve_drag_tp_link(
                         exchange=exchange,
                         symbol=req.symbol,
                         api_key_id=req.api_key_id,
@@ -591,6 +596,8 @@ async def place_drag_bracket_endpoint(
                     )
                     if linked_tp_id:
                         sl_meta['tp_order_id'] = linked_tp_id
+                        if linked_tp_price:
+                            sl_meta['tp_price'] = float(linked_tp_price)
                         logger.info(f"🔗 Attached TP order {linked_tp_id} to updated SL monitor {target_sl_id} on {req.symbol}")
                     if resolved_entry_id and not sl_meta.get('entry_order_id'):
                         sl_meta['entry_order_id'] = resolved_entry_id
@@ -630,7 +637,7 @@ async def place_drag_bracket_endpoint(
                 }
             else:
                 # No active SL exists yet — resolve any linked TP and spawn a software SL synchronously
-                linked_tp_id, resolved_entry_id = await _resolve_drag_tp_link(
+                linked_tp_id, resolved_entry_id, linked_tp_price = await _resolve_drag_tp_link(
                     exchange=exchange,
                     symbol=req.symbol,
                     api_key_id=req.api_key_id,
@@ -676,6 +683,7 @@ async def place_drag_bracket_endpoint(
                     entry_order_id=resolved_entry_id,
                     is_consolidation_chunk=False,
                     linked_tp_order_id=linked_tp_id,
+                    linked_tp_price=linked_tp_price,
                 )
                 sl_mode_label = str(sl_cfg.get('type', 'smart_chase')).replace('_', ' ').title()
                 msg = f"🛡️ {sl_mode_label} Stop-Loss placed at {final_price} for {final_amount} {req.symbol}"
@@ -819,11 +827,14 @@ async def place_drag_bracket_endpoint(
                 is_consolidation_chunk=False,
             )
             new_tp_id = tp_spawn_res.get('tp_order_id') if isinstance(tp_spawn_res, dict) else None
+            new_tp_price = tp_spawn_res.get('tp_price') if isinstance(tp_spawn_res, dict) else None
             if new_tp_id:
+                resolved_tp_px = float(new_tp_price or final_price)
                 for sid in linked_sl_ids:
                     sdata = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sid)
                     if sdata and not sdata.get('cancelled'):
                         sdata['tp_order_id'] = str(new_tp_id)
+                        sdata['tp_price'] = resolved_tp_px
                         logger.info(f"🔗 Linked Drag TP {new_tp_id} to active SL monitor {sid} on {req.symbol}")
             msg = f"🎯 Take Profit placed at {final_price} for {final_amount} {req.symbol}"
 

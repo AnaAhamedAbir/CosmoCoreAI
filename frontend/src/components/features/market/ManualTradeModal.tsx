@@ -558,10 +558,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   React.useEffect(() => {
     if (!selectedApi) return;
     fetchActiveBrackets(true);
-    const pollInterval = isOpen ? 3000 : 7000;
+    const pollInterval = isOpen ? 1000 : 2500;
     const interval = setInterval(() => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        fetchActiveBrackets(isOpen);
+        fetchActiveBrackets(false);
       }
     }, pollInterval);
     return () => clearInterval(interval);
@@ -1005,6 +1005,34 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [isOpen, selectedApi, activeSymbol, fetchBalance]);
+
+  // Trigger immediate orderbook/chart/balance sync when an active software bracket stops (e.g. TP filled)
+  const prevActiveBracketScopeRef = React.useRef<string>('');
+  const prevActiveBracketIdsRef = React.useRef<Set<string>>(new Set());
+
+  React.useEffect(() => {
+    const scopeKey = `${selectedApi || ''}:${activeSymbol || ''}`;
+    const nextIds = new Set(activeBrackets.map((b: any) => String(b.id)));
+    if (prevActiveBracketScopeRef.current !== scopeKey) {
+      prevActiveBracketScopeRef.current = scopeKey;
+      prevActiveBracketIdsRef.current = nextIds;
+      return;
+    }
+
+    let closedAny = false;
+    prevActiveBracketIdsRef.current.forEach((id) => {
+      if (!nextIds.has(id)) closedAny = true;
+    });
+    prevActiveBracketIdsRef.current = nextIds;
+
+    if (closedAny) {
+      window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+      fetchActiveBrackets(true);
+      if (isOpenRef.current) {
+        fetchBalance(true);
+      }
+    }
+  }, [activeBrackets, selectedApi, activeSymbol, fetchActiveBrackets, fetchBalance]);
 
   // Dynamic left position so modal opens cleanly docked to the left of the workspace (clearing sidebar)
   const [modalLeft, setModalLeft] = useState<number>(() => {

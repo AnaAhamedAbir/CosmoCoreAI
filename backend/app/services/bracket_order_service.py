@@ -1021,6 +1021,13 @@ class BracketOrderService:
             )
             if tp_chk and str(tp_chk.get('status', '')).lower() in ['closed', 'filled']:
                 logger.info(f"🎯 TP order {curr_tp_id} filled! Closing {context_label} for {symbol}.")
+                try:
+                    api_key_id = sl_meta.get('api_key_id')
+                    if api_key_id is not None:
+                        from app.services.manual_trade_service import ManualTradeService
+                        ManualTradeService.invalidate_open_orders_cache(int(api_key_id), symbol)
+                except Exception:
+                    pass
                 exit_price = float(tp_chk.get('average') or tp_chk.get('price') or 0.0)
                 fill_amt = float(tp_chk.get('filled') or tp_chk.get('amount') or default_amount)
                 if user_id:
@@ -1038,6 +1045,10 @@ class BracketOrderService:
                     except Exception as notify_err:
                         logger.debug(f"TP completed notification notice: {notify_err}")
                 return True
+            if tp_chk and not sl_meta.get('tp_price'):
+                tp_px = float(tp_chk.get('price') or tp_chk.get('stopPrice') or 0.0)
+                if tp_px > 0:
+                    sl_meta['tp_price'] = tp_px
         except Exception as tp_chk_err:
             logger.debug(f"TP order check error: {tp_chk_err}")
         return False
@@ -1049,6 +1060,7 @@ class BracketOrderService:
         entry_order_id: str = None,
         is_consolidation_chunk: bool = True,
         linked_tp_order_id: str = None,
+        linked_tp_price: float = None,
     ):
         lock_key = str(entry_order_id) if entry_order_id else (f"tp:{linked_tp_order_id}" if linked_tp_order_id else None)
         entry_lock = None
@@ -1098,6 +1110,7 @@ class BracketOrderService:
             api_key_id = getattr(api_key_record, 'id', None)
 
             tp_order_id = str(linked_tp_order_id) if linked_tp_order_id else None
+            resolved_tp_price = float(linked_tp_price) if linked_tp_price and float(linked_tp_price) > 0 else None
 
             # --- Partial Fill / Iceberg Bracket Consolidation (SAME entry_order_id ONLY) ---
             # Consolidate ONLY when multiple partial fill chunks come from the exact SAME entry_order_id.
@@ -1222,9 +1235,12 @@ class BracketOrderService:
                         if tp_res and tp_res.get('id'):
                             new_tp_id = str(tp_res.get('id'))
                             tp_order_id = new_tp_id
+                            resolved_tp_price = float(final_tp_price)
                             existing_sl['tp_order_id'] = new_tp_id
+                            existing_sl['tp_price'] = resolved_tp_price
                             if matched_eb_key and matched_eb_key in BracketOrderService.ACTIVE_ENTRY_BRACKETS:
                                 BracketOrderService.ACTIVE_ENTRY_BRACKETS[matched_eb_key]['tp_order_id'] = new_tp_id
+                                BracketOrderService.ACTIVE_ENTRY_BRACKETS[matched_eb_key]['tp_price'] = resolved_tp_price
                             BracketOrderService.KNOWN_TP_ORDER_IDS.add(new_tp_id)
                             # Link to any active software SL
                             for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
@@ -1240,6 +1256,7 @@ class BracketOrderService:
                                         or (old_tp_id and str(sdata.get('tp_order_id') or '') == str(old_tp_id))
                                     ):
                                         sdata['tp_order_id'] = new_tp_id
+                                        sdata['tp_price'] = resolved_tp_price
                             logger.info(f"🔄 Consolidated Bracket TP to {tp_target_amt} at {final_tp_price} (ID: {new_tp_id})")
                     except Exception as tp_cons_err:
                         logger.warning(f"Failed to replace consolidated TP order: {tp_cons_err}")
@@ -1284,6 +1301,8 @@ class BracketOrderService:
                 if sl_config and not has_active_sl_loop:
                     logger.info(f"Bracket entry #{target_id_str} has no active software SL monitor. Proceeding to spawn SL monitor...")
                     tp_order_id = str(existing_sl.get('tp_order_id') or tp_order_id or '') or None
+                    if not resolved_tp_price and existing_sl.get('tp_price'):
+                        resolved_tp_price = float(existing_sl['tp_price'])
                 else:
                     if is_consolidation_chunk:
                         logger.info(
@@ -1296,8 +1315,10 @@ class BracketOrderService:
                             f"for entry #{target_id_str} on {symbol}"
                         )
                     resolved_tp = str(existing_sl.get('tp_order_id') or tp_order_id or '') or None
+                    resolved_px = float(existing_sl.get('tp_price') or resolved_tp_price or 0.0) or None
                     return {
                         'tp_order_id': resolved_tp,
+                        'tp_price': resolved_px,
                         'entry_order_id': str(entry_order_id) if entry_order_id else None,
                         'amount': new_total_amt,
                     }
@@ -1463,6 +1484,7 @@ class BracketOrderService:
     
                     if tp_res:
                         tp_order_id = tp_res.get('id')
+                        resolved_tp_price = float(final_tp_price)
                         if tp_order_id:
                             BracketOrderService.KNOWN_TP_ORDER_IDS.add(str(tp_order_id))
 
@@ -1669,7 +1691,8 @@ class BracketOrderService:
                             auto_breakeven_enabled=auto_breakeven_enabled,
                             auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
                             auto_breakeven_buffer_pct=auto_breakeven_buffer_pct,
-                            entry_order_id=entry_order_id
+                            entry_order_id=entry_order_id,
+                            tp_price=resolved_tp_price,
                         )
                     )
                 else:
@@ -1786,6 +1809,8 @@ class BracketOrderService:
                 prev_eb = BracketOrderService.ACTIVE_ENTRY_BRACKETS.get(eb_key)
                 if not resolved_tp_id and prev_eb and not tp_config:
                     resolved_tp_id = str(prev_eb.get('tp_order_id') or '') or None
+                if not resolved_tp_price and prev_eb and not tp_config and prev_eb.get('tp_price'):
+                    resolved_tp_price = float(prev_eb['tp_price'])
                 resolved_eb_entry = (
                     str(entry_order_id) if entry_order_id
                     else (prev_eb.get('entry_order_id') if prev_eb else None)
@@ -1798,6 +1823,7 @@ class BracketOrderService:
                     'amount': final_amount,
                     'entry_price': average_price,
                     'tp_order_id': resolved_tp_id,
+                    'tp_price': resolved_tp_price,
                     'cancelled': False,
                 }
             if eb_key or sl_config:
@@ -1806,6 +1832,7 @@ class BracketOrderService:
 
             return {
                 'tp_order_id': resolved_tp_id,
+                'tp_price': resolved_tp_price,
                 'entry_order_id': str(entry_order_id) if entry_order_id else None,
                 'amount': final_amount,
             }
@@ -2443,7 +2470,8 @@ class BracketOrderService:
         auto_breakeven_enabled: bool = False,
         auto_breakeven_trigger_pct: float = 1.0,
         auto_breakeven_buffer_pct: float = 0.05,
-        entry_order_id: str = None
+        entry_order_id: str = None,
+        tp_price: float = None,
     ):
         sl_id = str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
@@ -2474,7 +2502,8 @@ class BracketOrderService:
             'auto_breakeven_trigger_pct': auto_breakeven_trigger_pct,
             'auto_breakeven_buffer_pct': auto_breakeven_buffer_pct,
             'breakeven_activated': False,
-            'tp_order_id': str(tp_order_id) if tp_order_id else None
+            'tp_order_id': str(tp_order_id) if tp_order_id else None,
+            'tp_price': float(tp_price) if tp_price else None,
         }
 
         logger.info(
@@ -2484,6 +2513,8 @@ class BracketOrderService:
         sl_triggered = False
         loop_tick = 0
         pos_closed_streak = 0
+        was_tp_touched = False
+        tp_touch_grace = 0
 
         while True:
             # Check if monitor was cancelled by user
@@ -2499,7 +2530,12 @@ class BracketOrderService:
 
             # Keep dynamic TP, disaster SL, and amount synchronized from sl_meta (e.g. if edited via chart drag)
             if sl_meta.get('tp_order_id'):
+                if str(sl_meta['tp_order_id']) != str(tp_order_id or ''):
+                    was_tp_touched = False
+                    tp_touch_grace = 0
                 tp_order_id = sl_meta['tp_order_id']
+            if sl_meta.get('tp_price'):
+                tp_price = float(sl_meta['tp_price'])
             if sl_meta.get('disaster_sl_order_id'):
                 disaster_sl_order_id = sl_meta['disaster_sl_order_id']
             curr_amount = float(sl_meta.get('amount') if (sl_meta and sl_meta.get('amount') is not None) else amount)
@@ -2628,30 +2664,68 @@ class BracketOrderService:
                         sl_triggered = True
                         break
 
-                # ── PRIORITY 2: PERIODIC POSITION / TP INTEGRITY CHECK (every 6 ticks ≈ 3s) ──
-                # Throttling this background check avoids wasting 300ms on every tick while still safely detecting if TP filled
+                # ── PRIORITY 2: FAST PRICE-TRIGGERED + ADAPTIVE PERIODIC TP / POSITION CHECK ──
+                # Immediately checks TP fill when live ticker reaches TP price (~0.5s), and falls back to adaptive periodic polling
                 loop_tick += 1
-                if loop_tick % 6 == 0:
+                curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
+                curr_tp_price = float(sl_meta.get('tp_price') or tp_price or 0.0)
+                active_sl_count = sum(
+                    1 for s in BracketOrderService.ACTIVE_SOFTWARE_SL.values()
+                    if not s.get('cancelled') and s.get('status') == 'monitoring'
+                )
+                periodic_mod = 3 if active_sl_count <= 3 else (6 if active_sl_count <= 10 else 12)
+
+                tp_touched = False
+                tp_near = False
+                if curr_tp_id and curr_tp_price > 0:
+                    px_candidates = [px for px in (last_price, best_bid, best_ask) if px and px > 0]
+                    if px_candidates:
+                        if opposite_side == 'sell':
+                            hi_px = max(px_candidates)
+                            tp_touched = hi_px >= curr_tp_price
+                            tp_near = hi_px >= curr_tp_price * 0.998
+                        else:
+                            lo_px = min(px_candidates)
+                            tp_touched = lo_px <= curr_tp_price
+                            tp_near = lo_px <= curr_tp_price * 1.002
+
+                first_touch = tp_touched and not was_tp_touched
+                if tp_touched:
+                    tp_touch_grace = 6
+                elif tp_touch_grace > 0:
+                    tp_touch_grace -= 1
+                was_tp_touched = tp_touched
+
+                should_run_periodic = (loop_tick % periodic_mod == 0)
+                should_run_tp_check = bool(
+                    curr_tp_id and (
+                        first_touch
+                        or ((tp_touched or tp_near or tp_touch_grace > 0) and loop_tick % 2 == 0)
+                        or should_run_periodic
+                    )
+                )
+
+                if should_run_tp_check or should_run_periodic:
                     tp_or_disaster_filled = False
                     try:
                         # Check if TP already filled on exchange (using latest dynamic TP ID)
-                        curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
-                        tp_or_disaster_filled = await BracketOrderService._check_linked_tp_filled(
-                            exchange=exchange,
-                            symbol=symbol,
-                            is_futures=is_futures,
-                            sl_meta=sl_meta,
-                            fallback_tp_order_id=tp_order_id,
-                            user_id=user_id,
-                            entry_price=entry_price,
-                            opposite_side=opposite_side,
-                            default_amount=curr_amount,
-                            context_label="Smart Chase monitor",
-                        )
+                        if should_run_tp_check:
+                            tp_or_disaster_filled = await BracketOrderService._check_linked_tp_filled(
+                                exchange=exchange,
+                                symbol=symbol,
+                                is_futures=is_futures,
+                                sl_meta=sl_meta,
+                                fallback_tp_order_id=tp_order_id,
+                                user_id=user_id,
+                                entry_price=entry_price,
+                                opposite_side=opposite_side,
+                                default_amount=curr_amount,
+                                context_label="Smart Chase monitor",
+                            )
 
                         # Check if Disaster SL already filled on exchange
                         curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
-                        if not tp_or_disaster_filled and curr_disaster and is_futures:
+                        if not tp_or_disaster_filled and should_run_periodic and curr_disaster and is_futures:
                             try:
                                 dis_chk = await BracketOrderService._fetch_futures_order_universal(
                                     exchange, curr_disaster, symbol, is_conditional=True
@@ -2664,7 +2738,7 @@ class BracketOrderService:
                             except Exception:
                                 pass
 
-                        if not tp_or_disaster_filled and is_futures and loop_tick >= 12:
+                        if not tp_or_disaster_filled and should_run_periodic and is_futures and loop_tick >= 12:
                             pos_open = await BracketOrderService._check_futures_position_is_open(exchange, symbol, opposite_side)
                             if not pos_open:
                                 pos_closed_streak += 1

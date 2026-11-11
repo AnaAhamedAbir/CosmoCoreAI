@@ -1561,7 +1561,7 @@ class ManualTradeService:
                     )
                 )
 
-                ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+                ManualTradeService.invalidate_open_orders_cache(api_key_record.id, order_req.symbol)
                 return {
                     "id": peg_cid,
                     "symbol": order_req.symbol,

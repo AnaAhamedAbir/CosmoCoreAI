@@ -1,4 +1,6 @@
-import { useEffect, useState, FC } from 'react';
+import React, { useEffect, useState, useRef, useCallback, FC } from 'react';
+import { createPortal } from 'react-dom';
+import { GripVertical, X, Sparkles, Zap } from 'lucide-react';
 import { fetchApiKeys } from '../../../services/settings';
 import { botService } from '../../../services/botService';
 import { marketDataService } from '../../../services/marketData';
@@ -19,6 +21,44 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
     const [useNativeTokenFee, setUseNativeTokenFee] = useState(false);
     const [liveFeeRate, setLiveFeeRate] = useState<number | null>(null);
     const [mlModels, setMlModels] = useState<CustomMLModel[]>([]);
+
+    // --- Floating Modal Drag Position State (Zero-React-Re-render Direct GPU Transform Pattern, matching ManualTradeModal) ---
+    const [modalPos, setModalPos] = useState<{ x: number; y: number }>(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const saved = localStorage.getItem('cosmo_wallhunter_modal_pos_v2');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') return parsed;
+                }
+            } catch {}
+        }
+        const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+        const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+        return {
+            x: Math.max(20, Math.min(winW - 610, Math.round(winW * 0.35))),
+            y: Math.max(20, Math.round(winH * 0.08))
+        };
+    });
+
+    const hasUserDraggedModalRef = useRef<boolean>(
+        typeof window !== 'undefined' ? Boolean(localStorage.getItem('cosmo_wallhunter_modal_pos_v2')) : false
+    );
+
+    const dragRef = useRef({
+        isDragging: false,
+        startX: 0,
+        startY: 0,
+        originX: 0,
+        originY: 0,
+        currentX: 0,
+        currentY: 0,
+        minX: 6,
+        maxX: 1500,
+        minY: 10,
+        maxY: 1000
+    });
+    const modalContainerRef = useRef<HTMLDivElement>(null);
 
     // --- NEW: Trading Mode State ---
     const [tradingMode, setTradingMode] = useState<'spot' | 'futures'>('spot');
@@ -538,7 +578,199 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         }
     }, [isOpen]);
 
-    if (!isOpen) return null;
+    // Clamp screen position using actual rendered dimensions so modal never breaches screen bounds
+    const clampPos = useCallback((
+        rawX: number,
+        rawY: number,
+        elOverride?: HTMLElement | null
+    ) => {
+        const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+        const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+        const modalEl = elOverride || modalContainerRef.current;
+        const modalW = modalEl?.offsetWidth || 600;
+        const modalH = modalEl?.offsetHeight || 650;
+
+        const leftMargin = 6;
+        const rightMargin = 6;
+        const topMargin = 10;
+        const bottomMargin = 16;
+
+        const minX = leftMargin;
+        const maxX = Math.max(minX, winW - modalW - rightMargin);
+
+        const minY = topMargin;
+        const maxY = Math.max(minY, winH - modalH - bottomMargin);
+
+        return {
+            x: Math.max(minX, Math.min(maxX, Math.round(rawX))),
+            y: Math.max(minY, Math.min(maxY, Math.round(rawY)))
+        };
+    }, []);
+
+    // Synchronize modal position and observe live DOM dimension changes
+    useEffect(() => {
+        if (!isOpen || typeof window === 'undefined') return;
+        const modalEl = modalContainerRef.current;
+        if (!modalEl) return;
+
+        const clamped = clampPos(modalPos.x, modalPos.y, modalEl);
+        modalEl.style.transform = `translate3d(${clamped.x}px, ${clamped.y}px, 0)`;
+        dragRef.current.currentX = clamped.x;
+        dragRef.current.currentY = clamped.y;
+
+        if (clamped.x !== modalPos.x || clamped.y !== modalPos.y) {
+            setModalPos(clamped);
+        }
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            if (dragRef.current.isDragging) return;
+            for (const entry of entries) {
+                const targetEl = entry.target as HTMLElement;
+                const nextClamped = clampPos(modalPos.x, modalPos.y, targetEl);
+                if (nextClamped.x !== modalPos.x || nextClamped.y !== modalPos.y) {
+                    targetEl.style.transform = `translate3d(${nextClamped.x}px, ${nextClamped.y}px, 0)`;
+                    dragRef.current.currentX = nextClamped.x;
+                    dragRef.current.currentY = nextClamped.y;
+                    setModalPos(nextClamped);
+                }
+            }
+        });
+
+        resizeObserver.observe(modalEl);
+
+        const onWindowResize = () => {
+            if (dragRef.current.isDragging) return;
+            const nextClamped = clampPos(modalPos.x, modalPos.y, modalContainerRef.current);
+            if (modalContainerRef.current) {
+                modalContainerRef.current.style.transform = `translate3d(${nextClamped.x}px, ${nextClamped.y}px, 0)`;
+            }
+            dragRef.current.currentX = nextClamped.x;
+            dragRef.current.currentY = nextClamped.y;
+            setModalPos(nextClamped);
+        };
+
+        window.addEventListener('resize', onWindowResize);
+        return () => {
+            resizeObserver.disconnect();
+            window.removeEventListener('resize', onWindowResize);
+        };
+    }, [isOpen, clampPos, modalPos.x, modalPos.y]);
+
+    // Ultra-Smooth 120fps GPU Mouse & Touch Drag Handler (Zero React re-renders during drag)
+    const handleStartDrag = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+        const isTouch = 'touches' in e;
+        if (!isTouch && (e as React.MouseEvent).button !== 0) return;
+
+        const target = e.target as HTMLElement;
+        if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('textarea') || target.closest('[data-no-drag="true"]')) {
+            return;
+        }
+
+        const startClientX = isTouch ? e.touches[0]?.clientX : (e as React.MouseEvent).clientX;
+        const startClientY = isTouch ? e.touches[0]?.clientY : (e as React.MouseEvent).clientY;
+        if (startClientX === undefined || startClientY === undefined) return;
+
+        if (!isTouch && e.cancelable) {
+            e.preventDefault();
+        }
+        e.stopPropagation();
+
+        const modalEl = modalContainerRef.current;
+        const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+        const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+        const modalW = modalEl?.offsetWidth || 600;
+        const modalH = modalEl?.offsetHeight || 650;
+        const topMargin = 10;
+        const bottomMargin = 16;
+
+        const drag = dragRef.current;
+        drag.isDragging = true;
+        drag.startX = startClientX;
+        drag.startY = startClientY;
+        drag.originX = modalPos.x;
+        drag.originY = modalPos.y;
+        drag.currentX = modalPos.x;
+        drag.currentY = modalPos.y;
+        drag.minX = 6;
+        drag.maxX = Math.max(drag.minX, winW - modalW - 6);
+        drag.minY = topMargin;
+        drag.maxY = Math.max(drag.minY, winH - modalH - bottomMargin);
+
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'grabbing';
+        document.body.style.pointerEvents = 'none';
+
+        if (modalEl) {
+            modalEl.style.pointerEvents = 'auto';
+            modalEl.style.backdropFilter = 'none';
+            (modalEl.style as any).webkitBackdropFilter = 'none';
+            modalEl.style.backgroundColor = 'rgba(7, 11, 20, 0.98)';
+            modalEl.style.transition = 'none';
+        }
+
+        const applyMove = (clientX: number, clientY: number) => {
+            if (!drag.isDragging) return;
+            const rawX = drag.originX + (clientX - drag.startX);
+            const rawY = drag.originY + (clientY - drag.startY);
+
+            const clampedX = Math.max(drag.minX, Math.min(drag.maxX, rawX));
+            const clampedY = Math.max(drag.minY, Math.min(drag.maxY, rawY));
+
+            drag.currentX = clampedX;
+            drag.currentY = clampedY;
+
+            if (modalContainerRef.current) {
+                modalContainerRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
+            }
+        };
+
+        const onMouseMove = (mv: MouseEvent) => {
+            applyMove(mv.clientX, mv.clientY);
+        };
+
+        const onTouchMove = (tv: TouchEvent) => {
+            if (!drag.isDragging) return;
+            if (tv.cancelable) tv.preventDefault();
+            const touch = tv.touches[0];
+            if (!touch) return;
+            applyMove(touch.clientX, touch.clientY);
+        };
+
+        const onUp = () => {
+            if (!drag.isDragging) return;
+            drag.isDragging = false;
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+            document.body.style.pointerEvents = '';
+            if (modalEl) {
+                modalEl.style.backdropFilter = '';
+                (modalEl.style as any).webkitBackdropFilter = '';
+                modalEl.style.backgroundColor = '';
+                modalEl.style.transition = '';
+            }
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('touchmove', onTouchMove);
+            window.removeEventListener('touchend', onUp);
+            window.removeEventListener('touchcancel', onUp);
+
+            const finalX = drag.currentX;
+            const finalY = drag.currentY;
+            setModalPos({ x: finalX, y: finalY });
+            hasUserDraggedModalRef.current = true;
+            try {
+                localStorage.setItem('cosmo_wallhunter_modal_pos_v2', JSON.stringify({ x: finalX, y: finalY }));
+            } catch {}
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onUp);
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
+        window.addEventListener('touchend', onUp);
+        window.addEventListener('touchcancel', onUp);
+    }, [modalPos.x, modalPos.y]);
+
+    if (!isOpen || typeof document === 'undefined') return null;
 
     const handleAutoDetect = async () => {
         setIsLoading(true);
@@ -1091,46 +1323,166 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
     const currencyPrefix = isShortMode ? '' : '$';
     const currencySuffix = isShortMode ? ` ${baseCurrency}` : '';
 
-    return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-            <div className="w-[600px] bg-[#000000] border-2 border-yellow-500/30 rounded-[2rem] p-6 shadow-[0_0_50px_rgba(59,130,246,0.2)] max-h-[90vh] flex flex-col">
-                <div className="flex justify-between items-center mb-4 flex-shrink-0">
-                    <h2 className="text-2xl font-black italic text-white tracking-tighter">SNIPER DEPLOYMENT</h2>
-                    <button
-                        onClick={handleAutoDetect}
-                        className="flex items-center gap-1 bg-brand-primary/20 hover:bg-brand-primary/30 border border-brand-primary/50 text-brand-primary px-3 py-1.5 rounded-full text-xs font-bold transition-colors shadow-[0_0_10px_rgba(59,130,246,0.2)]"
-                    >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                        AUTO DETECT
-                    </button>
+    return createPortal(
+        <div
+            ref={modalContainerRef}
+            style={{
+                left: 0,
+                top: 0,
+                transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : modalPos.x}px, ${dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y}px, 0)`,
+                willChange: 'transform'
+            }}
+            className="fixed w-[600px] max-w-[calc(100vw-16px)] rounded-2xl bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/98 to-[#050811]/98 border border-amber-500/40 shadow-[0_16px_48px_rgba(0,0,0,0.85),0_0_25px_rgba(245,158,11,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col max-h-[calc(100vh-40px)]"
+        >
+            {/* Top Neon Horizon Accent Line */}
+            <div className="h-[2px] w-full bg-gradient-to-r from-transparent via-amber-400 to-orange-500 opacity-85 shrink-0" />
+
+            {/* Header (Draggable Handle matching ManualTradeModal) */}
+            <div
+                onMouseDown={handleStartDrag}
+                onTouchStart={handleStartDrag}
+                style={{ touchAction: 'none' }}
+                className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0"
+                title="Drag to move modal"
+            >
+                <div className="flex items-center gap-2.5 pointer-events-none min-w-0">
+                    <GripVertical className="w-4 h-4 text-amber-400/80 shrink-0" />
+                    <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.9)] animate-pulse shrink-0" />
+                    <div className="flex flex-col text-left truncate">
+                        <div className="flex items-center gap-2">
+                            <span className="font-black text-white text-base tracking-tight truncate">
+                                {form.botName || form.symbol || symbol || 'WallHunter Sniper'}
+                            </span>
+                            <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-mono font-black border leading-tight ${
+                                tradingMode === 'futures'
+                                    ? 'bg-orange-500/20 border-orange-400/40 text-orange-300'
+                                    : 'bg-amber-500/20 border-amber-400/40 text-amber-300'
+                            }`}>
+                                {tradingMode === 'futures' ? `${form.leverage || 5}x FUTURES` : 'SPOT'}
+                            </span>
+                            <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-mono font-bold border bg-white/[0.05] border-white/10 text-gray-300 leading-tight">
+                                {form.exchange?.toUpperCase() || exchange?.toUpperCase()}
+                            </span>
+                            {currentPrice > 0 && (
+                                <span className="text-emerald-400 font-mono text-[11px] font-bold tracking-tight shrink-0 hidden sm:inline">
+                                    ${currentPrice >= 1 ? currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : currentPrice}
+                                </span>
+                            )}
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-medium tracking-wide">
+                            Level 2 Order Book Sniper Bot • {tradeDirection.toUpperCase()}
+                        </span>
+                    </div>
                 </div>
 
-                {/* --- MAIN TRADING MODE TOGGLE --- */}
-                <div className="flex bg-black/40 p-1.5 rounded-2xl mb-4 border border-white/5 flex-shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                     <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleAutoDetect();
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="flex items-center gap-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.15)] active:scale-95"
+                        title="Auto-detect best sniper parameters from current order book walls"
+                    >
+                        <Sparkles className="w-3 h-3 text-amber-400" />
+                        AUTO DETECT
+                    </button>
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onClose();
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="p-1 rounded-lg bg-white/[0.04] hover:bg-rose-500/20 border border-white/[0.08] hover:border-rose-500/40 text-gray-400 hover:text-rose-300 transition-all cursor-pointer"
+                        title="Close"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
+
+            {/* --- MAIN TRADING MODE TOGGLE --- */}
+            <div className="px-5 pt-3 shrink-0">
+                <div className="flex bg-black/50 p-1 rounded-xl border border-white/10">
+                    <button
+                        type="button"
                         onClick={() => setTradingMode('spot')}
-                        className={`flex-1 py-2.5 text-xs font-black uppercase rounded-xl transition-all ${tradingMode === 'spot' ? 'bg-brand-primary text-white shadow-[0_0_15px_rgba(59,130,246,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+                        className={`flex-1 py-1.5 text-xs font-black uppercase rounded-lg transition-all ${
+                            tradingMode === 'spot'
+                                ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.4)]'
+                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                        }`}
                     >
                         SPOT BOT
                     </button>
                     <button
+                        type="button"
                         onClick={() => setTradingMode('futures')}
-                        className={`flex-1 py-2.5 text-xs font-black uppercase rounded-xl transition-all flex items-center justify-center gap-2 ${tradingMode === 'futures' ? 'bg-orange-500 text-white shadow-[0_0_15px_rgba(249,115,22,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+                        className={`flex-1 py-1.5 text-xs font-black uppercase rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                            tradingMode === 'futures'
+                                ? 'bg-orange-500 text-white shadow-[0_0_15px_rgba(249,115,22,0.4)]'
+                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                        }`}
                     >
+                        <Zap className="w-3.5 h-3.5" />
                         FUTURE TRADING BOT ⚡
                     </button>
                 </div>
+            </div>
 
-                {/* --- TABS NAVIGATION --- */}
-                <div className="flex gap-2 border-b border-white/10 mb-4 pb-2 overflow-x-auto flex-shrink-0 hide-scrollbar">
-                    <button onClick={() => setActiveTab('basic')} className={`px-4 py-2 text-xs font-black tracking-wider uppercase rounded-xl transition-all ${activeTab === 'basic' ? 'bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.2)]' : 'text-gray-500 hover:bg-white/5'}`}>Basic & Execution</button>
-                    <button onClick={() => setActiveTab('triggers')} className={`px-4 py-2 text-xs font-black tracking-wider uppercase rounded-xl transition-all ${activeTab === 'triggers' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'text-gray-500 hover:bg-white/5'}`}>Entry Triggers</button>
-                    <button onClick={() => setActiveTab('risk')} className={`px-4 py-2 text-xs font-black tracking-wider uppercase rounded-xl transition-all ${activeTab === 'risk' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.2)]' : 'text-gray-500 hover:bg-white/5'}`}>Risk Management</button>
-                    <button onClick={() => setActiveTab('advanced')} className={`px-4 py-2 text-xs font-black tracking-wider uppercase rounded-xl transition-all ${activeTab === 'advanced' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'text-gray-500 hover:bg-white/5'}`}>Advanced</button>
-                </div>
+            {/* --- TABS NAVIGATION --- */}
+            <div className="flex gap-1.5 px-5 pt-2.5 pb-2 border-b border-white/10 overflow-x-auto shrink-0 hide-scrollbar">
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('basic')}
+                    className={`px-3 py-1.5 text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer ${
+                        activeTab === 'basic'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                            : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                    }`}
+                >
+                    Basic & Execution
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('triggers')}
+                    className={`px-3 py-1.5 text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer ${
+                        activeTab === 'triggers'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                            : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                    }`}
+                >
+                    Entry Triggers
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('risk')}
+                    className={`px-3 py-1.5 text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer ${
+                        activeTab === 'risk'
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-[0_0_12px_rgba(59,130,246,0.2)]'
+                            : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                    }`}
+                >
+                    Risk Management
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('advanced')}
+                    className={`px-3 py-1.5 text-[11px] font-black tracking-wider uppercase rounded-lg transition-all cursor-pointer ${
+                        activeTab === 'advanced'
+                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_12px_rgba(168,85,247,0.2)]'
+                            : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                    }`}
+                >
+                    Advanced
+                </button>
+            </div>
 
-                {/* --- TABS CONTENT --- */}
-                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4">
+            {/* --- TABS CONTENT --- */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 custom-scrollbar space-y-4">
                     {activeTab === 'basic' && (
                         <div className="animate-fadeIn space-y-4">
                             <div className="flex gap-4">
@@ -3298,7 +3650,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 </div>
 
                 {/* --- FOOTER ACTIONS --- */}
-                <div className="pt-4 border-t border-white/10 mt-2 flex-shrink-0">
+                <div className="p-5 border-t border-white/10 bg-black/40 flex-shrink-0 space-y-3">
 
                     {/* --- ACTIVE BOT WARNING BANNER (Option C) --- */}
                     {existingBot && (
@@ -3341,20 +3693,26 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                         </p>
                     )}
 
-                    <div className="flex gap-3">
-                        <button onClick={onClose} disabled={isLoading} className="w-[120px] bg-white/5 hover:bg-white/10 text-gray-400 rounded-xl text-xs font-bold transition-colors">
+                    <div className="flex gap-2.5">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={isLoading}
+                            className="w-[100px] bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                        >
                             CANCEL
                         </button>
                         <button
+                            type="button"
                             onClick={handleDeploy}
                             disabled={isLoading}
-                            className={`flex-1 h-12 rounded-xl font-black text-white text-sm transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)] ${isLoading
+                            className={`flex-1 h-11 rounded-xl font-black text-white text-xs tracking-wider uppercase transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] cursor-pointer active:scale-[0.99] ${isLoading
                                     ? 'bg-gray-600 cursor-not-allowed opacity-70'
                                     : (existingBot && deployMode === 'update')
-                                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:scale-[1.02]'
+                                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:scale-[1.01]'
                                         : tradingMode === 'futures'
-                                            ? 'bg-gradient-to-r from-orange-500 to-red-600 hover:scale-[1.02]'
-                                            : 'bg-gradient-to-r from-yellow-400 to-orange-600 hover:scale-[1.02]'
+                                            ? 'bg-gradient-to-r from-orange-500 to-red-600 hover:scale-[1.01]'
+                                            : 'bg-gradient-to-r from-yellow-400 to-orange-600 hover:scale-[1.01]'
                                 }`}
                         >
                             {isLoading
@@ -3367,11 +3725,22 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             }
                         </button>
                     </div>
+
+                    {/* Footer Status Bar */}
+                    <div className="flex items-center justify-between text-[9px] text-gray-500 pt-1 select-none">
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
+                            Level 2 Sniper Engine Ready
+                        </span>
+                        <span className="font-mono text-[8.5px] text-gray-400">
+                            Drag header to position anywhere
+                        </span>
+                    </div>
                 </div>
-            </div>
-        </div>
-    );
-};
+            </div>,
+            document.body
+        );
+    };
 
 const InputField = ({ label, value, onChange, step = 1 }: any) => (
     <div>

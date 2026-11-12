@@ -55,6 +55,7 @@ class BotManager:
         
         # Create new DB session if not provided
         local_db = db or SessionLocal()
+        bot = None
         
         try:
             bot = local_db.query(models.Bot).filter(models.Bot.id == bot_id).first()
@@ -539,12 +540,51 @@ class BotManager:
             
             # Send Telegram Notification explicitly for bot startup
             if bot.owner_id:
-                asyncio.create_task(NotificationService.send_message(local_db, bot.owner_id, "\n".join(msg_lines)))
+                in_app_cat = "wallhunter" if bot.strategy == "wall_hunter" else None
+                asyncio.create_task(
+                    NotificationService.send_message(
+                        local_db,
+                        bot.owner_id,
+                        "\n".join(msg_lines),
+                        in_app_category=in_app_cat,
+                    )
+                )
             
             return {"status": "success", "message": f"Bot {bot_id} started"}
 
         except Exception as e:
             logger.error(f"Failed to start bot {bot_id}: {e}")
+            if bot is not None and getattr(bot, "owner_id", None):
+                try:
+                    from app.services.system_notification_service import (
+                        SystemNotificationService,
+                        is_exchange_auth_error,
+                    )
+                    import time
+
+                    if is_exchange_auth_error(e):
+                        await SystemNotificationService.emit(
+                            user_id=bot.owner_id,
+                            category="market_alerts",
+                            title="Exchange API Key Issue",
+                            message=f"Bot #{bot.id} ({bot.exchange} {bot.market}) auth/key error: {str(e)[:250]}",
+                            event_type="api_health",
+                            severity="critical",
+                            meta={"bot_id": bot.id, "exchange": bot.exchange, "symbol": bot.market},
+                            dedup_key=f"api_health:{bot.owner_id}:{bot.exchange}:{int(time.time() // 300)}",
+                        )
+                    if getattr(bot, "strategy", None) == "wall_hunter":
+                        await SystemNotificationService.emit(
+                            user_id=bot.owner_id,
+                            category="wallhunter",
+                            title=f"WallHunter Bot #{bot.id} Start Failed",
+                            message=f"Pair: {bot.market}\nError: {e}",
+                            event_type="bot_error",
+                            severity="critical",
+                            meta={"bot_id": bot.id, "symbol": bot.market, "exchange": bot.exchange},
+                        )
+                except Exception:
+                    pass
             if bot_id in self.active_bots and self.active_bots[bot_id] == "STARTING":
                 del self.active_bots[bot_id]
             return {"status": "error", "message": str(e)}
@@ -619,6 +659,20 @@ class BotManager:
                     logger.info(f"🧹 Cleaning up zombie bot {bot_id} (active in DB -> inactive)")
                 bot.status = "inactive"
                 local_db.commit()
+                if bot.strategy == "wall_hunter" and bot.owner_id:
+                    try:
+                        from app.services.system_notification_service import SystemNotificationService
+                        await SystemNotificationService.emit(
+                            user_id=bot.owner_id,
+                            category="wallhunter",
+                            title=f"WallHunter Bot #{bot.id} Stopped",
+                            message=f"Pair: {bot.market}\nExchange: {bot.exchange or 'binance'}\nBot has been stopped.",
+                            event_type="bot_stopped",
+                            severity="warning",
+                            meta={"bot_id": bot.id, "symbol": bot.market, "exchange": bot.exchange},
+                        )
+                    except Exception:
+                        pass
 
             return {"status": "success", "message": f"Bot {bot_id} stopped (or was already stopped)"}
 

@@ -1753,7 +1753,7 @@ class BracketOrderService:
                                             f"Pair: `{symbol}`\n"
                                             f"Callback Rate: `{sl_val}%`"
                                         )
-                                        await NotificationService.send_message(db, user_id, msg)
+                                        await NotificationService.send_message(db, user_id, msg, alert_type="alert_manual_trade")
                                     finally:
                                         db.close()
                                 except Exception:
@@ -1929,7 +1929,7 @@ class BracketOrderService:
                                             f"Stop Price: `{final_sl_price}`\n"
                                             f"Mode: {sl_mode} ({sl_val}{'%' if sl_mode == 'percentage' else '$'})"
                                         )
-                                        await NotificationService.send_message(db, user_id, msg)
+                                        await NotificationService.send_message(db, user_id, msg, alert_type="alert_manual_trade")
                                     finally:
                                         db.close()
                                 except Exception as notify_err:

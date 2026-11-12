@@ -109,6 +109,31 @@ class BinanceLiquidationStream:
                 # Publish to global stream
                 channel = f"stream:liquidations:{formatted_symbol}"
                 self.redis.publish(channel, json.dumps(payload))
+
+                if amount >= 500000:
+                    import time
+                    from app.services.system_notification_service import SystemNotificationService
+
+                    severity = "critical" if amount >= 2000000 else "warning"
+                    dedup_key = f"liq:{symbol}:{int(time.time() // 60)}"
+                    asyncio.create_task(
+                        SystemNotificationService.emit(
+                            user_id=None,
+                            category="market_alerts",
+                            title=f"Large Liquidation: {formatted_symbol} ({side.upper()})",
+                            message=f"${amount:,.0f} {side.upper()} liquidated @ ${price:,.4f} (Qty: {qty:,.4f})",
+                            event_type="liquidation_alert",
+                            severity=severity,
+                            meta={
+                                "symbol": formatted_symbol,
+                                "side": side,
+                                "amount": round(amount, 2),
+                                "price": price,
+                                "qty": qty,
+                            },
+                            dedup_key=dedup_key,
+                        )
+                    )
                 
                 # Useful for debugging, but might be too spammy for all markets if uncommented
                 # if amount > 10000:

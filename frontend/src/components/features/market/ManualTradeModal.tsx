@@ -6,6 +6,7 @@ import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
 import { notificationService } from '../../../services/notification';
 import { mlModelsService } from '../../../services/mlModelsService';
+import { trainingStudioToolsService } from '../../../services/trainingStudioToolsService';
 import { CustomMLModel } from '../../../types';
 
 const MotionButton = motion.button as any;
@@ -226,6 +227,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   // L2 Machine Learning Filter state (from ML Registry)
   const [mlModels, setMlModels] = useState<CustomMLModel[]>([]);
   const [isLoadingMlModels, setIsLoadingMlModels] = useState<boolean>(false);
+  const [pinnedModelId, setPinnedModelId] = useState<string | null>(null);
+  const hasManualMlOverrideRef = React.useRef<boolean>(false);
   const [mlFilterConfig, setMlFilterConfig] = useState({
     enabled: false,
     modelId: '',
@@ -478,16 +481,25 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   const fetchMlModels = React.useCallback(async () => {
     setIsLoadingMlModels(true);
     try {
-      const models = await mlModelsService.getModels();
+      const [models, pinned] = await Promise.all([
+        mlModelsService.getModels(),
+        trainingStudioToolsService.getPinnedManualTradeModel().catch(() => null),
+      ]);
       const list = models || [];
       setMlModels(list);
+      const validPinned = pinned && list.some(m => m.id === pinned.model_id) ? pinned : null;
+      setPinnedModelId(validPinned ? validPinned.model_id : null);
       if (list.length > 0) {
         setMlFilterConfig(prev => {
-          const chosenId = prev.modelId && list.some(m => m.id === prev.modelId) ? prev.modelId : list[0].id;
+          const shouldApplyPin = Boolean(validPinned && (!prev.modelId || !hasManualMlOverrideRef.current));
+          const chosenId = shouldApplyPin && validPinned
+            ? validPinned.model_id
+            : (prev.modelId && list.some(m => m.id === prev.modelId) ? prev.modelId : list[0].id);
           const opt = getModelOptimalThresholds(chosenId, list);
           return {
             ...prev,
             modelId: chosenId,
+            enabled: shouldApplyPin && validPinned ? validPinned.enabled : prev.enabled,
             bullishThreshold: prev.autoThreshold ? opt.bullish : prev.bullishThreshold,
             bearishThreshold: prev.autoThreshold ? opt.bearish : prev.bearishThreshold
           };
@@ -506,6 +518,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       setTradeSide('Sell');
       setIcebergMode('qty');
       setIcebergCustomQty((prev) => (!prev || prev === '0' ? '250' : prev));
+    } else {
+      hasManualMlOverrideRef.current = false;
     }
   }, [isOpen]);
 
@@ -2684,6 +2698,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
+                          hasManualMlOverrideRef.current = true;
                           setMlFilterConfig(prev => ({
                             ...prev,
                             enabled: !prev.enabled,
@@ -2706,6 +2721,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                           value={mlFilterConfig.modelId}
                           onChange={(e) => {
                             e.stopPropagation();
+                            hasManualMlOverrideRef.current = true;
                             const val = e.target.value;
                             const opt = getModelOptimalThresholds(val);
                             setMlFilterConfig(prev => ({
@@ -4050,13 +4066,14 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
               <div className={`space-y-2.5 p-3 rounded-lg border transition-all ${mlFilterConfig.enabled ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.12)]' : 'bg-black/30 border-blue-500/20'}`}>
                 <div
                   className="flex justify-between items-center cursor-pointer group"
-                  onClick={() =>
+                  onClick={() => {
+                    hasManualMlOverrideRef.current = true;
                     setMlFilterConfig(prev => ({
                       ...prev,
                       enabled: !prev.enabled,
                       modelId: !prev.enabled && !prev.modelId && mlModels.length > 0 ? mlModels[0].id : prev.modelId
-                    }))
-                  }
+                    }));
+                  }}
                 >
                   <div className="flex items-center gap-2.5">
                     <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500/25 text-blue-300 border border-blue-400/50' : 'bg-white/5 text-blue-400/70'}`}>
@@ -4072,6 +4089,11 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                         <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${mlFilterConfig.enabled ? 'bg-blue-500/30 text-blue-200 border border-blue-400/40' : 'bg-white/5 text-gray-400'}`}>
                           {mlFilterConfig.enabled ? 'ACTIVE' : 'OFF'}
                         </span>
+                        {pinnedModelId && mlFilterConfig.modelId === pinnedModelId && (
+                          <span className="text-[8.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/35">
+                            PINNED
+                          </span>
+                        )}
                       </div>
                       <span className="text-[10px] text-gray-400">
                         🤖 Filter {tradeSide.toUpperCase()} entry using Training Studio / ML Registry model
@@ -4116,6 +4138,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                       className="w-full bg-black border border-blue-500/30 rounded-lg py-1.5 px-2.5 text-white outline-none focus:border-blue-400 text-xs font-bold cursor-pointer"
                       value={mlFilterConfig.modelId}
                       onChange={(e) => {
+                        hasManualMlOverrideRef.current = true;
                         const val = e.target.value;
                         const opt = getModelOptimalThresholds(val);
                         setMlFilterConfig(prev => ({

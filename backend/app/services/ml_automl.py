@@ -1,8 +1,9 @@
+import math
 import optuna
 from sklearn.metrics import accuracy_score, mean_squared_error
 import numpy as np
 
-def run_optuna_study(algorithm: str, X_train, y_train, X_val, y_val, is_classification: bool, n_trials: int = 20, add_log=None):
+def run_optuna_study(algorithm: str, X_train, y_train, X_val, y_val, is_classification: bool, n_trials: int = 20, add_log=None, trials_out: list = None):
     """
     Runs an Optuna hyperparameter optimization study for the specified algorithm.
     Returns a dictionary of the best hyperparameters.
@@ -155,3 +156,18 @@ def run_optuna_study(algorithm: str, X_train, y_train, X_val, y_val, is_classifi
         if add_log:
             add_log(f"⚠️ AutoML optimization failed: {e}. Falling back to default params.")
         return {}
+    finally:
+        if trials_out is not None and study.trials:
+            for t in sorted(study.trials, key=lambda tr: tr.number):
+                raw_val = t.value
+                clean_val = (
+                    float(raw_val)
+                    if (raw_val is not None and math.isfinite(float(raw_val)))
+                    else None
+                )
+                trials_out.append({
+                    "number": int(t.number),
+                    "value": clean_val,
+                    "params": dict(t.params),
+                    "state": str(t.state.name),
+                })

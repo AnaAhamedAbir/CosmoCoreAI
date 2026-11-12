@@ -198,7 +198,7 @@ async def l2_listener(target_rows: int, symbol_ws: str, symbol_orig: str, sessio
                 db.commit()
                 if job.user_id:
                     from app.services.notification import NotificationService
-                    await NotificationService.send_message(db, job.user_id, f"❌ *Hybrid Collector Failed*\nSymbol: {symbol_orig.upper()}\nError: {e}", parse_mode="Markdown")
+                    await NotificationService.send_message(db, job.user_id, f"❌ *Hybrid Collector Failed*\nSymbol: {symbol_orig.upper()}\nError: {e}", parse_mode="Markdown", in_app_category="ml_training")
 
     # Finish and merge
     stop_event.set()
@@ -257,7 +257,7 @@ async def collect_hybrid_data(target_rows: int, symbol: str = SYMBOL, job_id: st
                     db.commit()
                     if job.user_id:
                         from app.services.notification import NotificationService
-                        await NotificationService.send_message(db, job.user_id, f"✅ *Hybrid Collection Complete*\nSymbol: {symbol.upper()}\nRows: {target_rows:,}", parse_mode="Markdown")
+                        await NotificationService.send_message(db, job.user_id, f"✅ *Hybrid Collection Complete*\nSymbol: {symbol.upper()}\nRows: {target_rows:,}", parse_mode="Markdown", in_app_category="ml_training")
                     
         except Exception as e:
             add_job_log(db, job_id, f"Error during merge process: {e}")
@@ -269,7 +269,7 @@ async def collect_hybrid_data(target_rows: int, symbol: str = SYMBOL, job_id: st
                     db.commit()
                     if job.user_id:
                         from app.services.notification import NotificationService
-                        await NotificationService.send_message(db, job.user_id, f"❌ *Hybrid Merge Failed*\nSymbol: {symbol.upper()}\nError: {e}", parse_mode="Markdown")
+                        await NotificationService.send_message(db, job.user_id, f"❌ *Hybrid Merge Failed*\nSymbol: {symbol.upper()}\nError: {e}", parse_mode="Markdown", in_app_category="ml_training")
     else:
         msg = "No hybrid data collected to merge."
         add_job_log(db, job_id, msg)

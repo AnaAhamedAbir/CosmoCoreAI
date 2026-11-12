@@ -67,8 +67,10 @@ class WallHunterNotifierMixin:
             msg += summary
         try:
             db = SessionLocal()
-            await NotificationService.send_message(db, self.owner_id, msg)
-            db.close()
+            try:
+                await NotificationService.send_message(db, self.owner_id, msg, in_app_category="wallhunter")
+            finally:
+                db.close()
         except Exception as e:
             self.logger.error(f"Failed to send Telegram in WallHunterBot: {e}")
 
@@ -77,7 +79,15 @@ class WallHunterNotifierMixin:
             return
         try:
             db = SessionLocal()
-            await NotificationService.send_photo_bytes(db, self.owner_id, photo_bytes, caption=caption)
-            db.close()
+            try:
+                await NotificationService.send_photo_bytes(
+                    db,
+                    self.owner_id,
+                    photo_bytes,
+                    caption=caption,
+                    in_app_category="wallhunter",
+                )
+            finally:
+                db.close()
         except Exception as e:
             self.logger.error(f"Error sending photo to telegram: {e}")

@@ -170,6 +170,63 @@ async def _send_order_modified_notification(
         db.close()
 
 
+async def _emit_manual_trade_in_app(
+    user_id: Optional[int],
+    title: str,
+    message: str,
+    event_type: str,
+    severity: str = "info",
+    meta: Optional[Dict[str, Any]] = None,
+):
+    """Safely emits a manual_trade in-app notification without affecting order execution."""
+    if not user_id:
+        return
+    try:
+        from app.services.system_notification_service import SystemNotificationService
+        await SystemNotificationService.emit(
+            user_id=user_id,
+            category="manual_trade",
+            title=title,
+            message=message,
+            event_type=event_type,
+            severity=severity,
+            meta=meta or {},
+        )
+    except Exception as notify_err:
+        logger.debug(f"In-app manual_trade emit skipped (non-fatal): {notify_err}")
+
+
+async def _maybe_emit_api_health_alert(
+    user_id: Optional[int],
+    exchange_name: Optional[str],
+    exc: Exception,
+):
+    """Emit a market_alerts api_health notification when an exchange auth/API-key failure occurs."""
+    if not user_id:
+        return
+    try:
+        from app.services.system_notification_service import (
+            SystemNotificationService,
+            is_exchange_auth_error,
+        )
+
+        if not is_exchange_auth_error(exc):
+            return
+        ex_label = str(exchange_name or "exchange")
+        await SystemNotificationService.emit(
+            user_id=user_id,
+            category="market_alerts",
+            title="Exchange API Key Issue",
+            message=f"{ex_label.upper()} API authentication/permission error: {str(exc)[:250]}",
+            event_type="api_health",
+            severity="critical",
+            meta={"exchange": ex_label, "error": str(exc)[:250]},
+            dedup_key=f"api_health:{user_id}:{ex_label}:{int(time.time() // 300)}",
+        )
+    except Exception as notify_err:
+        logger.debug(f"API health emit skipped (non-fatal): {notify_err}")
+
+
 class ManualTradeService:
     _HEDGE_MODE_CACHE = {}  # { cache_key: (is_hedge, expire_timestamp) }
     _LEVERAGE_CACHE = {}    # { cache_key: (leverage, expire_timestamp) }
@@ -473,6 +530,7 @@ class ManualTradeService:
         except HTTPException:
             raise
         except Exception as e:
+            await _maybe_emit_api_health_alert(user_id, api_key_record.exchange, e)
             logger.error(f"Fast balance fetch failed: {api_key_record.exchange} {e}")
             raise HTTPException(status_code=500, detail=f"Balance Error: {str(e)}")
 
@@ -566,6 +624,7 @@ class ManualTradeService:
         except HTTPException:
             raise
         except Exception as e:
+            await _maybe_emit_api_health_alert(user_id, api_key_record.exchange, e)
             logger.error(f"Fast position fetch failed: {api_key_record.exchange} {e}")
             raise HTTPException(status_code=500, detail=f"Position Error: {str(e)}")
 
@@ -715,6 +774,7 @@ class ManualTradeService:
         except HTTPException:
             raise
         except Exception as e:
+            await _maybe_emit_api_health_alert(user_id, api_key_record.exchange, e)
             logger.error(f"Open limit orders fetch failed: {api_key_record.exchange} {e}")
             raise HTTPException(status_code=500, detail=f"Open Orders Error: {str(e)}")
 
@@ -2019,6 +2079,18 @@ class ManualTradeService:
             raise
         except Exception as e:
             err_str = str(e)
+            await _maybe_emit_api_health_alert(user_id, api_key_record.exchange, e)
+            await _emit_manual_trade_in_app(
+                user_id=user_id,
+                title=f"Order Failed: {getattr(order_req, 'symbol', '')}",
+                message=(
+                    f"Side: {str(getattr(order_req, 'side', '')).upper()} | Type: {str(getattr(order_req, 'type', '')).upper()}\n"
+                    f"Reason: {err_str}"
+                ),
+                event_type="order_failed",
+                severity="critical",
+                meta={"symbol": getattr(order_req, "symbol", None), "side": getattr(order_req, "side", None)},
+            )
             is_exchange_rejection = (
                 isinstance(e, getattr(ccxt, 'BaseError', Exception)) or
                 any(kw in err_str.lower() for kw in [
@@ -2217,6 +2289,18 @@ class ManualTradeService:
             raise
         except Exception as e:
             err_str = str(e)
+            await _maybe_emit_api_health_alert(user_id, api_key_record.exchange, e)
+            await _emit_manual_trade_in_app(
+                user_id=user_id,
+                title=f"Order Modify Failed: {symbol}",
+                message=(
+                    f"Side: {str(side).upper()} | New Price: {new_price}\n"
+                    f"Reason: {err_str}"
+                ),
+                event_type="order_failed",
+                severity="critical",
+                meta={"symbol": symbol, "side": side, "price": float(new_price)},
+            )
             is_exchange_rejection = (
                 isinstance(e, getattr(ccxt, 'BaseError', Exception)) or
                 any(kw in err_str.lower() for kw in [
@@ -2848,6 +2932,7 @@ class ManualTradeService:
         except HTTPException:
             raise
         except Exception as e:
+            await _maybe_emit_api_health_alert(user_id, api_key_record.exchange, e)
             logger.error(f"Emergency force order error ({symbol}): {e}")
             raise HTTPException(status_code=400, detail=f"Emergency Force {side.upper()} Failed: {str(e)}")
 
@@ -2884,6 +2969,14 @@ class ManualTradeService:
             if specific_oid in ACTIVE_SMART_PEGS:
                 await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id, peg_id=specific_oid)
                 ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+                await _emit_manual_trade_in_app(
+                    user_id=user_id,
+                    title="Smart Peg Entry Cancelled",
+                    message=f"Exchange: {api_key_record.exchange.capitalize()}\nPair: {symbol}\nOrder ID: {specific_oid}\nSmart Peg Entry stopped.",
+                    event_type="order_cancelled",
+                    severity="warning",
+                    meta={"symbol": symbol, "order_id": specific_oid, "exchange": api_key_record.exchange, "order_type": "smart_peg"},
+                )
                 return {
                     "success": True,
                     "order_id": specific_oid,
@@ -2902,6 +2995,14 @@ class ManualTradeService:
                         pass
                 await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id, chase_id=specific_oid)
                 ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+                await _emit_manual_trade_in_app(
+                    user_id=user_id,
+                    title="Smart Chase SL Cancelled",
+                    message=f"Exchange: {api_key_record.exchange.capitalize()}\nPair: {symbol}\nOrder ID: {specific_oid}\nSmart Chase SL stopped.",
+                    event_type="order_cancelled",
+                    severity="warning",
+                    meta={"symbol": symbol, "order_id": specific_oid, "exchange": api_key_record.exchange, "order_type": "smart_chase"},
+                )
                 return {
                     "success": True,
                     "order_id": specific_oid,
@@ -2960,6 +3061,14 @@ class ManualTradeService:
                 pass
 
             ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+            await _emit_manual_trade_in_app(
+                user_id=user_id,
+                title="Manual Order Cancelled",
+                message=f"Exchange: {api_key_record.exchange.capitalize()}\nPair: {symbol}\nOrder ID: {specific_oid}\nOrder cancelled successfully.",
+                event_type="order_cancelled",
+                severity="warning",
+                meta={"symbol": symbol, "order_id": specific_oid, "exchange": api_key_record.exchange},
+            )
             return {
                 "success": True,
                 "order_id": specific_oid,
@@ -2970,6 +3079,7 @@ class ManualTradeService:
         except HTTPException:
             raise
         except Exception as e:
+            await _maybe_emit_api_health_alert(user_id, api_key_record.exchange, e)
             logger.error(f"Error cancelling order {specific_oid} ({symbol}): {e}")
             raise HTTPException(status_code=400, detail=f"Failed to cancel order: {str(e)}")
 
@@ -3072,6 +3182,14 @@ class ManualTradeService:
 
             ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
             total = cancelled_open_orders + stopped_pegs + stopped_chases + cancelled_brackets
+            await _emit_manual_trade_in_app(
+                user_id=user_id,
+                title="All Manual Orders Cancelled",
+                message=f"Exchange: {api_key_record.exchange.capitalize()}\nPair: {symbol}\nCleared Count: {total}\nAll open orders & brackets cancelled.",
+                event_type="orders_cancelled_all",
+                severity="warning",
+                meta={"symbol": symbol, "exchange": api_key_record.exchange, "cleared_count": total},
+            )
             return {
                 "success": True,
                 "symbol": symbol,
@@ -3082,6 +3200,7 @@ class ManualTradeService:
         except HTTPException:
             raise
         except Exception as e:
+            await _maybe_emit_api_health_alert(user_id, api_key_record.exchange, e)
             logger.error(f"Error cancelling all orders ({symbol}): {e}")
             raise HTTPException(status_code=400, detail=f"Failed to cancel all orders: {str(e)}")
 
@@ -3203,6 +3322,14 @@ class ManualTradeService:
                 res = await exchange.create_market_order(symbol, 'sell', safe_amt)
 
                 ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+                await _emit_manual_trade_in_app(
+                    user_id=user_id,
+                    title="Spot Position Closed (Market)",
+                    message=f"Exchange: {api_key_record.exchange.capitalize()}\nPair: {symbol}\nSide: SELL\nClosed Amount: {safe_amt} {meta.get('base') or ''}".strip(),
+                    event_type="position_closed",
+                    severity="info",
+                    meta={"symbol": symbol, "exchange": api_key_record.exchange, "side": "sell", "amount": safe_amt, "order_id": (res or {}).get('id')},
+                )
                 return {
                     "success": True,
                     "symbol": symbol,
@@ -3215,6 +3342,7 @@ class ManualTradeService:
         except HTTPException:
             raise
         except Exception as e:
+            await _maybe_emit_api_health_alert(user_id, api_key_record.exchange, e)
             logger.error(f"Error closing position ({symbol}): {e}")
             raise HTTPException(status_code=400, detail=f"Failed to close position: {str(e)}")
 

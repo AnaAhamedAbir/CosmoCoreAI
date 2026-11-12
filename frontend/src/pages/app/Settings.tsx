@@ -6,7 +6,13 @@ import { useTheme } from '@/context/ThemeContext';
 import { useToast } from '@/context/ToastContext';
 import { useSettings, ApiKeyConfig } from '@/context/SettingsContext';
 import { marketDataService } from '@/services/marketData';
-import { notificationService } from '@/services/notification';
+import { notificationService } from '@/services/notification';
+import { systemNotificationService } from '@/services/systemNotificationService';
+import {
+    SYS_NOTIF_PREFS_EVENT,
+    SYS_NOTIF_PREFS_STORAGE_KEY,
+} from '@/hooks/useSystemNotifications';
+import type { SysNotifPreferences } from '@/types/systemNotification';
 import { updateUserSecurity, uploadUserAvatar } from '@/services/auth';
 import { fetchExchangeBalance, syncExchangeBalance, ExchangeBalanceResult } from '@/services/settings';
 import { systemService } from '@/services/systemService';
@@ -155,7 +161,31 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
         alert_manual_trade: true,
     });
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
-    const [isTestingNotification, setIsTestingNotification] = useState(false);
+    const [isTestingNotification, setIsTestingNotification] = useState(false);
+
+    const [sysNotifPrefs, setSysNotifPrefs] = useState<SysNotifPreferences>(() => {
+        try {
+            const raw = localStorage.getItem(SYS_NOTIF_PREFS_STORAGE_KEY);
+            if (raw) {
+                const parsed = JSON.parse(raw) as Partial<SysNotifPreferences>;
+                return {
+                    soundEnabled: parsed.soundEnabled ?? true,
+                    toastEnabled: parsed.toastEnabled ?? true,
+                    desktopPushEnabled: parsed.desktopPushEnabled ?? false,
+                    muteLowImpactNews: parsed.muteLowImpactNews ?? false,
+                };
+            }
+        } catch {
+            // ignore storage read error
+        }
+        return {
+            soundEnabled: true,
+            toastEnabled: true,
+            desktopPushEnabled: false,
+            muteLowImpactNews: false,
+        };
+    });
+    const [isSavingSysNotifPrefs, setIsSavingSysNotifPrefs] = useState(false);
 
     // Auto-Archiver State
     const [isAutoArchiverEnabled, setIsAutoArchiverEnabled] = useState(false);
@@ -250,7 +280,38 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
             .catch(console.error);
     }, []);
 
-    // Security State
+    // Security State
+    useEffect(() => {
+        systemNotificationService.getPreferences()
+            .then(data => {
+                if (data) {
+                    const merged: SysNotifPreferences = {
+                        soundEnabled: data.soundEnabled ?? true,
+                        toastEnabled: data.toastEnabled ?? true,
+                        desktopPushEnabled: data.desktopPushEnabled ?? false,
+                        muteLowImpactNews: data.muteLowImpactNews ?? false,
+                    };
+                    setSysNotifPrefs(merged);
+                    try {
+                        localStorage.setItem(SYS_NOTIF_PREFS_STORAGE_KEY, JSON.stringify(merged));
+                    } catch {
+                        // ignore storage quota error
+                    }
+                }
+            })
+            .catch(() => {
+                // Keep local preferences if endpoint fails
+            });
+
+        const handlePrefsSync = (e: Event) => {
+            const custom = e as CustomEvent<SysNotifPreferences>;
+            if (custom.detail) {
+                setSysNotifPrefs(custom.detail);
+            }
+        };
+        window.addEventListener(SYS_NOTIF_PREFS_EVENT, handlePrefsSync);
+        return () => window.removeEventListener(SYS_NOTIF_PREFS_EVENT, handlePrefsSync);
+    }, []);
     const [clientIP, setClientIP] = useState<string>('');
     const [allowedIPs, setAllowedIPs] = useState<string[]>([]);
     const [isWhitelistEnabled, setIsWhitelistEnabled] = useState(false);
@@ -355,6 +416,48 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
         }
     };
 
+    const handleToggleSysNotifPref = async (key: keyof SysNotifPreferences, checked: boolean) => {
+        if (
+            key === 'desktopPushEnabled' &&
+            checked &&
+            typeof window !== 'undefined' &&
+            'Notification' in window &&
+            Notification.permission === 'default'
+        ) {
+            try {
+                await window.Notification?.requestPermission?.();
+            } catch {
+                // ignore permission prompt errors
+            }
+        }
+
+        const previous = sysNotifPrefs;
+        const next: SysNotifPreferences = { ...sysNotifPrefs, [key]: checked };
+        setSysNotifPrefs(next);
+
+        try {
+            localStorage.setItem(SYS_NOTIF_PREFS_STORAGE_KEY, JSON.stringify(next));
+            window.dispatchEvent(new CustomEvent<SysNotifPreferences>(SYS_NOTIF_PREFS_EVENT, { detail: next }));
+        } catch {
+            // ignore storage errors
+        }
+
+        setIsSavingSysNotifPrefs(true);
+        try {
+            const saved = await systemNotificationService.updatePreferences(next);
+            if (saved) {
+                setSysNotifPrefs(saved);
+                localStorage.setItem(SYS_NOTIF_PREFS_STORAGE_KEY, JSON.stringify(saved));
+            }
+            showToast('In-app SYS NOTIFY preferences updated', 'success');
+        } catch {
+            setSysNotifPrefs(previous);
+            showToast('Failed to update SYS NOTIFY preferences.', 'error');
+        } finally {
+            setIsSavingSysNotifPrefs(false);
+        }
+    };
+
     const handleToggleSetting = async (key: string, checked: boolean) => {
         const newSettings = { ...notificationSettings, [key]: checked };
         setNotificationSettings(newSettings);
@@ -767,6 +870,69 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
                 </Card>
             )}
 
+            {/* In-App SYS NOTIFY Preferences */}
+            {activeTab === 'notifications' && (
+                <Card className="mt-6">
+                    <div className="flex items-center justify-between gap-2 mb-4 border-b border-brand-border-light dark:border-[#1A1A1A] pb-3">
+                        <div>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">In-App SYS NOTIFY Preferences</h3>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                                Control real-time WebSocket chimes, floating popups, desktop push, and news filtering.
+                            </p>
+                        </div>
+                        {isSavingSysNotifPrefs && (
+                            <span className="text-xs text-cyan-500 font-mono">Syncing...</span>
+                        )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                        {[
+                            {
+                                key: 'soundEnabled' as const,
+                                label: '🔊 Sound Chime',
+                                desc: 'Play synthesized alert chime on incoming events',
+                            },
+                            {
+                                key: 'toastEnabled' as const,
+                                label: '✨ Live Toasts',
+                                desc: 'Show floating cyberpunk toast popups',
+                            },
+                            {
+                                key: 'desktopPushEnabled' as const,
+                                label: '🖥️ Desktop Browser Push',
+                                desc: 'Native OS notifications when hidden or urgent',
+                            },
+                            {
+                                key: 'muteLowImpactNews' as const,
+                                label: '📰 Mute Low-Impact News',
+                                desc: 'Only pop high-impact sentiment news',
+                            },
+                        ].map(({ key, label, desc }) => (
+                            <label
+                                key={key}
+                                className={`flex flex-col gap-1 p-3 rounded-lg border cursor-pointer transition-all ${
+                                    sysNotifPrefs[key]
+                                        ? 'border-cyan-500/60 bg-cyan-500/10'
+                                        : 'border-gray-200 dark:border-[#1A1A1A] hover:border-cyan-500/40'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="text-sm font-medium text-slate-900 dark:text-white">
+                                        {label}
+                                    </span>
+                                    <input
+                                        type="checkbox"
+                                        checked={sysNotifPrefs[key]}
+                                        onChange={(e) => void handleToggleSysNotifPref(key, e.target.checked)}
+                                        className="w-3.5 h-3.5 text-cyan-500 rounded"
+                                    />
+                                </div>
+                                <span className="text-xs text-gray-500">{desc}</span>
+                            </label>
+                        ))}
+                    </div>
+                </Card>
+            )}
+
             {/* System Data Management Section */}
             {activeTab === 'data' && (
                 <Card>

@@ -346,11 +346,46 @@ class NewsService:
                         except Exception:
                             pass  # No image, that's fine
 
+                        # Emit global in-app sentiment_news notification once per article
+                        try:
+                            from app.services.system_notification_service import SystemNotificationService
+                            news_dedup = f"news:{hashlib.sha256(r.link.encode('utf-8')).hexdigest()[:24]}"
+                            if r.impact_level == 'HIGH':
+                                clean_verdict = html.unescape(str(ai_data.get("trading_verdict", "") or "")).strip()
+                                msg_parts = [f"Source: {r.source} | Category: {r.category} | Impact: {r.impact_level} ({r.impact_score}/100)"]
+                                if clean_verdict:
+                                    msg_parts.append(f"Signal: {clean_verdict}")
+                                in_app_msg = "\n".join(msg_parts)
+                                in_app_sev = "warning"
+                            else:
+                                in_app_msg = f"Source: {r.source} | Category: {r.category} | Impact: {r.impact_level} ({r.impact_score}/100)"
+                                in_app_sev = "info"
+
+                            await SystemNotificationService.emit(
+                                user_id=None,
+                                category="sentiment_news",
+                                title=r.title,
+                                message=in_app_msg,
+                                event_type="market_news",
+                                severity=in_app_sev,
+                                dedup_key=news_dedup,
+                                meta={
+                                    "url": r.link,
+                                    "source": r.source,
+                                    "category": r.category,
+                                    "impact_level": r.impact_level,
+                                    "impact_score": r.impact_score,
+                                    "image_url": og_image_url,
+                                },
+                            )
+                        except Exception as in_app_news_err:
+                            logger.debug(f"[SysNotif] Background news emit skipped (non-fatal): {in_app_news_err}")
+
                         for setting in active_notifications:
                             if voice_path:
-                                await NotificationService.send_voice(db, setting.user_id, voice_path, caption=msg, parse_mode="HTML")
+                                await NotificationService.send_voice(db, setting.user_id, voice_path, caption=msg, parse_mode="HTML", skip_in_app=True)
                             else:
-                                await NotificationService.send_message(db, setting.user_id, msg, parse_mode="HTML")
+                                await NotificationService.send_message(db, setting.user_id, msg, parse_mode="HTML", skip_in_app=True)
 
                             # Send article image if found, else send plain URL for Telegram preview
                             if og_image_url:
@@ -581,6 +616,30 @@ class NewsService:
             
             # Cache the result
             await self._mark_news_as_processed(news_hash, news_item)
+
+            # Emit global in-app sentiment_news notification (deduplicated across RSS + background scraper)
+            try:
+                from app.services.system_notification_service import SystemNotificationService
+                rss_dedup = f"news:{hashlib.sha256((link or title).encode('utf-8')).hexdigest()[:24]}"
+                await SystemNotificationService.emit(
+                    user_id=None,
+                    category="sentiment_news",
+                    title=title_en or title,
+                    message=f"Source: {source} | Sentiment: {label} ({score:.1f}/100) | Impact: {impact_data['level']} ({impact_data['score']}/100)",
+                    event_type="market_news",
+                    severity="warning" if impact_data['level'] == 'HIGH' else "info",
+                    dedup_key=rss_dedup,
+                    meta={
+                        "url": link,
+                        "source": source,
+                        "sentiment": label,
+                        "score": score,
+                        "impact_level": impact_data['level'],
+                        "impact_score": impact_data['score'],
+                    },
+                )
+            except Exception as rss_notif_err:
+                logger.debug(f"[SysNotif] RSS news emit skipped (non-fatal): {rss_notif_err}")
             
             results.append(news_item)
             

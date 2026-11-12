@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, Play, Square, Settings, Database, Activity, Terminal, CheckCircle2, XCircle, Loader2, Trash2, Zap, Layers, Check, Target, Cpu } from 'lucide-react';
+import { BrainCircuit, Play, Square, Settings, Database, Activity, Terminal, CheckCircle2, XCircle, Loader2, Trash2, Zap, Layers, Check, Target, Cpu, GitCompare, Bookmark, Rocket } from 'lucide-react';
 import { mlTrainingService, TrainingJob } from '@/services/mlTrainingService';
 import apiClient from '@/services/client';
 import TargetSelection from '@/components/ml/TargetSelection';
@@ -32,6 +32,11 @@ import { AdvancedHybridCollectorPanel } from '@/components/ml/AdvancedHybridColl
 import { FeatureCorrelationModal } from '@/components/ml/FeatureCorrelationModal';
 import { CustomFeatureBuilder } from '@/components/ml/CustomFeatureBuilder';
 import { ShapValueModal } from '@/components/ml/ShapValueModal';
+import { WorkerQueueEtaBanner } from '@/components/ml/WorkerQueueEtaBanner';
+import { PreFlightHealthCard } from '@/components/ml/PreFlightHealthCard';
+import { ModelComparisonModal } from '@/components/ml/ModelComparisonModal';
+import { TrainingPresetsModal } from '@/components/ml/TrainingPresetsModal';
+import { OneClickDeployModal } from '@/components/ml/OneClickDeployModal';
 
 import { mlModelsService } from '@/services/mlModelsService';
 
@@ -326,6 +331,63 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
     const [mergedFile, setMergedFile] = useState<File | null>(null);
     const [isMerging, setIsMerging] = useState(false);
     const [mergedResult, setMergedResult] = useState<any>(null);
+
+    // Phase 3 Studio Pro Tools Modals
+    const [showCompareModal, setShowCompareModal] = useState(false);
+    const [showPresetsModal, setShowPresetsModal] = useState(false);
+    const [showDeployModal, setShowDeployModal] = useState(false);
+    const [deployModelId, setDeployModelId] = useState<string | null>(null);
+
+    const activeDatasetFile =
+        dataSource === 'l2_orderbook'
+            ? selectedL2File
+            : dataSource === 'hybrid_deep'
+              ? selectedHybridFile
+              : dataSource === 'historical_trades'
+                ? selectedTradeFile
+                : null;
+
+    const allStudioFeatures = [
+        ...selectedIndicators,
+        ...selectedL2Features,
+        ...selectedTradeFeatures,
+        ...selectedPlpFeatures,
+        ...selectedAltFeatures,
+        ...selectedGodModeFeatures,
+    ];
+
+    const handleApplyPresetOrCloneConfig = (snapshot: {
+        symbol: string;
+        timeframe: string;
+        algorithm: string;
+        config: Record<string, any>;
+    }) => {
+        if (snapshot.symbol) setSymbol(snapshot.symbol);
+        if (snapshot.timeframe) setTimeframe(snapshot.timeframe);
+        if (snapshot.algorithm) setAlgorithm(snapshot.algorithm);
+        const cfg = snapshot.config || {};
+        if (cfg.dataset_type) setDataSource(cfg.dataset_type);
+        if (cfg.exchange) setExchange(cfg.exchange);
+        if (typeof cfg.epochs === 'number') setEpochs(cfg.epochs);
+        if (typeof cfg.learning_rate === 'number') setLearningRate(cfg.learning_rate);
+        if (typeof cfg.max_depth === 'number') setMaxDepth(cfg.max_depth);
+        if (cfg.prediction_target) setPredictionTarget(cfg.prediction_target);
+        if (cfg.eval_metric) setEvalMetric(cfg.eval_metric);
+        if (cfg.split_method) setSplitMethod(cfg.split_method);
+        if (typeof cfg.is_auto_retrain === 'boolean') setIsAutoRetrain(cfg.is_auto_retrain);
+        if (typeof cfg.retrain_interval_hours === 'number') setRetrainInterval(cfg.retrain_interval_hours);
+        if (Array.isArray(cfg.indicators)) setSelectedIndicators(cfg.indicators);
+        if (Array.isArray(cfg.l2_features)) setSelectedL2Features(cfg.l2_features);
+        if (Array.isArray(cfg.trade_features)) {
+            setSelectedTradeFeatures(cfg.trade_features);
+            setSelectedHybridDeepTradeFeatures(cfg.trade_features);
+        }
+        if (Array.isArray(cfg.hybrid_deep_trade_features)) {
+            setSelectedHybridDeepTradeFeatures(cfg.hybrid_deep_trade_features);
+        }
+        if (Array.isArray(cfg.plp_features)) setSelectedPlpFeatures(cfg.plp_features);
+        if (Array.isArray(cfg.alt_features)) setSelectedAltFeatures(cfg.alt_features);
+    };
 
     React.useEffect(() => {
         const isRlAlgo = ['MuZero', 'Meta-RL', 'HRL', 'MAPPO'].includes(algorithm);
@@ -1021,21 +1083,52 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-brand-primary/20 blur-[120px] rounded-full pointer-events-none"></div>
             <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600/20 blur-[120px] rounded-full pointer-events-none"></div>
 
-            <header className="flex items-center gap-4 z-10 px-2 mt-2">
-                <h2 className="text-xl font-black text-white flex items-center gap-2">
-                    <BrainCircuit className="w-5 h-5 text-cyan-400" />
-                    {isRetrainMode ? "Model Retraining Studio" : "Machine Learning Engine Core"}
-                    {isRetrainMode && <div className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-ping ml-2"></div>}
-                </h2>
-                <div className="w-px h-4 bg-white/20"></div>
-                <div className="text-slate-400 text-xs font-medium tracking-wide flex items-center gap-2">
-                    {isRetrainMode 
-                        ? (
-                            <>
-                                Fine-tuning: <span className="text-purple-400 font-bold bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/30">{retrainModelName || retrainModelId}</span> Add new features to increase intelligence.
-                            </>
-                        )
-                        : `Advanced L2/OHLCV Machine Learning Synchronization Studio.`}
+            <header className="flex flex-wrap items-center justify-between gap-3 z-20 px-2 mt-2 lg:pr-56">
+                <div className="flex items-center gap-4 min-w-0">
+                    <h2 className="text-xl font-black text-white flex items-center gap-2 shrink-0">
+                        <BrainCircuit className="w-5 h-5 text-cyan-400" />
+                        {isRetrainMode ? "Model Retraining Studio" : "Machine Learning Engine Core"}
+                        {isRetrainMode && <div className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-ping ml-2"></div>}
+                    </h2>
+                    <div className="w-px h-4 bg-white/20 hidden sm:block"></div>
+                    <div className="text-slate-400 text-xs font-medium tracking-wide hidden xl:flex items-center gap-2 truncate">
+                        {isRetrainMode 
+                            ? (
+                                <>
+                                    Fine-tuning: <span className="text-purple-400 font-bold bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/30">{retrainModelName || retrainModelId}</span> Add new features to increase intelligence.
+                                </>
+                            )
+                            : `Advanced L2/OHLCV Machine Learning Synchronization Studio.`}
+                    </div>
+                </div>
+
+                {/* Phase 3 Studio Pro Action Bar */}
+                <div className="flex flex-wrap items-center gap-2">
+                    <WorkerQueueEtaBanner isTraining={isTraining} />
+                    <button
+                        type="button"
+                        onClick={() => setShowCompareModal(true)}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition-all"
+                    >
+                        <GitCompare className="w-3.5 h-3.5" /> Compare & Replay
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setShowPresetsModal(true)}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 transition-all"
+                    >
+                        <Bookmark className="w-3.5 h-3.5" /> Presets / Clone
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setDeployModelId(currentJob?.output_model_id || null);
+                            setShowDeployModal(true);
+                        }}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/35 shadow-[0_0_12px_rgba(16,185,129,0.2)] transition-all"
+                    >
+                        <Rocket className="w-3.5 h-3.5" /> 1-Click Deploy
+                    </button>
                 </div>
             </header>
 
@@ -1725,6 +1818,17 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     onOpenCorrelation={() => setShowCorrelationModal(true)} 
                                     onOpenBuilder={() => setShowFeatureBuilder(true)} 
                                     onAutoMLSelect={handleAutoMLSelect} 
+                                />
+
+                                <PreFlightHealthCard
+                                    symbol={symbol}
+                                    timeframe={timeframe}
+                                    dataSource={dataSource}
+                                    exchange={exchange}
+                                    datasetFile={activeDatasetFile}
+                                    features={allStudioFeatures}
+                                    predictionTarget={predictionTarget}
+                                    disabled={isTraining}
                                 />
 
                         <div>
@@ -3251,8 +3355,20 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     <StatusIcon className={`w-4 h-4 ${currentJob.status === 'RUNNING' ? 'animate-spin' : ''}`} />
                                     SYSTEM_STATUS: {statusLabel}
                                 </div>
-                                <div>
-                                    {currentJob.progress.toFixed(0)}%
+                                <div className="flex items-center gap-3">
+                                    {currentJob.status === 'COMPLETED' && currentJob.output_model_id && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setDeployModelId(currentJob.output_model_id!);
+                                                setShowDeployModal(true);
+                                            }}
+                                            className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-400/40 font-sans text-xs font-bold flex items-center gap-1.5 transition-all"
+                                        >
+                                            <Rocket className="w-3.5 h-3.5" /> 1-Click Deploy
+                                        </button>
+                                    )}
+                                    <span>{currentJob.progress.toFixed(0)}%</span>
                                 </div>
                             </div>
                         );
@@ -3298,6 +3414,61 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                 isOpen={showFeatureBuilder}
                 onClose={() => setShowFeatureBuilder(false)}
                 onAddCustomFeature={handleAddCustomFeature}
+            />
+
+            <ModelComparisonModal
+                isOpen={showCompareModal}
+                onClose={() => setShowCompareModal(false)}
+                onOpenDeploy={(mid) => {
+                    setShowCompareModal(false);
+                    setDeployModelId(mid);
+                    setShowDeployModal(true);
+                }}
+                onRetrainSuccess={async (jobId) => {
+                    setShowCompareModal(false);
+                    try {
+                        const job = await mlTrainingService.getJobStatus(jobId);
+                        setCurrentJob(job);
+                        setShowTerminal(true);
+                    } catch {
+                        // Ignore if polling handles later
+                    }
+                }}
+            />
+
+            <TrainingPresetsModal
+                isOpen={showPresetsModal}
+                onClose={() => setShowPresetsModal(false)}
+                currentConfig={{
+                    symbol,
+                    timeframe,
+                    algorithm,
+                    dataSource,
+                    config: {
+                        dataset_type: dataSource,
+                        exchange,
+                        epochs,
+                        learning_rate: learningRate,
+                        max_depth: maxDepth,
+                        prediction_target: predictionTarget,
+                        eval_metric: evalMetric,
+                        split_method: splitMethod,
+                        is_auto_retrain: isAutoRetrain,
+                        retrain_interval_hours: retrainInterval,
+                        indicators: selectedIndicators,
+                        l2_features: selectedL2Features,
+                        trade_features: selectedTradeFeatures,
+                        plp_features: selectedPlpFeatures,
+                        alt_features: selectedAltFeatures,
+                    },
+                }}
+                onApplyConfig={handleApplyPresetOrCloneConfig}
+            />
+
+            <OneClickDeployModal
+                isOpen={showDeployModal}
+                onClose={() => setShowDeployModal(false)}
+                initialModelId={deployModelId}
             />
         </div>
     );

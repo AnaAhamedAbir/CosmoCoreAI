@@ -37,6 +37,27 @@ async def merge_historical_dataset(
     try:
         # Call the merger service
         result = DatasetMergerService.merge_datasets(symbol, temp_file_path, db, current_user.id)
+        try:
+            from app.services.system_notification_service import SystemNotificationService
+
+            total_rows = result.get("total_rows") if isinstance(result, dict) else None
+            merged_file = result.get("merged_filename") if isinstance(result, dict) else None
+            rows_str = f"{int(total_rows):,}" if total_rows is not None else "N/A"
+            SystemNotificationService.emit_sync(
+                user_id=current_user.id,
+                category="ml_training",
+                title=f"Dataset Merged: {symbol}",
+                message=f"Rows: {rows_str}" + (f" | File: {merged_file}" if merged_file else ""),
+                event_type="dataset_merged",
+                severity="success",
+                meta={
+                    "symbol": symbol,
+                    "total_rows": total_rows,
+                    "merged_filename": merged_file,
+                },
+            )
+        except Exception:
+            pass
         
         return result
 
@@ -45,4 +66,18 @@ async def merge_historical_dataset(
     except Exception as e:
         from app.services.notification import NotificationService
         NotificationService.broadcast_admin_alert_sync(db, f"❌ *Dataset Merger Failed*\nSymbol: {symbol}\nError: {e}", parse_mode="Markdown")
+        try:
+            from app.services.system_notification_service import SystemNotificationService
+
+            SystemNotificationService.emit_sync(
+                user_id=current_user.id,
+                category="ml_training",
+                title="Dataset Merge Failed",
+                message=f"Symbol: {symbol} | Error: {str(e)[:250]}",
+                event_type="dataset_merge_failed",
+                severity="critical",
+                meta={"symbol": symbol, "error": str(e)[:250]},
+            )
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=f"Merge failed: {str(e)}")

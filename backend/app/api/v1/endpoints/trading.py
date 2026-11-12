@@ -15,6 +15,33 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+async def _emit_trading_in_app(
+    user_id: Optional[int],
+    title: str,
+    message: str,
+    event_type: str,
+    severity: str = "info",
+    meta: Optional[dict] = None,
+):
+    """Safely emits a manual_trade in-app notification without affecting trading execution."""
+    if not user_id:
+        return
+    try:
+        from app.services.system_notification_service import SystemNotificationService
+
+        await SystemNotificationService.emit(
+            user_id=user_id,
+            category="manual_trade",
+            title=title,
+            message=message,
+            event_type=event_type,
+            severity=severity,
+            meta=meta or {},
+        )
+    except Exception as notify_err:
+        logger.debug(f"[SysNotif] trading endpoint emit skipped (non-fatal): {notify_err}")
+
+
 class AttachedTPConfig(BaseModel):
     enabled: bool
     mode: str  # 'percentage' or 'price'
@@ -1138,6 +1165,14 @@ async def place_drag_bracket_endpoint(
             msg = f"🎯 Take Profit placed at {final_price} for {final_amount} {req.symbol}"
 
         manual_trade_service.invalidate_open_orders_cache(api_key_record.id, req.symbol)
+        await _emit_trading_in_app(
+            user_id=current_user.id,
+            title=f"Drag {bracket_type.upper()} Placed: {req.symbol}",
+            message=msg,
+            event_type="bracket_placed",
+            severity="info",
+            meta={"symbol": req.symbol, "price": float(final_price)},
+        )
 
         return {
             "status": "success",
@@ -1357,6 +1392,14 @@ async def stop_smart_chase_endpoint(
 
         total_stopped = stopped_chases + stopped_pegs + cancelled_monitors
         if total_stopped > 0:
+            await _emit_trading_in_app(
+                user_id=current_user.id,
+                title=f"Smart Chase / SL Monitor Stopped: {req.symbol}",
+                message=f"Pair: {req.symbol}\nStopped Chases: {stopped_chases} | Entry Pegs: {stopped_pegs} | Software SL Monitors: {cancelled_monitors}",
+                event_type="order_cancelled",
+                severity="warning",
+                meta={"symbol": req.symbol},
+            )
             return {
                 "status": "success",
                 "stopped_chases": stopped_chases,
@@ -1390,6 +1433,14 @@ async def stop_smart_peg_endpoint(
             peg_id=req.sl_id
         )
         if stopped_pegs > 0:
+            await _emit_trading_in_app(
+                user_id=current_user.id,
+                title=f"Smart Peg Entry Stopped: {req.symbol}",
+                message=f"Pair: {req.symbol}\nStopped {stopped_pegs} active Smart Peg Entry task(s).",
+                event_type="order_cancelled",
+                severity="warning",
+                meta={"symbol": req.symbol},
+            )
             return {
                 "status": "success",
                 "stopped_pegs": stopped_pegs,
@@ -1612,6 +1663,14 @@ async def execute_sor_order(
             )
             task_ids.append(task.id)
             
+        await _emit_trading_in_app(
+            user_id=current_user.id,
+            title=f"SOR Order Scheduled: {request.symbol}",
+            message=f"Exchange: {request.exchange_id}\nStrategy: {request.strategy} | Side: {request.side.upper()} | Total: {request.amount} ({len(task_ids)} child orders)",
+            event_type="order_placed",
+            severity="info",
+            meta={"symbol": request.symbol, "exchange": request.exchange_id, "side": request.side},
+        )
         return {
             "message": f"Successfully scheduled {len(task_ids)} child orders.",
             "strategy": request.strategy,

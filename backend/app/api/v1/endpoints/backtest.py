@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.security import OAuth2PasswordBearer
 from celery.result import AsyncResult
-from typing import List
+from sqlalchemy.orm import Session
+from typing import List, Optional
 import os
 from app import models, schemas
 from app.api import deps
@@ -11,13 +13,39 @@ from app import utils
 
 router = APIRouter()
 
+_oauth2_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+
+def get_optional_user_id(
+    db: Session = Depends(deps.get_db),
+    token: Optional[str] = Depends(_oauth2_optional),
+) -> Optional[int]:
+    """Resolve authenticated user_id if a valid Bearer token is present, otherwise return None."""
+    if not token:
+        return None
+    try:
+        from app.core import security
+        from app import crud
+
+        payload = security.verify_token(token)
+        email = payload.get("sub") if payload else None
+        if not email:
+            return None
+        user = crud.get_user_by_email(db, email=email)
+        return user.id if user else None
+    except Exception:
+        return None
+
+
 REPORTS_DIR = "app/reports"
 DATA_FEED_DIR = "app/data_feeds"
 
 @router.post("/run")
 def run_backtest(
-    request: schemas.BacktestRequest
+    request: schemas.BacktestRequest,
+    user_id: Optional[int] = Depends(get_optional_user_id),
 ):
+    uid = user_id if isinstance(user_id, int) else None
     task = run_backtest_task.apply_async(kwargs=dict(
         symbol=request.symbol,
         timeframe=request.timeframe,
@@ -34,15 +62,18 @@ def run_backtest(
         stop_loss=request.stop_loss,
         take_profit=request.take_profit,
         trailing_stop=request.trailing_stop,
-        indicator_id=request.indicator_id # ✅ Pass Indicator ID
+        indicator_id=request.indicator_id, # ✅ Pass Indicator ID
+        user_id=uid,
     ), queue="heavy")
     return {"task_id": task.id, "status": "Processing"}
 
 
 @router.post("/walk-forward")
 def run_walk_forward(
-    request: schemas.WalkForwardRequest
+    request: schemas.WalkForwardRequest,
+    user_id: Optional[int] = Depends(get_optional_user_id),
 ):
+    uid = user_id if isinstance(user_id, int) else None
     # প্যারামিটার ডিকশনারিতে কনভার্ট করা
     params_dict = {}
     for k, v in request.params.items():
@@ -66,15 +97,18 @@ def run_walk_forward(
         slippage=request.slippage,
         leverage=request.leverage,
         opt_target=getattr(request, 'opt_target', 'profit'), # ✅ Pass
-        min_trades=getattr(request, 'min_trades', 2)  # ✅ ফিক্স: ডিফল্ট ৫ থেকে কমিয়ে ২ করা হলো
+        min_trades=getattr(request, 'min_trades', 2),  # ✅ ফিক্স: ডিফল্ট ৫ থেকে কমিয়ে ২ করা হলো
+        user_id=uid,
     ), queue="heavy")
     
     return {"task_id": task.id, "status": "Processing WFA"}
 
 @router.post("/batch")
 def run_batch_backtest(
-    request: schemas.BatchBacktestRequest
+    request: schemas.BatchBacktestRequest,
+    user_id: Optional[int] = Depends(get_optional_user_id),
 ):
+    uid = user_id if isinstance(user_id, int) else None
     task = run_batch_backtest_task.apply_async(kwargs=dict(
         symbol=request.symbol,
         timeframe=request.timeframe,
@@ -90,16 +124,18 @@ def run_batch_backtest(
         custom_data_file=getattr(request, 'custom_data_file', None),
         
         commission=request.commission,
-        slippage=request.slippage
+        slippage=request.slippage,
+        user_id=uid,
     ), queue="heavy")
     return {"task_id": task.id, "status": "Processing"}
 
 # Keeping the redundant synchronous-looking endpoint name from main.py if needed, but mapped to batch task
 @router.post("/batch-run")
 def run_batch_backtest_alias(
-    request: schemas.BatchBacktestRequest
+    request: schemas.BatchBacktestRequest,
+    user_id: Optional[int] = Depends(get_optional_user_id),
 ):
-    return run_batch_backtest(request)
+    return run_batch_backtest(request, user_id=user_id)
 
 @router.get("/status/{task_id}")
 def get_backtest_status(task_id: str):
@@ -128,8 +164,10 @@ def get_backtest_status(task_id: str):
 
 @router.post("/optimize")
 def run_optimization(
-    request: schemas.OptimizationRequest
+    request: schemas.OptimizationRequest,
+    user_id: Optional[int] = Depends(get_optional_user_id),
 ):
+    uid = user_id if isinstance(user_id, int) else None
     params_dict = {}
     for k, v in request.params.items():
         params_dict[k] = v.model_dump() if hasattr(v, 'model_dump') else v
@@ -147,7 +185,8 @@ def run_optimization(
         generations=request.generations,
         commission=request.commission,
         slippage=request.slippage,
-        leverage=request.leverage # ✅ Pass Leverage
+        leverage=request.leverage, # ✅ Pass Leverage
+        user_id=uid,
     ), queue="heavy")
     
     return {"task_id": task.id, "status": "Processing"}

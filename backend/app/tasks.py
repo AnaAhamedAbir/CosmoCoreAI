@@ -159,8 +159,34 @@ def print_pretty_result(result):
     print(f"⚖️ Sharpe Ratio  : {metrics.get('sharpe', 0)}")
     print("="*50 + "\n")
 
+def _emit_backtest_notification(
+    user_id,
+    title: str,
+    message: str,
+    success: bool,
+    meta: dict = None,
+    dedup_key: str = None,
+):
+    """Best-effort in-app market_alerts emit for backtest/optimization/WFA/batch tasks."""
+    try:
+        from app.services.system_notification_service import SystemNotificationService
+
+        SystemNotificationService.emit_sync(
+            user_id=user_id,
+            category="market_alerts",
+            title=title,
+            message=message,
+            event_type="backtest_done" if success else "backtest_failed",
+            severity="success" if success else "critical",
+            meta=meta or {},
+            dedup_key=dedup_key,
+        )
+    except Exception:
+        pass
+
+
 @celery_app.task(bind=True)
-def run_backtest_task(self, symbol: str, timeframe: str, strategy_name: str, initial_cash: float, params: dict, start_date: str = None, end_date: str = None, custom_data_file: str = None, commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0, secondary_timeframe: str = None, stop_loss: float = 0.0, take_profit: float = 0.0, trailing_stop: float = 0.0, indicator_id: int = None):
+def run_backtest_task(self, symbol: str, timeframe: str, strategy_name: str, initial_cash: float, params: dict, start_date: str = None, end_date: str = None, custom_data_file: str = None, commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0, secondary_timeframe: str = None, stop_loss: float = 0.0, take_profit: float = 0.0, trailing_stop: float = 0.0, indicator_id: int = None, user_id: int = None):
     from app.services.backtest_engine import BacktestEngine
     from app.services.report_generator import generate_report
     db = SessionLocal()
@@ -207,19 +233,41 @@ def run_backtest_task(self, symbol: str, timeframe: str, strategy_name: str, ini
 
         print_pretty_result(result)
         publish_task_status('BACKTEST', self.request.id, 'completed', 100, result)
+        is_ok = result.get("status") == "success"
+        profit_pct = result.get("profit_percent", 0)
+        _emit_backtest_notification(
+            user_id=user_id,
+            title=f"Backtest {'Completed' if is_ok else 'Failed'}: {symbol}",
+            message=(
+                f"Strategy: {strategy_name} ({timeframe}) | Return: {profit_pct}%"
+                if is_ok
+                else f"Strategy: {strategy_name} ({timeframe}) | Error: {result.get('message') or 'Backtest failed'}"
+            ),
+            success=is_ok,
+            meta={"task_id": self.request.id, "symbol": symbol, "timeframe": timeframe, "strategy": strategy_name},
+            dedup_key=f"bt:{self.request.id}" if self.request.id else None,
+        )
         return result
         
     except Exception as e:
         import traceback
         print(f"❌ Backtest Error Traceback:\n{traceback.format_exc()}", flush=True)
         publish_task_status('BACKTEST', self.request.id, 'failed', 0, {"error": str(e)})
+        _emit_backtest_notification(
+            user_id=user_id,
+            title=f"Backtest Failed: {symbol}",
+            message=f"Strategy: {strategy_name} ({timeframe}) | Error: {str(e)[:200]}",
+            success=False,
+            meta={"task_id": self.request.id, "symbol": symbol, "timeframe": timeframe, "strategy": strategy_name},
+            dedup_key=f"bt_fail:{self.request.id}" if self.request.id else None,
+        )
         return {"status": "error", "message": str(e)}
         
     finally:
         db.close()
 
 @celery_app.task(bind=True)
-def run_optimization_task(self, symbol: str, timeframe: str, strategy_name: str, initial_cash: float, params: dict, start_date: str = None, end_date: str = None, method="grid", population_size=50, generations=10, commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0):
+def run_optimization_task(self, symbol: str, timeframe: str, strategy_name: str, initial_cash: float, params: dict, start_date: str = None, end_date: str = None, method="grid", population_size=50, generations=10, commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0, user_id: int = None):
     from app.services.backtest_engine import BacktestEngine
     db = SessionLocal()
     engine = BacktestEngine()
@@ -287,6 +335,14 @@ def run_optimization_task(self, symbol: str, timeframe: str, strategy_name: str,
         except: pass
 
         publish_task_status('OPTIMIZE', self.request.id, 'completed', 100, results)
+        _emit_backtest_notification(
+            user_id=user_id,
+            title=f"Optimization Completed: {symbol}",
+            message=f"Strategy: {strategy_name} ({timeframe}) | Method: {method}",
+            success=True,
+            meta={"task_id": self.request.id, "symbol": symbol, "timeframe": timeframe, "strategy": strategy_name, "method": method},
+            dedup_key=f"opt:{self.request.id}" if self.request.id else None,
+        )
         return results
         
     except Exception as e:
@@ -294,6 +350,14 @@ def run_optimization_task(self, symbol: str, timeframe: str, strategy_name: str,
         import traceback
         traceback.print_exc()
         publish_task_status('OPTIMIZE', self.request.id, 'failed', 0, {"error": str(e)})
+        _emit_backtest_notification(
+            user_id=user_id,
+            title=f"Optimization Failed: {symbol}",
+            message=f"Strategy: {strategy_name} ({timeframe}) | Error: {str(e)[:200]}",
+            success=False,
+            meta={"task_id": self.request.id, "symbol": symbol, "timeframe": timeframe, "strategy": strategy_name},
+            dedup_key=f"opt_fail:{self.request.id}" if self.request.id else None,
+        )
         return {"status": "error", "message": str(e)}
         
     finally:
@@ -302,7 +366,7 @@ def run_optimization_task(self, symbol: str, timeframe: str, strategy_name: str,
 @celery_app.task(bind=True)
 def run_walk_forward_task(self, symbol, timeframe, strategy_name, initial_cash, params, start_date, end_date, 
                           train_window_days, test_window_days, method, population_size, generations, 
-                          commission, slippage, leverage, opt_target='profit', min_trades=2):
+                          commission, slippage, leverage, opt_target='profit', min_trades=2, user_id: int = None):
     
     def progress_callback(percent, meta=None):
         self.update_state(
@@ -336,21 +400,45 @@ def run_walk_forward_task(self, symbol, timeframe, strategy_name, initial_cash, 
         
         if result.get("status") == "success":
              publish_task_status('WFA', self.request.id, 'completed', 100, result)
+             _emit_backtest_notification(
+                 user_id=user_id,
+                 title=f"Walk-Forward Completed: {symbol}",
+                 message=f"Strategy: {strategy_name} ({timeframe}) | WFA completed successfully.",
+                 success=True,
+                 meta={"task_id": self.request.id, "symbol": symbol, "timeframe": timeframe, "strategy": strategy_name},
+                 dedup_key=f"wfa:{self.request.id}" if self.request.id else None,
+             )
         else:
              publish_task_status('WFA', self.request.id, 'failed', 0, result)
+             _emit_backtest_notification(
+                 user_id=user_id,
+                 title=f"Walk-Forward Failed: {symbol}",
+                 message=f"Strategy: {strategy_name} ({timeframe}) | Error: {result.get('message') or 'WFA failed'}",
+                 success=False,
+                 meta={"task_id": self.request.id, "symbol": symbol, "timeframe": timeframe, "strategy": strategy_name},
+                 dedup_key=f"wfa_fail:{self.request.id}" if self.request.id else None,
+             )
              
         return result
 
     except Exception as e:
         print(f"❌ WFA Task Error: {e}", flush=True)
         publish_task_status('WFA', self.request.id, 'failed', 0, {"error": str(e)})
+        _emit_backtest_notification(
+            user_id=user_id,
+            title=f"Walk-Forward Failed: {symbol}",
+            message=f"Strategy: {strategy_name} ({timeframe}) | Error: {str(e)[:200]}",
+            success=False,
+            meta={"task_id": self.request.id, "symbol": symbol, "timeframe": timeframe, "strategy": strategy_name},
+            dedup_key=f"wfa_fail:{self.request.id}" if self.request.id else None,
+        )
         return {"status": "error", "message": str(e)}
         
     finally:
         db.close()
 
 @celery_app.task(bind=True)
-def run_batch_backtest_task(self, symbol: str, timeframe: str, initial_cash: float, strategies: list = None, start_date: str = None, end_date: str = None, commission: float = 0.001, slippage: float = 0.0, custom_data_file: str = None):
+def run_batch_backtest_task(self, symbol: str, timeframe: str, initial_cash: float, strategies: list = None, start_date: str = None, end_date: str = None, commission: float = 0.001, slippage: float = 0.0, custom_data_file: str = None, user_id: int = None):
     from app.services.backtest_engine import BacktestEngine
     from app.strategies import STRATEGY_MAP
     db = SessionLocal()
@@ -443,6 +531,14 @@ def run_batch_backtest_task(self, symbol: str, timeframe: str, initial_cash: flo
         "errors": errors
     }
     publish_task_status('BATCH', self.request.id, 'completed', 100, final_result)
+    _emit_backtest_notification(
+        user_id=user_id,
+        title=f"Batch Backtest Completed: {symbol}",
+        message=f"Tested {len(results)}/{total} strategies on {symbol} ({timeframe}).",
+        success=True,
+        meta={"task_id": self.request.id, "symbol": symbol, "timeframe": timeframe, "tested": len(results), "total": total},
+        dedup_key=f"batch:{self.request.id}" if self.request.id else None,
+    )
     return final_result
 
 @celery_app.task(bind=True)
@@ -860,6 +956,30 @@ def monitor_whale_movements():
                 db.add(alert_obj)
             
             db.commit()
+            try:
+                from app.services.system_notification_service import SystemNotificationService
+
+                top_alert = max(alerts, key=lambda x: float(x.get("value_usd", 0) or 0))
+                tx_hash = str(top_alert.get("hash") or top_alert.get("timestamp") or int(time.time()))
+                val_eth = float(top_alert.get("value_eth", 0) or 0)
+                val_usd = float(top_alert.get("value_usd", 0) or 0)
+                SystemNotificationService.emit_sync(
+                    user_id=None,
+                    category="market_alerts",
+                    title=f"Whale Alert: {len(alerts)} Large ETH Transfer(s)",
+                    message=f"Top Tx: {val_eth:,.2f} ETH (${val_usd:,.0f}) | Hash: {tx_hash[:14]}...",
+                    event_type="whale_alert",
+                    severity="warning",
+                    meta={
+                        "count": len(alerts),
+                        "top_value_eth": round(val_eth, 2),
+                        "top_value_usd": round(val_usd, 2),
+                        "tx_hash": tx_hash,
+                    },
+                    dedup_key=f"whale:{tx_hash[:64]}",
+                )
+            except Exception as notif_ex:
+                print(f"⚠️ Whale SysNotif emit skipped: {notif_ex}")
             return f"Found {len(alerts)} whales"
         
         return "No whales found"
@@ -928,10 +1048,36 @@ def execute_sor_child_order(user_id: int, exchange_id: str, symbol: str, side: s
         loop.close()
         
         print(f"✅ SOR Child Order Placed: {order['id']}")
+        try:
+            from app.services.system_notification_service import SystemNotificationService
+            SystemNotificationService.emit_sync(
+                user_id=user_id,
+                category="manual_trade",
+                title=f"SOR Child Order Filled: {symbol}",
+                message=f"Exchange: {exchange_id}\nSide: {str(side).upper()} | Qty: {amount}\nOrder ID: {order['id']}",
+                event_type="order_placed",
+                severity="success",
+                meta={"symbol": symbol, "exchange": exchange_id, "side": side, "order_id": str(order.get("id"))},
+            )
+        except Exception:
+            pass
         return {"status": "success", "order_id": order['id']}
 
     except Exception as e:
         print(f"❌ SOR Execution Error: {e}")
+        try:
+            from app.services.system_notification_service import SystemNotificationService
+            SystemNotificationService.emit_sync(
+                user_id=user_id,
+                category="manual_trade",
+                title=f"SOR Child Order Failed: {symbol}",
+                message=f"Exchange: {exchange_id}\nSide: {str(side).upper()} | Qty: {amount}\nError: {e}",
+                event_type="order_failed",
+                severity="critical",
+                meta={"symbol": symbol, "exchange": exchange_id, "side": side},
+            )
+        except Exception:
+            pass
         return {"status": "failed", "error": str(e)}
     
     finally:
@@ -1205,7 +1351,13 @@ def auto_retrain_models():
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         loop.run_until_complete(
-                            NotificationService.send_message(db, model.user_id, telegram_msg, parse_mode="Markdown")
+                            NotificationService.send_message(
+                                db,
+                                model.user_id,
+                                telegram_msg,
+                                parse_mode="Markdown",
+                                in_app_category="ml_training",
+                            )
                         )
                         loop.close()
                         logger.info(f"Telegram notification sent to user {model.user_id} for model {model.id}")
@@ -1229,7 +1381,13 @@ def auto_retrain_models():
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         loop.run_until_complete(
-                            NotificationService.send_message(db, model.user_id, fail_msg, parse_mode="Markdown")
+                            NotificationService.send_message(
+                                db,
+                                model.user_id,
+                                fail_msg,
+                                parse_mode="Markdown",
+                                in_app_category="ml_training",
+                            )
                         )
                         loop.close()
                     except Exception:
@@ -1244,6 +1402,72 @@ def auto_retrain_models():
         return f"Error: {str(e)}"
     finally:
         db.close()
+
+
+def _emit_ml_training_job_status(db, job_id: str, fallback_error: str = None):
+    """Emit ml_training completion/failure notification if not handled by auto_retrain_models."""
+    try:
+        from app.models import ModelTrainingJob, TrainingStatus
+        from app.models.ml_model import ModelVersion
+        from app.services.system_notification_service import SystemNotificationService
+
+        db.expire_all()
+        job = db.query(ModelTrainingJob).filter(ModelTrainingJob.id == job_id).first()
+        if not job or not job.user_id:
+            return
+        if isinstance(job.config, dict) and job.config.get("is_auto_retrain"):
+            return
+
+        meta = {
+            "job_id": job_id,
+            "model_id": job.output_model_id,
+            "symbol": job.symbol,
+            "algorithm": job.algorithm,
+        }
+
+        if job.status == TrainingStatus.COMPLETED:
+            mv = None
+            if job.output_model_id:
+                mv = (
+                    db.query(ModelVersion)
+                    .filter(ModelVersion.model_id == job.output_model_id)
+                    .order_by(ModelVersion.upload_date.desc())
+                    .first()
+                )
+            acc_part = ""
+            if mv is not None and mv.accuracy is not None:
+                meta["accuracy"] = round(float(mv.accuracy) * 100, 2)
+                acc_part = f" | Accuracy: {mv.accuracy:.2%}"
+            if mv is not None and mv.f1_score is not None:
+                meta["f1_score"] = round(float(mv.f1_score), 4)
+                acc_part += f" | F1: {mv.f1_score:.4f}"
+
+            SystemNotificationService.emit_sync(
+                user_id=job.user_id,
+                category="ml_training",
+                title=f"Training Completed: {job.symbol}",
+                message=f"Algorithm: {job.algorithm}{acc_part}",
+                event_type="job_completed",
+                severity="success",
+                meta=meta,
+                dedup_key=f"train_done:{job_id}",
+            )
+        elif job.status == TrainingStatus.FAILED or fallback_error:
+            err_text = (job.error_message or fallback_error or "Training job failed").strip()
+            if "cancelled" in err_text.lower() and "user" in err_text.lower():
+                return
+            SystemNotificationService.emit_sync(
+                user_id=job.user_id,
+                category="ml_training",
+                title=f"Training Failed: {job.symbol}",
+                message=f"Algorithm: {job.algorithm} | Error: {err_text[:200]}",
+                event_type="job_failed",
+                severity="critical",
+                meta=meta,
+                dedup_key=f"train_fail:{job_id}",
+            )
+    except Exception:
+        pass
 
 
 @celery_app.task(bind=True, max_retries=1)
@@ -1261,10 +1485,12 @@ def celery_train_model_task(self, job_id: str):
     try:
         # train_model_task handles all the async magic and DB commits internally
         train_model_task(job_id=job_id, db=db)
+        _emit_ml_training_job_status(db, job_id)
         logger.info(f"✅ Celery ML Training Job Completed: {job_id}")
         return {"status": "success", "job_id": job_id}
     except Exception as e:
         logger.error(f"❌ Celery ML Training Job Failed {job_id}: {str(e)}")
+        _emit_ml_training_job_status(db, job_id, fallback_error=str(e))
         import traceback
         traceback.print_exc()
         return {"status": "error", "job_id": job_id, "error": str(e)}
@@ -1359,7 +1585,37 @@ def evaluate_model_drift_task(self):
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
                             
-                        loop.run_until_complete(NotificationService.send_message(db, model_record.user_id, msg))
+                        loop.run_until_complete(
+                            NotificationService.send_message(
+                                db,
+                                model_record.user_id,
+                                msg,
+                                in_app_category="ml_training",
+                                skip_in_app=True,
+                            )
+                        )
+                        try:
+                            from app.services.system_notification_service import SystemNotificationService
+
+                            SystemNotificationService.emit_sync(
+                                user_id=model_record.user_id,
+                                category="ml_training",
+                                title=f"Model Drift Alert: {model_record.name}",
+                                message=(
+                                    f"Accuracy dropped to {accuracy*100:.1f}% over the last {len(recent_logs)} predictions. "
+                                    "Consider retraining from ML Studio."
+                                ),
+                                event_type="model_drift",
+                                severity="critical",
+                                meta={
+                                    "model_id": model_id,
+                                    "accuracy": round(accuracy * 100, 2),
+                                    "action_retrain": True,
+                                },
+                                dedup_key=f"drift:{model_id}:{datetime.utcnow().strftime('%Y%m%d%H')}",
+                            )
+                        except Exception:
+                            pass
                         
         # --- DATA RETENTION POLICY: Cleanup Old Logs ---
         cleanup_cutoff = datetime.utcnow() - timedelta(days=14)

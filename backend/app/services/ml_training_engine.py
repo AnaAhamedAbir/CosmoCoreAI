@@ -329,6 +329,22 @@ async def _async_live_scraper(symbol: str, target_rows: int, db: Session, job: m
         db.commit()
         
     add_log_func(f"Scraping completed. Total rows: {len(data)}")
+    if data and job and getattr(job, "user_id", None):
+        try:
+            from app.services.system_notification_service import SystemNotificationService
+
+            await SystemNotificationService.emit(
+                user_id=job.user_id,
+                category="ml_training",
+                title=f"L2 Data Collected: {symbol}",
+                message=f"Collected {len(data):,} orderbook rows for {symbol}.",
+                event_type="collector_done",
+                severity="success",
+                meta={"job_id": job.id, "symbol": symbol, "rows": len(data)},
+                dedup_key=f"l2_col:{job.id}",
+            )
+        except Exception:
+            pass
     
     df = pd.DataFrame(data)
     if not df.empty:
@@ -443,6 +459,22 @@ async def _async_live_trade_scraper(symbol: str, target_rows: int, db: Session, 
             await asyncio.sleep(2)
             
     add_log_func(f"Trade Scraping completed. Total rows: {len(data)}")
+    if data and job and getattr(job, "user_id", None):
+        try:
+            from app.services.system_notification_service import SystemNotificationService
+
+            await SystemNotificationService.emit(
+                user_id=job.user_id,
+                category="ml_training",
+                title=f"Trade Data Collected: {symbol}",
+                message=f"Collected {len(data):,} trade rows for {symbol}.",
+                event_type="collector_done",
+                severity="success",
+                meta={"job_id": job.id, "symbol": symbol, "rows": len(data)},
+                dedup_key=f"trade_col:{job.id}",
+            )
+        except Exception:
+            pass
     df = pd.DataFrame(data)
     return df
 
@@ -1696,6 +1728,7 @@ def train_model_task(job_id: str, db: Session):
         is_classification_target = (prediction_target == "classification")
         eval_metric = config.get("eval_metric", "rmse")
 
+        optuna_trials_history: list = []
         use_automl = config.get("use_automl", False)
         if use_automl and job.algorithm in ["Random Forest", "XGBoost", "LightGBM", "CatBoost"]:
             from app.services.ml_automl import run_optuna_study
@@ -1708,7 +1741,8 @@ def train_model_task(job_id: str, db: Session):
                 y_val=y_test if is_multi_output else y_test.ravel(),
                 is_classification=is_classification_target,
                 n_trials=n_trials,
-                add_log=add_log
+                add_log=add_log,
+                trials_out=optuna_trials_history
             )
             # Update default hyperparams with the best found
             if best_params:
@@ -2899,21 +2933,35 @@ def train_model_task(job_id: str, db: Session):
         db_version.metadata_path = metadata_path
         db.flush()
 
-        # ── Fix 2: Attach CV scores to explainability ─────────────────────────
+        # ── Fix 2: Attach CV scores & Optuna trial history to explainability ─
         if cv_result and final_explainability is not None:
             if isinstance(final_explainability, dict):
                 final_explainability["cv_scores"] = cv_result
         elif cv_result and final_explainability is None:
             final_explainability = {"cv_scores": cv_result}
 
-        # Update explainability in the version record now that cv_result is ready
-        if cv_result:
-            db_version.explainability = dict(final_explainability) if isinstance(final_explainability, dict) else final_explainability
-            
-            # Add prediction_target for frontend UI display
-            if isinstance(db_version.explainability, dict):
+        if optuna_trials_history:
+            if isinstance(final_explainability, dict):
+                final_explainability["optuna_trials"] = optuna_trials_history
+            elif final_explainability is None:
+                final_explainability = {"optuna_trials": optuna_trials_history}
+
+        # Update explainability in the version record now that cv_result / optuna_trials are ready
+        if cv_result or optuna_trials_history:
+            if isinstance(final_explainability, dict):
+                db_version.explainability = dict(final_explainability)
                 db_version.explainability["prediction_target"] = prediction_target
-                
+            elif final_explainability is not None:
+                db_version.explainability = final_explainability
+            else:
+                existing_exp = dict(db_version.explainability) if isinstance(db_version.explainability, dict) else {}
+                if cv_result:
+                    existing_exp["cv_scores"] = cv_result
+                if optuna_trials_history:
+                    existing_exp["optuna_trials"] = optuna_trials_history
+                existing_exp["prediction_target"] = prediction_target
+                db_version.explainability = existing_exp
+
             from sqlalchemy.orm.attributes import flag_modified
             flag_modified(db_version, "explainability")
             db.flush()

@@ -168,7 +168,7 @@ async def execute_smart_peg_entry(
             try:
                 db = SessionLocal()
                 try:
-                    await NotificationService.send_message(db, user_id, msg)
+                    await NotificationService.send_message(db, user_id, msg, alert_type="alert_manual_trade")
                 finally:
                     db.close()
             except Exception as notify_err:

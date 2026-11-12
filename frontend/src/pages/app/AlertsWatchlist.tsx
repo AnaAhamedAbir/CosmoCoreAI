@@ -5,6 +5,7 @@ import Button from '@/components/common/Button';
 import { MOCK_WATCHLISTS, MOCK_ALERTS, ChevronDownIcon } from '@/constants';
 import type { Watchlist, Alert } from '@/types';
 import { useToast } from '@/context/ToastContext';
+import { systemNotificationService } from '@/services/systemNotificationService';
 import { Area, AreaChart, ResponsiveContainer, YAxis } from 'recharts';
 
 type AssetPrice = {
@@ -188,6 +189,7 @@ const AlertsWatchlist: React.FC = () => {
     const [assetPrices, setAssetPrices] = useState<Record<string, AssetPrice>>({});
     const [isWatchlistDropdownOpen, setIsWatchlistDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const triggeredIdsRef = useRef<Set<string>>(new Set());
 
     const selectedWatchlist = useMemo(() => watchlists.find(w => w.id === selectedWatchlistId), [watchlists, selectedWatchlistId]);
 
@@ -246,9 +248,84 @@ const AlertsWatchlist: React.FC = () => {
     }, []);
 
 
+    // Evaluate active Price alerts against simulated live prices
+    useEffect(() => {
+        const newlyTriggered: Array<{ alert: Alert; livePrice: number }> = [];
+
+        for (const alert of alerts) {
+            if (alert.status !== 'Active' || alert.triggerType !== 'Price') continue;
+            if (triggeredIdsRef.current.has(alert.id)) continue;
+
+            const live = assetPrices[alert.asset];
+            if (!live) continue;
+
+            const match = alert.condition.match(/^Price\s*([><])\s*\$([\d,]+(?:\.\d+)?)$/i);
+            if (!match) continue;
+
+            const op = match[1];
+            const threshold = parseFloat(match[2].replace(/,/g, ''));
+            if (!Number.isFinite(threshold)) continue;
+
+            const hit = op === '>' ? live.price > threshold : live.price < threshold;
+            if (hit) {
+                triggeredIdsRef.current.add(alert.id);
+                newlyTriggered.push({ alert, livePrice: live.price });
+            }
+        }
+
+        if (newlyTriggered.length === 0) return;
+
+        const hitIds = new Set(newlyTriggered.map(t => t.alert.id));
+        setAlerts(prev =>
+            prev.map(a =>
+                hitIds.has(a.id) ? { ...a, status: 'Triggered', justTriggered: true } : a
+            )
+        );
+
+        for (const { alert, livePrice } of newlyTriggered) {
+            showToast(`Sentinel Triggered: ${alert.asset} (${alert.condition})`, 'warning');
+            void systemNotificationService
+                .emitClientEvent({
+                    category: 'market_alerts',
+                    event_type: 'price_alert',
+                    severity: 'warning',
+                    title: `Price Alert Triggered: ${alert.asset}`,
+                    message: `${alert.asset} hit $${livePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${alert.condition}).`,
+                    meta: {
+                        symbol: alert.asset,
+                        price: Number(livePrice.toFixed(4)),
+                        condition: alert.condition,
+                        alert_id: alert.id,
+                    },
+                    dedup_key: `price_alert_${alert.id}`,
+                })
+                .catch(() => {
+                    // ignore transient notification error
+                });
+        }
+    }, [assetPrices, alerts, showToast]);
+
     const handleAddAlert = (newAlert: Alert) => {
         setAlerts(prev => [newAlert as any, ...prev]);
         showToast(`Alert created for ${newAlert.asset}`, 'success');
+        void systemNotificationService
+            .emitClientEvent({
+                category: 'market_alerts',
+                event_type: 'alert_created',
+                severity: 'info',
+                title: `Sentinel Created: ${newAlert.asset}`,
+                message: `${newAlert.triggerType} alert (${newAlert.condition}) armed via ${newAlert.notificationChannels.join(', ') || 'Push'}.`,
+                meta: {
+                    symbol: newAlert.asset,
+                    trigger_type: newAlert.triggerType,
+                    condition: newAlert.condition,
+                    alert_id: newAlert.id,
+                },
+                dedup_key: `alert_created_${newAlert.id}`,
+            })
+            .catch(() => {
+                // ignore transient notification error
+            });
         setTimeout(() => {
             setAlerts(prev => prev.map(a => a.id === newAlert.id ? { ...a, isNew: false } : a));
         }, 500);

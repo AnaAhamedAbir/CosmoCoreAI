@@ -133,7 +133,37 @@ def cancel_training_job(
 
     db.commit()
     db.refresh(job)
+    _emit_training_job_event(
+        job=job,
+        title=f"Training Cancelled: {job.symbol}",
+        message=f"Algorithm: {job.algorithm} | Job ID: {job.id}",
+        event_type="job_cancelled",
+        severity="warning",
+    )
     return job
+
+
+def _emit_training_job_event(job, title: str, message: str, event_type: str, severity: str = "info"):
+    """Best-effort in-app ml_training emit for training job lifecycle endpoints."""
+    try:
+        from app.services.system_notification_service import SystemNotificationService
+
+        SystemNotificationService.emit_sync(
+            user_id=job.user_id,
+            category="ml_training",
+            title=title,
+            message=message,
+            event_type=event_type,
+            severity=severity,
+            meta={
+                "job_id": job.id,
+                "model_id": job.output_model_id,
+                "symbol": job.symbol,
+                "algorithm": job.algorithm,
+            },
+        )
+    except Exception:
+        pass
 
 @router.post("/jobs/{job_id}/pause", response_model=schemas.TrainingJobResponse)
 def pause_training_job(
@@ -162,6 +192,14 @@ def pause_training_job(
 
     db.commit()
     db.refresh(job)
+
+    _emit_training_job_event(
+        job=job,
+        title=f"Training Paused: {job.symbol}",
+        message=f"Algorithm: {job.algorithm} | Job ID: {job.id}",
+        event_type="job_paused",
+        severity="info",
+    )
     
     # Send Telegram Notification
     try:
@@ -177,7 +215,14 @@ def pause_training_job(
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(
-            NotificationService.send_message(db, current_user.id, telegram_msg, parse_mode="Markdown")
+            NotificationService.send_message(
+                db,
+                current_user.id,
+                telegram_msg,
+                parse_mode="Markdown",
+                in_app_category="ml_training",
+                skip_in_app=True,
+            )
         )
         loop.close()
     except Exception as e:
@@ -214,6 +259,14 @@ def resume_training_job(
 
     db.commit()
     db.refresh(job)
+
+    _emit_training_job_event(
+        job=job,
+        title=f"Training Resumed: {job.symbol}",
+        message=f"Algorithm: {job.algorithm} | Job ID: {job.id}",
+        event_type="job_resumed",
+        severity="info",
+    )
     
     # Send Telegram Notification
     try:
@@ -229,7 +282,14 @@ def resume_training_job(
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(
-            NotificationService.send_message(db, current_user.id, telegram_msg, parse_mode="Markdown")
+            NotificationService.send_message(
+                db,
+                current_user.id,
+                telegram_msg,
+                parse_mode="Markdown",
+                in_app_category="ml_training",
+                skip_in_app=True,
+            )
         )
         loop.close()
     except Exception as e:

@@ -50,6 +50,7 @@ import MarketDepthWidget from './MarketDepth/MarketDepthWidget';
 import EventDrivenSimulator from './EventDrivenSimulator';
 import PanicButton from '@/components/common/PanicButton';
 import SystemAlertWidget from '@/components/common/SystemAlertWidget';
+import SystemNotificationWidget from '@/components/common/SystemNotificationWidget';
 import MarketSwitcher from '@/components/common/MarketSwitcher';
 import { useSettings } from '@/context/SettingsContext';
 import { useMarketStore } from '@/store/marketStore';
@@ -618,6 +619,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                 <div className="flex items-center justify-center gap-4 laptop:gap-2 shrink-0">
                                     <MarketSwitcher />
                                     <SystemAlertWidget />
+                                    <SystemNotificationWidget />
                                 </div>
 
                                 {/* Right — Action Buttons */}

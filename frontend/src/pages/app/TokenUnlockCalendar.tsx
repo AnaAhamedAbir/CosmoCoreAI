@@ -9,6 +9,7 @@ import type { TokenUnlockEvent } from '@/types';
 import { useTheme } from '@/context/ThemeContext';
 import { useToast } from '@/context/ToastContext';
 import { unlockService, BackendTokenUnlockEvent } from '../../services/unlockService';
+import { systemNotificationService } from '@/services/systemNotificationService';
 
 // --- Intelligence Widgets (10 Features) ---
 import DnaFingerprintWidget from '@/components/token-unlock/DnaFingerprintWidget';
@@ -171,15 +172,20 @@ const EventDetailModal: React.FC<{ event: TokenUnlockEvent; onClose: () => void;
 
     const handleSetAlert = useCallback(async () => {
         try {
-            await fetch('/api/v1/notifications/create', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title: `Token Unlock Alert: ${event.tokenName}`,
-                    message: `${event.tokenName} (${event.tokenSymbol}) unlock of $${event.unlockAmountUSD?.toLocaleString()} scheduled on ${new Date(event.unlockDate).toLocaleDateString()}.`,
-                    type: 'token_unlock',
-                    related_id: event.id,
-                }),
+            await systemNotificationService.emitClientEvent({
+                category: 'market_alerts',
+                event_type: 'token_unlock',
+                severity: event.impactScore >= 8 ? 'warning' : 'info',
+                title: `Token Unlock Alert: ${event.tokenName}`,
+                message: `${event.tokenName} (${event.tokenSymbol}) unlock of $${event.unlockAmountUSD?.toLocaleString()} scheduled on ${new Date(event.unlockDate).toLocaleDateString()}.`,
+                meta: {
+                    symbol: event.tokenSymbol,
+                    unlock_id: event.id,
+                    unlock_date: event.unlockDate,
+                    unlock_amount_usd: event.unlockAmountUSD,
+                    impact_score: event.impactScore,
+                },
+                dedup_key: `token_unlock_${event.id}`,
             });
             showToast(`Smart Alert set for ${event.tokenName} unlock!`, 'success');
         } catch (err) {

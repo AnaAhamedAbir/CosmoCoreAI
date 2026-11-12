@@ -226,6 +226,53 @@ async def subscribe_to_container_logs():
     finally:
         await redis.close()
 
+
+async def subscribe_to_app_notifications():
+    """Listens to 'app_notifications' Redis channel with auto-reconnect and forwards sys notifications to user WS clients."""
+    print("🔔 Listening to App Notification Stream...")
+    while True:
+        redis = None
+        pubsub = None
+        try:
+            redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+            pubsub = redis.pubsub()
+            await pubsub.subscribe("app_notifications")
+
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    try:
+                        data = json.loads(message["data"])
+                        target_user_id = data.get("target_user_id")
+                        notif = data.get("notification")
+                        if not notif:
+                            continue
+                        payload = {"type": "sys_notification", "notification": notif}
+                        if target_user_id is not None:
+                            await manager.broadcast(payload, f"user_notif_{int(target_user_id)}")
+                        else:
+                            for channel in list(manager.active_connections.keys()):
+                                if channel.startswith("user_notif_"):
+                                    await manager.broadcast(payload, channel)
+                    except Exception as e:
+                        print(f"App Notification Forward Error: {e}")
+        except asyncio.CancelledError:
+            print("App Notification Subscriber Cancelled.")
+            raise
+        except Exception as e:
+            print(f"App Notification Redis Error (reconnecting in 3s): {e}")
+            await asyncio.sleep(3)
+        finally:
+            if pubsub is not None:
+                try:
+                    await pubsub.close()
+                except Exception:
+                    pass
+            if redis is not None:
+                try:
+                    await redis.close()
+                except Exception:
+                    pass
+
 async def fetch_market_data_background():
     local_exchange_client = None
     print("🚀 Background Market Data Task Started")
@@ -250,13 +297,14 @@ async def fetch_market_data_background():
                     NON_MARKET_CHANNELS = {
                         "general", "backtest", "block_trades", "dashboard",
                         "options_live", "correlation_feed", "system_alerts", "container_logs",
-                        "training_visualizer"
+                        "training_visualizer", "app_notifications"
                     }
                     
                     crypto_symbols = []
                     for sym in active:
                         if (sym in NON_MARKET_CHANNELS or sym.startswith("logs_") or 
-                            sym.startswith("status_") or sym.startswith("godmode_") or "_" in sym):
+                            sym.startswith("status_") or sym.startswith("godmode_") or
+                            sym.startswith("user_notif_") or "_" in sym):
                             continue
                         # Normalize symbol (BTCUSDT -> BTC/USDT)
                         # Strip futures contract suffix if present (e.g. 'HMSTR/USDT:USDT' -> 'HMSTR/USDT')
@@ -326,7 +374,7 @@ async def fetch_market_data_background():
             NON_MARKET_CHANNELS = {
                 "general", "backtest", "block_trades", "dashboard",
                 "options_live", "correlation_feed", "system_alerts", "container_logs",
-                "training_visualizer"
+                "training_visualizer", "app_notifications"
             }
             
             current_target_symbols = set()
@@ -338,6 +386,7 @@ async def fetch_market_data_background():
                         or symbol.startswith("logs_")
                         or symbol.startswith("status_")
                         or symbol.startswith("godmode_")
+                        or symbol.startswith("user_notif_")
                     ):
                         continue
                     
@@ -674,6 +723,11 @@ async def startup_event():
     running_tasks.add(container_log_task)
     container_log_task.add_done_callback(running_tasks.discard)
 
+    # Task K2: App Notification Subscriber (Sys Notifications → Per-User WebSocket)
+    app_notif_task = asyncio.create_task(subscribe_to_app_notifications())
+    running_tasks.add(app_notif_task)
+    app_notif_task.add_done_callback(running_tasks.discard)
+
     # Task G: Historical Orderbook Snapshot Loop
     snapshot_task = asyncio.create_task(orderbook_snapshot_service.start_recording_loop())
     running_tasks.add(snapshot_task)
@@ -934,6 +988,44 @@ async def websocket_container_logs(websocket: WebSocket):
         while True: await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket, "container_logs")
+
+@app.websocket("/ws/notifications")
+async def websocket_notifications(websocket: WebSocket, token: str = None):
+    """Per-user real-time sys notification WebSocket stream authenticated via JWT token."""
+    from app.core import security
+    from app import crud
+    from app.db.session import SessionLocal
+
+    if not token:
+        await websocket.close(code=4001)
+        return
+
+    payload = security.verify_token(token)
+    if not payload:
+        await websocket.close(code=4001)
+        return
+
+    user_id = payload.get("user_id")
+    if not user_id and payload.get("sub"):
+        db = SessionLocal()
+        try:
+            user = crud.get_user_by_email(db, email=payload.get("sub"))
+            if user:
+                user_id = user.id
+        finally:
+            db.close()
+
+    if not user_id:
+        await websocket.close(code=4001)
+        return
+
+    channel_id = f"user_notif_{int(user_id)}"
+    await manager.connect(websocket, channel_id)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, channel_id)
 
 @app.websocket("/ws/godmode/{symbol:path}")
 async def websocket_godmode(websocket: WebSocket, symbol: str):

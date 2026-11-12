@@ -42,6 +42,44 @@ class BracketOrderService:
         return default_val
 
     @staticmethod
+    def _compute_tp_price(tp_config: dict, ref_price: float, opposite_side: str) -> float:
+        """Compute absolute Take-Profit price from tp_config ('percentage', 'absolute', or 'price' offset)."""
+        if not tp_config or not isinstance(tp_config, dict):
+            return 0.0
+        mode = str(tp_config.get('mode', 'percentage')).lower()
+        try:
+            val = float(tp_config.get('value', 0) or 0.0)
+        except (ValueError, TypeError):
+            return 0.0
+        if mode == 'percentage':
+            pct = val / 100.0
+            return ref_price * (1 + pct) if opposite_side == 'sell' else ref_price * (1 - pct)
+        if mode == 'absolute':
+            return val
+        return ref_price + val if opposite_side == 'sell' else ref_price - val
+
+    @staticmethod
+    def _compute_sl_price(sl_config: dict, ref_price: float, opposite_side: str) -> float:
+        """Compute absolute Stop-Loss trigger price from sl_config ('percentage', 'absolute', or 'price' offset)."""
+        if not sl_config or not isinstance(sl_config, dict):
+            return 0.0
+        sl_mode = str(sl_config.get('mode', 'percentage')).lower()
+        if sl_mode == 'atr':
+            return 0.0
+        try:
+            sl_val = float(sl_config.get('value', 0) or 0.0)
+        except (ValueError, TypeError):
+            return 0.0
+        if sl_val <= 0:
+            return 0.0
+        if sl_mode == 'percentage':
+            pct = sl_val / 100.0
+            return ref_price * (1 - pct) if opposite_side == 'sell' else ref_price * (1 + pct)
+        if sl_mode == 'absolute':
+            return sl_val
+        return ref_price - sl_val if opposite_side == 'sell' else ref_price + sl_val
+
+    @staticmethod
     def _safe_amount_to_precision(exchange, symbol: str, amount: float) -> float:
         """Safely formats amount using exchange market precision, with fallback if markets are unloaded."""
         try:
@@ -753,7 +791,14 @@ class BracketOrderService:
             db.close()
 
     @staticmethod
-    async def update_software_bracket(sl_id: str, new_price: float, api_key_id: int = None, user_id: int = 0) -> dict:
+    async def update_software_bracket(
+        sl_id: str,
+        new_price: float,
+        api_key_id: int = None,
+        user_id: int = 0,
+        set_manual_override: bool = True,
+        send_notify: bool = True,
+    ) -> dict:
         """
         Dynamically update the trigger price of an active software SL (Smart Chase, Trailing, Fixed).
         Safely re-calculates futures disaster stops if active.
@@ -799,7 +844,8 @@ class BracketOrderService:
         # Update metadata dynamically
         sl_meta['trigger_price'] = prec_price
         sl_meta['price'] = prec_price
-        sl_meta['manual_trigger_override'] = prec_price
+        if set_manual_override:
+            sl_meta['manual_trigger_override'] = prec_price
 
         # If disaster SL order exists on futures exchange, replace it with updated disaster level
         disaster_order_id = sl_meta.get('disaster_sl_order_id')
@@ -832,7 +878,7 @@ class BracketOrderService:
 
         total_ms = int((time.perf_counter() - t0) * 1000)
         logger.info(f"✅ Software SL [{mode}] for {symbol} ({side}) trigger price updated to {prec_price} in {total_ms}ms")
-        if user_id:
+        if user_id and send_notify:
             sl_mode_label = str(mode).replace('_', ' ').title() + " Stop-Loss"
             exch_name = str(getattr(exchange, 'id', 'Binance') if exchange else 'Binance')
             asyncio.create_task(BracketOrderService._send_sl_modified_notification(
@@ -1256,15 +1302,7 @@ class BracketOrderService:
                             )
 
                     tp_order_type = tp_config.get('order_type', 'Limit').lower()
-                    mode = tp_config.get('mode', 'percentage')
-                    val = float(tp_config.get('value', 0))
-                    if mode == 'percentage':
-                        pct = val / 100.0
-                        tp_price = weighted_entry * (1 + pct) if opposite_side == 'sell' else weighted_entry * (1 - pct)
-                    elif mode == 'absolute':
-                        tp_price = val
-                    else:
-                        tp_price = weighted_entry + val if opposite_side == 'sell' else weighted_entry - val
+                    tp_price = BracketOrderService._compute_tp_price(tp_config, weighted_entry, opposite_side)
 
                     final_tp_price = BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price)
                     t_cons_tp_start = time.perf_counter()
@@ -1348,19 +1386,6 @@ class BracketOrderService:
                     except Exception as tp_cons_err:
                         logger.warning(f"Failed to replace consolidated TP order: {tp_cons_err}")
 
-                # Consolidate / Update Futures disaster SL if present
-                old_dis_id = existing_sl.get('disaster_sl_order_id')
-                if old_dis_id and is_futures and existing_sl.get('id'):
-                    try:
-                        await BracketOrderService.update_software_bracket(
-                            existing_sl['id'],
-                            float(existing_sl.get('trigger_price') or existing_sl.get('price') or average_price),
-                            api_key_id,
-                            user_id
-                        )
-                    except Exception as dis_cons_err:
-                        logger.debug(f"Consolidate disaster SL notice: {dis_cons_err}")
-
                 # Check if an active software SL monitor is running for this bracket
                 has_active_sl_loop = False
                 for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
@@ -1374,22 +1399,62 @@ class BracketOrderService:
                         and BracketOrderService._matches_bracket_ref(sid, sdata, target_id_str)
                     ):
                         has_active_sl_loop = True
+                        sdata['amount'] = new_total_amt
+                        sdata['entry_price'] = weighted_entry
                         if sl_config:
-                            new_sl_val = float(sl_config.get('value', 0.0))
-                            if new_sl_val > 0:
-                                prec_sl = BracketOrderService._safe_price_to_precision(exchange, symbol, new_sl_val)
-                                sdata['trigger_price'] = prec_sl
-                                sdata['price'] = prec_sl
-                                sdata['manual_trigger_override'] = prec_sl
+                            sl_type_curr = str(sl_config.get('type') or sdata.get('type') or 'fixed').lower()
+                            sl_mode_curr = str(sl_config.get('mode', 'percentage')).lower()
+                            is_trailing_type = (
+                                sl_type_curr in ('trailing', 'trailing_chase')
+                                or str(sdata.get('type') or '').lower() in ('trailing', 'trailing_chase')
+                            )
+                            # On partial-fill consolidation chunks, recalculate SL from weighted_entry & mode
+                            # (unless trailing, auto-breakeven activated, or manually dragged on chart) instead of
+                            # treating relative price/% offsets as an absolute trigger price.
+                            should_update_sl = (
+                                not is_consolidation_chunk
+                                or (
+                                    not is_trailing_type
+                                    and not sdata.get('breakeven_activated')
+                                    and sdata.get('manual_trigger_override') is None
+                                )
+                            )
+                            if should_update_sl:
+                                computed_sl = BracketOrderService._compute_sl_price(sl_config, weighted_entry, opposite_side)
+                                if computed_sl > 0:
+                                    prec_sl = BracketOrderService._safe_price_to_precision(exchange, symbol, computed_sl)
+                                    if prec_sl > 0:
+                                        sdata['trigger_price'] = prec_sl
+                                        sdata['price'] = prec_sl
+                                        if not is_consolidation_chunk and sl_mode_curr == 'absolute':
+                                            sdata['manual_trigger_override'] = prec_sl
                         break
+
+                # Consolidate / Update Futures disaster SL if present (after trigger_price is synced)
+                old_dis_id = existing_sl.get('disaster_sl_order_id')
+                if old_dis_id and is_futures and existing_sl.get('id'):
+                    try:
+                        await BracketOrderService.update_software_bracket(
+                            existing_sl['id'],
+                            float(existing_sl.get('trigger_price') or existing_sl.get('price') or weighted_entry),
+                            api_key_id,
+                            user_id,
+                            set_manual_override=not is_consolidation_chunk,
+                            send_notify=not is_consolidation_chunk,
+                        )
+                    except Exception as dis_cons_err:
+                        logger.debug(f"Consolidate disaster SL notice: {dis_cons_err}")
 
                 # If sl_config was requested but NO software SL monitor is running yet,
                 # we must NOT return early — we must proceed down to start the SL monitor loop!
                 if sl_config and not has_active_sl_loop:
                     logger.info(f"Bracket entry #{target_id_str} has no active software SL monitor. Proceeding to spawn SL monitor...")
+                    final_amount = new_total_amt
+                    average_price = weighted_entry
                     tp_order_id = str(existing_sl.get('tp_order_id') or tp_order_id or '') or None
                     if not resolved_tp_price and existing_sl.get('tp_price'):
                         resolved_tp_price = float(existing_sl['tp_price'])
+                    tp_config = None  # Consolidated TP was already handled above
                 else:
                     if is_consolidation_chunk:
                         logger.info(
@@ -1426,27 +1491,9 @@ class BracketOrderService:
             ):
                 logger.info(f"⚡ Bracket Monitor: Using Native Binance OCO for {symbol} (Market Entry Fallback)")
                 
-                # Calculate TP Price
-                tp_mode = tp_config.get('mode', 'percentage')
-                tp_val = float(tp_config.get('value', 0))
-                if tp_mode == 'percentage':
-                    pct = tp_val / 100.0
-                    tp_price = average_price * (1 + pct) if opposite_side == 'sell' else average_price * (1 - pct)
-                elif tp_mode == 'absolute':
-                    tp_price = tp_val
-                else:
-                    tp_price = average_price + tp_val if opposite_side == 'sell' else average_price - tp_val
-                
-                # Calculate SL Price
-                sl_mode = sl_config.get('mode', 'percentage')
-                sl_val = float(sl_config.get('value', 0))
-                if sl_mode == 'percentage':
-                    pct = sl_val / 100.0
-                    sl_price = average_price * (1 - pct) if opposite_side == 'sell' else average_price * (1 + pct)
-                elif sl_mode == 'absolute':
-                    sl_price = sl_val
-                else:
-                    sl_price = average_price - sl_val if opposite_side == 'sell' else average_price + sl_val
+                # Calculate TP & SL Prices
+                tp_price = BracketOrderService._compute_tp_price(tp_config, average_price, opposite_side)
+                sl_price = BracketOrderService._compute_sl_price(sl_config, average_price, opposite_side)
                 
                 try:
                     native_symbol = BracketOrderService._resolve_native_futures_symbol(exchange, symbol, False)
@@ -1510,16 +1557,7 @@ class BracketOrderService:
                 tp_order_type = tp_config.get('order_type', 'Limit').lower()
                 mode          = tp_config.get('mode', 'percentage')
                 val           = float(tp_config.get('value', 0))
-    
-                tp_price = average_price
-                if mode == 'percentage':
-                    pct = val / 100.0
-                    tp_price = average_price * (1 + pct) if opposite_side == 'sell' else average_price * (1 - pct)
-                elif mode == 'absolute':
-                    tp_price = val
-                else:
-                    tp_price = average_price + val if opposite_side == 'sell' else average_price - val
-    
+                tp_price      = BracketOrderService._compute_tp_price(tp_config, average_price, opposite_side)
                 final_tp_price = BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price)
     
                 t_tp_start = time.perf_counter()
@@ -1738,15 +1776,7 @@ class BracketOrderService:
                             )
                         )
                 elif sl_type == 'smart_chase':
-                    sl_price = average_price
-                    if sl_mode == 'percentage':
-                        pct = sl_val / 100.0
-                        sl_price = average_price * (1 - pct) if opposite_side == 'sell' else average_price * (1 + pct)
-                    elif sl_mode == 'absolute':
-                        sl_price = sl_val
-                    else:
-                        sl_price = average_price - sl_val if opposite_side == 'sell' else average_price + sl_val
-
+                    sl_price = BracketOrderService._compute_sl_price(sl_config, average_price, opposite_side) or average_price
                     final_sl_price = BracketOrderService._safe_price_to_precision(exchange, symbol, sl_price)
 
                     disaster_sl_order_id = None
@@ -1795,15 +1825,7 @@ class BracketOrderService:
                         )
                     )
                 else:
-                    sl_price = average_price
-                    if sl_mode == 'percentage':
-                        pct = sl_val / 100.0
-                        sl_price = average_price * (1 - pct) if opposite_side == 'sell' else average_price * (1 + pct)
-                    elif sl_mode == 'absolute':
-                        sl_price = sl_val
-                    else:
-                        sl_price = average_price - sl_val if opposite_side == 'sell' else average_price + sl_val
-    
+                    sl_price = BracketOrderService._compute_sl_price(sl_config, average_price, opposite_side) or average_price
                     final_sl_price = BracketOrderService._safe_price_to_precision(exchange, symbol, sl_price)
 
                     if not is_futures:

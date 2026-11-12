@@ -1015,6 +1015,9 @@ async def place_drag_bracket_endpoint(
                     current_px=current_px,
                     target_order_id=req.target_order_id,
                 )
+                if linked_tp_id:
+                    tp_px_str = f" @ ${linked_tp_price}" if linked_tp_price else ""
+                    logger.info(f"🔗 Linked Dip Buy-Back TP #{linked_tp_id}{tp_px_str} to Smart Chase {opposite_side.upper()} SL for {req.symbol}")
 
                 sl_cfg = dict(req.sl_config or {})
                 sl_cfg['enabled'] = True

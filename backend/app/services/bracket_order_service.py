@@ -1844,7 +1844,13 @@ class BracketOrderService:
                         except Exception as d_err:
                             logger.warning(f"⚠️ Failed to place native disaster SL: {d_err}")
 
-                    logger.info(f"🚀 Bracket Monitor: Starting Smart Chase Limit SL for {symbol} | Trigger: {final_sl_price} | Strategy: {peg_strategy.upper()} | Mode: {chase_mode.upper()}")
+                    side_tag = "BUY (Buy-Back ⚡)" if opposite_side.lower() == 'buy' else "SELL (Long Exit 🛡️)"
+                    tp_tag = f" | Linked TP: #{tp_order_id}" if tp_order_id else ""
+                    logger.info(
+                        f"🚀 Bracket Monitor: Starting Smart Chase Limit SL for {symbol} | Action: {side_tag} | "
+                        f"Amount: {final_amount} | Trigger: {final_sl_price}{tp_tag} | "
+                        f"Strategy: {peg_strategy.upper()} | Mode: {chase_mode.upper()}"
+                    )
                     asyncio.create_task(
                         BracketOrderService._smart_chase_monitor_loop(
                             exchange=exchange,
@@ -2720,9 +2726,12 @@ class BracketOrderService:
             'tp_price': float(tp_price) if tp_price else None,
         }
 
+        side_tag = "BUY (Buy-Back ⚡)" if opposite_side.lower() == 'buy' else "SELL (Long Exit 🛡️)"
+        tp_tag = f" | Linked TP: #{tp_order_id} (@ {tp_price})" if tp_order_id else " | Linked TP: None"
         logger.info(
-            f"🏁 Smart Chase Monitor started for {symbol} | Trigger: {sl_price} | Strategy: {peg_strategy.upper()} | "
-            f"Mode: {chase_mode.upper()} | Source: {trigger_source.upper()} | Entry: {entry_price}"
+            f"🏁 Smart Chase Monitor started for {symbol} | Action: {side_tag} | Amount: {amount} | "
+            f"Trigger: {sl_price} | Strategy: {peg_strategy.upper()} | Mode: {chase_mode.upper()} | "
+            f"Source: {trigger_source.upper()} | Entry: {entry_price}{tp_tag}"
         )
         sl_triggered = False
         loop_tick = 0

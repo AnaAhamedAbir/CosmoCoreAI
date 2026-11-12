@@ -18,6 +18,32 @@ import Card from '@/components/common/Card';
 import { MarketRegime, RegimeDataPoint } from '@/types';
 import { fetchMarketRegime, RegimeResponse } from '@/services/regimeService';
 
+const getRegimeHeadingClass = (regime: MarketRegime) => {
+    switch (regime) {
+        case 'Bull Volatile': return 'text-emerald-600 dark:text-brand-success';
+        case 'Bull Stable': return 'text-emerald-600 dark:text-brand-success-light';
+        case 'Bear Volatile': return 'text-rose-600 dark:text-brand-danger';
+        case 'Bear Stable': return 'text-rose-600 dark:text-brand-danger-light';
+        case 'Ranging': return 'text-amber-600 dark:text-brand-warning';
+        default: return 'text-slate-700 dark:text-slate-300';
+    }
+};
+
+const getRegimeBadgeClass = (regime: MarketRegime) => {
+    switch (regime) {
+        case 'Bull Volatile':
+        case 'Bull Stable':
+            return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300';
+        case 'Bear Volatile':
+        case 'Bear Stable':
+            return 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300';
+        case 'Ranging':
+            return 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300';
+        default:
+            return 'bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300';
+    }
+};
+
 const cryptoPairs = ['BTC/USDT']; // Currently only BTC supported by backend
 
 // --- Visual Components ---
@@ -67,20 +93,20 @@ const RegimeCompass: React.FC<RegimeCompassProps> = ({ currentRegime, trendScore
     }, [currentRegime, trendScore, volatilityScore]);
 
     return (
-        <div className="relative w-full h-64 bg-[#050505] rounded-xl border border-[#141414] overflow-hidden shadow-inner">
+        <div className="relative w-full h-64 bg-slate-50 dark:bg-[#050505] rounded-xl border border-slate-200 dark:border-[#141414] overflow-hidden shadow-inner">
             {/* Grid Lines */}
             <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-full h-px bg-[#0A0A0A]/50"></div>
+                <div className="w-full h-px bg-slate-200 dark:bg-[#0A0A0A]/50"></div>
             </div>
             <div className="absolute inset-0 flex items-center justify-center">
-                <div className="h-full w-px bg-[#0A0A0A]/50"></div>
+                <div className="h-full w-px bg-slate-200 dark:bg-[#0A0A0A]/50"></div>
             </div>
 
             {/* Labels */}
-            <span className="absolute top-2 right-1/2 translate-x-1/2 text-[10px] font-bold uppercase tracking-widest text-emerald-500 bg-[#050505]/80 px-2 rounded">Bullish Trend</span>
-            <span className="absolute bottom-2 right-1/2 translate-x-1/2 text-[10px] font-bold uppercase tracking-widest text-rose-500 bg-[#050505]/80 px-2 rounded">Bearish Trend</span>
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase tracking-widest text-blue-400 [writing-mode:vertical-lr] rotate-180 bg-[#050505]/80 py-2 rounded">Stable</span>
-            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase tracking-widest text-purple-400 [writing-mode:vertical-lr] bg-[#050505]/80 py-2 rounded">Volatile</span>
+            <span className="absolute top-2 right-1/2 translate-x-1/2 text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-500 bg-white/90 dark:bg-[#050505]/80 border border-slate-200/70 dark:border-transparent px-2 rounded shadow-sm dark:shadow-none">Bullish Trend</span>
+            <span className="absolute bottom-2 right-1/2 translate-x-1/2 text-[10px] font-bold uppercase tracking-widest text-rose-600 dark:text-rose-500 bg-white/90 dark:bg-[#050505]/80 border border-slate-200/70 dark:border-transparent px-2 rounded shadow-sm dark:shadow-none">Bearish Trend</span>
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400 [writing-mode:vertical-lr] rotate-180 bg-white/90 dark:bg-[#050505]/80 border border-slate-200/70 dark:border-transparent py-2 rounded shadow-sm dark:shadow-none">Stable</span>
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase tracking-widest text-purple-600 dark:text-purple-400 [writing-mode:vertical-lr] bg-white/90 dark:bg-[#050505]/80 border border-slate-200/70 dark:border-transparent py-2 rounded shadow-sm dark:shadow-none">Volatile</span>
 
             {/* The Puck */}
             <div
@@ -97,7 +123,7 @@ const RegimeCompass: React.FC<RegimeCompassProps> = ({ currentRegime, trendScore
             </div>
 
             {/* Radar Sweep Effect */}
-            <div className="absolute inset-0 bg-[conic-gradient(from_0deg,transparent_0_340deg,rgba(255,255,255,0.05)_360deg)] animate-[spin_4s_linear_infinite] rounded-full scale-150 opacity-30 pointer-events-none"></div>
+            <div className="absolute inset-0 bg-[conic-gradient(from_0deg,transparent_0_340deg,rgba(99,102,241,0.12)_360deg)] dark:bg-[conic-gradient(from_0deg,transparent_0_340deg,rgba(255,255,255,0.05)_360deg)] animate-[spin_4s_linear_infinite] rounded-full scale-150 opacity-30 pointer-events-none"></div>
         </div>
     );
 };
@@ -147,8 +173,8 @@ const MarkovMatrix: React.FC<MarkovMatrixProps> = ({ currentRegime, matrix, regi
             {transitions.map((t) => (
                 <div key={t.target} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
-                        <div className={`w-1.5 h-1.5 rounded-full ${t.target === currentRegime ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
-                        <span className={`${t.target === currentRegime ? 'text-slate-900 dark:text-white font-bold' : 'text-gray-500'}`}>{t.target}</span>
+                        <div className={`w-1.5 h-1.5 rounded-full ${t.target === currentRegime ? 'bg-brand-primary dark:bg-white animate-pulse' : 'bg-slate-400 dark:bg-gray-400'}`}></div>
+                        <span className={`${t.target === currentRegime ? 'text-slate-900 dark:text-white font-bold' : 'text-slate-600 dark:text-gray-500'}`}>{t.target}</span>
                     </div>
                     <div className="flex items-center gap-2 w-1/2">
                         <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -230,7 +256,7 @@ const RegimeHistoryChart: React.FC<{ data: RegimeDataPoint[] }> = ({ data }) => 
                     <div className="flex justify-between items-center gap-4 mb-2">
                         <span className="text-slate-900 dark:text-white font-bold text-lg">${dataPoint.price.toLocaleString()}</span>
                     </div>
-                    <div className={`px-2 py-1 rounded text-[10px] font-bold uppercase inline-block ${regimeInfo.color.replace('bg-', 'bg-opacity-20 text-')}`}>
+                    <div className={`px-2 py-1 rounded text-[10px] font-bold uppercase inline-block ${getRegimeBadgeClass(dataPoint.regime)}`}>
                         {dataPoint.regime}
                     </div>
                 </div>
@@ -294,7 +320,7 @@ const RegimeHistoryChart: React.FC<{ data: RegimeDataPoint[] }> = ({ data }) => 
                     stroke="url(#priceLine)"
                     strokeWidth={2}
                     dot={false}
-                    activeDot={{ r: 6, fill: '#fff', strokeWidth: 0 }}
+                    activeDot={{ r: 6, fill: theme === 'dark' ? '#fff' : '#6366F1', stroke: theme === 'dark' ? '#6366F1' : '#fff', strokeWidth: 2 }}
                 />
             </ComposedChart>
         </ResponsiveContainer>
@@ -364,9 +390,9 @@ const MarketRegimeClassifier: React.FC = () => {
                     <select
                         value={activePair}
                         onChange={(e) => setActivePair(e.target.value)}
-                        className="bg-gray-100 dark:bg-[#000000] border border-gray-200 dark:border-gray-700 rounded-lg py-2 pl-3 pr-10 text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-primary outline-none appearance-none min-w-[150px]"
+                        className="bg-slate-100 dark:bg-[#000000] border border-slate-200 dark:border-gray-700 rounded-lg py-2 pl-3 pr-10 text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-primary outline-none appearance-none min-w-[150px]"
                     >
-                        {cryptoPairs.map(p => <option key={p}>{p}</option>)}
+                        {cryptoPairs.map(p => <option key={p} className="bg-white dark:bg-[#0A0A0A] text-slate-900 dark:text-white">{p}</option>)}
                     </select>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
@@ -388,8 +414,8 @@ const MarketRegimeClassifier: React.FC = () => {
                     {/* Current Status Card */}
                     <Card className="relative overflow-hidden">
                         <div className={`absolute top-0 left-0 w-1 h-full ${currentRegimeInfo.color}`}></div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-widest font-semibold mb-1">Current State</p>
-                        <h3 className={`text-2xl font-extrabold ${currentRegimeInfo.textColor} mb-2`}>{currentRegime}</h3>
+                        <p className="text-xs text-slate-500 dark:text-gray-400 uppercase tracking-widest font-semibold mb-1">Current State</p>
+                        <h3 className={`text-2xl font-extrabold ${getRegimeHeadingClass(currentRegime)} mb-2`}>{currentRegime}</h3>
                         <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{currentRegimeInfo.description}</p>
                     </Card>
 
@@ -415,7 +441,7 @@ const MarketRegimeClassifier: React.FC = () => {
                     <Card className="flex-1 flex flex-col min-h-[400px]">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-lg font-bold text-slate-900 dark:text-white">Regime History</h3>
-                            <div className="flex gap-4 text-xs font-medium">
+                            <div className="flex gap-4 text-xs font-medium text-slate-600 dark:text-slate-300">
                                 <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#10B981]"></div> Bull</div>
                                 <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#F43F5E]"></div> Bear</div>
                                 <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#FBBF24]"></div> Range</div>
@@ -439,7 +465,7 @@ const MarketRegimeClassifier: React.FC = () => {
                         <Card>
                             <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wide mb-2">Risk Distribution</h4>
                             <VolatilityDistribution currentRegime={currentRegime} />
-                            <div className="mt-2 p-2 bg-gray-100 dark:bg-white/5 rounded text-xs text-gray-500 flex justify-between">
+                            <div className="mt-2 p-2 bg-slate-100 dark:bg-white/5 rounded text-xs text-slate-600 dark:text-gray-400 flex justify-between">
                                 <span>Est. Volatility: <span className="text-slate-900 dark:text-white font-bold">{data?.volatility_score && data.volatility_score > 0.5 ? 'High' : 'Low'}</span></span>
                                 <span>Tail Risk: <span className="text-slate-900 dark:text-white font-bold">Fat</span></span>
                             </div>

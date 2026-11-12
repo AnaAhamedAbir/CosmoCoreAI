@@ -60,20 +60,20 @@ const ScanLine = () => (
 );
 
 const DataMetric: React.FC<{ label: string; value: string; trend?: number; sub?: string }> = ({ label, value, trend, sub }) => (
-    <div className="bg-white/80 dark:bg-[#000000]/60 backdrop-blur-md border border-gray-200 dark:border-[#1A1A1A] p-4 rounded-xl shadow-sm flex flex-col justify-between relative overflow-hidden group hover:border-brand-primary/30 transition-all">
+    <div className="bg-white/80 dark:bg-[#000000]/60 backdrop-blur-md border border-slate-200 dark:border-[#1A1A1A] p-4 rounded-xl shadow-sm flex flex-col justify-between relative overflow-hidden group hover:border-brand-primary/30 transition-all">
         {/* Hover glow */}
         <div className="absolute -right-10 -top-10 w-24 h-24 bg-brand-primary/10 rounded-full blur-2xl group-hover:bg-brand-primary/20 transition-all duration-500"></div>
 
-        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold z-10">{label}</p>
+        <p className="text-xs text-slate-500 dark:text-gray-400 uppercase tracking-wider font-semibold z-10">{label}</p>
         <div className="mt-2 z-10">
             <p className="text-2xl font-bold text-slate-900 dark:text-white font-mono">{value}</p>
             <div className="flex items-center gap-2 mt-1">
                 {trend !== undefined && (
-                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${trend >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${trend >= 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-500' : 'bg-rose-500/10 text-rose-600 dark:text-rose-500'}`}>
                         {trend > 0 ? '+' : ''}{trend}%
                     </span>
                 )}
-                {sub && <span className="text-xs text-gray-400">{sub}</span>}
+                {sub && <span className="text-xs text-slate-500 dark:text-gray-400">{sub}</span>}
             </div>
         </div>
     </div>
@@ -82,40 +82,45 @@ const DataMetric: React.FC<{ label: string; value: string; trend?: number; sub?:
 // --- VIEWS ---
 
 const SatelliteView: React.FC = () => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
             {/* Visual Map Panel */}
-            <div className="lg:col-span-2 relative bg-[#050505] rounded-2xl overflow-hidden border border-[#1A1A1A] shadow-2xl group">
+            <div className="lg:col-span-2 relative bg-slate-100 dark:bg-[#050505] rounded-2xl overflow-hidden border border-slate-200 dark:border-[#1A1A1A] shadow-lg dark:shadow-2xl group">
                 {/* Simulated Satellite Map Background */}
-                <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-30"></div>
+                <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-10 dark:opacity-30"></div>
                 <div className="absolute inset-0" style={{
-                    backgroundImage: 'linear-gradient(rgba(51, 65, 85, 0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(51, 65, 85, 0.5) 1px, transparent 1px)',
+                    backgroundImage: isDark
+                        ? 'linear-gradient(rgba(51, 65, 85, 0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(51, 65, 85, 0.5) 1px, transparent 1px)'
+                        : 'linear-gradient(rgba(148, 163, 184, 0.35) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.35) 1px, transparent 1px)',
                     backgroundSize: '40px 40px',
                     transform: 'perspective(500px) rotateX(10deg) scale(1.1)'
                 }}></div>
 
                 {/* "Parking Lot" Rectangles simulating cars */}
-                <div className="absolute top-1/4 left-1/4 w-32 h-24 border-2 border-brand-primary/30 rounded bg-brand-primary/5 flex flex-wrap content-start p-1 gap-0.5">
+                <div className="absolute top-1/4 left-1/4 w-32 h-24 border-2 border-brand-primary/50 dark:border-brand-primary/30 rounded bg-brand-primary/10 dark:bg-brand-primary/5 flex flex-wrap content-start p-1 gap-0.5">
                     {Array.from({ length: 40 }).map((_, i) => (
-                        <div key={i} className={`w-2 h-3 rounded-sm ${Math.random() > 0.3 ? 'bg-white/80 shadow-[0_0_5px_white]' : 'bg-transparent'}`}></div>
+                        <div key={i} className={`w-2 h-3 rounded-sm ${Math.random() > 0.3 ? 'bg-brand-primary/70 dark:bg-white/80 dark:shadow-[0_0_5px_white]' : 'bg-transparent'}`}></div>
                     ))}
                 </div>
-                <div className="absolute bottom-1/3 right-1/3 w-40 h-28 border-2 border-yellow-500/30 rounded bg-yellow-500/5 flex flex-wrap content-start p-1 gap-0.5">
+                <div className="absolute bottom-1/3 right-1/3 w-40 h-28 border-2 border-amber-500/50 dark:border-yellow-500/30 rounded bg-amber-500/10 dark:bg-yellow-500/5 flex flex-wrap content-start p-1 gap-0.5">
                     {Array.from({ length: 50 }).map((_, i) => (
-                        <div key={i} className={`w-2 h-3 rounded-sm ${Math.random() > 0.4 ? 'bg-white/80 shadow-[0_0_5px_white]' : 'bg-transparent'}`}></div>
+                        <div key={i} className={`w-2 h-3 rounded-sm ${Math.random() > 0.4 ? 'bg-amber-600/80 dark:bg-white/80 dark:shadow-[0_0_5px_white]' : 'bg-transparent'}`}></div>
                     ))}
                 </div>
 
                 <ScanLine />
 
                 {/* HUD Overlay */}
-                <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-sm border border-white/10 px-3 py-1 rounded text-xs font-mono text-brand-primary">
+                <div className="absolute top-4 left-4 bg-white/90 dark:bg-black/60 backdrop-blur-sm border border-slate-200 dark:border-white/10 px-3 py-1 rounded text-xs font-mono text-brand-primary shadow-sm dark:shadow-none">
                     <span className="w-2 h-2 bg-red-500 rounded-full inline-block mr-2 animate-pulse"></span>
                     LIVE FEED: ORBITAL-4
                 </div>
-                <div className="absolute bottom-4 right-4 text-right">
-                    <p className="text-[10px] text-gray-400 font-mono">LAT: 34.0522 N | LON: 118.2437 W</p>
-                    <p className="text-xs font-bold text-white font-mono">OBJECT_COUNT: 5,102</p>
+                <div className="absolute bottom-4 right-4 text-right bg-white/90 dark:bg-transparent backdrop-blur-sm dark:backdrop-blur-none px-2.5 py-1.5 rounded-lg dark:p-0 border border-slate-200 dark:border-0 shadow-sm dark:shadow-none">
+                    <p className="text-[10px] text-slate-600 dark:text-gray-400 font-mono">LAT: 34.0522 N | LON: 118.2437 W</p>
+                    <p className="text-xs font-bold text-slate-900 dark:text-white font-mono">OBJECT_COUNT: 5,102</p>
                 </div>
             </div>
 
@@ -135,18 +140,24 @@ const SatelliteView: React.FC = () => {
                                         <stop offset="95%" stopColor="#6366F1" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#334155" : "#e2e8f0"} vertical={false} />
                                 <XAxis dataKey="week" hide />
                                 <YAxis hide domain={['dataMin - 100', 'dataMax + 100']} />
                                 <Tooltip
-                                    contentStyle={{ backgroundColor: '#0A0A0A', border: 'none', borderRadius: '8px' }}
-                                    itemStyle={{ color: '#fff' }}
+                                    contentStyle={{
+                                        backgroundColor: isDark ? '#0A0A0A' : '#ffffff',
+                                        border: isDark ? '1px solid #334155' : '1px solid #e2e8f0',
+                                        borderRadius: '8px',
+                                        color: isDark ? '#fff' : '#0f172a'
+                                    }}
+                                    itemStyle={{ color: isDark ? '#fff' : '#0f172a' }}
+                                    labelStyle={{ color: isDark ? '#94a3b8' : '#64748b' }}
                                 />
                                 <Area type="monotone" dataKey="count" stroke="#6366F1" strokeWidth={2} fill="url(#satGradient)" />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
-                    <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                    <div className="mt-2 flex items-center justify-between text-xs text-slate-500 dark:text-gray-500">
                         <span>Correlation to Revenue:</span>
                         <span className="font-bold text-brand-primary">0.82 (High)</span>
                     </div>
@@ -157,6 +168,9 @@ const SatelliteView: React.FC = () => {
 };
 
 const TransactionView: React.FC = () => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
             <div className="lg:col-span-2">
@@ -164,7 +178,7 @@ const TransactionView: React.FC = () => {
                     <div className="flex justify-between items-center mb-6">
                         <div>
                             <h3 className="text-lg font-bold text-slate-900 dark:text-white">Consumer Spending Pulse</h3>
-                            <p className="text-xs text-gray-500">Aggregated credit card data (Lag: T-2 days)</p>
+                            <p className="text-xs text-slate-500 dark:text-gray-500">Aggregated credit card data (Lag: T-2 days)</p>
                         </div>
                         <div className="flex items-center gap-2 text-xs bg-brand-primary/10 text-brand-primary px-2 py-1 rounded font-bold">
                             <span className="relative flex h-2 w-2">
@@ -183,12 +197,18 @@ const TransactionView: React.FC = () => {
                                         <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} opacity={0.5} />
-                                <XAxis dataKey="date" stroke="#94A3B8" tickFormatter={(val) => new Date(val).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} fontSize={10} axisLine={false} tickLine={false} />
-                                <YAxis stroke="#94A3B8" fontSize={10} axisLine={false} tickLine={false} />
+                                <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#334155" : "#e2e8f0"} vertical={false} opacity={0.5} />
+                                <XAxis dataKey="date" stroke={isDark ? "#94A3B8" : "#64748B"} tick={{ fill: isDark ? '#94A3B8' : '#64748B' }} tickFormatter={(val) => new Date(val).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} fontSize={10} axisLine={false} tickLine={false} />
+                                <YAxis stroke={isDark ? "#94A3B8" : "#64748B"} tick={{ fill: isDark ? '#94A3B8' : '#64748B' }} fontSize={10} axisLine={false} tickLine={false} />
                                 <Tooltip
-                                    contentStyle={{ backgroundColor: '#0A0A0A', border: '1px solid #334155', borderRadius: '8px' }}
-                                    labelStyle={{ color: '#94A3B8' }}
+                                    contentStyle={{
+                                        backgroundColor: isDark ? '#0A0A0A' : '#ffffff',
+                                        border: isDark ? '1px solid #334155' : '1px solid #e2e8f0',
+                                        borderRadius: '8px',
+                                        color: isDark ? '#f8fafc' : '#0f172a'
+                                    }}
+                                    itemStyle={{ color: isDark ? '#e2e8f0' : '#334155' }}
+                                    labelStyle={{ color: isDark ? '#94A3B8' : '#64748B' }}
                                 />
                                 <Legend />
                                 <Area type="monotone" dataKey="credit_card_spend" name="Alt Data Spend" stroke="#10B981" fill="url(#spendGradient)" strokeWidth={2} />
@@ -203,16 +223,16 @@ const TransactionView: React.FC = () => {
                 <DataMetric label="Avg Ticket Size" value="$84.20" trend={-1.5} sub="YoY" />
 
                 <Card className="flex-1 !p-0 overflow-hidden relative">
-                    <div className="absolute inset-0 bg-gradient-to-br from-purple-900/20 to-blue-900/20"></div>
+                    <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-blue-500/10 dark:from-purple-900/20 dark:to-blue-900/20"></div>
                     <div className="p-5 relative z-10">
-                        <h4 className="text-sm font-bold text-white mb-2">Signal Strength</h4>
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-2">Signal Strength</h4>
                         <div className="flex items-center gap-2">
-                            <div className="h-2 flex-1 bg-gray-700 rounded-full overflow-hidden">
-                                <div className="h-full bg-green-400 w-[85%]"></div>
+                            <div className="h-2 flex-1 bg-slate-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                <div className="h-full bg-emerald-500 dark:bg-green-400 w-[85%]"></div>
                             </div>
-                            <span className="text-green-400 font-bold text-sm">85%</span>
+                            <span className="text-emerald-600 dark:text-green-400 font-bold text-sm">85%</span>
                         </div>
-                        <p className="text-xs text-gray-400 mt-2">
+                        <p className="text-xs text-slate-600 dark:text-gray-400 mt-2">
                             Based on historical correlation, current spend data predicts an earnings beat with high confidence.
                         </p>
                     </div>
@@ -223,13 +243,16 @@ const TransactionView: React.FC = () => {
 };
 
 const GeolocationView: React.FC = () => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
     return (
         <div className="h-full flex flex-col">
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 relative rounded-2xl overflow-hidden border border-brand-border-light dark:border-[#1A1A1A] shadow-xl">
                     {/* Map Base */}
-                    <div className="absolute inset-0 bg-gray-200 dark:bg-[#0A0A0A]">
-                        <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" className="opacity-20">
+                    <div className="absolute inset-0 bg-slate-100 dark:bg-[#0A0A0A]">
+                        <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" className="opacity-30 dark:opacity-20 text-slate-400 dark:text-slate-500">
                             <defs>
                                 <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
                                     <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="1" />
@@ -240,13 +263,13 @@ const GeolocationView: React.FC = () => {
                     </div>
 
                     {/* Heatmap overlay using radial gradients */}
-                    <div className="absolute top-1/3 left-1/4 w-64 h-64 bg-red-500/40 rounded-full blur-3xl mix-blend-screen animate-pulse"></div>
-                    <div className="absolute bottom-1/4 right-1/3 w-48 h-48 bg-yellow-500/30 rounded-full blur-3xl mix-blend-screen"></div>
-                    <div className="absolute top-1/2 right-1/4 w-32 h-32 bg-blue-500/30 rounded-full blur-2xl mix-blend-screen"></div>
+                    <div className="absolute top-1/3 left-1/4 w-64 h-64 bg-red-500/40 rounded-full blur-3xl mix-blend-multiply dark:mix-blend-screen animate-pulse"></div>
+                    <div className="absolute bottom-1/4 right-1/3 w-48 h-48 bg-yellow-500/30 rounded-full blur-3xl mix-blend-multiply dark:mix-blend-screen"></div>
+                    <div className="absolute top-1/2 right-1/4 w-32 h-32 bg-blue-500/30 rounded-full blur-2xl mix-blend-multiply dark:mix-blend-screen"></div>
 
-                    <div className="absolute bottom-4 left-4 bg-white/90 dark:bg-black/80 backdrop-blur p-3 rounded-xl border border-gray-200 dark:border-white/10">
+                    <div className="absolute bottom-4 left-4 bg-white/90 dark:bg-black/80 backdrop-blur p-3 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none">
                         <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-2">Traffic Density</h4>
-                        <div className="flex items-center gap-1 text-[10px] text-gray-500 font-mono">
+                        <div className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-gray-500 font-mono">
                             <span>Low</span>
                             <div className="w-24 h-2 bg-gradient-to-r from-blue-500 via-yellow-500 to-red-500 rounded-full"></div>
                             <span>High</span>
@@ -260,8 +283,19 @@ const GeolocationView: React.FC = () => {
                         <div className="h-40">
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={MOCK_FOOT_TRAFFIC}>
+                                    <Tooltip
+                                        cursor={{ fill: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.05)' }}
+                                        contentStyle={{
+                                            backgroundColor: isDark ? '#0A0A0A' : '#ffffff',
+                                            border: isDark ? '1px solid #334155' : '1px solid #e2e8f0',
+                                            borderRadius: '8px',
+                                            color: isDark ? '#f8fafc' : '#0f172a'
+                                        }}
+                                        itemStyle={{ color: isDark ? '#f8fafc' : '#0f172a' }}
+                                        labelStyle={{ color: isDark ? '#94a3b8' : '#64748b' }}
+                                    />
                                     <Bar dataKey="traffic" fill="#F472B6" radius={[4, 4, 0, 0]} />
-                                    <XAxis dataKey="hour" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                                    <XAxis dataKey="hour" tick={{ fontSize: 10, fill: isDark ? '#94A3B8' : '#64748B' }} axisLine={false} tickLine={false} />
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
@@ -275,20 +309,33 @@ const GeolocationView: React.FC = () => {
 };
 
 const JobPostingsView: React.FC = () => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
             <Card className="lg:col-span-2 flex flex-col">
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white">Talent Demand (Hiring)</h3>
-                    <span className="text-xs bg-purple-500/10 text-purple-500 px-2 py-1 rounded font-bold">Growth Signal</span>
+                    <span className="text-xs bg-purple-500/10 text-purple-600 dark:text-purple-500 px-2 py-1 rounded font-bold">Growth Signal</span>
                 </div>
                 <div className="flex-1 min-h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={MOCK_JOB_POSTINGS_DATA} layout="vertical" margin={{ left: 40 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={true} vertical={false} />
+                            <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#334155" : "#e2e8f0"} horizontal={true} vertical={false} />
                             <XAxis type="number" hide />
-                            <YAxis dataKey="dept" type="category" width={100} tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-                            <Tooltip contentStyle={{ backgroundColor: '#0A0A0A', border: '1px solid #334155', borderRadius: '8px' }} />
+                            <YAxis dataKey="dept" type="category" width={100} tick={{ fontSize: 11, fill: isDark ? '#94A3B8' : '#475569' }} axisLine={false} tickLine={false} />
+                            <Tooltip
+                                cursor={{ fill: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.05)' }}
+                                contentStyle={{
+                                    backgroundColor: isDark ? '#0A0A0A' : '#ffffff',
+                                    border: isDark ? '1px solid #334155' : '1px solid #e2e8f0',
+                                    borderRadius: '8px',
+                                    color: isDark ? '#f8fafc' : '#0f172a'
+                                }}
+                                itemStyle={{ color: isDark ? '#f8fafc' : '#0f172a' }}
+                                labelStyle={{ color: isDark ? '#94a3b8' : '#64748b' }}
+                            />
                             <Bar dataKey="openings" radius={[0, 4, 4, 0]}>
                                 {MOCK_JOB_POSTINGS_DATA.map((entry, index) => (
                                     <Cell key={`cell-${index}`} fill={['#8B5CF6', '#A78BFA', '#C4B5FD', '#DDD6FE'][index % 4]} />
@@ -300,13 +347,13 @@ const JobPostingsView: React.FC = () => {
             </Card>
 
             <div className="lg:col-span-1 flex flex-col gap-4">
-                <div className="bg-[#050505] border border-gray-800 rounded-xl p-4 flex-1 overflow-hidden flex flex-col">
-                    <h4 className="text-xs font-bold text-green-400 uppercase tracking-wider mb-3 font-mono">&gt;&gt; LIVE_FEED: POSTINGS</h4>
+                <div className="bg-white dark:bg-[#050505] border border-slate-200 dark:border-gray-800 rounded-xl p-4 flex-1 overflow-hidden flex flex-col shadow-sm dark:shadow-none">
+                    <h4 className="text-xs font-bold text-emerald-600 dark:text-green-400 uppercase tracking-wider mb-3 font-mono">&gt;&gt; LIVE_FEED: POSTINGS</h4>
                     <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar font-mono text-xs">
                         {MOCK_SAMPLE_JOBS.map((job, i) => (
-                            <div key={i} className="p-2 bg-white/5 rounded border-l-2 border-purple-500">
-                                <span className="text-white block mb-1">{job.title}</span>
-                                <span className="text-gray-500">{job.department}</span>
+                            <div key={i} className="p-2 bg-slate-50 dark:bg-white/5 rounded border-l-2 border-purple-500">
+                                <span className="text-slate-900 dark:text-white block mb-1 font-medium dark:font-normal">{job.title}</span>
+                                <span className="text-slate-500 dark:text-gray-500">{job.department}</span>
                             </div>
                         ))}
                     </div>
@@ -350,15 +397,15 @@ const AlternativeData: React.FC = () => {
         <div className="h-full flex flex-col gap-6 laptop:gap-3 animate-fade-in-slide-up">
 
             {/* Control Deck */}
-            <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-[#0A0A0A] border border-brand-border-light dark:border-[#1A1A1A] p-2 rounded-2xl shadow-sm flex-shrink-0">
-                <div className="flex p-1 bg-gray-100 dark:bg-[#000000]/50 rounded-xl overflow-x-auto no-scrollbar w-full md:w-auto">
+            <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-[#0A0A0A] border border-slate-200 dark:border-[#1A1A1A] p-2 rounded-2xl shadow-sm flex-shrink-0">
+                <div className="flex p-1 bg-slate-100 dark:bg-[#000000]/50 rounded-xl overflow-x-auto no-scrollbar w-full md:w-auto">
                     {navItems.map((item) => (
                         <button
                             key={item.id}
                             onClick={() => setActiveSource(item.id as any)}
                             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeSource === item.id
                                 ? 'bg-white dark:bg-brand-primary text-brand-primary dark:text-white shadow-md'
-                                : 'text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-white/5'
+                                : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/5'
                                 }`}
                         >
                             {item.icon}
@@ -368,13 +415,13 @@ const AlternativeData: React.FC = () => {
                 </div>
 
                 <div className="mt-4 md:mt-0 flex items-center gap-3 px-4">
-                    <span className="text-xs font-bold text-gray-400 uppercase">Asset:</span>
+                    <span className="text-xs font-bold text-slate-500 dark:text-gray-400 uppercase">Asset:</span>
                     <select
                         value={activeStock}
                         onChange={(e) => setActiveStock(e.target.value)}
                         className="bg-transparent text-lg font-bold text-slate-900 dark:text-white focus:outline-none cursor-pointer"
                     >
-                        {MOCK_ASSETS.map(s => <option key={s} value={s}>{s}</option>)}
+                        {MOCK_ASSETS.map(s => <option key={s} value={s} className="bg-white dark:bg-[#0A0A0A] text-slate-800 dark:text-gray-200">{s}</option>)}
                     </select>
                 </div>
             </div>
@@ -386,10 +433,10 @@ const AlternativeData: React.FC = () => {
                 {activeSource === 'geolocation' && <GeolocationView />}
                 {activeSource === 'jobs' && <JobPostingsView />}
                 {activeSource === 'earnings' && (
-                    <div className="h-full flex flex-col items-center justify-center text-gray-500 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-2xl">
+                    <div className="h-full flex flex-col items-center justify-center text-slate-500 dark:text-gray-500 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl bg-white/50 dark:bg-transparent">
                         <CardIcon className="w-12 h-12 mb-4 opacity-50" />
-                        <p className="text-sm font-bold uppercase tracking-widest">Earnings Calendar & SEC Filings</p>
-                        <p className="text-xs mt-2">Mock data module for {activeStock}</p>
+                        <p className="text-sm font-bold uppercase tracking-widest text-slate-700 dark:text-slate-300">Earnings Calendar & SEC Filings</p>
+                        <p className="text-xs mt-2 text-slate-500 dark:text-gray-400">Mock data module for {activeStock}</p>
                     </div>
                 )}
             </div>

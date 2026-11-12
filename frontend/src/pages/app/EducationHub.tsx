@@ -20,14 +20,14 @@ import type { EducationResource } from '@/types';
 
 const LevelBadge = ({ level }: { level: string }) => {
     const colors: Record<string, string> = {
-        'Level 1': 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50',
-        'Level 2': 'bg-blue-500/20 text-blue-400 border-blue-500/50',
-        'Level 3': 'bg-violet-500/20 text-violet-400 border-violet-500/50',
-        'Level 4': 'bg-orange-500/20 text-orange-400 border-orange-500/50',
-        'Level 5': 'bg-rose-500/20 text-rose-400 border-rose-500/50',
+        'Level 1': 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/40 dark:border-emerald-500/50',
+        'Level 2': 'bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-500/40 dark:border-blue-500/50',
+        'Level 3': 'bg-violet-500/20 text-violet-700 dark:text-violet-400 border-violet-500/40 dark:border-violet-500/50',
+        'Level 4': 'bg-orange-500/20 text-orange-700 dark:text-orange-400 border-orange-500/40 dark:border-orange-500/50',
+        'Level 5': 'bg-rose-500/20 text-rose-700 dark:text-rose-400 border-rose-500/40 dark:border-rose-500/50',
     };
     return (
-        <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-md border ${colors[level] || 'bg-gray-800 text-gray-400'}`}>
+        <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-md border backdrop-blur-sm ${colors[level] || 'bg-slate-200 dark:bg-gray-800 text-slate-700 dark:text-gray-400 border-slate-300 dark:border-gray-700'}`}>
             {level}
         </span>
     );
@@ -86,31 +86,31 @@ const EducationHub: React.FC = () => {
     ];
 
     return (
-        <div className="min-h-full bg-[#0B0E14] text-white font-sans selection:bg-blue-500/30">
+        <div className="min-h-full bg-slate-50 dark:bg-[#0B0E14] text-slate-900 dark:text-white font-sans selection:bg-blue-500/30">
 
             {/* --- Hero Section with Glow --- */}
-            <div className="relative overflow-hidden bg-gradient-to-b from-blue-900/20 to-transparent pb-10 pt-6 px-6 md:px-12 border-b border-white/5">
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-blue-500/20 blur-[120px] rounded-full pointer-events-none"></div>
+            <div className="relative overflow-hidden bg-gradient-to-b from-blue-50/80 dark:from-blue-900/20 to-transparent pb-10 pt-6 px-6 md:px-12 border-b border-slate-200 dark:border-white/5">
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-blue-500/10 dark:bg-blue-500/20 blur-[120px] rounded-full pointer-events-none"></div>
 
                 <div className="relative z-10 max-w-5xl mx-auto text-center">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-bold uppercase tracking-widest mb-4 animate-fade-in">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-widest mb-4 animate-fade-in">
                         <Zap className="w-3 h-3" /> Cosmo Academy
                     </div>
-                    <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-4 text-transparent bg-clip-text bg-gradient-to-r from-white via-blue-100 to-gray-400">
-                        Zero to <span className="text-blue-500">Quant Hero.</span>
+                    <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-4 text-transparent bg-clip-text bg-gradient-to-r from-slate-900 via-blue-950 to-slate-700 dark:from-white dark:via-blue-100 dark:to-gray-400">
+                        Zero to <span className="text-blue-600 dark:text-blue-500">Quant Hero.</span>
                     </h1>
-                    <p className="text-gray-400 max-w-2xl mx-auto text-lg mb-8">
+                    <p className="text-slate-600 dark:text-gray-400 max-w-2xl mx-auto text-lg mb-8">
                         Master the markets with our structured curriculum. From blockchain basics to deploying your first algorithmic trading bot.
                     </p>
 
                     {/* Tab Switcher */}
                     <div className="flex justify-center mb-8">
-                        <div className="p-1 bg-white/5 rounded-xl border border-white/10 flex gap-1">
+                        <div className="p-1 bg-slate-200/60 dark:bg-white/5 rounded-xl border border-slate-300/80 dark:border-white/10 flex gap-1">
                             <button
                                 onClick={() => setActiveTab('curriculum')}
                                 className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'curriculum'
                                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 dark:text-gray-400 dark:hover:text-white dark:hover:bg-white/5'
                                     }`}
                             >
                                 <GraduationCap className="w-4 h-4" /> Curriculum
@@ -119,7 +119,7 @@ const EducationHub: React.FC = () => {
                                 onClick={() => setActiveTab('news')}
                                 className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'news'
                                     ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
-                                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 dark:text-gray-400 dark:hover:text-white dark:hover:bg-white/5'
                                     }`}
                             >
                                 <Newspaper className="w-4 h-4" /> Market Intel
@@ -134,8 +134,8 @@ const EducationHub: React.FC = () => {
                 {/* --- Left Sidebar: Roadmap (Only for Curriculum) --- */}
                 {activeTab === 'curriculum' && (
                     <div className="w-full md:w-80 flex-shrink-0">
-                        <div className="sticky top-24 bg-[#131722] border border-white/5 rounded-2xl p-2 shadow-2xl">
-                            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider px-4 py-3 mb-2">Learning Path</h3>
+                        <div className="sticky top-24 bg-white dark:bg-[#131722] border border-slate-200 dark:border-white/5 rounded-2xl p-2 shadow-md dark:shadow-2xl">
+                            <h3 className="text-xs font-bold text-slate-500 dark:text-gray-500 uppercase tracking-wider px-4 py-3 mb-2">Learning Path</h3>
                             <div className="space-y-1">
                                 {levels.map((lvl, idx) => (
                                     <button
@@ -143,18 +143,18 @@ const EducationHub: React.FC = () => {
                                         onClick={() => setSelectedLevel(lvl.id)}
                                         className={`w-full group flex items-center gap-4 p-3 rounded-xl transition-all border ${selectedLevel === lvl.id
                                             ? 'bg-blue-500/10 border-blue-500/50'
-                                            : 'bg-transparent border-transparent hover:bg-white/5'
+                                            : 'bg-transparent border-transparent hover:bg-slate-100 dark:hover:bg-white/5'
                                             }`}
                                     >
-                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-colors ${selectedLevel === lvl.id ? 'bg-blue-500 text-white' : 'bg-white/10 text-gray-400 group-hover:bg-white/20'
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-colors ${selectedLevel === lvl.id ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-gray-400 group-hover:bg-slate-200 dark:group-hover:bg-white/20'
                                             }`}>
                                             {idx + 1}
                                         </div>
                                         <div className="text-left">
-                                            <p className={`text-sm font-bold ${selectedLevel === lvl.id ? 'text-white' : 'text-gray-300'}`}>{lvl.title}</p>
-                                            <p className="text-[10px] text-gray-500">{lvl.desc}</p>
+                                            <p className={`text-sm font-bold ${selectedLevel === lvl.id ? 'text-blue-600 dark:text-white' : 'text-slate-800 dark:text-gray-300 group-hover:text-slate-900 dark:group-hover:text-white'}`}>{lvl.title}</p>
+                                            <p className="text-[10px] text-slate-500 dark:text-gray-500">{lvl.desc}</p>
                                         </div>
-                                        {selectedLevel === lvl.id && <ChevronRight className="w-4 h-4 text-blue-500 ml-auto" />}
+                                        {selectedLevel === lvl.id && <ChevronRight className="w-4 h-4 text-blue-600 dark:text-blue-500 ml-auto" />}
                                     </button>
                                 ))}
                             </div>
@@ -166,15 +166,15 @@ const EducationHub: React.FC = () => {
                 <div className="flex-1">
                     {/* Search & Filter Bar */}
                     <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-xl font-bold flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                             {activeTab === 'curriculum' ? (
                                 <>
-                                    <span className="text-blue-500">{selectedLevel}:</span>
+                                    <span className="text-blue-600 dark:text-blue-500">{selectedLevel}:</span>
                                     {levels.find(l => l.id === selectedLevel)?.desc}
                                 </>
                             ) : (
                                 <>
-                                    <span className="text-emerald-500 animate-pulse">●</span> Live Market News
+                                    <span className="text-emerald-600 dark:text-emerald-500 animate-pulse">●</span> Live Market News
                                 </>
                             )}
                         </h2>
@@ -184,9 +184,9 @@ const EducationHub: React.FC = () => {
                                 placeholder="Search topic..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="bg-[#131722] border border-white/10 rounded-full pl-9 pr-4 py-2 text-sm text-gray-300 focus:outline-none focus:border-blue-500 w-64 transition-all"
+                                className="bg-white dark:bg-[#131722] border border-slate-300 dark:border-white/10 rounded-full pl-9 pr-4 py-2 text-sm text-slate-900 dark:text-gray-300 placeholder:text-slate-400 dark:placeholder:text-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 w-64 transition-all shadow-sm"
                             />
-                            <Search className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <Search className="w-4 h-4 text-slate-400 dark:text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
                         </div>
                     </div>
 
@@ -194,7 +194,7 @@ const EducationHub: React.FC = () => {
                     {loading ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {[1, 2, 3, 4].map(i => (
-                                <div key={i} className="h-48 bg-white/5 rounded-2xl animate-pulse"></div>
+                                <div key={i} className="h-48 bg-slate-200 dark:bg-white/5 rounded-2xl animate-pulse"></div>
                             ))}
                         </div>
                     ) : resources.length > 0 ? (
@@ -204,17 +204,17 @@ const EducationHub: React.FC = () => {
                                 .map((resource) => (
                                     <Card
                                         key={resource.id}
-                                        className="!bg-[#131722] !border-white/5 hover:!border-blue-500/30 transition-all duration-300 group overflow-hidden relative"
+                                        className="!bg-white dark:!bg-[#131722] !border-slate-200 dark:!border-white/5 hover:!border-blue-500/40 dark:hover:!border-blue-500/30 shadow-md dark:shadow-none transition-all duration-300 group overflow-hidden relative"
                                     >
                                         {/* Image Overlay Gradient */}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-[#131722] via-transparent to-transparent z-10 pointer-events-none"></div>
+                                        <div className="absolute inset-0 bg-gradient-to-t from-white via-white/40 dark:from-[#131722] dark:via-transparent to-transparent z-10 pointer-events-none"></div>
 
                                         {/* Background Image (Mock if null) */}
                                         <div className="h-32 w-full overflow-hidden relative">
                                             <img
                                                 src={resource.image_url || `https://source.unsplash.com/random/800x600/?crypto,${resource.category}`}
                                                 alt={resource.title}
-                                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-60 group-hover:opacity-80"
+                                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-75 dark:opacity-60 group-hover:opacity-90 dark:group-hover:opacity-80"
                                             />
                                             <div className="absolute top-3 right-3 z-20">
                                                 <LevelBadge level={resource.level || 'News'} />
@@ -228,16 +228,16 @@ const EducationHub: React.FC = () => {
                                                     {resource.category}
                                                 </span>
                                                 {resource.source && (
-                                                    <span className="text-[10px] text-gray-400 flex items-center gap-1 bg-black/30 px-2 py-0.5 rounded backdrop-blur-sm border border-white/5">
+                                                    <span className="text-[10px] text-slate-600 dark:text-gray-400 flex items-center gap-1 bg-slate-100/90 dark:bg-black/30 px-2 py-0.5 rounded backdrop-blur-sm border border-slate-200 dark:border-white/5">
                                                         <Clock className="w-3 h-3" /> {resource.source}
                                                     </span>
                                                 )}
                                             </div>
 
-                                            <h3 className="text-lg font-bold text-white mb-2 leading-tight group-hover:text-blue-400 transition-colors">
+                                            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2 leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                                                 {resource.title}
                                             </h3>
-                                            <p className="text-sm text-gray-400 line-clamp-2 mb-4">
+                                            <p className="text-sm text-slate-600 dark:text-gray-400 line-clamp-2 mb-4">
                                                 {resource.description}
                                             </p>
 
@@ -245,7 +245,7 @@ const EducationHub: React.FC = () => {
                                                 href={resource.link}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="inline-flex items-center gap-2 text-sm font-bold text-white bg-white/5 hover:bg-blue-600 hover:shadow-lg hover:shadow-blue-500/25 border border-white/10 hover:border-transparent px-4 py-2 rounded-lg transition-all w-full justify-center"
+                                                className="inline-flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-white bg-slate-100 hover:bg-blue-600 hover:text-white dark:bg-white/5 dark:hover:bg-blue-600 hover:shadow-lg hover:shadow-blue-500/25 border border-slate-200 dark:border-white/10 hover:border-transparent px-4 py-2 rounded-lg transition-all w-full justify-center"
                                             >
                                                 {activeTab === 'curriculum' ? (
                                                     <><PlayCircle className="w-4 h-4" /> Start Lesson</>
@@ -258,12 +258,12 @@ const EducationHub: React.FC = () => {
                                 ))}
                         </div>
                     ) : (
-                        <div className="text-center py-20 bg-[#131722] rounded-3xl border border-dashed border-white/10 col-span-full">
-                            <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <Search className="w-8 h-8 text-gray-500" />
+                        <div className="text-center py-20 bg-white dark:bg-[#131722] rounded-3xl border border-dashed border-slate-300 dark:border-white/10 shadow-sm col-span-full">
+                            <div className="w-16 h-16 bg-slate-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Search className="w-8 h-8 text-slate-400 dark:text-gray-500" />
                             </div>
-                            <h3 className="text-xl font-bold text-gray-300">No content found</h3>
-                            <p className="text-gray-500 mt-2 mb-6">Database is empty. Initialize to load starter content.</p>
+                            <h3 className="text-xl font-bold text-slate-800 dark:text-gray-300">No content found</h3>
+                            <p className="text-slate-500 dark:text-gray-500 mt-2 mb-6">Database is empty. Initialize to load starter content.</p>
 
                             <button
                                 onClick={handleInit}

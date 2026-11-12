@@ -56,6 +56,27 @@ html {
   color: #dcdcaa;
 }
 
+.light .token-comment {
+  color: #008000;
+}
+
+.light .token-string {
+  color: #a31515;
+}
+
+.light .token-keyword {
+  color: #0000ff;
+  font-weight: 600;
+}
+
+.light .token-number {
+  color: #098658;
+}
+
+.light .token-function {
+  color: #795e26;
+}
+
 .slider-thumb::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;

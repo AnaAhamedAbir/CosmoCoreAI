@@ -42,6 +42,7 @@ const parseParamsFromCode = (code: string): Record<string, any> => {
 
 const CustomIndicatorStudio: React.FC = () => {
     const { theme } = useTheme();
+    const isDark = theme === 'dark';
     const { showToast } = useToast();
     const [searchParams] = useSearchParams();
     const symbol = searchParams.get('symbol') || 'BINANCE:BTCUSDT';
@@ -131,10 +132,10 @@ const CustomIndicatorStudio: React.FC = () => {
                 interval: '60',
                 autosize: true,
                 container_id: containerId,
-                theme: theme === 'dark' ? 'Dark' : 'Light',
+                theme: isDark ? 'Dark' : 'Light',
                 style: '1',
                 locale: 'en',
-                toolbar_bg: theme === 'dark' ? '#141414' : '#FFFFFF',
+                toolbar_bg: isDark ? '#141414' : '#FFFFFF',
                 enable_publishing: false,
                 hide_side_toolbar: false,
                 allow_symbol_change: true,
@@ -354,13 +355,13 @@ const CustomIndicatorStudio: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <div className="hidden md:flex items-center bg-gray-100 dark:bg-white/5 rounded-lg px-3 py-1.5 border border-transparent focus-within:border-brand-primary/50 transition-all">
+                        <div className="hidden md:flex items-center bg-white dark:bg-white/5 rounded-lg px-3 py-1.5 border border-gray-200 dark:border-transparent focus-within:border-brand-primary/50 transition-all shadow-sm dark:shadow-none">
                             <input
                                 type="text"
                                 value={indicatorName}
                                 onChange={(e) => setIndicatorName(e.target.value)}
                                 placeholder="Script Name..."
-                                className="bg-transparent text-xs text-slate-900 dark:text-white outline-none w-32 placeholder-gray-500"
+                                className="bg-transparent text-xs text-slate-900 dark:text-white outline-none w-32 placeholder-gray-400 dark:placeholder-gray-500"
                             />
                             <button onClick={handleSaveIndicator} className="ml-2 text-gray-400 hover:text-brand-primary"><SaveIcon className="w-4 h-4" /></button>
                         </div>
@@ -373,7 +374,7 @@ const CustomIndicatorStudio: React.FC = () => {
                                 id="isPublic"
                                 checked={isPublic}
                                 onChange={(e) => setIsPublic(e.target.checked)}
-                                className="w-4 h-4 text-brand-primary rounded focus:ring-brand-primary focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+                                className="w-4 h-4 text-brand-primary rounded focus:ring-brand-primary focus:ring-offset-2 dark:focus:ring-offset-gray-900 bg-white dark:bg-transparent border-gray-300 dark:border-gray-600"
                             />
                             <label htmlFor="isPublic" className="text-xs text-slate-700 dark:text-gray-300 cursor-pointer select-none">
                                 Share with community?
@@ -386,7 +387,7 @@ const CustomIndicatorStudio: React.FC = () => {
                             <Button size="sm" variant="primary" onClick={handleRunScript} className="text-xs h-8 flex items-center gap-2 shadow-lg shadow-brand-primary/20">
                                 <PlayIcon className="w-3 h-3" /> Run Script
                             </Button>
-                            <div className="absolute top-full right-0 mt-2 w-64 p-3 bg-white dark:bg-[#0A0A0A] text-slate-600 dark:text-slate-300 text-[10px] leading-relaxed rounded-lg shadow-xl border border-gray-100 dark:border-[#1F1F1F] opacity-0 invisible group-hover/hint:opacity-100 group-hover/hint:visible transition-all z-50">
+                            <div className="absolute top-full right-0 mt-2 w-64 p-3 bg-white dark:bg-[#0A0A0A] text-slate-600 dark:text-slate-300 text-[10px] leading-relaxed rounded-lg shadow-xl border border-gray-200 dark:border-[#1F1F1F] opacity-0 invisible group-hover/hint:opacity-100 group-hover/hint:visible transition-all z-50">
                                 <strong>Note:</strong> This editor configures parameters for the built-in study. Custom Pine Script logic is not directly injected into this widget version.
                             </div>
                         </div>
@@ -396,15 +397,15 @@ const CustomIndicatorStudio: React.FC = () => {
                 {/* Studio Content Area */}
                 <div className="flex-1 overflow-hidden relative">
                     {/* Editor Tab */}
-                    <div className={`absolute inset-0 transition-opacity duration-300 ${activeTab === 'editor' ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}>
+                    <div className={`absolute inset-0 transition-opacity duration-300 ${activeTab === 'editor' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
                         <CodeEditor value={code} onChange={setCode} />
                     </div>
 
                     {/* Config Tab */}
-                    <div className={`absolute inset-0 overflow-y-auto p-6 transition-opacity duration-300 ${activeTab === 'config' ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}>
+                    <div className={`absolute inset-0 overflow-y-auto p-6 transition-opacity duration-300 ${activeTab === 'config' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
                         <div className="max-w-2xl mx-auto">
                             <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Runtime Parameters</h3>
-                            <p className="text-xs text-gray-500 mb-6">Adjust values to see real-time changes when you re-compile.</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-6">Adjust values to see real-time changes when you re-compile.</p>
 
                             {Object.keys(indicatorParams).length > 0 ? (
                                 <div className="grid grid-cols-1 gap-6">
@@ -412,7 +413,7 @@ const CustomIndicatorStudio: React.FC = () => {
                                         <div key={key} className="bg-gray-50 dark:bg-white/5 p-4 rounded-xl border border-gray-200 dark:border-white/5">
                                             <div className="flex justify-between items-center mb-3">
                                                 <label className="text-sm font-semibold text-slate-700 dark:text-gray-200">{config.label}</label>
-                                                <span className="text-xs font-mono bg-white dark:bg-black/40 px-2 py-1 rounded text-brand-primary font-bold">{paramValues[key]}</span>
+                                                <span className="text-xs font-mono bg-white dark:bg-black/40 border border-gray-200 dark:border-transparent px-2 py-1 rounded text-brand-primary font-bold">{paramValues[key]}</span>
                                             </div>
                                             <input
                                                 type="range"
@@ -423,7 +424,7 @@ const CustomIndicatorStudio: React.FC = () => {
                                                 onChange={(e) => handleParamChange(key, Number(e.target.value))}
                                                 className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb accent-brand-primary"
                                             />
-                                            <div className="flex justify-between text-[10px] text-gray-400 mt-2 font-mono">
+                                            <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mt-2 font-mono">
                                                 <span>{config.min}</span>
                                                 <span>{config.max}</span>
                                             </div>
@@ -432,35 +433,35 @@ const CustomIndicatorStudio: React.FC = () => {
                                 </div>
                             ) : (
                                 <div className="text-center py-12 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-xl">
-                                    <p className="text-gray-500 text-sm">No configurable parameters found.</p>
-                                    <p className="text-xs text-gray-400 mt-1">Add <code className="bg-gray-100 dark:bg-white/10 px-1 rounded"># @params</code> block to your code.</p>
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm">No configurable parameters found.</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Add <code className="bg-gray-100 dark:bg-white/10 text-slate-700 dark:text-gray-200 px-1 rounded"># @params</code> block to your code.</p>
                                 </div>
                             )}
                         </div>
                     </div>
 
                     {/* Library Tab */}
-                    <div className={`absolute inset-0 overflow-y-auto p-6 transition-opacity duration-300 ${activeTab === 'library' ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}>
+                    <div className={`absolute inset-0 overflow-y-auto p-6 transition-opacity duration-300 ${activeTab === 'library' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6">Indicator Library</h3>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {/* Templates */}
                             {templates.map(temp => (
-                                <div key={temp.name} onClick={() => handleLoadPreset(temp)} className="group cursor-pointer bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 p-4 rounded-xl hover:border-brand-primary/50 hover:bg-gray-50 dark:hover:bg-white/10 transition-all">
+                                <div key={temp.name} onClick={() => handleLoadPreset(temp)} className="group cursor-pointer bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 p-4 rounded-xl hover:border-brand-primary/50 hover:bg-gray-50 dark:hover:bg-white/10 transition-all shadow-sm dark:shadow-none">
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="p-2 bg-brand-primary/10 rounded-lg text-brand-primary group-hover:scale-110 transition-transform">
                                             <CodeIcon className="w-5 h-5" />
                                         </div>
-                                        <span className="text-[10px] uppercase font-bold text-gray-400 bg-gray-100 dark:bg-black/40 px-2 py-0.5 rounded">Template</span>
+                                        <span className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-black/40 px-2 py-0.5 rounded">Template</span>
                                     </div>
                                     <h4 className="font-bold text-slate-900 dark:text-white">{temp.name}</h4>
-                                    <p className="text-xs text-gray-500 mt-1">Standard implementation.</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Standard implementation.</p>
                                 </div>
                             ))}
 
                             {/* Saved */}
                             {savedIndicators.map((ind, idx) => (
-                                <div key={idx} className="group relative bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 p-4 rounded-xl hover:border-brand-primary/50 transition-all">
+                                <div key={idx} className="group relative bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 p-4 rounded-xl hover:border-brand-primary/50 transition-all shadow-sm dark:shadow-none">
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="p-2 bg-purple-500/10 rounded-lg text-purple-500 group-hover:scale-110 transition-transform">
                                             <FolderIcon className="w-5 h-5" />
@@ -471,7 +472,7 @@ const CustomIndicatorStudio: React.FC = () => {
                                     </div>
                                     <div onClick={() => handleLoadSaved(ind)} className="cursor-pointer">
                                         <h4 className="font-bold text-slate-900 dark:text-white truncate">{ind.name}</h4>
-                                        <p className="text-xs text-gray-500 mt-1">Based on {ind.baseType}</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Based on {ind.baseType}</p>
                                     </div>
                                 </div>
                             ))}
@@ -485,7 +486,8 @@ const CustomIndicatorStudio: React.FC = () => {
                     <div id={`indicator_chart_fullscreen_${widgetKey}`} className="w-full h-full" />
                     <button
                         onClick={toggleFullScreen}
-                        className="absolute top-4 right-4 z-[110] p-2 bg-black/40 backdrop-blur-md rounded-lg text-white hover:bg-black/60 transition-colors"
+                        className="absolute top-4 right-4 z-[110] p-2 bg-white/90 dark:bg-black/60 backdrop-blur-md rounded-lg text-gray-700 dark:text-white border border-gray-200 dark:border-white/10 hover:bg-white dark:hover:bg-black/80 transition-colors shadow-lg"
+                        title="Exit Fullscreen"
                     >
                         <CollapseIcon />
                     </button>

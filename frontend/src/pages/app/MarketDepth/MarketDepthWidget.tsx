@@ -40,13 +40,13 @@ const SymbolSelector: React.FC<{
             <div className="relative">
                 <div className="relative w-full cursor-default overflow-hidden rounded-lg bg-transparent text-left focus:outline-none sm:text-sm">
                     <Combobox.Input
-                        className="w-full border-none bg-transparent py-0 pl-0 pr-6 text-xs font-bold text-slate-700 dark:text-gray-200 focus:ring-0 uppercase placeholder-gray-500"
+                        className="w-full border-none bg-transparent py-0 pl-0 pr-6 text-xs font-bold text-slate-700 dark:text-gray-200 focus:ring-0 uppercase placeholder-slate-400 dark:placeholder-gray-500"
                         displayValue={(s: string) => s}
                         onChange={(event) => setQuery(event.target.value)}
                         placeholder="Search..."
                     />
                     <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
-                        <ChevronsUpDown className="h-3 w-3 text-gray-400" aria-hidden="true" />
+                        <ChevronsUpDown className="h-3 w-3 text-slate-400 dark:text-gray-400" aria-hidden="true" />
                     </Combobox.Button>
                 </div>
                 <Transition
@@ -56,9 +56,9 @@ const SymbolSelector: React.FC<{
                     leaveTo="opacity-0"
                     afterLeave={() => setQuery('')}
                 >
-                    <Combobox.Options className="absolute mt-1 max-h-60 min-w-[150px] overflow-auto rounded-md bg-white dark:bg-[#0A0A0A] py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm z-50 custom-scrollbar">
+                    <Combobox.Options className="absolute mt-1 max-h-60 min-w-[150px] overflow-auto rounded-md bg-white dark:bg-[#0A0A0A] py-1 text-base shadow-lg ring-1 ring-slate-200 dark:ring-black dark:ring-opacity-5 border border-slate-200 dark:border-gray-800 focus:outline-none sm:text-sm z-50 custom-scrollbar">
                         {filtered.length === 0 && query !== '' ? (
-                            <div className="relative cursor-default select-none py-2 px-4 text-gray-700 dark:text-gray-400">
+                            <div className="relative cursor-default select-none py-2 px-4 text-slate-600 dark:text-gray-400">
                                 Nothing found.
                             </div>
                         ) : (
@@ -66,7 +66,7 @@ const SymbolSelector: React.FC<{
                                 <Combobox.Option
                                     key={s}
                                     className={({ active }) =>
-                                        `relative cursor-default select-none py-2 pl-10 pr-4 ${active ? 'bg-brand-primary text-white' : 'text-gray-900 dark:text-gray-100'
+                                        `relative cursor-default select-none py-2 pl-10 pr-4 ${active ? 'bg-brand-primary text-white' : 'text-slate-900 dark:text-gray-100'
                                         }`
                                     }
                                     value={s}
@@ -90,7 +90,7 @@ const SymbolSelector: React.FC<{
                             ))
                         )}
                         {filtered.length === 50 && (
-                            <div className="relative cursor-default select-none py-2 px-4 text-xs text-gray-400 italic text-center border-t border-gray-700">
+                            <div className="relative cursor-default select-none py-2 px-4 text-xs text-slate-500 dark:text-gray-400 italic text-center border-t border-slate-200 dark:border-gray-700">
                                 Keep typing to see more...
                             </div>
                         )}
@@ -103,6 +103,7 @@ const SymbolSelector: React.FC<{
 
 const MarketDepthWidget: React.FC = () => {
     const { theme } = useTheme();
+    const isDark = theme === 'dark';
 
     // API Config
     const API_BASE = '/api/v1/market-depth';
@@ -252,22 +253,22 @@ const MarketDepthWidget: React.FC = () => {
 
         const chart = createChart(chartContainerRef.current, {
             layout: {
-                background: { type: ColorType.Solid, color: '#111827' },
-                textColor: '#D1D5DB',
+                background: { type: ColorType.Solid, color: isDark ? '#111827' : '#ffffff' },
+                textColor: isDark ? '#D1D5DB' : '#475569',
             },
             grid: {
-                vertLines: { color: '#374151', style: 1 },
-                horzLines: { color: '#374151', style: 1 },
+                vertLines: { color: isDark ? '#374151' : '#f1f5f9', style: 1 },
+                horzLines: { color: isDark ? '#374151' : '#f1f5f9', style: 1 },
             },
             width: chartContainerRef.current.clientWidth,
             height: chartContainerRef.current.clientHeight,
             timeScale: {
                 timeVisible: true,
                 secondsVisible: false,
-                borderColor: '#374151',
+                borderColor: isDark ? '#374151' : '#cbd5e1',
             },
             rightPriceScale: {
-                borderColor: '#374151',
+                borderColor: isDark ? '#374151' : '#cbd5e1',
             }
         });
 
@@ -298,6 +299,27 @@ const MarketDepthWidget: React.FC = () => {
             chart.remove();
         };
     }, []);
+
+    // Dynamically update lightweight-charts options when theme changes
+    useEffect(() => {
+        if (!chartRef.current) return;
+        chartRef.current.applyOptions({
+            layout: {
+                background: { type: ColorType.Solid, color: isDark ? '#111827' : '#ffffff' },
+                textColor: isDark ? '#D1D5DB' : '#475569',
+            },
+            grid: {
+                vertLines: { color: isDark ? '#374151' : '#f1f5f9', style: 1 },
+                horzLines: { color: isDark ? '#374151' : '#f1f5f9', style: 1 },
+            },
+            timeScale: {
+                borderColor: isDark ? '#374151' : '#cbd5e1',
+            },
+            rightPriceScale: {
+                borderColor: isDark ? '#374151' : '#cbd5e1',
+            }
+        });
+    }, [isDark]);
 
     // --- 5. Draw Liquidity Zones ---
     useEffect(() => {
@@ -331,7 +353,7 @@ const MarketDepthWidget: React.FC = () => {
     return (
         <div className="h-full flex flex-col p-6 laptop:p-3 space-y-4 laptop:space-y-2.5">
             {/* Header Section */}
-            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white dark:bg-[#0A0A0A] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white dark:bg-[#0A0A0A] p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700">
                 <div>
                     <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <Activity className="text-brand-primary w-5 h-5" />
@@ -341,23 +363,23 @@ const MarketDepthWidget: React.FC = () => {
 
                 <div className="flex flex-wrap items-center gap-2">
                     {/* Controls Group */}
-                    <div className='flex items-center gap-2 bg-gray-50 dark:bg-[#0A0A0A] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700'>
+                    <div className='flex items-center gap-2 bg-slate-50 dark:bg-[#0A0A0A] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-gray-700'>
                         {/* Exchange */}
                         <div className="flex flex-col">
-                            <span className="text-[10px] text-gray-500 uppercase font-bold">Exchange</span>
+                            <span className="text-[10px] text-slate-500 dark:text-gray-500 uppercase font-bold">Exchange</span>
                             <select
                                 value={selectedExchange}
                                 onChange={(e) => setSelectedExchange(e.target.value)}
-                                className="bg-transparent text-xs font-bold text-slate-700 dark:text-gray-200 focus:outline-none cursor-pointer max-w-[80px] dark:bg-[#0A0A0A]"
+                                className="bg-transparent text-xs font-bold text-slate-700 dark:text-gray-200 focus:outline-none cursor-pointer max-w-[80px]"
                             >
-                                {availableExchanges.map(ex => <option key={ex} value={ex}>{ex.toUpperCase()}</option>)}
+                                {availableExchanges.map(ex => <option key={ex} value={ex} className="bg-white dark:bg-[#0A0A0A] text-slate-800 dark:text-gray-200">{ex.toUpperCase()}</option>)}
                             </select>
                         </div>
-                        <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                        <div className="w-px h-6 bg-slate-300 dark:bg-gray-600 mx-1"></div>
 
                         {/* Symbol (Searchable) */}
                         <div className="flex flex-col relative min-w-[120px]">
-                            <span className="text-[10px] text-gray-500 uppercase font-bold">Symbol</span>
+                            <span className="text-[10px] text-slate-500 dark:text-gray-500 uppercase font-bold">Symbol</span>
                             <SymbolSelector
                                 selected={selectedSymbol}
                                 setSelected={setSelectedSymbol}
@@ -367,29 +389,29 @@ const MarketDepthWidget: React.FC = () => {
                     </div>
 
                     {/* Timeframe & Bucket */}
-                    <div className='flex items-center gap-2 bg-gray-50 dark:bg-[#0A0A0A] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700'>
+                    <div className='flex items-center gap-2 bg-slate-50 dark:bg-[#0A0A0A] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-gray-700'>
                         {/* Timeframe */}
                         <div className="flex flex-col">
-                            <span className="text-[10px] text-gray-500 uppercase font-bold">Time</span>
+                            <span className="text-[10px] text-slate-500 dark:text-gray-500 uppercase font-bold">Time</span>
                             <select
                                 value={selectedTimeframe}
                                 onChange={(e) => setSelectedTimeframe(e.target.value)}
-                                className="bg-transparent text-xs font-bold text-brand-primary focus:outline-none cursor-pointer dark:bg-[#0A0A0A]"
+                                className="bg-transparent text-xs font-bold text-brand-primary focus:outline-none cursor-pointer"
                             >
-                                {timeframeOptions.map(tf => <option key={tf} value={tf}>{tf}</option>)}
+                                {timeframeOptions.map(tf => <option key={tf} value={tf} className="bg-white dark:bg-[#0A0A0A] text-slate-800 dark:text-gray-200">{tf}</option>)}
                             </select>
                         </div>
-                        <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                        <div className="w-px h-6 bg-slate-300 dark:bg-gray-600 mx-1"></div>
 
                         {/* Bucket */}
                         <div className="flex flex-col">
-                            <span className="text-[10px] text-gray-500 uppercase font-bold">Bucket</span>
+                            <span className="text-[10px] text-slate-500 dark:text-gray-500 uppercase font-bold">Bucket</span>
                             <select
                                 value={bucketSize}
                                 onChange={(e) => setBucketSize(parseFloat(e.target.value))}
-                                className="bg-transparent text-xs font-bold text-brand-primary focus:outline-none cursor-pointer dark:bg-[#0A0A0A]"
+                                className="bg-transparent text-xs font-bold text-brand-primary focus:outline-none cursor-pointer"
                             >
-                                {bucketOptions.map(b => <option key={b} value={b}>${b}</option>)}
+                                {bucketOptions.map(b => <option key={b} value={b} className="bg-white dark:bg-[#0A0A0A] text-slate-800 dark:text-gray-200">${b}</option>)}
                             </select>
                         </div>
                     </div>
@@ -401,14 +423,14 @@ const MarketDepthWidget: React.FC = () => {
             </div>
 
             {/* Main Chart Area */}
-            <div className="flex-1 bg-[#111827] rounded-2xl shadow-lg border border-gray-800 overflow-hidden relative min-h-[240px]">
+            <div className="flex-1 bg-white dark:bg-[#111827] rounded-2xl shadow-lg border border-slate-200 dark:border-gray-800 overflow-hidden relative min-h-[240px]">
                 {loading && !depthData && (
-                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/70 dark:bg-black/50 backdrop-blur-sm">
                         <div className="text-brand-primary animate-pulse font-mono">Fetching Market Data...</div>
                     </div>
                 )}
                 {error && (
-                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/90 dark:bg-black/80 backdrop-blur-sm">
                         <div className="text-red-500 font-bold">{error}</div>
                     </div>
                 )}
@@ -418,8 +440,8 @@ const MarketDepthWidget: React.FC = () => {
                 {/* Overlay Info */}
                 <div className="absolute top-4 left-4 z-10 pointer-events-none">
                     <div className="flex items-baseline gap-2">
-                        <h1 className="text-2xl font-bold text-white font-mono">{selectedSymbol}</h1>
-                        <span className="text-sm text-gray-400 font-mono">{selectedExchange.toUpperCase()} {selectedTimeframe}</span>
+                        <h1 className="text-2xl font-bold text-slate-900 dark:text-white font-mono">{selectedSymbol}</h1>
+                        <span className="text-sm text-slate-500 dark:text-gray-400 font-mono">{selectedExchange.toUpperCase()} {selectedTimeframe}</span>
                     </div>
                     <div className="text-3xl font-bold text-[#26a69a] font-mono mt-1">
                         ${depthData?.current_price?.toLocaleString() || '---'}

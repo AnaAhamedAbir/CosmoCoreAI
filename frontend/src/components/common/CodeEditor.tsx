@@ -7,7 +7,7 @@ const pythonKeywords = [
 const highlightSyntax = (code: string) => {
     return code
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') // HTML escape
-        .replace(/(#.*$)/gm, '<span class="token-comment">$1</span>') // Comments
+        .replace(/(\/\/.*$|#.*$)/gm, '<span class="token-comment">$1</span>') // Comments (supports // and #)
         .replace(/('.*?'|".*?")/g, '<span class="token-string">$1</span>') // Strings
         .replace(new RegExp(`\\b(${pythonKeywords.join('|')})\\b`, 'g'), '<span class="token-keyword">$1</span>') // Keywords
         .replace(/\b(\d+\.?\d*)\b/g, '<span class="token-number">$1</span>') // Numbers
@@ -47,7 +47,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ value, onChange }) => {
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 onScroll={syncScroll}
-                className="absolute inset-0 z-10 w-full h-full bg-transparent text-transparent caret-white font-mono text-sm p-4 border-0 rounded-md resize-none outline-none leading-relaxed tracking-wide"
+                className="absolute inset-0 z-10 w-full h-full bg-transparent text-transparent caret-slate-900 dark:caret-white font-mono text-sm p-4 border-0 rounded-md resize-none outline-none leading-relaxed tracking-wide"
                 spellCheck="false"
                 autoComplete="off"
                 autoCorrect="off"
@@ -56,7 +56,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ value, onChange }) => {
             <pre
                 ref={preRef}
                 aria-hidden="true"
-                className="absolute inset-0 w-full h-full bg-gray-900 text-gray-200 font-mono text-sm p-4 rounded-md border border-[#1A1A1A] resize-none overflow-auto pointer-events-none leading-relaxed tracking-wide"
+                className="absolute inset-0 w-full h-full bg-slate-50 dark:bg-gray-900 text-slate-900 dark:text-gray-200 font-mono text-sm p-4 rounded-md border border-slate-200 dark:border-[#1A1A1A] resize-none overflow-auto pointer-events-none leading-relaxed tracking-wide"
             >
                 <code dangerouslySetInnerHTML={{ __html: highlightedCode }} />
             </pre>

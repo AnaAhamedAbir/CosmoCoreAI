@@ -8,6 +8,7 @@ import Button from '@/components/common/Button';
 import { generateTrade, SUPPORTED_EXCHANGES, ExpandIcon, CollapseIcon, MOCK_CRYPTO_NEWS } from '@/constants';
 import type { Trade, Exchange, Timeframe } from '@/types';
 import SmartOrderForm from '@/components/features/trading/SmartOrderForm'; // Import SOR Component
+import { getThermalProfile, isThermalGuardActive } from '@/utils/deviceProfile';
 
 const timeframes: Timeframe[] = [
     '1s', '5s', '10s', '15s', '30s', '45s',
@@ -475,15 +476,96 @@ const Market: React.FC = () => {
     };
 
     const ws = useRef<WebSocket | null>(null);
+    const lastPriceRef = useRef(0);
+    const priceFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingBatchRef = useRef<{
+        ticker?: {
+            price: number;
+            high: number;
+            low: number;
+            volume: number;
+            price24hAgo?: number;
+        };
+        depth?: { bids: OrderBookEntry[]; asks: OrderBookEntry[] };
+        trades: TradeWithStatus[];
+        legacyPrice?: number;
+    }>({ trades: [] });
 
     // WebSocket কানেকশন (শুধুমাত্র Ticker এবং OrderBook আপডেটের জন্য রাখা হয়েছে)
     // চার্ট এখন TradingView দ্বারা হ্যান্ডেল হবে
     // WebSocket for Live Data
     useEffect(() => {
         let socket: WebSocket | null = null;
-        let timeoutId: NodeJS.Timeout;
+        let timeoutId: ReturnType<typeof setTimeout>;
+        let isMounted = true;
+
+        const triggerPriceFlash = (newPrice: number) => {
+            const prevPrice = lastPriceRef.current;
+            if (newPrice !== prevPrice) {
+                setPriceUpdateStatus(newPrice > prevPrice ? 'up' : 'down');
+                if (priceFlashTimerRef.current) {
+                    clearTimeout(priceFlashTimerRef.current);
+                }
+                priceFlashTimerRef.current = setTimeout(() => {
+                    priceFlashTimerRef.current = null;
+                    if (isMounted) setPriceUpdateStatus('none');
+                }, 500);
+            }
+            lastPriceRef.current = newPrice;
+            setLastPrice(newPrice);
+        };
+
+        const flushPendingBatch = () => {
+            flushTimerRef.current = null;
+            if (!isMounted || document.hidden) {
+                pendingBatchRef.current = { trades: [] };
+                return;
+            }
+            const batch = pendingBatchRef.current;
+            pendingBatchRef.current = { trades: [] };
+
+            if (batch.ticker) {
+                triggerPriceFlash(batch.ticker.price);
+                setHigh24h(batch.ticker.high);
+                setLow24h(batch.ticker.low);
+                setVolume24h(batch.ticker.volume);
+                if (batch.ticker.price24hAgo !== undefined) {
+                    setPrice24hAgo(batch.ticker.price24hAgo);
+                }
+            } else if (batch.legacyPrice !== undefined) {
+                lastPriceRef.current = batch.legacyPrice;
+                setLastPrice(batch.legacyPrice);
+            }
+
+            if (batch.depth) {
+                setOrderBookData(batch.depth);
+            }
+
+            if (batch.trades.length > 0) {
+                const incoming = batch.trades;
+                setRecentTrades(prevTrades => [...incoming, ...prevTrades].slice(0, 50));
+            }
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.hidden && isThermalGuardActive()) {
+                if (flushTimerRef.current) {
+                    clearTimeout(flushTimerRef.current);
+                    flushTimerRef.current = null;
+                }
+                if (priceFlashTimerRef.current) {
+                    clearTimeout(priceFlashTimerRef.current);
+                    priceFlashTimerRef.current = null;
+                }
+                setPriceUpdateStatus('none');
+                pendingBatchRef.current = { trades: [] };
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         const connect = () => {
+            if (!isMounted) return;
             // Using implicit host logic for robustness
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsHost = window.location.host; // Use proxied host
@@ -496,26 +578,58 @@ const Market: React.FC = () => {
             };
 
             socket.onmessage = (event) => {
+                if (!isMounted) return;
                 const message = JSON.parse(event.data);
 
-                // Handle new unified message format
+                if (isThermalGuardActive()) {
+                    if (document.hidden) {
+                        return;
+                    }
+
+                    if (message.type === 'ticker') {
+                        const ticker = message.data;
+                        const currentPrice = parseFloat(ticker.price);
+                        const priceChange = parseFloat(ticker.change);
+                        pendingBatchRef.current.ticker = {
+                            price: currentPrice,
+                            high: parseFloat(ticker.high),
+                            low: parseFloat(ticker.low),
+                            volume: parseFloat(ticker.volume),
+                            price24hAgo: !isNaN(priceChange) ? currentPrice - priceChange : undefined,
+                        };
+                    } else if (message.type === 'depth') {
+                        pendingBatchRef.current.depth = message.data;
+                    } else if (message.type === 'trade') {
+                        const newTrades: TradeWithStatus[] = message.data.map((t: any) => ({
+                            id: t.id,
+                            time: t.time,
+                            price: parseFloat(t.price),
+                            amount: parseFloat(t.amount),
+                            type: t.type,
+                            isNew: true
+                        }));
+                        pendingBatchRef.current.trades = [...newTrades, ...pendingBatchRef.current.trades].slice(0, 50);
+                    } else if (message.price) {
+                        pendingBatchRef.current.legacyPrice = message.price;
+                    }
+
+                    if (!flushTimerRef.current) {
+                        const flushMs = getThermalProfile().timings.marketTradeFlushMs || 250;
+                        flushTimerRef.current = setTimeout(flushPendingBatch, flushMs);
+                    }
+                    return;
+                }
+
+                // Handle new unified message format (Desktop PC: full-speed immediate updates)
                 if (message.type === 'ticker') {
                     const ticker = message.data;
-                    setLastPrice(prev => {
-                        const newPrice = parseFloat(ticker.price);
-                        const change = newPrice - prev;
-                        if (change !== 0) {
-                            setPriceUpdateStatus(change > 0 ? 'up' : 'down');
-                            setTimeout(() => setPriceUpdateStatus('none'), 500);
-                        }
-                        return newPrice;
-                    });
+                    const currentPrice = parseFloat(ticker.price);
+                    triggerPriceFlash(currentPrice);
 
                     setHigh24h(parseFloat(ticker.high));
                     setLow24h(parseFloat(ticker.low));
                     setVolume24h(parseFloat(ticker.volume));
                     // Calculate price 24h ago based on change
-                    const currentPrice = parseFloat(ticker.price);
                     const priceChange = parseFloat(ticker.change);
                     if (!isNaN(priceChange)) {
                         setPrice24hAgo(currentPrice - priceChange);
@@ -540,12 +654,14 @@ const Market: React.FC = () => {
                 }
                 // Fallback for simple message format (if any legacy)
                 else if (message.price) {
+                    lastPriceRef.current = message.price;
                     setLastPrice(message.price);
                 }
             };
 
             socket.onerror = (error) => { console.error("WebSocket Error:", error); };
             socket.onclose = () => {
+                if (!isMounted) return;
                 // console.log("WS Closed, reconnecting..."); 
                 timeoutId = setTimeout(connect, 3000);
             };
@@ -553,8 +669,22 @@ const Market: React.FC = () => {
 
         connect();
         return () => {
+            isMounted = false;
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             clearTimeout(timeoutId);
-            if (socket) socket.close();
+            if (flushTimerRef.current) {
+                clearTimeout(flushTimerRef.current);
+                flushTimerRef.current = null;
+            }
+            if (priceFlashTimerRef.current) {
+                clearTimeout(priceFlashTimerRef.current);
+                priceFlashTimerRef.current = null;
+            }
+            pendingBatchRef.current = { trades: [] };
+            if (socket) {
+                socket.onclose = null;
+                socket.close();
+            }
         };
     }, [activePair]);
 

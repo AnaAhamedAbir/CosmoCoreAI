@@ -1,6 +1,7 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { BtcLogo, EthLogo, SolLogo, BinanceLogo, AptosLogo, SeiLogo, SuiLogo, UsdtLogo, MOCK_CRYPTO_NEWS } from '@/constants';
+import React, { useState, useEffect, useRef } from 'react';
+import { BtcLogo, EthLogo, SolLogo, BinanceLogo, AptosLogo, SeiLogo, SuiLogo, UsdtLogo } from '@/constants';
+import { getThermalProfile, isThermalGuardActive } from '@/utils/deviceProfile';
 
 interface TickerItemProps {
     coin: any;
@@ -70,11 +71,64 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
     };
 
     const [coins, setCoins] = useState<any[]>([]);
+    const [isPageHidden, setIsPageHidden] = useState<boolean>(() =>
+        typeof document !== 'undefined' ? document.hidden : false
+    );
+    const pendingCoinsRef = useRef<any[] | null>(null);
+    const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastFlushAtRef = useRef<number>(0);
+
+    useEffect(() => {
+        const handleVisibility = () => {
+            const hidden = document.hidden;
+            setIsPageHidden(hidden);
+            if (!hidden && pendingCoinsRef.current) {
+                const queued = pendingCoinsRef.current;
+                pendingCoinsRef.current = null;
+                lastFlushAtRef.current = Date.now();
+                setCoins(queued);
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => document.removeEventListener('visibilitychange', handleVisibility);
+    }, []);
 
     useEffect(() => {
         let socket: WebSocket | null = null;
         let retryTimeout: NodeJS.Timeout;
         let isUnmounted = false;
+
+        const flushCoins = (nextCoins: any[]) => {
+            if (isUnmounted) return;
+            if (typeof document !== 'undefined' && document.hidden) {
+                pendingCoinsRef.current = nextCoins;
+                return;
+            }
+            if (!isThermalGuardActive()) {
+                setCoins(nextCoins);
+                return;
+            }
+            const throttleMs = 2000;
+            const elapsed = Date.now() - lastFlushAtRef.current;
+            pendingCoinsRef.current = nextCoins;
+            if (elapsed >= throttleMs && !flushTimerRef.current) {
+                const latest = pendingCoinsRef.current;
+                pendingCoinsRef.current = null;
+                lastFlushAtRef.current = Date.now();
+                if (latest) setCoins(latest);
+                return;
+            }
+            if (!flushTimerRef.current) {
+                flushTimerRef.current = setTimeout(() => {
+                    flushTimerRef.current = null;
+                    if (isUnmounted || (typeof document !== 'undefined' && document.hidden)) return;
+                    const latest = pendingCoinsRef.current;
+                    pendingCoinsRef.current = null;
+                    lastFlushAtRef.current = Date.now();
+                    if (latest) setCoins(latest);
+                }, Math.max(250, throttleMs - elapsed));
+            }
+        };
 
         const connect = () => {
             if (isUnmounted) return;
@@ -95,6 +149,9 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
 
             socket.onmessage = (event) => {
                 if (isUnmounted) return;
+                if (isThermalGuardActive() && typeof document !== 'undefined' && document.hidden) {
+                    return;
+                }
                 try {
                     const message = JSON.parse(event.data);
 
@@ -109,7 +166,7 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
                                 change: parseFloat(item.changePercent)
                             };
                         });
-                        setCoins(newCoins);
+                        flushCoins(newCoins);
                     }
                 } catch (e) {
                     console.error("Ticker Parse Error:", e);
@@ -136,6 +193,10 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
         return () => {
             isUnmounted = true;
             clearTimeout(retryTimeout);
+            if (flushTimerRef.current) {
+                clearTimeout(flushTimerRef.current);
+                flushTimerRef.current = null;
+            }
             if (socket) {
                 if (socket.readyState === WebSocket.OPEN) {
                     socket.close();
@@ -161,7 +222,7 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
 
     return (
         <div className="w-full overflow-hidden">
-            <div className="animate-marquee-slow hover:pause-animation" style={{ animationDuration: '500s' }}>
+            <div className="animate-marquee-slow hover:pause-animation" style={{ animationDuration: '500s', animationPlayState: isPageHidden ? 'paused' : 'running' }}>
                 <div className="flex whitespace-nowrap">
                     {tickerItems.map((coin, index) => (
                         <ItemComponent

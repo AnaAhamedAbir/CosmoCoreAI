@@ -4,6 +4,7 @@ import { VPVRData } from '../components/features/market/VolumeProfileWidget';
 import { CVDDataPoint } from '../components/features/market/CVDChart';
 import { FootprintCandleData } from '../components/features/market/FootprintRenderer';
 import { HeatmapDataPoint } from '../components/features/market/LiquidityHeatmapRenderer';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 interface OrderFlowData {
     heatmapData: HeatmapDataPoint[];
@@ -14,7 +15,12 @@ interface OrderFlowData {
     error: string | null;
 }
 
-export const useOrderFlowData = (symbol: string, exchange: string, interval: string): OrderFlowData => {
+export const useOrderFlowData = (
+    symbol: string,
+    exchange: string = 'binance',
+    interval: string = '1m',
+    enabled: boolean = true
+): OrderFlowData => {
     const [heatmapData, setHeatmapData] = useState<HeatmapDataPoint[]>([]);
     const [vpvrData, setVpvrData] = useState<VPVRData[]>([]);
     const [cvdData, setCvdData] = useState<CVDDataPoint[]>([]);
@@ -23,11 +29,21 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
+        if (!enabled || !symbol || !exchange || !interval) {
+            setHeatmapData([]);
+            setVpvrData([]);
+            setCvdData([]);
+            setFootprintData([]);
+            setLoading(false);
+            setError(null);
+            return;
+        }
+
         let isMounted = true;
 
         let activeFootprints: FootprintCandleData[] = [];
         const fetchOrderFlowData = async () => {
-            if (!symbol || !exchange || !interval) return;
+            if (!symbol || !exchange || !interval || !enabled) return;
 
             setLoading(true);
             setError(null);
@@ -195,6 +211,7 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
                         sellVolume: data.sell
                     }));
 
+                    if (!isMounted) return;
                     setVpvrData(vpvr);
                     setCvdData(cvd); // Pre-fill with historical data
                     
@@ -202,6 +219,7 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
                     activeFootprints = footprints.slice(); 
                     setFootprintData(footprints); // Pre-fill with simulated historical footprint data
                 } else {
+                    if (!isMounted) return;
                     setVpvrData([]);
                     setCvdData([]);
                     setFootprintData([]);
@@ -222,9 +240,18 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
         let pendingCandleTime: number | null = null;
         let hasPendingFootprint = false;
         let orderFlowThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+        let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
         const flushOrderFlow = () => {
-            if (!isMounted) return;
+            if (!isMounted) {
+                orderFlowThrottleTimer = null;
+                return;
+            }
+            if (isThermalGuardActive() && typeof document !== 'undefined' && document.hidden) {
+                // Defer React flush while tab is hidden; keep pending values for when visible
+                orderFlowThrottleTimer = null;
+                return;
+            }
             if (pendingCvdDelta !== 0 && pendingCandleTime !== null) {
                 const delta = pendingCvdDelta;
                 const cTime = pendingCandleTime;
@@ -255,6 +282,21 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
                 orderFlowThrottleTimer = setTimeout(flushOrderFlow, 250);
             }
         };
+
+        const handleVisibilityChange = () => {
+            if (
+                typeof document !== 'undefined' &&
+                !document.hidden &&
+                isMounted &&
+                ((pendingCvdDelta !== 0 && pendingCandleTime !== null) || hasPendingFootprint)
+            ) {
+                flushOrderFlow();
+            }
+        };
+
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+        }
 
         if (symbol) {
              const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -415,18 +457,29 @@ export const useOrderFlowData = (symbol: string, exchange: string, interval: str
 
         return () => {
             isMounted = false;
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
+            }
             if (orderFlowThrottleTimer) {
                 clearTimeout(orderFlowThrottleTimer);
+                orderFlowThrottleTimer = null;
+            }
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
             }
             if (ws) {
+                ws.onclose = null;
                 if (ws.readyState === WebSocket.CONNECTING) {
-                    ws.onopen = () => ws?.close();
+                    const closingWs = ws;
+                    closingWs.onopen = () => closingWs.close();
                 } else if (ws.readyState === WebSocket.OPEN) {
                     ws.close();
                 }
+                ws = null;
             }
         };
-    }, [symbol, exchange, interval]);
+    }, [symbol, exchange, interval, enabled]);
 
     return { heatmapData, vpvrData, cvdData, footprintData, loading, error };
 };

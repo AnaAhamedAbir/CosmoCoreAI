@@ -1,53 +1,15 @@
 import * as React from 'react';
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, Suspense } from 'react';
 import { Logo, DashboardIcon, PortfolioIcon, BacktesterIcon, BotLabIcon, MarketIcon, SentimentIcon, FilingsIcon, SettingsIcon, LogoutIcon, OnChainIcon, RegimeIcon, CorrelationIcon, MLModelIcon, IndicatorStudioIcon, EducationIcon, AIFoundryIcon, AlternativeDataIcon, MLModelMarketplaceIcon, RealTimeDataIcon, QuantScreenerIcon, AlertsWatchlistIcon, AnalystResearchIcon, InstitutionalHoldingsIcon, BlockTradeDetectorIcon, UnusualOptionsActivityIcon, LiquidationMapIcon, PineScriptIcon, TokenUnlockIcon, AssistantIcon, GeneralIcon, TradingIcon, AlphaEngineIcon, StudioIcon, ChevronDownIcon, UserCircleIcon, CreditCardIcon, KeyIcon, TaskManagerIcon } from '@/constants';
 // FIX: Updated AppView import to break circular dependency.
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getPathFromView, getViewFromPath } from '@/utils/routeUtils';
 import { AppView, TradingBot, IndicatorData } from '@/types';
 import { Cpu, LayoutDashboard, Database, Activity, LineChart, BrainCircuit, CloudLightning, Bot, Zap, History, Layers, Shield, Bell, Palette } from 'lucide-react';
-import Dashboard from './Dashboard';
-
-
-import PortfolioTracker from './PortfolioTracker';
-import Market from './Market';
-import SentimentEngine from './SentimentEngine';
-import CorporateFilings from './CorporateFilings';
-import Settings from './Settings';
-import OnChainAnalyzer from './OnChainAnalyzer';
-import MarketRegimeClassifier from './MarketRegimeClassifier';
-import CorrelationMatrix from './CorrelationMatrix';
-import CustomMLModels from './CustomMLModels';
-import CustomIndicatorStudio from './CustomIndicatorStudio';
-import ModelTrainingStudio from './ModelTrainingStudio';
-import EducationHub from './EducationHub';
 import Button from '@/components/common/Button';
-import AIFoundry from './AIFoundry';
-import AlternativeData from './AlternativeData';
-import MLModelMarketplace from './MLModelMarketplace';
-import RealTimeData from './RealTimeData';
-import QuantScreener from './QuantScreener';
-import AlertsWatchlist from './AlertsWatchlist';
-import AnalystResearch from './AnalystResearch';
-import InstitutionalHoldingsTracker from './InstitutionalHoldingsTracker';
-import BlockTradeDetector from './BlockTradeDetector';
-import UnusualOptionsActivity from './UnusualOptionsActivity';
-import LiquidationMap from './LiquidationMap';
-import PineScriptStudio from './PineScriptStudio';
-import TokenUnlockCalendar from './TokenUnlockCalendar';
 import AIAssistantModal from './AIAssistantModal';
 import ThemeToggle from '@/components/common/ThemeToggle';
 import MarketTicker from '@/components/features/market/MarketTicker';
-import TaskManager from './TaskManager';
-import NeuralArchitecture from './NeuralArchitecture';
-import Backtester from './Backtester';
-import BotLab from './BotLab';
-import OrderFlowHeatmap from './OrderFlowHeatmap';
-import ArbitrageBot from './ArbitrageBot';
-import GridBot from './GridBot';
-import LeadLagBot from './LeadLagBot';
-import MarketDepthWidget from './MarketDepth/MarketDepthWidget';
-import EventDrivenSimulator from './EventDrivenSimulator';
 import PanicButton from '@/components/common/PanicButton';
 import SystemAlertWidget from '@/components/common/SystemAlertWidget';
 import SystemNotificationWidget from '@/components/common/SystemNotificationWidget';
@@ -55,10 +17,47 @@ import MarketSwitcher from '@/components/common/MarketSwitcher';
 import { useSettings } from '@/context/SettingsContext';
 import { useMarketStore } from '@/store/marketStore';
 
-import ForexDashboard from './forex/ForexDashboard';
-import ForexBotLab from './forex/ForexBotLab';
-import ForexCalendar from './forex/ForexCalendar';
-import ForexPairs from './forex/ForexPairs';
+const Dashboard = React.lazy(() => import('./Dashboard'));
+const PortfolioTracker = React.lazy(() => import('./PortfolioTracker'));
+const Market = React.lazy(() => import('./Market'));
+const SentimentEngine = React.lazy(() => import('./SentimentEngine'));
+const CorporateFilings = React.lazy(() => import('./CorporateFilings'));
+const Settings = React.lazy(() => import('./Settings'));
+const OnChainAnalyzer = React.lazy(() => import('./OnChainAnalyzer'));
+const MarketRegimeClassifier = React.lazy(() => import('./MarketRegimeClassifier'));
+const CorrelationMatrix = React.lazy(() => import('./CorrelationMatrix'));
+const CustomMLModels = React.lazy(() => import('./CustomMLModels'));
+const CustomIndicatorStudio = React.lazy(() => import('./CustomIndicatorStudio'));
+const ModelTrainingStudio = React.lazy(() => import('./ModelTrainingStudio'));
+const EducationHub = React.lazy(() => import('./EducationHub'));
+const AIFoundry = React.lazy(() => import('./AIFoundry'));
+const AlternativeData = React.lazy(() => import('./AlternativeData'));
+const MLModelMarketplace = React.lazy(() => import('./MLModelMarketplace'));
+const RealTimeData = React.lazy(() => import('./RealTimeData'));
+const QuantScreener = React.lazy(() => import('./QuantScreener'));
+const AlertsWatchlist = React.lazy(() => import('./AlertsWatchlist'));
+const AnalystResearch = React.lazy(() => import('./AnalystResearch'));
+const InstitutionalHoldingsTracker = React.lazy(() => import('./InstitutionalHoldingsTracker'));
+const BlockTradeDetector = React.lazy(() => import('./BlockTradeDetector'));
+const UnusualOptionsActivity = React.lazy(() => import('./UnusualOptionsActivity'));
+const LiquidationMap = React.lazy(() => import('./LiquidationMap'));
+const PineScriptStudio = React.lazy(() => import('./PineScriptStudio'));
+const TokenUnlockCalendar = React.lazy(() => import('./TokenUnlockCalendar'));
+const TaskManager = React.lazy(() => import('./TaskManager'));
+const NeuralArchitecture = React.lazy(() => import('./NeuralArchitecture'));
+const Backtester = React.lazy(() => import('./Backtester'));
+const BotLab = React.lazy(() => import('./BotLab'));
+const OrderFlowHeatmap = React.lazy(() => import('./OrderFlowHeatmap'));
+const ArbitrageBot = React.lazy(() => import('./ArbitrageBot'));
+const GridBot = React.lazy(() => import('./GridBot'));
+const LeadLagBot = React.lazy(() => import('./LeadLagBot'));
+const MarketDepthWidget = React.lazy(() => import('./MarketDepth/MarketDepthWidget'));
+const EventDrivenSimulator = React.lazy(() => import('./EventDrivenSimulator'));
+
+const ForexDashboard = React.lazy(() => import('./forex/ForexDashboard'));
+const ForexBotLab = React.lazy(() => import('./forex/ForexBotLab'));
+const ForexCalendar = React.lazy(() => import('./forex/ForexCalendar'));
+const ForexPairs = React.lazy(() => import('./forex/ForexPairs'));
 
 const StocksDashboard = () => <div className="p-8 text-white"><h1 className="text-3xl font-bold">Stocks Dashboard</h1><p className="text-gray-400 mt-4">Welcome to the Equities Desk workspace.</p></div>;
 const CommoditiesDashboard = () => <div className="p-8 text-white"><h1 className="text-3xl font-bold">Commodities Dashboard</h1><p className="text-gray-400 mt-4">Welcome to the Commodities workspace.</p></div>;
@@ -318,13 +317,15 @@ const Sidebar: React.FC<{
             {/* Profile Section */}
             <div className="p-4 laptop:p-2.5 relative z-20 flex-shrink-0" ref={profileRef}>
                 {/* Backdrop Overlay */}
-                <div 
-                    className={`fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-[100] transition-opacity duration-300 ${isProfileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        setIsProfileOpen(false);
-                    }}
-                />
+                {isProfileOpen && (
+                    <div 
+                        className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-[100] transition-opacity duration-300 opacity-100 pointer-events-auto"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsProfileOpen(false);
+                        }}
+                    />
+                )}
 
                 {/* Slide-over Profile Drawer */}
                 <div 
@@ -649,7 +650,9 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                             {viewToRender === AppView.MARKET && <div className="border-t border-gray-100 dark:border-gray-800"><MarketTicker /></div>}
                         </header>
                         <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-8 laptop:p-3 laptop-h:p-2.5 relative z-0">
-                            {renderContent()}
+                            <Suspense fallback={<div className="flex items-center justify-center h-full min-h-[240px] text-slate-400 text-xs">Loading module...</div>}>
+                                {renderContent()}
+                            </Suspense>
                         </main>
                     </div>
                     <AIAssistantModal isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} currentView={viewToRender} />

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../services/api';
+import { getThermalProfile } from '@/utils/deviceProfile';
 
 export interface OpenLimitOrder {
   id: string;
@@ -23,31 +24,47 @@ export interface OpenLimitOrder {
  * BUG-11 fix: Dev-only debug logging so errors are visible during development
  *             without polluting production console.
  *
- * - Polls every `intervalMs` (default 5s)
+ * - Polls every `intervalMs` (default 2s desktop, 6s on thermal-guarded devices)
  * - Pauses automatically when the browser tab is hidden (Page Visibility API)
  * - On error, backs off silently in production
  */
 export const useOpenOrders = (
   apiKeyId: string | number | null,
   symbol: string,
-  intervalMs = 2000
+  intervalMs?: number,
+  enabled: boolean = true
 ): OpenLimitOrder[] => {
   const [orders, setOrders] = useState<OpenLimitOrder[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isVisibleRef = useRef(true);
+  const isVisibleRef = useRef(typeof document !== 'undefined' ? document.visibilityState === 'visible' : true);
   const isMountedRef = useRef(true); // BUG-05: mount guard
 
+  const thermalProfile = getThermalProfile();
+  const effectiveIntervalMs =
+    intervalMs === undefined || thermalProfile.isThermalGuardActive
+      ? Math.max(intervalMs ?? 2000, thermalProfile.timings.openOrdersPollMs)
+      : intervalMs;
+
   const fetchOrders = useCallback(async () => {
-    // BUG-05 fix: skip stale fetches after unmount or dependency change
-    if (!apiKeyId || !symbol || !isVisibleRef.current || !isMountedRef.current) return;
+    // BUG-05 fix: skip stale fetches after unmount, when disabled, or when tab is hidden
+    if (
+      !enabled ||
+      !apiKeyId ||
+      !symbol ||
+      !isVisibleRef.current ||
+      !isMountedRef.current ||
+      (typeof document !== 'undefined' && document.hidden)
+    ) {
+      return;
+    }
     try {
       const [res, slRes] = await Promise.all([
         api.get(`/trading/open-limit-orders/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`).catch(() => ({ data: { orders: [] } })),
         api.get(`/trading/active-software-brackets/${apiKeyId}?symbol=${encodeURIComponent(symbol)}`).catch(() => ({ data: [] }))
       ]);
 
-      // Guard again after await — component may have unmounted during the request
-      if (isMountedRef.current) {
+      // Guard again after await — component may have unmounted or been disabled during the request
+      if (isMountedRef.current && enabled) {
         const limitOrders = (res.data?.orders ?? []).map((o: any) => ({
           ...o,
           isIceberg: Boolean(o.isIceberg),
@@ -88,39 +105,48 @@ export const useOpenOrders = (
         console.debug('[useOpenOrders] poll error:', err);
       }
     }
-  }, [apiKeyId, symbol]);
+  }, [apiKeyId, symbol, enabled]);
 
   // Page Visibility API — pause polling when tab is hidden
   useEffect(() => {
     const handleVisibility = () => {
       isVisibleRef.current = document.visibilityState === 'visible';
-      if (isVisibleRef.current) fetchOrders(); // Immediate refresh on tab focus
+      if (isVisibleRef.current && enabled) fetchOrders(); // Immediate refresh on tab focus
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [fetchOrders]);
+  }, [fetchOrders, enabled]);
 
   // Immediate refresh on custom event (e.g. after drag bracket order placement)
   useEffect(() => {
     const handleRefresh = () => {
-      fetchOrders();
+      if (enabled) fetchOrders();
     };
     window.addEventListener('refreshOpenOrders', handleRefresh);
     return () => window.removeEventListener('refreshOpenOrders', handleRefresh);
-  }, [fetchOrders]);
+  }, [fetchOrders, enabled]);
 
   // Polling loop with proper mount guard
   useEffect(() => {
+    if (!enabled || !apiKeyId || !symbol) {
+      isMountedRef.current = false;
+      setOrders([]);
+      return;
+    }
+
     isMountedRef.current = true; // BUG-05: mark mounted on (re)run
 
     fetchOrders(); // Immediate fetch on mount or dependency change
-    timerRef.current = setInterval(fetchOrders, intervalMs);
+    timerRef.current = setInterval(fetchOrders, effectiveIntervalMs);
 
     return () => {
       isMountedRef.current = false; // BUG-05: mark unmounted before cleanup
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     };
-  }, [fetchOrders, intervalMs]);
+  }, [fetchOrders, effectiveIntervalMs, enabled, apiKeyId, symbol]);
 
   return orders;
 };

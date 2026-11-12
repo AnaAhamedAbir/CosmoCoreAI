@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { subscribeMarketDepthEvents } from './useMarketDepthEvents';
 
 export interface MLSetupEvent {
     type: string;
@@ -11,54 +12,21 @@ export interface MLSetupEvent {
     timestamp: number;
 }
 
-export const useMLSetupEvents = (symbol: string) => {
+export const useMLSetupEvents = (symbol: string, enabled: boolean = true) => {
     const [mlSetup, setMlSetup] = useState<MLSetupEvent | null>(null);
-    const wsRef = useRef<WebSocket | null>(null);
 
     useEffect(() => {
-        if (!symbol) return;
+        if (!symbol || !enabled) return;
 
-        const connect = () => {
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const apiUrl = (import.meta as any).env?.VITE_API_URL as string | undefined;
-            const host = apiUrl
-                ? apiUrl.replace(/^https?:\/\//, '')
-                : window.location.host;
-
-            const wsUrl = `${wsProtocol}//${host}/api/v1/market-depth/ws/events?symbol=${encodeURIComponent(symbol)}`;
-
-            wsRef.current = new WebSocket(wsUrl);
-
-            wsRef.current.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'ML_ADVANCED_SETUP') {
-                        data.timestamp = Date.now();
-                        setMlSetup(data);
-                    }
-                } catch (_err) {
-                    // ignore parse errors
-                }
-            };
-
-            wsRef.current.onerror = () => {
-                // silent fail
-            };
-
-            wsRef.current.onclose = () => {
-                // Reconnect after 5s if still mounted
-                reconnectTimerRef.current = window.setTimeout(connect, 5000);
-            };
-        };
-
-        const reconnectTimerRef = { current: 0 };
-        connect();
-
-        return () => {
-            window.clearTimeout(reconnectTimerRef.current);
-            wsRef.current?.close();
-        };
-    }, [symbol]);
+        return subscribeMarketDepthEvents(symbol, (data: MLSetupEvent) => {
+            if (data && data.type === 'ML_ADVANCED_SETUP') {
+                setMlSetup({
+                    ...data,
+                    timestamp: Date.now(),
+                });
+            }
+        });
+    }, [symbol, enabled]);
 
     return mlSetup;
 };

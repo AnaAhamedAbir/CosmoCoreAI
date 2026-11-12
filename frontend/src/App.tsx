@@ -8,6 +8,7 @@ import ForgotPasswordModal from '@/pages/public/ForgotPasswordModal';
 import ResetPasswordScreen from '@/pages/public/ResetPasswordScreen';
 import { AppView } from '@/types';
 import { Toaster } from 'react-hot-toast';
+import { syncThermalDocumentClass } from '@/utils/deviceProfile';
 
 // AppState Enum আপডেট
 enum AppState {
@@ -26,6 +27,7 @@ function App() {
 
   // Sync dynamic viewport height (--app-height) for tablet/mobile Chrome (e.g., Redmi Pad 2 Pro)
   useEffect(() => {
+    syncThermalDocumentClass();
     const isInputActive = () => {
       const el = document.activeElement;
       if (!el) return false;

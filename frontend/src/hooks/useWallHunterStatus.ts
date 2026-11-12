@@ -27,28 +27,36 @@ export interface WallHunterStatusData {
     mode?: string;
 }
 
-export const useWallHunterStatus = (botId: number | null) => {
+export const useWallHunterStatus = (botId: number | string | null, enabled: boolean = true) => {
     const [statusData, setStatusData] = useState<WallHunterStatusData | null>(null);
     const [isConnected, setIsConnected] = useState<boolean>(false);
     const wsRef = useRef<WebSocket | null>(null);
 
     useEffect(() => {
-        if (!botId) {
+        if (!botId || !enabled) {
             setStatusData(null);
             setIsConnected(false);
             if (wsRef.current) {
-                wsRef.current.close();
+                wsRef.current.onclose = null;
+                if (wsRef.current.readyState === WebSocket.CONNECTING) {
+                    const closingWs = wsRef.current;
+                    closingWs.onopen = () => closingWs.close();
+                } else {
+                    wsRef.current.close();
+                }
                 wsRef.current = null;
             }
             return;
         }
 
         let isSubscribed = true;
+        let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
         const wsUrl = `${protocol}//${host}/api/v1/bots/${botId}/ws/status`;
 
         const connect = () => {
+            if (!isSubscribed) return;
             try {
                 const ws = new WebSocket(wsUrl);
                 wsRef.current = ws;
@@ -79,14 +87,14 @@ export const useWallHunterStatus = (botId: number | null) => {
                     if (isSubscribed) {
                         setIsConnected(false);
                         wsRef.current = null;
-                        setTimeout(connect, 5000);
+                        reconnectTimer = setTimeout(connect, 5000);
                     }
                 };
             } catch (error) {
                 console.error("Error creating Bot Status WebSocket:", error);
                 if (isSubscribed) {
                     setIsConnected(false);
-                    setTimeout(connect, 5000);
+                    reconnectTimer = setTimeout(connect, 5000);
                 }
             }
         };
@@ -96,12 +104,22 @@ export const useWallHunterStatus = (botId: number | null) => {
         return () => {
             isSubscribed = false;
             setIsConnected(false);
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
             if (wsRef.current) {
-                wsRef.current.close();
+                wsRef.current.onclose = null;
+                if (wsRef.current.readyState === WebSocket.CONNECTING) {
+                    const closingWs = wsRef.current;
+                    closingWs.onopen = () => closingWs.close();
+                } else {
+                    wsRef.current.close();
+                }
                 wsRef.current = null;
             }
         };
-    }, [botId]);
+    }, [botId, enabled]);
 
     return { statusData, isConnected };
 };

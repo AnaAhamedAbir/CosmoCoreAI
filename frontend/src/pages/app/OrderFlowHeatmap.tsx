@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { createChart, ISeriesApi, CandlestickData, CandlestickSeries, LineSeries, HistogramSeries, HistogramData, createSeriesMarkers, LineStyle } from 'lightweight-charts';
 import { WickSRRenderer } from '../../components/features/market/WickSRRenderer';
-import { useLevel2MarketData } from '@/hooks/useLevel2MarketData';
+import { useLevel2MarketData, subscribeLiveTradeTicks } from '@/hooks/useLevel2MarketData';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { useOrderFlowData } from '../../hooks/useOrderFlowData';
 import { useHeatmapData } from '../../hooks/useHeatmapData';
 import { useIcebergEvents } from '../../hooks/useIcebergEvents.tsx';
@@ -80,6 +81,7 @@ import { TopTokensModal } from '../../components/TopTokensModal';
 import { CandlestickTooltip, TooltipCandleData } from '../../components/features/market/CandlestickTooltip';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 // Helper to convert interval string to ms
 const parseIntervalToMs = (interval: string): number => {
     const value = parseInt(interval) || 1;
@@ -105,8 +107,73 @@ const formatDisplayPrice = (price: number | undefined | null): string => {
     return price.toFixed(2);
 };
 
+const CandleCountdown = React.memo<{
+    interval: string;
+    lastCandleRef: React.MutableRefObject<CandlestickData | null>;
+}>(({ interval, lastCandleRef }) => {
+    const [countdownFormatted, setCountdownFormatted] = useState<string>('');
+
+    useEffect(() => {
+        const intervalMs = parseIntervalToMs(interval);
+
+        const tick = () => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            const now = Date.now();
+            let remaining = 0;
+
+            if (lastCandleRef.current && lastCandleRef.current.time) {
+                let candleTimeMs = Number(lastCandleRef.current.time);
+                if (Number.isFinite(candleTimeMs) && candleTimeMs > 0) {
+                    if (candleTimeMs < 10000000000) {
+                        candleTimeMs = candleTimeMs * 1000;
+                    }
+                    const nextCandleTimeMs = candleTimeMs + intervalMs;
+                    remaining = nextCandleTimeMs - now;
+                } else {
+                    const nextBoundary = Math.ceil(now / intervalMs) * intervalMs;
+                    remaining = nextBoundary - now;
+                }
+            } else {
+                const nextBoundary = Math.ceil(now / intervalMs) * intervalMs;
+                remaining = nextBoundary - now;
+            }
+
+            if (remaining < 0) remaining = 0;
+
+            const h = Math.floor(remaining / (1000 * 60 * 60));
+            const m = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+            const s = Math.floor((remaining % (1000 * 60)) / 1000);
+
+            if (h > 0) {
+                setCountdownFormatted(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
+            } else {
+                setCountdownFormatted(`${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
+            }
+        };
+
+        tick();
+        const timerId = setInterval(tick, 1000);
+        const handleVisibility = () => {
+            if (!document.hidden) tick();
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => {
+            clearInterval(timerId);
+            document.removeEventListener('visibilitychange', handleVisibility);
+        };
+    }, [interval, lastCandleRef]);
+
+    if (!countdownFormatted) return null;
+
+    return (
+        <div className="bg-black/60 dark:bg-black/60 border border-white/10 text-[#d1d5db] text-[20px] font-mono font-bold px-3 py-1.5 rounded shadow-lg backdrop-blur-md">
+            {countdownFormatted}
+        </div>
+    );
+});
+
 // Chart Component
-const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean }> = ({ exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false }) => {
+const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean }>(({ exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<any>(null);
     const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -143,19 +210,27 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     const crosshairPriceRef = useRef<number | null>(null);
     const lastCandleRef = useRef<CandlestickData | null>(null);
     const allCandlesRef = useRef<any[]>([]);
+    const candlesVersionRef = useRef<number>(0);
+    const lastTooltipUpdateAtRef = useRef<number>(0);
+    const lastTooltipTimeRef = useRef<number | string | null>(null);
     const lastTradeEventRef = useRef<any>(null);
     const lastProcessedPriceRef = useRef<number>(0);
     const prevPositionRef = useRef<boolean>(false);
     const markersPluginRef = useRef<any>(null);
-    const [countdownFormatted, setCountdownFormatted] = useState<string>('');
+    const deviceProfile = useDeviceProfile();
+    const isThermalGuard = deviceProfile.isThermalGuardActive;
+    const indicatorIntervalMs = deviceProfile.timings.indicatorIntervalMs;
     const [fiboData, setFiboData] = useState<FibonacciData | null>(null);
     const [ichimokuData, setIchimokuData] = useState<IchimokuDataPoint[]>([]);
     const [trendFinderData, setTrendFinderData] = useState<TrendFinderResult | null>(null);
-    const { vpvrData, cvdData, footprintData } = useOrderFlowData(symbol, exchange, interval);
-    const { heatmapData: realHeatmapData } = useHeatmapData(symbol, exchange);
+    const isOrderFlowOverlayActive = Boolean(showVPVR || showCVD || showFootprint || indicatorSettings.showQuantumAI);
+    const { vpvrData, cvdData, footprintData } = useOrderFlowData(symbol, exchange, interval, isOrderFlowOverlayActive);
+    const showHeatmapOverlay = Boolean(showVPVR || indicatorSettings.showHeatmap);
+    const { heatmapData: realHeatmapData } = useHeatmapData(symbol, exchange, showHeatmapOverlay);
     useIcebergEvents(symbol);
     const mlSetup = useMLSetupEvents(symbol);
-    const godModeData = useGodModeData(symbol);
+    const showGodMode = Boolean(indicatorSettings.showLiquidationHeatmap);
+    const godModeData = useGodModeData(symbol, showGodMode);
     const [sessionsData, setSessionsData] = useState<{ a: SessionData[]; b: SessionData[]; c: SessionData[]; d: SessionData[]; }>({
         a: [], b: [], c: [], d: []
     });
@@ -354,50 +429,63 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             
             // Tooltip Modal Logic
             if (!param.point || !param.time || param.point.x < 0 || param.point.x > (chartContainerRef.current?.clientWidth || 0) || param.point.y < 0 || param.point.y > (chartContainerRef.current?.clientHeight || 0)) {
-                setTooltipData(null);
-                setTooltipPos(null);
-            } else {
-                let candleData = null;
-                
-                // 1. Primary method: Get exact internal data point used by TradingView chart
-                if (candlestickSeriesRef.current && param.seriesData) {
-                    const cData = param.seriesData.get(candlestickSeriesRef.current) as any;
-                    const vData = volumeSeriesRef.current ? param.seriesData.get(volumeSeriesRef.current) as any : null;
-                    if (cData && cData.open !== undefined) {
-                        candleData = {
-                            time: cData.time as number,
-                            open: cData.open,
-                            high: cData.high,
-                            low: cData.low,
-                            close: cData.close,
-                            volume: vData?.value || 0
-                        };
-                    }
-                }
-                
-                // 2. Fallback method: Search raw CCXT data (accounting for JS string/number mismatches)
-                if (!candleData) {
-                    const fallbackCandle = allCandlesRef.current.find(c => {
-                        return c.time === param.time || String(c.time) === String(param.time) || Number(c.time) === Number(param.time);
-                    });
-                    if (fallbackCandle) {
-                        candleData = {
-                            time: fallbackCandle.time,
-                            open: fallbackCandle.open,
-                            high: fallbackCandle.high,
-                            low: fallbackCandle.low,
-                            close: fallbackCandle.close,
-                            volume: fallbackCandle.volume || 0
-                        };
-                    }
-                }
-
-                if (candleData) {
-                    setTooltipData(candleData);
-                    setTooltipPos({ x: param.point.x, y: param.point.y });
-                } else {
+                if (lastTooltipTimeRef.current !== null) {
+                    lastTooltipTimeRef.current = null;
                     setTooltipData(null);
                     setTooltipPos(null);
+                }
+            } else {
+                const nowMs = Date.now();
+                const tooltipThrottleMs = isThermalGuardActive() ? 90 : 0;
+                const timeChanged = lastTooltipTimeRef.current !== (param.time as any);
+                if (tooltipThrottleMs > 0 && !timeChanged && nowMs - lastTooltipUpdateAtRef.current < tooltipThrottleMs) {
+                    // Skip rapid touch-pan React state updates on same bar
+                } else {
+                    let candleData = null;
+                    
+                    // 1. Primary method: Get exact internal data point used by TradingView chart
+                    if (candlestickSeriesRef.current && param.seriesData) {
+                        const cData = param.seriesData.get(candlestickSeriesRef.current) as any;
+                        const vData = volumeSeriesRef.current ? param.seriesData.get(volumeSeriesRef.current) as any : null;
+                        if (cData && cData.open !== undefined) {
+                            candleData = {
+                                time: cData.time as number,
+                                open: cData.open,
+                                high: cData.high,
+                                low: cData.low,
+                                close: cData.close,
+                                volume: vData?.value || 0
+                            };
+                        }
+                    }
+                    
+                    // 2. Fallback method: Search raw CCXT data (accounting for JS string/number mismatches)
+                    if (!candleData) {
+                        const fallbackCandle = allCandlesRef.current.find(c => {
+                            return c.time === param.time || String(c.time) === String(param.time) || Number(c.time) === Number(param.time);
+                        });
+                        if (fallbackCandle) {
+                            candleData = {
+                                time: fallbackCandle.time,
+                                open: fallbackCandle.open,
+                                high: fallbackCandle.high,
+                                low: fallbackCandle.low,
+                                close: fallbackCandle.close,
+                                volume: fallbackCandle.volume || 0
+                            };
+                        }
+                    }
+
+                    if (candleData) {
+                        lastTooltipUpdateAtRef.current = nowMs;
+                        lastTooltipTimeRef.current = candleData.time as any;
+                        setTooltipData(candleData);
+                        setTooltipPos({ x: param.point.x, y: param.point.y });
+                    } else if (lastTooltipTimeRef.current !== null) {
+                        lastTooltipTimeRef.current = null;
+                        setTooltipData(null);
+                        setTooltipPos(null);
+                    }
                 }
             }
 
@@ -452,6 +540,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 if (candlestickSeriesRef.current && isMounted) {
                     candlestickSeriesRef.current.setData(candles);
                     allCandlesRef.current = candles;
+                    candlesVersionRef.current += 1;
                     if (candles.length > 0) {
                         lastCandleRef.current = { ...candles[candles.length - 1] };
                     }
@@ -1045,11 +1134,14 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         let isCancelled = false;
+        let lastVersion = -1;
 
         const runCalc = () => {
             if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (candles.length < 10) return;
+            if (lastVersion === candlesVersionRef.current) return;
+            lastVersion = candlesVersionRef.current;
             const { walls: liveWalls, cvdData: liveCvd, footprintData: liveFp, currentPrice: livePx } = smcDataRef.current;
             try {
                 const result = calculateSMC(candles, smcSettings as any, liveWalls as any, liveCvd, liveFp as any, livePx);
@@ -1062,14 +1154,14 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         // Run instantly immediately via setTimeout 0 to render visuals without blocking UI toggle switch
         setTimeout(runCalc, 0);
 
-        // Throttle updates to 4 seconds, avoiding rapid CPU-heavy recalculation loops
-        const intervalId = setInterval(runCalc, 4000);
+        // Throttle updates to 4s desktop / 6s mobile thermal guard, avoiding rapid CPU-heavy recalculation loops
+        const intervalId = setInterval(runCalc, isThermalGuard ? 6000 : 4000);
 
         return () => {
             isCancelled = true;
             clearInterval(intervalId);
         };
-    }, [indicatorSettings]);
+    }, [indicatorSettings, isThermalGuard]);
 
     // ICT Killzones Calculation Effect (Throttled)
     useEffect(() => {
@@ -1111,10 +1203,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             showEquilibrium: indicatorSettings.ictShowEquilibrium,
         };
 
+        let lastVersion = -1;
         const runIctCalc = () => {
             if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (candles.length < 10) return;
+            if (lastVersion === candlesVersionRef.current) return;
+            lastVersion = candlesVersionRef.current;
             try {
                 const result = calculateICTSuite(candles, ictConfigs);
                 setIctData(result);
@@ -1124,10 +1219,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runIctCalc, 0);
-        const intervalId = setInterval(runIctCalc, 4000);
+        const intervalId = setInterval(runIctCalc, isThermalGuard ? 6000 : 4000);
 
         return () => clearInterval(intervalId);
-    }, [indicatorSettings]);
+    }, [indicatorSettings, isThermalGuard]);
 
     // LuxAlgo ICT Concepts Engine
     useEffect(() => {
@@ -1187,6 +1282,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     useEffect(() => {
         if (!symbol || !indicatorSettings.showICTPO3) return;
         const fetchPO3 = async () => {
+            if (document.hidden) return;
             try {
                 const formattedSymbol = symbol.replace('/', '-');
                 // Adjust base URL as needed for your env. Assuming proxy or relative route is working.
@@ -1211,10 +1307,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             return;
         }
 
+        let lastVersion = -1;
         const runSupertrendCalc = () => {
             if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (candles.length < 10) return;
+            if (lastVersion === candlesVersionRef.current) return;
+            lastVersion = candlesVersionRef.current;
             try {
                 const result = calculateSupertrend(
                     candles,
@@ -1229,10 +1328,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runSupertrendCalc, 0);
-        const intervalId = setInterval(runSupertrendCalc, 5000);
+        const intervalId = setInterval(runSupertrendCalc, isThermalGuard ? 7500 : 5000);
 
         return () => clearInterval(intervalId);
-    }, [indicatorSettings]);
+    }, [indicatorSettings, isThermalGuard]);
 
     // MSB-OB Calculation Effect (Throttled)
     useEffect(() => {
@@ -1241,10 +1340,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             return;
         }
 
+        let lastVersion = -1;
         const runMsbObCalc = () => {
             if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (candles.length < 10) return;
+            if (lastVersion === candlesVersionRef.current) return;
+            lastVersion = candlesVersionRef.current;
             try {
                 const result = calculateMsbOb(
                     candles,
@@ -1259,10 +1361,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runMsbObCalc, 0);
-        const intervalId = setInterval(runMsbObCalc, 5000);
+        const intervalId = setInterval(runMsbObCalc, isThermalGuard ? 7500 : 5000);
 
         return () => clearInterval(intervalId);
-    }, [indicatorSettings]);
+    }, [indicatorSettings, isThermalGuard]);
 
     // ── Wick Rejection S/R Calculation Effect ──
     useEffect(() => {
@@ -1274,6 +1376,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
 
         const runWickSRCalc = async () => {
+            if (document.hidden) return;
             try {
                 const tf = indicatorSettings.wickSRTimeframe || '15m';
                 // If it's 1m, and chart is 1m, we could reuse allCandlesRef, but for true generic support, we fetch independent data series for Wick SR
@@ -1301,13 +1404,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
 
         // Run immediately, then throttle updates
         setTimeout(runWickSRCalc, 0);
-        // Throttle updates purely based on timeframe (e.g., polling every 10s is sufficient, as HTF wicks don't change natively per ms)
-        const intervalId = setInterval(runWickSRCalc, 10000);
+        // Throttle updates purely based on timeframe (e.g., polling every 10s desktop / 15s mobile is sufficient, as HTF wicks don't change natively per ms)
+        const intervalId = setInterval(runWickSRCalc, isThermalGuard ? 15000 : 10000);
         return () => {
             isMounted = false;
             clearInterval(intervalId);
         };
-    }, [indicatorSettings.showWickSR, indicatorSettings.wickSRTimeframe, indicatorSettings.wickSRLookback, indicatorSettings.wickSRMinTouches, indicatorSettings.wickSRAtrPeriod, indicatorSettings.wickSRAtrMultiplier, symbol, exchange]);
+    }, [indicatorSettings.showWickSR, indicatorSettings.wickSRTimeframe, indicatorSettings.wickSRLookback, indicatorSettings.wickSRMinTouches, indicatorSettings.wickSRAtrPeriod, indicatorSettings.wickSRAtrMultiplier, symbol, exchange, isThermalGuard]);
 
     // ── Quantum AI v8 Calculation Effect ──
     useEffect(() => {
@@ -1316,10 +1419,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             return;
         }
 
+        let lastVersion = -1;
         const runQuantumCalc = () => {
             if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (!candles || candles.length < 200) return;
+            if (lastVersion === candlesVersionRef.current) return;
+            lastVersion = candlesVersionRef.current;
             try {
                 const pocPrice = vpvrData && vpvrData.length > 0 ? vpvrData.reduce((max, row) => (row.volume > max.volume ? row : max), vpvrData[0]).price : 0;
                 const results = calculateQuantumAi(candles, {
@@ -1335,10 +1441,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runQuantumCalc, 0);
-        const intervalId = setInterval(runQuantumCalc, 5000);
+        const intervalId = setInterval(runQuantumCalc, isThermalGuard ? 7500 : 5000);
 
         return () => clearInterval(intervalId);
-    }, [indicatorSettings]);
+    }, [indicatorSettings, isThermalGuard]);
 
     // ── VWAP Standard Deviation Bands Effect ──
     useEffect(() => {
@@ -1347,10 +1453,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             return;
         }
 
+        let lastVersion = -1;
         const runVwapSDCalc = () => {
             if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (!candles || candles.length < 5) return;
+            if (lastVersion === candlesVersionRef.current) return;
+            lastVersion = candlesVersionRef.current;
             try {
                 const results = calculateVWAPSD(
                     candles,
@@ -1367,11 +1476,11 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runVwapSDCalc, 0);
-        // Refresh every 5s for VWAP tracking without CPU thrashing
-        const intervalId = setInterval(runVwapSDCalc, 5000);
+        // Refresh every 5s desktop / 7.5s mobile for VWAP tracking without CPU thrashing
+        const intervalId = setInterval(runVwapSDCalc, isThermalGuard ? 7500 : 5000);
 
         return () => clearInterval(intervalId);
-    }, [indicatorSettings]);
+    }, [indicatorSettings, isThermalGuard]);
 
     // ── Safe Marker Setter Utility ──
     const safeSetMarkers = () => {
@@ -1508,10 +1617,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             return;
         }
 
+        let lastVersion = -1;
         const runPatternExtraction = () => {
             if (document.hidden) return;
             const candles = allCandlesRef.current;
             if (candles.length === 0) return;
+            if (lastVersion === candlesVersionRef.current) return;
+            lastVersion = candlesVersionRef.current;
             const markers: any[] = [];
             candles.forEach(c => {
                 if (c.patterns && c.patterns.length > 0) {
@@ -1531,9 +1643,9 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         };
 
         setTimeout(runPatternExtraction, 0);
-        const pid = setInterval(runPatternExtraction, 5000);
+        const pid = setInterval(runPatternExtraction, isThermalGuard ? 7500 : 5000);
         return () => clearInterval(pid);
-    }, [indicatorSettings.showCandlestickPatterns]);
+    }, [indicatorSettings.showCandlestickPatterns, isThermalGuard]);
 
     useEffect(() => {
         if (!markersPluginRef.current) return;
@@ -1548,6 +1660,11 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     // Refs to track last applied events to avoid redundant calculations
     const lastAppliedTradeRef = useRef<any>(null);
     const lastAppliedPriceRef = useRef<number>(0);
+    const hasDirectTicksRef = useRef<boolean>(false);
+    const lastDirectTickAtRef = useRef<number>(0);
+    const lastDirectTickTimestampRef = useRef<number>(0);
+    const lastProcessedCandleKeyRef = useRef<string>('');
+    const lastSessionsKeyRef = useRef<string>('');
     // Aggressor side of the last trade ('buy' = green ▲, 'sell' = red ▼)
     const lastTradeSideRef = useRef<'buy' | 'sell'>('buy');
     const lastTickPriceRef = useRef<number>(0);
@@ -1576,7 +1693,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         const tradeHigh = trade?.high !== undefined ? trade.high : livePrice;
         const tradeLow = trade?.low !== undefined ? trade.low : livePrice;
         const tradeVol = trade?.volume || 0;
-        const eventTimestamp = (trade && trade.timestamp) ? trade.timestamp : Date.now();
+        const rawTimestamp = (trade && trade.timestamp) ? trade.timestamp : Date.now();
+        const eventTimestamp = rawTimestamp < 10000000000 ? rawTimestamp * 1000 : rawTimestamp;
+
+        // Guard against out-of-order older candles arriving after newer candles
+        if (eventTimestamp < candleTimeMs) {
+            return;
+        }
 
         let updatedCandle: any;
         let isNewCandle = false;
@@ -1639,8 +1762,10 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 if (allCandlesRef.current.length > MAX_CANDLES) {
                     allCandlesRef.current = allCandlesRef.current.slice(-MAX_CANDLES);
                 }
+                candlesVersionRef.current += 1;
             } else if (len > 0 && allCandlesRef.current[len - 1].time === updatedCandle.time) {
                 allCandlesRef.current[len - 1] = updatedCandle;
+                candlesVersionRef.current += 1;
             }
 
             // Sync horizontal live price line with exact candle close at zero lag
@@ -1663,11 +1788,46 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
     useEffect(() => {
         lastAppliedTradeRef.current = null;
         lastAppliedPriceRef.current = 0;
-    }, [symbol, interval]);
+        hasDirectTicksRef.current = false;
+        lastDirectTickAtRef.current = 0;
+        lastDirectTickTimestampRef.current = 0;
+        lastProcessedCandleKeyRef.current = '';
+        lastSessionsKeyRef.current = '';
+    }, [symbol, interval, exchange]);
 
-    // Instant Zero-Lag Reaction on Live Price & Trade Events
+    // Direct canvas live trade tick subscription (~25 FPS throttled on mobile/tablet, instant on PC)
+    // bypasses full React page re-renders for smooth live candlestick updates.
     useEffect(() => {
+        if (!symbol || !exchange) return;
+        const unsubscribe = subscribeLiveTradeTicks(symbol, exchange, (tick) => {
+            if (!tick || !tick.price || tick.price <= 0 || Number.isNaN(tick.price)) return;
+            const rawTs = tick.timestamp || Date.now();
+            const ts = rawTs < 10000000000 ? rawTs * 1000 : rawTs;
+            if (ts < lastDirectTickTimestampRef.current) return;
+            hasDirectTicksRef.current = true;
+            lastDirectTickAtRef.current = Date.now();
+            lastDirectTickTimestampRef.current = ts;
+            applyLivePriceTick(tick.price, {
+                price: tick.price,
+                volume: tick.quantity,
+                timestamp: ts,
+                side: tick.isBuyerMaker ? 'sell' : 'buy',
+            });
+        });
+        return () => {
+            unsubscribe();
+        };
+    }, [symbol, exchange, applyLivePriceTick]);
+
+    // Fallback reaction on React tradeEvent/currentPrice when direct live ticks are not actively streaming
+    useEffect(() => {
+        const directStreamActive = hasDirectTicksRef.current && (Date.now() - lastDirectTickAtRef.current) < 2000;
+        if (directStreamActive) return;
+
         if (tradeEvent && tradeEvent.price > 0 && !isNaN(tradeEvent.price) && tradeEvent !== lastAppliedTradeRef.current) {
+            const rawTs = tradeEvent.timestamp || 0;
+            const ts = rawTs > 0 && rawTs < 10000000000 ? rawTs * 1000 : rawTs;
+            if (ts > 0 && ts <= lastDirectTickTimestampRef.current) return;
             lastAppliedTradeRef.current = tradeEvent;
             lastAppliedPriceRef.current = tradeEvent.price;
             applyLivePriceTick(tradeEvent.price, tradeEvent);
@@ -1677,8 +1837,17 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         }
     }, [tradeEvent, currentPrice, applyLivePriceTick]);
 
-    // Throttled Technical Indicator Engine (Runs smoothly every 200ms without freezing UI)
+    // Throttled Technical Indicator Engine (200ms PC / 500ms mobile thermal guard, skips unchanged candles & hidden tabs)
     useEffect(() => {
+        const anyFastIndicatorActive = Boolean(
+            indicatorSettings.showEMA ||
+            indicatorSettings.showBB ||
+            indicatorSettings.showRSI ||
+            indicatorSettings.showUTBot ||
+            indicatorSettings.showSessions
+        );
+        if (!anyFastIndicatorActive) return;
+
         const updateInterval = setInterval(() => {
             if (document.hidden) return;
             if (!candlestickSeriesRef.current || !lastCandleRef.current || allCandlesRef.current.length === 0) return;
@@ -1687,7 +1856,12 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 const curData = allCandlesRef.current;
                 const lastCandle = lastCandleRef.current as any;
                 if (curData && curData.length > 0) {
-                    const emaP = Math.max(1, Math.floor(Number(indicatorSettings.emaPeriod) || 20));
+                    const emaTfsKey = (indicatorSettings.emaTimeframes || ['1m']).join(',');
+                    const toggleSig = `${indicatorSettings.showEMA ? 1 : 0}:${indicatorSettings.emaPeriod}:${indicatorSettings.emaRenderMode}:${emaTfsKey}|${indicatorSettings.showBB ? 1 : 0}:${indicatorSettings.bbPeriod}:${indicatorSettings.bbStdDev}|${indicatorSettings.showRSI ? 1 : 0}:${indicatorSettings.rsiPeriod}|${indicatorSettings.showUTBot ? 1 : 0}:${indicatorSettings.utBotSensitivity}:${indicatorSettings.utBotAtrPeriod}:${indicatorSettings.utBotUseHeikinAshi ? 1 : 0}|${indicatorSettings.showSessions ? 1 : 0}:${indicatorSettings.timezoneOffset || 0}:${indicatorSettings.sessionA?.session}:${indicatorSettings.sessionB?.session}:${indicatorSettings.sessionC?.session}:${indicatorSettings.sessionD?.session}`;
+                    const candleKey = `${curData.length}:${lastCandle?.time}:${lastCandle?.close}:${lastCandle?.volume}|${toggleSig}`;
+                    if (candleKey === lastProcessedCandleKeyRef.current) return;
+                    lastProcessedCandleKeyRef.current = candleKey;
+
                     const bbP = Math.max(1, Math.floor(Number(indicatorSettings.bbPeriod) || 20));
                     const bbDev = Number.isFinite(Number(indicatorSettings.bbStdDev)) && Number(indicatorSettings.bbStdDev) > 0 ? Number(indicatorSettings.bbStdDev) : 2;
                     const rsiP = Math.max(1, Math.floor(Number(indicatorSettings.rsiPeriod) || 14));
@@ -1731,13 +1905,18 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         if (Object.keys(newLatestValues).length > 0) {
                             setMtfEmaValues(prev => {
                                 const next: Record<string, number> = {};
+                                let changed = false;
                                 activeTfs.forEach(t => {
                                     if (newLatestValues[t] !== undefined) {
                                         next[t] = newLatestValues[t];
                                     } else if (prev[t] !== undefined) {
                                         next[t] = prev[t];
                                     }
+                                    if (next[t] !== prev[t]) changed = true;
                                 });
+                                if (!changed && Object.keys(next).length === Object.keys(prev).length) {
+                                    return prev;
+                                }
                                 return next;
                             });
                         }
@@ -1782,38 +1961,46 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                         }
                     }
 
-                    // --- SESSIONS CALCULATION (Throttled) ---
+                    // --- SESSIONS CALCULATION (Only recalculates when candle count or minute bucket changes) ---
                     if (indicatorSettings.showSessions) {
-                        const sessData = allCandlesRef.current;
                         const tz = indicatorSettings.timezoneOffset || 0;
+                        let rawTime = Number(lastCandle?.time || 0);
+                        if (rawTime > 0 && rawTime < 10000000000) rawTime *= 1000;
+                        const minuteBucket = Math.floor((rawTime || Date.now()) / 60000);
+                        const sessionsKey = `${curData.length}:${minuteBucket}:${tz}:${indicatorSettings.sessionA.session}:${indicatorSettings.sessionB.session}:${indicatorSettings.sessionC.session}:${indicatorSettings.sessionD.session}:${indicatorSettings.sessionA.name}:${indicatorSettings.sessionB.name}:${indicatorSettings.sessionC.name}:${indicatorSettings.sessionD.name}`;
 
-                        const sa = calculateSessions(sessData, indicatorSettings.sessionA.session, tz);
-                        const sb = calculateSessions(sessData, indicatorSettings.sessionB.session, tz);
-                        const sc = calculateSessions(sessData, indicatorSettings.sessionC.session, tz);
-                        const sd = calculateSessions(sessData, indicatorSettings.sessionD.session, tz);
+                        if (sessionsKey !== lastSessionsKeyRef.current) {
+                            lastSessionsKeyRef.current = sessionsKey;
+                            const sessData = allCandlesRef.current;
 
-                        setSessionsData({ a: sa, b: sb, c: sc, d: sd });
+                            const sa = calculateSessions(sessData, indicatorSettings.sessionA.session, tz);
+                            const sb = calculateSessions(sessData, indicatorSettings.sessionB.session, tz);
+                            const sc = calculateSessions(sessData, indicatorSettings.sessionC.session, tz);
+                            const sd = calculateSessions(sessData, indicatorSettings.sessionD.session, tz);
 
-                        const lastA = sa[sa.length - 1];
-                        const lastB = sb[sb.length - 1];
-                        const lastC = sc[sc.length - 1];
-                        const lastD = sd[sd.length - 1];
+                            setSessionsData({ a: sa, b: sb, c: sc, d: sd });
 
-                        setSessionStatuses([
-                            { name: indicatorSettings.sessionA.name, isActive: lastA?.isSession || false, color: indicatorSettings.sessionA.color, r2: lastA?.linReg?.r2 || null, stdev: lastA?.linReg?.stdev || null, volume: null },
-                            { name: indicatorSettings.sessionB.name, isActive: lastB?.isSession || false, color: indicatorSettings.sessionB.color, r2: lastB?.linReg?.r2 || null, stdev: lastB?.linReg?.stdev || null, volume: null },
-                            { name: indicatorSettings.sessionC.name, isActive: lastC?.isSession || false, color: indicatorSettings.sessionC.color, r2: lastC?.linReg?.r2 || null, stdev: lastC?.linReg?.stdev || null, volume: null },
-                            { name: indicatorSettings.sessionD.name, isActive: lastD?.isSession || false, color: indicatorSettings.sessionD.color, r2: lastD?.linReg?.r2 || null, stdev: lastD?.linReg?.stdev || null, volume: null },
-                        ]);
+                            const lastA = sa[sa.length - 1];
+                            const lastB = sb[sb.length - 1];
+                            const lastC = sc[sc.length - 1];
+                            const lastD = sd[sd.length - 1];
+
+                            setSessionStatuses([
+                                { name: indicatorSettings.sessionA.name, isActive: lastA?.isSession || false, color: indicatorSettings.sessionA.color, r2: lastA?.linReg?.r2 || null, stdev: lastA?.linReg?.stdev || null, volume: null },
+                                { name: indicatorSettings.sessionB.name, isActive: lastB?.isSession || false, color: indicatorSettings.sessionB.color, r2: lastB?.linReg?.r2 || null, stdev: lastB?.linReg?.stdev || null, volume: null },
+                                { name: indicatorSettings.sessionC.name, isActive: lastC?.isSession || false, color: indicatorSettings.sessionC.color, r2: lastC?.linReg?.r2 || null, stdev: lastC?.linReg?.stdev || null, volume: null },
+                                { name: indicatorSettings.sessionD.name, isActive: lastD?.isSession || false, color: indicatorSettings.sessionD.color, r2: lastD?.linReg?.r2 || null, stdev: lastD?.linReg?.stdev || null, volume: null },
+                            ]);
+                        }
                     }
                 }
             } catch (e) {
                 console.error("Failed to update indicators", e);
             }
-        }, 200);
+        }, indicatorIntervalMs);
 
         return () => clearInterval(updateInterval);
-    }, [indicatorSettings]);
+    }, [indicatorSettings, indicatorIntervalMs, interval, exchange, symbol]);
 
     // Auto Fibonacci Indicator
     useEffect(() => {
@@ -2852,45 +3039,6 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
         prevPositionRef.current = isPositionOpen;
     }, [botStatus]);
 
-    // Countdown Timer logic
-    useEffect(() => {
-        const intervalMs = parseIntervalToMs(interval);
-
-        const tick = () => {
-            const now = Date.now();
-            let remaining = 0;
-
-            if (lastCandleRef.current && lastCandleRef.current.time) {
-                let candleTimeMs = lastCandleRef.current.time as number;
-                // If the timestamp is in seconds, convert to ms
-                if (candleTimeMs < 10000000000) {
-                    candleTimeMs = candleTimeMs * 1000;
-                }
-                const nextCandleTimeMs = candleTimeMs + intervalMs;
-                remaining = nextCandleTimeMs - now;
-            } else {
-                const nextBoundary = Math.ceil(now / intervalMs) * intervalMs;
-                remaining = nextBoundary - now;
-            }
-
-            if (remaining < 0) remaining = 0;
-
-            const h = Math.floor(remaining / (1000 * 60 * 60));
-            const m = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-            const s = Math.floor((remaining % (1000 * 60)) / 1000);
-
-            if (h > 0) {
-                setCountdownFormatted(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
-            } else {
-                setCountdownFormatted(`${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
-            }
-        };
-
-        tick();
-        const timerId = setInterval(tick, 1000);
-        return () => clearInterval(timerId);
-    }, [interval]);
-
     return (
         <div className="w-full h-full flex flex-col absolute inset-0">
             <div className="flex-1 relative">
@@ -2952,7 +3100,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     {advancedMetrics.showDeltaDivergence && <DeltaDivergenceRenderer chart={chartRef.current} series={candlestickSeriesRef.current} visible={advancedMetrics.showDeltaDivergence} data={advancedMetricsData?.divergenceData} />}
                     {indicatorSettings.showAetherFlow && <AetherFlowRenderer chart={chartRef.current} series={candlestickSeriesRef.current!} data={aetherFlowData} settings={indicatorSettings} />}
 
-                    <LiquidityHeatmapRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={realHeatmapData} />
+                    {showHeatmapOverlay && <LiquidityHeatmapRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={realHeatmapData} />}
                     {indicatorSettings.showLiquidationHeatmap && <LiquidationHeatmapGodModeRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={godModeData} visible={indicatorSettings.showLiquidationHeatmap} />}
                     {indicatorSettings.showAutoFibo && <FibonacciCloudRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={fiboData} />}
                     {indicatorSettings.showBB && <BollingerBandsRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={bbData} visible={indicatorSettings.showBB} />}
@@ -3319,46 +3467,42 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                     return typeof window !== 'undefined' ? createPortal(quantumHudElement, document.body) : null;
                 })()}
 
-                {countdownFormatted && (
-                    <div className="absolute bottom-[40px] right-[75px] z-20 pointer-events-none flex flex-col items-end gap-2">
-                        {dontAskDragConfirm && (
-                            <button
-                                onClick={() => {
-                                    setDontAskDragConfirm(false);
-                                    dontAskDragConfirmRef.current = false;
-                                    try {
-                                        localStorage.setItem('dontAskDragConfirm', 'false');
-                                    } catch (e) {}
-                                    toast('Drag & Drop confirmation popup re-enabled', { icon: '🛡️' });
-                                }}
-                                className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold bg-black/70 hover:bg-black/90 text-cyan-400 border border-cyan-500/40 hover:border-cyan-400 transition-all cursor-pointer pointer-events-auto shadow-lg backdrop-blur-md flex items-center gap-1.5 group"
-                                title="Click to require confirmation popup on drag & drop again"
-                            >
-                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                                <span>⚡ Instant Drag: ON</span>
-                                <span className="text-[9px] text-gray-400 group-hover:text-white underline">Re-enable popup</span>
-                            </button>
-                        )}
-                        {botStatus && botStatus.is_absorbing && (
-                            <div className="bg-orange-600 border border-orange-400 text-white text-[16px] font-bold px-3 py-1.5 rounded animate-pulse shadow-lg">
-                                🧬 ABSORPTION DETECTED
-                            </div>
-                        )}
-                        {botStatus && botStatus.absorption_delta !== undefined && (
-                            <div className="bg-black/60 border border-white/10 text-[14px] font-mono px-3 py-1.5 rounded backdrop-blur-md">
-                                <span className="text-gray-400 mr-2 text-[11px] uppercase tracking-tighter">Backend CVD</span>
-                                <span className={botStatus.absorption_delta >= 0 ? 'text-green-400' : 'text-red-400'}>
-                                    {botStatus.absorption_delta > 0 ? '+' : ''}{typeof botStatus.absorption_delta === 'number'
-                                        ? botStatus.absorption_delta.toLocaleString(undefined, { maximumFractionDigits: 0 })
-                                        : botStatus.absorption_delta}
-                                </span>
-                            </div>
-                        )}
-                        <div className="bg-black/60 dark:bg-black/60 border border-white/10 text-[#d1d5db] text-[20px] font-mono font-bold px-3 py-1.5 rounded shadow-lg backdrop-blur-md">
-                            {countdownFormatted}
+                <div className="absolute bottom-[40px] right-[75px] z-20 pointer-events-none flex flex-col items-end gap-2">
+                    {dontAskDragConfirm && (
+                        <button
+                            onClick={() => {
+                                setDontAskDragConfirm(false);
+                                dontAskDragConfirmRef.current = false;
+                                try {
+                                    localStorage.setItem('dontAskDragConfirm', 'false');
+                                } catch (e) {}
+                                toast('Drag & Drop confirmation popup re-enabled', { icon: '🛡️' });
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold bg-black/70 hover:bg-black/90 text-cyan-400 border border-cyan-500/40 hover:border-cyan-400 transition-all cursor-pointer pointer-events-auto shadow-lg backdrop-blur-md flex items-center gap-1.5 group"
+                            title="Click to require confirmation popup on drag & drop again"
+                        >
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                            <span>⚡ Instant Drag: ON</span>
+                            <span className="text-[9px] text-gray-400 group-hover:text-white underline">Re-enable popup</span>
+                        </button>
+                    )}
+                    {botStatus && botStatus.is_absorbing && (
+                        <div className="bg-orange-600 border border-orange-400 text-white text-[16px] font-bold px-3 py-1.5 rounded animate-pulse shadow-lg">
+                            🧬 ABSORPTION DETECTED
                         </div>
-                    </div>
-                )}
+                    )}
+                    {botStatus && botStatus.absorption_delta !== undefined && (
+                        <div className="bg-black/60 border border-white/10 text-[14px] font-mono px-3 py-1.5 rounded backdrop-blur-md">
+                            <span className="text-gray-400 mr-2 text-[11px] uppercase tracking-tighter">Backend CVD</span>
+                            <span className={botStatus.absorption_delta >= 0 ? 'text-green-400' : 'text-red-400'}>
+                                {botStatus.absorption_delta > 0 ? '+' : ''}{typeof botStatus.absorption_delta === 'number'
+                                    ? botStatus.absorption_delta.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                                    : botStatus.absorption_delta}
+                            </span>
+                        </div>
+                    )}
+                    <CandleCountdown interval={interval} lastCandleRef={lastCandleRef} />
+                </div>
             </div>
             {showCVD && (
                 <div className="h-[25%] border-t border-gray-200 dark:border-white/5 relative z-0">
@@ -3553,7 +3697,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             />
         </div>
     );
-};
+});
 
 // ─── Advanced L2 Order Book ───────────────────────────────────────────────────
 type L2Event = {
@@ -3931,7 +4075,7 @@ interface ChartConfig {
     interval: string;
 }
 
-const OrderFlowChartPanel: React.FC<{
+const OrderFlowChartPanel = React.memo<{
     config: ChartConfig;
     isMain: boolean;
     isActive?: boolean;
@@ -3955,11 +4099,15 @@ const OrderFlowChartPanel: React.FC<{
     volumeThreshold: number;
     volumeMode: string;
     parentL2Data?: any;
+    parentBotId?: number | null;
+    parentBotStatus?: any;
+    parentSymbol?: string;
+    parentOpenOrders?: OpenLimitOrder[];
     showCrosshairAIPredict?: boolean;
     showBidAsk?: boolean;
     renderFloatingTools?: React.ReactNode;
     onFullscreenChange?: (isFullscreen: boolean) => void;
-}> = ({ 
+}>(({ 
     config, 
     isMain, 
     isActive = false, 
@@ -3982,7 +4130,11 @@ const OrderFlowChartPanel: React.FC<{
     setManualTradeTrigger, 
     volumeThreshold, 
     volumeMode, 
-    parentL2Data, 
+    parentL2Data,
+    parentBotId,
+    parentBotStatus,
+    parentSymbol,
+    parentOpenOrders,
     showCrosshairAIPredict = false,
     showBidAsk = false,
     renderFloatingTools,
@@ -4019,8 +4171,11 @@ const OrderFlowChartPanel: React.FC<{
     const removeBotForChart = useBotStore(state => state.removeBotForChart);
     const activeBotsByChartId = useBotStore(state => state.activeBotsByChartId);
 
+    const panelDeviceProfile = useDeviceProfile();
     const chartBotId = activeBotsByChartId[config.id] || null;
-    const { statusData: botStatus } = useWallHunterStatus(chartBotId);
+    const usingParentBotStatus = Boolean(chartBotId && parentBotId && chartBotId === parentBotId && parentBotStatus !== undefined);
+    const { statusData: ownBotStatus } = useWallHunterStatus(chartBotId, !usingParentBotStatus);
+    const botStatus = usingParentBotStatus ? parentBotStatus : ownBotStatus;
     
     const isShared = isMain && !!parentL2Data;
     const fallbackL2 = useLevel2MarketData(isShared ? '' : config.symbol, isShared ? '' : config.exchange);
@@ -4028,7 +4183,9 @@ const OrderFlowChartPanel: React.FC<{
     const bestBid = useMemo(() => (bids && bids.length ? Math.max(...bids.map((b: any) => b.price)) : 0), [bids]);
     const bestAsk = useMemo(() => (asks && asks.length ? Math.min(...asks.map((a: any) => a.price)) : 0), [asks]);
     const advancedMetricsData = useAdvancedMetrics(config.symbol, config.exchange, config.interval, advancedMetrics);
-    const openOrders = useOpenOrders(selectedApiKeyId, config.symbol, 2000);
+    const usingParentOpenOrders = Boolean(parentOpenOrders && parentSymbol && config.symbol === parentSymbol);
+    const ownOpenOrders = useOpenOrders(selectedApiKeyId, config.symbol, panelDeviceProfile.timings.openOrdersPollMs, !usingParentOpenOrders);
+    const openOrders = usingParentOpenOrders ? parentOpenOrders! : ownOpenOrders;
 
     // Report live currentPrice back up to parent
     useEffect(() => {
@@ -4205,7 +4362,7 @@ const OrderFlowChartPanel: React.FC<{
         return createPortal(panelContent, document.body);
     }
     return panelContent;
-};
+});
 
 // Main Page Component
 const OrderFlowHeatmap: React.FC = () => {
@@ -4389,12 +4546,13 @@ const OrderFlowHeatmap: React.FC = () => {
     const [isOrderBookModalOpen, setIsOrderBookModalOpen] = useState(false);
     const [isIndicatorModalOpen, setIsIndicatorModalOpen] = useState(false);
     const [isAIDeploymentModalOpen, setIsAIDeploymentModalOpen] = useState(false);
+    const deviceProfile = useDeviceProfile();
     const { bids, asks, walls, currentPrice, tradeEvent } = useLevel2MarketData(symbol, exchange);
     const { volumeThreshold, setVolumeThreshold, volumeMode, setVolumeMode } = useVolumeFilter(5000000);
     const mainChartBotId = activeBotsByChartId['main'] || null;
     const { statusData: botStatus, isConnected: botWsConnected } = useWallHunterStatus(selectedHudBotId);
     const [selectedApiKeyId, setSelectedApiKeyId] = useState<string | null>(null);
-    const openOrders = useOpenOrders(selectedApiKeyId, symbol, 2000);
+    const openOrders = useOpenOrders(selectedApiKeyId, symbol, deviceProfile.timings.openOrdersPollMs);
 
     // Keep 'main' chart price synced in chartPrices
     const [lastPriceSide, setLastPriceSide] = useState<'buy' | 'sell'>('buy');
@@ -4433,6 +4591,83 @@ const OrderFlowHeatmap: React.FC = () => {
             price: chartPrices[c.id] || (c.isMain ? currentPrice : undefined)
         }));
     }, [allCharts, chartPrices, currentPrice]);
+
+    // Isolate ManualTradeModal from high-frequency parent price churn on mobile/tablet thermal guard
+    const [isManualTradeOpen, setIsManualTradeOpen] = useState(false);
+    const modalThrottleMs = deviceProfile.timings.modalPriceThrottleMs;
+    const rawModalPrice = chartPrices[activeChart?.id || 'main'] || (activeChart?.isMain ? currentPrice : (chartPrices[activeChart?.id || ''] || currentPrice));
+    const [throttledModalPrice, setThrottledModalPrice] = useState<number>(rawModalPrice);
+    const [throttledChartPrices, setThrottledChartPrices] = useState<Record<string, number>>(chartPrices);
+    const lastModalPriceFlushRef = useRef<number>(0);
+
+    useEffect(() => {
+        if (!deviceProfile.isThermalGuardActive || modalThrottleMs <= 0) return;
+        if (!isManualTradeOpen && manualTradeTrigger === 0) return;
+        const now = Date.now();
+        const elapsed = now - lastModalPriceFlushRef.current;
+        if (elapsed >= modalThrottleMs) {
+            lastModalPriceFlushRef.current = now;
+            setThrottledModalPrice(rawModalPrice);
+            setThrottledChartPrices(chartPrices);
+            return;
+        }
+        const timer = setTimeout(() => {
+            lastModalPriceFlushRef.current = Date.now();
+            setThrottledModalPrice(rawModalPrice);
+            setThrottledChartPrices(chartPrices);
+        }, modalThrottleMs - elapsed);
+        return () => clearTimeout(timer);
+    }, [deviceProfile.isThermalGuardActive, modalThrottleMs, isManualTradeOpen, manualTradeTrigger, rawModalPrice, chartPrices]);
+
+    useEffect(() => {
+        if (!deviceProfile.isThermalGuardActive || modalThrottleMs <= 0) return;
+        if (isManualTradeOpen || manualTradeTrigger > 0) {
+            lastModalPriceFlushRef.current = Date.now();
+            setThrottledModalPrice(rawModalPrice);
+            setThrottledChartPrices(chartPrices);
+        }
+    }, [deviceProfile.isThermalGuardActive, modalThrottleMs, isManualTradeOpen, manualTradeTrigger, activeChartId]);
+
+    const throttledModalAvailablePairs: AvailablePair[] = useMemo(() => {
+        return allCharts.map(c => ({
+            id: c.id,
+            symbol: c.symbol,
+            exchange: c.exchange,
+            isMain: c.isMain,
+            price: throttledChartPrices[c.id] || (c.isMain ? throttledModalPrice : undefined)
+        }));
+    }, [allCharts, throttledChartPrices, throttledModalPrice]);
+
+    const modalCurrentPrice = (deviceProfile.isThermalGuardActive && modalThrottleMs > 0) ? throttledModalPrice : rawModalPrice;
+    const modalAvailablePairs = (deviceProfile.isThermalGuardActive && modalThrottleMs > 0) ? throttledModalAvailablePairs : availablePairs;
+
+    const handleModalSelectPair = useCallback((pair: AvailablePair) => {
+        setActiveChartId(pair.id);
+        setManualTradeSymbol(pair.symbol);
+    }, []);
+
+    const handleModalClose = useCallback(() => {
+        setManualTradePrice(null);
+        setManualTradeTrigger(0);
+    }, []);
+
+    const handleModalDragBracketStart = useCallback((type: 'tp' | 'sl') => {
+        (window as any)._handleChartDragBracketStart?.(type);
+    }, []);
+
+    const handleModalDragBracketMove = useCallback((type: 'tp' | 'sl', x: number, y: number) => {
+        return (window as any)._handleChartDragBracketMove?.(type, x, y) ?? null;
+    }, []);
+
+    const handleModalDragBracketEnd = useCallback((type: 'tp' | 'sl', x: number, y: number) => {
+        return (window as any)._handleChartDragBracketEnd?.(type, x, y) ?? { inChart: false, price: null };
+    }, []);
+
+    const mainParentL2Data = useMemo(
+        () => ({ bids, asks, walls, currentPrice, tradeEvent }),
+        [bids, asks, walls, currentPrice, tradeEvent]
+    );
+    const noopCallback = useCallback(() => {}, []);
 
 
     const filteredWalls = useMemo(() => {
@@ -4569,25 +4804,20 @@ const OrderFlowHeatmap: React.FC = () => {
     
                                 {/* MANUAL TRADE MODAL */}
                                 <div className="w-[42px] h-[42px] relative shrink-0">
-                                    <ManualTradeModal 
-                                        buttonSize="sm" 
-                                        symbol={manualTradeSymbol || activeChart?.symbol || symbol} 
-                                        currentPrice={chartPrices[activeChart?.id || 'main'] || (activeChart?.isMain ? currentPrice : (chartPrices[activeChart?.id || ''] || currentPrice))} 
-                                        availablePairs={availablePairs}
-                                        onSelectPair={(pair) => {
-                                            setActiveChartId(pair.id);
-                                            setManualTradeSymbol(pair.symbol);
-                                        }}
-                                        onApiKeyChange={setSelectedApiKeyId} 
-                                        clickedPrice={manualTradePrice} 
+                                    <ManualTradeModal
+                                        buttonSize="sm"
+                                        symbol={manualTradeSymbol || activeChart?.symbol || symbol}
+                                        currentPrice={modalCurrentPrice}
+                                        availablePairs={modalAvailablePairs}
+                                        onSelectPair={handleModalSelectPair}
+                                        onApiKeyChange={setSelectedApiKeyId}
+                                        clickedPrice={manualTradePrice}
                                         openTrigger={manualTradeTrigger}
-                                        onClose={() => {
-                                            setManualTradePrice(null);
-                                            setManualTradeTrigger(0);
-                                        }}
-                                        onChartDragBracketStart={(type) => (window as any)._handleChartDragBracketStart?.(type)}
-                                        onChartDragBracketMove={(type, x, y) => (window as any)._handleChartDragBracketMove?.(type, x, y) ?? null}
-                                        onChartDragBracketEnd={(type, x, y) => (window as any)._handleChartDragBracketEnd?.(type, x, y) ?? { inChart: false, price: null }}
+                                        onClose={handleModalClose}
+                                        onOpenChange={setIsManualTradeOpen}
+                                        onChartDragBracketStart={handleModalDragBracketStart}
+                                        onChartDragBracketMove={handleModalDragBracketMove}
+                                        onChartDragBracketEnd={handleModalDragBracketEnd}
                                     />
                                 </div>
     
@@ -4599,7 +4829,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 {/* ALGO PREDICTOR MODAL */}
                                 <ModelPredictorModal 
                                     size="sm"
-                                    currentPrice={currentPrice} 
+                                    currentPrice={modalCurrentPrice} 
                                     onPrediction={setPredictionResult}
                                     externalPrice={externalAIPrice}
                                     externalOpenTrigger={externalAIOpenTrigger}
@@ -4845,8 +5075,8 @@ const OrderFlowHeatmap: React.FC = () => {
                             selectedApiKeyId={selectedApiKeyId} 
                             predictionResult={c.isMain ? predictionResult : null} 
                             activeMLModelId={c.isMain ? activeMLModelId : null} 
-                            setExternalAIPrice={c.isMain ? setExternalAIPrice : () => {}} 
-                            setExternalAIOpenTrigger={c.isMain ? setExternalAIOpenTrigger : () => {}} 
+                            setExternalAIPrice={c.isMain ? setExternalAIPrice : noopCallback} 
+                            setExternalAIOpenTrigger={c.isMain ? setExternalAIOpenTrigger : noopCallback} 
                             setManualTradePrice={(price) => {
                                 setActiveChartId(c.id);
                                 setManualTradeSymbol(c.symbol);
@@ -4855,7 +5085,11 @@ const OrderFlowHeatmap: React.FC = () => {
                             setManualTradeTrigger={setManualTradeTrigger}
                             volumeThreshold={volumeThreshold} 
                             volumeMode={volumeMode} 
-                            parentL2Data={c.isMain ? { bids, asks, walls, currentPrice, tradeEvent } : undefined}
+                            parentL2Data={c.isMain ? mainParentL2Data : undefined}
+                            parentBotId={selectedHudBotId}
+                            parentBotStatus={botStatus}
+                            parentSymbol={symbol}
+                            parentOpenOrders={openOrders}
                             showCrosshairAIPredict={showCrosshairAIPredict}
                             showBidAsk={showBidAsk}
                             renderFloatingTools={floatingToolsNode}
@@ -4877,7 +5111,7 @@ const OrderFlowHeatmap: React.FC = () => {
                             width: '256px',
                         }}
                     >
-                        <div className="bg-white/10 dark:bg-black/40 backdrop-blur-xl border border-white/20 dark:border-white/10 p-4 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.3)] flex flex-col gap-3">
+                        <div className={`${deviceProfile.isThermalGuardActive ? 'bg-[#0B0E14]/95' : 'bg-white/10 dark:bg-black/40 backdrop-blur-xl'} border border-white/20 dark:border-white/10 p-4 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.3)] flex flex-col gap-3`}>
                             {/* Tabs if multiple bots */}
                             {activeBotIds.length > 1 && (
                                 <div className="flex gap-1 p-1 bg-black/20 rounded-lg overflow-x-auto hide-scrollbar w-full">
@@ -5044,52 +5278,62 @@ const OrderFlowHeatmap: React.FC = () => {
                         </div>
                     )}
 
-                    <WallHunterModal
-                        isOpen={isWallHunterOpen}
-                        onClose={() => setIsWallHunterOpen(false)}
-                        symbol={symbol}
-                        exchange={exchange}
-                        bids={bids}
-                        asks={asks}
-                        onDeploySuccess={(botId) => {
-                            setActiveWallHunterId(Number(botId));
-                            setBotForChart('main', Number(botId));
-                            setIsWallHunterOpen(false);
-                        }}
-                    />
+                    {isWallHunterOpen && (
+                        <WallHunterModal
+                            isOpen={isWallHunterOpen}
+                            onClose={() => setIsWallHunterOpen(false)}
+                            symbol={symbol}
+                            exchange={exchange}
+                            bids={bids}
+                            asks={asks}
+                            onDeploySuccess={(botId) => {
+                                setActiveWallHunterId(Number(botId));
+                                setBotForChart('main', Number(botId));
+                                setIsWallHunterOpen(false);
+                            }}
+                        />
+                    )}
 
-                    <ForexWallHunterModal
-                        isOpen={isForexWallHunterOpen}
-                        onClose={() => setIsForexWallHunterOpen(false)}
-                        onDeploySuccess={(botId) => {
-                            setActiveWallHunterId(Number(botId));
-                            setBotForChart('main', Number(botId));
-                            setIsForexWallHunterOpen(false);
-                        }}
-                    />
+                    {isForexWallHunterOpen && (
+                        <ForexWallHunterModal
+                            isOpen={isForexWallHunterOpen}
+                            onClose={() => setIsForexWallHunterOpen(false)}
+                            onDeploySuccess={(botId) => {
+                                setActiveWallHunterId(Number(botId));
+                                setBotForChart('main', Number(botId));
+                                setIsForexWallHunterOpen(false);
+                            }}
+                        />
+                    )}
 
-                    <AIModelDeploymentModal
-                        isOpen={isAIDeploymentModalOpen}
-                        onClose={() => setIsAIDeploymentModalOpen(false)}
-                        symbol={symbol}
-                        exchange={exchange}
-                        onDeploySuccess={(botId) => {
-                            setActiveWallHunterId(Number(botId));
-                            setIsAIDeploymentModalOpen(false);
-                            setActiveTab('heatmap');
-                        }}
-                    />
+                    {isAIDeploymentModalOpen && (
+                        <AIModelDeploymentModal
+                            isOpen={isAIDeploymentModalOpen}
+                            onClose={() => setIsAIDeploymentModalOpen(false)}
+                            symbol={symbol}
+                            exchange={exchange}
+                            onDeploySuccess={(botId) => {
+                                setActiveWallHunterId(Number(botId));
+                                setIsAIDeploymentModalOpen(false);
+                                setActiveTab('heatmap');
+                            }}
+                        />
+                    )}
 
-                    <TopTokensModal 
-                        isOpen={isTopTokensModalOpen} 
-                        onClose={() => setIsTopTokensModalOpen(false)} 
-                    />
+                    {isTopTokensModalOpen && (
+                        <TopTokensModal 
+                            isOpen={isTopTokensModalOpen} 
+                            onClose={() => setIsTopTokensModalOpen(false)} 
+                        />
+                    )}
 
-                    <TechnicalIndicatorModal
-                        isOpen={isIndicatorModalOpen}
-                        onClose={() => setIsIndicatorModalOpen(false)}
-                        symbol={symbol}
-                    />
+                    {isIndicatorModalOpen && (
+                        <TechnicalIndicatorModal
+                            isOpen={isIndicatorModalOpen}
+                            onClose={() => setIsIndicatorModalOpen(false)}
+                            symbol={symbol}
+                        />
+                    )}
                 </div>,
                 document.body
             )}

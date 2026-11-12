@@ -1,16 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import { HeatmapDataPoint } from '../components/features/market/LiquidityHeatmapRenderer';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
-export const useHeatmapData = (symbol: string, exchange: string) => {
+export const useHeatmapData = (symbol: string, exchange: string = 'binance', enabled: boolean = true) => {
     const [heatmapData, setHeatmapData] = useState<HeatmapDataPoint[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
-    const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
         let isMounted = true;
-        setHeatmapData([]); // Clear previous data when symbol/exchange changes
+        setHeatmapData([]); // Clear previous data when symbol/exchange/enabled changes
+
+        if (!symbol || !exchange || !enabled) {
+            setLoading(false);
+            setError(null);
+            return;
+        }
 
         const fetchHeatmap = async () => {
             if (!symbol || !exchange) return;
@@ -146,10 +153,17 @@ export const useHeatmapData = (symbol: string, exchange: string) => {
         const init = async () => {
             setLoading(true);
             await fetchHistorical();
+            if (!isMounted) return;
             await fetchHeatmap(); // Fetch current
+            if (!isMounted) return;
 
-            // Poll every 5 seconds (matching Redis TTL in backend)
-            intervalRef.current = setInterval(fetchHeatmap, 5000);
+            const pollIntervalMs = isThermalGuardActive() ? 10000 : 5000;
+            intervalRef.current = setInterval(() => {
+                if (isThermalGuardActive() && typeof document !== 'undefined' && document.hidden) {
+                    return;
+                }
+                fetchHeatmap();
+            }, pollIntervalMs);
         };
 
         init();
@@ -158,9 +172,10 @@ export const useHeatmapData = (symbol: string, exchange: string) => {
             isMounted = false;
             if (intervalRef.current) {
                 clearInterval(intervalRef.current);
+                intervalRef.current = null;
             }
         };
-    }, [symbol, exchange]);
+    }, [symbol, exchange, enabled]);
 
     return { heatmapData, loading, error };
 };

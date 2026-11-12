@@ -1762,3 +1762,42 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     border-radius: 9999px;
   }
 }
+
+/* ============================================================================
+   MOBILE & TABLET THERMAL GUARD (Auto-active on Samsung A34, Redmi Pad 2 Pro)
+   Zero effect on desktop PCs. Eliminates continuous GPU gaussian-blur
+   re-compositing over live charts and infinite decorative layer repaints.
+   ============================================================================ */
+html.mobile-thermal-guard .backdrop-blur-xs,
+html.mobile-thermal-guard .backdrop-blur-sm,
+html.mobile-thermal-guard .backdrop-blur,
+html.mobile-thermal-guard .backdrop-blur-md,
+html.mobile-thermal-guard .backdrop-blur-lg,
+html.mobile-thermal-guard .backdrop-blur-xl,
+html.mobile-thermal-guard .backdrop-blur-2xl,
+html.mobile-thermal-guard .backdrop-blur-3xl,
+html.mobile-thermal-guard [class*="backdrop-blur"] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Stop huge static ambient blur blobs from pinning large GPU offscreen textures */
+html.mobile-thermal-guard [class*="blur-[80px]"],
+html.mobile-thermal-guard [class*="blur-[100px]"],
+html.mobile-thermal-guard [class*="blur-[120px]"] {
+  display: none !important;
+}
+
+/* Stop infinite 60/120Hz layer invalidation on status dots & skeletons (keep animate-spin intact) */
+html.mobile-thermal-guard .animate-ping {
+  animation: none !important;
+  opacity: 0.45 !important;
+}
+
+html.mobile-thermal-guard .animate-pulse {
+  animation: none !important;
+}
+
+html.mobile-thermal-guard .animate-bounce {
+  animation: none !important;
+}

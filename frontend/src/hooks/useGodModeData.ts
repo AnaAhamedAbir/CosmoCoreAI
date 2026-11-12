@@ -40,23 +40,24 @@ export interface GodModeState {
     iceberg_events?: any[];
 }
 
-export const useGodModeData = (symbol: string) => {
+export const useGodModeData = (symbol: string, enabled: boolean = true) => {
     const [godModeData, setGodModeData] = useState<GodModeState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
 
     useEffect(() => {
-        if (!symbol) return;
+        if (!symbol || !enabled) {
+            setGodModeData(null);
+            return;
+        }
 
         // Ensure slash is kept raw since fastapi endpoint uses {symbol:path}
         // e.g. BTC/USDT
-        const targetSymbol = encodeURIComponent(symbol).replace('%2F', '/');
-        
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const baseUrl = `${protocol}//${window.location.host}`;
         const wsUrl = `${baseUrl}/api/v1/advanced_liquidation/ws/god-mode?symbol=${encodeURIComponent(symbol)}`;
 
-        let ws: WebSocket;
-        let reconnectTimeout: NodeJS.Timeout;
+        let ws: WebSocket | null = null;
+        let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
         let isSubscribed = true;
 
         const connect = () => {
@@ -100,10 +101,16 @@ export const useGodModeData = (symbol: string) => {
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
             if (ws) {
                 ws.onclose = null;
-                ws.close();
+                if (ws.readyState === WebSocket.CONNECTING) {
+                    const closingWs = ws;
+                    closingWs.onopen = () => closingWs.close();
+                } else if (ws.readyState === WebSocket.OPEN) {
+                    ws.close();
+                }
             }
+            wsRef.current = null;
         };
-    }, [symbol]);
+    }, [symbol, enabled]);
 
     return godModeData;
 };

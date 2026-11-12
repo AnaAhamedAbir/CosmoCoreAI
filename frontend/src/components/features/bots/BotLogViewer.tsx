@@ -13,6 +13,7 @@ import {
     XCircle,
     CheckCircle2
 } from 'lucide-react';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 interface LogEntry {
     time: string;
@@ -37,6 +38,8 @@ const BotLogViewer: React.FC<BotLogViewerProps> = ({ botId, botName, className =
     const wsRef = useRef<WebSocket | null>(null);
     const logsEndRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const pendingLogsRef = useRef<LogEntry[]>([]);
+    const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // WebSocket Connection
     useEffect(() => {
@@ -49,6 +52,18 @@ const BotLogViewer: React.FC<BotLogViewerProps> = ({ botId, botName, className =
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
+        const maxEntries = isThermalGuardActive() ? 300 : 500;
+        const appendBufferedLogs = () => {
+            flushTimerRef.current = null;
+            if (pendingLogsRef.current.length === 0) return;
+            const batch = pendingLogsRef.current;
+            pendingLogsRef.current = [];
+            setLogs(prev => {
+                const combined = [...prev, ...batch];
+                return combined.length > maxEntries ? combined.slice(-maxEntries) : combined;
+            });
+        };
+
         ws.onopen = () => {
             setConnectionStatus("Connected");
             addSystemLog("UPLINK ESTABLISHED. CONNECTED TO NEURAL NETWORK.");
@@ -57,7 +72,20 @@ const BotLogViewer: React.FC<BotLogViewerProps> = ({ botId, botName, className =
         ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                setLogs(prev => [...prev, data]);
+                if (isThermalGuardActive()) {
+                    pendingLogsRef.current.push(data);
+                    if (pendingLogsRef.current.length > maxEntries) {
+                        pendingLogsRef.current = pendingLogsRef.current.slice(-maxEntries);
+                    }
+                    if (!flushTimerRef.current) {
+                        flushTimerRef.current = setTimeout(appendBufferedLogs, 250);
+                    }
+                } else {
+                    setLogs(prev => {
+                        const combined = [...prev, data];
+                        return combined.length > maxEntries ? combined.slice(-maxEntries) : combined;
+                    });
+                }
             } catch (e) {
                 console.error("Data corruption detected", e);
             }
@@ -74,6 +102,11 @@ const BotLogViewer: React.FC<BotLogViewerProps> = ({ botId, botName, className =
         };
 
         return () => {
+            if (flushTimerRef.current) {
+                clearTimeout(flushTimerRef.current);
+                flushTimerRef.current = null;
+            }
+            pendingLogsRef.current = [];
             if (ws.readyState === WebSocket.OPEN) {
                 ws.close();
             }
@@ -83,7 +116,7 @@ const BotLogViewer: React.FC<BotLogViewerProps> = ({ botId, botName, className =
     // Auto-scroll logic
     useEffect(() => {
         if (isAutoScroll && logsEndRef.current) {
-            logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+            logsEndRef.current.scrollIntoView({ behavior: isThermalGuardActive() ? 'auto' : 'smooth' });
         }
     }, [logs, isAutoScroll]);
 

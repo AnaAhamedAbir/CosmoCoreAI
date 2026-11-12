@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { GodModeState } from '../../../hooks/useGodModeData';
+import { getThermalProfile } from '@/utils/deviceProfile';
 
 interface LiquidationRendererProps {
     chart: IChartApi | null;
@@ -21,6 +22,15 @@ interface LiquidationRendererProps {
 export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity, showTrueCVD, showSpoofing = true, showGEX = true, showBookmap = true, bookmapIntensity = 50, spoofingThreshold = 500000, smartMoneyBias = false }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
+    const drawRafIdRef = useRef<number | null>(null);
+    const animRafIdRef = useRef<number | null>(null);
+    const scheduleAnimationRef = useRef<() => void>(() => {});
+    const showBubblesRef = useRef(showBubbles);
+    showBubblesRef.current = showBubbles;
+    const showTrueCVDRef = useRef(showTrueCVD);
+    showTrueCVDRef.current = showTrueCVD;
+    const showBookmapRef = useRef(showBookmap);
+    showBookmapRef.current = showBookmap;
     
     // History for Bookmap time-series heatmap
     const bookmapHistoryRef = useRef<{time: number, depth: {price: number, volume: number}[]}[]>([]);
@@ -33,16 +43,6 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
     
     // Crosshair state for tooltips
     const crosshairRef = useRef<{ price: number, x: number, y: number, visible: boolean }>({ price: 0, x: 0, y: 0, visible: false });
-
-    const requestDraw = useCallback(() => {
-        if (!drawRequested.current) {
-            drawRequested.current = true;
-            requestAnimationFrame(() => {
-                drawRequested.current = false;
-                drawHeatmap();
-            });
-        }
-    }, [chart, series, data, showBubbles, intensityScale]);
 
     const drawHeatmap = useCallback(() => {
         if (!canvasRef.current) return;
@@ -600,15 +600,88 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
             }
         }
 
-    }, [chart, series, data, showBubbles, intensityScale, showTrueCVD]);
+        // Wake event-driven animation loop if active animations exist
+        const hasBubbles = showBubbles && bubblesRef.current.length > 0;
+        const hasIcebergs = showTrueCVD && icebergsRef.current.length > 0;
+        const hasBookmap = showBookmap && bookmapHistoryRef.current.length > 0;
+        if ((hasBubbles || hasIcebergs || hasBookmap) && (typeof document === 'undefined' || !document.hidden)) {
+            scheduleAnimationRef.current();
+        }
+
+    }, [chart, series, data, showBubbles, intensityScale, showTrueCVD, showBookmap, useTrailingLiquidity, showSpoofing, showGEX, bookmapIntensity, spoofingThreshold, smartMoneyBias]);
+
+    const requestDraw = useCallback(() => {
+        if (!drawRequested.current) {
+            drawRequested.current = true;
+            drawRafIdRef.current = requestAnimationFrame(() => {
+                drawRequested.current = false;
+                drawRafIdRef.current = null;
+                drawHeatmap();
+            });
+        }
+    }, [drawHeatmap]);
 
     useEffect(() => {
         if (!chart || !series) return;
+
+        let lastFrameTime = 0;
+
+        const hasActiveAnimations = () => {
+            if (typeof document !== 'undefined' && document.hidden) return false;
+            return (
+                (showBubblesRef.current && bubblesRef.current.length > 0) ||
+                (showTrueCVDRef.current && icebergsRef.current.length > 0) ||
+                (showBookmapRef.current && bookmapHistoryRef.current.length > 0)
+            );
+        };
+
+        const animate = (timestamp: number) => {
+            if (!hasActiveAnimations()) {
+                animRafIdRef.current = null;
+                return;
+            }
+            const fpsInterval = 1000 / getThermalProfile().timings.liquidationFps;
+            if (timestamp - lastFrameTime >= fpsInterval) {
+                lastFrameTime = timestamp;
+                requestDraw();
+            }
+            if (hasActiveAnimations()) {
+                animRafIdRef.current = requestAnimationFrame(animate);
+            } else {
+                animRafIdRef.current = null;
+            }
+        };
+
+        const scheduleAnimation = () => {
+            if (animRafIdRef.current !== null) return;
+            if (!hasActiveAnimations()) return;
+            animRafIdRef.current = requestAnimationFrame(animate);
+        };
+
+        scheduleAnimationRef.current = scheduleAnimation;
+
+        const handleRangeOrSizeChange = () => {
+            requestDraw();
+            scheduleAnimation();
+        };
+
+        const handleVisibilityChange = () => {
+            if (typeof document !== 'undefined' && !document.hidden) {
+                requestDraw();
+                scheduleAnimation();
+            }
+        };
+
         requestDraw();
+        scheduleAnimation();
 
         const timeScale = chart.timeScale();
-        timeScale.subscribeVisibleTimeRangeChange(requestDraw);
-        timeScale.subscribeSizeChange(requestDraw);
+        if (typeof timeScale.subscribeVisibleTimeRangeChange === 'function') {
+            timeScale.subscribeVisibleTimeRangeChange(handleRangeOrSizeChange);
+        }
+        if (typeof timeScale.subscribeSizeChange === 'function') {
+            timeScale.subscribeSizeChange(handleRangeOrSizeChange);
+        }
         
         const crosshairHandler = (param: any) => {
             if (!param.point || !param.time) {
@@ -625,34 +698,38 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
         };
         chart.subscribeCrosshairMove(crosshairHandler);
 
-        // Continuous animation loop for bubbles, icebergs, and Bookmap time-series flow
-        // Throttled to 20 FPS to prevent mobile/tablet GPU thermal runaway
-        let animationFrameId: number;
-        let lastFrameTime = 0;
-        const FPS_INTERVAL = 50; // ~20 FPS (every 50ms)
-        const animate = (timestamp: number) => {
-            const hasBubbles = showBubbles && bubblesRef.current.length > 0;
-            const hasIcebergs = showTrueCVD && icebergsRef.current.length > 0;
-            const hasBookmap = showBookmap && bookmapHistoryRef.current.length > 0;
-            if ((hasBubbles || hasIcebergs || hasBookmap) && (timestamp - lastFrameTime >= FPS_INTERVAL)) {
-                lastFrameTime = timestamp;
-                requestDraw();
-            }
-            animationFrameId = requestAnimationFrame(animate);
-        };
-        animationFrameId = requestAnimationFrame(animate);
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+        }
 
         return () => {
-            timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
-            timeScale.unsubscribeSizeChange(requestDraw);
+            scheduleAnimationRef.current = () => {};
+            if (typeof timeScale.unsubscribeVisibleTimeRangeChange === 'function') {
+                timeScale.unsubscribeVisibleTimeRangeChange(handleRangeOrSizeChange);
+            }
+            if (typeof timeScale.unsubscribeSizeChange === 'function') {
+                timeScale.unsubscribeSizeChange(handleRangeOrSizeChange);
+            }
             chart.unsubscribeCrosshairMove(crosshairHandler);
-            cancelAnimationFrame(animationFrameId);
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
+            }
+            if (animRafIdRef.current !== null) {
+                cancelAnimationFrame(animRafIdRef.current);
+                animRafIdRef.current = null;
+            }
+            if (drawRafIdRef.current !== null) {
+                cancelAnimationFrame(drawRafIdRef.current);
+                drawRafIdRef.current = null;
+                drawRequested.current = false;
+            }
         };
-    }, [chart, series, requestDraw, showBubbles]);
+    }, [chart, series, requestDraw, showBubbles, showTrueCVD, showBookmap]);
 
-    // Force redraw when data changes
+    // Force redraw and wake animation loop when data changes
     useEffect(() => {
         requestDraw();
+        scheduleAnimationRef.current();
     }, [data, requestDraw]);
 
     return (

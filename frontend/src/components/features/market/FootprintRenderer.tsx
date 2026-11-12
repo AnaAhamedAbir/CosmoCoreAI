@@ -34,15 +34,19 @@ interface FootprintRendererProps {
 
 export const FootprintRenderer: React.FC<FootprintRendererProps> = ({ chart, series, data, visible }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const rafIdRef = useRef<number | null>(null);
 
     useEffect(() => {
-        if (!visible || !chart || !series || !canvasRef.current || data.length === 0) return;
+        if (!visible || !chart || !series || !canvasRef.current) return;
 
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        let animationFrameId: number;
+        if (data.length === 0) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            return;
+        }
 
         const drawFootprint = () => {
             const timeScale = chart.timeScale();
@@ -193,14 +197,35 @@ export const FootprintRenderer: React.FC<FootprintRendererProps> = ({ chart, ser
             }
         };
 
-        const renderLoop = () => {
-            drawFootprint();
-            animationFrameId = requestAnimationFrame(renderLoop);
+        const requestDraw = () => {
+            if (rafIdRef.current !== null) return;
+            rafIdRef.current = requestAnimationFrame(() => {
+                rafIdRef.current = null;
+                drawFootprint();
+            });
         };
-        renderLoop();
+
+        requestDraw();
+
+        const timeScale = chart.timeScale();
+        if (typeof timeScale.subscribeVisibleLogicalRangeChange === 'function') {
+            timeScale.subscribeVisibleLogicalRangeChange(requestDraw);
+        }
+        if (typeof timeScale.subscribeSizeChange === 'function') {
+            timeScale.subscribeSizeChange(requestDraw);
+        }
 
         return () => {
-            cancelAnimationFrame(animationFrameId);
+            if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+            }
+            if (typeof timeScale.unsubscribeVisibleLogicalRangeChange === 'function') {
+                timeScale.unsubscribeVisibleLogicalRangeChange(requestDraw);
+            }
+            if (typeof timeScale.unsubscribeSizeChange === 'function') {
+                timeScale.unsubscribeSizeChange(requestDraw);
+            }
         };
     }, [chart, series, data, visible]);
 

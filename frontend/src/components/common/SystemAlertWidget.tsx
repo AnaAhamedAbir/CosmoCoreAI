@@ -383,8 +383,18 @@ const SystemAlertWidget: React.FC = () => {
     prevLen.current = alerts.length;
   }, [alerts]);
 
-  // Container log WebSocket
+  // Container log WebSocket (connect only when Logs drawer is open on 'logs' tab)
   useEffect(() => {
+    if (!open || tab !== 'logs') {
+      setLogConn(false);
+      if (logWsRef.current) {
+        logWsRef.current.onclose = null;
+        logWsRef.current.close();
+        logWsRef.current = null;
+      }
+      return;
+    }
+
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -399,7 +409,12 @@ const SystemAlertWidget: React.FC = () => {
       logWsRef.current = ws;
 
       ws.onopen  = () => { if (alive) setLogConn(true); };
-      ws.onclose = () => { if (!alive) return; setLogConn(false); timer = setTimeout(connect, 6000); };
+      ws.onclose = () => {
+        if (logWsRef.current === ws) logWsRef.current = null;
+        if (!alive) return;
+        setLogConn(false);
+        timer = setTimeout(connect, 6000);
+      };
       ws.onerror = () => ws.close();
       ws.onmessage = (e) => {
         if (!alive) return;
@@ -415,9 +430,14 @@ const SystemAlertWidget: React.FC = () => {
     return () => {
       alive = false;
       if (timer) clearTimeout(timer);
-      if (logWsRef.current) { logWsRef.current.onclose = null; logWsRef.current.close(); }
+      if (logWsRef.current) {
+        logWsRef.current.onclose = null;
+        logWsRef.current.close();
+        logWsRef.current = null;
+      }
+      setLogConn(false);
     };
-  }, []);
+  }, [open, tab]);
 
   const [position, setPosition]     = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -518,7 +538,7 @@ const SystemAlertWidget: React.FC = () => {
   const critical = alerts.filter(a => a.severity === 'CRITICAL').length;
   const error    = alerts.filter(a => a.severity === 'ERROR').length;
   const warning  = alerts.filter(a => a.severity === 'WARNING').length;
-  const bothLive = connected && logConn;
+  const bothLive = open && tab === 'logs' ? connected && logConn : connected;
   const hasAlert = unreadCount > 0;
 
   return (

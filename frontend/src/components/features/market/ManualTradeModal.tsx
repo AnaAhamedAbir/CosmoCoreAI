@@ -8,6 +8,7 @@ import { notificationService } from '../../../services/notification';
 import { mlModelsService } from '../../../services/mlModelsService';
 import { trainingStudioToolsService } from '../../../services/trainingStudioToolsService';
 import { CustomMLModel } from '../../../types';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 
 const MotionButton = motion.button as any;
 const MotionDiv = motion.div as any;
@@ -30,12 +31,13 @@ interface ManualTradeModalProps {
   openTrigger?: number;
   buttonSize?: 'sm' | 'md';
   onClose?: () => void;
+  onOpenChange?: (isOpen: boolean) => void;
   onChartDragBracketStart?: (type: 'tp' | 'sl') => void;
   onChartDragBracketMove?: (type: 'tp' | 'sl', clientX: number, clientY: number) => number | null;
   onChartDragBracketEnd?: (type: 'tp' | 'sl', clientX: number, clientY: number) => { inChart: boolean; price: number | null };
 }
 
-export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({ 
+const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({ 
   symbol, 
   currentPrice, 
   availablePairs,
@@ -45,14 +47,20 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   openTrigger, 
   buttonSize = 'md', 
   onClose,
+  onOpenChange,
   onChartDragBracketStart,
   onChartDragBracketMove,
   onChartDragBracketEnd
 }) => {
+  const { isThermalGuardActive, timings } = useDeviceProfile();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [submittingSide, setSubmittingSide] = useState<'Buy' | 'Sell' | null>(null);
   const [activeSymbol, setActiveSymbol] = useState<string>(symbol);
+
+  React.useEffect(() => {
+    onOpenChange?.(isOpen);
+  }, [isOpen, onOpenChange]);
 
   // Floating Modal Drag Position State (Zero-React-Re-render Direct GPU Transform Pattern)
   // Dedicated independent positions for Minimized Quick-Trade Cyber-HUD and Full Terminal Modal
@@ -328,7 +336,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         <div
           className={`${
             t.visible ? 'animate-enter' : 'animate-leave'
-          } max-w-[390px] w-full bg-[#0b101b]/95 backdrop-blur-xl border border-amber-500/45 rounded-xl shadow-[0_14px_45px_rgba(0,0,0,0.85),0_0_25px_rgba(245,158,11,0.18)] p-3.5 text-white pointer-events-auto`}
+          } max-w-[390px] w-full ${isThermalGuardActive ? 'bg-[#0B0E14]/95' : 'bg-[#0b101b]/95 backdrop-blur-xl'} border border-amber-500/45 rounded-xl shadow-[0_14px_45px_rgba(0,0,0,0.85),0_0_25px_rgba(245,158,11,0.18)] p-3.5 text-white pointer-events-auto`}
         >
           <div className="flex items-start justify-between gap-2 pb-2 border-b border-white/10">
             <div className="flex items-center gap-2">
@@ -526,30 +534,54 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
   // Pre-warm ML model + live features in backend RAM so BUY/SELL order execution is instant (<5ms)
   React.useEffect(() => {
     if (!isOpen || !mlFilterConfig.modelId || !activeSymbol) return;
-    manualTradeService.warmupMlFilter(activeSymbol, mlFilterConfig.modelId);
+    if (typeof document === 'undefined' || (!document.hidden && document.visibilityState === 'visible')) {
+      manualTradeService.warmupMlFilter(activeSymbol, mlFilterConfig.modelId);
+    }
     if (!mlFilterConfig.enabled) return;
     const warmupInterval = setInterval(() => {
-      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      if (typeof document === 'undefined' || (!document.hidden && document.visibilityState === 'visible')) {
         manualTradeService.warmupMlFilter(activeSymbol, mlFilterConfig.modelId);
       }
-    }, 12000);
+    }, timings.mlWarmupMs);
     return () => clearInterval(warmupInterval);
-  }, [isOpen, mlFilterConfig.enabled, mlFilterConfig.modelId, activeSymbol]);
+  }, [isOpen, mlFilterConfig.enabled, mlFilterConfig.modelId, activeSymbol, timings.mlWarmupMs]);
 
   // Poll active software brackets and open exchange orders
   const lastOpenOrdersFetchRef = React.useRef<number>(0);
   const isOpenRef = React.useRef(isOpen);
   isOpenRef.current = isOpen;
 
+  const isActivelyChasingOrPegging = React.useMemo(
+    () =>
+      isSubmitting ||
+      isEmergencySubmitting ||
+      activeBrackets.some((b) => b?.status === 'chasing' || b?.status === 'pegging'),
+    [isSubmitting, isEmergencySubmitting, activeBrackets]
+  );
+
+  const bracketThermalRef = React.useRef({
+    isThermalGuardActive,
+    openOrdersPollMs: timings.openOrdersPollMs,
+    isActivelyChasingOrPegging,
+  });
+  bracketThermalRef.current = {
+    isThermalGuardActive,
+    openOrdersPollMs: timings.openOrdersPollMs,
+    isActivelyChasingOrPegging,
+  };
+
   const fetchActiveBrackets = React.useCallback(async (forceOpenOrders = false) => {
     if (!selectedApi) return;
+    if (!forceOpenOrders && typeof document !== 'undefined' && document.hidden) return;
     try {
       const now = Date.now();
-      const isVisible = typeof document === 'undefined' || document.visibilityState === 'visible';
+      const isVisible = typeof document === 'undefined' || (!document.hidden && document.visibilityState === 'visible');
       const timeSinceLast = now - lastOpenOrdersFetchRef.current;
-      // Only query exchange open orders if forced, or if at least 4.5 seconds have elapsed and modal is open & tab visible
+      const { isThermalGuardActive: guardActive, openOrdersPollMs, isActivelyChasingOrPegging: isActive } = bracketThermalRef.current;
+      const openOrdersMinGapMs = guardActive && !isActive ? Math.max(6000, openOrdersPollMs) : 4500;
+      // Only query exchange open orders if forced, or if enough time has elapsed and modal is open & tab visible
       const shouldFetchOpenOrders =
-        forceOpenOrders || (isOpenRef.current && isVisible && timeSinceLast >= 4500);
+        forceOpenOrders || (isOpenRef.current && isVisible && timeSinceLast >= openOrdersMinGapMs);
 
       if (shouldFetchOpenOrders) {
         lastOpenOrdersFetchRef.current = now;
@@ -569,17 +601,37 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     }
   }, [selectedApi, activeSymbol]);
 
+  const lastBracketImmediateFetchScopeRef = React.useRef<string>('');
   React.useEffect(() => {
     if (!selectedApi) return;
-    fetchActiveBrackets(true);
-    const pollInterval = isOpen ? 1000 : 2500;
+    const scopeKey = `${selectedApi}:${activeSymbol}:${isOpen ? '1' : '0'}`;
+    if (lastBracketImmediateFetchScopeRef.current !== scopeKey) {
+      lastBracketImmediateFetchScopeRef.current = scopeKey;
+      if (typeof document === 'undefined' || !document.hidden) {
+        fetchActiveBrackets(true);
+      }
+    }
+    const pollInterval = isActivelyChasingOrPegging
+      ? timings.bracketActivePollMs
+      : isOpen
+        ? timings.bracketOpenPollMs
+        : timings.bracketClosedPollMs;
     const interval = setInterval(() => {
-      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      if (typeof document === 'undefined' || (!document.hidden && document.visibilityState === 'visible')) {
         fetchActiveBrackets(false);
       }
     }, pollInterval);
     return () => clearInterval(interval);
-  }, [selectedApi, activeSymbol, isOpen, fetchActiveBrackets]);
+  }, [
+    selectedApi,
+    activeSymbol,
+    isOpen,
+    isActivelyChasingOrPegging,
+    timings.bracketActivePollMs,
+    timings.bracketOpenPollMs,
+    timings.bracketClosedPollMs,
+    fetchActiveBrackets
+  ]);
 
   // Unified list of selectable open orders & software brackets for Emergency Force Buy/Sell
   const forceOrderTargets = React.useMemo(() => {
@@ -1002,23 +1054,23 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     }
   }, [selectedApi, activeSymbol, isOpen]);
 
-  // Live background auto-refresh every 5.5 seconds while modal is open (safe from Binance rate limits)
+  // Live background auto-refresh (5.5s desktop / 9.5s mobile thermal guard) while modal is open
   React.useEffect(() => {
     if (!isOpen || !selectedApi) return;
 
     // Immediate initial fetch
     fetchBalance(false);
 
-    // Periodic live sync (every 5.5s — consumes ~10 req/min, <15% of Binance 1200 weight/min limit)
+    // Periodic live sync (adaptive per device thermal profile)
     const intervalId = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      if (typeof document !== 'undefined' && !document.hidden && document.visibilityState === 'visible') {
         fetchBalance(true);
       }
-    }, 5500);
+    }, timings.balancePollMs);
 
     // Immediate refresh on tab focus / visibility restore
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (!document.hidden && document.visibilityState === 'visible') {
         fetchBalance(true);
       }
     };
@@ -1029,7 +1081,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [isOpen, selectedApi, activeSymbol, fetchBalance]);
+  }, [isOpen, selectedApi, activeSymbol, fetchBalance, timings.balancePollMs]);
 
   // Trigger immediate orderbook/chart/balance sync when an active software bracket stops (e.g. TP filled)
   const prevActiveBracketScopeRef = React.useRef<string>('');
@@ -2200,7 +2252,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
           <div
             className={`${
               t.visible ? 'animate-enter' : 'animate-leave'
-            } max-w-sm w-full bg-[#070b14]/95 backdrop-blur-xl border border-cyan-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.85)] p-3 text-white pointer-events-auto flex items-center justify-between gap-3`}
+            } max-w-sm w-full ${isThermalGuardActive ? 'bg-[#0B0E14]/95' : 'bg-[#070b14]/95 backdrop-blur-xl'} border border-cyan-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.85)] p-3 text-white pointer-events-auto flex items-center justify-between gap-3`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="text-base shrink-0">{orderType === 'SmartPeg' ? '⚡' : '✅'}</span>
@@ -2295,7 +2347,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
               setIsMinimized(false);
               setTradeSide('Sell');
             }}
-            className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center border text-white backdrop-blur-md z-[999] transition-all focus:outline-none group ${
+            className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center border text-white ${isThermalGuardActive ? '' : 'backdrop-blur-md'} z-[999] transition-all focus:outline-none group ${
               activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging')
                 ? 'bg-gradient-to-r from-red-600 via-amber-600 to-amber-500 border-amber-400 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.7)]'
                 : `bg-brand-primary hover:bg-blue-600 border-blue-400/30 ${buttonSize === 'sm' ? 'shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'shadow-[0_0_20px_rgba(59,130,246,0.4)]'}`
@@ -2335,7 +2387,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
           const activePeg = activeBrackets.find(b => b.status === 'pegging');
           const activeChase = activeBrackets.find(b => b.status === 'chasing');
           return (
-            <div className="fixed bottom-[104px] right-24 z-[99998] flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-[#0c0204]/95 border border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.35)] backdrop-blur-xl animate-fade-in select-none">
+            <div className={`fixed bottom-[104px] right-24 z-[99998] flex items-center gap-3 px-3.5 py-2 rounded-2xl ${isThermalGuardActive ? 'bg-[#0B0E14]/95' : 'bg-[#0c0204]/95 backdrop-blur-xl'} border border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.35)] animate-fade-in select-none`}>
               <span className="relative flex h-2.5 w-2.5 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
@@ -2412,9 +2464,13 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
               }}
               className={`fixed rounded-xl ${
                 isMinimized
-                  ? 'w-[395px] max-w-[calc(100vw-12px)] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/98 to-[#05070d]/98 border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)]'
-                  : 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#000000]/80 border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)]'
-              } backdrop-blur-xl border z-[99999] overflow-hidden transition-colors duration-200 select-none`}
+                  ? isThermalGuardActive
+                    ? 'w-[395px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
+                    : 'w-[395px] max-w-[calc(100vw-12px)] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/98 to-[#05070d]/98 border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
+                  : isThermalGuardActive
+                    ? 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#0B0E14]/95 border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.85)]'
+                    : 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#000000]/80 border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl'
+              } border z-[99999] overflow-hidden transition-colors duration-200 select-none`}
             >
               {isMinimized ? (
                 /* ULTRA-SLIM PREMIUM MINIMIZED QUICK TRADE CYBER-HUD */
@@ -3735,7 +3791,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                   </div>
                   <div className="text-[10px] text-gray-500 text-right flex flex-col items-end">
                     <div className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="Live Auto-Sync Active (5.5s)" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title={`Live Auto-Sync Active (${(timings.balancePollMs / 1000).toFixed(1)}s)`} />
                       <span>Balance:</span>
                       <span className="text-gray-200 font-semibold font-mono">
                         {isLoadingBalance ? "..." : balanceData ? (
@@ -5276,7 +5332,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
             pointerEvents: 'none',
             zIndex: 999999,
           }}
-          className={`px-2.5 py-1 rounded-lg border font-mono text-[11px] font-black shadow-2xl backdrop-blur-md flex items-center gap-2 select-none animate-fadeIn ${
+          className={`px-2.5 py-1 rounded-lg border font-mono text-[11px] font-black shadow-2xl ${isThermalGuardActive ? '' : 'backdrop-blur-md'} flex items-center gap-2 select-none animate-fadeIn ${
             activeDragLine.type === 'tp'
               ? 'bg-emerald-950/95 border-emerald-400 text-emerald-300 shadow-[0_0_18px_rgba(16,185,129,0.55)]'
               : 'bg-rose-950/95 border-rose-400 text-rose-300 shadow-[0_0_18px_rgba(244,63,94,0.55)]'
@@ -5306,3 +5362,5 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     </>
   );
 };
+
+export const ManualTradeModal = React.memo(ManualTradeModalBase);

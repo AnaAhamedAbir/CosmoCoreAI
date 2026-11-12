@@ -395,10 +395,10 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                                 ...settings,
                                                 emaRenderMode: settings.emaRenderMode === 'stepped' ? 'smooth' : 'stepped'
                                             })}
-                                            className="text-[9px] px-1.5 py-0.5 rounded font-mono font-medium bg-black/40 border border-white/10 text-gray-300 hover:text-white transition-colors"
+                                            className="text-[9px] px-1.5 py-0.5 rounded font-mono font-medium bg-slate-100 hover:bg-slate-200 dark:bg-black/40 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-gray-300 dark:hover:text-white transition-colors"
                                             title="Toggle between Smooth curve and Stepped horizontal levels"
                                         >
-                                            Mode: <span className="text-amber-400 font-bold uppercase">{settings.emaRenderMode || 'smooth'}</span>
+                                            Mode: <span className="text-amber-500 dark:text-amber-400 font-bold uppercase">{settings.emaRenderMode || 'smooth'}</span>
                                         </button>
                                     </div>
 
@@ -426,8 +426,8 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                                     }}
                                                     className={`flex items-center justify-center gap-1.5 py-1 px-1.5 rounded-lg text-xs font-mono font-bold transition-all border ${
                                                         isActive
-                                                            ? 'bg-black/60 text-white shadow-sm'
-                                                            : 'bg-white/5 text-gray-400 border-transparent hover:bg-white/10 hover:text-gray-200'
+                                                            ? 'bg-slate-900 text-white dark:bg-black/60 dark:text-white shadow-sm'
+                                                            : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-gray-400 border-slate-200 dark:border-transparent hover:bg-slate-200 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-gray-200'
                                                     }`}
                                                     style={{
                                                         borderColor: isActive ? tfStyle.color : 'transparent',
@@ -447,33 +447,33 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
 
                                     {/* Presets Row */}
                                     <div className="flex items-center justify-between pt-1 text-[9px] text-gray-400">
-                                        <span className="font-semibold text-gray-500">Presets:</span>
+                                        <span className="font-semibold text-slate-500 dark:text-gray-500">Presets:</span>
                                         <div className="flex items-center gap-1">
                                             <button
                                                 type="button"
                                                 onClick={() => onSettingsChange({ ...settings, emaTimeframes: ['1m', '3m', '5m'] })}
-                                                className="px-1.5 py-0.5 rounded bg-black/40 hover:bg-white/10 hover:text-white border border-white/5 transition-colors"
+                                                className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-black/40 dark:hover:bg-white/10 text-slate-700 hover:text-slate-900 dark:text-gray-300 dark:hover:text-white border border-slate-200 dark:border-white/5 transition-colors"
                                             >
                                                 Scalp
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => onSettingsChange({ ...settings, emaTimeframes: ['5m', '15m', '1h'] })}
-                                                className="px-1.5 py-0.5 rounded bg-black/40 hover:bg-white/10 hover:text-white border border-white/5 transition-colors"
+                                                className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-black/40 dark:hover:bg-white/10 text-slate-700 hover:text-slate-900 dark:text-gray-300 dark:hover:text-white border border-slate-200 dark:border-white/5 transition-colors"
                                             >
                                                 Intraday
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => onSettingsChange({ ...settings, emaTimeframes: ['1h', '4h', '1d'] })}
-                                                className="px-1.5 py-0.5 rounded bg-black/40 hover:bg-white/10 hover:text-white border border-white/5 transition-colors"
+                                                className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-black/40 dark:hover:bg-white/10 text-slate-700 hover:text-slate-900 dark:text-gray-300 dark:hover:text-white border border-slate-200 dark:border-white/5 transition-colors"
                                             >
                                                 Swing
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => onSettingsChange({ ...settings, emaTimeframes: Object.keys(DEFAULT_EMA_TIMEFRAMES) })}
-                                                className="px-1.5 py-0.5 rounded bg-black/40 hover:bg-white/10 hover:text-white border border-white/5 transition-colors"
+                                                className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-black/40 dark:hover:bg-white/10 text-slate-700 hover:text-slate-900 dark:text-gray-300 dark:hover:text-white border border-slate-200 dark:border-white/5 transition-colors"
                                             >
                                                 All
                                             </button>
@@ -496,7 +496,7 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                                 Show Price Column Labels
                                             </span>
                                         </label>
-                                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${settings.emaShowPriceLabels !== false ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20' : 'text-gray-500 bg-white/5 border border-white/5'}`}>
+                                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${settings.emaShowPriceLabels !== false ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20' : 'text-slate-500 dark:text-gray-500 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5'}`}>
                                             {settings.emaShowPriceLabels !== false ? 'ON' : 'OFF'}
                                         </span>
                                     </div>
@@ -514,24 +514,24 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                 />
                                 <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-200 group-hover:text-brand-primary transition-colors">Bollinger</span>
                             </label>
-                            <div className="flex items-center gap-2 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                            <div className="flex items-center gap-2 bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 rounded border border-slate-200 dark:border-transparent">
                                 <div className="flex items-center">
-                                    <span className="text-xs text-gray-500">P:</span>
+                                    <span className="text-xs text-slate-500 dark:text-gray-500 font-semibold">P:</span>
                                     <input
                                         type="number"
                                         value={settings.bbPeriod}
                                         onChange={(e) => updateSetting('bbPeriod', Number(e.target.value))}
-                                        className="w-8 text-xs bg-transparent text-gray-700 dark:text-gray-300 focus:outline-none focus:text-brand-primary"
+                                        className="w-8 text-xs bg-transparent text-slate-800 dark:text-gray-300 font-bold focus:outline-none focus:text-brand-primary"
                                         min={1} max={500}
                                     />
                                 </div>
-                                <div className="flex items-center border-l dark:border-white/10 pl-2">
-                                    <span className="text-xs text-gray-500">D:</span>
+                                <div className="flex items-center border-l border-slate-300 dark:border-white/10 pl-2">
+                                    <span className="text-xs text-slate-500 dark:text-gray-500 font-semibold">D:</span>
                                     <input
                                         type="number"
                                         value={settings.bbStdDev}
                                         onChange={(e) => updateSetting('bbStdDev', parseFloat(e.target.value))}
-                                        className="w-8 text-xs bg-transparent text-gray-700 dark:text-gray-300 focus:outline-none focus:text-brand-primary"
+                                        className="w-8 text-xs bg-transparent text-slate-800 dark:text-gray-300 font-bold focus:outline-none focus:text-brand-primary"
                                         min={0.1} max={10} step={0.1}
                                     />
                                 </div>

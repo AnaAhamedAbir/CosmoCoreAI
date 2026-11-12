@@ -43,6 +43,7 @@ import { BollingerBandsRenderer } from '../../components/features/market/Bolling
 import { ICTPO3Renderer, ICTPO3Data } from '../../components/features/market/ICTPO3Renderer';
 import { SessionsDashboard, SessionStatus } from '../../components/features/market/SessionsDashboard';
 import { HeatmapSubNav } from '../../components/features/market/HeatmapSubNav';
+import { useTheme } from '@/context/ThemeContext';
 import { BotLogsTab } from '../../components/features/market/BotLogsTab';
 import { WallHunterModal } from '../../components/features/market/WallHunterModal';
 import { ForexWallHunterModal } from '../../components/features/market/ForexWallHunterModal';
@@ -175,6 +176,8 @@ const CandleCountdown = React.memo<{
 
 // Chart Component
 const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean }>(({ exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<any>(null);
     const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -328,24 +331,24 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         const chart = createChart(chartContainerRef.current, {
             layout: {
                 background: { type: 'solid', color: 'transparent' } as any,
-                textColor: '#94a3b8',
+                textColor: isDark ? '#94a3b8' : '#475569',
                 fontSize: 14, // larger price-scale tags (live price tag etc.)
             },
             grid: {
-                vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
-                horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)' },
+                horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)' },
             },
             timeScale: {
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
             },
             rightPriceScale: {
                 visible: true,
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
                 scaleMargins: { top: 0.1, bottom: 0.2 }, // Leave bottom 20% for RSI
             },
             leftPriceScale: {
                 visible: false,
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
                 scaleMargins: { top: 0.8, bottom: 0 }, // RSI takes bottom 20%
             },
             handleScroll: {
@@ -391,9 +394,9 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         });
 
         const emaSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceScaleId: 'right', visible: false });
-        const bbUpperSeries = chart.addSeries(LineSeries, { color: '#22c55e', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
-        const bbMiddleSeries = chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
-        const bbLowerSeries = chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
+        const bbUpperSeries = chart.addSeries(LineSeries, { color: isDark ? '#22c55e' : '#16a34a', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
+        const bbMiddleSeries = chart.addSeries(LineSeries, { color: isDark ? '#3b82f6' : '#2563eb', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
+        const bbLowerSeries = chart.addSeries(LineSeries, { color: isDark ? '#ef4444' : '#dc2626', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
         const utBotSeries = chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 2, lineStyle: LineStyle.Solid, crosshairMarkerVisible: false, lastValueVisible: false, priceScaleId: 'right', visible: indicatorSettings.showUTBot });
         const rsiSeries = chart.addSeries(LineSeries, { color: '#db2777', lineWidth: 2, priceScaleId: 'left', crosshairMarkerVisible: false, lastValueVisible: false, visible: indicatorSettings.showRSI });
 
@@ -859,6 +862,32 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             volumeSeriesRef.current = null;
         };
     }, [symbol, interval, exchange]);
+
+    // Dynamically apply theme changes to chart layout & indicator colors
+    useEffect(() => {
+        if (!chartRef.current) return;
+        chartRef.current.applyOptions({
+            layout: {
+                textColor: isDark ? '#94a3b8' : '#475569',
+            },
+            grid: {
+                vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)' },
+                horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)' },
+            },
+            timeScale: {
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+            },
+            rightPriceScale: {
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+            },
+            leftPriceScale: {
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+            },
+        });
+        if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.applyOptions({ color: isDark ? '#22c55e' : '#16a34a' });
+        if (bbMiddleSeriesRef.current) bbMiddleSeriesRef.current.applyOptions({ color: isDark ? '#3b82f6' : '#2563eb' });
+        if (bbLowerSeriesRef.current) bbLowerSeriesRef.current.applyOptions({ color: isDark ? '#ef4444' : '#dc2626' });
+    }, [isDark]);
 
     // Keep showCrosshairAIPredictRef in sync and cleanup crosshair button / line when toggled off
     useEffect(() => {
@@ -3244,29 +3273,29 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                         const last = bbData[bbData.length - 1];
                         return (
                             <div className="absolute top-2 left-2 z-[10] flex flex-col gap-1 pointer-events-none select-none">
-                                <div className="flex items-center gap-2 px-2 py-1 bg-black/60 backdrop-blur-md rounded border border-white/10">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
-                                    <span className="text-[10px] font-bold text-gray-400">BB UPPER:</span>
-                                    <span className="text-[10px] font-mono font-bold text-[#22c55e]">{last.upper.toFixed(5)}</span>
+                                <div className="flex items-center gap-2 px-2 py-1 bg-white/90 dark:bg-black/60 backdrop-blur-md rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-[#22c55e]" />
+                                    <span className="text-[10px] font-bold text-slate-600 dark:text-gray-400">BB UPPER:</span>
+                                    <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-[#22c55e]">{last.upper.toFixed(5)}</span>
                                 </div>
-                                <div className="flex items-center gap-2 px-2 py-1 bg-black/60 backdrop-blur-md rounded border border-white/10">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-[#3b82f6]" />
-                                    <span className="text-[10px] font-bold text-gray-400">BB MIDDLE:</span>
-                                    <span className="text-[10px] font-mono font-bold text-[#3b82f6]">{last.middle.toFixed(5)}</span>
+                                <div className="flex items-center gap-2 px-2 py-1 bg-white/90 dark:bg-black/60 backdrop-blur-md rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 dark:bg-[#3b82f6]" />
+                                    <span className="text-[10px] font-bold text-slate-600 dark:text-gray-400">BB MIDDLE:</span>
+                                    <span className="text-[10px] font-mono font-bold text-blue-600 dark:text-[#3b82f6]">{last.middle.toFixed(5)}</span>
                                 </div>
-                                <div className="flex items-center gap-2 px-2 py-1 bg-black/60 backdrop-blur-md rounded border border-white/10">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
-                                    <span className="text-[10px] font-bold text-gray-400">BB LOWER:</span>
-                                    <span className="text-[10px] font-mono font-bold text-[#ef4444]">{last.lower.toFixed(5)}</span>
+                                <div className="flex items-center gap-2 px-2 py-1 bg-white/90 dark:bg-black/60 backdrop-blur-md rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-rose-500 dark:bg-[#ef4444]" />
+                                    <span className="text-[10px] font-bold text-slate-600 dark:text-gray-400">BB LOWER:</span>
+                                    <span className="text-[10px] font-mono font-bold text-rose-600 dark:text-[#ef4444]">{last.lower.toFixed(5)}</span>
                                 </div>
                             </div>
                         );
                     })()}
                     {/* ── Multi-Timeframe EMA HUD Overlay ── */}
                     {indicatorSettings.showEMA && Object.keys(mtfEmaValues).length > 0 && (
-                        <div className="absolute top-2 right-14 z-[10] flex items-center gap-2 px-2.5 py-1 bg-black/75 backdrop-blur-md rounded-lg border border-white/10 select-none shadow-lg">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        <div className="absolute top-2 right-14 z-[10] flex items-center gap-2 px-2.5 py-1 bg-white/90 dark:bg-black/75 backdrop-blur-md rounded-lg border border-slate-200 dark:border-white/10 select-none shadow-md dark:shadow-lg">
+                            <span className="text-[10px] font-bold text-slate-700 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 animate-pulse" />
                                 EMA {indicatorSettings.emaPeriod}:
                             </span>
                             <div className="flex items-center gap-2 font-mono text-[10px] font-bold">
@@ -3278,7 +3307,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                                     return (
                                         <div key={tf} className="flex items-center gap-1">
                                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                                            <span className="text-gray-400 font-normal">{tfStyle.label}:</span>
+                                            <span className="text-slate-500 dark:text-gray-400 font-normal">{tfStyle.label}:</span>
                                             <span style={{ color }}>{formatDisplayPrice(val)}</span>
                                         </div>
                                     );

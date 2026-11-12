@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { BollingerBandsDataPoint } from '../../../utils/indicators';
+import { useTheme } from '../../../context/ThemeContext';
 
 interface BollingerBandsRendererProps {
     chart: IChartApi | null;
@@ -10,6 +11,8 @@ interface BollingerBandsRendererProps {
 }
 
 export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ chart, series, data, visible }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
 
@@ -21,7 +24,7 @@ export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ 
                 drawShading();
             });
         }
-    }, [chart, series, data, visible]);
+    }, [chart, series, data, visible, isDark]);
 
     const drawShading = useCallback(() => {
         if (!canvasRef.current) return;
@@ -48,8 +51,10 @@ export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ 
         const timeWidth = timeScale.width();
         const barSpacing = timeWidth / (logicalRange.to - logicalRange.from);
 
-        // Define shading color (very light blue matching existing bands)
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.08)';
+        // Define shading color:
+        // Dark Mode: soft cyber cyan cloud matching the dark background
+        // Light Mode: crisp, clearly visible sky-blue tint (20% opacity) that stands out cleanly on light canvas
+        ctx.fillStyle = isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(2, 132, 199, 0.20)';
 
         const getX = (i: number) => {
             if (i >= 0 && i < data.length) {
@@ -96,7 +101,7 @@ export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ 
             ctx.fill();
         }
 
-    }, [chart, series, data, visible]);
+    }, [chart, series, data, visible, isDark]);
 
     useEffect(() => {
         if (!chart || !series) return;
@@ -106,7 +111,7 @@ export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ 
         return () => {
             timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
         };
-    }, [chart, series, requestDraw]);
+    }, [chart, series, requestDraw, isDark]);
 
     return (
         <canvas

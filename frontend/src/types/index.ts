@@ -25,6 +25,7 @@ export interface Asset {
   value: number;
   price24h: number;
   exchange?: string; // ✅ Added for live price sync
+  allocations?: { exchange: string; amount: number }[];
   history: { time: string; value: number }[];
 }
 

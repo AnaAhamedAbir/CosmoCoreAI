@@ -6,6 +6,8 @@ from app.api import deps
 import shutil
 import os
 from app.services.exchange_balance_service import fetch_all_exchange_balances, sync_user_balance
+from app.core.redis import redis_manager
+from app.services.exchange_pool import invalidate as invalidate_exchange_pool
 
 router = APIRouter()
 
@@ -46,12 +48,19 @@ def upload_avatar(
     return current_user
 
 @router.post("/api-keys", response_model=schemas.ApiKeyResponse)
-def add_api_key(
+async def add_api_key(
     api_key_data: schemas.ApiKeyCreate, 
     current_user: models.User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db)
 ):
-    return crud.create_user_api_key(db=db, api_key=api_key_data, user_id=current_user.id)
+    created = crud.create_user_api_key(db=db, api_key=api_key_data, user_id=current_user.id)
+    redis = redis_manager.get_redis()
+    if redis:
+        try:
+            await redis.delete(f"portfolio:balances:fresh:{current_user.id}")
+        except Exception:
+            pass
+    return created
 
 @router.get("/api-keys", response_model=List[schemas.ApiKeyResponse])
 def read_api_keys(
@@ -61,15 +70,24 @@ def read_api_keys(
     return crud.get_user_api_keys(db=db, user_id=current_user.id)
 
 @router.delete("/api-keys/{key_id}")
-def delete_api_key(
+async def delete_api_key(
     key_id: int,
     current_user: models.User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db)
 ):
     success = crud.delete_user_api_key(db=db, key_id=key_id, user_id=current_user.id)
     if not success:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="API Key not found")
+    try:
+        await invalidate_exchange_pool(key_id)
+    except Exception:
+        pass
+    redis = redis_manager.get_redis()
+    if redis:
+        try:
+            await redis.delete(f"portfolio:balances:fresh:{current_user.id}")
+        except Exception:
+            pass
     return {"message": "API Key deleted successfully"}
 
 

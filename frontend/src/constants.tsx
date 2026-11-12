@@ -1664,7 +1664,7 @@ export const MOCK_PORTFOLIO_PROJECTS: PortfolioProject[] = [
         category: 'Machine Learning',
         description: 'Developed a custom LSTM model to forecast short-term volatility spikes in the SPX, allowing for more profitable options straddle strategies. The model was trained on historical VIX data, market volume, and macroeconomic indicators.',
         tags: ['Python', 'TensorFlow', 'Options', 'LSTM'],
-        imageUrl: 'https://via.placeholder.com/400x250/1E293B/FFFFFF?text=Volatility+Model',
+        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><defs><linearGradient id='g1' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%230F172A'/><stop offset='100%25' stop-color='%231E293B'/></linearGradient></defs><rect width='400' height='250' fill='url(%23g1)'/><path d='M20 180 Q100 120 180 150 T380 70' fill='none' stroke='%2306B6D4' stroke-width='3'/><text x='200' y='215' fill='%2394A3B8' font-family='monospace' font-size='14' text-anchor='middle'>VOLATILITY MODEL</text></svg>",
         metrics: [
             { label: 'Backtested Sharpe Ratio', value: '2.15' },
             { label: 'Profit Factor', value: '3.2' },
@@ -1677,7 +1677,7 @@ export const MOCK_PORTFOLIO_PROJECTS: PortfolioProject[] = [
         category: 'High-Frequency Trading',
         description: 'A high-frequency arbitrage bot built in Rust that connects to Binance, Kraken, and Coinbase via WebSocket APIs to identify and execute on fleeting price discrepancies between exchanges. Includes a robust risk management module.',
         tags: ['Rust', 'WebSocket', 'Arbitrage', 'Crypto'],
-        imageUrl: 'https://via.placeholder.com/400x250/1E293B/FFFFFF?text=Arbitrage+Bot',
+        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><defs><linearGradient id='g2' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%230F172A'/><stop offset='100%25' stop-color='%231E293B'/></linearGradient></defs><rect width='400' height='250' fill='url(%23g2)'/><path d='M20 140 L120 90 L220 145 L320 65 L380 95' fill='none' stroke='%238B5CF6' stroke-width='3'/><text x='200' y='215' fill='%2394A3B8' font-family='monospace' font-size='14' text-anchor='middle'>ARBITRAGE ENGINE</text></svg>",
         metrics: [
             { label: 'Average Daily Return', value: '0.8%' },
             { label: 'Execution Latency', value: '< 10ms' },
@@ -1690,7 +1690,7 @@ export const MOCK_PORTFOLIO_PROJECTS: PortfolioProject[] = [
         category: 'Quantitative Strategy',
         description: 'A systematic trend-following strategy for major FX pairs (EUR/USD, GBP/USD). It uses a Markov-Switching model to classify the market into different volatility regimes and adjusts EMA crossover parameters accordingly.',
         tags: ['Python', 'Pandas', 'Forex', 'Market Regimes'],
-        imageUrl: 'https://via.placeholder.com/400x250/1E293B/FFFFFF?text=FX+Strategy',
+        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><defs><linearGradient id='g3' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%230F172A'/><stop offset='100%25' stop-color='%231E293B'/></linearGradient></defs><rect width='400' height='250' fill='url(%23g3)'/><path d='M20 170 C100 170 150 90 240 110 C310 125 340 60 380 50' fill='none' stroke='%2310B981' stroke-width='3'/><text x='200' y='215' fill='%2394A3B8' font-family='monospace' font-size='14' text-anchor='middle'>FX REGIME STRATEGY</text></svg>",
         metrics: [
             { label: 'CAGR', value: '18.2%' },
             { label: 'Sortino Ratio', value: '1.9' },

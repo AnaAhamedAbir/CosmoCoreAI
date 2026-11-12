@@ -1,14 +1,54 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMarketStore } from '@/store/marketStore';
-import { GoogleGenAI } from '@google/genai';
 import { MOCK_ASSETS, SUPPORTED_EXCHANGES } from '@/constants';
 import Button from '@/components/common/Button';
-import Card from '@/components/common/Card';
 import { useTheme } from '@/context/ThemeContext';
 import { useToast } from '@/context/ToastContext';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, Tooltip, PieChart, Pie, Cell } from 'recharts';
 import type { Asset, Exchange } from '@/types';
 import { portfolioService } from '@/services/portfolioService';
+
+const STABLE_COINS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'FDUSD', 'TUSD']);
+
+interface PortfolioBalancesResponse {
+    assets: Asset[];
+    total_portfolio_value: number;
+}
+
+const getUserCacheScope = (): string => {
+    try {
+        const token = sessionStorage.getItem('accessToken') || localStorage.getItem('accessToken');
+        if (!token) return 'anon';
+        const parts = token.split('.');
+        if (parts.length < 2) return 'anon';
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        return String(payload?.sub || 'anon');
+    } catch {
+        return 'anon';
+    }
+};
+
+const readPortfolioSnapshot = (scope: string): { data: PortfolioBalancesResponse; timestamp: number } | null => {
+    try {
+        const raw = sessionStorage.getItem(`cosmo_portfolio_v1:${scope}`);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed?.data || typeof parsed.timestamp !== 'number') return null;
+        if (Date.now() - parsed.timestamp > 24 * 60 * 60 * 1000) return null;
+        return parsed;
+    } catch {
+        return null;
+    }
+};
+
+const writePortfolioSnapshot = (scope: string, data: PortfolioBalancesResponse): void => {
+    try {
+        sessionStorage.setItem(`cosmo_portfolio_v1:${scope}`, JSON.stringify({ data, timestamp: Date.now() }));
+    } catch {
+        // Ignore storage quota errors
+    }
+};
 
 const COLORS = ['#6366F1', '#8B5CF6', '#D946EF', '#F43F5E', '#F59E0B', '#10B981'];
 
@@ -36,13 +76,33 @@ const ExchangeStatusIndicator: React.FC<{ connected: boolean }> = ({ connected }
 
 const MiniSparkline: React.FC<{ data: { time: string, value: number }[], color: string }> = ({ data, color }) => {
     if (!data || data.length < 2) return null;
+    const values = data.map(d => d.value);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const width = 112;
+    const height = 40;
+    const pad = 4;
+    const points = values
+        .map((v, i) => {
+            const x = pad + (i / (values.length - 1)) * (width - pad * 2);
+            const y = height - pad - ((v - min) / range) * (height - pad * 2);
+            return `${x.toFixed(1)},${y.toFixed(1)}`;
+        })
+        .join(' ');
+
     return (
-        <div className="h-12 w-28 opacity-80 hover:opacity-100 transition-opacity">
-            <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data}>
-                    <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2.5} dot={false} />
-                </LineChart>
-            </ResponsiveContainer>
+        <div className="h-12 w-28 opacity-80 hover:opacity-100 transition-opacity inline-flex items-center justify-end">
+            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
+                <polyline
+                    fill="none"
+                    stroke={color}
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    points={points}
+                />
+            </svg>
         </div>
     );
 };
@@ -145,6 +205,7 @@ const ConnectExchangeModal: React.FC<{
 const PortfolioTracker: React.FC = () => {
     const { theme } = useTheme();
     const { showToast } = useToast();
+    const queryClient = useQueryClient();
     const { activeMarket, setGlobalSymbol, setGlobalExchange } = useMarketStore();
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
     const [riskTolerance, setRiskTolerance] = useState(65);
@@ -153,127 +214,187 @@ const PortfolioTracker: React.FC = () => {
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [recommendations, setRecommendations] = useState<string[]>([]);
     
-    const [exchanges, setExchanges] = useState<Exchange[]>(SUPPORTED_EXCHANGES);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [assets, setAssets] = useState<Asset[]>([]);
-    const [totalPortfolioValue, setTotalPortfolioValue] = useState(0);
-    const [isLoading, setIsLoading] = useState(true);
-    const [apiKeysMap, setApiKeysMap] = useState<Record<string, number>>({}); 
+    const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+    const [isForceRefreshing, setIsForceRefreshing] = useState(false);
+
+    const userScope = useMemo(() => getUserCacheScope(), []);
+    const wasMarkedDirty = useMemo(() => {
+        try {
+            if (sessionStorage.getItem('cosmo_portfolio_dirty') === '1') {
+                sessionStorage.removeItem('cosmo_portfolio_dirty');
+                return true;
+            }
+        } catch {
+            // Ignore
+        }
+        return false;
+    }, []);
+    const initialSnapshot = useMemo(() => (wasMarkedDirty ? null : readPortfolioSnapshot(userScope)), [userScope, wasMarkedDirty]);
+
+    const apiKeysQuery = useQuery({
+        queryKey: ['portfolio', 'apiKeys', userScope],
+        queryFn: portfolioService.fetchApiKeys,
+        staleTime: wasMarkedDirty ? 0 : 60_000,
+        gcTime: 15 * 60_000,
+        refetchOnWindowFocus: false,
+    });
+
+    const balancesQuery = useQuery({
+        queryKey: ['portfolio', 'balances', userScope],
+        queryFn: async () => {
+            const res = await portfolioService.fetchBalances(wasMarkedDirty);
+            writePortfolioSnapshot(userScope, res);
+            return res;
+        },
+        initialData: initialSnapshot?.data,
+        initialDataUpdatedAt: initialSnapshot?.timestamp,
+        staleTime: wasMarkedDirty ? 0 : 30_000,
+        gcTime: 15 * 60_000,
+        refetchOnWindowFocus: false,
+    });
+
+    useEffect(() => {
+        if (wasMarkedDirty) {
+            queryClient.invalidateQueries({ queryKey: ['portfolio', 'apiKeys', userScope] });
+            queryClient.invalidateQueries({ queryKey: ['portfolio', 'balances', userScope] });
+        }
+    }, [wasMarkedDirty, queryClient, userScope]);
+
+    useEffect(() => {
+        if (balancesQuery.isError && !balancesQuery.data) {
+            showToast('Failed to sync data stream', 'error');
+        }
+    }, [balancesQuery.isError, balancesQuery.data, showToast]);
+
+    const { exchanges, apiKeysMap } = useMemo(() => {
+        const keysData = apiKeysQuery.data || [];
+        const connectedSet = new Set(keysData.map((k: any) => k.exchange.toLowerCase()));
+        const keysMapping: Record<string, number> = {};
+        keysData.forEach((k: any) => { if (k.id) keysMapping[k.exchange.toLowerCase()] = k.id; });
+
+        const updated: Exchange[] = SUPPORTED_EXCHANGES.map(ex => ({
+            ...ex,
+            isConnected: connectedSet.has(ex.id.toLowerCase()),
+        }));
+        keysData.forEach((k: any) => {
+            if (!updated.find(ex => ex.id.toLowerCase() === k.exchange.toLowerCase())) {
+                updated.push({
+                    id: k.exchange,
+                    name: k.exchange.charAt(0).toUpperCase() + k.exchange.slice(1),
+                    logo: null,
+                    isConnected: true,
+                });
+            }
+        });
+        return { exchanges: updated, apiKeysMap: keysMapping };
+    }, [apiKeysQuery.data]);
+
+    const { assets, totalPortfolioValue } = useMemo(() => {
+        const rawAssets = balancesQuery.data?.assets || [];
+        if (rawAssets.length === 0) {
+            return { assets: [] as Asset[], totalPortfolioValue: 0 };
+        }
+        const hasLiveOverrides = Object.keys(livePrices).length > 0;
+        let total = 0;
+        const mapped = rawAssets.map((a: Asset) => {
+            const liveP = livePrices[a.symbol];
+            const price = typeof liveP === 'number' && liveP > 0 ? liveP : a.price;
+            const value = typeof liveP === 'number' && liveP > 0 ? price * a.amount : a.value;
+            total += value;
+            return { ...a, logo: null, price, value };
+        });
+        return {
+            assets: mapped,
+            totalPortfolioValue: hasLiveOverrides ? total : (balancesQuery.data?.total_portfolio_value ?? total),
+        };
+    }, [balancesQuery.data, livePrices]);
+
+    const isInitialLoading = balancesQuery.isLoading && !balancesQuery.data;
+    const isSyncing = balancesQuery.isFetching || isForceRefreshing;
+
+    const subscriptionMap = useMemo(() => {
+        const subscriptions: Record<string, string[]> = {};
+        const rawAssets = balancesQuery.data?.assets || [];
+        rawAssets.forEach((asset: Asset) => {
+            if (STABLE_COINS.has(asset.symbol.toUpperCase())) return;
+            const ex = (asset.exchange || asset.allocations?.[0]?.exchange)?.toLowerCase();
+            if (!ex) return;
+            if (!subscriptions[ex]) subscriptions[ex] = [];
+            const pair = `${asset.symbol}/USDT`;
+            if (!subscriptions[ex].includes(pair)) {
+                subscriptions[ex].push(pair);
+            }
+        });
+        return subscriptions;
+    }, [balancesQuery.data?.assets]);
+
+    const subscriptionKey = useMemo(() => JSON.stringify(subscriptionMap), [subscriptionMap]);
 
     // WebSocket for real-time prices
     useEffect(() => {
-        if (assets.length === 0) return;
+        const parsedSubs: Record<string, string[]> = JSON.parse(subscriptionKey);
+        if (Object.keys(parsedSubs).length === 0) return;
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
         const wsUrl = `${protocol}//${host}/api/v1/portfolio/ws/prices`;
-        
+
         const socket = new WebSocket(wsUrl);
 
         socket.onopen = () => {
-            console.log('Connected to Portfolio Price Stream');
-            // Extract exchanges and symbols to watch
-            const subscriptions: Record<string, string[]> = {};
-            assets.forEach(asset => {
-                if (asset.exchange) {
-                    const ex = asset.exchange.toLowerCase();
-                    if (!subscriptions[ex]) subscriptions[ex] = [];
-                    subscriptions[ex].push(asset.symbol);
-                }
-            });
-            
-            if (Object.keys(subscriptions).length > 0) {
-                socket.send(JSON.stringify({ action: 'subscribe', exchanges: subscriptions }));
-            }
+            socket.send(JSON.stringify({ action: 'subscribe', exchanges: parsedSubs }));
         };
 
         socket.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                if (data.type === 'portfolio_price_update') {
-                    const exchange = data.exchange;
-                    const priceUpdates = data.prices;
-
-                    setAssets(currentAssets => {
-                        let totalNewValue = 0;
-                        const updated = currentAssets.map(asset => {
-                            if (asset.exchange?.toLowerCase() === exchange && priceUpdates[asset.symbol]) {
-                                const newPrice = priceUpdates[asset.symbol].price || asset.price;
-                                const newVal = newPrice * asset.amount;
-                                totalNewValue += newVal;
-                                return { ...asset, price: newPrice, value: newVal };
-                            }
-                            totalNewValue += asset.value;
-                            return asset;
-                        });
-                        setTotalPortfolioValue(totalNewValue);
-                        return updated;
+                if (data.type === 'portfolio_price_update' && data.prices) {
+                    const priceUpdates = data.prices as Record<string, { price?: number }>;
+                    const nextOverrides: Record<string, number> = {};
+                    Object.entries(priceUpdates).forEach(([pairOrSym, info]) => {
+                        if (typeof info?.price === 'number' && info.price > 0) {
+                            const baseSym = pairOrSym.includes('/') ? pairOrSym.split('/')[0] : pairOrSym;
+                            nextOverrides[baseSym] = info.price;
+                        }
                     });
+                    if (Object.keys(nextOverrides).length > 0) {
+                        setLivePrices(prev => ({ ...prev, ...nextOverrides }));
+                    }
                 }
             } catch (err) {
                 console.error('WS Message Parse Error:', err);
             }
         };
 
-        socket.onclose = () => console.log('Portfolio Price Stream Closed');
         socket.onerror = (err) => console.error('WS Error:', err);
 
         return () => socket.close();
-    }, [assets.length]); // Re-connect if asset list changes significantly
+    }, [subscriptionKey]);
 
-    const fetchPortfolioData = useCallback(async () => {
+    const refreshPortfolio = useCallback(async (force = true) => {
+        setIsForceRefreshing(true);
         try {
-            setIsLoading(true);
-            const [keysData, balancesData] = await Promise.all([
-                portfolioService.fetchApiKeys(),
-                portfolioService.fetchBalances()
+            const [_, freshBalances] = await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['portfolio', 'apiKeys', userScope] }),
+                portfolioService.fetchBalances(force),
             ]);
-
-            const connectedSet = new Set(keysData.map((k: any) => k.exchange.toLowerCase()));
-            const keysMapping: Record<string, number> = {};
-            keysData.forEach((k: any) => { if (k.id) keysMapping[k.exchange.toLowerCase()] = k.id; });
-            
-            setApiKeysMap(keysMapping);
-            
-            setExchanges(prev => {
-                let updated = prev.map(ex => ({ ...ex, isConnected: connectedSet.has(ex.id.toLowerCase()) }));
-                keysData.forEach((k: any) => {
-                    if (!updated.find(ex => ex.id.toLowerCase() === k.exchange.toLowerCase())) {
-                        updated.push({
-                            id: k.exchange,
-                            name: k.exchange.charAt(0).toUpperCase() + k.exchange.slice(1),
-                            logo: null, 
-                            isConnected: true
-                        });
-                    }
-                });
-                return updated;
-            });
-
-            const mappedAssets = (balancesData.assets || []).map((a: any) => {
-                const mockAsset = MOCK_ASSETS.find(m => m.symbol === a.symbol);
-                return { ...a, logo: null }; // Removed exchange logos as requested
-            });
-            
-            setAssets(mappedAssets);
-            setTotalPortfolioValue(balancesData.total_portfolio_value || 0);
+            setLivePrices({});
+            writePortfolioSnapshot(userScope, freshBalances);
+            queryClient.setQueryData(['portfolio', 'balances', userScope], freshBalances);
         } catch (error) {
-            console.error('Error fetching portfolio:', error);
+            console.error('Error refreshing portfolio:', error);
             showToast('Failed to sync data stream', 'error');
         } finally {
-            setIsLoading(false);
+            setIsForceRefreshing(false);
         }
-    }, [showToast]);
-
-    useEffect(() => {
-        fetchPortfolioData();
-    }, [fetchPortfolioData]);
+    }, [queryClient, userScope, showToast]);
 
     const handleConnect = async (exchangeId: string, apiKey: string, secretKey: string, passphrase?: string) => {
         try {
             await portfolioService.addApiKey({ name: `${exchangeId} Stream`, exchange: exchangeId, api_key: apiKey, secret_key: secretKey, passphrase });
             showToast(`Encrypted connection to ${exchangeId} established`, 'success');
-            await fetchPortfolioData();
+            await refreshPortfolio(true);
         } catch (error) {
             showToast(`Connection to ${exchangeId} rejected`, 'error');
         }
@@ -285,7 +406,7 @@ const PortfolioTracker: React.FC = () => {
             if (keyId) {
                 await portfolioService.deleteApiKey(keyId);
                 showToast(`Session terminated for ${exchangeId}`, 'success');
-                await fetchPortfolioData();
+                await refreshPortfolio(true);
             }
         } catch (error) {
             showToast(`Termination failed`, 'error');
@@ -326,6 +447,7 @@ const PortfolioTracker: React.FC = () => {
 
         const prompt = `Analyze crypto portfolio: ${portfolioString}. Risk Profile: ${riskProfile}. Provide 3 futuristic, high-alpha optimization steps. Keep it professional and technical.`;
         try {
+            const { GoogleGenAI } = await import('@google/genai');
             const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY as string || process.env.API_KEY as string });
             const response = await ai.models.generateContent({ model: 'gemini-2.0-flash', contents: prompt });
             setRecommendations(response.text.split(/[-*]/).map(s => s.trim()).filter(Boolean));
@@ -337,18 +459,6 @@ const PortfolioTracker: React.FC = () => {
             setIsOptimizing(false);
         }
     }, [assets, riskTolerance, totalPortfolioValue, showToast]);
-
-    if (isLoading && assets.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
-                <div className="relative h-24 w-24">
-                    <div className="absolute inset-0 rounded-full border-4 border-slate-200 dark:border-white/5 border-t-white animate-spin"></div>
-                    <div className="absolute inset-4 rounded-full border-4 border-slate-200 dark:border-white/5 border-b-white animate-spin-reverse"></div>
-                </div>
-                <p className="text-slate-500 dark:text-white/40 font-mono tracking-widest uppercase text-xs animate-pulse">Establishing Secure Stream...</p>
-            </div>
-        );
-    }
 
     return (
         <div className="space-y-10 pb-20 overflow-x-hidden">
@@ -369,7 +479,16 @@ const PortfolioTracker: React.FC = () => {
             {/* Hero Visualization */}
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
                 <GlassCard className="xl:col-span-8 p-10 relative group">
-                    <div className="absolute top-0 right-0 p-8">
+                    <div className="absolute top-0 right-0 p-8 flex items-center gap-3">
+                         <button
+                            onClick={() => refreshPortfolio(true)}
+                            disabled={isSyncing}
+                            title="Sync live balances"
+                            className="bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-white/80 border border-slate-200 dark:border-white/10 backdrop-blur-md rounded-2xl px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 disabled:opacity-50"
+                         >
+                            <span className={`inline-block h-2 w-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`}></span>
+                            {isSyncing ? 'Syncing...' : 'Sync'}
+                         </button>
                          <Button variant="secondary" className="bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white border-slate-200 dark:border-white/10 backdrop-blur-md rounded-2xl px-6 py-3 transition-all transform hover:scale-105" onClick={() => setIsModalOpen(true)}>
                             + Add Data Stream
                          </Button>
@@ -377,9 +496,13 @@ const PortfolioTracker: React.FC = () => {
 
                     <div className="space-y-1">
                         <p className="text-slate-500 dark:text-white/40 uppercase tracking-[0.3em] text-[10px] font-black">Aggregated Delta Value</p>
-                        <h1 className="text-6xl md:text-8xl font-black text-slate-900 dark:text-white leading-tight">
-                            <GlowingText>${totalPortfolioValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</GlowingText>
-                        </h1>
+                        {isInitialLoading ? (
+                            <div className="h-20 w-72 rounded-2xl bg-slate-200/70 dark:bg-white/10 animate-pulse my-2" />
+                        ) : (
+                            <h1 className="text-6xl md:text-8xl font-black text-slate-900 dark:text-white leading-tight">
+                                <GlowingText>${totalPortfolioValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</GlowingText>
+                            </h1>
+                        )}
                         <div className={`flex items-center gap-4 mt-6 ${portfolio24hChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                             <div className="px-4 py-2 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 flex items-center gap-2">
                                 <span className="font-black">{portfolio24hChange >= 0 ? '↗' : '↘'} {Math.abs(portfolio24hChangePercent).toFixed(2)}%</span>
@@ -413,7 +536,9 @@ const PortfolioTracker: React.FC = () => {
                                 </AreaChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="h-full flex items-center justify-center border-2 border-dashed border-slate-200 dark:border-white/5 rounded-3xl text-slate-300 dark:text-white/10 font-mono italic">Awaiting connection parameters...</div>
+                            <div className="h-full flex items-center justify-center border-2 border-dashed border-slate-200 dark:border-white/5 rounded-3xl text-slate-300 dark:text-white/10 font-mono italic">
+                                {isInitialLoading ? 'Syncing trajectory...' : 'Awaiting connection parameters...'}
+                            </div>
                         )}
                     </div>
                 </GlassCard>
@@ -482,7 +607,18 @@ const PortfolioTracker: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {assets.length === 0 && (
+                            {isInitialLoading && assets.length === 0 && (
+                                [0, 1, 2].map(row => (
+                                    <tr key={`skel-${row}`}>
+                                        <td className="p-10"><div className="h-6 w-24 rounded-lg bg-slate-200/70 dark:bg-white/10 animate-pulse" /></td>
+                                        <td className="p-10 text-right"><div className="h-5 w-20 ml-auto rounded-lg bg-slate-200/70 dark:bg-white/10 animate-pulse" /></td>
+                                        <td className="p-10 text-right"><div className="h-5 w-20 ml-auto rounded-lg bg-slate-200/70 dark:bg-white/10 animate-pulse" /></td>
+                                        <td className="p-10 text-right"><div className="h-6 w-24 ml-auto rounded-lg bg-slate-200/70 dark:bg-white/10 animate-pulse" /></td>
+                                        <td className="p-10 text-right"><div className="h-8 w-28 ml-auto rounded-lg bg-slate-200/70 dark:bg-white/10 animate-pulse" /></td>
+                                    </tr>
+                                ))
+                            )}
+                            {!isInitialLoading && assets.length === 0 && (
                                 <tr><td colSpan={5} className="p-20 text-center text-slate-300 dark:text-white/10 uppercase tracking-widest font-black italic">Awaiting inventory data...</td></tr>
                             )}
                             {assets.map(asset => {

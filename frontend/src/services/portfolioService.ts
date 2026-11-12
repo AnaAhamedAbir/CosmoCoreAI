@@ -12,8 +12,10 @@ export interface ApiKeyData {
 }
 
 export const portfolioService = {
-    async fetchBalances(): Promise<{ assets: Asset[], total_portfolio_value: number }> {
-        const response = await apiClient.get('/portfolio/balances');
+    async fetchBalances(forceRefresh = false): Promise<{ assets: Asset[], total_portfolio_value: number }> {
+        const response = await apiClient.get('/portfolio/balances', {
+            params: forceRefresh ? { force_refresh: true } : undefined,
+        });
         return response.data;
     },
 

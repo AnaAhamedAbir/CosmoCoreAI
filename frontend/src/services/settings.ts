@@ -28,13 +28,29 @@ export const fetchApiKeys = async () => {
     return response.data;
 };
 
+const markPortfolioCacheDirty = () => {
+    try {
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+            const k = sessionStorage.key(i);
+            if (k && k.startsWith('cosmo_portfolio_v1:')) {
+                sessionStorage.removeItem(k);
+            }
+        }
+        sessionStorage.setItem('cosmo_portfolio_dirty', '1');
+    } catch {
+        // Ignore storage access errors
+    }
+};
+
 export const saveApiKey = async (data: ApiKeyPayload) => {
     const response = await apiClient.post('/users/api-keys', data);
+    markPortfolioCacheDirty();
     return response.data;
 };
 
 export const deleteApiKey = async (keyId: number) => {
     const response = await apiClient.delete(`/users/api-keys/${keyId}`);
+    markPortfolioCacheDirty();
     return response.data;
 };
 

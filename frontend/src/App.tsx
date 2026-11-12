@@ -21,6 +21,19 @@ enum AppState {
   LOGGED_IN,
 }
 
+const clearPortfolioSessionCache = () => {
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const k = sessionStorage.key(i);
+      if (k && (k.startsWith('cosmo_portfolio_v1:') || k === 'cosmo_portfolio_dirty')) {
+        sessionStorage.removeItem(k);
+      }
+    }
+  } catch {
+    // Ignore storage access errors
+  }
+};
+
 function App() {
   const [appState, setAppState] = useState<AppState>(AppState.PUBLIC);
   const [resetToken, setResetToken] = useState<string | null>(null);
@@ -120,6 +133,7 @@ function App() {
         sessionStorage.removeItem('refreshToken');
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
+        clearPortfolioSessionCache();
         setAppState(AppState.PUBLIC);
       }
     };
@@ -180,6 +194,7 @@ function App() {
     sessionStorage.removeItem('refreshToken');
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
+    clearPortfolioSessionCache();
     
     // Broadcast logout to other tabs
     localStorage.setItem('cross-tab-logout', Date.now().toString());

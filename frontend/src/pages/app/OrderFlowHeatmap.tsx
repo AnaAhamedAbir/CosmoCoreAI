@@ -46,6 +46,7 @@ import { HeatmapSubNav } from '../../components/features/market/HeatmapSubNav';
 import { BotLogsTab } from '../../components/features/market/BotLogsTab';
 import { WallHunterModal } from '../../components/features/market/WallHunterModal';
 import { ForexWallHunterModal } from '../../components/features/market/ForexWallHunterModal';
+import { OrderBookFloatingModal } from '../../components/features/market/OrderBookFloatingModal';
 import { TechnicalIndicatorModal } from '../../components/features/market/TechnicalIndicators/TechnicalIndicatorModal';
 import { ManualTradeModal, AvailablePair } from '../../components/features/market/ManualTradeModal';
 import { FloatingTVChartButton } from '../../components/features/market/FloatingTVChartButton';
@@ -3970,7 +3971,7 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
                             <span className="text-[8px] text-gray-600 mr-0.5">Grp</span>
                             {BUCKET_OPTIONS.map(b => (
                                 <button key={b} onClick={() => setBucket(b)}
-                                    className={`px-1.5 py-0.5 rounded text-[8px] font-bold transition-all ${bucket === b ? 'bg-indigo-600/80 text-white' : 'text-gray-600 hover:text-gray-300'}`}>
+                                    className={`px-1.5 py-0.5 rounded text-[8px] font-bold transition-all ${bucket === b ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:text-gray-300'}`}>
                                     {b === 0 ? 'Tick' : b}
                                 </button>
                             ))}
@@ -4040,13 +4041,13 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
 
                 {/* ── STEP 5: Activity Feed / Event Log ───────────────────────── */}
                 <div className="flex-shrink-0 border-t border-white/10 mt-1">
-                    <div className="flex items-center justify-between px-3 py-1.5 bg-black/20">
+                    <div className="flex items-center justify-between px-3 py-1 bg-black/20">
                         <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">⚡ Activity Feed</span>
                         {events.length > 0 && (
                             <button onClick={() => setEvents([])} className="text-[9px] text-gray-600 hover:text-gray-400 transition-colors uppercase font-bold tracking-wider">clear</button>
                         )}
                     </div>
-                    <div className="h-[140px] overflow-y-auto custom-scrollbar">
+                    <div className="h-[88px] overflow-y-auto custom-scrollbar">
                         {events.length === 0 ? (
                             <div className="text-center text-[10px] text-gray-600 py-6">Monitoring for significant wall activity...</div>
                         ) : events.map(ev => {
@@ -4742,8 +4743,8 @@ const OrderFlowHeatmap: React.FC = () => {
                                             className="group relative w-[42px] h-[42px] shrink-0"
                                             title="Update WallHunter Config"
                                         >
-                                            <div className="absolute inset-0 bg-indigo-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center border border-white/20 shadow-[0_0_12px_rgba(99,102,241,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
+                                            <div className="absolute inset-0 bg-indigo-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center border border-slate-900/15 dark:border-white/20 shadow-md dark:shadow-[0_0_12px_rgba(99,102,241,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
                                                 <svg className="w-4.5 h-4.5 text-white group-hover:rotate-90 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                                 </svg>
@@ -4765,8 +4766,8 @@ const OrderFlowHeatmap: React.FC = () => {
                                             className="group relative w-[42px] h-[42px] shrink-0"
                                             title="Abort WallHunter"
                                         >
-                                            <div className="absolute inset-0 bg-red-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-red-500 to-red-700 rounded-full flex items-center justify-center border-2 border-white/20 shadow-[0_0_12px_rgba(239,68,68,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
+                                            <div className="absolute inset-0 bg-red-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-red-500 to-red-700 rounded-full flex items-center justify-center border-2 border-slate-900/15 dark:border-white/20 shadow-md dark:shadow-[0_0_12px_rgba(239,68,68,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
                                                 <svg className="w-5 h-5 text-white group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
                                                 </svg>
@@ -4780,8 +4781,8 @@ const OrderFlowHeatmap: React.FC = () => {
                                             className="relative w-[42px] h-[42px] shrink-0 group opacity-100 transition-opacity duration-300"
                                             title="Deploy WallHunter"
                                         >
-                                            <div className="absolute inset-0 bg-yellow-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center border-2 border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
+                                            <div className="absolute inset-0 bg-yellow-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center border-2 border-slate-900/15 dark:border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
                                                 <svg className="w-5 h-5 text-white group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
                                                 </svg>
@@ -4792,8 +4793,8 @@ const OrderFlowHeatmap: React.FC = () => {
                                             className="relative w-[42px] h-[42px] shrink-0 group opacity-100 transition-opacity duration-300"
                                             title="Deploy Forex WallHunter"
                                         >
-                                            <div className="absolute inset-0 bg-emerald-500 rounded-full blur-sm opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
-                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full flex items-center justify-center border-2 border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
+                                            <div className="absolute inset-0 bg-emerald-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full flex items-center justify-center border-2 border-slate-900/15 dark:border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
                                                 <svg className="w-5 h-5 text-white group-hover:-rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                                                 </svg>
@@ -4840,7 +4841,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 {/* FLOATING LEVEL 2 ORDER BOOK BUTTON */}
                                 <button
                                     onClick={() => setIsOrderBookModalOpen(true)}
-                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border border-blue-400/30 text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border border-slate-900/15 dark:border-blue-400/30 text-white shadow-md dark:shadow-[0_0_12px_rgba(59,130,246,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
                                     title="Level 2 Order Book"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:scale-110 transition-transform"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
@@ -4849,7 +4850,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 {/* FLOATING AI DEPLOYMENT BUTTON */}
                                 <button
                                     onClick={() => setIsAIDeploymentModalOpen(true)}
-                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 border border-purple-400/30 text-white shadow-[0_0_12px_rgba(168,85,247,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 border border-slate-900/15 dark:border-purple-400/30 text-white shadow-md dark:shadow-[0_0_12px_rgba(168,85,247,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
                                     title="Deploy AI Trading Model"
                                 >
                                     <svg className="w-5 h-5 group-hover:scale-110 transition-transform bg-transparent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -4868,7 +4869,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 {/* FLOATING TOP TOKENS DASHBOARD BUTTON */}
                                 <button
                                     onClick={() => setIsTopTokensModalOpen(true)}
-                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-400 hover:to-red-500 border border-orange-400/30 text-white shadow-[0_0_12px_rgba(249,115,22,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-orange-500 to-red-600 hover:from-orange-400 hover:to-red-500 border border-slate-900/15 dark:border-orange-400/30 text-white shadow-md dark:shadow-[0_0_12px_rgba(249,115,22,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
                                     title="Top Tokens Dashboard"
                                 >
                                     <svg className="w-5 h-5 group-hover:scale-110 transition-transform bg-transparent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -4879,7 +4880,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 {/* FLOATING TECHNICAL INDICATORS BUTTON */}
                                 <button
                                     onClick={() => setIsIndicatorModalOpen(true)}
-                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 border border-teal-400/30 text-white shadow-[0_0_12px_rgba(20,184,166,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
+                                    className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 border border-slate-900/15 dark:border-teal-400/30 text-white shadow-md dark:shadow-[0_0_12px_rgba(20,184,166,0.5)] z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group"
                                     title="Technical Analysis Indicators"
                                 >
                                     <svg className="w-5 h-5 group-hover:scale-110 transition-transform bg-transparent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4896,7 +4897,7 @@ const OrderFlowHeatmap: React.FC = () => {
                             setIsFloatingToolbarOpen(prev => !prev);
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-[#121624] to-[#0b0e17] hover:from-[#1b2236] hover:to-[#121624] border border-cyan-500/40 text-cyan-400 hover:text-white shadow-[0_0_15px_rgba(6,182,212,0.35)] z-[1000] transition-all duration-300 hover:scale-110 active:scale-95 group cursor-pointer"
+                        className="relative shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center bg-gradient-to-br from-white to-slate-100 dark:from-[#121624] dark:to-[#0b0e17] hover:from-slate-50 hover:to-slate-200 dark:hover:from-[#1b2236] dark:hover:to-[#121624] border border-cyan-600/35 dark:border-cyan-500/40 text-cyan-600 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-white shadow-[0_6px_18px_rgba(15,23,42,0.16)] dark:shadow-[0_0_15px_rgba(6,182,212,0.35)] z-[1000] transition-all duration-300 hover:scale-110 active:scale-95 group cursor-pointer"
                         title={isFloatingToolbarOpen ? "Hide Tools" : "Show Floating Tools"}
                     >
                         <ChevronLeft className={`w-5 h-5 transition-transform duration-300 ${isFloatingToolbarOpen ? 'rotate-180' : ''}`} />
@@ -5260,22 +5261,13 @@ const OrderFlowHeatmap: React.FC = () => {
             {typeof document !== 'undefined' && createPortal(
                 <div className="relative z-[100000]">
                     {isOrderBookModalOpen && (
-                        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                            <div className="relative w-[90%] md:w-[70%] lg:w-[60%] max-w-4xl h-[75vh] bg-white dark:bg-[#000000] rounded-xl shadow-2xl border border-gray-200 dark:border-white/10 overflow-hidden flex flex-col transform transition-all scale-100">
-                                <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-white/10 shrink-0">
-                                    <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-cyan-500">Level 2 Order Book</h2>
-                                    <button
-                                        onClick={() => setIsOrderBookModalOpen(false)}
-                                        className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                    </button>
-                                </div>
-                                <div className="flex-1 overflow-hidden p-2">
-                                    <OrderBook bids={bids} asks={asks} maxTotal={maxTotal} volumeThreshold={volumeThreshold} />
-                                </div>
-                            </div>
-                        </div>
+                        <OrderBookFloatingModal
+                            isOpen={isOrderBookModalOpen}
+                            onClose={() => setIsOrderBookModalOpen(false)}
+                            symbol={symbol}
+                        >
+                            <OrderBook bids={bids} asks={asks} maxTotal={maxTotal} volumeThreshold={volumeThreshold} />
+                        </OrderBookFloatingModal>
                     )}
 
                     {isWallHunterOpen && (

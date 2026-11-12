@@ -116,7 +116,7 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({
             {/* Floating Button */}
             <button
                 onClick={() => setIsOpen(true)}
-                className={`relative shrink-0 ${size === 'sm' ? 'w-[42px] h-[42px] shadow-[0_0_12px_rgba(99,102,241,0.5)]' : 'w-16 h-16 shadow-[0_0_24px_rgba(99,102,241,0.5)]'} rounded-full flex items-center justify-center bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 border border-indigo-400/30 text-white z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group`}
+                className={`relative shrink-0 ${size === 'sm' ? 'w-[42px] h-[42px] shadow-md dark:shadow-[0_0_12px_rgba(99,102,241,0.5)]' : 'w-16 h-16 shadow-lg dark:shadow-[0_0_24px_rgba(99,102,241,0.5)]'} rounded-full flex items-center justify-center bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 border border-slate-900/15 dark:border-indigo-400/30 text-white z-[999] transition-all opacity-100 hover:scale-110 focus:outline-none group`}
                 title="Algo Predictor"
             >
                 <BrainCircuit className={`${size === 'sm' ? 'w-5 h-5' : 'w-8 h-8'} group-hover:scale-110 transition-transform bg-transparent`} />
@@ -137,7 +137,7 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({
                             initial={{ opacity: 0, scale: 0.95, y: 20 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                            className="relative w-full max-w-md bg-white/10 dark:bg-black/40 backdrop-blur-2xl border border-white/20 dark:border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] overflow-hidden"
+                            className="cosmo-theme-modal relative w-full max-w-md bg-white dark:bg-black/40 backdrop-blur-2xl border border-slate-200 dark:border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] overflow-hidden"
                         >
                             {/* Header */}
                             <div className="flex items-center justify-between p-5 border-b border-white/10 bg-black/20 backdrop-blur-md">

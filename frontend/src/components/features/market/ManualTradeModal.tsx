@@ -1311,7 +1311,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       modalEl.style.pointerEvents = 'auto';
       modalEl.style.backdropFilter = 'none';
       (modalEl.style as any).webkitBackdropFilter = 'none';
-      modalEl.style.backgroundColor = isMinimized ? 'rgba(9, 13, 22, 0.98)' : 'rgba(6, 9, 15, 0.96)';
+      modalEl.style.backgroundColor =
+        typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+          ? 'rgba(255, 255, 255, 0.98)'
+          : isMinimized
+            ? 'rgba(9, 13, 22, 0.98)'
+            : 'rgba(6, 9, 15, 0.96)';
       modalEl.style.transition = 'none';
     }
 
@@ -2349,8 +2354,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
             }}
             className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center border text-white ${isThermalGuardActive ? '' : 'backdrop-blur-md'} z-[999] transition-all focus:outline-none group ${
               activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging')
-                ? 'bg-gradient-to-r from-red-600 via-amber-600 to-amber-500 border-amber-400 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.7)]'
-                : `bg-brand-primary hover:bg-blue-600 border-blue-400/30 ${buttonSize === 'sm' ? 'shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'shadow-[0_0_20px_rgba(59,130,246,0.4)]'}`
+                ? 'bg-gradient-to-r from-red-600 via-amber-600 to-amber-500 border-amber-400 animate-pulse shadow-md dark:shadow-[0_0_20px_rgba(245,158,11,0.7)]'
+                : `bg-brand-primary hover:bg-blue-600 border-slate-900/15 dark:border-blue-400/30 shadow-md ${buttonSize === 'sm' ? 'dark:shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'dark:shadow-[0_0_20px_rgba(59,130,246,0.4)]'}`
             }`}
             title={
               activeBrackets.some(b => b.status === 'pegging')
@@ -2387,7 +2392,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           const activePeg = activeBrackets.find(b => b.status === 'pegging');
           const activeChase = activeBrackets.find(b => b.status === 'chasing');
           return (
-            <div className={`fixed bottom-[104px] right-24 z-[99998] flex items-center gap-3 px-3.5 py-2 rounded-2xl ${isThermalGuardActive ? 'bg-[#0B0E14]/95' : 'bg-[#0c0204]/95 backdrop-blur-xl'} border border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.35)] animate-fade-in select-none`}>
+            <div className={`cosmo-theme-modal fixed bottom-[104px] right-24 z-[99998] flex items-center gap-3 px-3.5 py-2 rounded-2xl ${isThermalGuardActive ? 'bg-white dark:bg-[#0B0E14]/95' : 'bg-white/95 dark:bg-[#0c0204]/95 backdrop-blur-xl'} border border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.35)] animate-fade-in select-none`}>
               <span className="relative flex h-2.5 w-2.5 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
@@ -2462,11 +2467,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                 transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : (isMinimized ? hudPos.x : modalPos.x)}px, ${dragRef.current.isDragging ? dragRef.current.currentY : (isMinimized ? hudPos.y : modalPos.y)}px, 0)`,
                 willChange: 'transform'
               }}
-              className={`fixed rounded-xl ${
+              className={`cosmo-theme-modal fixed rounded-xl ${
                 isMinimized
                   ? isThermalGuardActive
                     ? 'w-[395px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
-                    : 'w-[395px] max-w-[calc(100vw-12px)] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/98 to-[#05070d]/98 border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
+                    : 'w-[395px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
                   : isThermalGuardActive
                     ? 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#0B0E14]/95 border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.85)]'
                     : 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#000000]/80 border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl'

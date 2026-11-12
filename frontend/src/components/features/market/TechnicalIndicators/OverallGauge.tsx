@@ -88,7 +88,7 @@ export const OverallGauge: React.FC<Props> = ({ sentiment }) => {
           </defs>
           
           {/* Background Track (Thick) */}
-          <path d="M 10 90 A 80 80 0 0 1 190 90" fill="none" stroke="#1e293b" strokeWidth="16" strokeLinecap="round" />
+          <path d="M 10 90 A 80 80 0 0 1 190 90" fill="none" className="stroke-slate-300 dark:stroke-[#1e293b]" strokeWidth="16" strokeLinecap="round" />
           
           {/* Colored Arc (Animated Fill) */}
           <path 
@@ -123,9 +123,9 @@ export const OverallGauge: React.FC<Props> = ({ sentiment }) => {
             }} 
             className="transition-all duration-75 ease-linear"
           >
-            <polygon points="97,90 103,90 100,15" fill="#f8fafc" className="drop-shadow-xl" />
-            <circle cx="100" cy="90" r="8" fill="#f8fafc" filter="url(#glow)" />
-            <circle cx="100" cy="90" r="3" fill="#0f172a" />
+            <polygon points="97,90 103,90 100,15" className="fill-slate-900 dark:fill-[#f8fafc] drop-shadow-xl" />
+            <circle cx="100" cy="90" r="8" className="fill-slate-900 dark:fill-[#f8fafc]" filter="url(#glow)" />
+            <circle cx="100" cy="90" r="3" className="fill-white dark:fill-[#0f172a]" />
           </g>
         </svg>
 

@@ -1801,3 +1801,199 @@ html.mobile-thermal-guard .animate-pulse {
 html.mobile-thermal-guard .animate-bounce {
   animation: none !important;
 }
+
+/* ============================================================================
+   LIGHT THEME ADAPTIVE FLOATING TOOL MODALS (OrderFlow / WallHunter Page)
+   Active ONLY when <html class="light">; zero effect in dark mode.
+   Converts dark-first modals, nested tabs, inputs, selects, and cards cleanly.
+   ============================================================================ */
+html.light .cosmo-theme-modal {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  color: #0f172a !important;
+  border-color: rgba(15, 23, 42, 0.16) !important;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Map dark inner card/panel/row backgrounds to crisp light surfaces */
+html.light .cosmo-theme-modal [class*="bg-[#0"],
+html.light .cosmo-theme-modal [class*="bg-[#1"],
+html.light .cosmo-theme-modal [class*="bg-black"],
+html.light .cosmo-theme-modal [class*="bg-slate-9"],
+html.light .cosmo-theme-modal [class*="bg-slate-8"],
+html.light .cosmo-theme-modal [class*="bg-gray-9"],
+html.light .cosmo-theme-modal [class*="bg-gray-8"],
+html.light .cosmo-theme-modal [class*="bg-white/"],
+html.light .cosmo-theme-modal [class*="bg-white\\["] {
+  background-color: #f8fafc !important;
+  background-image: none !important;
+}
+
+/* Neutral text colors -> crisp dark ink on light backgrounds */
+html.light .cosmo-theme-modal .text-white,
+html.light .cosmo-theme-modal [class*="text-slate-1"],
+html.light .cosmo-theme-modal [class*="text-slate-2"],
+html.light .cosmo-theme-modal [class*="text-gray-1"],
+html.light .cosmo-theme-modal [class*="text-gray-2"] {
+  color: #0f172a !important;
+}
+
+html.light .cosmo-theme-modal [class*="text-slate-3"],
+html.light .cosmo-theme-modal [class*="text-gray-3"] {
+  color: #334155 !important;
+}
+
+html.light .cosmo-theme-modal [class*="text-slate-4"],
+html.light .cosmo-theme-modal [class*="text-gray-4"],
+html.light .cosmo-theme-modal [class*="text-slate-5"],
+html.light .cosmo-theme-modal [class*="text-gray-5"],
+html.light .cosmo-theme-modal [class*="text-gray-6"],
+html.light .cosmo-theme-modal [class*="text-gray-7"] {
+  color: #475569 !important;
+}
+
+/* Light-friendly accessible contrast for bright pastel 300/400 accents */
+html.light .cosmo-theme-modal [class*="text-emerald-3"],
+html.light .cosmo-theme-modal [class*="text-emerald-4"],
+html.light .cosmo-theme-modal [class*="text-green-4"] {
+  color: #047857 !important;
+}
+
+html.light .cosmo-theme-modal [class*="text-amber-2"],
+html.light .cosmo-theme-modal [class*="text-amber-3"],
+html.light .cosmo-theme-modal [class*="text-amber-4"],
+html.light .cosmo-theme-modal [class*="text-yellow-3"],
+html.light .cosmo-theme-modal [class*="text-yellow-4"] {
+  color: #b45309 !important;
+}
+
+html.light .cosmo-theme-modal [class*="text-cyan-3"],
+html.light .cosmo-theme-modal [class*="text-cyan-4"],
+html.light .cosmo-theme-modal [class*="text-sky-3"],
+html.light .cosmo-theme-modal [class*="text-sky-4"] {
+  color: #0369a1 !important;
+}
+
+html.light .cosmo-theme-modal [class*="text-indigo-3"],
+html.light .cosmo-theme-modal [class*="text-indigo-4"],
+html.light .cosmo-theme-modal [class*="text-violet-3"],
+html.light .cosmo-theme-modal [class*="text-violet-4"],
+html.light .cosmo-theme-modal [class*="text-blue-3"],
+html.light .cosmo-theme-modal [class*="text-blue-4"] {
+  color: #4338ca !important;
+}
+
+html.light .cosmo-theme-modal [class*="text-purple-3"],
+html.light .cosmo-theme-modal [class*="text-purple-4"],
+html.light .cosmo-theme-modal [class*="text-pink-4"] {
+  color: #7e22ce !important;
+}
+
+html.light .cosmo-theme-modal [class*="text-rose-3"],
+html.light .cosmo-theme-modal [class*="text-rose-4"],
+html.light .cosmo-theme-modal [class*="text-red-4"],
+html.light .cosmo-theme-modal [class*="text-orange-3"],
+html.light .cosmo-theme-modal [class*="text-orange-4"] {
+  color: #be123c !important;
+}
+
+/* Neutral borders on light surfaces */
+html.light .cosmo-theme-modal [class*="border-white/"],
+html.light .cosmo-theme-modal [class*="border-white\\["],
+html.light .cosmo-theme-modal [class*="border-slate-7"],
+html.light .cosmo-theme-modal [class*="border-slate-8"] {
+  border-color: rgba(15, 23, 42, 0.13) !important;
+}
+
+/* Form controls inside adaptive modals */
+html.light .cosmo-theme-modal input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+html.light .cosmo-theme-modal select,
+html.light .cosmo-theme-modal textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: rgba(15, 23, 42, 0.18) !important;
+}
+
+/* Keep transparent borderless controls inside pill wrappers (e.g. TopTokensModal search/filters) */
+html.light .cosmo-theme-modal [class*="rounded-full"] > input,
+html.light .cosmo-theme-modal [class*="rounded-full"] > select {
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+html.light .cosmo-theme-modal input::placeholder,
+html.light .cosmo-theme-modal textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.light .cosmo-theme-modal option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* Restore intentional saturated CTA buttons & active gradient pills (keep original color + white/contrast text) */
+html.light .cosmo-theme-modal button[style*="background"],
+html.light .cosmo-theme-modal button[class*="from-"]:not([class*="/"]),
+html.light .cosmo-theme-modal button[class*="bg-indigo-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-indigo-5"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-emerald-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-emerald-5"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-green-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-green-5"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-red-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-red-5"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-rose-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-blue-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-blue-5"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-purple-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-purple-5"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-violet-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-orange-5"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-orange-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-cyan-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-teal-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-pink-5"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-pink-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]),
+html.light .cosmo-theme-modal button[class*="bg-brand-primary"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]) {
+  color: #ffffff !important;
+}
+
+/* Keep white icons inside vibrant gradient icon badges (e.g. TopTokensModal column headers) */
+html.light .cosmo-theme-modal [class*="bg-gradient-to-"]:not([class*="900/"]):not([class*="white/"]) svg.text-white {
+  color: #ffffff !important;
+}
+
+html.light .cosmo-theme-modal button[style*="background"] *,
+html.light .cosmo-theme-modal button[class*="from-"]:not([class*="/"]) *,
+html.light .cosmo-theme-modal button[class*="bg-indigo-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]) *,
+html.light .cosmo-theme-modal button[class*="bg-indigo-5"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]) *,
+html.light .cosmo-theme-modal button[class*="bg-emerald-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]) *,
+html.light .cosmo-theme-modal button[class*="bg-emerald-5"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]) *,
+html.light .cosmo-theme-modal button[class*="bg-green-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]) *,
+html.light .cosmo-theme-modal button[class*="bg-red-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]) *,
+html.light .cosmo-theme-modal button[class*="bg-blue-6"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]) *,
+html.light .cosmo-theme-modal button[class*="bg-orange-5"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]) *,
+html.light .cosmo-theme-modal button[class*="bg-brand-primary"]:not([class*="/1"]):not([class*="/2"]):not([class*="/3"]) * {
+  color: inherit !important;
+}
+
+/* Preserve clipped gradient headings */
+html.light .cosmo-theme-modal .bg-clip-text.text-transparent {
+  color: transparent !important;
+}
+
+/* Dark-text CTA pills (e.g., bright amber gradient with text-slate-950) */
+html.light .cosmo-theme-modal button[class*="text-slate-950"],
+html.light .cosmo-theme-modal button[class*="text-slate-950"] *,
+html.light .cosmo-theme-modal [class*="text-slate-950"],
+html.light .cosmo-theme-modal [class*="text-slate-950"] * {
+  color: #020617 !important;
+}
+
+/* Clean light scrollbar inside adaptive modals */
+html.light .cosmo-theme-modal .custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(15, 23, 42, 0.22) !important;
+}
+html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(15, 23, 42, 0.38) !important;
+}

@@ -34,7 +34,7 @@ export const TechnicalIndicatorModal: React.FC<Props> = ({ isOpen, onClose, symb
 
       {/* Modal Container */}
       <div 
-        className={`relative w-full max-w-4xl max-h-[90vh] bg-[#0f172a] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${isRendered ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}
+        className={`cosmo-theme-modal relative w-full max-w-4xl max-h-[90vh] bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${isRendered ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/5 bg-slate-900/50 backdrop-blur-md z-10 sticky top-0">

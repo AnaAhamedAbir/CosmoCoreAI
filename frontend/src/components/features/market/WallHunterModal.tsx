@@ -12,6 +12,7 @@ import { mlModelsService } from '../../../services/mlModelsService';
 import { CustomMLModel } from '../../../types';
 import { AdvancedRiskManager } from './AdvancedRiskManager';
 import { GodModeBotTriggerSettings } from './GodModeBotTriggerSettings';
+import { useDeviceProfile } from '../../../hooks/useDeviceProfile';
 
 const getDefaultProxySymbol = (nativeSym: string) =>
     nativeSym ? `${nativeSym.split('/')[0]}/USDT` : 'BTC/USDT';
@@ -41,6 +42,7 @@ const toSafeInt = (val: unknown, fallback: number): number => {
 };
 
 export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol: string; exchange?: string; bids?: any[]; asks?: any[]; onDeploySuccess?: (botId: number) => void }> = ({ isOpen, onClose, symbol, exchange = 'binance', bids = [], asks = [], onDeploySuccess }) => {
+    const { isThermalGuardActive } = useDeviceProfile();
     const [savedKeys, setSavedKeys] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
@@ -775,7 +777,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             modalEl.style.pointerEvents = 'auto';
             modalEl.style.backdropFilter = 'none';
             (modalEl.style as any).webkitBackdropFilter = 'none';
-            modalEl.style.backgroundColor = 'rgba(7, 11, 20, 0.98)';
+            modalEl.style.backgroundColor =
+                typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+                    ? 'rgba(255, 255, 255, 0.98)'
+                    : 'rgba(7, 11, 20, 0.98)';
             modalEl.style.transition = 'none';
         }
 
@@ -1466,7 +1471,11 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     : '540px',
                 willChange: 'transform'
             }}
-            className="fixed w-[430px] max-w-[calc(100vw-12px)] rounded-xl bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/98 to-[#050811]/98 border border-amber-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_20px_rgba(245,158,11,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col"
+            className={`cosmo-theme-modal fixed w-[430px] max-w-[calc(100vw-12px)] rounded-xl border z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col ${
+                isThermalGuardActive
+                    ? 'bg-[#080c16] border-amber-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
+                    : 'bg-[#070b14] bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/[0.98] to-[#050811]/[0.98] border-amber-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_20px_rgba(245,158,11,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
+            }`}
         >
             {/* Top Neon Horizon Accent Line */}
             <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-amber-400 to-orange-500 opacity-85 shrink-0" />

@@ -111,7 +111,7 @@ export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ 
                     initial={{ opacity: 0, scale: 0.95, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                    className="relative w-[90%] md:w-[500px] bg-white dark:bg-[#0A0A0A] rounded-2xl shadow-2xl border border-gray-200 dark:border-white/10 overflow-hidden flex flex-col"
+                    className="cosmo-theme-modal relative w-[90%] md:w-[500px] bg-white dark:bg-[#0A0A0A] rounded-2xl shadow-2xl border border-gray-200 dark:border-white/10 overflow-hidden flex flex-col"
                 >
                     {/* Header */}
                     <div className="p-5 border-b border-gray-200 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-brand-primary/10 to-transparent">

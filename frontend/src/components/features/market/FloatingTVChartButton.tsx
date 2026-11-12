@@ -18,6 +18,7 @@ import {
 } from '../../../utils/indicators';
 import { HeatmapSymbolSelector } from './HeatmapSymbolSelector';
 import { TimeframeSelector } from './TimeframeSelector';
+import { useTheme } from '../../../context/ThemeContext';
 
 const MotionButton = motion.button as any;
 const MotionDiv   = motion.div   as any;
@@ -64,6 +65,8 @@ interface MiniChartProps {
 }
 
 const MiniOrderFlowChart: React.FC<MiniChartProps> = ({ symbol, exchange, interval, ind }) => {
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
   const containerRef     = useRef<HTMLDivElement>(null);
   const chartRef         = useRef<any>(null);
   const candleRef        = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -97,20 +100,20 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = ({ symbol, exchange, interv
     const chart = createChart(containerRef.current, {
       layout: {
         background:  { type: 'solid', color: 'transparent' } as any,
-        textColor:   '#64748b',
+        textColor:   isLight ? '#334155' : '#64748b',
         fontSize:    10,
       },
       grid: {
-        vertLines: { color: 'rgba(255,255,255,0.03)' },
-        horzLines: { color: 'rgba(255,255,255,0.03)' },
+        vertLines: { color: isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.03)' },
+        horzLines: { color: isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.03)' },
       },
       crosshair: {
         vertLine: { color: 'rgba(139,92,246,0.4)', width: 1, style: LineStyle.Dashed },
         horzLine: { color: 'rgba(139,92,246,0.4)', width: 1, style: LineStyle.Dashed },
       },
-      timeScale: { borderColor: 'rgba(255,255,255,0.05)', timeVisible: true, secondsVisible: false },
-      rightPriceScale: { borderColor: 'rgba(255,255,255,0.05)', scaleMargins: { top: 0.06, bottom: bottomMargin } },
-      leftPriceScale:  { visible: hasBottom, borderColor: 'rgba(255,255,255,0.05)', scaleMargins: { top: 0.76, bottom: 0 } },
+      timeScale: { borderColor: isLight ? 'rgba(15,23,42,0.1)' : 'rgba(255,255,255,0.05)', timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: isLight ? 'rgba(15,23,42,0.1)' : 'rgba(255,255,255,0.05)', scaleMargins: { top: 0.06, bottom: bottomMargin } },
+      leftPriceScale:  { visible: hasBottom, borderColor: isLight ? 'rgba(15,23,42,0.1)' : 'rgba(255,255,255,0.05)', scaleMargins: { top: 0.76, bottom: 0 } },
       handleScale: { mouseWheel: true, pinch: true },
       handleScroll: { mouseWheel: true, pressedMouseMove: true },
     });
@@ -188,6 +191,23 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = ({ symbol, exchange, interv
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Dynamically re-skin LightweightCharts grid & axes when user switches Light/Dark mode
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const borderCol = isLight ? 'rgba(15,23,42,0.1)' : 'rgba(255,255,255,0.05)';
+    const gridCol = isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.03)';
+    chartRef.current.applyOptions({
+      layout: { textColor: isLight ? '#334155' : '#64748b' },
+      grid: {
+        vertLines: { color: gridCol },
+        horzLines: { color: gridCol },
+      },
+      timeScale: { borderColor: borderCol },
+      rightPriceScale: { borderColor: borderCol },
+      leftPriceScale: { borderColor: borderCol },
+    });
+  }, [isLight]);
 
   // ── DATA FETCH whenever symbol / exchange / interval changes ─────────────
   useEffect(() => {
@@ -393,7 +413,7 @@ const IndPill: React.FC<{
         ? 'text-white border-transparent'
         : 'border-white/10 text-gray-600 hover:text-gray-300 hover:border-white/20'
     }`}
-    style={active ? { background: color, boxShadow: `0 0 8px ${color}66` } : {}}
+    style={active ? { background: color, color: '#ffffff', boxShadow: `0 0 8px ${color}66` } : {}}
   >
     {label}
     {children}
@@ -479,7 +499,7 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
           <MotionButton
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} whileHover={{ scale: 1.05 }}
             onClick={() => setIsOpen(true)}
-            className={`relative ${size === 'sm' ? 'w-[42px] h-[42px] shadow-[0_0_12px_rgba(139,92,246,0.5)]' : 'w-16 h-16 shadow-[0_0_24px_rgba(139,92,246,0.5)]'} rounded-full flex items-center justify-center bg-gradient-to-br from-violet-600 to-indigo-600 border border-violet-400/30 text-white transition-all focus:outline-none group`}
+            className={`relative ${size === 'sm' ? 'w-[42px] h-[42px] shadow-md dark:shadow-[0_0_12px_rgba(139,92,246,0.5)]' : 'w-16 h-16 shadow-lg dark:shadow-[0_0_24px_rgba(139,92,246,0.5)]'} rounded-full flex items-center justify-center bg-gradient-to-br from-violet-600 to-indigo-600 border border-slate-900/15 dark:border-violet-400/30 text-white transition-all focus:outline-none group`}
             title="TVChart"
           >
             <BarChart2 className={`${size === 'sm' ? 'w-5 h-5' : 'w-7 h-7'} transition-transform`} />
@@ -500,7 +520,7 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
               height: ind.showRSI || ind.showMACD ? 560 : 520,
               zIndex: 9999,
             }}
-            className="w-[540px] rounded-2xl bg-[#070C17] border border-violet-500/20 shadow-[0_16px_64px_rgba(0,0,0,0.85),0_0_0_1px_rgba(139,92,246,0.07)] flex flex-col overflow-hidden"
+            className="cosmo-theme-modal w-[540px] max-w-[calc(100vw-24px)] rounded-2xl bg-white dark:bg-[#070C17] border border-slate-200 dark:border-violet-500/20 shadow-[0_16px_64px_rgba(0,0,0,0.85),0_0_0_1px_rgba(139,92,246,0.07)] flex flex-col overflow-hidden"
           >
             {/* ── DRAG HANDLE ─────────────────────────────────────────── */}
             <div

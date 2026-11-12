@@ -101,8 +101,8 @@ export const TopTokensModal: React.FC<TopTokensModalProps> = ({ isOpen, onClose 
                         <h3 className={`font-bold text-sm tracking-wide bg-clip-text text-transparent bg-gradient-to-r ${colorClass}`}>{title}</h3>
                         
                         <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-1.5 h-1.5">
-                            <span className="absolute inline-flex h-full w-full rounded-full bg-white opacity-20 animate-ping"></span>
-                            <span className="relative inline-flex rounded-full h-1 w-1 bg-white opacity-50"></span>
+                            <span className="absolute inline-flex h-full w-full rounded-full bg-slate-500 dark:bg-white opacity-20 animate-ping"></span>
+                            <span className="relative inline-flex rounded-full h-1 w-1 bg-slate-600 dark:bg-white opacity-60"></span>
                         </div>
                     </div>
 
@@ -166,7 +166,7 @@ export const TopTokensModal: React.FC<TopTokensModalProps> = ({ isOpen, onClose 
     const modalContent = (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-5 font-sans">
             <div 
-                className={`absolute inset-0 bg-black/70 backdrop-blur-xl transition-opacity duration-500 ${isOpen ? 'opacity-100' : 'opacity-0'}`}
+                className={`absolute inset-0 bg-slate-900/45 dark:bg-black/70 backdrop-blur-xl transition-opacity duration-500 ${isOpen ? 'opacity-100' : 'opacity-0'}`}
                 onClick={onClose}
             >
                 <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-blue-500/20 rounded-full blur-[80px] mix-blend-screen pointer-events-none"></div>
@@ -175,7 +175,7 @@ export const TopTokensModal: React.FC<TopTokensModalProps> = ({ isOpen, onClose 
             </div>
             
             <div 
-                className={`relative w-full max-w-[95vw] xl:max-w-[1300px] h-[85vh] bg-[#0a0a0c]/85 backdrop-blur-2xl rounded-2xl shadow-[0_0_60px_rgba(0,0,0,0.8)] border border-white/10 overflow-hidden flex flex-col transform transition-all duration-500 ease-out ${isOpen ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-8'}`}
+                className={`cosmo-theme-modal relative w-full max-w-[95vw] xl:max-w-[1300px] h-[85vh] bg-white dark:bg-[#0a0a0c]/85 backdrop-blur-2xl rounded-2xl shadow-[0_0_60px_rgba(0,0,0,0.8)] border border-slate-200 dark:border-white/10 overflow-hidden flex flex-col transform transition-all duration-500 ease-out ${isOpen ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-8'}`}
             >
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 border-b border-white/5 shrink-0 bg-gradient-to-b from-white/5 to-transparent relative z-20">
                     <div className="flex items-center gap-3">

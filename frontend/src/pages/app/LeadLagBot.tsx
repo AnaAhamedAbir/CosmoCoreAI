@@ -4,15 +4,17 @@ import { createChart, ColorType, IChartApi, ISeriesApi, CandlestickSeries, Time 
 import toast from 'react-hot-toast';
 import { leadLagService, LeadLagBot as BotConfig, LeadLagTradeLog } from '../../services/leadLagService';
 import { useMarketStore } from '@/store/marketStore';
+import { useTheme } from '@/context/ThemeContext';
 
 // Reusable Components
 const GlassCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-    <div className={`backdrop-blur-md bg-[#050505]/50 border border-white/5 rounded-3xl overflow-hidden ${className}`}>
+    <div className={`backdrop-blur-md bg-white/90 dark:bg-[#050505]/50 border border-gray-200 dark:border-white/5 shadow-sm dark:shadow-none rounded-3xl overflow-hidden ${className}`}>
         {children}
     </div>
 );
 
 const LeadLagBot = () => {
+    const { theme } = useTheme();
     const [bot, setBot] = useState<BotConfig | null>(null);
     const [isRunning, setIsRunning] = useState(false);
 
@@ -96,14 +98,19 @@ const LeadLagBot = () => {
     useEffect(() => {
         if (!chartContainerRef.current) return;
 
+        const isDark = theme === 'dark';
         const chart = createChart(chartContainerRef.current, {
-            layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: '#DDD' },
-            grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
+            layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: isDark ? '#DDD' : '#334155' },
+            grid: { vertLines: { color: isDark ? '#334155' : '#E2E8F0' }, horzLines: { color: isDark ? '#334155' : '#E2E8F0' } },
             width: chartContainerRef.current.clientWidth,
             height: 400,
             timeScale: {
                 timeVisible: true,
                 secondsVisible: false,
+                borderColor: isDark ? '#334155' : '#CBD5E1',
+            },
+            rightPriceScale: {
+                borderColor: isDark ? '#334155' : '#CBD5E1',
             },
         });
 
@@ -147,6 +154,18 @@ const LeadLagBot = () => {
         };
     }, [timeframe]);
 
+    // Sync chart theme options dynamically without recreating the chart
+    useEffect(() => {
+        if (!chartRef.current) return;
+        const isDark = theme === 'dark';
+        chartRef.current.applyOptions({
+            layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: isDark ? '#DDD' : '#334155' },
+            grid: { vertLines: { color: isDark ? '#334155' : '#E2E8F0' }, horzLines: { color: isDark ? '#334155' : '#E2E8F0' } },
+            timeScale: { borderColor: isDark ? '#334155' : '#CBD5E1' },
+            rightPriceScale: { borderColor: isDark ? '#334155' : '#CBD5E1' },
+        });
+    }, [theme]);
+
     const handleToggleBot = async () => {
         if (!bot) return;
 
@@ -183,19 +202,23 @@ const LeadLagBot = () => {
         }
     };
 
+    const inputClasses = "w-full bg-slate-50 dark:bg-black/40 border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white outline-none transition-colors placeholder-gray-400 dark:placeholder-gray-600 disabled:opacity-60 disabled:cursor-not-allowed";
+    const selectClasses = "bg-slate-50 dark:bg-black/40 border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-900 dark:text-white outline-none disabled:opacity-50 [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-[#0A0A0A] dark:[&>option]:text-white";
+    const labelClasses = "block text-[10px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider mb-2";
+
     return (
         <div className="flex flex-col h-full gap-6 laptop:gap-3 staggered-fade-in pb-4">
 
             {/* Header */}
             <div className="flex justify-between items-end gap-4 mb-2 flex-shrink-0">
                 <div>
-                    <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 flex items-center gap-3">
+                    <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-gray-400 flex items-center gap-3">
                         Lead-Lag Bot
-                        <span className={`text-sm font-mono px-2 py-1 rounded border ${isRunning ? 'text-emerald-500 animate-pulse bg-emerald-500/10 border-emerald-500/20' : 'text-gray-500 bg-gray-500/10 border-gray-500/20'}`}>
+                        <span className={`text-sm font-mono px-2 py-1 rounded border ${isRunning ? 'text-emerald-600 dark:text-emerald-500 animate-pulse bg-emerald-500/10 border-emerald-500/20' : 'text-slate-500 dark:text-gray-500 bg-slate-100 dark:bg-gray-500/10 border-gray-200 dark:border-gray-500/20'}`}>
                             {isRunning ? 'CONNECTED - SYNCING' : 'OFFLINE'}
                         </span>
                     </h1>
-                    <p className="text-gray-400 text-sm mt-1 font-light">
+                    <p className="text-slate-500 dark:text-gray-400 text-sm mt-1 font-light">
                         Trade altcoins automatically based on BTC momentum and leading indicators.
                     </p>
                 </div>
@@ -204,8 +227,8 @@ const LeadLagBot = () => {
                     onClick={handleToggleBot}
                     disabled={!bot}
                     className={`px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg transition-all ${isRunning
-                        ? 'bg-rose-500/20 text-rose-500 border border-rose-500/50 hover:bg-rose-500/30'
-                        : 'bg-emerald-500 text-black shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] disabled:opacity-50 disabled:cursor-not-allowed'
+                        ? 'bg-rose-500/15 dark:bg-rose-500/20 text-rose-600 dark:text-rose-500 border border-rose-500/50 hover:bg-rose-500/25 dark:hover:bg-rose-500/30'
+                        : 'bg-emerald-500 text-white dark:text-black shadow-[0_0_20px_rgba(16,185,129,0.25)] dark:shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.45)] disabled:opacity-50 disabled:cursor-not-allowed'
                         }`}
                 >
                     {isRunning ? <Square fill="currentColor" size={18} /> : <Play fill="currentColor" size={18} />}
@@ -219,16 +242,16 @@ const LeadLagBot = () => {
                     {/* Left: Chart Section */}
                     <div className="col-span-12 lg:col-span-8 flex flex-col gap-6">
                         <GlassCard className="p-4 flex flex-col h-[500px]">
-                            <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
-                                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                    <Activity className="text-cyan-400" size={18} /> {bot?.leader_pair || 'BTC/USDT'} Momentum
+                            <div className="flex items-center justify-between mb-4 border-b border-gray-200 dark:border-white/5 pb-2">
+                                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <Activity className="text-cyan-600 dark:text-cyan-400" size={18} /> {bot?.leader_pair || 'BTC/USDT'} Momentum
                                 </h3>
                                 <div className="flex gap-2">
                                     <select
                                         value={timeframe}
                                         onChange={(e) => setTimeframe(e.target.value)}
                                         disabled={isRunning}
-                                        className="bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none disabled:opacity-50"
+                                        className={selectClasses}
                                     >
                                         <option value="1m">1m</option>
                                         <option value="5m">5m</option>
@@ -239,7 +262,7 @@ const LeadLagBot = () => {
                                         value={indicators}
                                         onChange={(e) => setIndicators(e.target.value)}
                                         disabled={isRunning}
-                                        className="bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none disabled:opacity-50"
+                                        className={selectClasses}
                                     >
                                         <option value="EMA Crossover">EMA Crossover</option>
                                         <option value="Bollinger Breakout">Bollinger Breakout</option>
@@ -253,12 +276,12 @@ const LeadLagBot = () => {
 
                         {/* Trade Records */}
                         <GlassCard className="p-4 flex-1 min-h-[250px]">
-                            <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2 pb-2 border-b border-white/5">
-                                <RefreshCw className={`text-cyan-400 ${isRunning ? 'animate-spin' : ''}`} size={18} /> Live Trade Activity
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-white/5">
+                                <RefreshCw className={`text-cyan-600 dark:text-cyan-400 ${isRunning ? 'animate-spin' : ''}`} size={18} /> Live Trade Activity
                             </h3>
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left text-xs text-gray-400">
-                                    <thead className="text-[10px] uppercase font-bold tracking-wider text-gray-500 bg-white/5">
+                                <table className="w-full text-left text-xs text-slate-600 dark:text-gray-400">
+                                    <thead className="text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-gray-500 bg-slate-100 dark:bg-white/5">
                                         <tr>
                                             <th className="px-4 py-2 rounded-tl-lg">Time</th>
                                             <th className="px-4 py-2">BTC Trigger</th>
@@ -268,24 +291,24 @@ const LeadLagBot = () => {
                                             <th className="px-4 py-2 rounded-tr-lg">PnL</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-white/5">
+                                    <tbody className="divide-y divide-gray-200 dark:divide-white/5">
                                         {logs.length === 0 ? (
                                             <tr>
-                                                <td colSpan={6} className="text-center py-8 text-gray-500">
+                                                <td colSpan={6} className="text-center py-8 text-slate-500 dark:text-gray-500">
                                                     No trades executed yet.
                                                 </td>
                                             </tr>
                                         ) : (
                                             logs.map((log) => (
-                                                <tr key={log.id} className="hover:bg-white/5 transition-colors">
+                                                <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
                                                     <td className="px-4 py-3">{new Date(log.created_at).toLocaleTimeString()}</td>
-                                                    <td className="px-4 py-3 text-cyan-400">{log.trigger_reason}</td>
-                                                    <td className="px-4 py-3 font-bold text-white">{log.executed_pair}</td>
-                                                    <td className={`px-4 py-3 font-bold ${log.side === 'buy' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    <td className="px-4 py-3 text-cyan-600 dark:text-cyan-400">{log.trigger_reason}</td>
+                                                    <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">{log.executed_pair}</td>
+                                                    <td className={`px-4 py-3 font-bold ${log.side === 'buy' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                                                         {log.side.toUpperCase()}
                                                     </td>
                                                     <td className="px-4 py-3 font-mono">${log.price.toFixed(4)}</td>
-                                                    <td className={`px-4 py-3 font-mono ${log.pnl && log.pnl > 0 ? 'text-emerald-400' : log.pnl && log.pnl < 0 ? 'text-rose-400' : 'text-gray-500'}`}>
+                                                    <td className={`px-4 py-3 font-mono ${log.pnl && log.pnl > 0 ? 'text-emerald-600 dark:text-emerald-400' : log.pnl && log.pnl < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-gray-500'}`}>
                                                         {log.pnl ? (log.pnl > 0 ? `+${log.pnl.toFixed(2)}` : log.pnl.toFixed(2)) : '-'}
                                                     </td>
                                                 </tr>
@@ -300,28 +323,28 @@ const LeadLagBot = () => {
                     {/* Right: Execution Configuration Panel */}
                     <div className="col-span-12 lg:col-span-4">
                         <GlassCard className="p-6">
-                            <h3 className="text-sm font-bold text-white mb-6 flex items-center gap-2 pb-4 border-b border-white/5">
-                                <Settings size={18} className="text-cyan-400" /> Execution Settings
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2 pb-4 border-b border-gray-200 dark:border-white/5">
+                                <Settings size={18} className="text-cyan-600 dark:text-cyan-400" /> Execution Settings
                             </h3>
                             <div className="space-y-5">
                                 <div>
-                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Target Altcoin Pair</label>
+                                    <label className={labelClasses}>Target Altcoin Pair</label>
                                     <input
                                         type="text"
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:border-cyan-500/50 outline-none transition-colors"
+                                        className={`${inputClasses} focus:border-cyan-500/50`}
                                         value={targetPair}
                                         onChange={e => setTargetPair(e.target.value)}
                                         disabled={isRunning || !bot}
                                         placeholder="e.g. SOL/USDT"
                                     />
-                                    <p className="text-[10px] text-gray-500 mt-1">Asset that will be traded based on BTC movements.</p>
+                                    <p className="text-[10px] text-slate-500 dark:text-gray-500 mt-1">Asset that will be traded based on BTC movements.</p>
                                 </div>
 
                                 <div>
-                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Trade Size (USDT)</label>
+                                    <label className={labelClasses}>Trade Size (USDT)</label>
                                     <input
                                         type="number"
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:border-cyan-500/50 outline-none transition-colors"
+                                        className={`${inputClasses} focus:border-cyan-500/50`}
                                         value={tradeSize}
                                         onChange={e => setTradeSize(parseFloat(e.target.value))}
                                         disabled={isRunning || !bot}
@@ -330,20 +353,20 @@ const LeadLagBot = () => {
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Stop-Loss (%)</label>
+                                        <label className={labelClasses}>Stop-Loss (%)</label>
                                         <input
                                             type="number" step="0.1"
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:border-rose-500/50 outline-none transition-colors"
+                                            className={`${inputClasses} focus:border-rose-500/50`}
                                             value={stopLoss}
                                             onChange={e => setStopLoss(parseFloat(e.target.value))}
                                             disabled={isRunning || !bot}
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Take-Profit (%)</label>
+                                        <label className={labelClasses}>Take-Profit (%)</label>
                                         <input
                                             type="number" step="0.1"
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:border-emerald-500/50 outline-none transition-colors"
+                                            className={`${inputClasses} focus:border-emerald-500/50`}
                                             value={takeProfit}
                                             onChange={e => setTakeProfit(parseFloat(e.target.value))}
                                             disabled={isRunning || !bot}
@@ -351,12 +374,12 @@ const LeadLagBot = () => {
                                     </div>
                                 </div>
 
-                                <div className="p-4 bg-white/5 rounded-xl border border-white/10 mt-4">
-                                    <h4 className="text-xs font-bold text-white mb-2">Strategy Summary</h4>
-                                    <ul className="text-xs text-gray-400 space-y-2">
-                                        <li className="flex justify-between"><span>Watch:</span> <span className="text-cyan-400">BTC/USDT ({timeframe})</span></li>
+                                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/10 mt-4">
+                                    <h4 className="text-xs font-bold text-slate-900 dark:text-white mb-2">Strategy Summary</h4>
+                                    <ul className="text-xs text-slate-600 dark:text-gray-400 space-y-2">
+                                        <li className="flex justify-between"><span>Watch:</span> <span className="text-cyan-600 dark:text-cyan-400">BTC/USDT ({timeframe})</span></li>
                                         <li className="flex justify-between"><span>Trigger:</span> <span>{indicators}</span></li>
-                                        <li className="flex justify-between"><span>Execute on:</span> <span className="font-bold text-white">{targetPair}</span></li>
+                                        <li className="flex justify-between"><span>Execute on:</span> <span className="font-bold text-slate-900 dark:text-white">{targetPair}</span></li>
                                         <li className="flex justify-between"><span>Position:</span> <span>${tradeSize}</span></li>
                                     </ul>
                                 </div>

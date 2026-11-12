@@ -25,8 +25,12 @@ interface ApiKey {
 }
 
 // Reusable Glass Card Component
-const GlassCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-    <div className={`backdrop-blur-md bg-[#050505]/50 border border-white/5 rounded-3xl overflow-hidden ${className}`}>
+const GlassCard: React.FC<{ children: React.ReactNode; className?: string; surfaceClassName?: string }> = ({
+    children,
+    className = '',
+    surfaceClassName = 'bg-white/90 dark:bg-[#050505]/50 shadow-sm dark:shadow-none',
+}) => (
+    <div className={`backdrop-blur-md ${surfaceClassName} border border-gray-200 dark:border-white/5 rounded-3xl overflow-hidden ${className}`}>
         {children}
     </div>
 );
@@ -302,39 +306,39 @@ const ArbitrageBot = () => {
         }
     };
 
-    const inputClasses = "w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all outline-none placeholder-gray-600";
-    const labelClasses = "block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2";
+    const inputClasses = "w-full bg-slate-50 dark:bg-black/40 border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all outline-none placeholder-gray-400 dark:placeholder-gray-600 disabled:opacity-60 disabled:cursor-not-allowed [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-[#0A0A0A] dark:[&>option]:text-white";
+    const labelClasses = "block text-[10px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider mb-2";
 
     return (
         <div className="space-y-6 laptop:space-y-4 staggered-fade-in relative min-h-full pb-10 laptop:pb-4">
             {/* Background Decor */}
             <div className="fixed inset-0 z-[-1] pointer-events-none">
-                <div className="absolute top-[-10%] right-[-5%] w-[30%] h-[30%] rounded-full bg-violet-900/10 blur-[120px]"></div>
-                <div className="absolute bottom-[10%] left-[-10%] w-[30%] h-[30%] rounded-full bg-cyan-900/10 blur-[120px]"></div>
+                <div className="absolute top-[-10%] right-[-5%] w-[30%] h-[30%] rounded-full bg-violet-500/10 dark:bg-violet-900/10 blur-[120px]"></div>
+                <div className="absolute bottom-[10%] left-[-10%] w-[30%] h-[30%] rounded-full bg-cyan-500/10 dark:bg-cyan-900/10 blur-[120px]"></div>
             </div>
 
             {/* --- Header Section --- */}
             <div className="flex flex-col md:flex-row justify-between items-end gap-4 mb-4">
                 <div>
-                    <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 flex items-center gap-3">
-                        <Zap className="text-cyan-400" size={28} /> Arbitrage Bot Engine
+                    <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-gray-400 flex items-center gap-3">
+                        <Zap className="text-cyan-600 dark:text-cyan-400" size={28} /> Arbitrage Bot Engine
                     </h1>
-                    <p className="text-gray-400 text-sm mt-1 font-light">
+                    <p className="text-slate-500 dark:text-gray-400 text-sm mt-1 font-light">
                         Real-time multi-exchange latency arbitrage & execution system
                     </p>
                 </div>
 
-                <div className={`flex items-center gap-4 p-2 rounded-2xl border transition-all duration-300 ${isRunning ? 'bg-emerald-950/20 border-emerald-500/30' : 'bg-[#050505]/50 border-white/5'}`}>
-                    <div className={`px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 uppercase tracking-wider ${isRunning ? 'bg-emerald-500/20 text-emerald-400' : 'bg-[#0A0A0A] text-slate-500'}`}>
-                        <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}`}></div>
+                <div className={`flex items-center gap-4 p-2 rounded-2xl border transition-all duration-300 ${isRunning ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-500/30' : 'bg-white/90 dark:bg-[#050505]/50 border-gray-200 dark:border-white/5 shadow-sm dark:shadow-none'}`}>
+                    <div className={`px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 uppercase tracking-wider ${isRunning ? 'bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'bg-slate-100 dark:bg-[#0A0A0A] text-slate-600 dark:text-slate-500'}`}>
+                        <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400 dark:bg-slate-500'}`}></div>
                         {isRunning ? 'Online' : 'Offline'}
                     </div>
                     {isRunning ? (
-                        <button onClick={handleStop} className="h-9 px-4 rounded-xl bg-rose-500/20 hover:bg-rose-500 hover:text-white text-rose-500 border border-rose-500/30 transition-all font-bold text-xs flex items-center gap-2">
+                        <button onClick={handleStop} className="h-9 px-4 rounded-xl bg-rose-500/15 dark:bg-rose-500/20 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-500 border border-rose-500/30 transition-all font-bold text-xs flex items-center gap-2">
                             <Square size={14} fill="currentColor" /> TERMINATE
                         </button>
                     ) : (
-                        <button onClick={handleStart} className="h-9 px-4 rounded-xl bg-cyan-500/20 hover:bg-cyan-500 hover:text-black text-cyan-400 border border-cyan-500/30 transition-all font-bold text-xs flex items-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.1)] hover:shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                        <button onClick={handleStart} className="h-9 px-4 rounded-xl bg-cyan-500/15 dark:bg-cyan-500/20 hover:bg-cyan-500 hover:text-white dark:hover:text-black text-cyan-700 dark:text-cyan-400 border border-cyan-500/30 transition-all font-bold text-xs flex items-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.1)] hover:shadow-[0_0_20px_rgba(6,182,212,0.4)]">
                             <Play size={14} fill="currentColor" /> INITIALIZE
                         </button>
                     )}
@@ -370,42 +374,42 @@ const ArbitrageBot = () => {
                     </div>
 
                     <GlassCard className="p-6">
-                        <h3 className="text-sm font-bold text-white mb-6 flex items-center gap-2 pb-4 border-b border-white/5">
-                            <Settings size={18} className="text-cyan-400" /> System Configuration
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2 pb-4 border-b border-gray-200 dark:border-white/5">
+                            <Settings size={18} className="text-cyan-600 dark:text-cyan-400" /> System Configuration
                         </h3>
 
                         <div className="space-y-6">
                             {/* Paper Trading Toggle Switch */}
-                            <div className="bg-black/20 p-4 rounded-2xl flex items-center justify-between border border-white/5">
+                            <div className="bg-slate-50 dark:bg-black/20 p-4 rounded-2xl flex items-center justify-between border border-gray-200 dark:border-white/5">
                                 <div>
-                                    <span className={`block text-sm font-bold flex items-center gap-2 ${isPaperTrading ? 'text-violet-400' : 'text-amber-400'}`}>
+                                    <span className={`block text-sm font-bold flex items-center gap-2 ${isPaperTrading ? 'text-violet-600 dark:text-violet-400' : 'text-amber-600 dark:text-amber-400'}`}>
                                         {isPaperTrading ? '🧪 Paper Mode' : '⚡ Real Trading'}
                                     </span>
-                                    <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
+                                    <span className="text-[10px] text-slate-500 dark:text-gray-500 uppercase tracking-wider font-bold">
                                         {isPaperTrading ? 'Simulation Only' : 'Live Capital Risk'}
                                     </span>
                                 </div>
                                 <div
                                     onClick={() => !isRunning && setIsPaperTrading(!isPaperTrading)}
-                                    className={`w-12 h-6 rounded-full flex items-center padding-1 cursor-pointer transition-colors ${!isPaperTrading ? 'bg-amber-500' : 'bg-[#0A0A0A]'}`}
+                                    className={`w-12 h-6 rounded-full flex items-center padding-1 cursor-pointer transition-colors ${!isPaperTrading ? 'bg-amber-500' : 'bg-slate-300 dark:bg-[#0A0A0A]'}`}
                                 >
                                     <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform mx-1 ${!isPaperTrading ? 'translate-x-6' : ''}`}></div>
                                 </div>
                             </div>
 
                             {/* Auto-Balance Toggle Switch */}
-                            <div className="bg-black/20 p-4 rounded-2xl flex items-center justify-between border border-white/5">
+                            <div className="bg-slate-50 dark:bg-black/20 p-4 rounded-2xl flex items-center justify-between border border-gray-200 dark:border-white/5">
                                 <div>
-                                    <span className={`block text-sm font-bold flex items-center gap-2 ${autoBalance ? 'text-emerald-400' : 'text-gray-400'}`}>
+                                    <span className={`block text-sm font-bold flex items-center gap-2 ${autoBalance ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-600 dark:text-gray-400'}`}>
                                         ⚖️ Auto-Balance
                                     </span>
-                                    <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
+                                    <span className="text-[10px] text-slate-500 dark:text-gray-500 uppercase tracking-wider font-bold">
                                         Buys 50% assets if missing
                                     </span>
                                 </div>
                                 <div
                                     onClick={() => !isRunning && setAutoBalance(!autoBalance)}
-                                    className={`w-12 h-6 rounded-full flex items-center padding-1 cursor-pointer transition-colors ${autoBalance ? 'bg-emerald-500' : 'bg-[#0A0A0A]'}`}
+                                    className={`w-12 h-6 rounded-full flex items-center padding-1 cursor-pointer transition-colors ${autoBalance ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-[#0A0A0A]'}`}
                                 >
                                     <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform mx-1 ${autoBalance ? 'translate-x-6' : ''}`}></div>
                                 </div>
@@ -426,32 +430,32 @@ const ArbitrageBot = () => {
                                     <label className={labelClasses}>Min Spread %</label>
                                     <div className="relative">
                                         <input type="number" step="0.01" className={inputClasses} value={minSpread} onChange={(e) => setMinSpread(parseFloat(e.target.value))} disabled={isRunning} />
-                                        <span className="absolute right-3 top-2.5 text-xs text-gray-500">%</span>
+                                        <span className="absolute right-3 top-2.5 text-xs text-slate-400 dark:text-gray-500">%</span>
                                     </div>
                                 </div>
                                 <div>
                                     <label className={labelClasses}>Trade Size $</label>
                                     <div className="relative">
                                         <input type="number" className={inputClasses} value={tradeSize} onChange={(e) => setTradeSize(parseFloat(e.target.value))} disabled={isRunning} />
-                                        <span className="absolute right-3 top-2.5 text-xs text-gray-500">$</span>
+                                        <span className="absolute right-3 top-2.5 text-xs text-slate-400 dark:text-gray-500">$</span>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Trailing Stop Toggle & Input */}
-                            <div className="bg-black/20 p-4 rounded-2xl border border-white/5 space-y-4">
+                            <div className="bg-slate-50 dark:bg-black/20 p-4 rounded-2xl border border-gray-200 dark:border-white/5 space-y-4">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <span className={`block text-sm font-bold flex items-center gap-2 ${isTrailingStopEnabled ? 'text-rose-400' : 'text-gray-400'}`}>
+                                        <span className={`block text-sm font-bold flex items-center gap-2 ${isTrailingStopEnabled ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-gray-400'}`}>
                                             🛑 Trailing Stop Loss
                                         </span>
-                                        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
+                                        <span className="text-[10px] text-slate-500 dark:text-gray-500 uppercase tracking-wider font-bold">
                                             Protects profit by selling on drop
                                         </span>
                                     </div>
                                     <div
                                         onClick={() => !isRunning && setIsTrailingStopEnabled(!isTrailingStopEnabled)}
-                                        className={`w-12 h-6 rounded-full flex items-center padding-1 cursor-pointer transition-colors ${isTrailingStopEnabled ? 'bg-rose-500' : 'bg-[#0A0A0A]'}`}
+                                        className={`w-12 h-6 rounded-full flex items-center padding-1 cursor-pointer transition-colors ${isTrailingStopEnabled ? 'bg-rose-500' : 'bg-slate-300 dark:bg-[#0A0A0A]'}`}
                                     >
                                         <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform mx-1 ${isTrailingStopEnabled ? 'translate-x-6' : ''}`}></div>
                                     </div>
@@ -469,27 +473,27 @@ const ArbitrageBot = () => {
                                                 onChange={(e) => setTrailingStop(parseFloat(e.target.value))}
                                                 disabled={isRunning}
                                             />
-                                            <span className="absolute right-3 top-2.5 text-xs text-gray-500">%</span>
+                                            <span className="absolute right-3 top-2.5 text-xs text-slate-400 dark:text-gray-500">%</span>
                                         </div>
-                                        <p className="text-[9px] text-gray-500 mt-1">Triggers Panic Sell if price drops <strong>{trailingStop}%</strong> from the session high.</p>
+                                        <p className="text-[9px] text-slate-500 dark:text-gray-500 mt-1">Triggers Panic Sell if price drops <strong>{trailingStop}%</strong> from the session high.</p>
                                     </div>
                                 )}
                             </div>
 
                             {/* SOR Configuration */}
-                            <div className="bg-black/20 p-4 rounded-2xl border border-white/5 space-y-4">
+                            <div className="bg-slate-50 dark:bg-black/20 p-4 rounded-2xl border border-gray-200 dark:border-white/5 space-y-4">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <span className={`block text-sm font-bold flex items-center gap-2 ${isSorEnabled ? 'text-blue-400' : 'text-gray-400'}`}>
+                                        <span className={`block text-sm font-bold flex items-center gap-2 ${isSorEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-gray-400'}`}>
                                             ⚡ Smart Order Routing (SOR)
                                         </span>
-                                        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
+                                        <span className="text-[10px] text-slate-500 dark:text-gray-500 uppercase tracking-wider font-bold">
                                             Splits large orders to reduce slippage
                                         </span>
                                     </div>
                                     <div
                                         onClick={() => !isRunning && setIsSorEnabled(!isSorEnabled)}
-                                        className={`w-12 h-6 rounded-full flex items-center padding-1 cursor-pointer transition-colors ${isSorEnabled ? 'bg-blue-500' : 'bg-[#0A0A0A]'}`}
+                                        className={`w-12 h-6 rounded-full flex items-center padding-1 cursor-pointer transition-colors ${isSorEnabled ? 'bg-blue-500' : 'bg-slate-300 dark:bg-[#0A0A0A]'}`}
                                     >
                                         <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform mx-1 ${isSorEnabled ? 'translate-x-6' : ''}`}></div>
                                     </div>
@@ -506,31 +510,31 @@ const ArbitrageBot = () => {
                                                 onChange={(e) => setSorThreshold(parseFloat(e.target.value))}
                                                 disabled={isRunning}
                                             />
-                                            <span className="absolute right-3 top-2.5 text-xs text-gray-500">$</span>
+                                            <span className="absolute right-3 top-2.5 text-xs text-slate-400 dark:text-gray-500">$</span>
                                         </div>
-                                        <p className="text-[9px] text-gray-500 mt-1">Orders larger than <strong>${sorThreshold}</strong> will be split into chunks.</p>
+                                        <p className="text-[9px] text-slate-500 dark:text-gray-500 mt-1">Orders larger than <strong>${sorThreshold}</strong> will be split into chunks.</p>
                                     </div>
                                 )}
                             </div>
 
                             {/* Fee Configuration */}
-                            <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 block">Exchange Fees (Taker)</label>
+                            <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-gray-200 dark:border-white/5">
+                                <label className="text-[10px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider mb-3 block">Exchange Fees (Taker)</label>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="text-[10px] text-gray-500 block mb-1">Fee A %</label>
+                                        <label className="text-[10px] text-slate-500 dark:text-gray-500 block mb-1">Fee A %</label>
                                         <input type="number" step="0.01" className={inputClasses} value={feeExA} onChange={(e) => setFeeExA(parseFloat(e.target.value))} disabled={isRunning} />
                                     </div>
                                     <div>
-                                        <label className="text-[10px] text-gray-500 block mb-1">Fee B %</label>
+                                        <label className="text-[10px] text-slate-500 dark:text-gray-500 block mb-1">Fee B %</label>
                                         <input type="number" step="0.01" className={inputClasses} value={feeExB} onChange={(e) => setFeeExB(parseFloat(e.target.value))} disabled={isRunning} />
                                     </div>
                                 </div>
                             </div>
 
                             {/* Source Exchange A */}
-                            <div className="p-4 bg-white/5 rounded-2xl border border-white/5 relative group hover:border-blue-500/30 transition-colors">
-                                <label className="flex items-center gap-2 text-xs font-bold text-gray-300 mb-3 uppercase tracking-wider">
+                            <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-gray-200 dark:border-white/5 relative group hover:border-blue-500/30 transition-colors">
+                                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-gray-300 mb-3 uppercase tracking-wider">
                                     <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6]"></span> Source A (Buy)
                                 </label>
                                 <div className="space-y-3">
@@ -540,9 +544,9 @@ const ArbitrageBot = () => {
                                     </select>
 
                                     {exchangeA && (
-                                        <div className="flex items-center gap-2 bg-black/30 rounded-xl px-3 border border-white/5">
-                                            <Key size={14} className="text-gray-500" />
-                                            <select className="w-full bg-transparent text-xs py-2 text-gray-400 outline-none border-none cursor-pointer" value={apiKeyA} onChange={(e) => setApiKeyA(e.target.value)} disabled={isRunning}>
+                                        <div className="flex items-center gap-2 bg-white dark:bg-black/30 rounded-xl px-3 border border-gray-200 dark:border-white/5">
+                                            <Key size={14} className="text-slate-400 dark:text-gray-500" />
+                                            <select className="w-full bg-transparent text-xs py-2 text-slate-700 dark:text-gray-400 outline-none border-none cursor-pointer [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-[#0A0A0A] dark:[&>option]:text-white" value={apiKeyA} onChange={(e) => setApiKeyA(e.target.value)} disabled={isRunning}>
                                                 <option value="" disabled>Select API Key</option>
                                                 {apiProfiles[exchangeA]?.map(label => <option key={label} value={label}>{label}</option>)}
                                             </select>
@@ -552,8 +556,8 @@ const ArbitrageBot = () => {
                             </div>
 
                             {/* Target Exchange B */}
-                            <div className="p-4 bg-white/5 rounded-2xl border border-white/5 relative group hover:border-purple-500/30 transition-colors">
-                                <label className="flex items-center gap-2 text-xs font-bold text-gray-300 mb-3 uppercase tracking-wider">
+                            <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-gray-200 dark:border-white/5 relative group hover:border-purple-500/30 transition-colors">
+                                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-gray-300 mb-3 uppercase tracking-wider">
                                     <span className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_#a855f7]"></span> Target B (Sell)
                                 </label>
                                 <div className="space-y-3">
@@ -563,9 +567,9 @@ const ArbitrageBot = () => {
                                     </select>
 
                                     {exchangeB && (
-                                        <div className="flex items-center gap-2 bg-black/30 rounded-xl px-3 border border-white/5">
-                                            <Key size={14} className="text-gray-500" />
-                                            <select className="w-full bg-transparent text-xs py-2 text-gray-400 outline-none border-none cursor-pointer" value={apiKeyB} onChange={(e) => setApiKeyB(e.target.value)} disabled={isRunning}>
+                                        <div className="flex items-center gap-2 bg-white dark:bg-black/30 rounded-xl px-3 border border-gray-200 dark:border-white/5">
+                                            <Key size={14} className="text-slate-400 dark:text-gray-500" />
+                                            <select className="w-full bg-transparent text-xs py-2 text-slate-700 dark:text-gray-400 outline-none border-none cursor-pointer [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-[#0A0A0A] dark:[&>option]:text-white" value={apiKeyB} onChange={(e) => setApiKeyB(e.target.value)} disabled={isRunning}>
                                                 <option value="" disabled>Select API Key</option>
                                                 {apiProfiles[exchangeB]?.map(label => <option key={label} value={label}>{label}</option>)}
                                             </select>
@@ -579,23 +583,23 @@ const ArbitrageBot = () => {
                                 <label className={labelClasses}>Asset Pair</label>
                                 <Combobox value={pair} onChange={(val) => val && setPair(val)} disabled={isRunning}>
                                     <div className="relative mt-1">
-                                        <div className="relative w-full cursor-default overflow-hidden rounded-xl bg-black/40 border border-white/10 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white/75 focus-visible:ring-offset-2 focus-visible:ring-offset-teal-300 sm:text-sm">
+                                        <div className="relative w-full cursor-default overflow-hidden rounded-xl bg-slate-50 dark:bg-black/40 border border-gray-200 dark:border-white/10 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/75 sm:text-sm">
                                             <ComboboxInput
-                                                className="w-full border-none py-2.5 pl-3 pr-10 text-sm leading-5 text-white bg-transparent focus:ring-0 outline-none placeholder-gray-600"
+                                                className="w-full border-none py-2.5 pl-3 pr-10 text-sm leading-5 text-slate-900 dark:text-white bg-transparent focus:ring-0 outline-none placeholder-gray-400 dark:placeholder-gray-600"
                                                 displayValue={(p: string) => p}
                                                 onChange={(event) => setQuery(event.target.value)}
                                                 placeholder="Search e.g. BTC/USDT"
                                             />
                                             <ComboboxButton className="absolute inset-y-0 right-0 flex items-center pr-2">
                                                 <ChevronsUpDown
-                                                    className="h-5 w-5 text-gray-400"
+                                                    className="h-5 w-5 text-slate-400 dark:text-gray-400"
                                                     aria-hidden="true"
                                                 />
                                             </ComboboxButton>
                                         </div>
-                                        <ComboboxOptions className="absolute mt-1 max-h-60 w-full overflow-auto rounded-md bg-[#0A0A0A] py-1 text-base shadow-lg ring-1 ring-black/5 focus:outline-none sm:text-sm z-50">
+                                        <ComboboxOptions className="absolute mt-1 max-h-60 w-full overflow-auto rounded-md bg-white dark:bg-[#0A0A0A] py-1 text-base shadow-lg border border-gray-200 dark:border-white/10 ring-1 ring-black/5 focus:outline-none sm:text-sm z-50">
                                             {filteredPairs.length === 0 && query !== '' ? (
-                                                <div className="relative cursor-default select-none py-2 px-4 text-gray-400">
+                                                <div className="relative cursor-default select-none py-2 px-4 text-slate-500 dark:text-gray-400">
                                                     Nothing found.
                                                 </div>
                                             ) : (
@@ -603,7 +607,7 @@ const ArbitrageBot = () => {
                                                     <ComboboxOption
                                                         key={p}
                                                         className={({ active }) =>
-                                                            `relative cursor-default select-none py-2 pl-10 pr-4 ${active ? 'bg-cyan-600 text-white' : 'text-gray-300'
+                                                            `relative cursor-default select-none py-2 pl-10 pr-4 ${active ? 'bg-cyan-600 text-white' : 'text-slate-700 dark:text-gray-300'
                                                             }`
                                                         }
                                                         value={p}
@@ -618,7 +622,7 @@ const ArbitrageBot = () => {
                                                                 </span>
                                                                 {selected ? (
                                                                     <span
-                                                                        className={`absolute inset-y-0 left-0 flex items-center pl-3 ${active ? 'text-white' : 'text-cyan-400'
+                                                                        className={`absolute inset-y-0 left-0 flex items-center pl-3 ${active ? 'text-white' : 'text-cyan-600 dark:text-cyan-400'
                                                                             }`}
                                                                     >
                                                                         <Check className="h-5 w-5" aria-hidden="true" />
@@ -637,10 +641,10 @@ const ArbitrageBot = () => {
                             {/* Mode Switcher */}
                             <div
                                 onClick={() => !isRunning && setMode(mode === 'auto' ? 'manual' : 'auto')}
-                                className={`cursor-pointer border-2 rounded-2xl p-4 flex flex-col items-center justify-center transition-all ${mode === 'auto' ? 'border-cyan-500 bg-cyan-500/10' : 'border-white/5 bg-white/5 hover:border-white/20'}`}
+                                className={`cursor-pointer border-2 rounded-2xl p-4 flex flex-col items-center justify-center transition-all ${mode === 'auto' ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-500/10' : 'border-gray-200 dark:border-white/5 bg-slate-50 dark:bg-white/5 hover:border-gray-300 dark:hover:border-white/20'}`}
                             >
-                                <Settings className={mode === 'auto' ? "text-cyan-400" : "text-gray-500"} size={24} />
-                                <span className={`font-bold mt-2 text-sm ${mode === 'auto' ? 'text-white' : 'text-gray-400'}`}>
+                                <Settings className={mode === 'auto' ? "text-cyan-600 dark:text-cyan-400" : "text-slate-400 dark:text-gray-500"} size={24} />
+                                <span className={`font-bold mt-2 text-sm ${mode === 'auto' ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-gray-400'}`}>
                                     {mode === 'auto' ? 'Fully Automated Mode' : 'Manual Confirmation Mode'}
                                 </span>
                             </div>
@@ -657,58 +661,61 @@ const ArbitrageBot = () => {
                         <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-50 shadow-[0_0_15px_#22d3ee]"></div>
 
                         <div className="flex justify-between items-center mb-8">
-                            <h3 className="text-md font-bold flex items-center gap-3 text-white">
-                                <RefreshCw size={18} className={`text-cyan-400 ${isRunning ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
+                            <h3 className="text-md font-bold flex items-center gap-3 text-slate-900 dark:text-white">
+                                <RefreshCw size={18} className={`text-cyan-600 dark:text-cyan-400 ${isRunning ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
                                 Live Market Data
                             </h3>
                             {spread > 0 && (
-                                <span className="text-xs font-mono text-cyan-500 bg-cyan-950/30 px-2 py-1 rounded border border-cyan-500/20">Latency: ~Realtime</span>
+                                <span className="text-xs font-mono text-cyan-700 dark:text-cyan-500 bg-cyan-50 dark:bg-cyan-950/30 px-2 py-1 rounded border border-cyan-200 dark:border-cyan-500/20">Latency: ~Realtime</span>
                             )}
                         </div>
 
                         <div className="flex items-center justify-center gap-4 md:gap-12 py-4">
                             {/* Exchange A */}
                             <div className="text-center group">
-                                <div className="w-16 h-16 md:w-20 md:h-20 rounded-3xl bg-[#0A0A0A] flex items-center justify-center mx-auto mb-4 shadow-xl group-hover:scale-110 transition-transform border border-white/5 group-hover:border-blue-500/50 relative">
-                                    <span className="text-2xl font-bold text-blue-400">{exchangeA ? exchangeA[0] : '?'}</span>
-                                    <div className="absolute -bottom-1.5 -right-1.5 w-5 h-5 bg-emerald-500 border-4 border-slate-900 rounded-full shadow-[0_0_10px_#10b981]" title="API Connected"></div>
+                                <div className="w-16 h-16 md:w-20 md:h-20 rounded-3xl bg-slate-100 dark:bg-[#0A0A0A] flex items-center justify-center mx-auto mb-4 shadow-md dark:shadow-xl group-hover:scale-110 transition-transform border border-gray-200 dark:border-white/5 group-hover:border-blue-500/50 relative">
+                                    <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">{exchangeA ? exchangeA[0] : '?'}</span>
+                                    <div className="absolute -bottom-1.5 -right-1.5 w-5 h-5 bg-emerald-500 border-4 border-white dark:border-slate-900 rounded-full shadow-[0_0_10px_#10b981]" title="API Connected"></div>
                                 </div>
-                                <p className="font-bold text-white text-sm">{exchangeA || 'Select Exch'}</p>
-                                <p className="text-[10px] text-gray-500 max-w-[100px] truncate mx-auto mt-1">{apiKeyA || "No Key"}</p>
+                                <p className="font-bold text-slate-900 dark:text-white text-sm">{exchangeA || 'Select Exch'}</p>
+                                <p className="text-[10px] text-slate-500 dark:text-gray-500 max-w-[100px] truncate mx-auto mt-1">{apiKeyA || "No Key"}</p>
                             </div>
 
                             {/* Spread Animation */}
                             <div className="flex flex-col items-center flex-1 max-w-[240px]">
-                                <div className="text-[10px] text-gray-400 mb-3 uppercase tracking-widest font-bold">Spread Gap</div>
+                                <div className="text-[10px] text-slate-500 dark:text-gray-400 mb-3 uppercase tracking-widest font-bold">Spread Gap</div>
                                 <div className="flex items-center gap-2 w-full justify-center relative group">
-                                    <div className="h-2 w-full bg-[#0A0A0A] rounded-full overflow-hidden relative border border-white/5">
+                                    <div className="h-2 w-full bg-slate-200 dark:bg-[#0A0A0A] rounded-full overflow-hidden relative border border-gray-200 dark:border-white/5">
                                         <div className={`absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500 shadow-[0_0_15px_rgba(168,85,247,0.5)]`} style={{ width: `${Math.min(spread * 50, 100)}%` }}></div>
                                     </div>
                                 </div>
-                                <div className={`mt-4 text-4xl font-bold font-mono transition-all duration-300 ${spread > 1.0 ? 'text-emerald-400 drop-shadow-[0_0_15px_rgba(52,211,153,0.5)] scale-110' : 'text-gray-500'}`}>
+                                <div className={`mt-4 text-4xl font-bold font-mono transition-all duration-300 ${spread > 1.0 ? 'text-emerald-600 dark:text-emerald-400 drop-shadow-[0_0_15px_rgba(52,211,153,0.5)] scale-110' : 'text-slate-400 dark:text-gray-500'}`}>
                                     {spread.toFixed(2)}%
                                 </div>
                             </div>
 
                             {/* Exchange B */}
                             <div className="text-center group">
-                                <div className="w-16 h-16 md:w-20 md:h-20 rounded-3xl bg-[#0A0A0A] flex items-center justify-center mx-auto mb-4 shadow-xl group-hover:scale-110 transition-transform border border-white/5 group-hover:border-purple-500/50 relative">
-                                    <span className="text-2xl font-bold text-purple-400">{exchangeB ? exchangeB[0] : '?'}</span>
-                                    <div className="absolute -bottom-1.5 -right-1.5 w-5 h-5 bg-emerald-500 border-4 border-slate-900 rounded-full shadow-[0_0_10px_#10b981]" title="API Connected"></div>
+                                <div className="w-16 h-16 md:w-20 md:h-20 rounded-3xl bg-slate-100 dark:bg-[#0A0A0A] flex items-center justify-center mx-auto mb-4 shadow-md dark:shadow-xl group-hover:scale-110 transition-transform border border-gray-200 dark:border-white/5 group-hover:border-purple-500/50 relative">
+                                    <span className="text-2xl font-bold text-purple-600 dark:text-purple-400">{exchangeB ? exchangeB[0] : '?'}</span>
+                                    <div className="absolute -bottom-1.5 -right-1.5 w-5 h-5 bg-emerald-500 border-4 border-white dark:border-slate-900 rounded-full shadow-[0_0_10px_#10b981]" title="API Connected"></div>
                                 </div>
-                                <p className="font-bold text-white text-sm">{exchangeB || 'Select Exch'}</p>
-                                <p className="text-[10px] text-gray-500 max-w-[100px] truncate mx-auto mt-1">{apiKeyB || "No Key"}</p>
+                                <p className="font-bold text-slate-900 dark:text-white text-sm">{exchangeB || 'Select Exch'}</p>
+                                <p className="text-[10px] text-slate-500 dark:text-gray-500 max-w-[100px] truncate mx-auto mt-1">{apiKeyB || "No Key"}</p>
                             </div>
                         </div>
                     </GlassCard>
 
                     {/* Terminal Window */}
-                    <GlassCard className="flex flex-col h-[400px] bg-black/40 shadow-2xl">
+                    <GlassCard
+                        className="flex flex-col h-[400px]"
+                        surfaceClassName="bg-white/95 dark:bg-black/40 shadow-md dark:shadow-2xl"
+                    >
                         {/* Terminal Header */}
-                        <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between bg-black/20">
+                        <div className="px-5 py-3 border-b border-gray-200 dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-black/20">
                             <div className="flex items-center gap-3">
-                                <Terminal size={14} className="text-cyan-400" />
-                                <span className="font-mono text-xs text-gray-400 font-bold tracking-widest">SYSTEM_LOGS</span>
+                                <Terminal size={14} className="text-cyan-600 dark:text-cyan-400" />
+                                <span className="font-mono text-xs text-slate-600 dark:text-gray-400 font-bold tracking-widest">SYSTEM_LOGS</span>
                             </div>
                             <div className="flex gap-2">
                                 <div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/50"></div>
@@ -720,18 +727,18 @@ const ArbitrageBot = () => {
                         {/* Log Content */}
                         <div ref={logsEndRef} className="flex-1 p-5 overflow-y-auto font-mono text-xs space-y-2 custom-scrollbar">
                             {logs.length === 0 && (
-                                <div className="h-full flex flex-col items-center justify-center text-gray-600">
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-gray-600">
                                     <Monitor size={48} className="mb-4 opacity-20" />
                                     <p>Engine Interface Initialized. Waiting for data stream...</p>
                                 </div>
                             )}
                             {logs.map(log => (
-                                <div key={log.id} className="flex gap-3 hover:bg-white/5 p-1 rounded transition-colors group">
-                                    <span className="text-gray-600 select-none group-hover:text-gray-400 transition-colors">[{log.timestamp}]</span>
-                                    <span className={`${log.type === 'error' ? 'text-rose-400' :
-                                        log.type === 'success' ? 'text-emerald-400 font-bold drop-shadow-[0_0_5px_rgba(52,211,153,0.3)]' :
-                                            log.type === 'warning' ? 'text-amber-400' :
-                                                'text-gray-300'
+                                <div key={log.id} className="flex gap-3 hover:bg-slate-100 dark:hover:bg-white/5 p-1 rounded transition-colors group">
+                                    <span className="text-slate-400 dark:text-gray-600 select-none group-hover:text-slate-600 dark:group-hover:text-gray-400 transition-colors">[{log.timestamp}]</span>
+                                    <span className={`${log.type === 'error' ? 'text-rose-600 dark:text-rose-400' :
+                                        log.type === 'success' ? 'text-emerald-600 dark:text-emerald-400 font-bold drop-shadow-[0_0_5px_rgba(52,211,153,0.3)]' :
+                                            log.type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
+                                                'text-slate-700 dark:text-gray-300'
                                         }`}>
                                         {log.type === 'success' && '>>> '}
                                         {log.type === 'warning' && '!!! '}

@@ -45,6 +45,66 @@ function getAccessToken(): string | null {
   }
 }
 
+function isJwtExpired(token: string, skewSeconds = 15): boolean {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    const payload = JSON.parse(atob(padded)) as { exp?: number };
+    if (typeof payload.exp !== 'number') return false;
+    return payload.exp * 1000 <= Date.now() + skewSeconds * 1000;
+  } catch {
+    return false;
+  }
+}
+
+let inflightTokenRefresh: Promise<string | null> | null = null;
+
+async function getValidOrRefreshedAccessToken(): Promise<string | null> {
+  const token = getAccessToken();
+  if (!token) return null;
+  if (!isJwtExpired(token)) return token;
+
+  if (inflightTokenRefresh) {
+    return inflightTokenRefresh;
+  }
+
+  inflightTokenRefresh = (async () => {
+    try {
+      const isSessionStorage = Boolean(sessionStorage.getItem('refreshToken'));
+      const refreshToken =
+        sessionStorage.getItem('refreshToken') || localStorage.getItem('refreshToken');
+      if (!refreshToken) return null;
+
+      const res = await fetch('/api/v1/auth/refresh-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!res.ok) return null;
+
+      const data = (await res.json()) as { access_token?: string; refresh_token?: string };
+      if (!data?.access_token) return null;
+
+      if (isSessionStorage) {
+        sessionStorage.setItem('accessToken', data.access_token);
+        if (data.refresh_token) sessionStorage.setItem('refreshToken', data.refresh_token);
+      } else {
+        localStorage.setItem('accessToken', data.access_token);
+        if (data.refresh_token) localStorage.setItem('refreshToken', data.refresh_token);
+      }
+      return data.access_token;
+    } catch {
+      return null;
+    } finally {
+      inflightTokenRefresh = null;
+    }
+  })();
+
+  return inflightTokenRefresh;
+}
+
 function normalizePreferences(
   parsed: Partial<SysNotifPreferences> | null | undefined,
   fallback: SysNotifPreferences = DEFAULT_PREFERENCES
@@ -388,12 +448,25 @@ export function useSystemNotifications() {
       }
     };
 
-    const connect = () => {
+    const connect = async () => {
       if (!alive) return;
-      const token = getAccessToken();
-      if (!token) {
+      const rawToken = getAccessToken();
+      if (!rawToken) {
         setConnected(false);
-        reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+        reconnectTimer = setTimeout(() => {
+          void connect();
+        }, RECONNECT_DELAY_MS);
+        return;
+      }
+
+      const token = await getValidOrRefreshedAccessToken();
+      if (!alive) return;
+      if (!token) {
+        // Avoid spamming 403 Forbidden WebSocket handshakes with an expired unrefreshable token
+        setConnected(false);
+        reconnectTimer = setTimeout(() => {
+          void connect();
+        }, RECONNECT_DELAY_MS * 6);
         return;
       }
 
@@ -404,7 +477,9 @@ export function useSystemNotifications() {
       try {
         ws = new WebSocket(buildWsUrl(token));
       } catch {
-        reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+        reconnectTimer = setTimeout(() => {
+          void connect();
+        }, RECONNECT_DELAY_MS);
         return;
       }
 

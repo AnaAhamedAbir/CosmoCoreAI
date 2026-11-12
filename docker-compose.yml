@@ -119,6 +119,7 @@ services:
   frontend:
     build: ./frontend
     container_name: cosmoquant_frontend
+    restart: always
     volumes:
       - ./frontend:/app
       - /app/node_modules

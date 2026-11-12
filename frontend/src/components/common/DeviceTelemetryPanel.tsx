@@ -1,6 +1,20 @@
 import React from 'react';
-import { Cpu, HardDrive, MemoryStick, Thermometer, MonitorSmartphone, Server, RefreshCw, BatteryCharging, Battery } from 'lucide-react';
+import {
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  Thermometer,
+  MonitorSmartphone,
+  Server,
+  RefreshCw,
+  BatteryCharging,
+  Battery,
+  Wifi,
+  Download,
+  CheckCircle2,
+} from 'lucide-react';
 import { useClientHardwareMonitor, ThermalRiskLevel } from '@/hooks/useClientHardwareMonitor';
+import { usePwaInstall } from '@/hooks/usePwaInstall';
 import type { ThermalMode } from '@/utils/deviceProfile';
 
 interface DeviceTelemetryPanelProps {
@@ -48,8 +62,31 @@ const RISK_STYLE: Record<ThermalRiskLevel, { badge: string; dot: string }> = {
   },
 };
 
+const getLatencyTone = (ms: number | null | undefined): string => {
+  if (ms === null || ms === undefined) return 'text-gray-400';
+  if (ms < 60) return 'text-emerald-400';
+  if (ms < 150) return 'text-amber-400';
+  return 'text-rose-400';
+};
+
+const formatMs = (ms: number | null | undefined): string => {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return '-- ms';
+  return `${Math.round(ms)} ms`;
+};
+
 const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) => {
-  const { profile, client, vps, vpsLoading, vpsError, setThermalMode, refreshNow } = useClientHardwareMonitor(active);
+  const {
+    profile,
+    client,
+    vps,
+    clientToVpsMs,
+    clientToVpsJitterMs,
+    vpsLoading,
+    vpsError,
+    setThermalMode,
+    refreshNow,
+  } = useClientHardwareMonitor(active);
+  const pwa = usePwaInstall();
 
   const clientHeapPct =
     client.ram.heapUsedMb !== null && client.ram.heapLimitMb
@@ -65,7 +102,7 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
         : 'DESKTOP PC';
 
   return (
-    <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
+    <div className="flex-1 min-h-0 overflow-y-auto touch-pan-y overscroll-contain p-3 space-y-3 scrollbar-thin">
       {/* ─── Section 1: Client Device (Auto-Detected) ─── */}
       <div className="rounded-xl border border-violet-500/25 bg-black/25 dark:bg-white/[0.03] p-3 space-y-2.5">
         <div className="flex items-start justify-between gap-2">
@@ -132,7 +169,7 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
                 <Cpu className="w-3 h-3 text-sky-400" /> CPU
               </span>
               <span className="font-mono font-bold text-gray-900 dark:text-white">
-                {client.cpu.cores ? `${client.cpu.cores} Cores` : 'N/A'} • {client.cpu.fps || '--'} FPS
+                {client.cpu.cores ? `${client.cpu.cores} Threads` : 'N/A'} • {client.cpu.fps || '--'} FPS
               </span>
             </div>
             <div className="h-1.5 rounded-full bg-gray-300 dark:bg-white/10 overflow-hidden">
@@ -156,7 +193,11 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
                 <MemoryStick className="w-3 h-3 text-purple-400" /> RAM
               </span>
               <span className="font-mono font-bold text-gray-900 dark:text-white">
-                {client.ram.deviceMemoryGb ? `${client.ram.deviceMemoryGb} GB Tier` : 'Tier Hidden'}
+                {client.ram.deviceMemoryGb
+                  ? `${client.ram.deviceMemoryGb} GB Tier`
+                  : client.isSecureContext
+                  ? 'Tier Hidden'
+                  : 'HTTPS Required'}
               </span>
             </div>
             <div className="h-1.5 rounded-full bg-gray-300 dark:bg-white/10 overflow-hidden">
@@ -182,7 +223,11 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
                 <HardDrive className="w-3 h-3 text-emerald-400" /> STORAGE
               </span>
               <span className="font-mono font-bold text-gray-900 dark:text-white">
-                {client.rom.quotaMb !== null ? formatMb(client.rom.quotaMb) : 'N/A'} Quota
+                {client.rom.quotaMb !== null
+                  ? `${formatMb(client.rom.quotaMb)} Quota`
+                  : client.isSecureContext
+                  ? 'N/A Quota'
+                  : 'HTTPS Required'}
               </span>
             </div>
             <div className="h-1.5 rounded-full bg-gray-300 dark:bg-white/10 overflow-hidden">
@@ -192,7 +237,14 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
               />
             </div>
             <div className="flex items-center justify-between text-[8.5px] font-mono text-gray-500 dark:text-gray-400">
-              <span>App Cache: {formatMb(client.rom.usedMb)}</span>
+              <span>
+                App Cache:{' '}
+                {client.rom.usedMb !== null
+                  ? formatMb(client.rom.usedMb)
+                  : client.isSecureContext
+                  ? 'N/A'
+                  : 'HTTPS Required'}
+              </span>
               <span>ROM sandboxed</span>
             </div>
           </div>
@@ -375,6 +427,111 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
             ))}
           </div>
         )}
+      </div>
+
+      {/* ─── Section 3: Network & Exchange Latency + PWA App Status ─── */}
+      <div className="rounded-xl border border-emerald-500/25 bg-black/25 dark:bg-white/[0.03] p-3 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
+              <Wifi className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-[10px] font-black tracking-wider uppercase text-gray-900 dark:text-white block">
+                Network &amp; Exchange Latency
+              </span>
+              <p className="text-[10px] text-gray-600 dark:text-gray-400 truncate">
+                Device ↔ VPS RTT &amp; VPS → Binance API / WS Ping
+              </p>
+            </div>
+          </div>
+
+          {vps?.network && (
+            <span
+              className={`px-1.5 py-0.5 text-[8.5px] font-black uppercase rounded border ${
+                vps.network.status === 'optimal'
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                  : vps.network.status === 'good'
+                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                    : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+              }`}
+            >
+              {vps.network.status}
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="rounded-lg bg-black/10 dark:bg-black/30 border border-white/5 p-2 space-y-0.5">
+            <span className="text-[8.5px] font-bold text-gray-500 dark:text-gray-400 block">DEVICE ↔ VPS</span>
+            <span className={`text-xs font-mono font-black ${getLatencyTone(clientToVpsMs)}`}>
+              {formatMs(clientToVpsMs)}
+            </span>
+            <span className="text-[8px] font-mono text-gray-500 block">
+              Jitter: {clientToVpsJitterMs !== null ? `${clientToVpsJitterMs} ms` : '--'}
+            </span>
+          </div>
+
+          <div className="rounded-lg bg-black/10 dark:bg-black/30 border border-white/5 p-2 space-y-0.5">
+            <span className="text-[8.5px] font-bold text-gray-500 dark:text-gray-400 block">VPS → SPOT REST</span>
+            <span className={`text-xs font-mono font-black ${getLatencyTone(vps?.network?.binance_spot_ms)}`}>
+              {formatMs(vps?.network?.binance_spot_ms)}
+            </span>
+            <span className="text-[8px] font-mono text-gray-500 block">api.binance.com</span>
+          </div>
+
+          <div className="rounded-lg bg-black/10 dark:bg-black/30 border border-white/5 p-2 space-y-0.5">
+            <span className="text-[8.5px] font-bold text-gray-500 dark:text-gray-400 block">VPS → FUTURES REST</span>
+            <span className={`text-xs font-mono font-black ${getLatencyTone(vps?.network?.binance_futures_ms)}`}>
+              {formatMs(vps?.network?.binance_futures_ms)}
+            </span>
+            <span className="text-[8px] font-mono text-gray-500 block">fapi.binance.com</span>
+          </div>
+
+          <div className="rounded-lg bg-black/10 dark:bg-black/30 border border-white/5 p-2 space-y-0.5">
+            <span className="text-[8.5px] font-bold text-gray-500 dark:text-gray-400 block">VPS → BINANCE WS</span>
+            <span className={`text-xs font-mono font-black ${getLatencyTone(vps?.network?.binance_ws_ms)}`}>
+              {formatMs(vps?.network?.binance_ws_ms)}
+            </span>
+            <span className="text-[8px] font-mono text-gray-500 block">stream.binance:9443</span>
+          </div>
+        </div>
+
+        {/* PWA Install Bar */}
+        <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/10">
+          <div className="min-w-0">
+            <span className="text-[9.5px] font-bold text-gray-700 dark:text-gray-200 block">
+              Mobile / Tablet PWA App Mode
+            </span>
+            <span className="text-[8.5px] font-mono text-gray-500 dark:text-gray-400 truncate block">
+              {pwa.isInstalled
+                ? 'Running in full-screen standalone PWA mode (reduced Chrome UI overhead)'
+                : !pwa.isSecureContext
+                  ? 'Open via HTTPS to unlock 1-tap Chrome PWA Install on A34 & Redmi Pad 2 Pro'
+                  : pwa.canPromptInstall
+                    ? 'Ready to install as standalone app (faster & cooler than browser tab)'
+                    : 'Use Chrome menu (⋮) → Install App / Add to Home Screen'}
+            </span>
+          </div>
+
+          {pwa.isInstalled ? (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex-shrink-0">
+              <CheckCircle2 className="w-3 h-3" /> INSTALLED
+            </span>
+          ) : pwa.canPromptInstall ? (
+            <button
+              type="button"
+              onClick={() => void pwa.promptInstall()}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[9.5px] font-black bg-violet-600 hover:bg-violet-500 text-white shadow-sm transition-colors cursor-pointer flex-shrink-0"
+            >
+              <Download className="w-3 h-3" /> Install App
+            </button>
+          ) : (
+            <span className="px-2 py-1 rounded-lg text-[8.5px] font-mono bg-white/5 text-gray-400 border border-white/10 flex-shrink-0">
+              {pwa.isSecureContext ? (pwa.swRegistered ? 'SW READY' : 'MENU INSTALL') : 'HTTPS NEEDED'}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

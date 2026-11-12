@@ -1,4 +1,5 @@
 
+import asyncio
 import logging
 import os
 import platform
@@ -10,6 +11,10 @@ try:
     import psutil
 except ImportError:
     psutil = None  # type: ignore[assignment]
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None  # type: ignore[assignment]
 from sqlalchemy.sql import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
@@ -253,3 +258,93 @@ class SystemService:
             },
             "temperature": temp_info,
         }
+
+    _binance_latency_cache: Optional[Dict[str, Any]] = None
+    _binance_latency_cached_at: float = 0.0
+    _BINANCE_CACHE_TTL_SEC: float = 8.0
+
+    @classmethod
+    async def measure_binance_latency(cls, force: bool = False) -> Dict[str, Any]:
+        """Measure VPS-to-Binance REST & WebSocket edge latency with short TTL cache."""
+        now = time.monotonic()
+        if (
+            not force
+            and cls._binance_latency_cache is not None
+            and (now - cls._binance_latency_cached_at) < cls._BINANCE_CACHE_TTL_SEC
+        ):
+            return {**cls._binance_latency_cache, "cached": True}
+
+        async def _probe_http(session: Any, url: str) -> Optional[float]:
+            t0 = time.perf_counter()
+            try:
+                if session is not None:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=2.5)) as resp:
+                        await resp.read()
+                        if 200 <= resp.status < 400:
+                            return round((time.perf_counter() - t0) * 1000.0, 1)
+                else:
+                    import urllib.request
+
+                    def _sync_get() -> int:
+                        req = urllib.request.Request(url, method="GET")
+                        with urllib.request.urlopen(req, timeout=2.5) as r:
+                            return getattr(r, "status", 200)
+
+                    status = await asyncio.to_thread(_sync_get)
+                    if 200 <= status < 400:
+                        return round((time.perf_counter() - t0) * 1000.0, 1)
+            except Exception:
+                return None
+            return None
+
+        async def _probe_tcp(host: str, port: int) -> Optional[float]:
+            t0 = time.perf_counter()
+            writer = None
+            try:
+                _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=2.5)
+                return round((time.perf_counter() - t0) * 1000.0, 1)
+            except Exception:
+                return None
+            finally:
+                if writer is not None:
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
+
+        spot_ms: Optional[float] = None
+        futures_ms: Optional[float] = None
+        ws_ms: Optional[float] = None
+
+        if aiohttp is not None:
+            async with aiohttp.ClientSession() as session:
+                spot_ms, futures_ms, ws_ms = await asyncio.gather(
+                    _probe_http(session, "https://api.binance.com/api/v3/ping"),
+                    _probe_http(session, "https://fapi.binance.com/fapi/v1/ping"),
+                    _probe_tcp("stream.binance.com", 9443),
+                )
+        else:
+            spot_ms, futures_ms, ws_ms = await asyncio.gather(
+                _probe_http(None, "https://api.binance.com/api/v3/ping"),
+                _probe_http(None, "https://fapi.binance.com/fapi/v1/ping"),
+                _probe_tcp("stream.binance.com", 9443),
+            )
+
+        samples = [v for v in (spot_ms, futures_ms, ws_ms) if v is not None]
+        if not samples:
+            status = "unreachable"
+        else:
+            avg_ms = sum(samples) / len(samples)
+            status = "optimal" if avg_ms < 80 else "good" if avg_ms < 180 else "degraded"
+
+        result = {
+            "binance_spot_ms": spot_ms,
+            "binance_futures_ms": futures_ms,
+            "binance_ws_ms": ws_ms,
+            "status": status,
+            "cached": False,
+        }
+        cls._binance_latency_cache = result
+        cls._binance_latency_cached_at = time.monotonic()
+        return result

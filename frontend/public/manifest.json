@@ -1,25 +1,37 @@
 {
+  "id": "/",
+  "scope": "/",
+  "start_url": "/",
   "short_name": "CosmoQuant",
   "name": "CosmoQuant AI Trading Terminal",
   "description": "High-Frequency AI & Quantitative Trading Terminal",
   "icons": [
     {
-      "src": "/logo.png",
+      "src": "/pwa-192.png",
       "type": "image/png",
       "sizes": "192x192",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/logo.png",
+      "src": "/pwa-512.png",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ],
-  "start_url": "/",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "background_color": "#090b10",
+  "theme_color": "#090b10",
   "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
   "orientation": "any",
   "categories": [
     "finance",
@@ -27,4 +39,3 @@
     "utilities"
   ]
 }
-

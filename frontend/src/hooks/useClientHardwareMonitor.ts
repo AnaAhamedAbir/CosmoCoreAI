@@ -11,6 +11,7 @@ export interface ClientHardwareTelemetry {
   browserSummary: string;
   gpuRenderer: string | null;
   screenInfo: string;
+  isSecureContext: boolean;
   cpu: {
     cores: number | null;
     pressure: PressureState;
@@ -45,6 +46,8 @@ export interface HardwareMonitorState {
   profile: DeviceThermalProfile;
   client: ClientHardwareTelemetry;
   vps: VpsHardwareTelemetry | null;
+  clientToVpsMs: number | null;
+  clientToVpsJitterMs: number | null;
   vpsLoading: boolean;
   vpsError: string | null;
   lastUpdatedAt: number | null;
@@ -151,16 +154,29 @@ export function useClientHardwareMonitor(enabled: boolean): HardwareMonitorState
   });
 
   const [vps, setVps] = useState<VpsHardwareTelemetry | null>(null);
+  const [clientToVpsMs, setClientToVpsMs] = useState<number | null>(null);
+  const [clientToVpsJitterMs, setClientToVpsJitterMs] = useState<number | null>(null);
   const [vpsLoading, setVpsLoading] = useState<boolean>(false);
   const [vpsError, setVpsError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
-  const fetchVpsTelemetry = useCallback(async (showSpinner = false) => {
+  const fetchVpsTelemetry = useCallback(async (showSpinner = false, forceLatencyProbe = false) => {
     if (typeof document !== 'undefined' && document.hidden) return;
     if (showSpinner) setVpsLoading(true);
     try {
-      const data = await systemService.getHardwareTelemetry();
+      const [data, rttMs] = await Promise.all([
+        systemService.getHardwareTelemetry(forceLatencyProbe),
+        systemService.pingServerRtt().catch(() => null),
+      ]);
       setVps(data);
+      if (rttMs !== null) {
+        setClientToVpsMs((prev) => {
+          if (prev !== null) {
+            setClientToVpsJitterMs(Math.round(Math.abs(rttMs - prev) * 10) / 10);
+          }
+          return rttMs;
+        });
+      }
       setVpsError(null);
       setLastUpdatedAt(Date.now());
     } catch (err: unknown) {
@@ -386,6 +402,8 @@ export function useClientHardwareMonitor(enabled: boolean): HardwareMonitorState
       ? ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? null)
       : null;
 
+  const isSecureContext = typeof window !== 'undefined' ? Boolean(window.isSecureContext) : false;
+
   return {
     profile,
     client: {
@@ -393,6 +411,7 @@ export function useClientHardwareMonitor(enabled: boolean): HardwareMonitorState
       browserSummary: browser,
       gpuRenderer,
       screenInfo,
+      isSecureContext,
       cpu: {
         cores: typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || null : null,
         pressure: cpuPressure,
@@ -418,6 +437,8 @@ export function useClientHardwareMonitor(enabled: boolean): HardwareMonitorState
       },
     },
     vps,
+    clientToVpsMs,
+    clientToVpsJitterMs,
     vpsLoading,
     vpsError,
     lastUpdatedAt,
@@ -425,7 +446,7 @@ export function useClientHardwareMonitor(enabled: boolean): HardwareMonitorState
       setThermalModeOverride(mode);
     },
     refreshNow: () => {
-      void fetchVpsTelemetry(true);
+      void fetchVpsTelemetry(true, true);
     },
   };
 }

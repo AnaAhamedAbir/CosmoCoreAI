@@ -607,7 +607,6 @@ const SystemAlertWidget: React.FC = () => {
             maxWidth: 'calc(100vw - 20px)',
             transformOrigin: 'top left',
             willChange: isDragging ? 'top, left' : 'auto',
-            touchAction: 'none',
           }}
         >
         {/* Outer glow border */}
@@ -734,7 +733,7 @@ const SystemAlertWidget: React.FC = () => {
             </div>
 
             {/* ── Tab Content ── */}
-            <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
               {tab === 'alerts' ? (
                 <>
                   <div className="flex-shrink-0 flex items-center justify-between px-4 py-1.5 border-b" style={{ borderColor: document.documentElement.classList.contains('dark') ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.06)' }}>

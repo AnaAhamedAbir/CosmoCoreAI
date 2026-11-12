@@ -40,6 +40,13 @@ export interface VpsHardwareTelemetry {
         sensor_label: string | null;
         available: boolean;
     };
+    network?: {
+        binance_spot_ms: number | null;
+        binance_futures_ms: number | null;
+        binance_ws_ms: number | null;
+        status: 'optimal' | 'good' | 'degraded' | 'unreachable';
+        cached: boolean;
+    };
     timestamp: string;
 }
 
@@ -59,9 +66,17 @@ export const systemService = {
         return response.data;
     },
 
-    getHardwareTelemetry: async (): Promise<VpsHardwareTelemetry> => {
-        const response = await client.get('/system/hardware-telemetry');
+    getHardwareTelemetry: async (refresh = false): Promise<VpsHardwareTelemetry> => {
+        const response = await client.get('/system/hardware-telemetry', {
+            params: refresh ? { refresh: true } : undefined,
+        });
         return response.data;
+    },
+
+    pingServerRtt: async (): Promise<number> => {
+        const t0 = performance.now();
+        await client.get('/system/ping', { params: { _t: Date.now() } });
+        return Math.round((performance.now() - t0) * 10) / 10;
     },
 
     getAutoArchiverStatus: async () => {

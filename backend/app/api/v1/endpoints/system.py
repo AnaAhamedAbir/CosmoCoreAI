@@ -165,13 +165,21 @@ async def health_check(
     return status_data
 
 
+@router.get("/ping")
+async def ping_server():
+    """Lightweight ping endpoint for measuring pure Device-to-VPS network RTT."""
+    return {"ok": True, "ts": datetime.now(pytz.utc).isoformat()}
+
+
 @router.get("/hardware-telemetry")
 async def get_vps_hardware_telemetry(
+    refresh: bool = False,
     current_user: models.User = Depends(deps.get_current_active_user)
 ):
-    """Return live VPS host CPU, RAM, disk/ROM, uptime, and temperature telemetry."""
+    """Return live VPS host CPU, RAM, disk/ROM, uptime, temperature, and Binance network latency."""
     try:
         data = SystemService.get_hardware_telemetry()
+        data["network"] = await SystemService.measure_binance_latency(force=refresh)
         data["timestamp"] = datetime.now(pytz.utc).isoformat()
         return data
     except Exception as e:

@@ -1,9 +1,9 @@
 // CosmoQuantAI PWA Service Worker
-const CACHE_NAME = 'cosmoquant-cache-v2';
+const CACHE_NAME = 'cosmoquant-cache-v3';
 const PRECACHE_ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.json',
+  '/pwa-192.png',
+  '/pwa-512.png',
   '/logo.png'
 ];
 
@@ -24,6 +24,7 @@ self.addEventListener('activate', (event) => {
           if (key !== CACHE_NAME) {
             return caches.delete(key);
           }
+          return undefined;
         })
       );
     })
@@ -32,41 +33,70 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only handle GET requests and skip WebSocket/API requests
+  const req = event.request;
+  // Only handle same-origin GET requests; never intercept API, WebSockets, or cross-origin exchange traffic
   if (
-    event.request.method !== 'GET' ||
-    event.request.url.includes('/api/') ||
-    event.request.url.includes('/market-depth/') ||
-    event.request.url.includes('/ws') ||
-    event.request.url.startsWith('ws://') ||
-    event.request.url.startsWith('wss://')
+    req.method !== 'GET' ||
+    !req.url.startsWith(self.location.origin) ||
+    req.url.includes('/api/') ||
+    req.url.includes('/market-depth/') ||
+    req.url.includes('/ws')
   ) {
     return;
   }
 
-  // Network-first strategy for fast live updates, fallback to cache for offline static assets
+  const isStaticAsset =
+    req.url.includes('/assets/') ||
+    req.destination === 'script' ||
+    req.destination === 'style' ||
+    req.destination === 'image' ||
+    req.destination === 'font';
+
+  if (isStaticAsset) {
+    // Stale-while-revalidate for static assets to reduce mobile radio wakeups & speed up PWA boot
+    event.respondWith(
+      caches.open(CACHE_NAME).then(async (cache) => {
+        const cached = await cache.match(req);
+        const networkPromise = fetch(req)
+          .then((res) => {
+            if (res && res.status === 200 && res.type === 'basic') {
+              cache.put(req, res.clone()).catch(() => {});
+            }
+            return res;
+          })
+          .catch(
+            () =>
+              cached ||
+              new Response('Offline', {
+                status: 503,
+                statusText: 'Service Unavailable',
+                headers: { 'Content-Type': 'text/plain' }
+              })
+          );
+        return cached || networkPromise;
+      })
+    );
+    return;
+  }
+
+  // Network-first for HTML navigation so deployments always serve fresh UI
   event.respondWith(
-    fetch(event.request)
-      .then((networkResponse) => {
-        return networkResponse;
-      })
-      .catch(async () => {
-        const cachedResponse = await caches.match(event.request);
-        if (cachedResponse) {
-          return cachedResponse;
+    fetch(req).catch(async () => {
+      const cachedResponse = await caches.match(req);
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+      if (req.mode === 'navigate') {
+        const fallbackIndex = (await caches.match('/index.html')) || (await caches.match('/'));
+        if (fallbackIndex) {
+          return fallbackIndex;
         }
-        if (event.request.mode === 'navigate') {
-          const fallbackIndex = (await caches.match('/index.html')) || (await caches.match('/'));
-          if (fallbackIndex) {
-            return fallbackIndex;
-          }
-        }
-        return new Response('Network error occurred', {
-          status: 503,
-          statusText: 'Service Unavailable',
-          headers: { 'Content-Type': 'text/plain' }
-        });
-      })
+      }
+      return new Response('Network error occurred', {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: { 'Content-Type': 'text/plain' }
+      });
+    })
   );
 });
-

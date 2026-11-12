@@ -1837,7 +1837,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       }
 
       const dropPrice = result.price;
-      const toastId = toast.loading(`Placing ${type.toUpperCase()} at ${dropPrice < 1 ? dropPrice.toFixed(6) : dropPrice.toFixed(4)}...`);
+      const buyBackSuffix = (type === 'sl' && dropPrice > (effectiveCurrentPrice || 0)) ? ' (BUY-BACK)' : (type === 'tp' && dropPrice < (effectiveCurrentPrice || 0) ? ' (DIP BUY-BACK)' : '');
+      const toastId = toast.loading(`Placing ${type.toUpperCase()}${buyBackSuffix} at ${dropPrice < 1 ? dropPrice.toFixed(6) : dropPrice.toFixed(4)}...`);
 
       try {
         let targetAmount: number | undefined = undefined;
@@ -1846,9 +1847,24 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
         const resolveTargetFromForceOrder = (target: (typeof forceOrderTargets)[number]) => {
           const isExitOrder = Boolean(target.isSoftwareSL || target.mode === 'TP');
-          const resolvedSide: 'buy' | 'sell' = isExitOrder
+          let resolvedSide: 'buy' | 'sell' = isExitOrder
             ? (target.side === 'buy' ? 'sell' : 'buy')
             : (target.side === 'buy' ? 'buy' : 'sell');
+
+          // Spot / Cash Swing & Chart Geometry Alignment:
+          // SL above market -> Buy-Back SL (exit is Buy, so swing entry_side is 'sell').
+          // SL below market -> Long SL (exit is Sell, so swing entry_side is 'buy').
+          // TP above market -> Long TP (exit is Sell, so swing entry_side is 'buy').
+          // TP below market -> Dip Buy-Back TP (exit is Buy, so swing entry_side is 'sell').
+          const currentPx = effectiveCurrentPrice || 0;
+          if (currentPx > 0 && dropPrice > 0) {
+            if (type === 'sl') {
+              resolvedSide = dropPrice > currentPx ? 'sell' : 'buy';
+            } else if (type === 'tp') {
+              resolvedSide = dropPrice > currentPx ? 'buy' : 'sell';
+            }
+          }
+
           let resolvedAmount = target.amount;
           if (
             isInverseFutures &&
@@ -1899,10 +1915,25 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           if (size && Number(size) > 0) {
             targetAmount = sizeMode === 'quote' && dropPrice > 0 ? Number(size) / dropPrice : Number(size);
           } else if (balanceData) {
-            if (targetSide === 'sell' && (balanceData.quote_free || 0) > 0 && dropPrice > 0) {
-              targetAmount = balanceData.quote_free / dropPrice;
-            } else if ((balanceData.base_free || 0) > 0) {
-              targetAmount = balanceData.base_free;
+            const effectiveQuote = (balanceData.quote_free || 0) > 0
+              ? (balanceData.quote_free || 0)
+              : ((balanceData.quote_total || 0) > 0 ? (balanceData.quote_total || 0) : 0);
+            const effectiveBase = (balanceData.base_free || 0) > 0
+              ? (balanceData.base_free || 0)
+              : ((balanceData.base_total || 0) > 0 ? (balanceData.base_total || 0) : 0);
+
+            if (targetSide === 'sell') {
+              if (effectiveQuote > 0 && dropPrice > 0) {
+                targetAmount = effectiveQuote / dropPrice;
+              } else if (effectiveBase > 0) {
+                targetAmount = effectiveBase;
+              }
+            } else {
+              if (effectiveBase > 0) {
+                targetAmount = effectiveBase;
+              } else if (effectiveQuote > 0 && dropPrice > 0) {
+                targetAmount = effectiveQuote / dropPrice;
+              }
             }
           }
         }
@@ -1952,7 +1983,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           targetOrderId: targetOrderId,
         });
 
-        toast.success(res.message || `✅ ${type.toUpperCase()} placed at ${dropPrice < 1 ? dropPrice.toFixed(6) : dropPrice.toFixed(4)}`, { id: toastId });
+        toast.success(res.message || `✅ ${type.toUpperCase()}${buyBackSuffix} placed at ${dropPrice < 1 ? dropPrice.toFixed(6) : dropPrice.toFixed(4)}`, { id: toastId });
 
         fetchBalance(true);
         fetchActiveBrackets(true);

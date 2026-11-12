@@ -777,7 +777,12 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             const isTP = type === 'tp';
             const color = isTP ? '#22c55e' : '#ef4444';
             const formattedPrice = price < 1 ? price.toFixed(6) : price.toFixed(4);
-            const title = isTP ? `🎯 DROP TO SET TP (${formattedPrice})` : `🛡️ DROP TO SET SL (${formattedPrice})`;
+            const liveRefPrice = smcDataRef.current?.currentPrice || currentPrice || 0;
+            const isBuyBackSL = !isTP && liveRefPrice > 0 && price > liveRefPrice;
+            const isDipBuyTP = isTP && liveRefPrice > 0 && price < liveRefPrice;
+            const title = isTP
+                ? (isDipBuyTP ? `🎯 DROP TO SET DIP BUY-BACK TP (${formattedPrice})` : `🎯 DROP TO SET TP (${formattedPrice})`)
+                : (isBuyBackSL ? `🛡️ DROP TO SET BUY-BACK SL (${formattedPrice})` : `🛡️ DROP TO SET SL (${formattedPrice})`);
 
             if (!chartBracketGhostLineRef.current) {
                 chartBracketGhostLineRef.current = candlestickSeriesRef.current?.createPriceLine({

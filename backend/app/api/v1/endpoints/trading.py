@@ -528,9 +528,11 @@ def _is_exit_tp_order(order: dict, opposite_side: str, ref_sl_price: float, curr
     px = float(order.get('price') or order.get('stopPrice') or 0.0)
     if px <= 0:
         return False
+    # If exit is SELL (Long TP), TP price must be above SL trigger (and above current price if beyond market required)
     if opposite_side.lower() == 'sell':
-        return px > max(ref_sl_price, current_px) if require_beyond_market else px > ref_sl_price
-    return (px < min(ref_sl_price, current_px)) if require_beyond_market else (px < ref_sl_price)
+        return px > max(ref_sl_price, current_px * 0.999) if require_beyond_market else px > ref_sl_price
+    # If exit is BUY (Short / Dip Buy-Back TP), TP price must be below SL trigger (and below current price if beyond market required)
+    return (px < min(ref_sl_price, current_px * 1.001)) if require_beyond_market else (px < ref_sl_price)
 
 
 async def _cancel_exchange_order_safe(exchange, order_id: str, symbol: str, is_futures: bool, cancelled_ids: set):
@@ -777,7 +779,16 @@ async def place_drag_bracket_endpoint(
         # Unified target_order_id / active bracket / open order resolution (Spot & Futures)
         cached_open_orders = None
         matched_target_amount = 0.0
+        has_known_in_memory_bracket = False
         if req.target_order_id:
+            ref_str = str(req.target_order_id)
+            if (
+                ref_str in BracketOrderService.ACTIVE_ENTRY_BRACKETS
+                or ref_str in BracketOrderService.ACTIVE_SOFTWARE_SL
+                or any(str(eb.get('tp_order_id') or '') == ref_str for eb in BracketOrderService.ACTIVE_ENTRY_BRACKETS.values())
+            ):
+                has_known_in_memory_bracket = True
+
             amount, entry_side, matched_target_amount, cached_open_orders = await _resolve_drag_target_ref(
                 exchange=exchange,
                 symbol=req.symbol,
@@ -837,10 +848,34 @@ async def place_drag_bracket_endpoint(
                     except Exception:
                         pass
 
-        # Chart drop position heuristic fallback ONLY when entry_side wasn't explicitly provided or resolved from target/position:
-        # TP above market = Sell TP (Long) | TP below market = Buy TP (Dip Buy-Back)
-        # SL below market = Sell SL (Long) | SL above market = Buy SL (Smart Chase Buy-Back)
-        if entry_side is None:
+        # Market Geometry Validation & Spot Cash Swing Alignment:
+        # A Stop-Loss (SL) placed ABOVE market price (final_price > current_px) is GUARANTEED to be a BUY exit:
+        # - In Spot: Smart Chase Buy-Back (protecting a cash position against upward pump; swing entry_side='sell').
+        # - In Futures: Short Stop-Loss (protecting a short position; entry_side='sell').
+        # Any attempt to treat an SL above market as a 'sell' exit will trigger immediately (current_price <= sl_price).
+        # Conversely, an SL placed BELOW market price (final_price < current_px) is a SELL exit (entry_side='buy').
+        #
+        # A Take-Profit (TP) placed ABOVE market price (final_price > current_px) is a SELL exit (entry_side='buy').
+        # A Take-Profit (TP) placed BELOW market price (final_price < current_px) is a BUY exit (Dip Buy-Back TP, entry_side='sell').
+        # (Exception: if an active entry bracket ALREADY exists in memory with a verified side, keep its known side).
+        if current_px > 0 and final_price > 0:
+            if bracket_type == 'sl':
+                expected_entry = 'sell' if final_price > current_px else 'buy'
+                if entry_side != expected_entry:
+                    logger.info(
+                        f"🧭 Corrected drag SL entry_side from '{entry_side}' to '{expected_entry}' based on chart geometry "
+                        f"(SL {final_price} {'above' if final_price > current_px else 'below'} market {current_px})"
+                    )
+                    entry_side = expected_entry
+            elif bracket_type == 'tp' and not has_known_in_memory_bracket:
+                expected_entry = 'buy' if final_price > current_px else 'sell'
+                if entry_side != expected_entry:
+                    logger.info(
+                        f"🧭 Corrected drag TP entry_side from '{entry_side}' to '{expected_entry}' based on chart geometry "
+                        f"(TP {final_price} {'above' if final_price > current_px else 'below'} market {current_px})"
+                    )
+                    entry_side = expected_entry
+        elif entry_side is None:
             if bracket_type == 'tp':
                 entry_side = 'buy' if final_price > current_px else 'sell'
             else:
@@ -851,16 +886,22 @@ async def place_drag_bracket_endpoint(
             bal = await manual_trade_service.get_fast_balance(db, current_user.id, req.api_key_id, req.symbol)
             base_free = float(bal.get('base_free') or 0.0)
             quote_free = float(bal.get('quote_free') or 0.0)
+            quote_used = float(bal.get('quote_used') or 0.0)
+            quote_total = float(bal.get('quote_total') or 0.0)
+            base_total = float(bal.get('base_total') or 0.0)
+            effective_quote = quote_free if quote_free > 0 else (quote_total if quote_total > 0 else quote_used)
+            effective_base = base_free if base_free > 0 else base_total
+
             if entry_side == 'sell':
-                if quote_free > 0 and final_price > 0:
-                    amount = quote_free / final_price
-                elif base_free > 0:
-                    amount = base_free
+                if effective_quote > 0 and final_price > 0:
+                    amount = effective_quote / final_price
+                elif effective_base > 0:
+                    amount = effective_base
             else:
-                if base_free > 0:
-                    amount = base_free
-                elif quote_free > 0 and final_price > 0:
-                    amount = quote_free / final_price
+                if effective_base > 0:
+                    amount = effective_base
+                elif effective_quote > 0 and final_price > 0:
+                    amount = effective_quote / final_price
 
         # 4. Format amount with exchange precision
         final_amount = BracketOrderService._safe_amount_to_precision(exchange, req.symbol, amount)
@@ -953,13 +994,14 @@ async def place_drag_bracket_endpoint(
 
                 manual_trade_service.invalidate_open_orders_cache(api_key_record.id, req.symbol)
                 sl_mode_label = str(sl_meta.get('type', 'smart_chase')).replace('_', ' ').title()
+                buyback_tag = " (Buy-Back)" if opposite_side == 'buy' else ""
                 return {
                     "status": "success",
                     "bracket_type": "sl",
                     "price": final_price,
                     "amount": sl_meta.get('amount', final_amount),
                     "entry_side": entry_side,
-                    "message": f"🛡️ {sl_mode_label} Stop-Loss updated to {final_price} for {sl_meta.get('amount', final_amount)} {req.symbol}"
+                    "message": f"🛡️ {sl_mode_label} Stop-Loss{buyback_tag} updated to {final_price} for {sl_meta.get('amount', final_amount)} {req.symbol}"
                 }
             else:
                 # No active SL exists yet — resolve any linked TP and spawn a software SL synchronously
@@ -1012,7 +1054,8 @@ async def place_drag_bracket_endpoint(
                     linked_tp_price=linked_tp_price,
                 )
                 sl_mode_label = str(sl_cfg.get('type', 'smart_chase')).replace('_', ' ').title()
-                msg = f"🛡️ {sl_mode_label} Stop-Loss placed at {final_price} for {final_amount} {req.symbol}"
+                buyback_tag = " (Buy-Back)" if opposite_side == 'buy' else ""
+                msg = f"🛡️ {sl_mode_label} Stop-Loss{buyback_tag} placed at {final_price} for {final_amount} {req.symbol}"
 
         elif bracket_type == 'tp':
             # Identify linked active software SL monitors & real entry_order_id BEFORE replacing prior TP
@@ -1162,7 +1205,8 @@ async def place_drag_bracket_endpoint(
                         sdata['tp_order_id'] = str(new_tp_id)
                         sdata['tp_price'] = resolved_tp_px
                         logger.info(f"🔗 Linked Drag TP {new_tp_id} to active SL monitor {sid} on {req.symbol}")
-            msg = f"🎯 Take Profit placed at {final_price} for {final_amount} {req.symbol}"
+            tp_buyback_tag = " (Dip Buy-Back)" if opposite_side == 'buy' else ""
+            msg = f"🎯 Take Profit{tp_buyback_tag} placed at {final_price} for {final_amount} {req.symbol}"
 
         manual_trade_service.invalidate_open_orders_cache(api_key_record.id, req.symbol)
         await _emit_trading_in_app(

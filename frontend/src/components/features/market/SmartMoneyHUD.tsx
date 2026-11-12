@@ -71,15 +71,15 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
     const isLongBias = (data.funding_rate || 0) < -0.0001; // Negative funding = Retail Shorting -> Smart Money Pump
     const isShortBias = (data.funding_rate || 0) > 0.0001; // Positive funding = Retail Longing -> Smart Money Dump
     const biasText = isLongBias ? "BULLISH BIAS (1.5x Asks)" : isShortBias ? "BEARISH BIAS (1.5x Bids)" : "NEUTRAL";
-    const biasColor = isLongBias ? "text-emerald-400" : isShortBias ? "text-rose-400" : "text-gray-400";
+    const biasColor = isLongBias ? "text-emerald-600 dark:text-emerald-400" : isShortBias ? "text-rose-600 dark:text-rose-400" : "text-slate-500 dark:text-gray-400";
 
-    const glowShadow = data.direction === 'UP' ? 'shadow-[0_0_50px_-12px_rgba(16,185,129,0.3)]' :
-                       data.direction === 'DOWN' ? 'shadow-[0_0_50px_-12px_rgba(244,63,94,0.3)]' :
-                       'shadow-[0_0_30px_rgba(0,0,0,0.8)]';
+    const glowShadow = data.direction === 'UP' ? 'shadow-lg dark:shadow-[0_0_50px_-12px_rgba(16,185,129,0.3)]' :
+                       data.direction === 'DOWN' ? 'shadow-lg dark:shadow-[0_0_50px_-12px_rgba(244,63,94,0.3)]' :
+                       'shadow-lg dark:shadow-[0_0_30px_rgba(0,0,0,0.8)]';
 
-    const dirColor = data.direction === 'UP' ? 'text-emerald-400' : 
-                     data.direction === 'DOWN' ? 'text-rose-400' : 
-                     'text-gray-400';
+    const dirColor = data.direction === 'UP' ? 'text-emerald-600 dark:text-emerald-400' : 
+                     data.direction === 'DOWN' ? 'text-rose-600 dark:text-rose-400' : 
+                     'text-slate-500 dark:text-gray-400';
 
     // Divergence Logic (Trap Detection)
     const isBullTrap = data.direction === 'UP' && (data.raw_ask_force || 0) < (data.raw_bid_force || 0) * 0.9;
@@ -112,19 +112,19 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
             className="fixed z-[9999] top-24 right-20 flex flex-col pointer-events-auto"
             style={{ touchAction: 'none' }} // Prevent scrolling when dragging
         >
-            <div className={`bg-black/70 backdrop-blur-xl border border-white/20 rounded-2xl overflow-hidden ${glowShadow} w-[400px] font-mono text-sm pointer-events-auto transition-shadow duration-500`}>
+            <div className={`bg-white/95 dark:bg-black/70 backdrop-blur-xl border border-slate-200 dark:border-white/20 rounded-2xl overflow-hidden ${glowShadow} w-[400px] font-mono text-sm pointer-events-auto transition-shadow duration-500`}>
                 {/* Header (Draggable Handle) */}
                 <div 
-                    className="flex justify-between items-center px-5 py-3 bg-gradient-to-r from-gray-900/90 to-gray-800/90 border-b border-white/20 select-none cursor-grab active:cursor-grabbing"
+                    className="flex justify-between items-center px-5 py-3 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-gray-900/90 dark:to-gray-800/90 border-b border-slate-200 dark:border-white/20 select-none cursor-grab active:cursor-grabbing"
                     onDoubleClick={() => setIsMinimized(!isMinimized)}
                 >
                     <div className="flex items-center gap-3">
                         <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
-                        <span className="font-bold text-gray-100 tracking-widest text-sm">SMART MONEY HUD</span>
+                        <span className="font-bold text-slate-900 dark:text-gray-100 tracking-widest text-sm">SMART MONEY HUD</span>
                     </div>
                     <button 
                         onClick={() => setIsMinimized(!isMinimized)}
-                        className="text-gray-400 hover:text-white transition-colors cursor-pointer z-10 p-1"
+                        className="text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer z-10 p-1"
                     >
                         {isMinimized ? '▼' : '▲'}
                     </button>
@@ -148,7 +148,7 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                                             initial={{ opacity: 0, y: -10 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             exit={{ opacity: 0, height: 0 }}
-                                            className={`px-3 py-2.5 rounded-md animate-pulse text-center font-bold text-xs uppercase tracking-widest shadow-[inset_0_0_20px_rgba(0,0,0,0.5)] ${isBullTrap ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'}`}
+                                            className={`px-3 py-2.5 rounded-md animate-pulse text-center font-bold text-xs uppercase tracking-widest shadow-sm dark:shadow-[inset_0_0_20px_rgba(0,0,0,0.5)] ${isBullTrap ? 'bg-rose-500/15 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/40 dark:border-rose-500/50' : 'bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40 dark:border-emerald-500/50'}`}
                                         >
                                             <span className="mr-2 text-sm">⚠️</span> 
                                             {isBullTrap ? 'BULL TRAP DETECTED - FAKEOUT' : 'BEAR TRAP DETECTED - FAKEOUT'}
@@ -157,15 +157,15 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                                 </AnimatePresence>
 
                                 {/* Target & Direction */}
-                                <div className="flex justify-between items-center bg-black/50 p-4 rounded-xl border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.02)]">
+                                <div className="flex justify-between items-center bg-slate-50 dark:bg-black/50 p-4 rounded-xl border border-slate-200 dark:border-white/10 shadow-inner dark:shadow-[inset_0_0_15px_rgba(255,255,255,0.02)]">
                                     <div>
-                                        <div className="text-gray-500 text-xs uppercase font-semibold tracking-wider">AI Target</div>
-                                        <div className={`text-3xl font-black ${dirColor} drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] mt-1`}>
+                                        <div className="text-slate-500 dark:text-gray-500 text-xs uppercase font-semibold tracking-wider">AI Target</div>
+                                        <div className={`text-3xl font-black ${dirColor} dark:drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] mt-1`}>
                                             ${formatPrice(data.target_price)}
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-gray-500 text-xs uppercase font-semibold tracking-wider">Direction</div>
+                                        <div className="text-slate-500 dark:text-gray-500 text-xs uppercase font-semibold tracking-wider">Direction</div>
                                         <div className={`text-2xl font-black tracking-widest ${dirColor} mt-1 flex items-center justify-end gap-2`}>
                                             {data.direction} 
                                             <span className="text-3xl leading-none">
@@ -177,18 +177,18 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
 
                                 {/* Liquidity Dominance (EMA Smoothed) */}
                                 <div className="space-y-1.5">
-                                    <div className="flex justify-between text-xs text-gray-400 uppercase font-semibold">
+                                    <div className="flex justify-between text-xs text-slate-500 dark:text-gray-400 uppercase font-semibold">
                                         <span>Bulls (Ask Force)</span>
                                         <span>Bears (Bid Force)</span>
                                     </div>
                                     <div className="flex justify-between font-black text-lg">
-                                        <span className="text-emerald-400 drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]">{formatPct(data.ask_dominance)}</span>
-                                        <span className="text-rose-400 drop-shadow-[0_0_5px_rgba(244,63,94,0.5)]">{formatPct(data.bid_dominance)}</span>
+                                        <span className="text-emerald-600 dark:text-emerald-400 dark:drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]">{formatPct(data.ask_dominance)}</span>
+                                        <span className="text-rose-600 dark:text-rose-400 dark:drop-shadow-[0_0_5px_rgba(244,63,94,0.5)]">{formatPct(data.bid_dominance)}</span>
                                     </div>
-                                    <div className="relative h-3 w-full bg-gray-900 rounded-full overflow-hidden flex shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] mt-2">
+                                    <div className="relative h-3 w-full bg-slate-200 dark:bg-gray-900 rounded-full overflow-hidden flex shadow-inner dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] mt-2">
                                         {/* Hysteresis Markers */}
-                                        <div className="absolute top-0 bottom-0 left-[48%] w-[2px] bg-white/30 z-10 shadow-[0_0_4px_rgba(255,255,255,0.8)]"></div>
-                                        <div className="absolute top-0 bottom-0 left-[52%] w-[2px] bg-white/30 z-10 shadow-[0_0_4px_rgba(255,255,255,0.8)]"></div>
+                                        <div className="absolute top-0 bottom-0 left-[48%] w-[2px] bg-slate-700/40 dark:bg-white/30 z-10 dark:shadow-[0_0_4px_rgba(255,255,255,0.8)]"></div>
+                                        <div className="absolute top-0 bottom-0 left-[52%] w-[2px] bg-slate-700/40 dark:bg-white/30 z-10 dark:shadow-[0_0_4px_rgba(255,255,255,0.8)]"></div>
                                         
                                         <motion.div 
                                             className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400"
@@ -201,16 +201,16 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                                         />
                                     </div>
                                     <div className="relative h-2 w-full mt-1">
-                                        <div className="absolute top-0 left-[48%] -translate-x-1/2 text-[9px] font-bold text-gray-500">48</div>
-                                        <div className="absolute top-0 left-[52%] -translate-x-1/2 text-[9px] font-bold text-gray-500">52</div>
+                                        <div className="absolute top-0 left-[48%] -translate-x-1/2 text-[9px] font-bold text-slate-500 dark:text-gray-500">48</div>
+                                        <div className="absolute top-0 left-[52%] -translate-x-1/2 text-[9px] font-bold text-slate-500 dark:text-gray-500">52</div>
                                     </div>
-                                    <div className="flex justify-between text-xs font-bold text-gray-500 pt-3">
+                                    <div className="flex justify-between text-xs font-bold text-slate-500 dark:text-gray-500 pt-3">
                                         <span>{formatForce(data.smoothed_ask_force)} EMA</span>
                                         <span>{formatForce(data.smoothed_bid_force)} EMA</span>
                                     </div>
                                     
                                     {/* Momentum Sparkline */}
-                                    <div className="relative h-10 w-full mt-3 border-b border-white/10">
+                                    <div className="relative h-10 w-full mt-3 border-b border-slate-200 dark:border-white/10">
                                         <svg className="w-full h-full overflow-visible preserve-3d" viewBox="0 0 100 100" preserveAspectRatio="none">
                                             {/* Gradients for fills */}
                                             <defs>
@@ -232,42 +232,42 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                                 </div>
 
                                 {/* Raw Forces & Liquidity */}
-                                <div className="grid grid-cols-2 gap-3 bg-black/40 p-3 rounded-xl border border-white/5">
+                                <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-black/40 p-3 rounded-xl border border-slate-200 dark:border-white/5">
                                     <div className="space-y-1">
-                                        <div className="text-gray-500 text-[10px] uppercase font-bold tracking-widest">Raw Bull Force</div>
-                                        <div className="text-emerald-400/90 font-black text-lg pb-1">{formatForce(data.raw_ask_force)}</div>
-                                        <div className="text-gray-500 text-[10px] uppercase font-bold tracking-widest">Ask Liquidity</div>
-                                        <div className="text-emerald-400/70 text-sm font-semibold">${((data.total_asks_liquidity || 0) / 1000000).toFixed(2)}M</div>
+                                        <div className="text-slate-500 dark:text-gray-500 text-[10px] uppercase font-bold tracking-widest">Raw Bull Force</div>
+                                        <div className="text-emerald-600 dark:text-emerald-400/90 font-black text-lg pb-1">{formatForce(data.raw_ask_force)}</div>
+                                        <div className="text-slate-500 dark:text-gray-500 text-[10px] uppercase font-bold tracking-widest">Ask Liquidity</div>
+                                        <div className="text-emerald-600/80 dark:text-emerald-400/70 text-sm font-semibold">${((data.total_asks_liquidity || 0) / 1000000).toFixed(2)}M</div>
                                     </div>
                                     <div className="text-right space-y-1">
-                                        <div className="text-gray-500 text-[10px] uppercase font-bold tracking-widest">Raw Bear Force</div>
-                                        <div className="text-rose-400/90 font-black text-lg pb-1">{formatForce(data.raw_bid_force)}</div>
-                                        <div className="text-gray-500 text-[10px] uppercase font-bold tracking-widest">Bid Liquidity</div>
-                                        <div className="text-rose-400/70 text-sm font-semibold">${((data.total_bids_liquidity || 0) / 1000000).toFixed(2)}M</div>
+                                        <div className="text-slate-500 dark:text-gray-500 text-[10px] uppercase font-bold tracking-widest">Raw Bear Force</div>
+                                        <div className="text-rose-600 dark:text-rose-400/90 font-black text-lg pb-1">{formatForce(data.raw_bid_force)}</div>
+                                        <div className="text-slate-500 dark:text-gray-500 text-[10px] uppercase font-bold tracking-widest">Bid Liquidity</div>
+                                        <div className="text-rose-600/80 dark:text-rose-400/70 text-sm font-semibold">${((data.total_bids_liquidity || 0) / 1000000).toFixed(2)}M</div>
                                     </div>
                                 </div>
 
                                 {/* Market Sentiment & Squeeze */}
-                                <div className="pt-4 border-t border-white/10 space-y-3">
+                                <div className="pt-4 border-t border-slate-200 dark:border-white/10 space-y-3">
                                     <div className="flex justify-between items-center">
-                                        <span className="text-gray-400 text-xs uppercase font-bold tracking-wider">Retail Funding</span>
-                                        <span className="text-gray-100 font-mono text-sm bg-white/10 px-2 py-0.5 rounded">{formatFunding(data.funding_rate)}</span>
+                                        <span className="text-slate-500 dark:text-gray-400 text-xs uppercase font-bold tracking-wider">Retail Funding</span>
+                                        <span className="text-slate-900 dark:text-gray-100 font-mono text-sm bg-slate-100 dark:bg-white/10 px-2 py-0.5 rounded">{formatFunding(data.funding_rate)}</span>
                                     </div>
                                     <div className="flex justify-between items-center">
-                                        <span className="text-gray-400 text-xs uppercase font-bold tracking-wider">Smart Bias</span>
-                                        <span className={`font-black text-xs px-2 py-0.5 rounded border border-white/10 bg-black/50 ${biasColor}`}>{biasText}</span>
+                                        <span className="text-slate-500 dark:text-gray-400 text-xs uppercase font-bold tracking-wider">Smart Bias</span>
+                                        <span className={`font-black text-xs px-2 py-0.5 rounded border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-black/50 ${biasColor}`}>{biasText}</span>
                                     </div>
                                     
                                     {/* Squeeze Gauge */}
                                     {squeezeProb > 20 && (
                                         <div className="pt-1">
                                             <div className="flex justify-between text-[10px] font-black uppercase mb-1.5 tracking-wider">
-                                                <span className={isShortSqueeze ? 'text-emerald-400 drop-shadow-[0_0_2px_rgba(16,185,129,0.5)]' : 'text-rose-400 drop-shadow-[0_0_2px_rgba(244,63,94,0.5)]'}>
+                                                <span className={isShortSqueeze ? 'text-emerald-600 dark:text-emerald-400 dark:drop-shadow-[0_0_2px_rgba(16,185,129,0.5)]' : 'text-rose-600 dark:text-rose-400 dark:drop-shadow-[0_0_2px_rgba(244,63,94,0.5)]'}>
                                                     {isShortSqueeze ? '🚀 SHORT SQUEEZE PROBABILITY' : '🩸 LONG SQUEEZE PROBABILITY'}
                                                 </span>
-                                                <span className="text-white bg-black/60 px-1 rounded">{squeezeProb.toFixed(0)}%</span>
+                                                <span className="text-slate-900 dark:text-white bg-slate-200 dark:bg-black/60 px-1 rounded">{squeezeProb.toFixed(0)}%</span>
                                             </div>
-                                            <div className="w-full bg-black/80 h-2.5 rounded-full overflow-hidden shadow-[inset_0_1px_3px_rgba(0,0,0,0.8)] border border-white/5">
+                                            <div className="w-full bg-slate-200 dark:bg-black/80 h-2.5 rounded-full overflow-hidden shadow-inner dark:shadow-[inset_0_1px_3px_rgba(0,0,0,0.8)] border border-slate-300 dark:border-white/5">
                                                 <div 
                                                     className={`h-full ${isShortSqueeze ? 'bg-gradient-to-r from-emerald-600 to-emerald-400 shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-gradient-to-r from-rose-600 to-rose-400 shadow-[0_0_10px_rgba(244,63,94,1)]'}`} 
                                                     style={{ width: `${squeezeProb}%` }}
@@ -279,17 +279,17 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                                 
                                 {/* Liquidation Magnet Radar */}
                                 {magnets.length > 0 && (
-                                    <div className="pt-4 border-t border-white/10">
-                                        <div className="text-xs text-gray-400 uppercase font-black tracking-widest mb-2 flex items-center gap-2">
+                                    <div className="pt-4 border-t border-slate-200 dark:border-white/10">
+                                        <div className="text-xs text-slate-500 dark:text-gray-400 uppercase font-black tracking-widest mb-2 flex items-center gap-2">
                                             <span className="animate-pulse text-sm">🧲</span> CLOSEST MAGNETS
                                         </div>
                                         <div className="space-y-1.5">
                                             {magnets.map((mag, i) => {
                                                 const dist = Math.abs(((mag.price - currentPrice) / currentPrice) * 100);
                                                 return (
-                                                    <div key={i} className="flex justify-between items-center text-xs bg-gradient-to-r from-black/60 to-black/30 p-2 rounded-md border-l-4 hover:bg-white/5 transition-colors" style={{ borderLeftColor: mag.price > currentPrice ? '#10B981' : '#F43F5E' }}>
-                                                        <span className="text-gray-200 font-black tracking-wider">${formatPrice(mag.price)}</span>
-                                                        <span className="text-gray-400 font-mono text-[10px] bg-black/40 px-1.5 py-0.5 rounded">{dist.toFixed(2)}% AWAY</span>
+                                                    <div key={i} className="flex justify-between items-center text-xs bg-slate-50 dark:bg-gradient-to-r dark:from-black/60 dark:to-black/30 p-2 rounded-md border-l-4 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors" style={{ borderLeftColor: mag.price > currentPrice ? '#10B981' : '#F43F5E' }}>
+                                                        <span className="text-slate-900 dark:text-gray-200 font-black tracking-wider">${formatPrice(mag.price)}</span>
+                                                        <span className="text-slate-500 dark:text-gray-400 font-mono text-[10px] bg-slate-200/80 dark:bg-black/40 px-1.5 py-0.5 rounded">{dist.toFixed(2)}% AWAY</span>
                                                     </div>
                                                 );
                                             })}
@@ -299,20 +299,20 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                                 
                                 {/* Whale Order Feed */}
                                 {icebergEvents && icebergEvents.length > 0 && (
-                                    <div className="pt-4 border-t border-white/10">
-                                        <div className="text-xs text-gray-400 uppercase font-black tracking-widest mb-2 flex items-center gap-2">
+                                    <div className="pt-4 border-t border-slate-200 dark:border-white/10">
+                                        <div className="text-xs text-slate-500 dark:text-gray-400 uppercase font-black tracking-widest mb-2 flex items-center gap-2">
                                             <span className="animate-pulse text-sm">🐋</span> LIVE WHALE FEED
                                         </div>
                                         <div className="space-y-1.5 max-h-24 overflow-y-auto custom-scrollbar pr-2">
                                             {icebergEvents.slice(0, 4).map((ev, i) => (
-                                                <div key={i} className="text-xs flex justify-between items-center bg-black/40 p-2 rounded-md hover:bg-white/5 transition-colors border border-white/5">
-                                                    <span className={`font-black tracking-widest px-1.5 py-0.5 rounded ${ev.type === 'buy' ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'}`}>
+                                                <div key={i} className="text-xs flex justify-between items-center bg-slate-50 dark:bg-black/40 p-2 rounded-md hover:bg-slate-100 dark:hover:bg-white/5 transition-colors border border-slate-200 dark:border-white/5">
+                                                    <span className={`font-black tracking-widest px-1.5 py-0.5 rounded ${ev.type === 'buy' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10' : 'text-rose-600 dark:text-rose-400 bg-rose-500/10'}`}>
                                                         {ev.type === 'buy' ? 'BUY' : 'SELL'}
                                                     </span>
-                                                    <span className="text-gray-200 font-mono">
+                                                    <span className="text-slate-900 dark:text-gray-200 font-mono">
                                                         <span className="font-bold">{(ev.volume || 0).toFixed(1)}</span> 
-                                                        <span className="text-gray-600 mx-1">@</span> 
-                                                        <span className="text-gray-400">${formatPrice(ev.price)}</span>
+                                                        <span className="text-slate-400 dark:text-gray-600 mx-1">@</span> 
+                                                        <span className="text-slate-600 dark:text-gray-400">${formatPrice(ev.price)}</span>
                                                     </span>
                                                 </div>
                                             ))}

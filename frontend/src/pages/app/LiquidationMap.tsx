@@ -9,16 +9,16 @@ const LiquidationMap: React.FC = () => {
         <div className="h-full flex flex-col relative overflow-hidden">
             {/* Toggle Switch Header (Absolute positioned to float over the top right) */}
             <div className="absolute top-4 right-4 z-[100]">
-                <div className="flex items-center gap-3 bg-black/60 backdrop-blur-md p-1.5 px-3 rounded-xl border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.5)] cursor-pointer" onClick={() => setIsGodMode(!isGodMode)}>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors duration-300 ${!isGodMode ? 'text-brand-primary drop-shadow-[0_0_5px_rgba(59,130,246,0.5)]' : 'text-gray-500'}`}>Standard</span>
+                <div className="flex items-center gap-3 bg-white/90 dark:bg-black/60 backdrop-blur-md p-1.5 px-3 rounded-xl border border-slate-200 dark:border-white/10 shadow-lg dark:shadow-[0_4px_20px_rgba(0,0,0,0.5)] cursor-pointer" onClick={() => setIsGodMode(!isGodMode)}>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors duration-300 ${!isGodMode ? 'text-brand-primary drop-shadow-[0_0_5px_rgba(59,130,246,0.5)]' : 'text-slate-500 dark:text-gray-500'}`}>Standard</span>
                     
                     <div 
-                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-500 focus:outline-none ${isGodMode ? 'bg-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.6)]' : 'bg-gray-700'}`}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-500 focus:outline-none ${isGodMode ? 'bg-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.6)]' : 'bg-slate-300 dark:bg-gray-700'}`}
                     >
                         <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform duration-500 ease-in-out ${isGodMode ? 'translate-x-4.5' : 'translate-x-1'}`} style={{ transform: isGodMode ? 'translateX(18px)' : 'translateX(4px)' }} />
                     </div>
 
-                    <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors duration-300 ${isGodMode ? 'text-rose-500 drop-shadow-[0_0_8px_rgba(244,63,94,0.8)]' : 'text-gray-500'}`}>God Mode</span>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors duration-300 ${isGodMode ? 'text-rose-500 drop-shadow-[0_0_8px_rgba(244,63,94,0.8)]' : 'text-slate-500 dark:text-gray-500'}`}>God Mode</span>
                 </div>
             </div>
 
@@ -30,7 +30,7 @@ const LiquidationMap: React.FC = () => {
                         <GodModeLiquidationView />
                     </div>
                 ) : (
-                    <div key="standard-mode" className="absolute inset-0 animate-fade-in text-white pt-4">
+                    <div key="standard-mode" className="absolute inset-0 animate-fade-in text-slate-900 dark:text-white pt-4">
                         <StandardLiquidationView />
                     </div>
                 )}

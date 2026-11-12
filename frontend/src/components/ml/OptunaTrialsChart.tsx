@@ -13,6 +13,7 @@ import {
   OptunaTrialsOut,
   trainingStudioToolsService,
 } from '@/services/trainingStudioToolsService';
+import { useTheme } from '@/context/ThemeContext';
 
 export interface OptunaTrialsChartProps {
   modelId: string;
@@ -39,15 +40,17 @@ function formatParamValue(val: unknown): string {
 
 function getStateBadge(state: string): string {
   const s = state.toUpperCase();
-  if (s === 'COMPLETE') return 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300';
-  if (s === 'PRUNED') return 'border-amber-500/35 bg-amber-500/15 text-amber-300';
-  return 'border-rose-500/35 bg-rose-500/15 text-rose-300';
+  if (s === 'COMPLETE') return 'border-emerald-500/35 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+  if (s === 'PRUNED') return 'border-amber-500/35 bg-amber-500/15 text-amber-700 dark:text-amber-300';
+  return 'border-rose-500/35 bg-rose-500/15 text-rose-700 dark:text-rose-300';
 }
 
 export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
   modelId,
   onApplyBestParams,
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const uid = useId().replace(/:/g, '');
   const [data, setData] = useState<OptunaTrialsOut | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -187,17 +190,17 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
 
   if (loading) {
     return (
-      <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-slate-700/70 bg-slate-900/65 p-6 backdrop-blur-xl">
-        <Loader2 className="h-6 w-6 animate-spin text-cyan-400" />
-        <p className="mt-2 text-xs text-slate-400">Loading Optuna AutoML trial history...</p>
+      <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-900/65 p-6 backdrop-blur-xl">
+        <Loader2 className="h-6 w-6 animate-spin text-cyan-600 dark:text-cyan-400" />
+        <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">Loading Optuna AutoML trial history...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-start gap-2.5 rounded-2xl border border-rose-500/35 bg-rose-500/10 p-4 text-xs text-rose-300">
-        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+      <div className="flex items-start gap-2.5 rounded-2xl border border-rose-500/35 bg-rose-500/10 p-4 text-xs text-rose-700 dark:text-rose-300">
+        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
         <span>{error}</span>
       </div>
     );
@@ -205,11 +208,11 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
 
   if (!data || !data.trials || data.trials.length === 0) {
     return (
-      <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-700/80 bg-slate-900/50 p-6 text-center backdrop-blur-xl">
-        <div className="mb-2.5 flex h-10 w-10 items-center justify-center rounded-xl border border-purple-500/30 bg-purple-500/10 text-purple-300">
+      <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-700/80 bg-slate-50 dark:bg-slate-900/50 p-6 text-center backdrop-blur-xl">
+        <div className="mb-2.5 flex h-10 w-10 items-center justify-center rounded-xl border border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300">
           <Sliders className="h-5 w-5" />
         </div>
-        <p className="max-w-md text-xs font-medium text-slate-300">
+        <p className="max-w-md text-xs font-medium text-slate-600 dark:text-slate-300">
           No Optuna AutoML trials recorded for this model — enable AutoML before training
         </p>
       </div>
@@ -220,31 +223,31 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
   const activeHover = hoveredIdx !== null && chartModel ? chartModel.points[hoveredIdx] : null;
 
   return (
-    <div className="space-y-4 rounded-2xl border border-slate-700/70 bg-slate-900/65 p-4 backdrop-blur-xl shadow-[0_0_30px_rgba(168,85,247,0.07)]">
+    <div className="space-y-4 rounded-2xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-900/65 p-4 backdrop-blur-xl shadow-sm dark:shadow-[0_0_30px_rgba(168,85,247,0.07)]">
       {/* Header + Best Trial Callout */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h4 className="flex items-center gap-2 text-sm font-bold text-white">
-            <TrendingUp className="h-4 w-4 text-cyan-400" />
+          <h4 className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+            <TrendingUp className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
             Optuna Hyperparameter Optimization
-            <span className="rounded-full border border-purple-500/35 bg-purple-500/15 px-2 py-0.5 text-[10px] font-semibold text-purple-300">
+            <span className="rounded-full border border-purple-500/35 bg-purple-500/15 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:text-purple-300">
               {data.trials.length} Trials
             </span>
           </h4>
-          <p className="mt-0.5 text-[11px] text-slate-400">
-            {data.model_name} • <span className="text-slate-300">{data.algorithm}</span>
+          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+            {data.model_name} • <span className="text-slate-700 dark:text-slate-300">{data.algorithm}</span>
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {data.best_trial_number !== null && data.best_trial_number !== undefined && (
             <div className="flex items-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5">
-              <Award className="h-4 w-4 text-emerald-400" />
+              <Award className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               <div className="text-[11px]">
-                <span className="text-slate-400">Best Trial </span>
-                <span className="font-mono font-bold text-white">#{data.best_trial_number}</span>
+                <span className="text-slate-600 dark:text-slate-400">Best Trial </span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white">#{data.best_trial_number}</span>
                 {typeof data.best_value === 'number' && (
-                  <span className="ml-1.5 font-mono font-bold text-emerald-300">
+                  <span className="ml-1.5 font-mono font-bold text-emerald-700 dark:text-emerald-300">
                     ({data.best_value.toFixed(4)})
                   </span>
                 )}
@@ -256,11 +259,11 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
             <button
               type="button"
               onClick={handleApplyBest}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-gradient-to-r from-cyan-600/80 to-purple-600/80 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_0_15px_rgba(6,182,212,0.2)] transition-all hover:brightness-110"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-gradient-to-r from-cyan-600 to-purple-600 dark:from-cyan-600/80 dark:to-purple-600/80 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_0_15px_rgba(6,182,212,0.2)] transition-all hover:brightness-110"
             >
               {applied ? (
                 <>
-                  <Check className="h-3.5 w-3.5 text-emerald-300" />
+                  <Check className="h-3.5 w-3.5 text-emerald-200 dark:text-emerald-300" />
                   Applied
                 </>
               ) : (
@@ -280,10 +283,10 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
           {bestParamsEntries.map(([key, value]) => (
             <span
               key={key}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-950/70 px-2.5 py-1 text-[11px]"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700/80 bg-slate-50 dark:bg-slate-950/70 px-2.5 py-1 text-[11px]"
             >
-              <span className="text-slate-400">{key}:</span>
-              <span className="font-mono font-semibold text-cyan-300">
+              <span className="text-slate-500 dark:text-slate-400">{key}:</span>
+              <span className="font-mono font-semibold text-cyan-700 dark:text-cyan-300">
                 {formatParamValue(value)}
               </span>
             </span>
@@ -293,26 +296,26 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
 
       {/* Responsive SVG Trial Chart */}
       {chartModel ? (
-        <div className="relative rounded-xl border border-slate-800 bg-slate-950/70 p-2.5">
-          <div className="mb-1.5 flex items-center justify-between px-2 text-[10px] text-slate-400">
+        <div className="relative rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/70 p-2.5">
+          <div className="mb-1.5 flex items-center justify-between px-2 text-[10px] text-slate-600 dark:text-slate-400">
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1.5">
-                <span className="inline-block h-2 w-2 rounded-full bg-cyan-400" />
+                <span className="inline-block h-2 w-2 rounded-full bg-cyan-500 dark:bg-cyan-400" />
                 Trial Score
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="inline-block h-0.5 w-4 border-t-2 border-dashed border-emerald-400" />
+                <span className="inline-block h-0.5 w-4 border-t-2 border-dashed border-emerald-500 dark:border-emerald-400" />
                 Best-So-Far Envelope
               </span>
             </div>
             {activeHover && (
-              <div className="font-mono text-[11px] text-slate-200">
+              <div className="font-mono text-[11px] text-slate-800 dark:text-slate-200">
                 Trial #{activeHover.trial.number} • Score:{' '}
-                <span className="font-bold text-cyan-300">
+                <span className="font-bold text-cyan-700 dark:text-cyan-300">
                   {activeHover.trial.value?.toFixed(4)}
                 </span>{' '}
                 • Best:{' '}
-                <span className="font-bold text-emerald-300">
+                <span className="font-bold text-emerald-700 dark:text-emerald-300">
                   {activeHover.bestSoFarVal.toFixed(4)}
                 </span>
               </div>
@@ -347,7 +350,7 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
                   y1={tick.y}
                   x2={svgWidth - padRight}
                   y2={tick.y}
-                  stroke="rgba(148,163,184,0.12)"
+                  stroke={isDark ? 'rgba(148,163,184,0.12)' : 'rgba(15,23,42,0.1)'}
                   strokeDasharray="3 3"
                 />
                 <text
@@ -403,7 +406,7 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
                     cy={pt.y}
                     r={isHovered ? 5.5 : isBest ? 4 : 3}
                     fill={isBest ? '#10b981' : isHovered ? '#22d3ee' : '#38bdf8'}
-                    stroke="#0f172a"
+                    stroke={isDark ? '#0f172a' : '#ffffff'}
                     strokeWidth="1.2"
                   />
                   {/* Larger invisible hover target */}
@@ -438,16 +441,16 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
           </svg>
         </div>
       ) : (
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-center text-xs text-slate-400">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-4 text-center text-xs text-slate-600 dark:text-slate-400">
           All recorded trials lack finite objective scores (pruned or failed).
         </div>
       )}
 
       {/* Scrollable Trial Table */}
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60">
+      <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60">
         <div className="max-h-56 overflow-auto">
           <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 text-[10px] uppercase tracking-wider text-slate-400 backdrop-blur">
+            <thead className="sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800 bg-slate-100/95 dark:bg-slate-900/95 text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 backdrop-blur">
               <tr>
                 <th className="px-3 py-2">#</th>
                 <th className="px-3 py-2">State</th>
@@ -455,7 +458,7 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
                 <th className="px-3 py-2">Params</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/70">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/70">
               {data.trials.map((trial) => {
                 const isBest = trial.number === data.best_trial_number;
                 const paramText = Object.entries(trial.params ?? {})
@@ -466,14 +469,14 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
                     key={trial.number}
                     className={
                       isBest
-                        ? 'bg-emerald-500/10 text-emerald-100'
-                        : 'text-slate-300 hover:bg-white/[0.03]'
+                        ? 'bg-emerald-500/10 text-emerald-950 dark:text-emerald-100'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.03]'
                     }
                   >
                     <td className="whitespace-nowrap px-3 py-2 font-mono font-semibold">
                       #{trial.number}
                       {isBest && (
-                        <span className="ml-1.5 rounded bg-emerald-500/20 px-1 py-0.5 text-[9px] font-bold text-emerald-300">
+                        <span className="ml-1.5 rounded bg-emerald-500/20 px-1 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-300">
                           BEST
                         </span>
                       )}
@@ -487,12 +490,12 @@ export const OptunaTrialsChart: React.FC<OptunaTrialsChartProps> = ({
                         {trial.state}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono font-semibold text-cyan-300">
+                    <td className="whitespace-nowrap px-3 py-2 font-mono font-semibold text-cyan-700 dark:text-cyan-300">
                       {typeof trial.value === 'number' && Number.isFinite(trial.value)
                         ? trial.value.toFixed(4)
                         : '--'}
                     </td>
-                    <td className="max-w-md truncate px-3 py-2 font-mono text-[11px] text-slate-400" title={paramText}>
+                    <td className="max-w-md truncate px-3 py-2 font-mono text-[11px] text-slate-500 dark:text-slate-400" title={paramText}>
                       {paramText || '--'}
                     </td>
                   </tr>

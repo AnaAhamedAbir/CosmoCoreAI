@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BrainCircuit, X, Activity, DollarSign, Target, GitCommit } from 'lucide-react';
 import { createChart, IChartApi, ISeriesApi, LineSeries } from 'lightweight-charts';
 import { LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { useTheme } from '@/context/ThemeContext';
 
 interface RLStepData {
     step: number;
@@ -42,6 +43,8 @@ const actionLabels = {
 };
 
 const CustomNeuralNetwork = ({ features, action, step }: { features: string[], action: number, step: number }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
     const layer1 = useMemo(() => Array.from({ length: 11 }).map((_, i) => ({ x: 450, y: 70 + i * 36 })), []);
     const layer2 = useMemo(() => Array.from({ length: 8 }).map((_, i) => ({ x: 600, y: 124 + i * 36 })), []);
     const layer3 = useMemo(() => Array.from({ length: 5 }).map((_, i) => ({ x: 750, y: 178 + i * 36 })), []);
@@ -79,7 +82,7 @@ const CustomNeuralNetwork = ({ features, action, step }: { features: string[], a
     };
 
     return (
-        <div className="w-full h-full relative overflow-hidden bg-[#020617] rounded-xl flex items-center justify-center border border-white/5 shadow-[inset_0_0_50px_rgba(0,0,0,0.8)]">
+        <div className="w-full h-full relative overflow-hidden bg-slate-50 dark:bg-[#020617] rounded-xl flex items-center justify-center border border-slate-200 dark:border-white/5 shadow-inner dark:shadow-[inset_0_0_50px_rgba(0,0,0,0.8)]">
             <style>{`
                 @keyframes flowPulse {
                     0% { stroke-opacity: 0.1; filter: drop-shadow(0 0 0px transparent); }
@@ -137,9 +140,9 @@ const CustomNeuralNetwork = ({ features, action, step }: { features: string[], a
                 {/* 1. Feature Groups */}
                 {groups.map(g => (
                     <g key={g.name} transform={`translate(10, ${g.y})`}>
-                        <rect width="170" height="50" rx="8" fill="#0f172a" stroke="#0ea5e9" strokeWidth="1" strokeOpacity="0.4" />
-                        <text x="10" y="20" fill="#e0f2fe" fontSize="12" fontWeight="600">{g.name}</text>
-                        <text x="10" y="38" fill="#7dd3fc" fontSize="9" opacity="0.6">
+                        <rect width="170" height="50" rx="8" fill={isDark ? "#0f172a" : "#ffffff"} stroke="#0ea5e9" strokeWidth="1" strokeOpacity={isDark ? "0.4" : "0.6"} />
+                        <text x="10" y="20" fill={isDark ? "#e0f2fe" : "#0f172a"} fontSize="12" fontWeight="600">{g.name}</text>
+                        <text x="10" y="38" fill={isDark ? "#7dd3fc" : "#0284c7"} fontSize="9" opacity={isDark ? "0.6" : "0.85"}>
                             {features.length > 0 ? `${Math.max(1, Math.floor(features.length / 6))} Features Loaded` : 'Waiting...'}
                         </text>
                         <circle cx="160" cy="15" r="2" fill="#38bdf8" className="glow-node" style={{ color: '#38bdf8' }} />
@@ -150,27 +153,27 @@ const CustomNeuralNetwork = ({ features, action, step }: { features: string[], a
 
                 {/* 2. Pre-processing Block */}
                 <g transform={`translate(${preProc.x}, ${preProc.y})`}>
-                    <rect width={preProc.w} height={preProc.h} rx="12" fill="#020617" stroke="#0ea5e9" strokeWidth="2" className="glow-node" style={{ color: '#0ea5e9' }} />
-                    <text x={preProc.w/2} y={preProc.h/2 - 15} fill="#e0f2fe" fontSize="14" fontWeight="bold" textAnchor="middle">Feature</text>
-                    <text x={preProc.w/2} y={preProc.h/2 + 5} fill="#e0f2fe" fontSize="14" fontWeight="bold" textAnchor="middle">Pre-processing</text>
-                    <text x={preProc.w/2} y={preProc.h/2 + 25} fill="#38bdf8" fontSize="11" textAnchor="middle">& Embedding</text>
+                    <rect width={preProc.w} height={preProc.h} rx="12" fill={isDark ? "#020617" : "#f0f9ff"} stroke="#0ea5e9" strokeWidth="2" className="glow-node" style={{ color: '#0ea5e9' }} />
+                    <text x={preProc.w/2} y={preProc.h/2 - 15} fill={isDark ? "#e0f2fe" : "#0f172a"} fontSize="14" fontWeight="bold" textAnchor="middle">Feature</text>
+                    <text x={preProc.w/2} y={preProc.h/2 + 5} fill={isDark ? "#e0f2fe" : "#0f172a"} fontSize="14" fontWeight="bold" textAnchor="middle">Pre-processing</text>
+                    <text x={preProc.w/2} y={preProc.h/2 + 25} fill={isDark ? "#38bdf8" : "#0284c7"} fontSize="11" textAnchor="middle">& Embedding</text>
                 </g>
 
                 {/* 3. Hidden Layers Dots */}
                 <g>
-                    {layer1.map((n, i) => <circle key={`L1-${i}`} cx={n.x} cy={n.y} r="3" fill="#e0f2fe" className="glow-node" style={{ color: '#38bdf8' }} />)}
-                    {layer2.map((n, i) => <circle key={`L2-${i}`} cx={n.x} cy={n.y} r="3" fill="#e0f2fe" className="glow-node" style={{ color: '#818cf8' }} />)}
-                    {layer3.map((n, i) => <circle key={`L3-${i}`} cx={n.x} cy={n.y} r="3" fill="#e0f2fe" className="glow-node" style={{ color: '#a78bfa' }} />)}
+                    {layer1.map((n, i) => <circle key={`L1-${i}`} cx={n.x} cy={n.y} r="3" fill={isDark ? "#e0f2fe" : "#0284c7"} className="glow-node" style={{ color: '#38bdf8' }} />)}
+                    {layer2.map((n, i) => <circle key={`L2-${i}`} cx={n.x} cy={n.y} r="3" fill={isDark ? "#e0f2fe" : "#4f46e5"} className="glow-node" style={{ color: '#818cf8' }} />)}
+                    {layer3.map((n, i) => <circle key={`L3-${i}`} cx={n.x} cy={n.y} r="3" fill={isDark ? "#e0f2fe" : "#7c3aed"} className="glow-node" style={{ color: '#a78bfa' }} />)}
                 </g>
 
-                <text x="450" y="45" fill="#94a3b8" fontSize="12" textAnchor="middle" fontWeight="bold">Layer 1 (512)</text>
-                <text x="600" y="99" fill="#94a3b8" fontSize="12" textAnchor="middle" fontWeight="bold">Layer 2 (256)</text>
-                <text x="750" y="153" fill="#94a3b8" fontSize="12" textAnchor="middle" fontWeight="bold">Layer 3 (128)</text>
+                <text x="450" y="45" fill={isDark ? "#94a3b8" : "#475569"} fontSize="12" textAnchor="middle" fontWeight="bold">Layer 1 (512)</text>
+                <text x="600" y="99" fill={isDark ? "#94a3b8" : "#475569"} fontSize="12" textAnchor="middle" fontWeight="bold">Layer 2 (256)</text>
+                <text x="750" y="153" fill={isDark ? "#94a3b8" : "#475569"} fontSize="12" textAnchor="middle" fontWeight="bold">Layer 3 (128)</text>
 
                 {/* 4. Output Actions */}
                 {outputs.map(out => (
                     <g key={out.id} transform={`translate(${out.x}, ${out.y})`}>
-                        <rect x="0" y="-25" width="100" height="50" rx="25" fill="#0f172a" stroke={out.color} strokeWidth={out.glow ? 2 : 1} className={out.glow ? "glow-node-strong" : ""} style={{ color: out.color }} />
+                        <rect x="0" y="-25" width="100" height="50" rx="25" fill={isDark ? "#0f172a" : (out.glow ? out.color : "#ffffff")} stroke={out.color} strokeWidth={out.glow ? 2 : 1} className={out.glow ? "glow-node-strong" : ""} style={{ color: out.color }} />
                         <text x="50" y="5" fill={out.glow ? '#ffffff' : out.color} fontSize="14" fontWeight="bold" textAnchor="middle">{out.label}</text>
                     </g>
                 ))}
@@ -187,6 +190,8 @@ export const RLTrainingVisualizer: React.FC<RLTrainingVisualizerProps> = ({
     algorithm,
     symbol
 }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
     const [status, setStatus] = useState<'connecting' | 'training' | 'completed' | 'failed'>('connecting');
     const [progress, setProgress] = useState(0);
     const [latestStep, setLatestStep] = useState<RLStepData | null>(null);
@@ -208,15 +213,19 @@ export const RLTrainingVisualizer: React.FC<RLTrainingVisualizerProps> = ({
             const chart = createChart(chartContainerRef.current, {
                 layout: {
                     background: { type: 'solid', color: 'transparent' } as any,
-                    textColor: '#94a3b8',
+                    textColor: isDark ? '#94a3b8' : '#475569',
                 },
                 grid: {
-                    vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
-                    horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                    vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.06)' },
+                    horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.06)' },
                 },
                 timeScale: {
                     timeVisible: true,
                     secondsVisible: false,
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.12)',
+                },
+                rightPriceScale: {
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.12)',
                 },
             });
             const lineSeries = chart.addSeries(LineSeries, {
@@ -239,6 +248,19 @@ export const RLTrainingVisualizer: React.FC<RLTrainingVisualizerProps> = ({
             };
         }
     }, [isOpen]);
+
+    useEffect(() => {
+        if (!chartRef.current) return;
+        chartRef.current.applyOptions({
+            layout: { textColor: isDark ? '#94a3b8' : '#475569' },
+            grid: {
+                vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.06)' },
+                horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.06)' },
+            },
+            timeScale: { borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.12)' },
+            rightPriceScale: { borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.12)' },
+        });
+    }, [isDark]);
 
     // WebSocket Connection
     useEffect(() => {
@@ -355,36 +377,36 @@ export const RLTrainingVisualizer: React.FC<RLTrainingVisualizerProps> = ({
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
+                className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 dark:bg-black/90 backdrop-blur-md p-4"
             >
-                <div className="w-full h-full max-w-[1600px] max-h-[900px] flex flex-col bg-[#020617] border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative">
+                <div className="w-full h-full max-w-[1600px] max-h-[900px] flex flex-col bg-white dark:bg-[#020617] border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative">
                     
                     {/* Header */}
-                    <div className="h-16 border-b border-white/5 bg-white/5 flex items-center justify-between px-6 shrink-0">
+                    <div className="h-16 border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/5 flex items-center justify-between px-6 shrink-0">
                         <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/50 flex items-center justify-center text-purple-400">
+                            <div className="w-10 h-10 rounded-xl bg-purple-500/15 dark:bg-purple-500/20 border border-purple-500/40 dark:border-purple-500/50 flex items-center justify-center text-purple-600 dark:text-purple-400">
                                 <BrainCircuit className="w-5 h-5" />
                             </div>
                             <div>
-                                <h2 className="text-white font-bold text-lg leading-tight flex items-center gap-2 tracking-wide">
+                                <h2 className="text-slate-900 dark:text-white font-bold text-lg leading-tight flex items-center gap-2 tracking-wide">
                                     {algorithm} Institutional Model Engine
                                     {status === 'training' && <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse glow-node-strong" style={{ color: '#34d399' }}></div>}
                                 </h2>
-                                <p className="text-slate-400 text-xs tracking-wider">Simulating Advanced Environment: {symbol}</p>
+                                <p className="text-slate-500 dark:text-slate-400 text-xs tracking-wider">Simulating Advanced Environment: {symbol}</p>
                             </div>
                         </div>
 
                         <div className="flex items-center gap-6">
-                            <div className="flex items-center gap-3 bg-black/40 px-4 py-2 rounded-xl border border-white/5">
-                                <span className="text-xs text-slate-400">Progress:</span>
-                                <div className="w-32 h-2 bg-slate-900 rounded-full overflow-hidden shadow-inner">
+                            <div className="flex items-center gap-3 bg-white dark:bg-black/40 px-4 py-2 rounded-xl border border-slate-200 dark:border-white/5">
+                                <span className="text-xs text-slate-500 dark:text-slate-400">Progress:</span>
+                                <div className="w-32 h-2 bg-slate-200 dark:bg-slate-900 rounded-full overflow-hidden shadow-inner">
                                     <div className="h-full bg-gradient-to-r from-purple-500 to-cyan-400 transition-all duration-300 relative" style={{ width: `${progress}%` }}>
                                         <div className="absolute inset-0 bg-white/20 w-full h-full animate-[shimmer_2s_infinite]"></div>
                                     </div>
                                 </div>
-                                <span className="text-xs text-white font-bold">{progress}%</span>
+                                <span className="text-xs text-slate-900 dark:text-white font-bold">{progress}%</span>
                             </div>
-                            <button onClick={onClose} className="p-2 bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-xl transition-colors">
+                            <button onClick={onClose} className="p-2 bg-slate-100 dark:bg-white/5 hover:bg-red-500/20 text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 rounded-xl transition-colors">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -400,69 +422,69 @@ export const RLTrainingVisualizer: React.FC<RLTrainingVisualizerProps> = ({
 
                         {/* Bottom Section: Stats & Charts */}
                         <div className="col-span-3 flex flex-col gap-4 min-h-0">
-                            <div className="bg-black/40 border border-white/5 rounded-2xl p-4 shrink-0 shadow-lg">
+                            <div className="bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-2xl p-4 shrink-0 shadow-md dark:shadow-lg">
                                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
                                     <Activity className="w-4 h-4 text-cyan-500" />
                                     Agent Live State
                                 </h3>
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-slate-900/50 rounded-xl p-3 border border-white/5">
-                                        <div className="text-slate-400 text-xs mb-1 flex items-center gap-1"><DollarSign className="w-3 h-3"/> Net Worth</div>
-                                        <div className="text-lg text-white font-mono font-bold">${latestStep?.net_worth.toFixed(2) || '0.00'}</div>
+                                    <div className="bg-white dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-white/5">
+                                        <div className="text-slate-500 dark:text-slate-400 text-xs mb-1 flex items-center gap-1"><DollarSign className="w-3 h-3"/> Net Worth</div>
+                                        <div className="text-lg text-slate-900 dark:text-white font-mono font-bold">${latestStep?.net_worth.toFixed(2) || '0.00'}</div>
                                     </div>
-                                    <div className="bg-slate-900/50 rounded-xl p-3 border border-white/5">
-                                        <div className="text-slate-400 text-xs mb-1 flex items-center gap-1"><Target className="w-3 h-3"/> Action</div>
-                                        <div className={`text-sm font-mono font-bold mt-1 ${actionColors[latestStep?.action as keyof typeof actionColors] || 'text-slate-400'}`}>
+                                    <div className="bg-white dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-white/5">
+                                        <div className="text-slate-500 dark:text-slate-400 text-xs mb-1 flex items-center gap-1"><Target className="w-3 h-3"/> Action</div>
+                                        <div className={`text-sm font-mono font-bold mt-1 ${actionColors[latestStep?.action as keyof typeof actionColors] || 'text-slate-500 dark:text-slate-400'}`}>
                                             {actionLabels[latestStep?.action as keyof typeof actionLabels] || 'WAITING'}
                                         </div>
                                     </div>
-                                    <div className="bg-slate-900/50 rounded-xl p-3 border border-white/5">
-                                        <div className="text-slate-400 text-xs mb-1 flex items-center gap-1"><GitCommit className="w-3 h-3"/> Episode Step</div>
-                                        <div className="text-lg text-white font-mono font-bold">{latestStep?.step || 0}</div>
+                                    <div className="bg-white dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-white/5">
+                                        <div className="text-slate-500 dark:text-slate-400 text-xs mb-1 flex items-center gap-1"><GitCommit className="w-3 h-3"/> Episode Step</div>
+                                        <div className="text-lg text-slate-900 dark:text-white font-mono font-bold">{latestStep?.step || 0}</div>
                                     </div>
-                                    <div className="bg-slate-900/50 rounded-xl p-3 border border-white/5">
-                                        <div className="text-slate-400 text-xs mb-1 flex items-center gap-1"><Activity className="w-3 h-3"/> Last Reward</div>
-                                        <div className={`text-lg font-mono font-bold ${latestStep && latestStep.reward >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    <div className="bg-white dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-white/5">
+                                        <div className="text-slate-500 dark:text-slate-400 text-xs mb-1 flex items-center gap-1"><Activity className="w-3 h-3"/> Last Reward</div>
+                                        <div className={`text-lg font-mono font-bold ${latestStep && latestStep.reward >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                                             {latestStep?.reward.toFixed(4) || '0.0000'}
                                         </div>
                                     </div>
                                 </div>
                                 {/* Live Trade Statistics */}
                                 <div className="grid grid-cols-4 gap-2 mt-4">
-                                    <div className="bg-slate-900/50 rounded-xl p-2 border border-white/5 text-center flex flex-col justify-center">
+                                    <div className="bg-white dark:bg-slate-900/50 rounded-xl p-2 border border-slate-200 dark:border-white/5 text-center flex flex-col justify-center">
                                         <div className="text-slate-500 text-[9px] uppercase font-bold">Buys</div>
-                                        <div className="text-green-400 font-mono text-sm">{tradeStats.buy}</div>
+                                        <div className="text-green-600 dark:text-green-400 font-mono text-sm">{tradeStats.buy}</div>
                                     </div>
-                                    <div className="bg-slate-900/50 rounded-xl p-2 border border-white/5 text-center flex flex-col justify-center">
+                                    <div className="bg-white dark:bg-slate-900/50 rounded-xl p-2 border border-slate-200 dark:border-white/5 text-center flex flex-col justify-center">
                                         <div className="text-slate-500 text-[9px] uppercase font-bold">Sells</div>
-                                        <div className="text-red-400 font-mono text-sm">{tradeStats.sell}</div>
+                                        <div className="text-red-600 dark:text-red-400 font-mono text-sm">{tradeStats.sell}</div>
                                     </div>
-                                    <div className="bg-slate-900/50 rounded-xl p-2 border border-white/5 text-center flex flex-col justify-center">
+                                    <div className="bg-white dark:bg-slate-900/50 rounded-xl p-2 border border-slate-200 dark:border-white/5 text-center flex flex-col justify-center">
                                         <div className="text-slate-500 text-[9px] uppercase font-bold">Profitable</div>
-                                        <div className="text-emerald-400 font-mono text-sm">{tradeStats.win}</div>
+                                        <div className="text-emerald-600 dark:text-emerald-400 font-mono text-sm">{tradeStats.win}</div>
                                     </div>
-                                    <div className="bg-slate-900/50 rounded-xl p-2 border border-white/5 text-center flex flex-col justify-center">
+                                    <div className="bg-white dark:bg-slate-900/50 rounded-xl p-2 border border-slate-200 dark:border-white/5 text-center flex flex-col justify-center">
                                         <div className="text-slate-500 text-[9px] uppercase font-bold">Losses</div>
-                                        <div className="text-rose-500 font-mono text-sm">{tradeStats.loss}</div>
+                                        <div className="text-rose-600 dark:text-rose-500 font-mono text-sm">{tradeStats.loss}</div>
                                     </div>
                                 </div>
                             </div>
                             
                             {/* Trade Log */}
-                            <div className="flex-1 bg-black/40 border border-white/5 rounded-2xl flex flex-col overflow-hidden shadow-lg">
-                                <div className="p-3 border-b border-white/5 bg-slate-900/50">
+                            <div className="flex-1 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-2xl flex flex-col overflow-hidden shadow-md dark:shadow-lg">
+                                <div className="p-3 border-b border-slate-200 dark:border-white/5 bg-white dark:bg-slate-900/50">
                                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Agent Decisions</h3>
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
                                     {tradeLog.map((log, i) => (
-                                        <div key={i} className="flex items-center justify-between bg-slate-900/80 p-2 rounded-lg border border-white/5 text-xs font-mono">
+                                        <div key={i} className="flex items-center justify-between bg-white dark:bg-slate-900/80 p-2 rounded-lg border border-slate-200 dark:border-white/5 text-xs font-mono">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-slate-500">#{log.step}</span>
-                                                <span className={log.action === 1 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                                                <span className={log.action === 1 ? 'text-green-600 dark:text-green-400 font-bold' : 'text-red-600 dark:text-red-400 font-bold'}>
                                                     {log.action === 1 ? 'BUY' : 'SELL'}
                                                 </span>
                                             </div>
-                                            <div className="text-slate-300">${log.price.toFixed(2)}</div>
+                                            <div className="text-slate-700 dark:text-slate-300">${log.price.toFixed(2)}</div>
                                         </div>
                                     ))}
                                     {tradeLog.length === 0 && (
@@ -475,7 +497,7 @@ export const RLTrainingVisualizer: React.FC<RLTrainingVisualizerProps> = ({
                         {/* Chart Area */}
                         <div className="col-span-9 flex flex-col gap-4 min-h-0">
                             {/* Equity Curve (Recharts) */}
-                            <div className="h-48 bg-black/40 border border-white/5 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-lg relative">
+                            <div className="h-48 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-md dark:shadow-lg relative">
                                 <div className="absolute top-3 left-4 z-10">
                                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Model Equity Curve (Returns)</h3>
                                 </div>
@@ -491,8 +513,8 @@ export const RLTrainingVisualizer: React.FC<RLTrainingVisualizerProps> = ({
                                             <XAxis dataKey="step" hide />
                                             <YAxis domain={['auto', 'auto']} hide />
                                             <RechartsTooltip 
-                                                contentStyle={{ backgroundColor: '#020617', borderColor: '#1e293b', borderRadius: '8px' }}
-                                                itemStyle={{ color: '#38bdf8', fontWeight: 'bold' }}
+                                                contentStyle={{ backgroundColor: isDark ? '#020617' : '#ffffff', borderColor: isDark ? '#1e293b' : '#e2e8f0', borderRadius: '8px', color: isDark ? '#f8fafc' : '#0f172a' }}
+                                                itemStyle={{ color: isDark ? '#38bdf8' : '#0284c7', fontWeight: 'bold' }}
                                             />
                                             <Area type="monotone" dataKey="value" stroke="#38bdf8" strokeWidth={2} fillOpacity={1} fill="url(#colorEq)" isAnimationActive={false} />
                                         </AreaChart>
@@ -502,16 +524,16 @@ export const RLTrainingVisualizer: React.FC<RLTrainingVisualizerProps> = ({
 
                             <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
                                 {/* Price Simulator Chart */}
-                                <div className="flex-1 bg-black/40 border border-white/5 rounded-2xl flex flex-col overflow-hidden shadow-lg">
-                                    <div className="p-3 border-b border-white/5 bg-slate-900/50 flex items-center justify-between">
+                                <div className="flex-1 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-2xl flex flex-col overflow-hidden shadow-md dark:shadow-lg">
+                                    <div className="p-3 border-b border-slate-200 dark:border-white/5 bg-white dark:bg-slate-900/50 flex items-center justify-between">
                                         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Price Environment</h3>
-                                        <div className="text-slate-300 font-mono text-sm">{latestStep?.price ? `$${latestStep.price.toFixed(4)}` : '...'}</div>
+                                        <div className="text-slate-700 dark:text-slate-300 font-mono text-sm">{latestStep?.price ? `$${latestStep.price.toFixed(4)}` : '...'}</div>
                                     </div>
                                     <div ref={chartContainerRef} className="flex-1 w-full" />
                                 </div>
 
                                 {/* Reward Chart */}
-                                <div className="flex-1 bg-black/40 border border-white/5 rounded-2xl flex flex-col overflow-hidden shadow-lg relative">
+                                <div className="flex-1 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-2xl flex flex-col overflow-hidden shadow-md dark:shadow-lg relative">
                                     <div className="absolute top-3 left-4 z-10">
                                         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Instantaneous Reward</h3>
                                     </div>

@@ -15,16 +15,16 @@ const ForecastConfigurator: React.FC<ForecastConfiguratorProps> = ({
   setLookbackWindow
 }) => {
   return (
-    <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 mb-6">
+    <div className="bg-white dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/50 rounded-xl p-4 mb-6 shadow-sm dark:shadow-none">
       <div className="flex items-center gap-2 mb-4">
-        <Target className="w-5 h-5 text-purple-400" />
-        <h3 className="text-lg font-semibold text-white">Forecast & Lookback Window</h3>
+        <Target className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Forecast & Lookback Window</h3>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm text-slate-400">
-            <History className="w-4 h-4 text-purple-400" /> Lookback Window (Sequence Length)
+          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+            <History className="w-4 h-4 text-purple-600 dark:text-purple-400" /> Lookback Window (Sequence Length)
           </label>
           <div className="relative">
             <input
@@ -33,7 +33,7 @@ const ForecastConfigurator: React.FC<ForecastConfiguratorProps> = ({
               max="500"
               value={lookbackWindow}
               onChange={(e) => setLookbackWindow(Number(e.target.value))}
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-3 pr-20 py-2.5 text-white focus:outline-none focus:border-purple-500 transition-colors"
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg pl-3 pr-20 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-purple-500 transition-colors"
             />
             <span className="absolute right-3 top-2.5 text-slate-500 text-sm pointer-events-none">Candles</span>
           </div>
@@ -41,8 +41,8 @@ const ForecastConfigurator: React.FC<ForecastConfiguratorProps> = ({
         </div>
 
         <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm text-slate-400">
-            <FastForward className="w-4 h-4 text-cyan-400" /> Forecast Horizon (Look-ahead)
+          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+            <FastForward className="w-4 h-4 text-cyan-600 dark:text-cyan-400" /> Forecast Horizon (Look-ahead)
           </label>
           <div className="relative">
             <input
@@ -51,7 +51,7 @@ const ForecastConfigurator: React.FC<ForecastConfiguratorProps> = ({
               max="100"
               value={forecastHorizon}
               onChange={(e) => setForecastHorizon(Number(e.target.value))}
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-3 pr-20 py-2.5 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg pl-3 pr-20 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500 transition-colors"
             />
             <span className="absolute right-3 top-2.5 text-slate-500 text-sm pointer-events-none">Candles</span>
           </div>

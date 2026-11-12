@@ -19,14 +19,14 @@ const DataAugmentationConfig: React.FC<DataAugmentationConfigProps> = ({
     setAugmentationSamples
 }) => {
     return (
-        <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 mb-4 transition-all duration-300 hover:border-slate-600/50">
+        <div className="bg-white dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/50 rounded-xl p-4 mb-4 transition-all duration-300 hover:border-slate-300 dark:hover:border-slate-600/50 shadow-sm dark:shadow-none">
             <div className="flex items-center gap-2 mb-3">
-                <CopyPlus className="w-4 h-4 text-emerald-400" />
-                <h4 className="text-sm font-bold text-white">Data Augmentation</h4>
+                <CopyPlus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Data Augmentation</h4>
             </div>
             
             <div className="mb-3">
-                <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase">Generation Strategy</label>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1.5 uppercase">Generation Strategy</label>
                 <div className="grid grid-cols-2 gap-2 mb-3">
                     {[
                         { id: 'none', label: 'None' },
@@ -37,7 +37,7 @@ const DataAugmentationConfig: React.FC<DataAugmentationConfigProps> = ({
                         <button
                             key={opt.id}
                             onClick={() => setAugmentationStrategy(opt.id)}
-                            className={`py-1.5 rounded-lg text-[11px] font-bold transition-all ${augmentationStrategy === opt.id ? 'bg-teal-500/20 text-teal-300 border border-teal-500/50 shadow-[0_0_10px_rgba(20,184,166,0.2)]' : 'bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10'}`}
+                            className={`py-1.5 rounded-lg text-[11px] font-bold transition-all ${augmentationStrategy === opt.id ? 'bg-teal-500/15 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/50 shadow-[0_0_10px_rgba(20,184,166,0.2)]' : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-white/10'}`}
                         >
                             {opt.label}
                         </button>
@@ -46,10 +46,10 @@ const DataAugmentationConfig: React.FC<DataAugmentationConfigProps> = ({
             </div>
 
             {augmentationStrategy !== 'none' && augmentationStrategy !== 'timegan' && (
-                <div className="bg-black/20 p-3 rounded-lg border border-white/5">
+                <div className="bg-slate-50 dark:bg-black/20 p-3 rounded-lg border border-slate-200 dark:border-white/5">
                     <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs font-semibold text-slate-300">Augmentation Factor</label>
-                        <span className="text-xs font-mono text-emerald-400">{augmentationFactor}x</span>
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Augmentation Factor</label>
+                        <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400">{augmentationFactor}x</span>
                     </div>
                     <input 
                         type="range" 
@@ -58,33 +58,33 @@ const DataAugmentationConfig: React.FC<DataAugmentationConfigProps> = ({
                         step="1"
                         value={augmentationFactor}
                         onChange={(e) => setAugmentationFactor(parseInt(e.target.value))}
-                        className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                     />
                     <div className="flex justify-between mt-1 text-[10px] text-slate-500 font-medium">
                         <span>Min (1x)</span>
                         <span>Max (5x)</span>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                    <p className="text-[10px] text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
                         Multiply the training dataset size by generating synthetic samples. Helps prevent overfitting in deep learning models.
                     </p>
                 </div>
             )}
 
             {augmentationStrategy === 'timegan' && (
-                <div className="bg-teal-900/20 p-3 rounded-lg border border-teal-500/30">
+                <div className="bg-teal-50 dark:bg-teal-900/20 p-3 rounded-lg border border-teal-200 dark:border-teal-500/30">
                     <div className="mb-2">
-                        <label className="text-xs font-semibold text-teal-300 block mb-1">Target Synthetic Samples</label>
+                        <label className="text-xs font-semibold text-teal-700 dark:text-teal-300 block mb-1">Target Synthetic Samples</label>
                         <input 
                             type="number" 
                             min="1000"
                             step="1000"
                             value={augmentationSamples}
                             onChange={(e) => setAugmentationSamples && setAugmentationSamples(parseInt(e.target.value) || 0)}
-                            className="w-full bg-black/40 border border-teal-500/30 rounded-md px-2 py-1.5 text-xs text-white focus:outline-none focus:border-teal-400"
+                            className="w-full bg-white dark:bg-black/40 border border-teal-300 dark:border-teal-500/30 rounded-md px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 dark:focus:border-teal-400"
                         />
                     </div>
-                    <div className="bg-amber-900/30 border border-amber-700/50 rounded p-2 mt-2">
-                        <p className="text-[10px] text-amber-200/90 leading-relaxed font-medium">
+                    <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700/50 rounded p-2 mt-2">
+                        <p className="text-[10px] text-amber-800 dark:text-amber-200/90 leading-relaxed font-medium">
                             ⚠️ Note: Generating TimeGAN data live on CPU for {augmentationSamples.toLocaleString()} samples may take several minutes before actual model training starts.
                         </p>
                     </div>

@@ -684,24 +684,24 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
 
     return (
         <>
-            <div className="h-full flex flex-col space-y-3 relative overflow-hidden bg-black/20 rounded-3xl">
+            <div className="h-full flex flex-col space-y-3 relative overflow-hidden bg-slate-50 dark:bg-black/20 rounded-3xl">
             {/* Background Orbs adapted for Forex (Teal/Blue vibe) */}
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-teal-600/20 blur-[120px] rounded-full pointer-events-none"></div>
-            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/20 blur-[120px] rounded-full pointer-events-none"></div>
+            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-teal-600/10 dark:bg-teal-600/20 blur-[120px] rounded-full pointer-events-none"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/10 dark:bg-blue-600/20 blur-[120px] rounded-full pointer-events-none"></div>
 
             <header className="flex items-center gap-4 z-10 px-2 mt-2">
-                <h2 className="text-xl font-black text-white flex items-center gap-2">
-                    <Globe className="w-5 h-5 text-teal-400" />
+                <h2 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <Globe className="w-5 h-5 text-teal-600 dark:text-teal-400" />
                     Forex ML Intelligence Studio
                 </h2>
-                <div className="w-px h-4 bg-white/20"></div>
-                <div className="text-slate-400 text-xs font-medium tracking-wide flex items-center gap-2">
+                <div className="w-px h-4 bg-slate-300 dark:bg-white/20"></div>
+                <div className="text-slate-600 dark:text-slate-400 text-xs font-medium tracking-wide flex items-center gap-2">
                     Decentralized Market Modeling with Macro-Economic Pipelines
                 </div>
             </header>
 
             <div className="flex-1 flex flex-col min-h-0 relative z-10">
-                <div className="w-full flex flex-col bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 laptop:p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative overflow-hidden h-full">
+                <div className="w-full flex flex-col bg-white/85 dark:bg-black/40 backdrop-blur-2xl border border-slate-200 dark:border-white/10 rounded-3xl p-6 laptop:p-3.5 shadow-lg dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative overflow-hidden h-full">
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 laptop:gap-4 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                         
                         {/* COLUMN 1: Core Parameters (Modularized) */}
@@ -800,14 +800,14 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                         />
 
                         {/* COLUMN 2: Neural Architecture */}
-                        <div className="flex flex-col h-full bg-white/5 border border-teal-500/30 rounded-2xl shadow-[0_0_12px_rgba(20,184,166,0.1)] overflow-hidden">
-                            <div className="p-5 bg-black/40 border-b border-white/10 flex-shrink-0 relative z-20">
-                                <h3 className="text-sm font-bold text-blue-400 flex items-center gap-2 uppercase tracking-widest"><Cpu className="w-4 h-4" /> Neural Architecture</h3>
+                        <div className="flex flex-col h-full bg-white dark:bg-white/5 border border-teal-500/30 rounded-2xl shadow-sm dark:shadow-[0_0_12px_rgba(20,184,166,0.1)] overflow-hidden">
+                            <div className="p-5 bg-slate-50 dark:bg-black/40 border-b border-slate-200 dark:border-white/10 flex-shrink-0 relative z-20">
+                                <h3 className="text-sm font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2 uppercase tracking-widest"><Cpu className="w-4 h-4" /> Neural Architecture</h3>
                             </div>
                             <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar h-full flex flex-col">
                                 <div className="space-y-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-slate-300 mb-2">Algorithm Selection</label>
+                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Algorithm Selection</label>
                                         <EnsembleBuilder
                                             isEnsemble={isEnsemble}
                                             setIsEnsemble={setIsEnsemble}
@@ -842,7 +842,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                                     {ALGORITHM_CATEGORIES.map(category => (
                                                         <div key={category.name} className="space-y-2">
                                                             <div>
-                                                                <h4 className="text-[10px] font-black text-teal-400 uppercase tracking-widest">{category.name}</h4>
+                                                                <h4 className="text-[10px] font-black text-teal-600 dark:text-teal-400 uppercase tracking-widest">{category.name}</h4>
                                                                 <p className="text-[10px] text-slate-500 font-medium">{category.desc}</p>
                                                             </div>
                                                             <div className="grid grid-cols-1 gap-2">
@@ -856,22 +856,22 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                                                             }
                                                                             if (!isTraining) setAlgorithm(algo.id);
                                                                         }}
-                                                                        className={`flex items-start p-3 rounded-xl border cursor-pointer transition-all duration-300 relative overflow-hidden ${algorithm === algo.id ? 'border-teal-400 bg-teal-500/20 shadow-[0_0_15px_rgba(20,184,166,0.2)]' : 'border-white/10 bg-white/5 hover:bg-white/10'} ${isTraining || (algo as any).disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                                        className={`flex items-start p-3 rounded-xl border cursor-pointer transition-all duration-300 relative overflow-hidden ${algorithm === algo.id ? 'border-teal-500 dark:border-teal-400 bg-teal-500/15 dark:bg-teal-500/20 shadow-[0_0_15px_rgba(20,184,166,0.15)]' : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10'} ${isTraining || (algo as any).disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                                     >
-                                                                        <div className={`mt-1 w-3.5 h-3.5 rounded-full border flex items-center justify-center flex-shrink-0 ${algorithm === algo.id ? 'border-teal-400' : 'border-white/30'}`}>
-                                                                            {algorithm === algo.id && <div className="w-1.5 h-1.5 bg-teal-400 rounded-full" />}
+                                                                        <div className={`mt-1 w-3.5 h-3.5 rounded-full border flex items-center justify-center flex-shrink-0 ${algorithm === algo.id ? 'border-teal-500 dark:border-teal-400' : 'border-slate-400 dark:border-white/30'}`}>
+                                                                            {algorithm === algo.id && <div className="w-1.5 h-1.5 bg-teal-500 dark:bg-teal-400 rounded-full" />}
                                                                         </div>
                                                                         <div className="ml-3 flex-1 min-w-0">
                                                                             <div className="flex justify-between items-start mb-1">
                                                                                 <div className="flex items-center gap-2">
-                                                                                    <span className={`text-xs font-bold ${algorithm === algo.id ? 'text-teal-300' : 'text-slate-300'}`}>{algo.id}</span>
+                                                                                    <span className={`text-xs font-bold ${algorithm === algo.id ? 'text-teal-700 dark:text-teal-300' : 'text-slate-800 dark:text-slate-300'}`}>{algo.id}</span>
                                                                                     {(algo as any).disabled && (
-                                                                                        <span className="text-[8px] font-bold text-red-400 bg-red-900/30 border border-red-500/30 px-1.5 py-0.5 rounded uppercase tracking-widest">CUDA REQUIRED</span>
+                                                                                        <span className="text-[8px] font-bold text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-500/30 px-1.5 py-0.5 rounded uppercase tracking-widest">CUDA REQUIRED</span>
                                                                                     )}
                                                                                 </div>
-                                                                                <span className="text-[9px] font-bold tracking-wider uppercase text-slate-500 bg-black/40 px-1.5 py-0.5 rounded border border-white/5">{algo.type}</span>
+                                                                                <span className="text-[9px] font-bold tracking-wider uppercase text-slate-600 dark:text-slate-500 bg-slate-200/70 dark:bg-black/40 px-1.5 py-0.5 rounded border border-slate-300/60 dark:border-white/5">{algo.type}</span>
                                                                             </div>
-                                                                            <p className="text-[10px] text-slate-400 leading-snug">{algo.desc}</p>
+                                                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">{algo.desc}</p>
                                                                         </div>
                                                                     </div>
                                                                 ))}
@@ -927,16 +927,16 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                                 <h3 className="font-bold">Supervised ML Pipeline Settings</h3>
                                             </div>
                                             <div className="space-y-4">
-                                                <div className="bg-black/30 border border-teal-500/20 rounded-xl p-4">
+                                                <div className="bg-slate-50 dark:bg-black/30 border border-teal-500/20 rounded-xl p-4">
                                                     <div className="flex justify-between items-center mb-2">
-                                                        <label className="text-xs font-bold text-white flex items-center gap-2">
+                                                        <label className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
                                                             Profit Barrier (Fee Threshold)
                                                         </label>
-                                                        <span className="text-xs font-mono text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded">
+                                                        <span className="text-xs font-mono text-teal-700 dark:text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded">
                                                             {(feeThreshold * 100).toFixed(4)}%
                                                         </span>
                                                     </div>
-                                                    <p className="text-[10px] text-slate-400 mb-3">
+                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-3">
                                                         Filters out trades whose potential profit is less than the broker fee/spread. 
                                                         If set to 0.01%, the ML model will only learn from moves strictly {'>'} 0.01%.
                                                     </p>
@@ -947,7 +947,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                                         step="0.0001" 
                                                         value={feeThreshold} 
                                                         onChange={(e) => setFeeThreshold(parseFloat(e.target.value))}
-                                                        className="w-full accent-teal-500 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                                                        className="w-full accent-teal-500 h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer"
                                                     />
                                                     <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
                                                         <span>0.00%</span>
@@ -971,50 +971,50 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                         <motion.div 
                                             initial={{ opacity: 0 }} 
                                             animate={{ opacity: 1 }}
-                                            className="mt-4 p-4 bg-teal-500/5 border border-teal-500/20 rounded-2xl space-y-4"
+                                            className="mt-4 p-4 bg-teal-50/70 dark:bg-teal-500/5 border border-teal-500/20 rounded-2xl space-y-4"
                                         >
-                                            <h4 className="text-xs font-black text-teal-400 uppercase tracking-widest flex items-center gap-2">
+                                            <h4 className="text-xs font-black text-teal-700 dark:text-teal-400 uppercase tracking-widest flex items-center gap-2">
                                                 <Target className="w-3.5 h-3.5" /> Engine Specific Settings
                                             </h4>
                                             
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div>
-                                                    <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Initial Balance ($)</label>
+                                                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Initial Balance ($)</label>
                                                     <input 
                                                         type="number" 
                                                         value={initialBalance} 
                                                         onChange={e => setInitialBalance(parseInt(e.target.value))}
-                                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-teal-400"
+                                                        className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-teal-400"
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Trading Fees / Spread</label>
+                                                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Trading Fees / Spread</label>
                                                     <input 
                                                         type="number" 
                                                         step="0.0001"
                                                         value={tradingFees} 
                                                         onChange={e => setTradingFees(parseFloat(e.target.value))}
-                                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-teal-400"
+                                                        className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-teal-400"
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Slippage</label>
+                                                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Slippage</label>
                                                     <input 
                                                         type="number" 
                                                         step="0.0001"
                                                         value={slippage} 
                                                         onChange={e => setSlippage(parseFloat(e.target.value))}
-                                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-teal-400"
+                                                        className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-teal-400"
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase" title="0 = Disabled">Max Drawdown (%)</label>
+                                                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase" title="0 = Disabled">Max Drawdown (%)</label>
                                                     <input 
                                                         type="number" 
                                                         step="0.1"
                                                         value={maxAllowedDrawdown} 
                                                         onChange={e => setMaxAllowedDrawdown(parseFloat(e.target.value) || 0)}
-                                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-teal-400"
+                                                        className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-teal-400"
                                                         placeholder="0 = Disabled"
                                                     />
                                                 </div>
@@ -1079,18 +1079,18 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
 
                     </div>
                     
-                    <div className="pt-6 mt-2 relative z-10 flex flex-col gap-3 border-t border-white/10">
+                    <div className="pt-6 mt-2 relative z-10 flex flex-col gap-3 border-t border-slate-200 dark:border-white/10">
                         {isTraining && activeJob ? (
                             <div className="flex gap-3">
                                 <button 
                                     onClick={() => setShowTerminal(true)}
-                                    className="flex-1 py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-3 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all duration-300 shadow-xl"
+                                    className="flex-1 py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-3 bg-cyan-500/15 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/25 dark:hover:bg-cyan-500/30 transition-all duration-300 shadow-lg dark:shadow-xl"
                                 >
                                     <Activity className="w-5 h-5" /> SHOW LIVE TERMINAL
                                 </button>
                                 <button 
                                     onClick={handleCancelTraining}
-                                    className="flex-1 py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-2 bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-all"
+                                    className="flex-1 py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-2 bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-all"
                                 >
                                     <XCircle className="w-5 h-5" /> CANCEL
                                 </button>
@@ -1115,17 +1115,17 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.95 }}
-                        className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm"
+                        className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm"
                     >
                         <div className="w-full max-w-6xl h-[85vh] relative flex flex-col min-h-0">
                             <button 
                                 onClick={() => setShowTerminal(false)}
-                                className="absolute -top-12 right-0 p-2 text-slate-400 hover:text-white transition-colors"
+                                className="absolute -top-12 right-0 p-2 text-slate-200 dark:text-slate-400 hover:text-white transition-colors"
                             >
                                 <XCircle className="w-8 h-8" />
                             </button>
 
-                            <div className="flex flex-col bg-black/60 backdrop-blur-2xl border border-cyan-500/20 rounded-3xl shadow-[0_0_50px_rgba(56,189,248,0.1)] overflow-hidden h-full relative z-10 w-full">
+                            <div className="flex flex-col bg-slate-950/95 dark:bg-black/60 backdrop-blur-2xl border border-cyan-500/20 rounded-3xl shadow-[0_0_50px_rgba(56,189,248,0.1)] overflow-hidden h-full relative z-10 w-full">
                                 {/* Header */}
                                 <div className="px-6 py-4 bg-gradient-to-r from-cyan-900/40 to-blue-900/20 border-b border-cyan-500/20 flex items-center justify-between flex-shrink-0">
                                     <div className="flex items-center gap-3">

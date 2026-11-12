@@ -67,7 +67,7 @@ export const CustomFeatureBuilder: React.FC<CustomFeatureBuilderProps> = ({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+                    className="absolute inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm"
                     onClick={onClose}
                 />
                 
@@ -75,22 +75,22 @@ export const CustomFeatureBuilder: React.FC<CustomFeatureBuilderProps> = ({
                     initial={{ opacity: 0, scale: 0.95, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                    className="relative w-full max-w-2xl bg-[#0A0A0A] border border-pink-500/30 rounded-2xl shadow-[0_0_50px_rgba(236,72,153,0.2)] flex flex-col overflow-hidden"
+                    className="relative w-full max-w-2xl bg-white dark:bg-[#0A0A0A] border border-pink-200 dark:border-pink-500/30 rounded-2xl shadow-2xl dark:shadow-[0_0_50px_rgba(236,72,153,0.2)] flex flex-col overflow-hidden"
                 >
                     {/* Header */}
-                    <div className="flex items-center justify-between p-5 border-b border-white/10 bg-gradient-to-r from-pink-900/20 to-transparent">
+                    <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-white/10 bg-gradient-to-r from-pink-50 dark:from-pink-900/20 to-transparent">
                         <div className="flex items-center gap-3">
-                            <div className="p-2 bg-pink-500/20 rounded-lg border border-pink-500/30">
-                                <TerminalSquare className="w-5 h-5 text-pink-400" />
+                            <div className="p-2 bg-pink-500/15 dark:bg-pink-500/20 rounded-lg border border-pink-300 dark:border-pink-500/30">
+                                <TerminalSquare className="w-5 h-5 text-pink-600 dark:text-pink-400" />
                             </div>
                             <div>
-                                <h2 className="text-lg font-black text-white uppercase tracking-widest">Custom Feature Builder</h2>
-                                <p className="text-xs text-slate-400 mt-0.5">Define custom mathematical formulas using existing features</p>
+                                <h2 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-widest">Custom Feature Builder</h2>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Define custom mathematical formulas using existing features</p>
                             </div>
                         </div>
                         <button 
                             onClick={onClose}
-                            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-slate-400 hover:text-white"
+                            className="p-2 rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                         >
                             <X className="w-5 h-5" />
                         </button>
@@ -99,20 +99,20 @@ export const CustomFeatureBuilder: React.FC<CustomFeatureBuilderProps> = ({
                     {/* Content */}
                     <div className="p-6 space-y-6">
                         <div>
-                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Feature Name</label>
+                            <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-2">Feature Name</label>
                             <input 
                                 type="text"
                                 value={featureName}
                                 onChange={(e) => setFeatureName(e.target.value)}
                                 placeholder="e.g. customized_volume_ratio"
-                                className="w-full bg-white/5 border border-white/10 focus:border-pink-500/50 rounded-xl px-4 py-3 text-sm text-white outline-none transition-all placeholder-white/20 font-mono"
+                                className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 focus:border-pink-500/50 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white outline-none transition-all placeholder-slate-400 dark:placeholder-white/20 font-mono"
                             />
                         </div>
 
                         <div>
-                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex justify-between">
+                            <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-2 flex justify-between">
                                 Formula Expression
-                                <span className="text-pink-400 text-[10px]">Pandas/Polars syntax supported on backend</span>
+                                <span className="text-pink-600 dark:text-pink-400 text-[10px]">Pandas/Polars syntax supported on backend</span>
                             </label>
                             <div className="relative">
                                 <textarea 
@@ -120,24 +120,24 @@ export const CustomFeatureBuilder: React.FC<CustomFeatureBuilderProps> = ({
                                     onChange={(e) => setFormula(e.target.value)}
                                     placeholder="e.g. (buy_volume - sell_volume) / (trade_count + 1)"
                                     rows={4}
-                                    className="w-full bg-black border border-white/10 focus:border-pink-500/50 rounded-xl px-4 py-3 text-sm text-pink-300 outline-none transition-all placeholder-white/20 font-mono resize-none"
+                                    className="w-full bg-slate-50 dark:bg-black border border-slate-200 dark:border-white/10 focus:border-pink-500/50 rounded-xl px-4 py-3 text-sm text-pink-700 dark:text-pink-300 outline-none transition-all placeholder-slate-400 dark:placeholder-white/20 font-mono resize-none"
                                 />
                                 <div className="absolute bottom-3 right-3 flex gap-2">
-                                    <span className="text-[10px] font-bold bg-white/5 px-2 py-1 rounded border border-white/10 text-slate-400">math.log()</span>
-                                    <span className="text-[10px] font-bold bg-white/5 px-2 py-1 rounded border border-white/10 text-slate-400">rolling_mean(20)</span>
+                                    <span className="text-[10px] font-bold bg-white dark:bg-white/5 px-2 py-1 rounded border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400">math.log()</span>
+                                    <span className="text-[10px] font-bold bg-white dark:bg-white/5 px-2 py-1 rounded border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400">rolling_mean(20)</span>
                                 </div>
                             </div>
                         </div>
 
                         {error && (
-                            <div className="flex items-center gap-2 text-rose-400 bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl text-sm font-bold">
+                            <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl text-sm font-bold">
                                 <AlertCircle className="w-4 h-4" />
                                 {error}
                             </div>
                         )}
                         
                         {success && (
-                            <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl text-sm font-bold">
+                            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl text-sm font-bold">
                                 <CheckCircle2 className="w-4 h-4" />
                                 Feature validated and added successfully!
                             </div>
@@ -145,10 +145,10 @@ export const CustomFeatureBuilder: React.FC<CustomFeatureBuilderProps> = ({
                     </div>
 
                     {/* Footer */}
-                    <div className="p-4 border-t border-white/10 bg-black/50 flex justify-end gap-3">
+                    <div className="p-4 border-t border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/50 flex justify-end gap-3">
                         <button 
                             onClick={onClose}
-                            className="px-6 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-sm transition-all border border-white/10"
+                            className="px-6 py-2.5 rounded-xl bg-white dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-white font-bold text-sm transition-all border border-slate-200 dark:border-white/10"
                         >
                             Cancel
                         </button>

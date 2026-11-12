@@ -1085,17 +1085,17 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
             <header className="flex flex-wrap items-center justify-between gap-3 z-20 px-2 mt-2 lg:pr-56">
                 <div className="flex items-center gap-4 min-w-0">
-                    <h2 className="text-xl font-black text-white flex items-center gap-2 shrink-0">
-                        <BrainCircuit className="w-5 h-5 text-cyan-400" />
+                    <h2 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2 shrink-0">
+                        <BrainCircuit className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
                         {isRetrainMode ? "Model Retraining Studio" : "Machine Learning Engine Core"}
                         {isRetrainMode && <div className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-ping ml-2"></div>}
                     </h2>
-                    <div className="w-px h-4 bg-white/20 hidden sm:block"></div>
-                    <div className="text-slate-400 text-xs font-medium tracking-wide hidden xl:flex items-center gap-2 truncate">
+                    <div className="w-px h-4 bg-slate-300 dark:bg-white/20 hidden sm:block"></div>
+                    <div className="text-slate-600 dark:text-slate-400 text-xs font-medium tracking-wide hidden xl:flex items-center gap-2 truncate">
                         {isRetrainMode 
                             ? (
                                 <>
-                                    Fine-tuning: <span className="text-purple-400 font-bold bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/30">{retrainModelName || retrainModelId}</span> Add new features to increase intelligence.
+                                    Fine-tuning: <span className="text-purple-700 dark:text-purple-400 font-bold bg-purple-100 dark:bg-purple-500/10 px-2 py-0.5 rounded border border-purple-300 dark:border-purple-500/30">{retrainModelName || retrainModelId}</span> Add new features to increase intelligence.
                                 </>
                             )
                             : `Advanced L2/OHLCV Machine Learning Synchronization Studio.`}
@@ -1108,14 +1108,14 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                     <button
                         type="button"
                         onClick={() => setShowCompareModal(true)}
-                        className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition-all"
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-500/30 transition-all"
                     >
                         <GitCompare className="w-3.5 h-3.5" /> Compare & Replay
                     </button>
                     <button
                         type="button"
                         onClick={() => setShowPresetsModal(true)}
-                        className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 transition-all"
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-purple-50 dark:bg-purple-500/10 hover:bg-purple-100 dark:hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-500/30 transition-all"
                     >
                         <Bookmark className="w-3.5 h-3.5" /> Presets / Clone
                     </button>
@@ -1125,7 +1125,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                             setDeployModelId(currentJob?.output_model_id || null);
                             setShowDeployModal(true);
                         }}
-                        className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/35 shadow-[0_0_12px_rgba(16,185,129,0.2)] transition-all"
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/35 shadow-[0_0_12px_rgba(16,185,129,0.15)] dark:shadow-[0_0_12px_rgba(16,185,129,0.2)] transition-all"
                     >
                         <Rocket className="w-3.5 h-3.5" /> 1-Click Deploy
                     </button>
@@ -1134,20 +1134,20 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
             <div className="flex-1 flex flex-col min-h-0 relative z-10">
                 {/* Configuration Panel */}
-                <div className="w-full flex flex-col bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 laptop:p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative overflow-hidden h-full">
+                <div className="w-full flex flex-col bg-white/85 dark:bg-black/40 backdrop-blur-2xl border border-slate-200 dark:border-white/10 rounded-3xl p-6 laptop:p-3.5 shadow-xl dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative overflow-hidden h-full">
                     {/* Glass reflection */}
                     <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent"></div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 laptop:gap-4 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                         {/* COLUMN 1: Core Parameters */}
-                        <div className="flex flex-col h-full bg-white/5 border border-amber-500/50 rounded-2xl shadow-[0_0_12px_rgba(245,158,11,0.4)] overflow-hidden">
-                            <div className="p-5 bg-black/40 border-b border-white/10 flex-shrink-0 relative z-20">
-                                <h3 className="text-sm font-bold text-cyan-400 flex items-center gap-2 uppercase tracking-widest"><Settings className="w-4 h-4" /> Core Parameters</h3>
+                        <div className="flex flex-col h-full bg-slate-50/80 dark:bg-white/5 border border-amber-400/70 dark:border-amber-500/50 rounded-2xl shadow-[0_0_12px_rgba(245,158,11,0.2)] dark:shadow-[0_0_12px_rgba(245,158,11,0.4)] overflow-hidden">
+                            <div className="p-5 bg-slate-100/90 dark:bg-black/40 border-b border-slate-200 dark:border-white/10 flex-shrink-0 relative z-20">
+                                <h3 className="text-sm font-bold text-cyan-600 dark:text-cyan-400 flex items-center gap-2 uppercase tracking-widest"><Settings className="w-4 h-4" /> Core Parameters</h3>
                             </div>
                             <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar h-full">
                                 <div className="grid grid-cols-2 gap-4 items-end">
                             <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-2">Asset & Exchange</label>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Asset & Exchange</label>
                                 <div className={isTraining ? 'opacity-50 pointer-events-none' : ''}>
                                     <HeatmapSymbolSelector 
                                         symbol={symbol} 
@@ -1161,13 +1161,13 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                         </div>
                         
                         <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-1">Custom Model Name (Optional)</label>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Custom Model Name (Optional)</label>
                             <input 
                                 type="text" 
                                 value={modelName} 
                                 onChange={e => setModelName(e.target.value)}
                                 disabled={isTraining}
-                                className="w-full bg-white/5 backdrop-blur-md border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-purple-500/50 focus:border-purple-400 outline-none transition-all disabled:opacity-50 placeholder-white/30 shadow-inner"
+                                className="w-full bg-white dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500/50 focus:border-purple-400 outline-none transition-all disabled:opacity-50 placeholder-slate-400 dark:placeholder-white/30 shadow-inner"
                                 placeholder="e.g., BTC_Scalper_V1"
                             />
                         </div>
@@ -1194,14 +1194,14 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
                         {(dataSource === 'ohlcv' || dataSource === 'hybrid' || ((dataSource === 'l2_orderbook' || dataSource === 'hybrid_deep') && isResampleL2)) && (
                             <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1">Candle Interval</label>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Candle Interval</label>
                                 <div className="grid grid-cols-5 gap-2">
                                 {TIMEFRAMES.map(tf => (
                                     <button
                                         key={tf}
                                         disabled={isTraining}
                                         onClick={() => setTimeframe(tf)}
-                                        className={`py-2 rounded-xl text-sm font-bold transition-all duration-300 ${timeframe === tf ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-400/50 shadow-[0_0_15px_rgba(34,211,238,0.3)]' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white hover:border-white/20'}`}
+                                        className={`py-2 rounded-xl text-sm font-bold transition-all duration-300 ${timeframe === tf ? 'bg-cyan-500/15 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 border border-cyan-500/50 dark:border-cyan-400/50 shadow-[0_0_15px_rgba(34,211,238,0.2)] dark:shadow-[0_0_15px_rgba(34,211,238,0.3)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-white/20'}`}
                                     >
                                         {tf}
                                     </button>
@@ -1212,7 +1212,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
                         {(dataSource === 'l2_orderbook' && !isResampleL2) && (
                             <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1">Snapshot Interval (Sampling Rate)</label>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Snapshot Interval (Sampling Rate)</label>
                                 <div className="grid grid-cols-5 gap-2">
                                 {['100ms', '500ms', '1s', '5s', 'Tick'].map(tf => (
                                     <button
@@ -1222,7 +1222,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                             setTimeframe(tf);
                                             setIsResampleL2(tf !== 'Tick');
                                         }}
-                                        className={`py-2 rounded-xl text-sm font-bold transition-all duration-300 ${timeframe === tf ? 'bg-purple-500/20 text-purple-400 border border-purple-400/50 shadow-[0_0_15px_rgba(168,85,247,0.3)]' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white hover:border-white/20'}`}
+                                        className={`py-2 rounded-xl text-sm font-bold transition-all duration-300 ${timeframe === tf ? 'bg-purple-500/15 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/50 dark:border-purple-400/50 shadow-[0_0_15px_rgba(168,85,247,0.2)] dark:shadow-[0_0_15px_rgba(168,85,247,0.3)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-white/20'}`}
                                     >
                                         {tf}
                                     </button>
@@ -1232,15 +1232,15 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                         )}
                         
                         {/* Data Preprocessing & Cleaning */}
-                        <div className="mt-6 pt-6 border-t border-white/10">
-                            <h4 className="text-xs font-bold text-teal-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <div className="mt-6 pt-6 border-t border-slate-200 dark:border-white/10">
+                            <h4 className="text-xs font-bold text-teal-600 dark:text-teal-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                                 <Activity className="w-4 h-4" /> Data Preprocessing
                             </h4>
                             
                             <div className="space-y-4">
                                 {/* Missing Data Strategy */}
                                 <div>
-                                    <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase">Missing Data Handling</label>
+                                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1.5 uppercase">Missing Data Handling</label>
                                     <div className="grid grid-cols-3 gap-2">
                                         {[
                                             { id: 'drop', label: 'Drop Rows' },
@@ -1251,7 +1251,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 key={opt.id}
                                                 disabled={isTraining}
                                                 onClick={() => setMissingDataStrategy(opt.id)}
-                                                className={`py-1.5 rounded-lg text-xs font-bold transition-all ${missingDataStrategy === opt.id ? 'bg-teal-500/20 text-teal-300 border border-teal-500/50 shadow-[0_0_10px_rgba(20,184,166,0.2)]' : 'bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10'}`}
+                                                className={`py-1.5 rounded-lg text-xs font-bold transition-all ${missingDataStrategy === opt.id ? 'bg-teal-500/15 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/50 shadow-[0_0_10px_rgba(20,184,166,0.15)] dark:shadow-[0_0_10px_rgba(20,184,166,0.2)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'}`}
                                             >
                                                 {opt.label}
                                             </button>
@@ -1261,7 +1261,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
                                 {/* Outlier Removal */}
                                 <div>
-                                    <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase">Outlier Filtering</label>
+                                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1.5 uppercase">Outlier Filtering</label>
                                     <div className="grid grid-cols-3 gap-2">
                                         {[
                                             { id: 'none', label: 'None' },
@@ -1272,7 +1272,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 key={opt.id}
                                                 disabled={isTraining}
                                                 onClick={() => setOutlierRemoval(opt.id)}
-                                                className={`py-1.5 rounded-lg text-xs font-bold transition-all ${outlierRemoval === opt.id ? 'bg-teal-500/20 text-teal-300 border border-teal-500/50 shadow-[0_0_10px_rgba(20,184,166,0.2)]' : 'bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10'}`}
+                                                className={`py-1.5 rounded-lg text-xs font-bold transition-all ${outlierRemoval === opt.id ? 'bg-teal-500/15 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/50 shadow-[0_0_10px_rgba(20,184,166,0.15)] dark:shadow-[0_0_10px_rgba(20,184,166,0.2)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'}`}
                                             >
                                                 {opt.label}
                                             </button>
@@ -1282,7 +1282,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
                                 {/* Scaling Method */}
                                 <div>
-                                    <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase">Feature Scaling</label>
+                                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1.5 uppercase">Feature Scaling</label>
                                     <div className="grid grid-cols-4 gap-2">
                                         {[
                                             { id: 'none', label: 'None' },
@@ -1294,7 +1294,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 key={opt.id}
                                                 disabled={isTraining}
                                                 onClick={() => setScalingMethod(opt.id)}
-                                                className={`py-1.5 rounded-lg text-xs font-bold transition-all ${scalingMethod === opt.id ? 'bg-teal-500/20 text-teal-300 border border-teal-500/50 shadow-[0_0_10px_rgba(20,184,166,0.2)]' : 'bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10'}`}
+                                                className={`py-1.5 rounded-lg text-xs font-bold transition-all ${scalingMethod === opt.id ? 'bg-teal-500/15 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/50 shadow-[0_0_10px_rgba(20,184,166,0.15)] dark:shadow-[0_0_10px_rgba(20,184,166,0.2)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'}`}
                                             >
                                                 {opt.label}
                                             </button>
@@ -1306,8 +1306,8 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                 </div>
                                 
                                 {/* 🚀 Smart Feature Selection (Phase 3) */}
-                                <div className="p-3 bg-purple-500/5 border border-purple-500/20 rounded-xl space-y-3">
-                                    <h4 className="text-xs font-bold text-purple-400 flex items-center justify-between">
+                                <div className="p-3 bg-purple-50 dark:bg-purple-500/5 border border-purple-200 dark:border-purple-500/20 rounded-xl space-y-3">
+                                    <h4 className="text-xs font-bold text-purple-700 dark:text-purple-400 flex items-center justify-between">
                                         <span className="flex items-center gap-2"><Target className="w-4 h-4" /> Smart Feature Selection</span>
                                         <button
                                             onClick={(e) => {
@@ -1324,12 +1324,12 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     
                                     <div className="flex items-center justify-between">
                                         <div>
-                                            <span className="text-[11px] font-bold text-slate-300 block">Collinearity Filter (PCA)</span>
+                                            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">Collinearity Filter (PCA)</span>
                                             <span className="text-[9px] text-slate-500">Drops features with &gt;95% correlation to reduce noise.</span>
                                         </div>
                                         <button
                                             onClick={(e) => { e.preventDefault(); setApplyPcaCollinearity(!applyPcaCollinearity); }}
-                                            className={`w-10 h-5 rounded-full transition-colors relative ${applyPcaCollinearity ? 'bg-purple-500' : 'bg-slate-700'}`}
+                                            className={`w-10 h-5 rounded-full transition-colors relative ${applyPcaCollinearity ? 'bg-purple-500' : 'bg-slate-300 dark:bg-slate-700'}`}
                                         >
                                             <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 transition-transform ${applyPcaCollinearity ? 'translate-x-5.5 left-0.5' : 'translate-x-0.5'}`} style={{ transform: applyPcaCollinearity ? 'translateX(22px)' : 'translateX(2px)' }} />
                                         </button>
@@ -1337,69 +1337,69 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     
                                     <div className="flex items-center justify-between">
                                         <div>
-                                            <span className="text-[11px] font-bold text-slate-300 block">SHAP Value Extraction</span>
+                                            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">SHAP Value Extraction</span>
                                             <span className="text-[9px] text-slate-500">Trains lightweight XGBoost to pick features with predictive power.</span>
                                         </div>
                                         <button
                                             onClick={(e) => { e.preventDefault(); setApplyShapSelection(!applyShapSelection); }}
-                                            className={`w-10 h-5 rounded-full transition-colors relative ${applyShapSelection ? 'bg-purple-500' : 'bg-slate-700'}`}
+                                            className={`w-10 h-5 rounded-full transition-colors relative ${applyShapSelection ? 'bg-purple-500' : 'bg-slate-300 dark:bg-slate-700'}`}
                                         >
                                             <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 transition-transform ${applyShapSelection ? 'translate-x-5.5 left-0.5' : 'translate-x-0.5'}`} style={{ transform: applyShapSelection ? 'translateX(22px)' : 'translateX(2px)' }} />
                                         </button>
                                     </div>
 
                                     {applyShapSelection && (
-                                        <div className="pt-2 border-t border-purple-500/10">
-                                            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                        <div className="pt-2 border-t border-purple-200 dark:border-purple-500/10">
+                                            <div className="flex justify-between text-[10px] text-slate-600 dark:text-slate-400 mb-1">
                                                 <span>Variance Explained Threshold</span>
-                                                <span className="text-purple-400 font-bold">{(shapVarianceThreshold * 100).toFixed(0)}%</span>
+                                                <span className="text-purple-600 dark:text-purple-400 font-bold">{(shapVarianceThreshold * 100).toFixed(0)}%</span>
                                             </div>
                                             <input 
                                                 type="range" min="0.50" max="0.99" step="0.01"
                                                 value={shapVarianceThreshold} 
                                                 onChange={(e) => setShapVarianceThreshold(parseFloat(e.target.value))}
-                                                className="w-full accent-purple-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                                                className="w-full accent-purple-500 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
                                             />
                                         </div>
                                     )}
 
-                                    <div className="pt-2 border-t border-purple-500/10">
-                                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                    <div className="pt-2 border-t border-purple-200 dark:border-purple-500/10">
+                                        <div className="flex justify-between text-[10px] text-slate-600 dark:text-slate-400 mb-1">
                                             <span>Missing Data Dropout Threshold</span>
-                                            <span className="text-purple-400 font-bold">{(missingDataThreshold * 100).toFixed(0)}%</span>
+                                            <span className="text-purple-600 dark:text-purple-400 font-bold">{(missingDataThreshold * 100).toFixed(0)}%</span>
                                         </div>
                                         <input 
                                             type="range" min="0.05" max="0.50" step="0.01"
                                             value={missingDataThreshold} 
                                             onChange={(e) => setMissingDataThreshold(parseFloat(e.target.value))}
-                                            className="w-full accent-purple-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                                            className="w-full accent-purple-500 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
                                         />
                                         <p className="text-[9px] text-slate-500 mt-1">Drops features with &gt;{(missingDataThreshold * 100).toFixed(0)}% missing data (protects sparse features like volume).</p>
                                     </div>
-                                    <div className="pt-2 border-t border-purple-500/10 flex items-center justify-between">
+                                    <div className="pt-2 border-t border-purple-200 dark:border-purple-500/10 flex items-center justify-between">
                                         <div>
-                                            <span className="text-[10px] text-slate-400 block mb-0.5">Auto Feature Selection</span>
+                                            <span className="text-[10px] text-slate-600 dark:text-slate-400 block mb-0.5">Auto Feature Selection</span>
                                             <span className="text-[9px] text-slate-500 block">RF+MI Hybrid Rank (Prevents Overfitting)</span>
                                         </div>
                                         <button
                                             type="button"
                                             onClick={() => setAutoFeatureSelection(!autoFeatureSelection)}
-                                            className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none ${autoFeatureSelection ? 'bg-purple-500' : 'bg-slate-700'}`}
+                                            className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none ${autoFeatureSelection ? 'bg-purple-500' : 'bg-slate-300 dark:bg-slate-700'}`}
                                         >
                                             <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${autoFeatureSelection ? 'translate-x-4' : 'translate-x-1'}`} />
                                         </button>
                                     </div>
                                     {autoFeatureSelection && (
                                         <div className="pt-1">
-                                            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                            <div className="flex justify-between text-[10px] text-slate-600 dark:text-slate-400 mb-1">
                                                 <span>Target Feature Count</span>
-                                                <span className="text-purple-400 font-bold">{autoFeatureCount}</span>
+                                                <span className="text-purple-600 dark:text-purple-400 font-bold">{autoFeatureCount}</span>
                                             </div>
                                             <input 
                                                 type="range" min="10" max="150" step="10"
                                                 value={autoFeatureCount} 
                                                 onChange={(e) => setAutoFeatureCount(parseInt(e.target.value))}
-                                                className="w-full accent-purple-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                                                className="w-full accent-purple-500 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
                                             />
                                         </div>
                                     )}
@@ -1457,19 +1457,19 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                         </div>
 
                         {/* COLUMN 2: Neural Architecture */}
-                        <div className="flex flex-col h-full bg-white/5 border border-amber-500/50 rounded-2xl shadow-[0_0_12px_rgba(245,158,11,0.4)] overflow-hidden">
-                            <div className="p-5 bg-black/40 border-b border-white/10 flex-shrink-0 relative z-20">
-                                <h3 className="text-sm font-bold text-purple-400 flex items-center gap-2 uppercase tracking-widest"><Cpu className="w-4 h-4" /> Neural Architecture</h3>
+                        <div className="flex flex-col h-full bg-slate-50/80 dark:bg-white/5 border border-amber-400/70 dark:border-amber-500/50 rounded-2xl shadow-[0_0_12px_rgba(245,158,11,0.2)] dark:shadow-[0_0_12px_rgba(245,158,11,0.4)] overflow-hidden">
+                            <div className="p-5 bg-slate-100/90 dark:bg-black/40 border-b border-slate-200 dark:border-white/10 flex-shrink-0 relative z-20">
+                                <h3 className="text-sm font-bold text-purple-600 dark:text-purple-400 flex items-center gap-2 uppercase tracking-widest"><Cpu className="w-4 h-4" /> Neural Architecture</h3>
                             </div>
                             <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar h-full">
 
                         <div>
                             <div className="flex items-center justify-between mb-2">
-                                <label className="block text-sm font-medium text-slate-300">Algorithm Engine</label>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Algorithm Engine</label>
                                 {isRetrainMode && (
-                                    <div className="flex items-center gap-2 bg-purple-500/10 px-2 py-1 rounded-lg border border-purple-500/30" title="Transfer knowledge to a different architecture">
-                                        <Layers className="w-3.5 h-3.5 text-purple-400" />
-                                        <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">Cross-Algo Transfer</span>
+                                    <div className="flex items-center gap-2 bg-purple-100 dark:bg-purple-500/10 px-2 py-1 rounded-lg border border-purple-300 dark:border-purple-500/30" title="Transfer knowledge to a different architecture">
+                                        <Layers className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                                        <span className="text-[10px] font-bold text-purple-700 dark:text-purple-400 uppercase tracking-widest">Cross-Algo Transfer</span>
                                         <button
                                             onClick={() => {
                                                 if (isCrossAlgorithmTransfer) {
@@ -1478,7 +1478,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 setIsCrossAlgorithmTransfer(!isCrossAlgorithmTransfer);
                                             }}
                                             disabled={isTraining}
-                                            className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${isCrossAlgorithmTransfer ? 'bg-purple-500' : 'bg-slate-600'} ${isTraining ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${isCrossAlgorithmTransfer ? 'bg-purple-500' : 'bg-slate-300 dark:bg-slate-600'} ${isTraining ? 'opacity-50 cursor-not-allowed' : ''}`}
                                         >
                                             <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${isCrossAlgorithmTransfer ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
                                         </button>
@@ -1490,10 +1490,10 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                 <motion.div 
                                     initial={{ opacity: 0, height: 0 }} 
                                     animate={{ opacity: 1, height: 'auto' }}
-                                    className="mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-xl"
+                                    className="mb-4 p-3 bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 rounded-xl"
                                 >
-                                    <p className="text-[10px] text-purple-300 font-medium leading-relaxed">
-                                        <span className="font-bold">Transfer Learning Hub:</span> You are transferring weights/knowledge from <strong className="text-white">{initialAlgorithm}</strong> to a new architecture. Select your target engine below.
+                                    <p className="text-[10px] text-purple-700 dark:text-purple-300 font-medium leading-relaxed">
+                                        <span className="font-bold">Transfer Learning Hub:</span> You are transferring weights/knowledge from <strong className="text-slate-900 dark:text-white">{initialAlgorithm}</strong> to a new architecture. Select your target engine below.
                                         Supported pairs: PPO ↔ SAC, LSTM ↔ GRU, TCN ↔ 1D-CNN, XGBoost ↔ LightGBM, CQL ↔ SAC, A2C ↔ PPO, DDPG ↔ TD3.
                                     </p>
                                 </motion.div>
@@ -1534,7 +1534,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                         {ALGORITHM_CATEGORIES.map(category => (
                                             <div key={category.name} className="space-y-2">
                                                 <div>
-                                                    <h4 className="text-[10px] font-black text-cyan-400 uppercase tracking-widest">{category.name}</h4>
+                                                    <h4 className="text-[10px] font-black text-cyan-600 dark:text-cyan-400 uppercase tracking-widest">{category.name}</h4>
                                                     <p className="text-[10px] text-slate-500 font-medium">{category.desc}</p>
                                                 </div>
                                                 <div className="grid grid-cols-1 gap-2">
@@ -1553,24 +1553,24 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                                     setAlgorithm(algo.id);
                                                                 }
                                                             }}
-                                                            className={`flex items-start p-3 rounded-xl border cursor-pointer transition-all duration-300 relative overflow-hidden ${algorithm === algo.id ? (isRetrainMode && initialAlgorithm === algo.id ? 'border-purple-400 bg-purple-500/20 shadow-[0_0_20px_rgba(168,85,247,0.3)]' : 'border-purple-500 bg-purple-500/10 shadow-[0_0_15px_rgba(168,85,247,0.15)]') : 'border-white/10 bg-white/5 hover:bg-white/10'} ${isTraining || (isRetrainMode && !isCrossAlgorithmTransfer && algo.id !== initialAlgorithm) || (algo as any).disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                            className={`flex items-start p-3 rounded-xl border cursor-pointer transition-all duration-300 relative overflow-hidden ${algorithm === algo.id ? (isRetrainMode && initialAlgorithm === algo.id ? 'border-purple-500 dark:border-purple-400 bg-purple-500/15 dark:bg-purple-500/20 shadow-[0_0_20px_rgba(168,85,247,0.2)] dark:shadow-[0_0_20px_rgba(168,85,247,0.3)]' : 'border-purple-500 bg-purple-500/10 shadow-[0_0_15px_rgba(168,85,247,0.12)] dark:shadow-[0_0_15px_rgba(168,85,247,0.15)]') : 'border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10'} ${isTraining || (isRetrainMode && !isCrossAlgorithmTransfer && algo.id !== initialAlgorithm) || (algo as any).disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                         >
-                                                            <div className={`mt-1 w-3.5 h-3.5 rounded-full border flex items-center justify-center flex-shrink-0 ${algorithm === algo.id ? 'border-purple-400' : 'border-white/30'}`}>
-                                                                {algorithm === algo.id && <div className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_5px_#a855f7]"></div>}
+                                                            <div className={`mt-1 w-3.5 h-3.5 rounded-full border flex items-center justify-center flex-shrink-0 ${algorithm === algo.id ? 'border-purple-500 dark:border-purple-400' : 'border-slate-300 dark:border-white/30'}`}>
+                                                                {algorithm === algo.id && <div className="w-1.5 h-1.5 rounded-full bg-purple-500 dark:bg-purple-400 shadow-[0_0_5px_#a855f7]"></div>}
                                                             </div>
                                                             <div className="ml-3 flex-1 pr-16">
                                                                 <div className="flex items-center gap-2">
-                                                                    <span className={`text-sm font-semibold tracking-wide ${algorithm === algo.id && isRetrainMode && initialAlgorithm === algo.id ? 'text-purple-300' : 'text-slate-200'}`}>{algo.id}</span>
-                                                                    <span className="text-[8px] font-bold text-slate-400 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded uppercase tracking-widest">{algo.type}</span>
+                                                                    <span className={`text-sm font-semibold tracking-wide ${algorithm === algo.id && isRetrainMode && initialAlgorithm === algo.id ? 'text-purple-700 dark:text-purple-300' : 'text-slate-900 dark:text-slate-200'}`}>{algo.id}</span>
+                                                                    <span className="text-[8px] font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-1.5 py-0.5 rounded uppercase tracking-widest">{algo.type}</span>
                                                                     {(algo as any).disabled && (
-                                                                        <span className="text-[8px] font-bold text-red-400 bg-red-900/30 border border-red-500/30 px-1.5 py-0.5 rounded uppercase tracking-widest">CUDA REQUIRED</span>
+                                                                        <span className="text-[8px] font-bold text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-500/30 px-1.5 py-0.5 rounded uppercase tracking-widest">CUDA REQUIRED</span>
                                                                     )}
                                                                 </div>
                                                                 <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">{algo.desc}</p>
                                                             </div>
                                                             {isRetrainMode && initialAlgorithm === algo.id && (
-                                                                <span className="absolute top-3 right-3 text-[9px] font-black uppercase text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/30 flex items-center gap-1">
-                                                                    <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-ping"></div> Original
+                                                                <span className="absolute top-3 right-3 text-[9px] font-black uppercase text-purple-700 dark:text-purple-400 bg-purple-100 dark:bg-purple-500/10 px-2 py-0.5 rounded border border-purple-300 dark:border-purple-500/30 flex items-center gap-1">
+                                                                    <div className="w-1.5 h-1.5 bg-purple-500 dark:bg-purple-400 rounded-full animate-ping"></div> Original
                                                                 </span>
                                                             )}
                                                         </div>
@@ -1584,7 +1584,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-1">Epochs / Trees</label>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Epochs / Trees</label>
                             <input 
                                 type="number" 
                                 value={epochs} 
@@ -1592,7 +1592,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                 disabled={isTraining}
                                 min={1}
                                 max={500}
-                                className="w-full bg-white/5 backdrop-blur-md border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-purple-500/50 focus:border-purple-400 outline-none transition-all disabled:opacity-50 shadow-inner"
+                                className="w-full bg-white dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500/50 focus:border-purple-400 outline-none transition-all disabled:opacity-50 shadow-inner"
                             />
                             
                             {!useAutoML && !isGodTier && (
@@ -1606,11 +1606,11 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                             )}
                             
                             {isGodTier && (
-                                <div className="mt-4 p-4 rounded-xl border border-purple-500/30 bg-purple-500/10 shadow-[0_0_15px_rgba(168,85,247,0.15)] flex items-start gap-3">
-                                    <Cpu className="w-5 h-5 text-purple-400 flex-shrink-0 mt-0.5" />
+                                <div className="mt-4 p-4 rounded-xl border border-purple-300 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 shadow-[0_0_15px_rgba(168,85,247,0.1)] dark:shadow-[0_0_15px_rgba(168,85,247,0.15)] flex items-start gap-3">
+                                    <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0 mt-0.5" />
                                     <div>
-                                        <h4 className="text-sm font-bold text-purple-300">God-Tier Engine Active</h4>
-                                        <p className="text-xs text-slate-400 mt-1">
+                                        <h4 className="text-sm font-bold text-purple-700 dark:text-purple-300">God-Tier Engine Active</h4>
+                                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
                                             This Next-Gen model handles its own architecture dynamically. Standard hyperparameters are bypassed.
                                         </p>
                                     </div>
@@ -1622,49 +1622,49 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                 <motion.div 
                                     initial={{ opacity: 0, y: -10 }} 
                                     animate={{ opacity: 1, y: 0 }}
-                                    className="mt-4 p-5 rounded-2xl bg-cyan-900/10 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.1)]"
+                                    className="mt-4 p-5 rounded-2xl bg-cyan-50/70 dark:bg-cyan-900/10 border border-cyan-300 dark:border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.08)] dark:shadow-[0_0_15px_rgba(6,182,212,0.1)]"
                                 >
-                                    <div className="flex items-center gap-2 mb-4 text-cyan-400">
+                                    <div className="flex items-center gap-2 mb-4 text-cyan-700 dark:text-cyan-400">
                                         <Layers className="w-5 h-5" />
                                         <h3 className="font-bold">Supervised ML Pipeline Settings</h3>
                                     </div>
                                     <div className="space-y-4">
                                         {/* Fee Threshold */}
                                         <div>
-                                            <div className="flex justify-between text-sm text-gray-400 mb-1">
+                                            <div className="flex justify-between text-sm text-slate-600 dark:text-gray-400 mb-1">
                                                 <span>Profit Barrier (Fee & Slippage Threshold %)</span>
-                                                <span className="text-cyan-400 font-bold">{(feeThreshold * 100).toFixed(2)}%</span>
+                                                <span className="text-cyan-700 dark:text-cyan-400 font-bold">{(feeThreshold * 100).toFixed(2)}%</span>
                                             </div>
                                             <input 
                                                 type="range" min="0" max="1" step="0.01"
                                                 value={feeThreshold * 100} 
                                                 onChange={(e) => setFeeThreshold(parseFloat(e.target.value) / 100)}
-                                                className="w-full accent-cyan-500 bg-gray-700 h-2 rounded-lg appearance-none cursor-pointer"
+                                                className="w-full accent-cyan-500 bg-slate-200 dark:bg-gray-700 h-2 rounded-lg appearance-none cursor-pointer"
                                             />
-                                            <p className="text-xs text-gray-500 mt-1">Targets below this return will be classified as 0 (No Trade) to avoid getting eaten by fees.</p>
+                                            <p className="text-xs text-slate-500 dark:text-gray-500 mt-1">Targets below this return will be classified as 0 (No Trade) to avoid getting eaten by fees.</p>
                                         </div>
 
                                         {/* Fractional Differencing */}
-                                        <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10 hover:border-cyan-500/50 transition-colors">
+                                        <div className="flex items-center justify-between p-3 bg-white dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 hover:border-cyan-500/50 transition-colors">
                                             <div>
-                                                <h4 className="text-sm font-semibold text-gray-200">Apply Fractional Differencing</h4>
-                                                <p className="text-xs text-gray-500">Makes data stationary while preserving long-term memory (Hedge-fund standard).</p>
+                                                <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-200">Apply Fractional Differencing</h4>
+                                                <p className="text-xs text-slate-500 dark:text-gray-500">Makes data stationary while preserving long-term memory (Hedge-fund standard).</p>
                                             </div>
                                             <div className="flex items-center gap-3">
                                                 {fractionalDiff && (
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-xs text-gray-400">d = </span>
+                                                        <span className="text-xs text-slate-600 dark:text-gray-400">d = </span>
                                                         <input 
                                                             type="number" min="0" max="1" step="0.1" 
                                                             value={fractionalDValue}
                                                             onChange={(e) => setFractionalDValue(parseFloat(e.target.value))}
-                                                            className="w-16 bg-gray-900 border border-gray-600 rounded p-1 text-sm text-center text-white focus:border-cyan-500 focus:outline-none"
+                                                            className="w-16 bg-slate-50 dark:bg-gray-900 border border-slate-300 dark:border-gray-600 rounded p-1 text-sm text-center text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
                                                         />
                                                     </div>
                                                 )}
                                                 <button
                                                     onClick={(e) => { e.preventDefault(); setFractionalDiff(!fractionalDiff); }}
-                                                    className={`w-12 h-6 rounded-full transition-colors relative ${fractionalDiff ? 'bg-cyan-500' : 'bg-gray-600'}`}
+                                                    className={`w-12 h-6 rounded-full transition-colors relative ${fractionalDiff ? 'bg-cyan-500' : 'bg-slate-300 dark:bg-gray-600'}`}
                                                 >
                                                     <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${fractionalDiff ? 'translate-x-7' : 'translate-x-1'}`} />
                                                 </button>
@@ -1673,18 +1673,18 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
                                         {/* Imbalance Strategy */}
                                         <div>
-                                            <label className="block text-sm text-gray-400 mb-2">Class Imbalance Strategy</label>
+                                            <label className="block text-sm text-slate-700 dark:text-gray-400 mb-2">Class Imbalance Strategy</label>
                                             <select
                                                 value={imbalanceStrategy}
                                                 onChange={(e) => setImbalanceStrategy(e.target.value)}
-                                                className="w-full bg-gray-800/50 border border-gray-700 text-white text-sm rounded-xl focus:ring-cyan-500 focus:border-cyan-500 block p-2.5 transition-all outline-none"
+                                                className="w-full bg-white dark:bg-gray-800/50 border border-slate-300 dark:border-gray-700 text-slate-900 dark:text-white text-sm rounded-xl focus:ring-cyan-500 focus:border-cyan-500 block p-2.5 transition-all outline-none"
                                             >
-                                                <option value="none">None (Raw Data)</option>
-                                                <option value="undersampling">Undersampling (Drop Majority Class)</option>
-                                                <option value="class_weights">Class Weights (Algorithmic Penalty)</option>
+                                                <option value="none" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">None (Raw Data)</option>
+                                                <option value="undersampling" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">Undersampling (Drop Majority Class)</option>
+                                                <option value="class_weights" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">Class Weights (Algorithmic Penalty)</option>
                                                 {/* Purposely omitted SMOTE per hedge fund standards to avoid fake candle generation */}
                                             </select>
-                                            <p className="text-xs text-gray-500 mt-1">SMOTE is disabled by default to preserve the true integrity of financial tick distributions.</p>
+                                            <p className="text-xs text-slate-500 dark:text-gray-500 mt-1">SMOTE is disabled by default to preserve the true integrity of financial tick distributions.</p>
                                         </div>
                                     </div>
                                 </motion.div>
@@ -1695,26 +1695,26 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                 <motion.div 
                                     initial={{ opacity: 0, y: -10 }} 
                                     animate={{ opacity: 1, y: 0 }}
-                                    className={`mt-4 p-4 rounded-2xl border transition-all duration-300 ${useAutoML ? 'bg-purple-500/10 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'bg-white/5 border-white/10'}`}
+                                    className={`mt-4 p-4 rounded-2xl border transition-all duration-300 ${useAutoML ? 'bg-purple-50 dark:bg-purple-500/10 border-purple-300 dark:border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.12)] dark:shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10'}`}
                                 >
                                     <div className="flex items-center justify-between mb-3">
-                                        <h4 className="text-xs font-black text-purple-400 uppercase tracking-widest flex items-center gap-2">
+                                        <h4 className="text-xs font-black text-purple-700 dark:text-purple-400 uppercase tracking-widest flex items-center gap-2">
                                             <BrainCircuit className="w-4 h-4" /> Optuna AutoML Tuning
                                         </h4>
                                         <button
                                             onClick={() => setUseAutoML(!useAutoML)}
                                             disabled={isTraining}
-                                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${useAutoML ? 'bg-purple-500' : 'bg-slate-600'} ${isTraining ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${useAutoML ? 'bg-purple-500' : 'bg-slate-300 dark:bg-slate-600'} ${isTraining ? 'opacity-50 cursor-not-allowed' : ''}`}
                                         >
                                             <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${useAutoML ? 'translate-x-5' : 'translate-x-1'}`} />
                                         </button>
                                     </div>
                                     
                                     {useAutoML && (
-                                        <div className="mt-3 pt-3 border-t border-purple-500/20">
-                                            <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase flex items-center justify-between">
+                                        <div className="mt-3 pt-3 border-t border-purple-200 dark:border-purple-500/20">
+                                            <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase flex items-center justify-between">
                                                 <span>Search Trials</span>
-                                                <span className="text-purple-300">{automlTrials} Trials</span>
+                                                <span className="text-purple-700 dark:text-purple-300">{automlTrials} Trials</span>
                                             </label>
                                             <input 
                                                 type="range" 
@@ -1739,20 +1739,20 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                 <motion.div 
                                     initial={{ opacity: 0 }} 
                                     animate={{ opacity: 1 }}
-                                    className="mt-4 p-4 bg-cyan-500/5 border border-cyan-500/20 rounded-2xl space-y-4"
+                                    className="mt-4 p-4 bg-cyan-50/70 dark:bg-cyan-500/5 border border-cyan-200 dark:border-cyan-500/20 rounded-2xl space-y-4"
                                 >
-                                    <h4 className="text-xs font-black text-cyan-400 uppercase tracking-widest flex items-center gap-2">
+                                    <h4 className="text-xs font-black text-cyan-700 dark:text-cyan-400 uppercase tracking-widest flex items-center gap-2">
                                         <Zap className="w-3.5 h-3.5" /> Engine Specific Settings
                                     </h4>
                                     
                                     {algorithm === 'Transformer' && (
                                         <div>
-                                            <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Sequence Length (Window)</label>
+                                            <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase">Sequence Length (Window)</label>
                                             <input 
                                                 type="number" 
                                                 value={sequenceLength} 
                                                 onChange={e => setSequenceLength(parseInt(e.target.value))}
-                                                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                                                className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none"
                                             />
                                         </div>
                                     )}
@@ -1760,42 +1760,42 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     {(algorithm.includes('-RL') || ['QR-DQN', 'CQL', 'GAIL'].includes(algorithm)) && (
                                         <div className="grid grid-cols-2 gap-3">
                                             <div>
-                                                <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Initial Balance ($)</label>
+                                                <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase">Initial Balance ($)</label>
                                                 <input 
                                                     type="number" 
                                                     value={initialBalance} 
                                                     onChange={e => setInitialBalance(parseInt(e.target.value))}
-                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                                                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none"
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Trading Fees (%)</label>
+                                                <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase">Trading Fees (%)</label>
                                                 <input 
                                                     type="number" 
                                                     step="0.0001"
                                                     value={tradingFees} 
                                                     onChange={e => setTradingFees(parseFloat(e.target.value))}
-                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                                                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none"
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Slippage (%)</label>
+                                                <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase">Slippage (%)</label>
                                                 <input 
                                                     type="number" 
                                                     step="0.0001"
                                                     value={slippage} 
                                                     onChange={e => setSlippage(parseFloat(e.target.value))}
-                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                                                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none"
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase" title="0 = Disabled. Mask actions if drawdown exceeds this %">Max Drawdown (%)</label>
+                                                <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1 uppercase" title="0 = Disabled. Mask actions if drawdown exceeds this %">Max Drawdown (%)</label>
                                                 <input 
                                                     type="number" 
                                                     step="0.1"
                                                     value={maxAllowedDrawdown} 
                                                     onChange={e => setMaxAllowedDrawdown(parseFloat(e.target.value) || 0)}
-                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                                                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none"
                                                     placeholder="0 = Disabled"
                                                 />
                                             </div>
@@ -1808,9 +1808,9 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                         </div>
 
                         {/* COLUMN 3: Data Engine & Features */}
-                        <div className="flex flex-col h-full bg-white/5 border border-amber-500/50 rounded-2xl shadow-[0_0_12px_rgba(245,158,11,0.4)] overflow-hidden">
-                            <div className="p-5 bg-black/40 border-b border-white/10 flex-shrink-0 relative z-20">
-                                <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2 uppercase tracking-widest"><Database className="w-4 h-4" /> Data Engine & Features</h3>
+                        <div className="flex flex-col h-full bg-slate-50/80 dark:bg-white/5 border border-amber-400/70 dark:border-amber-500/50 rounded-2xl shadow-[0_0_12px_rgba(245,158,11,0.2)] dark:shadow-[0_0_12px_rgba(245,158,11,0.4)] overflow-hidden">
+                            <div className="p-5 bg-slate-100/90 dark:bg-black/40 border-b border-slate-200 dark:border-white/10 flex-shrink-0 relative z-20">
+                                <h3 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2 uppercase tracking-widest"><Database className="w-4 h-4" /> Data Engine & Features</h3>
                             </div>
                             <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar h-full">
                                 <AdvancedAIToolsPanel 
@@ -1833,13 +1833,13 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
                         <div>
                             <div className="flex items-center justify-between mb-3">
-                                <label className="flex items-center gap-2 text-sm font-medium text-white mb-3">
-                                    <Database className="w-4 h-4 text-cyan-400" /> Data Source Engine
+                                <label className="flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-white mb-3">
+                                    <Database className="w-4 h-4 text-cyan-600 dark:text-cyan-400" /> Data Source Engine
                                 </label>
                                 <button 
                                     onClick={handleClearL2Cache}
                                     disabled={isTraining || isClearing}
-                                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 px-3 py-1.5 rounded-lg transition-all hover:bg-red-500/20 hover:shadow-[0_0_10px_rgba(239,68,68,0.2)]"
+                                    className="text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 px-3 py-1.5 rounded-lg transition-all hover:bg-red-500/20 hover:shadow-[0_0_10px_rgba(239,68,68,0.2)]"
                                 >
                                     {isClearing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Trash2 className="w-3.5 h-3.5" />}
                                     Clear L2 Cache
@@ -1849,21 +1849,21 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                 <button
                                     onClick={() => setDataSource('ohlcv')}
                                     disabled={isTraining}
-                                    className={`py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${dataSource === 'ohlcv' ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'}`}
+                                    className={`py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${dataSource === 'ohlcv' ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'}`}
                                 >
                                     Standard OHLCV
                                 </button>
                                 <button
                                     onClick={() => setDataSource('l2_orderbook')}
                                     disabled={isTraining}
-                                    className={`py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${dataSource === 'l2_orderbook' ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'}`}
+                                    className={`py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${dataSource === 'l2_orderbook' ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'}`}
                                 >
                                     Level 2 Orderbook
                                 </button>
                                 <button
                                     onClick={() => setDataSource('hybrid')}
                                     disabled={isTraining}
-                                    className={`py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${dataSource === 'hybrid' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'}`}
+                                    className={`py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${dataSource === 'hybrid' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'}`}
                                 >
                                     Hybrid (OHLCV + L2)
                                 </button>
@@ -1873,14 +1873,14 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                 <button
                                     onClick={() => setDataSource('historical_trades')}
                                     disabled={isTraining}
-                                    className={`py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${dataSource === 'historical_trades' ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-[0_0_15px_rgba(245,158,11,0.4)]' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'}`}
+                                    className={`py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${dataSource === 'historical_trades' ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-[0_0_15px_rgba(245,158,11,0.4)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'}`}
                                 >
                                     Historical Trades (CSV)
                                 </button>
                                 <button
                                     onClick={() => setDataSource('hybrid_deep')}
                                     disabled={isTraining}
-                                    className={`py-2.5 rounded-xl text-sm font-bold transition-all duration-300 relative overflow-hidden ${dataSource === 'hybrid_deep' ? 'bg-gradient-to-r from-rose-600 via-red-500 to-orange-500 text-white shadow-[0_0_20px_rgba(244,63,94,0.5)] border border-rose-400/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'}`}
+                                    className={`py-2.5 rounded-xl text-sm font-bold transition-all duration-300 relative overflow-hidden ${dataSource === 'hybrid_deep' ? 'bg-gradient-to-r from-rose-600 via-red-500 to-orange-500 text-white shadow-[0_0_20px_rgba(244,63,94,0.5)] border border-rose-400/30' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'}`}
                                 >
                                     {dataSource === 'hybrid_deep' && (
                                         <span className="absolute inset-0 bg-gradient-to-r from-rose-500/0 via-white/10 to-rose-500/0 animate-pulse" />
@@ -1893,10 +1893,10 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                             {/* ── L2 ORDERBOOK & HYBRID DEEP (ARCHIVED MERGE OPTION) ───────────────────────────────────────────── */}
                             {['l2_orderbook', 'hybrid_deep'].includes(dataSource) && (
                                 <div className="mb-5 space-y-4">
-                                    <div className="flex items-center justify-between p-4 bg-indigo-500/10 rounded-xl border border-indigo-500/20 shadow-inner">
+                                    <div className="flex items-center justify-between p-4 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl border border-indigo-200 dark:border-indigo-500/20 shadow-inner">
                                         <div>
-                                            <h4 className="text-sm font-bold text-indigo-400">Merge 10GB Auto-Archived Data</h4>
-                                            <p className="text-xs text-slate-400 mt-0.5 font-medium">Merge live database with the auto-archived Parquet L2 files for a gap-free dataset.</p>
+                                            <h4 className="text-sm font-bold text-indigo-700 dark:text-indigo-400">Merge 10GB Auto-Archived Data</h4>
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-medium">Merge live database with the auto-archived Parquet L2 files for a gap-free dataset.</p>
                                         </div>
                                         <label className="relative inline-flex items-center cursor-pointer">
                                             <input 
@@ -1906,22 +1906,22 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 onChange={() => setIsIncludeArchived(!isIncludeArchived)}
                                                 disabled={isTraining}
                                             />
-                                            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-indigo-500 peer-checked:to-blue-500"></div>
+                                            <div className="w-11 h-6 bg-slate-300 dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-slate-300 dark:border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-indigo-500 peer-checked:to-blue-500"></div>
                                         </label>
                                     </div>
 
                                     {isIncludeArchived && (
-                                        <div className="p-4 bg-white/5 border border-indigo-500/20 rounded-xl space-y-4 shadow-inner">
+                                        <div className="p-4 bg-white dark:bg-white/5 border border-indigo-200 dark:border-indigo-500/20 rounded-xl space-y-4 shadow-inner">
                                             <div>
-                                                <h4 className="text-sm font-bold text-indigo-400">Optional: Add Historical DVC CSV</h4>
-                                                <p className="text-xs text-slate-400 mt-1">Leave empty to just merge Live DB + Parquet Archives, or upload an older CSV to include it.</p>
+                                                <h4 className="text-sm font-bold text-indigo-700 dark:text-indigo-400">Optional: Add Historical DVC CSV</h4>
+                                                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">Leave empty to just merge Live DB + Parquet Archives, or upload an older CSV to include it.</p>
                                             </div>
                                             
                                             <input 
                                                 type="file" 
                                                 accept=".csv"
                                                 onChange={(e) => setMergedFile(e.target.files?.[0] || null)}
-                                                className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-indigo-500/10 file:text-indigo-400 hover:file:bg-indigo-500/20 cursor-pointer"
+                                                className="block w-full text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-indigo-100 dark:file:bg-indigo-500/10 file:text-indigo-700 dark:file:text-indigo-400 hover:file:bg-indigo-200 dark:hover:file:bg-indigo-500/20 cursor-pointer"
                                             />
                                             
                                             <button
@@ -1934,8 +1934,8 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                             </button>
                                             
                                             {mergedResult && (
-                                                <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-sm text-indigo-200">
-                                                    ✅ Mega Dataset Created: <span className="font-bold text-white">{mergedResult.total_rows.toLocaleString()}</span> rows!<br/>
+                                                <div className="mt-3 p-3 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 rounded-lg text-sm text-indigo-800 dark:text-indigo-200">
+                                                    ✅ Mega Dataset Created: <span className="font-bold text-slate-900 dark:text-white">{mergedResult.total_rows.toLocaleString()}</span> rows!<br/>
                                                     <span className="text-xs opacity-75">(Sources: {mergedResult.sources.uploaded_csv ? 'Upload + ' : ''}{mergedResult.sources.parquet_archives} Archives + Live DB)</span>
                                                 </div>
                                             )}
@@ -1947,10 +1947,10 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                             {/* ── L2 ORDERBOOK (SCRAPING/SNAPSHOT OPTIONS) ───────────────────────────────────────────── */}
                             {dataSource === 'l2_orderbook' && (
                                 <div className="mb-5 space-y-4">
-                                    <div className="flex items-center justify-between p-4 bg-purple-500/10 rounded-xl border border-purple-500/20 shadow-inner">
+                                    <div className="flex items-center justify-between p-4 bg-purple-50 dark:bg-purple-500/10 rounded-xl border border-purple-200 dark:border-purple-500/20 shadow-inner">
                                         <div>
-                                            <h4 className="text-sm font-bold text-purple-400">Live L2 Scraping Engine</h4>
-                                            <p className="text-xs text-slate-400 mt-0.5 font-medium">Scrape live L2 partial depth (Top 20) via WebSocket.</p>
+                                            <h4 className="text-sm font-bold text-purple-700 dark:text-purple-400">Live L2 Scraping Engine</h4>
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-medium">Scrape live L2 partial depth (Top 20) via WebSocket.</p>
                                         </div>
                                         <label className="relative inline-flex items-center cursor-pointer">
                                             <input 
@@ -1960,15 +1960,15 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 onChange={() => setIsL2Scraping(!isL2Scraping)}
                                                 disabled={isTraining}
                                             />
-                                            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-purple-500 peer-checked:to-pink-500"></div>
+                                            <div className="w-11 h-6 bg-slate-300 dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-slate-300 dark:border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-purple-500 peer-checked:to-pink-500"></div>
                                         </label>
                                     </div>
 
                                     {isL2Scraping && (
-                                        <div className="p-4 bg-white/5 border border-purple-500/20 rounded-xl space-y-4 shadow-inner">
+                                        <div className="p-4 bg-white dark:bg-white/5 border border-purple-200 dark:border-purple-500/20 rounded-xl space-y-4 shadow-inner">
                                             <div className="flex justify-between items-center">
-                                                <label className="block text-sm font-medium text-slate-300">Target Snapshot Rows</label>
-                                                <span className="text-sm font-bold text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded-lg border border-purple-500/20 font-mono">
+                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Target Snapshot Rows</label>
+                                                <span className="text-sm font-bold text-purple-700 dark:text-purple-400 bg-purple-100 dark:bg-purple-500/10 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-500/20 font-mono">
                                                     {targetRowOptions[targetRowsIndex].toLocaleString()} Rows
                                                 </span>
                                             </div>
@@ -1979,7 +1979,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 step={1}
                                                 value={targetRowsIndex} 
                                                 onChange={(e) => handleSliderChange(parseInt(e.target.value))}
-                                                className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                                className="w-full h-2 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-purple-500"
                                                 disabled={isTraining}
                                             />
                                             <div className="flex justify-between text-[10px] text-slate-500 font-medium -mt-1">
@@ -1995,14 +1995,14 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                         step={1000}
                                                         value={manualTargetRows}
                                                         onChange={(e) => handleManualRowInput(e.target.value)}
-                                                        className="w-full bg-[#0A0A0A] border border-purple-500/30 rounded-lg p-2.5 text-purple-400 font-mono text-center pl-8"
+                                                        className="w-full bg-slate-50 dark:bg-[#0A0A0A] border border-purple-300 dark:border-purple-500/30 rounded-lg p-2.5 text-purple-700 dark:text-purple-400 font-mono text-center pl-8"
                                                         disabled={isTraining}
                                                     />
                                                     <Database className="w-4 h-4 text-purple-500/50 absolute left-3 top-1/2 -translate-y-1/2" />
                                                 </div>
                                                 <button 
                                                     onClick={() => handleManualRowInput("200000")}
-                                                    className="px-3 py-2.5 bg-purple-500/10 border border-purple-500/20 rounded-lg text-xs font-bold text-purple-300 hover:bg-purple-500/20 transition-all"
+                                                    className="px-3 py-2.5 bg-purple-100 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/20 rounded-lg text-xs font-bold text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-500/20 transition-all"
                                                     disabled={isTraining}
                                                 >
                                                     200K
@@ -2018,30 +2018,30 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                             </button>
 
                                             {l2ScrapeJob && (
-                                                <div className="mt-4 p-4 bg-black/40 border border-purple-500/30 rounded-xl">
+                                                <div className="mt-4 p-4 bg-slate-50 dark:bg-black/40 border border-purple-200 dark:border-purple-500/30 rounded-xl">
                                                     <div className="flex justify-between items-center mb-2">
-                                                        <span className="text-xs font-bold text-slate-300">Live Scraping Progress</span>
-                                                        <span className="text-xs text-purple-400">{l2ScrapeJob.progress.toFixed(1)}%</span>
+                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Live Scraping Progress</span>
+                                                        <span className="text-xs text-purple-600 dark:text-purple-400">{l2ScrapeJob.progress.toFixed(1)}%</span>
                                                     </div>
-                                                    <div className="w-full h-2 bg-purple-900/30 rounded-full overflow-hidden mb-3">
+                                                    <div className="w-full h-2 bg-purple-100 dark:bg-purple-900/30 rounded-full overflow-hidden mb-3">
                                                         <div 
                                                             className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
                                                             style={{ width: `${l2ScrapeJob.progress}%` }}
                                                         />
                                                     </div>
-                                                    <div className="text-[10px] text-slate-400 font-mono mb-3 truncate">
+                                                    <div className="text-[10px] text-slate-600 dark:text-slate-400 font-mono mb-3 truncate">
                                                         {l2ScrapeJob.logs && l2ScrapeJob.logs.length > 0 ? l2ScrapeJob.logs[l2ScrapeJob.logs.length - 1] : 'Initializing...'}
                                                     </div>
                                                     
                                                     {['PENDING', 'RUNNING'].includes(l2ScrapeJob.status) ? (
                                                         <button 
                                                             onClick={handleCancelL2Scrape}
-                                                            className="w-full py-1.5 rounded-lg border border-red-500/30 text-red-400 text-xs hover:bg-red-500/10 transition-colors"
+                                                            className="w-full py-1.5 rounded-lg border border-red-300 dark:border-red-500/30 text-red-600 dark:text-red-400 text-xs hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
                                                         >
                                                             Stop Collector
                                                         </button>
                                                     ) : (
-                                                        <div className={`text-center text-xs font-bold ${l2ScrapeJob.status === 'COMPLETED' ? 'text-green-400' : 'text-red-400'}`}>
+                                                        <div className={`text-center text-xs font-bold ${l2ScrapeJob.status === 'COMPLETED' ? 'text-emerald-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                                                             {l2ScrapeJob.status === 'COMPLETED' ? '✅ Completed Successfully' : '❌ ' + (l2ScrapeJob.error_message || 'Stopped')}
                                                         </div>
                                                     )}
@@ -2051,14 +2051,14 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     )}
 
                                     {!isL2Scraping && (
-                                        <div className="p-4 bg-purple-500/10 rounded-xl border border-purple-500/20 shadow-inner space-y-4">
+                                        <div className="p-4 bg-purple-50 dark:bg-purple-500/10 rounded-xl border border-purple-200 dark:border-purple-500/20 shadow-inner space-y-4">
                                             <div>
                                                 <div className="flex justify-between items-center mb-1">
-                                                    <label className="block text-sm font-medium text-slate-300">Select L2 Snapshot File</label>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Select L2 Snapshot File</label>
                                                     <button
                                                         onClick={handleDeleteL2SnapshotFile}
                                                         disabled={isTraining || !selectedL2File}
-                                                        className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded transition-all hover:bg-red-500/20 disabled:opacity-50"
+                                                        className="text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded transition-all hover:bg-red-500/20 disabled:opacity-50"
                                                         title="Delete selected L2 snapshot"
                                                     >
                                                         <Trash2 className="w-3 h-3" />
@@ -2068,27 +2068,27 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 <select 
                                                     value={selectedL2File} 
                                                     onChange={(e) => setSelectedL2File(e.target.value)}
-                                                    className="w-full bg-[#0A0A0A] border border-purple-500/30 rounded-lg p-2.5 text-slate-200"
+                                                    className="w-full bg-white dark:bg-[#0A0A0A] border border-purple-300 dark:border-purple-500/30 rounded-lg p-2.5 text-slate-900 dark:text-slate-200"
                                                     disabled={isTraining}
                                                 >
-                                                    <option value="">⚡ Fetch Database Ticks (Default)</option>
-                                                    {l2SnapshotFiles.length === 0 ? <option value="" disabled>No L2 snapshots available</option> : null}
-                                                    {l2SnapshotFiles.map(f => <option key={f} value={f}>📂 {f}</option>)}
+                                                    <option value="" className="bg-white dark:bg-[#0A0A0A] text-slate-900 dark:text-slate-200">⚡ Fetch Database Ticks (Default)</option>
+                                                    {l2SnapshotFiles.length === 0 ? <option value="" disabled className="bg-white dark:bg-[#0A0A0A] text-slate-500">No L2 snapshots available</option> : null}
+                                                    {l2SnapshotFiles.map(f => <option key={f} value={f} className="bg-white dark:bg-[#0A0A0A] text-slate-900 dark:text-slate-200">📂 {f}</option>)}
                                                 </select>
                                             </div>
                                             
                                             <div>
-                                                <label className="block text-sm font-medium text-slate-300 mb-1">L2 Processing Mode</label>
+                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">L2 Processing Mode</label>
                                                 <select 
                                                     value={l2ProcessingMode} 
                                                     onChange={(e) => setL2ProcessingMode(e.target.value as 'raw' | 'bars')}
-                                                    className="w-full bg-[#0A0A0A] border border-purple-500/30 rounded-lg p-2.5 text-slate-200"
+                                                    className="w-full bg-white dark:bg-[#0A0A0A] border border-purple-300 dark:border-purple-500/30 rounded-lg p-2.5 text-slate-900 dark:text-slate-200"
                                                     disabled={isTraining}
                                                 >
-                                                    <option value="raw">Raw Tick-by-Tick (Direct)</option>
-                                                    <option value="bars">Bar Aggregation (Recommended)</option>
+                                                    <option value="raw" className="bg-white dark:bg-[#0A0A0A] text-slate-900 dark:text-slate-200">Raw Tick-by-Tick (Direct)</option>
+                                                    <option value="bars" className="bg-white dark:bg-[#0A0A0A] text-slate-900 dark:text-slate-200">Bar Aggregation (Recommended)</option>
                                                 </select>
-                                                <p className="text-[10px] text-purple-400/80 mt-1.5">
+                                                <p className="text-[10px] text-purple-600 dark:text-purple-400/80 mt-1.5">
                                                     {l2ProcessingMode === 'raw' 
                                                         ? '⚠️ Uses raw snapshots. High memory usage for large files.' 
                                                         : '⚡ Aggregates ticks into Time/Volume bars for stable RL training.'}
@@ -2101,10 +2101,10 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                             
                             {dataSource === 'historical_trades' && (
                                 <div className="mb-5 space-y-4">
-                                    <div className="flex items-center justify-between p-4 bg-amber-500/10 rounded-xl border border-amber-500/20 shadow-inner">
+                                    <div className="flex items-center justify-between p-4 bg-amber-50 dark:bg-amber-500/10 rounded-xl border border-amber-200 dark:border-amber-500/20 shadow-inner">
                                         <div>
-                                            <h4 className="text-sm font-bold text-amber-400">Deep Training (Live Scraping)</h4>
-                                            <p className="text-xs text-slate-400 mt-0.5 font-medium">Scrape live trades instead of historical CSV.</p>
+                                            <h4 className="text-sm font-bold text-amber-700 dark:text-amber-400">Deep Training (Live Scraping)</h4>
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-medium">Scrape live trades instead of historical CSV.</p>
                                         </div>
                                         <label className="relative inline-flex items-center cursor-pointer">
                                             <input 
@@ -2114,19 +2114,19 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 onChange={() => setIsDeepTraining(!isDeepTraining)}
                                                 disabled={isTraining}
                                             />
-                                            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-amber-500 peer-checked:to-orange-500"></div>
+                                            <div className="w-11 h-6 bg-slate-300 dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-slate-300 dark:border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-amber-500 peer-checked:to-orange-500"></div>
                                         </label>
                                     </div>
                                     
                                     {/* CSV File Selector — only when NOT live scraping */}
                                     {!isDeepTraining && (
-                                        <div className="p-4 bg-amber-500/10 rounded-xl border border-amber-500/20 shadow-inner">
+                                        <div className="p-4 bg-amber-50 dark:bg-amber-500/10 rounded-xl border border-amber-200 dark:border-amber-500/20 shadow-inner">
                                             <div className="flex justify-between items-center mb-1">
-                                                <label className="block text-sm font-medium text-slate-300">Select Downloaded Trade Data</label>
+                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Select Downloaded Trade Data</label>
                                                 <button
                                                     onClick={handleDeleteTradeFile}
                                                     disabled={isTraining || !selectedTradeFile}
-                                                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded transition-all hover:bg-red-500/20 disabled:opacity-50"
+                                                    className="text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded transition-all hover:bg-red-500/20 disabled:opacity-50"
                                                     title="Delete selected file"
                                                 >
                                                     <Trash2 className="w-3 h-3" />
@@ -2136,56 +2136,56 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                             <select 
                                                 value={selectedTradeFile} 
                                                 onChange={(e) => setSelectedTradeFile(e.target.value)}
-                                                className="w-full bg-[#0A0A0A] border border-amber-500/30 rounded-lg p-2.5 text-slate-200"
+                                                className="w-full bg-white dark:bg-[#0A0A0A] border border-amber-300 dark:border-amber-500/30 rounded-lg p-2.5 text-slate-900 dark:text-slate-200"
                                                 disabled={isTraining}
                                             >
-                                                {tradeFiles.length === 0 ? <option value="">No trade files available in Backtester</option> : null}
-                                                {tradeFiles.map(f => <option key={f} value={f}>{f}</option>)}
+                                                {tradeFiles.length === 0 ? <option value="" className="bg-white dark:bg-[#0A0A0A] text-slate-500">No trade files available in Backtester</option> : null}
+                                                {tradeFiles.map(f => <option key={f} value={f} className="bg-white dark:bg-[#0A0A0A] text-slate-900 dark:text-slate-200">{f}</option>)}
                                             </select>
                                         </div>
                                     )}
 
                                     {/* Bar Generation — always visible so user can control how ticks are aggregated */}
-                                    <div className="space-y-3 p-4 bg-amber-500/10 rounded-xl border border-amber-500/20 shadow-inner">
+                                    <div className="space-y-3 p-4 bg-amber-50 dark:bg-amber-500/10 rounded-xl border border-amber-200 dark:border-amber-500/20 shadow-inner">
                                         {isDeepTraining && (
-                                            <p className="text-[11px] text-amber-400/80 font-semibold flex items-center gap-1.5">
+                                            <p className="text-[11px] text-amber-700 dark:text-amber-400/80 font-semibold flex items-center gap-1.5">
                                                 <span>⚡</span> Live scraped ticks will be aggregated using these bar settings.
                                             </p>
                                         )}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div>
-                                                <label className="block text-sm font-medium text-slate-300 mb-1">Bar Generation Mode</label>
+                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bar Generation Mode</label>
                                                 <select 
                                                     value={tradeBarType} 
                                                     onChange={(e) => setTradeBarType(e.target.value)}
-                                                    className="w-full bg-[#0A0A0A] border border-amber-500/30 rounded-lg p-2.5 text-slate-200"
+                                                    className="w-full bg-white dark:bg-[#0A0A0A] border border-amber-300 dark:border-amber-500/30 rounded-lg p-2.5 text-slate-900 dark:text-slate-200"
                                                     disabled={isTraining}
                                                 >
-                                                    <option value="time">Time Bars (Time-based aggregation)</option>
-                                                    <option value="volume">Volume Bars (Volume-based aggregation)</option>
+                                                    <option value="time" className="bg-white dark:bg-[#0A0A0A] text-slate-900 dark:text-slate-200">Time Bars (Time-based aggregation)</option>
+                                                    <option value="volume" className="bg-white dark:bg-[#0A0A0A] text-slate-900 dark:text-slate-200">Volume Bars (Volume-based aggregation)</option>
                                                 </select>
                                             </div>
                                             {tradeBarType === 'time' ? (
                                                 <div>
-                                                    <label className="block text-sm font-medium text-slate-300 mb-1">Bar Timeframe</label>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bar Timeframe</label>
                                                     <select 
                                                         value={tradeBarSize} 
                                                         onChange={(e) => setTradeBarSize(e.target.value)}
-                                                        className="w-full bg-[#0A0A0A] border border-amber-500/30 rounded-lg p-2.5 text-slate-200"
+                                                        className="w-full bg-white dark:bg-[#0A0A0A] border border-amber-300 dark:border-amber-500/30 rounded-lg p-2.5 text-slate-900 dark:text-slate-200"
                                                         disabled={isTraining}
                                                     >
-                                                        {TIMEFRAMES.map(t => <option key={t} value={t}>{t}</option>)}
+                                                        {TIMEFRAMES.map(t => <option key={t} value={t} className="bg-white dark:bg-[#0A0A0A] text-slate-900 dark:text-slate-200">{t}</option>)}
                                                     </select>
                                                 </div>
                                             ) : (
                                                 <div>
                                                     <div className="flex justify-between items-center mb-1">
-                                                        <label className="block text-sm font-medium text-slate-300">Volume Threshold (Units)</label>
+                                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Volume Threshold (Units)</label>
                                                         <button 
                                                             type="button"
                                                             onClick={handleAutoCalculateThreshold}
                                                             disabled={isTraining || isCalculatingThreshold}
-                                                            className="text-xs bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 px-2 py-1 rounded border border-amber-500/30 transition-colors flex items-center gap-1"
+                                                            className="text-xs bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-500/30 px-2 py-1 rounded border border-amber-300 dark:border-amber-500/30 transition-colors flex items-center gap-1"
                                                         >
                                                             {isCalculatingThreshold ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
                                                             Auto-Calculate
@@ -2195,7 +2195,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                         type="number"
                                                         value={tradeVolumeThreshold} 
                                                         onChange={(e) => setTradeVolumeThreshold(e.target.value)}
-                                                        className="w-full bg-[#0A0A0A] border border-amber-500/30 rounded-lg p-2.5 text-slate-200"
+                                                        className="w-full bg-white dark:bg-[#0A0A0A] border border-amber-300 dark:border-amber-500/30 rounded-lg p-2.5 text-slate-900 dark:text-slate-200"
                                                         disabled={isTraining}
                                                         step="0.1"
                                                     />
@@ -2205,10 +2205,10 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     </div>
 
                                     {isDeepTraining && (
-                                        <div className="p-4 bg-white/5 border border-amber-500/20 rounded-xl space-y-4 shadow-inner">
+                                        <div className="p-4 bg-white dark:bg-white/5 border border-amber-200 dark:border-amber-500/20 rounded-xl space-y-4 shadow-inner">
                                             <div className="flex justify-between items-center">
-                                                <label className="block text-sm font-medium text-slate-300">Target Executed Trades (Ticks)</label>
-                                                <span className="text-sm font-bold text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 font-mono">
+                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Target Executed Trades (Ticks)</label>
+                                                <span className="text-sm font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-200 dark:border-amber-500/20 font-mono">
                                                     {targetRowOptions[targetRowsIndex].toLocaleString()} Ticks
                                                 </span>
                                             </div>
@@ -2219,7 +2219,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 step={1}
                                                 value={targetRowsIndex} 
                                                 onChange={(e) => handleSliderChange(parseInt(e.target.value))}
-                                                className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                                className="w-full h-2 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-amber-500"
                                                 disabled={isTraining}
                                             />
                                             <div className="flex justify-between text-[10px] text-slate-500 font-medium -mt-1">
@@ -2235,14 +2235,14 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                         step={1000}
                                                         value={manualTargetRows}
                                                         onChange={(e) => handleManualRowInput(e.target.value)}
-                                                        className="w-full bg-[#0A0A0A] border border-amber-500/30 rounded-lg p-2.5 text-amber-400 font-mono text-center pl-8"
+                                                        className="w-full bg-slate-50 dark:bg-[#0A0A0A] border border-amber-300 dark:border-amber-500/30 rounded-lg p-2.5 text-amber-700 dark:text-amber-400 font-mono text-center pl-8"
                                                         disabled={isTraining}
                                                     />
                                                     <Activity className="w-4 h-4 text-amber-500/50 absolute left-3 top-1/2 -translate-y-1/2" />
                                                 </div>
                                                 <button 
                                                     onClick={() => handleManualRowInput("100000")}
-                                                    className="px-3 py-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs font-bold text-amber-300 hover:bg-amber-500/20 transition-all"
+                                                    className="px-3 py-2.5 bg-amber-100 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-500/20 transition-all"
                                                     disabled={isTraining}
                                                 >
                                                     100K
@@ -2251,14 +2251,14 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                         </div>
                                     )}
 
-                                    <div className="bg-white/5 backdrop-blur-md border border-amber-500/10 p-5 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
+                                    <div className="bg-white/80 dark:bg-white/5 backdrop-blur-md border border-amber-200 dark:border-amber-500/10 p-5 rounded-2xl shadow-sm dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
                                         <div className="flex justify-between items-center mb-4">
                                             <div>
-                                                <h3 className="text-sm font-bold text-amber-400 flex items-center gap-2">
+                                                <h3 className="text-sm font-bold text-amber-700 dark:text-amber-400 flex items-center gap-2">
                                                     <Layers className="w-4 h-4" />
                                                     Trade Feature Engineering
                                                 </h3>
-                                                <p className="text-xs text-slate-400 mt-1">Select highly-predictive features extracted from tick data.</p>
+                                                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">Select highly-predictive features extracted from tick data.</p>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <button
@@ -2270,11 +2270,11 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                         }
                                                     }}
                                                     disabled={isTraining}
-                                                    className="text-xs font-bold bg-amber-500/10 text-amber-400 px-3 py-1 rounded-lg border border-amber-500/20 hover:bg-amber-500/20 transition-all"
+                                                    className="text-xs font-bold bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 px-3 py-1 rounded-lg border border-amber-200 dark:border-amber-500/20 hover:bg-amber-200 dark:hover:bg-amber-500/20 transition-all"
                                                 >
                                                     {selectedTradeFeatures.length === ALL_TRADE_FEATURES.length ? 'Deselect All' : 'Select All'}
                                                 </button>
-                                                <div className="text-xs font-bold bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full border border-amber-500/20">
+                                                <div className="text-xs font-bold bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 px-3 py-1 rounded-full border border-amber-200 dark:border-amber-500/20">
                                                     {selectedTradeFeatures.length} / {ALL_TRADE_FEATURES.length} Selected
                                                 </div>
                                             </div>
@@ -2290,16 +2290,16 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                         disabled={isTraining}
                                                         className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all duration-300 ${
                                                             isSelected 
-                                                                ? 'bg-amber-500/10 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.1)]' 
-                                                                : 'bg-[#0A0A0A] border-white/5 hover:border-amber-500/30 hover:bg-white/5'
+                                                                ? 'bg-amber-500/10 border-amber-400 dark:border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.1)]' 
+                                                                : 'bg-slate-50 dark:bg-[#0A0A0A] border-slate-200 dark:border-white/5 hover:border-amber-400 dark:hover:border-amber-500/30 hover:bg-slate-100 dark:hover:bg-white/5'
                                                         }`}
                                                     >
                                                         <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
-                                                            isSelected ? 'bg-amber-500 border-amber-500 text-black' : 'border-slate-600 bg-transparent'
+                                                            isSelected ? 'bg-amber-500 border-amber-500 text-white dark:text-black' : 'border-slate-300 dark:border-slate-600 bg-transparent'
                                                         }`}>
                                                             {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                                                         </div>
-                                                        <span className={`text-xs font-semibold ${isSelected ? 'text-amber-300' : 'text-slate-400'}`}>
+                                                        <span className={`text-xs font-semibold ${isSelected ? 'text-amber-700 dark:text-amber-300' : 'text-slate-600 dark:text-slate-400'}`}>
                                                             {feat.name}
                                                         </span>
                                                     </button>
@@ -2318,24 +2318,24 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     className="mb-5 space-y-4"
                                 >
                                     {/* Dual WS Info Badge */}
-                                    <div className="p-4 bg-gradient-to-r from-rose-900/30 to-orange-900/20 rounded-xl border border-rose-500/30 shadow-[0_0_20px_rgba(244,63,94,0.1)] relative overflow-hidden">
+                                    <div className="p-4 bg-gradient-to-r from-rose-50 to-orange-50 dark:from-rose-900/30 dark:to-orange-900/20 rounded-xl border border-rose-200 dark:border-rose-500/30 shadow-[0_0_20px_rgba(244,63,94,0.08)] dark:shadow-[0_0_20px_rgba(244,63,94,0.1)] relative overflow-hidden">
                                         <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-rose-500/50 to-transparent" />
                                         <div className="flex items-center gap-3 mb-2">
                                             <div className="flex gap-1.5">
-                                                <div className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
-                                                <div className="w-2 h-2 rounded-full bg-orange-400 animate-ping [animation-delay:0.3s]" />
+                                                <div className="w-2 h-2 rounded-full bg-rose-500 dark:bg-rose-400 animate-ping" />
+                                                <div className="w-2 h-2 rounded-full bg-orange-500 dark:bg-orange-400 animate-ping [animation-delay:0.3s]" />
                                             </div>
-                                            <h4 className="text-sm font-black text-rose-300 tracking-wide">DUAL WEBSOCKET MODE</h4>
+                                            <h4 className="text-sm font-black text-rose-700 dark:text-rose-300 tracking-wide">DUAL WEBSOCKET MODE</h4>
                                         </div>
-                                        <div className="space-y-1.5 text-xs text-slate-400 font-medium ml-6">
+                                        <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 font-medium ml-6">
                                             <div className="flex items-center gap-2">
-                                                <span className="text-purple-400 font-bold">WS #1:</span>
-                                                <code className="text-purple-300 bg-purple-500/10 px-1.5 py-0.5 rounded text-[10px]">@depth20@100ms</code>
+                                                <span className="text-purple-700 dark:text-purple-400 font-bold">WS #1:</span>
+                                                <code className="text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-500/10 px-1.5 py-0.5 rounded text-[10px]">@depth20@100ms</code>
                                                 <span>→ L2 Orderbook Snapshots</span>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <span className="text-rose-400 font-bold">WS #2:</span>
-                                                <code className="text-rose-300 bg-rose-500/10 px-1.5 py-0.5 rounded text-[10px]">@aggTrade</code>
+                                                <span className="text-rose-700 dark:text-rose-400 font-bold">WS #2:</span>
+                                                <code className="text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-500/10 px-1.5 py-0.5 rounded text-[10px]">@aggTrade</code>
                                                 <span>→ Live Executed Trades (per tick)</span>
                                             </div>
                                             <p className="text-slate-500 mt-1.5 leading-relaxed">
@@ -2345,10 +2345,10 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     </div>
 
                                     {/* Hybrid Scraper Toggle & UI */}
-                                    <div className="flex items-center justify-between p-4 bg-rose-500/10 rounded-xl border border-rose-500/20 shadow-inner">
+                                    <div className="flex items-center justify-between p-4 bg-rose-50 dark:bg-rose-500/10 rounded-xl border border-rose-200 dark:border-rose-500/20 shadow-inner">
                                         <div>
-                                            <h4 className="text-sm font-bold text-rose-400">Live Hybrid Scraping Engine</h4>
-                                            <p className="text-xs text-slate-400 mt-0.5 font-medium">Connect to Binance WSS to download real-time synced L2 + Trades data.</p>
+                                            <h4 className="text-sm font-bold text-rose-700 dark:text-rose-400">Live Hybrid Scraping Engine</h4>
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-medium">Connect to Binance WSS to download real-time synced L2 + Trades data.</p>
                                         </div>
                                         <label className="relative inline-flex items-center cursor-pointer">
                                             <input 
@@ -2358,7 +2358,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 onChange={() => setIsHybridScraping(!isHybridScraping)}
                                                 disabled={isTraining || (hybridScrapeJob !== null && ['PENDING', 'RUNNING'].includes(hybridScrapeJob.status))}
                                             />
-                                            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-rose-500 peer-checked:to-orange-500"></div>
+                                            <div className="w-11 h-6 bg-slate-300 dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-slate-300 dark:border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-rose-500 peer-checked:to-orange-500"></div>
                                         </label>
                                     </div>
 
@@ -2374,13 +2374,13 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
                                     {!isHybridScraping && (
                                         <div className="space-y-4">
-                                            <div className="p-4 bg-rose-500/10 rounded-xl border border-rose-500/20 shadow-inner">
+                                            <div className="p-4 bg-rose-50 dark:bg-rose-500/10 rounded-xl border border-rose-200 dark:border-rose-500/20 shadow-inner">
                                                 <div className="flex justify-between items-center mb-1">
-                                                    <label className="block text-sm font-medium text-slate-300">Select Hybrid Snapshot File</label>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Select Hybrid Snapshot File</label>
                                                     <button
                                                         onClick={handleDeleteHybridSnapshotFile}
                                                         disabled={isTraining || !selectedHybridFile}
-                                                        className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded transition-all hover:bg-red-500/20 disabled:opacity-50"
+                                                        className="text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded transition-all hover:bg-red-500/20 disabled:opacity-50"
                                                         title="Delete selected snapshot"
                                                     >
                                                         <Trash2 className="w-3 h-3" />
@@ -2390,12 +2390,12 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 <select 
                                                     value={selectedHybridFile} 
                                                     onChange={(e) => setSelectedHybridFile(e.target.value)}
-                                                    className="w-full bg-[#0A0A0A] border border-rose-500/30 rounded-lg p-2.5 text-slate-200"
+                                                    className="w-full bg-white dark:bg-[#0A0A0A] border border-rose-300 dark:border-rose-500/30 rounded-lg p-2.5 text-slate-900 dark:text-slate-200"
                                                     disabled={isTraining}
                                                 >
-                                                    <option value="" disabled>📂 Select a snapshot file...</option>
-                                                    {hybridSnapshotFiles.length === 0 ? <option value="" disabled>No Hybrid snapshots available</option> : null}
-                                                    {hybridSnapshotFiles.map(f => <option key={f} value={f}>📂 {f}</option>)}
+                                                    <option value="" disabled className="bg-white dark:bg-[#0A0A0A] text-slate-500">📂 Select a snapshot file...</option>
+                                                    {hybridSnapshotFiles.length === 0 ? <option value="" disabled className="bg-white dark:bg-[#0A0A0A] text-slate-500">No Hybrid snapshots available</option> : null}
+                                                    {hybridSnapshotFiles.map(f => <option key={f} value={f} className="bg-white dark:bg-[#0A0A0A] text-slate-900 dark:text-slate-200">📂 {f}</option>)}
                                                 </select>
                                             </div>
 
@@ -2404,13 +2404,13 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     )}
 
                                     {/* Trade Tick Feature Selector — 12 features */}
-                                    <div className="bg-white/5 border border-rose-500/20 p-5 rounded-2xl shadow-inner">
+                                    <div className="bg-white dark:bg-white/5 border border-rose-200 dark:border-rose-500/20 p-5 rounded-2xl shadow-inner">
                                         <div className="flex justify-between items-center mb-4">
                                             <div>
-                                                <h3 className="text-sm font-bold text-rose-400 flex items-center gap-2">
+                                                <h3 className="text-sm font-bold text-rose-700 dark:text-rose-400 flex items-center gap-2">
                                                     <Layers className="w-4 h-4" /> Trade Tick Features
                                                 </h3>
-                                                <p className="text-xs text-slate-400 mt-1">Real aggTrade features — not L2 proxies.</p>
+                                                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">Real aggTrade features — not L2 proxies.</p>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <button
@@ -2422,11 +2422,11 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                         }
                                                     }}
                                                     disabled={isTraining}
-                                                    className="text-xs font-bold bg-rose-500/10 text-rose-400 px-3 py-1 rounded-lg border border-rose-500/20 hover:bg-rose-500/20 transition-all"
+                                                    className="text-xs font-bold bg-rose-100 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 px-3 py-1 rounded-lg border border-rose-200 dark:border-rose-500/20 hover:bg-rose-200 dark:hover:bg-rose-500/20 transition-all"
                                                 >
                                                     {selectedHybridDeepTradeFeatures.length === ALL_HYBRID_DEEP_TRADE_FEATURES.length ? 'Deselect All' : 'Select All'}
                                                 </button>
-                                                <div className="text-xs font-bold bg-rose-500/10 text-rose-400 px-3 py-1 rounded-full border border-rose-500/20">
+                                                <div className="text-xs font-bold bg-rose-100 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 px-3 py-1 rounded-full border border-rose-200 dark:border-rose-500/20">
                                                     {selectedHybridDeepTradeFeatures.length} / {ALL_HYBRID_DEEP_TRADE_FEATURES.length}
                                                 </div>
                                             </div>
@@ -2438,16 +2438,16 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                     <button key={feat.internal}
                                                         onClick={() => handleToggleHybridDeepTradeFeature(feat.internal)}
                                                         disabled={isTraining}
-                                                        className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all duration-200 ${isSel ? 'bg-rose-500/10 border-rose-500/30' : 'bg-[#0A0A0A] border-white/5 hover:border-rose-500/20 hover:bg-white/5'}`}
+                                                        className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all duration-200 ${isSel ? 'bg-rose-500/10 border-rose-400 dark:border-rose-500/30' : 'bg-slate-50 dark:bg-[#0A0A0A] border-slate-200 dark:border-white/5 hover:border-rose-300 dark:hover:border-rose-500/20 hover:bg-slate-100 dark:hover:bg-white/5'}`}
                                                     >
-                                                        <div className={`w-4 h-4 mt-0.5 rounded-md border flex-shrink-0 flex items-center justify-center relative ${isSel ? (isRetrainMode && initialLoadedTradeFeatures.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-rose-500 border-rose-500') : 'border-slate-600'}`}>
+                                                        <div className={`w-4 h-4 mt-0.5 rounded-md border flex-shrink-0 flex items-center justify-center relative ${isSel ? (isRetrainMode && initialLoadedTradeFeatures.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-rose-500 border-rose-500') : 'border-slate-300 dark:border-slate-600'}`}>
                                                             {isSel && <Check className="w-3 h-3 stroke-[3] text-white" />}
                                                             {isRetrainMode && initialLoadedTradeFeatures.includes(feat.internal) && isSel && (
                                                                 <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-purple-300 rounded-full animate-ping"></div>
                                                             )}
                                                         </div>
                                                         <div>
-                                                            <span className={`text-xs font-bold block ${isSel ? 'text-rose-300' : 'text-slate-300'}`}>{feat.name}</span>
+                                                            <span className={`text-xs font-bold block ${isSel ? 'text-rose-700 dark:text-rose-300' : 'text-slate-800 dark:text-slate-300'}`}>{feat.name}</span>
                                                             <span className="text-[10px] text-slate-500 mt-0.5 block">{feat.desc}</span>
                                                         </div>
                                                     </button>
@@ -2457,13 +2457,13 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     </div>
 
                                     {/* L2 Feature Selector (reused for hybrid_deep) */}
-                                    <div className="p-4 bg-indigo-900/20 border border-indigo-500/30 rounded-2xl shadow-inner">
+                                    <div className="p-4 bg-indigo-50/70 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-500/30 rounded-2xl shadow-inner">
                                         <div className="flex items-center justify-between mb-3">
                                             <div>
-                                                <h4 className="text-sm font-black text-indigo-400 flex items-center gap-2">
+                                                <h4 className="text-sm font-black text-indigo-700 dark:text-indigo-400 flex items-center gap-2">
                                                     <Activity className="w-4 h-4" /> L2 Orderbook Features
                                                 </h4>
-                                                <p className="text-xs text-slate-400 mt-0.5">Forward-filled from nearest L2 snapshot onto each tick.</p>
+                                                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Forward-filled from nearest L2 snapshot onto each tick.</p>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <button
@@ -2475,25 +2475,25 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                         }
                                                     }}
                                                     disabled={isTraining}
-                                                    className="text-xs font-bold bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all"
+                                                    className="text-xs font-bold bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 px-3 py-1 rounded-lg border border-indigo-200 dark:border-indigo-500/20 hover:bg-indigo-200 dark:hover:bg-indigo-500/20 transition-all"
                                                 >
                                                     {selectedL2Features.length === ALL_L2_FEATURES.length ? 'Deselect All' : 'Select All'}
                                                 </button>
-                                                <span className="text-xs font-bold bg-indigo-500/10 text-indigo-400 px-2 py-1 rounded-full border border-indigo-500/20">
+                                                <span className="text-xs font-bold bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 px-2 py-1 rounded-full border border-indigo-200 dark:border-indigo-500/20">
                                                     {selectedL2Features.length} / {ALL_L2_FEATURES.length}
                                                 </span>
                                             </div>
                                         </div>
-                                        <div className="text-[10px] font-bold text-indigo-300 mt-2 mb-2 px-1 border-b border-indigo-500/20 pb-1">Basic Features (0ms Latency Support)</div>
+                                        <div className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 mt-2 mb-2 px-1 border-b border-indigo-200 dark:border-indigo-500/20 pb-1">Basic Features (0ms Latency Support)</div>
                                         <div className="grid grid-cols-2 gap-2 mb-3">
                                             {BASIC_L2_FEATURES.map((feat) => {
                                                 const isSel = selectedL2Features.includes(feat.internal);
                                                 return (
                                                     <div key={feat.internal}
                                                         onClick={() => !isTraining && handleToggleL2Feature(feat.internal)}
-                                                        className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all ${isSel ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-200' : 'bg-black/30 border-white/5 text-slate-400 hover:bg-white/5'}`}
+                                                        className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all ${isSel ? 'bg-indigo-100 dark:bg-indigo-500/20 border-indigo-400 dark:border-indigo-500/50 text-indigo-800 dark:text-indigo-200' : 'bg-white dark:bg-black/30 border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'}`}
                                                     >
-                                                        <div className={`w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center relative ${isSel ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-indigo-500 border-indigo-400') : 'border-white/20'}`}>
+                                                        <div className={`w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center relative ${isSel ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-indigo-500 border-indigo-400') : 'border-slate-300 dark:border-white/20'}`}>
                                                             {isSel && <Check className="w-2.5 h-2.5 text-white" />}
                                                             {isRetrainMode && initialLoadedL2Features.includes(feat.internal) && isSel && (
                                                                 <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-purple-300 rounded-full animate-ping"></div>
@@ -2504,16 +2504,16 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 );
                                             })}
                                         </div>
-                                        <div className="text-[10px] font-bold text-slate-400 mt-2 mb-2 px-1 border-b border-white/10 pb-1">Advanced Features (High Latency)</div>
+                                        <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400 mt-2 mb-2 px-1 border-b border-slate-200 dark:border-white/10 pb-1">Advanced Features (High Latency)</div>
                                         <div className="grid grid-cols-2 gap-2 max-h-[140px] overflow-y-auto pr-1 custom-scrollbar">
                                             {ADV_L2_FEATURES.map((feat) => {
                                                 const isSel = selectedL2Features.includes(feat.internal);
                                                 return (
                                                     <div key={feat.internal}
                                                         onClick={() => !isTraining && handleToggleL2Feature(feat.internal)}
-                                                        className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all ${isSel ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-200' : 'bg-black/30 border-white/5 text-slate-400 hover:bg-white/5'}`}
+                                                        className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all ${isSel ? 'bg-indigo-100 dark:bg-indigo-500/20 border-indigo-400 dark:border-indigo-500/50 text-indigo-800 dark:text-indigo-200' : 'bg-white dark:bg-black/30 border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'}`}
                                                     >
-                                                        <div className={`w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center relative ${isSel ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-indigo-500 border-indigo-400') : 'border-white/20'}`}>
+                                                        <div className={`w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center relative ${isSel ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-indigo-500 border-indigo-400') : 'border-slate-300 dark:border-white/20'}`}>
                                                             {isSel && <Check className="w-2.5 h-2.5 text-white" />}
                                                             {isRetrainMode && initialLoadedL2Features.includes(feat.internal) && isSel && (
                                                                 <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-purple-300 rounded-full animate-ping"></div>
@@ -2543,10 +2543,10 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                             {(dataSource === 'l2_orderbook' || dataSource === 'hybrid') && (
 
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between p-4 bg-purple-500/10 rounded-xl border border-purple-500/20 shadow-inner">
+                                    <div className="flex items-center justify-between p-4 bg-purple-50 dark:bg-purple-500/10 rounded-xl border border-purple-200 dark:border-purple-500/20 shadow-inner">
                                         <div>
-                                            <h4 className="text-sm font-bold text-purple-400">Deep Training (Live Scraping)</h4>
-                                            <p className="text-xs text-slate-400 mt-0.5 font-medium">Scrape live L2 data instead of historical.</p>
+                                            <h4 className="text-sm font-bold text-purple-700 dark:text-purple-400">Deep Training (Live Scraping)</h4>
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-medium">Scrape live L2 data instead of historical.</p>
                                         </div>
                                         <label className="relative inline-flex items-center cursor-pointer">
                                             <input 
@@ -2556,16 +2556,16 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 onChange={() => setIsDeepTraining(!isDeepTraining)}
                                                 disabled={isTraining}
                                             />
-                                            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-purple-500 peer-checked:to-pink-500"></div>
+                                            <div className="w-11 h-6 bg-slate-300 dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-slate-300 dark:border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-purple-500 peer-checked:to-pink-500"></div>
                                         </label>
                                     </div>
 
                                     {isDeepTraining ? (
-                                        <div className="p-4 bg-white/5 border border-purple-500/20 rounded-xl space-y-4">
+                                        <div className="p-4 bg-white dark:bg-white/5 border border-purple-200 dark:border-purple-500/20 rounded-xl space-y-4">
                                             {/* Header row */}
                                             <div className="flex justify-between items-center">
-                                                <label className="block text-sm font-medium text-slate-300">Target L2 Snapshots (100ms each)</label>
-                                                <span className="text-sm font-bold text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded-lg border border-purple-500/20 font-mono">
+                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Target L2 Snapshots (100ms each)</label>
+                                                <span className="text-sm font-bold text-purple-700 dark:text-purple-400 bg-purple-100 dark:bg-purple-500/10 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-500/20 font-mono">
                                                     {targetRowOptions[targetRowsIndex].toLocaleString()} Snaps
                                                 </span>
                                             </div>
@@ -2579,7 +2579,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 value={targetRowsIndex}
                                                 onChange={(e) => handleSliderChange(parseInt(e.target.value))}
                                                 disabled={isTraining}
-                                                className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                                className="w-full h-2 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-purple-500"
                                             />
                                             <div className="flex justify-between text-[10px] text-slate-500 font-medium -mt-1">
                                                 <span>1K</span><span>50K</span><span>500K</span><span>5M</span><span>50M</span><span>100M</span>
@@ -2611,9 +2611,9 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                         }}
                                                         disabled={isTraining}
                                                         placeholder="Enter exact rows..."
-                                                        className="w-full bg-black/50 border border-purple-500/30 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:ring-2 focus:ring-purple-500/50 focus:border-purple-400 outline-none transition-all disabled:opacity-50 placeholder-white/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                        className="w-full bg-slate-50 dark:bg-black/50 border border-purple-300 dark:border-purple-500/30 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white font-mono focus:ring-2 focus:ring-purple-500/50 focus:border-purple-400 outline-none transition-all disabled:opacity-50 placeholder-slate-400 dark:placeholder-white/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                                     />
-                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-purple-400/60 uppercase tracking-wider pointer-events-none">rows</span>
+                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-purple-600/70 dark:text-purple-400/60 uppercase tracking-wider pointer-events-none">rows</span>
                                                 </div>
                                                 <button
                                                     onClick={() => {
@@ -2627,7 +2627,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                     }}
                                                     disabled={isTraining}
                                                     title="Apply manual value"
-                                                    className="flex-shrink-0 p-2.5 rounded-xl bg-purple-600/20 border border-purple-500/40 text-purple-400 hover:bg-purple-600/40 hover:text-purple-200 transition-all disabled:opacity-40"
+                                                    className="flex-shrink-0 p-2.5 rounded-xl bg-purple-100 dark:bg-purple-600/20 border border-purple-300 dark:border-purple-500/40 text-purple-700 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-600/40 hover:text-purple-900 dark:hover:text-purple-200 transition-all disabled:opacity-40"
                                                 >
                                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
                                                 </button>
@@ -2655,8 +2655,8 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                             }}
                                                             className={`py-1 text-[10px] font-black rounded-lg border transition-all ${
                                                                 isActive
-                                                                    ? 'bg-purple-600/30 border-purple-400/60 text-purple-300 shadow-[0_0_8px_rgba(168,85,247,0.3)]'
-                                                                    : 'bg-black/30 border-white/10 text-slate-400 hover:border-purple-500/40 hover:text-purple-300 hover:bg-purple-500/10'
+                                                                    ? 'bg-purple-100 dark:bg-purple-600/30 border-purple-400/80 dark:border-purple-400/60 text-purple-700 dark:text-purple-300 shadow-[0_0_8px_rgba(168,85,247,0.2)] dark:shadow-[0_0_8px_rgba(168,85,247,0.3)]'
+                                                                    : 'bg-slate-100 dark:bg-black/30 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:border-purple-400 dark:hover:border-purple-500/40 hover:text-purple-700 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-500/10'
                                                             }`}
                                                         >
                                                             {label}
@@ -2671,21 +2671,21 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                         </div>
                                     ) : (
                                         <div>
-                                            <label className="block text-sm font-medium text-slate-300 mb-1">Training Data Lookback (Hours)</label>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Training Data Lookback (Hours)</label>
                                             <select 
                                                 value={dataLookback}
                                                 onChange={(e) => setDataLookback(Number(e.target.value))}
                                                 disabled={isTraining}
-                                                className="w-full bg-white/5 backdrop-blur-md border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-purple-500/50 focus:border-purple-400 outline-none transition-all disabled:opacity-50"
+                                                className="w-full bg-white dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500/50 focus:border-purple-400 outline-none transition-all disabled:opacity-50"
                                             >
-                                                <option className="bg-gray-900 text-white" value={0.08333}>Last 5 Minutes</option>
-                                                <option className="bg-gray-900 text-white" value={0.25}>Last 15 Minutes</option>
-                                                <option className="bg-gray-900 text-white" value={0.5}>Last 30 Minutes</option>
-                                                <option className="bg-gray-900 text-white" value={1}>Last 1 Hour</option>
-                                                <option className="bg-gray-900 text-white" value={4}>Last 4 Hours</option>
-                                                <option className="bg-gray-900 text-white" value={6}>Last 6 Hours</option>
-                                                <option className="bg-gray-900 text-white" value={12}>Last 12 Hours</option>
-                                                <option className="bg-gray-900 text-white" value={24}>Last 24 Hours</option>
+                                                <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={0.08333}>Last 5 Minutes</option>
+                                                <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={0.25}>Last 15 Minutes</option>
+                                                <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={0.5}>Last 30 Minutes</option>
+                                                <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={1}>Last 1 Hour</option>
+                                                <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={4}>Last 4 Hours</option>
+                                                <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={6}>Last 6 Hours</option>
+                                                <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={12}>Last 12 Hours</option>
+                                                <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={24}>Last 24 Hours</option>
                                             </select>
                                             <p className="text-xs text-slate-500 mt-1.5 ml-1 font-medium">Amount of historical tick data to use.</p>
                                         </div>
@@ -2694,10 +2694,10 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                             )}
 
                             {(dataSource === 'l2_orderbook' || dataSource === 'hybrid' || dataSource === 'hybrid_deep') && (
-                                <div className="flex items-center justify-between p-4 bg-purple-500/5 rounded-xl border border-purple-500/20 shadow-inner">
+                                <div className="flex items-center justify-between p-4 bg-purple-50 dark:bg-purple-500/5 rounded-xl border border-purple-200 dark:border-purple-500/20 shadow-inner">
                                     <div>
-                                        <h4 className="text-sm font-bold text-purple-400">Resample to Candle Interval</h4>
-                                        <p className="text-xs text-slate-400 mt-0.5 font-medium">Group High-Frequency tick data into {timeframe} candles.</p>
+                                        <h4 className="text-sm font-bold text-purple-700 dark:text-purple-400">Resample to Candle Interval</h4>
+                                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-medium">Group High-Frequency tick data into {timeframe} candles.</p>
                                     </div>
                                     <label className="relative inline-flex items-center cursor-pointer">
                                         <input 
@@ -2707,29 +2707,29 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                             onChange={() => setIsResampleL2(!isResampleL2)}
                                             disabled={isTraining}
                                         />
-                                        <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-purple-500 peer-checked:to-pink-500 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"></div>
+                                        <div className="w-11 h-6 bg-slate-300 dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-slate-300 dark:border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-purple-500 peer-checked:to-pink-500 shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"></div>
                                     </label>
                                 </div>
                             )}
 
                             {(dataSource === 'l2_orderbook' || dataSource === 'hybrid') && (
-                                <div className="mt-4 p-4 bg-indigo-900/20 border border-indigo-500/30 rounded-2xl shadow-inner relative overflow-hidden">
+                                <div className="mt-4 p-4 bg-indigo-50/70 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-500/30 rounded-2xl shadow-inner relative overflow-hidden">
                                     {/* Background glow */}
                                     <div className="absolute top-[-50%] right-[-50%] w-[100%] h-[100%] bg-indigo-500/10 blur-[50px] rounded-full pointer-events-none"></div>
                                     
                                     <div className="flex items-center justify-between mb-4 relative z-10">
                                         <div>
-                                            <h4 className="text-sm font-black text-indigo-400 flex items-center gap-2">
+                                            <h4 className="text-sm font-black text-indigo-700 dark:text-indigo-400 flex items-center gap-2">
                                                 <Activity className="w-4 h-4" /> AUTO-FEATURE SELECTION
                                             </h4>
-                                            <p className="text-xs text-slate-400 mt-1 font-medium">Analyze live L2 metrics using <span className="text-indigo-300 font-bold">Random Forest</span> & <span className="text-indigo-300 font-bold">Mutual Information</span> to find the most predictive non-correlated features.</p>
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 font-medium">Analyze live L2 metrics using <span className="text-indigo-700 dark:text-indigo-300 font-bold">Random Forest</span> & <span className="text-indigo-700 dark:text-indigo-300 font-bold">Mutual Information</span> to find the most predictive non-correlated features.</p>
                                         </div>
                                     </div>
                                     
                                     <button 
                                         onClick={handleSuggestFeatures}
                                         disabled={isTraining || isSuggesting}
-                                        className={`w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md relative z-10 ${isSuggesting ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 cursor-wait' : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-[0_0_15px_rgba(79,70,229,0.4)] border border-indigo-400/50 hover:scale-[1.02]'}`}
+                                        className={`w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md relative z-10 ${isSuggesting ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-500/30 cursor-wait' : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-[0_0_15px_rgba(79,70,229,0.4)] border border-indigo-400/50 hover:scale-[1.02]'}`}
                                     >
                                         {isSuggesting ? (
                                             <><Loader2 className="w-4 h-4 animate-spin" /> SCANNING 50+ METRICS...</>
@@ -2746,9 +2746,9 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 className="mt-4 space-y-2 relative z-10"
                                             >
                                                 <div className="flex items-center justify-between mb-2">
-                                                    <p className="text-xs font-semibold text-emerald-400">Top Recommended Features:</p>
+                                                    <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">Top Recommended Features:</p>
                                                     {analysisStats && (
-                                                        <span className="text-[10px] bg-indigo-500/10 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/20">
+                                                        <span className="text-[10px] bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-500/20">
                                                             Analyzed {analysisStats.rows} rows × {analysisStats.features} features
                                                         </span>
                                                     )}
@@ -2757,21 +2757,21 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                     <div 
                                                         key={idx} 
                                                         onClick={() => !isTraining && handleToggleL2Feature(feat.internal)}
-                                                        className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-all ${selectedL2Features.includes(feat.internal) ? 'bg-emerald-500/10 border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.15)]' : 'bg-black/40 border-white/10 hover:border-white/20'}`}
+                                                        className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-all ${selectedL2Features.includes(feat.internal) ? 'bg-emerald-500/10 border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.12)]' : 'bg-white dark:bg-black/40 border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'}`}
                                                     >
                                                         <div className="flex items-center gap-3">
-                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors relative ${selectedL2Features.includes(feat.internal) ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-emerald-500 border-emerald-400') : 'border-white/30'}`}>
-                                                                {selectedL2Features.includes(feat.internal) && <CheckCircle2 className="w-3 h-3 text-black" />}
+                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors relative ${selectedL2Features.includes(feat.internal) ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-emerald-500 border-emerald-400') : 'border-slate-300 dark:border-white/30'}`}>
+                                                                {selectedL2Features.includes(feat.internal) && <CheckCircle2 className="w-3 h-3 text-white dark:text-black" />}
                                                                 {isRetrainMode && initialLoadedL2Features.includes(feat.internal) && selectedL2Features.includes(feat.internal) && (
                                                                     <div className="absolute -top-1 -right-1 w-2 h-2 bg-purple-300 rounded-full animate-ping"></div>
                                                                 )}
                                                             </div>
-                                                            <span className={`text-xs font-bold ${selectedL2Features.includes(feat.internal) ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'text-purple-300' : 'text-emerald-100') : 'text-slate-300'}`}>
+                                                            <span className={`text-xs font-bold ${selectedL2Features.includes(feat.internal) ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'text-purple-700 dark:text-purple-300' : 'text-emerald-800 dark:text-emerald-100') : 'text-slate-700 dark:text-slate-300'}`}>
                                                                 {feat.name}
                                                             </span>
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30">
+                                                            <span className="text-[10px] bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-500/30">
                                                                 Score: {feat.score}%
                                                             </span>
                                                         </div>
@@ -2783,13 +2783,13 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     </AnimatePresence>
 
                                     {/* Manual Selection Toggle */}
-                                    <div className="mt-4 border-t border-indigo-500/20 pt-4">
+                                    <div className="mt-4 border-t border-indigo-200 dark:border-indigo-500/20 pt-4">
                                         <button 
                                             onClick={() => setShowManualFeatures(!showManualFeatures)}
-                                            className="w-full flex items-center justify-between text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+                                            className="w-full flex items-center justify-between text-xs font-bold text-indigo-700 dark:text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
                                         >
                                             <span>Or Select Manually ({selectedL2Features.length}/{ALL_L2_FEATURES.length} Selected)</span>
-                                            <span className="text-[10px] bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                                            <span className="text-[10px] bg-indigo-100 dark:bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-500/20">
                                                 {showManualFeatures ? 'Hide' : 'Show All'}
                                             </span>
                                         </button>
@@ -2812,21 +2812,21 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                                 }
                                                             }}
                                                             disabled={isTraining}
-                                                            className="text-[10px] font-bold bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all"
+                                                            className="text-[10px] font-bold bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 px-3 py-1 rounded-lg border border-indigo-200 dark:border-indigo-500/20 hover:bg-indigo-200 dark:hover:bg-indigo-500/20 transition-all"
                                                         >
                                                             {selectedL2Features.length === ALL_L2_FEATURES.length ? 'Deselect All' : 'Select All'}
                                                         </button>
                                                     </div>
-                                                    <div className="text-[10px] font-bold text-indigo-300 mb-2 border-b border-indigo-500/20 pb-1">Basic Features (0ms Latency Support)</div>
+                                                    <div className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 mb-2 border-b border-indigo-200 dark:border-indigo-500/20 pb-1">Basic Features (0ms Latency Support)</div>
                                                     <div className="grid grid-cols-2 gap-2 mb-4">
                                                     {BASIC_L2_FEATURES.map((feat, idx) => (
                                                         <div 
                                                             key={idx} 
                                                             onClick={() => !isTraining && handleToggleL2Feature(feat.internal)}
-                                                            className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all ${selectedL2Features.includes(feat.internal) ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-200' : 'bg-black/30 border-white/5 text-slate-400 hover:bg-white/5'}`}
+                                                            className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all ${selectedL2Features.includes(feat.internal) ? 'bg-indigo-100 dark:bg-indigo-500/20 border-indigo-400 dark:border-indigo-500/50 text-indigo-800 dark:text-indigo-200' : 'bg-white dark:bg-black/30 border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'}`}
                                                         >
-                                                            <div className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center transition-colors flex-shrink-0 relative ${selectedL2Features.includes(feat.internal) ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-indigo-500 border-indigo-400') : 'border-white/20'}`}>
-                                                                {selectedL2Features.includes(feat.internal) && <CheckCircle2 className="w-2.5 h-2.5 text-black" />}
+                                                            <div className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center transition-colors flex-shrink-0 relative ${selectedL2Features.includes(feat.internal) ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-indigo-500 border-indigo-400') : 'border-slate-300 dark:border-white/20'}`}>
+                                                                {selectedL2Features.includes(feat.internal) && <CheckCircle2 className="w-2.5 h-2.5 text-white dark:text-black" />}
                                                                 {isRetrainMode && initialLoadedL2Features.includes(feat.internal) && selectedL2Features.includes(feat.internal) && (
                                                                     <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-purple-300 rounded-full animate-ping"></div>
                                                                 )}
@@ -2837,16 +2837,16 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                         </div>
                                                     ))}
                                                     </div>
-                                                    <div className="text-[10px] font-bold text-slate-400 mb-2 border-b border-white/10 pb-1">Advanced Features (High Latency)</div>
+                                                    <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-2 border-b border-slate-200 dark:border-white/10 pb-1">Advanced Features (High Latency)</div>
                                                     <div className="grid grid-cols-2 gap-2">
                                                     {ADV_L2_FEATURES.map((feat, idx) => (
                                                         <div 
                                                             key={idx} 
                                                             onClick={() => !isTraining && handleToggleL2Feature(feat.internal)}
-                                                            className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all ${selectedL2Features.includes(feat.internal) ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-200' : 'bg-black/30 border-white/5 text-slate-400 hover:bg-white/5'}`}
+                                                            className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-all ${selectedL2Features.includes(feat.internal) ? 'bg-indigo-100 dark:bg-indigo-500/20 border-indigo-400 dark:border-indigo-500/50 text-indigo-800 dark:text-indigo-200' : 'bg-white dark:bg-black/30 border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'}`}
                                                         >
-                                                            <div className={`w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center transition-colors flex-shrink-0 relative ${selectedL2Features.includes(feat.internal) ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-indigo-500 border-indigo-400') : 'border-white/20'}`}>
-                                                                {selectedL2Features.includes(feat.internal) && <CheckCircle2 className="w-2.5 h-2.5 text-black" />}
+                                                            <div className={`w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center transition-colors flex-shrink-0 relative ${selectedL2Features.includes(feat.internal) ? (isRetrainMode && initialLoadedL2Features.includes(feat.internal) ? 'bg-purple-500 border-purple-400' : 'bg-indigo-500 border-indigo-400') : 'border-slate-300 dark:border-white/20'}`}>
+                                                                {selectedL2Features.includes(feat.internal) && <CheckCircle2 className="w-2.5 h-2.5 text-white dark:text-black" />}
                                                                 {isRetrainMode && initialLoadedL2Features.includes(feat.internal) && selectedL2Features.includes(feat.internal) && (
                                                                     <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-purple-300 rounded-full animate-ping"></div>
                                                                 )}
@@ -2872,16 +2872,16 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     animate={{ opacity: 1, y: 0 }}
                                     className="mb-5"
                                 >
-                                    <div className="mb-3 p-3 bg-gradient-to-r from-purple-900/30 to-indigo-900/20 rounded-xl border border-purple-500/30 flex items-start gap-3">
+                                    <div className="mb-3 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/30 dark:to-indigo-900/20 rounded-xl border border-purple-200 dark:border-purple-500/30 flex items-start gap-3">
                                         <div className="flex gap-1.5 mt-0.5 flex-shrink-0">
-                                            <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
-                                            <div className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse [animation-delay:0.4s]" />
+                                            <div className="w-2 h-2 rounded-full bg-purple-500 dark:bg-purple-400 animate-pulse" />
+                                            <div className="w-2 h-2 rounded-full bg-indigo-500 dark:bg-indigo-400 animate-pulse [animation-delay:0.4s]" />
                                         </div>
                                         <div>
-                                            <p className="text-xs font-bold text-purple-300">
+                                            <p className="text-xs font-bold text-purple-700 dark:text-purple-300">
                                                 {dataSource === 'hybrid' ? '✅ Hybrid Mode: Full PLP Quality' : '✅ L2 Mode: OBI/Spread-Powered PLP'}
                                             </p>
-                                            <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">
+                                            <p className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">
                                                 {dataSource === 'hybrid'
                                                     ? 'All 50 PLP features fully powered — OHLCV provides Close/Volume, L2 provides OBI/Spread.'
                                                     : 'Stop-Hunt, Sweep, SMC & Spread-based features at full quality. Volume proxies used where trade ticks are absent.'}
@@ -2904,7 +2904,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
                         {(dataSource === 'ohlcv' || dataSource === 'hybrid') && (
                                 <div className="mb-4">
-                                    <label className="block text-sm font-medium text-slate-300 mb-2">Historical Period (Date Range)</label>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Historical Period (Date Range)</label>
                                     <div className="flex items-center gap-3">
                                         <div className="flex-1">
                                             <input 
@@ -2912,7 +2912,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 value={ohlcvStartDate}
                                                 onChange={(e) => setOhlcvStartDate(e.target.value)}
                                                 disabled={isTraining}
-                                                className="w-full bg-white/5 backdrop-blur-md border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-400 outline-none transition-all disabled:opacity-50 [color-scheme:dark]"
+                                                className="w-full bg-white dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-400 outline-none transition-all disabled:opacity-50 dark:[color-scheme:dark]"
                                             />
                                             <div className="text-[10px] text-slate-500 mt-1 ml-1 uppercase font-bold">Start Date</div>
                                         </div>
@@ -2923,7 +2923,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 value={ohlcvEndDate}
                                                 onChange={(e) => setOhlcvEndDate(e.target.value)}
                                                 disabled={isTraining}
-                                                className="w-full bg-white/5 backdrop-blur-md border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-400 outline-none transition-all disabled:opacity-50 [color-scheme:dark]"
+                                                className="w-full bg-white dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-400 outline-none transition-all disabled:opacity-50 dark:[color-scheme:dark]"
                                             />
                                             <div className="text-[10px] text-slate-500 mt-1 ml-1 uppercase font-bold">End Date</div>
                                         </div>
@@ -2933,10 +2933,10 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                         )}
 
                         {(dataSource === 'ohlcv' || dataSource === 'hybrid' || dataSource === 'historical_trades') && (
-                            <div className="mt-4 bg-black/40 border border-white/10 rounded-2xl p-5 shadow-inner">
+                            <div className="mt-4 bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-2xl p-5 shadow-inner">
                                 <div className="flex items-center justify-between mb-4">
-                                    <label className="flex items-center gap-2 text-sm font-medium text-slate-300 mb-3">
-                                        <Activity className="w-4 h-4 text-cyan-400" /> Feature Engineering Studio
+                                    <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                                        <Activity className="w-4 h-4 text-cyan-600 dark:text-cyan-400" /> Feature Engineering Studio
                                     </label>
                                     <span className="flex items-center gap-2">
                                         <button
@@ -2949,26 +2949,26 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                 }
                                             }}
                                             disabled={isTraining}
-                                            className="text-xs font-bold bg-cyan-500/10 text-cyan-400 px-3 py-1 rounded-lg border border-cyan-500/20 hover:bg-cyan-500/20 transition-all"
+                                            className="text-xs font-bold bg-cyan-100 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 px-3 py-1 rounded-lg border border-cyan-200 dark:border-cyan-500/20 hover:bg-cyan-200 dark:hover:bg-cyan-500/20 transition-all"
                                         >
                                             {selectedIndicators.length === INDICATOR_CATEGORIES.flatMap(c => c.indicators).length ? 'Deselect All' : 'Select All'}
                                         </button>
-                                        <span className="text-xs font-bold text-cyan-400 bg-cyan-500/10 px-2.5 py-1 rounded-md border border-cyan-500/20">
+                                        <span className="text-xs font-bold text-cyan-700 dark:text-cyan-400 bg-cyan-100 dark:bg-cyan-500/10 px-2.5 py-1 rounded-md border border-cyan-200 dark:border-cyan-500/20">
                                             {selectedIndicators.length} Selected
                                         </span>
                                     </span>
                                 </div>
 
                                 {/* Preset Packs */}
-                                <div className="mb-5 bg-white/5 p-3 rounded-xl border border-white/5">
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Preset Packs</p>
+                                <div className="mb-5 bg-slate-50 dark:bg-white/5 p-3 rounded-xl border border-slate-200 dark:border-white/5">
+                                    <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-2">Preset Packs</p>
                                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
                                         {PRESET_PACKS.map(pack => (
                                             <button
                                                 key={pack.name}
                                                 disabled={isTraining}
                                                 onClick={() => applyPresetPack(pack.list)}
-                                                className="py-2 px-2 rounded-lg text-xs font-semibold bg-black/50 border border-white/10 hover:bg-white/10 hover:border-cyan-500/30 text-slate-300 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                                className="py-2 px-2 rounded-lg text-xs font-semibold bg-white dark:bg-black/50 border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 hover:border-cyan-400 dark:hover:border-cyan-500/30 text-slate-700 dark:text-slate-300 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
                                             >
                                                 <span>{pack.icon}</span> <span className="truncate">{pack.name}</span>
                                             </button>
@@ -2980,7 +2980,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                 <div className="space-y-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
                                     {INDICATOR_CATEGORIES.map(category => (
                                         <div key={category.name} className="space-y-2">
-                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-white/5 pb-1">
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 dark:border-white/5 pb-1">
                                                 {category.name}
                                             </p>
                                             <div className="flex flex-wrap gap-2">
@@ -2989,11 +2989,11 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                                         key={ind}
                                                         disabled={isTraining}
                                                         onClick={() => handleToggleIndicator(ind)}
-                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-300 relative flex flex-col items-center justify-center gap-0.5 overflow-visible ${selectedIndicators.includes(ind) ? (isRetrainMode && initialLoadedIndicators.includes(ind) ? 'bg-purple-500/20 text-purple-300 border-purple-400/50 shadow-[0_0_15px_rgba(168,85,247,0.4)] scale-105' : 'bg-cyan-500/20 text-cyan-400 border-cyan-400/50 shadow-[0_0_10px_rgba(34,211,238,0.2)]') : 'bg-black/60 text-slate-400 border-white/10 hover:border-white/30 hover:text-white hover:bg-white/10'}`}
+                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all duration-300 relative flex flex-col items-center justify-center gap-0.5 overflow-visible ${selectedIndicators.includes(ind) ? (isRetrainMode && initialLoadedIndicators.includes(ind) ? 'bg-purple-500/15 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/50 dark:border-purple-400/50 shadow-[0_0_15px_rgba(168,85,247,0.25)] dark:shadow-[0_0_15px_rgba(168,85,247,0.4)] scale-105' : 'bg-cyan-500/15 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 border-cyan-500/50 dark:border-cyan-400/50 shadow-[0_0_10px_rgba(34,211,238,0.15)] dark:shadow-[0_0_10px_rgba(34,211,238,0.2)]') : 'bg-slate-100 dark:bg-black/60 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/30 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10'}`}
                                                     >
                                                         <span>{ind}</span>
                                                         {MULTI_PARAM_MAP[ind] && selectedIndicators.includes(ind) && (
-                                                            <span className="text-[9px] font-normal text-cyan-200/80 leading-none">{MULTI_PARAM_MAP[ind]}</span>
+                                                            <span className="text-[9px] font-normal text-cyan-700/80 dark:text-cyan-200/80 leading-none">{MULTI_PARAM_MAP[ind]}</span>
                                                         )}
                                                         {isRetrainMode && initialLoadedIndicators.includes(ind) && selectedIndicators.includes(ind) && (
                                                             <div className="absolute -top-1 -right-1 w-2 h-2 bg-purple-400 rounded-full animate-ping"></div>
@@ -3043,13 +3043,13 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                             setTwapDuration={setTwapDuration}
                         />
 
-                        <div className="p-5 mt-4 bg-gradient-to-br from-purple-900/20 to-blue-900/10 rounded-2xl border border-white/10 shadow-inner">
+                        <div className="p-5 mt-4 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/10 rounded-2xl border border-purple-200 dark:border-white/10 shadow-inner">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                                        <BrainCircuit className="w-4 h-4 text-purple-400" /> Auto Retrain
+                                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                        <BrainCircuit className="w-4 h-4 text-purple-600 dark:text-purple-400" /> Auto Retrain
                                     </h4>
-                                    <p className="text-xs text-slate-400 mt-1 font-medium">Keep model updated with fresh data automatically</p>
+                                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 font-medium">Keep model updated with fresh data automatically</p>
                                 </div>
                                 <label className="relative inline-flex items-center cursor-pointer">
                                     <input 
@@ -3059,54 +3059,54 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                         onChange={() => setIsAutoRetrain(!isAutoRetrain)}
                                         disabled={isTraining}
                                     />
-                                    <div className="w-12 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-cyan-500 peer-checked:to-blue-500 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"></div>
+                                    <div className="w-12 h-6 bg-slate-300 dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all border-slate-300 dark:border-white/5 peer-checked:bg-gradient-to-r peer-checked:from-cyan-500 peer-checked:to-blue-500 shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"></div>
                                 </label>
                             </div>
                             
                             {isAutoRetrain && (
-                                <div className="mt-4 pt-4 border-t border-white/5">
-                                    <label className="block text-xs font-semibold text-slate-300 mb-2">Retrain Interval (Hours)</label>
+                                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/5">
+                                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">Retrain Interval (Hours)</label>
                                     <select 
                                         value={retrainInterval}
                                         onChange={(e) => setRetrainInterval(Number(e.target.value))}
                                         disabled={isTraining}
-                                        className="w-full bg-black/50 backdrop-blur-md border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-400 outline-none transition-all shadow-inner"
+                                        className="w-full bg-white dark:bg-black/50 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-400 outline-none transition-all shadow-inner"
                                     >
-                                        <option className="bg-gray-900 text-white" value={1}>Every 1 Hour</option>
-                                        <option className="bg-gray-900 text-white" value={6}>Every 6 Hours</option>
-                                        <option className="bg-gray-900 text-white" value={12}>Every 12 Hours</option>
-                                        <option className="bg-gray-900 text-white" value={24}>Every 24 Hours</option>
+                                        <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={1}>Every 1 Hour</option>
+                                        <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={6}>Every 6 Hours</option>
+                                        <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={12}>Every 12 Hours</option>
+                                        <option className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white" value={24}>Every 24 Hours</option>
                                     </select>
                                 </div>
                             )}
 
-                            <div className="mt-4 pt-4 border-t border-white/5">
-                                <label className="block text-xs font-semibold text-slate-300 mb-2">Prediction Target</label>
+                            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/5">
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">Prediction Target</label>
                                 <select 
                                     value={predictionTarget}
                                     onChange={(e) => setPredictionTarget(e.target.value)}
                                     disabled={isTraining}
-                                    className="w-full bg-black/50 backdrop-blur-md border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-400 outline-none transition-all shadow-inner"
+                                    className="w-full bg-white dark:bg-black/50 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-400 outline-none transition-all shadow-inner"
                                 >
                                     <option 
                                         value="classification" 
                                         disabled={['MuZero', 'Meta-RL', 'HRL', 'MAPPO'].includes(algorithm)}
-                                        className={['MuZero', 'Meta-RL', 'HRL', 'MAPPO'].includes(algorithm) ? 'opacity-30' : ''}
+                                        className={`bg-white dark:bg-gray-900 text-slate-900 dark:text-white ${['MuZero', 'Meta-RL', 'HRL', 'MAPPO'].includes(algorithm) ? 'opacity-30' : ''}`}
                                     >
                                         Classification (Up/Down Return)
                                     </option>
                                     <option 
                                         value="regression"
                                         disabled={['MuZero', 'Meta-RL', 'HRL', 'MAPPO'].includes(algorithm)}
-                                        className={['MuZero', 'Meta-RL', 'HRL', 'MAPPO'].includes(algorithm) ? 'opacity-30' : ''}
+                                        className={`bg-white dark:bg-gray-900 text-slate-900 dark:text-white ${['MuZero', 'Meta-RL', 'HRL', 'MAPPO'].includes(algorithm) ? 'opacity-30' : ''}`}
                                     >
                                         Regression (Exact Future Price)
                                     </option>
-                                    <option value="advanced_setup">Advanced SMC Setups (Aether)</option>
-                                    <option value="smc_dynamic_mtf">SMC Dynamic MTF Target (1:2 R:R)</option>
+                                    <option value="advanced_setup" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">Advanced SMC Setups (Aether)</option>
+                                    <option value="smc_dynamic_mtf" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">SMC Dynamic MTF Target (1:2 R:R)</option>
                                 </select>
                                 {['MuZero', 'Meta-RL', 'HRL', 'MAPPO'].includes(algorithm) && (
-                                    <p className="text-[10px] text-purple-400 mt-2 flex items-start gap-1.5">
+                                    <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-2 flex items-start gap-1.5">
                                         <Layers className="w-3 h-3 flex-shrink-0 mt-0.5" />
                                         <span>Advanced RL models use SL/TP setup as reward bounds. Classification/Regression is faded out.</span>
                                     </p>
@@ -3128,12 +3128,12 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                         </div>
                     </div>
 
-                    <div className="pt-6 mt-2 relative z-10 flex flex-col gap-3 border-t border-white/10">
+                    <div className="pt-6 mt-2 relative z-10 flex flex-col gap-3 border-t border-slate-200 dark:border-white/10">
                         {!isTraining ? (
                             <button 
                                 onClick={handleStartTraining}
                                 disabled={!symbol || (dataSource === 'hybrid_deep' && (isHybridScraping || !selectedHybridFile))}
-                                className={`w-full py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-3 transition-all duration-300 shadow-xl ${(!symbol || (dataSource === 'hybrid_deep' && (isHybridScraping || !selectedHybridFile))) ? 'opacity-50 cursor-not-allowed bg-gray-800 text-gray-500 border-gray-700' : isRetrainMode ? 'bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 text-white hover:shadow-[0_0_30px_rgba(236,72,153,0.5)] border border-white/20 hover:scale-[1.02]' : 'bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 text-white hover:shadow-[0_0_30px_rgba(56,189,248,0.5)] border border-white/20 hover:scale-[1.02]'}`}
+                                className={`w-full py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-3 transition-all duration-300 shadow-xl ${(!symbol || (dataSource === 'hybrid_deep' && (isHybridScraping || !selectedHybridFile))) ? 'opacity-50 cursor-not-allowed bg-slate-200 dark:bg-gray-800 text-slate-500 dark:text-gray-500 border-slate-300 dark:border-gray-700' : isRetrainMode ? 'bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 text-white hover:shadow-[0_0_30px_rgba(236,72,153,0.5)] border border-white/20 hover:scale-[1.02]' : 'bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 text-white hover:shadow-[0_0_30px_rgba(56,189,248,0.5)] border border-white/20 hover:scale-[1.02]'}`}
                             >
                                 <Play className="w-5 h-5 fill-current" /> {isRetrainMode ? "START INCREMENTAL FINE-TUNING" : "START DEEP TRAINING"}
                             </button>
@@ -3141,13 +3141,13 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                             <div className="flex gap-3">
                                 <button 
                                     onClick={() => setShowTerminal(true)}
-                                    className="flex-1 py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-3 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all duration-300 shadow-xl"
+                                    className="flex-1 py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-3 bg-cyan-500/15 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 border border-cyan-400/50 dark:border-cyan-500/30 hover:bg-cyan-500/25 dark:hover:bg-cyan-500/30 transition-all duration-300 shadow-xl"
                                 >
                                     <Activity className="w-5 h-5" /> SHOW LIVE TERMINAL
                                 </button>
                                 <button 
                                     onClick={handleCancelTraining}
-                                    className="flex-1 py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-2 bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50 hover:shadow-[0_0_20px_rgba(239,68,68,0.3)] transition-all"
+                                    className="flex-1 py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-2 bg-red-500/10 text-red-600 dark:text-red-400 border border-red-400/50 dark:border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50 hover:shadow-[0_0_20px_rgba(239,68,68,0.3)] transition-all"
                                 >
                                     <XCircle className="w-5 h-5" /> STOP TRAINING
                                 </button>
@@ -3178,7 +3178,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                     <FloatingTVChartButton symbol={symbol} exchange={exchange} />
                                 </div>
 
-                                <div className="flex flex-col bg-black/60 backdrop-blur-2xl border border-cyan-500/20 rounded-3xl shadow-[0_0_50px_rgba(56,189,248,0.1)] overflow-hidden h-full relative z-10 w-full">
+                                <div className="flex flex-col bg-slate-950/95 dark:bg-black/60 backdrop-blur-2xl border border-cyan-500/30 dark:border-cyan-500/20 rounded-3xl shadow-2xl dark:shadow-[0_0_50px_rgba(56,189,248,0.1)] overflow-hidden h-full relative z-10 w-full">
                                     {/* Header */}
                         <div className="px-6 py-4 bg-gradient-to-r from-cyan-900/40 to-blue-900/20 border-b border-cyan-500/20 flex items-center justify-between">
                             <div className="flex items-center gap-3">

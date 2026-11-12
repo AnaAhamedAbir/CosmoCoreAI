@@ -84,7 +84,7 @@ export const SentimentHeader: React.FC<SentimentHeaderProps> = ({
                     <div>
                         <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
                             Sentiment Engine V2
-                            <div className="hidden md:block w-px h-6 bg-slate-300 dark:bg-[#0A0A0A] mx-2"></div>
+                            <div className="hidden md:block w-px h-6 bg-slate-300 dark:bg-white/15 mx-2"></div>
                             <DigitalClock className="text-lg text-blue-600 dark:text-blue-400" />
                         </h2>
                         <p className="text-xs text-gray-500 dark:text-gray-400">Real-time social volume & momentum analysis</p>
@@ -164,12 +164,12 @@ export const SentimentHeader: React.FC<SentimentHeaderProps> = ({
 
                     <div className="flex items-center gap-4">
                         {/* Model Toggle */}
-                        <div className="flex items-center bg-slate-100 dark:bg-[#0A0A0A] p-1 rounded-lg">
+                        <div className="flex items-center bg-slate-100 dark:bg-[#141414] border border-slate-200 dark:border-white/5 p-1 rounded-lg">
                             <button
                                 onClick={() => setAiModel('vader')}
                                 className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition-all ${aiModel === 'vader'
-                                    ? 'bg-white dark:bg-[#0A0A0A] text-green-600 shadow-sm'
-                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                                    ? 'bg-white dark:bg-[#0A0A0A] text-green-600 dark:text-green-400 shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                                     }`}
                             >
                                 🚀 Eco (VADER)
@@ -177,8 +177,8 @@ export const SentimentHeader: React.FC<SentimentHeaderProps> = ({
                             <button
                                 onClick={() => setAiModel('finbert')}
                                 className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition-all ${aiModel === 'finbert'
-                                    ? 'bg-white dark:bg-[#0A0A0A] text-purple-600 shadow-sm'
-                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                                    ? 'bg-white dark:bg-[#0A0A0A] text-purple-600 dark:text-purple-400 shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                                     }`}
                             >
                                 🧠 Pro (FinBERT)
@@ -186,12 +186,12 @@ export const SentimentHeader: React.FC<SentimentHeaderProps> = ({
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <span className={`text-sm font-semibold ${isNerEnabled ? 'text-indigo-500' : 'text-slate-500'}`}>
+                            <span className={`text-sm font-semibold ${isNerEnabled ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}>
                                 Deep Entity Analysis (AI)
                             </span>
                             <button
                                 onClick={() => setIsNerEnabled(!isNerEnabled)}
-                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${isNerEnabled ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-[#0A0A0A]'
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${isNerEnabled ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-800'
                                     }`}
                             >
                                 <span

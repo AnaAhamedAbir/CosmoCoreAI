@@ -844,7 +844,7 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
             onDoubleClick={resetPosition}
             title="Drag with mouse to reposition anywhere • Double-click to reset to bottom-left"
         >
-            <div className="flex items-center gap-2.5 bg-slate-950/90 backdrop-blur-md border border-purple-500/40 hover:border-purple-400/80 rounded-lg px-3 py-2 shadow-2xl transition-colors">
+            <div className="flex items-center gap-2.5 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border border-purple-500/40 hover:border-purple-400/80 rounded-lg px-3 py-2 shadow-xl dark:shadow-2xl transition-colors">
                 {/* 6-dot drag grip handle */}
                 <div className="flex flex-col gap-0.5 opacity-40 hover:opacity-80 transition-opacity">
                     <div className="flex gap-0.5">
@@ -865,7 +865,7 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
                 <div className="flex flex-col">
                     <div className="flex items-center gap-1.5">
                         <span className="text-xs leading-none">🛡️</span>
-                        <span className="text-[10px] font-bold tracking-wider text-purple-300 uppercase font-mono leading-none">
+                        <span className="text-[10px] font-bold tracking-wider text-purple-700 dark:text-purple-300 uppercase font-mono leading-none">
                             TRUE CVD (60s)
                         </span>
                     </div>

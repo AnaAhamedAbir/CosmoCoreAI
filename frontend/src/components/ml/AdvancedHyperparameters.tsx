@@ -15,23 +15,23 @@ const AdvancedHyperparameters: React.FC<AdvancedHyperparametersProps> = ({
     const [isOpen, setIsOpen] = useState(false);
 
     return (
-        <div className="mt-4 bg-white/5 border border-white/10 rounded-2xl overflow-hidden transition-all duration-300">
+        <div className="mt-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden transition-all duration-300 shadow-sm dark:shadow-none">
             <button 
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
+                className="w-full flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
                 type="button"
             >
-                <div className="flex items-center gap-2 text-sm font-bold text-white">
-                    <Sliders className="w-4 h-4 text-cyan-400" />
+                <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                    <Sliders className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                     Advanced Hyperparameters
                 </div>
-                {isOpen ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                {isOpen ? <ChevronUp className="w-4 h-4 text-slate-500 dark:text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-500 dark:text-slate-400" />}
             </button>
             
             {isOpen && (
-                <div className="p-4 pt-0 border-t border-white/5 mt-2 grid grid-cols-2 gap-4">
+                <div className="p-4 pt-0 border-t border-slate-200 dark:border-white/5 mt-2 grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">Learning Rate</label>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Learning Rate</label>
                         <input 
                             type="number" 
                             step="0.01"
@@ -40,11 +40,11 @@ const AdvancedHyperparameters: React.FC<AdvancedHyperparametersProps> = ({
                             value={learningRate} 
                             onChange={e => setLearningRate(parseFloat(e.target.value))}
                             disabled={isTraining}
-                            className="w-full bg-black/50 backdrop-blur-md border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all shadow-inner disabled:opacity-50"
+                            className="w-full bg-slate-50 dark:bg-black/50 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all shadow-inner disabled:opacity-50"
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">Max Depth</label>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Max Depth</label>
                         <input 
                             type="number" 
                             min="1"
@@ -52,7 +52,7 @@ const AdvancedHyperparameters: React.FC<AdvancedHyperparametersProps> = ({
                             value={maxDepth} 
                             onChange={e => setMaxDepth(parseInt(e.target.value))}
                             disabled={isTraining}
-                            className="w-full bg-black/50 backdrop-blur-md border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all shadow-inner disabled:opacity-50"
+                            className="w-full bg-slate-50 dark:bg-black/50 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all shadow-inner disabled:opacity-50"
                         />
                     </div>
                 </div>

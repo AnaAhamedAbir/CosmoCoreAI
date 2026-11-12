@@ -118,17 +118,17 @@ const EnsembleBuilder: React.FC<EnsembleBuilderProps> = ({
     return (
         <div className="space-y-4">
             {/* Ensemble Mode Toggle */}
-            <div className="flex items-center justify-between p-4 bg-purple-500/10 border border-purple-500/30 rounded-2xl shadow-[0_0_15px_rgba(168,85,247,0.1)]">
+            <div className="flex items-center justify-between p-4 bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 rounded-2xl shadow-sm dark:shadow-[0_0_15px_rgba(168,85,247,0.1)]">
                 <div>
-                    <h4 className="text-sm font-black text-purple-400 flex items-center gap-2">
+                    <h4 className="text-sm font-black text-purple-700 dark:text-purple-400 flex items-center gap-2">
                         <Layers className="w-4 h-4" /> Advanced Ensemble Mode
                     </h4>
-                    <p className="text-[10px] text-slate-400 mt-1">Combine multiple weak learners into a powerful super-model.</p>
+                    <p className="text-[10px] text-slate-600 dark:text-slate-400 mt-1">Combine multiple weak learners into a powerful super-model.</p>
                 </div>
                 <button
                     onClick={() => setIsEnsemble(!isEnsemble)}
                     disabled={disabled}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isEnsemble ? 'bg-purple-500 shadow-[0_0_10px_#a855f7]' : 'bg-slate-600'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isEnsemble ? 'bg-purple-500 shadow-[0_0_10px_#a855f7]' : 'bg-slate-300 dark:bg-slate-600'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isEnsemble ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
@@ -144,40 +144,40 @@ const EnsembleBuilder: React.FC<EnsembleBuilderProps> = ({
                     >
                         {/* 1. Select Ensemble Method */}
                         <div className="space-y-3">
-                            <h5 className="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                                <span className="flex items-center justify-center w-4 h-4 rounded-full bg-purple-500/20 text-purple-400 text-[9px]">1</span>
+                            <h5 className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                                <span className="flex items-center justify-center w-4 h-4 rounded-full bg-purple-500/20 text-purple-700 dark:text-purple-400 text-[9px]">1</span>
                                 Assembly Method
                             </h5>
                             <div className="grid grid-cols-3 gap-3">
                                 <div 
                                     onClick={() => !disabled && setEnsembleMethod('voting')}
-                                    className={`p-3 rounded-xl border cursor-pointer transition-all ${ensembleMethod === 'voting' ? 'bg-purple-500/20 border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    className={`p-3 rounded-xl border cursor-pointer transition-all ${ensembleMethod === 'voting' ? 'bg-purple-500/15 dark:bg-purple-500/20 border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
                                     <div className="flex items-center gap-2 mb-1">
-                                        <CheckSquare className={`w-4 h-4 ${ensembleMethod === 'voting' ? 'text-purple-400' : 'text-slate-500'}`} />
-                                        <span className={`text-xs font-bold ${ensembleMethod === 'voting' ? 'text-white' : 'text-slate-300'}`}>Voting (Soft/Hard)</span>
+                                        <CheckSquare className={`w-4 h-4 ${ensembleMethod === 'voting' ? 'text-purple-600 dark:text-purple-400' : 'text-slate-500'}`} />
+                                        <span className={`text-xs font-bold ${ensembleMethod === 'voting' ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>Voting (Soft/Hard)</span>
                                     </div>
-                                    <p className="text-[9px] text-slate-400">Averages the predictions of all base models.</p>
+                                    <p className="text-[9px] text-slate-500 dark:text-slate-400">Averages the predictions of all base models.</p>
                                 </div>
                                 <div 
                                     onClick={() => !disabled && setEnsembleMethod('stacking')}
-                                    className={`p-3 rounded-xl border cursor-pointer transition-all ${ensembleMethod === 'stacking' ? 'bg-purple-500/20 border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    className={`p-3 rounded-xl border cursor-pointer transition-all ${ensembleMethod === 'stacking' ? 'bg-purple-500/15 dark:bg-purple-500/20 border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
                                     <div className="flex items-center gap-2 mb-1">
-                                        <GitMerge className={`w-4 h-4 ${ensembleMethod === 'stacking' ? 'text-purple-400' : 'text-slate-500'}`} />
-                                        <span className={`text-xs font-bold ${ensembleMethod === 'stacking' ? 'text-white' : 'text-slate-300'}`}>Stacking</span>
+                                        <GitMerge className={`w-4 h-4 ${ensembleMethod === 'stacking' ? 'text-purple-600 dark:text-purple-400' : 'text-slate-500'}`} />
+                                        <span className={`text-xs font-bold ${ensembleMethod === 'stacking' ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>Stacking</span>
                                     </div>
-                                    <p className="text-[9px] text-slate-400">Trains a Meta-Model on the outputs of base models.</p>
+                                    <p className="text-[9px] text-slate-500 dark:text-slate-400">Trains a Meta-Model on the outputs of base models.</p>
                                 </div>
                                 <div 
                                     onClick={() => !disabled && setEnsembleMethod('rl_moe')}
-                                    className={`p-3 rounded-xl border cursor-pointer transition-all ${ensembleMethod === 'rl_moe' ? 'bg-emerald-500/20 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-white/5 border-white/10 hover:bg-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    className={`p-3 rounded-xl border cursor-pointer transition-all ${ensembleMethod === 'rl_moe' ? 'bg-emerald-500/15 dark:bg-emerald-500/20 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
                                     <div className="flex items-center gap-2 mb-1">
-                                        <BrainCircuit className={`w-4 h-4 ${ensembleMethod === 'rl_moe' ? 'text-emerald-400' : 'text-slate-500'}`} />
-                                        <span className={`text-xs font-bold ${ensembleMethod === 'rl_moe' ? 'text-white' : 'text-slate-300'}`}>RL-Based MoE</span>
+                                        <BrainCircuit className={`w-4 h-4 ${ensembleMethod === 'rl_moe' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}`} />
+                                        <span className={`text-xs font-bold ${ensembleMethod === 'rl_moe' ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>RL-Based MoE</span>
                                     </div>
-                                    <p className="text-[9px] text-slate-400">Dynamic weighting with PPO/SAC Agent.</p>
+                                    <p className="text-[9px] text-slate-500 dark:text-slate-400">Dynamic weighting with PPO/SAC Agent.</p>
                                 </div>
                             </div>
                         </div>
@@ -189,38 +189,38 @@ const EnsembleBuilder: React.FC<EnsembleBuilderProps> = ({
                                     initial={{ opacity: 0, height: 0 }}
                                     animate={{ opacity: 1, height: 'auto' }}
                                     exit={{ opacity: 0, height: 0 }}
-                                    className="space-y-3 pt-2 border-t border-white/10"
+                                    className="space-y-3 pt-2 border-t border-slate-200 dark:border-white/10"
                                 >
-                                    <h5 className="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                                        <Sliders className="w-3.5 h-3.5 text-purple-400" /> Voting Configuration
+                                    <h5 className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                                        <Sliders className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" /> Voting Configuration
                                     </h5>
                                     <div className="grid grid-cols-2 gap-2">
                                         <div 
                                             onClick={() => !disabled && setVotingStrategy('soft')}
-                                            className={`p-2 rounded-lg border cursor-pointer transition-all ${votingStrategy === 'soft' ? 'bg-indigo-500/20 border-indigo-500/50' : 'bg-white/5 border-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            className={`p-2 rounded-lg border cursor-pointer transition-all ${votingStrategy === 'soft' ? 'bg-indigo-500/15 dark:bg-indigo-500/20 border-indigo-500/50' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                         >
-                                            <div className="text-[10px] font-bold text-white mb-0.5">Soft Voting</div>
-                                            <div className="text-[8px] text-slate-400">Averages probabilities</div>
+                                            <div className="text-[10px] font-bold text-slate-900 dark:text-white mb-0.5">Soft Voting</div>
+                                            <div className="text-[8px] text-slate-500 dark:text-slate-400">Averages probabilities</div>
                                         </div>
                                         <div 
                                             onClick={() => !disabled && setVotingStrategy('hard')}
-                                            className={`p-2 rounded-lg border cursor-pointer transition-all ${votingStrategy === 'hard' ? 'bg-indigo-500/20 border-indigo-500/50' : 'bg-white/5 border-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            className={`p-2 rounded-lg border cursor-pointer transition-all ${votingStrategy === 'hard' ? 'bg-indigo-500/15 dark:bg-indigo-500/20 border-indigo-500/50' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                         >
-                                            <div className="text-[10px] font-bold text-white mb-0.5">Hard Voting</div>
-                                            <div className="text-[8px] text-slate-400">Majority rule class vote</div>
+                                            <div className="text-[10px] font-bold text-slate-900 dark:text-white mb-0.5">Hard Voting</div>
+                                            <div className="text-[8px] text-slate-500 dark:text-slate-400">Majority rule class vote</div>
                                         </div>
                                     </div>
                                     
                                     {votingStrategy === 'soft' && (
-                                        <div className="flex items-center justify-between p-2.5 bg-white/5 rounded-lg border border-white/5 mt-2">
+                                        <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-white/5 rounded-lg border border-slate-200 dark:border-white/5 mt-2">
                                             <div className="flex items-center gap-2">
-                                                <Settings2 className="w-3.5 h-3.5 text-indigo-400" />
-                                                <span className="text-xs text-slate-300">Auto-Optimize Weights</span>
+                                                <Settings2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                                <span className="text-xs text-slate-700 dark:text-slate-300">Auto-Optimize Weights</span>
                                             </div>
                                             <button
                                                 onClick={() => setAutoOptimizeWeights(!autoOptimizeWeights)}
                                                 disabled={disabled}
-                                                className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${autoOptimizeWeights ? 'bg-indigo-500' : 'bg-slate-600'} ${disabled ? 'opacity-50' : ''}`}
+                                                className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${autoOptimizeWeights ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'} ${disabled ? 'opacity-50' : ''}`}
                                             >
                                                 <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${autoOptimizeWeights ? 'translate-x-4' : 'translate-x-1'}`} />
                                             </button>
@@ -237,38 +237,38 @@ const EnsembleBuilder: React.FC<EnsembleBuilderProps> = ({
                                     initial={{ opacity: 0, height: 0 }}
                                     animate={{ opacity: 1, height: 'auto' }}
                                     exit={{ opacity: 0, height: 0 }}
-                                    className="space-y-3 pt-2 border-t border-white/10"
+                                    className="space-y-3 pt-2 border-t border-slate-200 dark:border-white/10"
                                 >
-                                    <h5 className="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                                        <Settings2 className="w-3.5 h-3.5 text-emerald-400" /> RL Master Configuration
+                                    <h5 className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                                        <Settings2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> RL Master Configuration
                                     </h5>
                                     <div className="grid grid-cols-2 gap-2">
                                         <div className="space-y-1">
-                                            <label className="text-[10px] text-slate-400">Algorithm</label>
+                                            <label className="text-[10px] text-slate-500 dark:text-slate-400">Algorithm</label>
                                             <select 
                                                 value={rlAlgorithm}
                                                 onChange={(e) => !disabled && setRlAlgorithm(e.target.value as 'PPO' | 'SAC' | 'A2C' | 'DDPG' | 'TD3')}
                                                 disabled={disabled}
-                                                className="w-full bg-[#0A0A0A] border border-emerald-500/30 rounded-lg p-2 text-xs text-emerald-100"
+                                                className="w-full bg-white dark:bg-[#0A0A0A] border border-emerald-300 dark:border-emerald-500/30 rounded-lg p-2 text-xs text-slate-900 dark:text-emerald-100"
                                             >
-                                                <option value="PPO">PPO (Proximal Policy Opt.)</option>
-                                                <option value="SAC">SAC (Soft Actor-Critic)</option>
-                                                <option value="A2C">A2C (Advantage Actor-Critic)</option>
-                                                <option value="DDPG">DDPG (Deterministic Policy)</option>
-                                                <option value="TD3">TD3 (Twin Delayed DDPG)</option>
+                                                <option value="PPO" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">PPO (Proximal Policy Opt.)</option>
+                                                <option value="SAC" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">SAC (Soft Actor-Critic)</option>
+                                                <option value="A2C" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">A2C (Advantage Actor-Critic)</option>
+                                                <option value="DDPG" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">DDPG (Deterministic Policy)</option>
+                                                <option value="TD3" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">TD3 (Twin Delayed DDPG)</option>
                                             </select>
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-[10px] text-slate-400">Reward Target</label>
+                                            <label className="text-[10px] text-slate-500 dark:text-slate-400">Reward Target</label>
                                             <select 
                                                 value={moeRewardTarget}
                                                 onChange={(e) => !disabled && setMoeRewardTarget(e.target.value as 'PnL' | 'Sharpe' | 'Sortino')}
                                                 disabled={disabled}
-                                                className="w-full bg-[#0A0A0A] border border-emerald-500/30 rounded-lg p-2 text-xs text-emerald-100"
+                                                className="w-full bg-white dark:bg-[#0A0A0A] border border-emerald-300 dark:border-emerald-500/30 rounded-lg p-2 text-xs text-slate-900 dark:text-emerald-100"
                                             >
-                                                <option value="Sharpe">Max Sharpe Ratio</option>
-                                                <option value="PnL">Max Profit (PnL)</option>
-                                                <option value="Sortino">Max Sortino Ratio</option>
+                                                <option value="Sharpe" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">Max Sharpe Ratio</option>
+                                                <option value="PnL" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">Max Profit (PnL)</option>
+                                                <option value="Sortino" className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">Max Sortino Ratio</option>
                                             </select>
                                         </div>
                                     </div>
@@ -279,28 +279,28 @@ const EnsembleBuilder: React.FC<EnsembleBuilderProps> = ({
                         {/* 2. Select Base Models */}
                         <div className="space-y-3">
                             <div className="flex justify-between items-center mb-2">
-                                <h5 className="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                                    <span className="flex items-center justify-center w-4 h-4 rounded-full bg-purple-500/20 text-purple-400 text-[9px]">2</span>
+                                <h5 className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                                    <span className="flex items-center justify-center w-4 h-4 rounded-full bg-purple-500/20 text-purple-700 dark:text-purple-400 text-[9px]">2</span>
                                     Select Base Models (Experts)
                                 </h5>
-                                <span className="text-[10px] text-purple-400 font-bold bg-purple-500/20 px-2 py-0.5 rounded-full">
+                                <span className="text-[10px] text-purple-700 dark:text-purple-400 font-bold bg-purple-500/15 dark:bg-purple-500/20 px-2 py-0.5 rounded-full">
                                     {baseModels.length} Selected
                                 </span>
                             </div>
 
                             {ensembleMethod === 'rl_moe' && (
-                                <div className="flex gap-2 p-1 bg-black/40 rounded-lg border border-white/5 mb-3">
+                                <div className="flex gap-2 p-1 bg-slate-100 dark:bg-black/40 rounded-lg border border-slate-200 dark:border-white/5 mb-3">
                                     <button
                                         onClick={() => setMoeMode('preset')}
                                         disabled={disabled}
-                                        className={`flex-1 text-xs py-1.5 rounded-md transition-all ${moeMode === 'preset' ? 'bg-emerald-500/20 text-emerald-300 font-bold' : 'text-slate-400 hover:text-slate-300'}`}
+                                        className={`flex-1 text-xs py-1.5 rounded-md transition-all ${moeMode === 'preset' ? 'bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
                                     >
                                         Genuine MoE Presets
                                     </button>
                                     <button
                                         onClick={() => setMoeMode('custom')}
                                         disabled={disabled}
-                                        className={`flex-1 text-xs py-1.5 rounded-md transition-all ${moeMode === 'custom' ? 'bg-emerald-500/20 text-emerald-300 font-bold' : 'text-slate-400 hover:text-slate-300'}`}
+                                        className={`flex-1 text-xs py-1.5 rounded-md transition-all ${moeMode === 'custom' ? 'bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
                                     >
                                         Custom Selection
                                     </button>
@@ -309,29 +309,29 @@ const EnsembleBuilder: React.FC<EnsembleBuilderProps> = ({
 
                             {ensembleMethod === 'rl_moe' && moeMode === 'preset' ? (
                                 <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                    <div onClick={() => setPreset(['ARIMA', 'Random Forest', 'GARCH'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('ARIMA') && baseModels.includes('GARCH') ? 'bg-cyan-500/10 border-cyan-500/30' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
-                                        <div className="text-xs font-bold text-cyan-300 mb-1">The Quant Macro Master</div>
-                                        <div className="text-[9px] text-slate-400">ARIMA + Random Forest + GARCH</div>
+                                    <div onClick={() => setPreset(['ARIMA', 'Random Forest', 'GARCH'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('ARIMA') && baseModels.includes('GARCH') ? 'bg-cyan-500/10 border-cyan-500/40 dark:border-cyan-500/30' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'}`}>
+                                        <div className="text-xs font-bold text-cyan-700 dark:text-cyan-300 mb-1">The Quant Macro Master</div>
+                                        <div className="text-[9px] text-slate-500 dark:text-slate-400">ARIMA + Random Forest + GARCH</div>
                                     </div>
-                                    <div onClick={() => setPreset(['1D-CNN', 'Transformer', 'LightGBM'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('1D-CNN') && baseModels.includes('LightGBM') ? 'bg-cyan-500/10 border-cyan-500/30' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
-                                        <div className="text-xs font-bold text-cyan-300 mb-1">The HFT Scalper</div>
-                                        <div className="text-[9px] text-slate-400">1D-CNN + Transformer + LightGBM</div>
+                                    <div onClick={() => setPreset(['1D-CNN', 'Transformer', 'LightGBM'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('1D-CNN') && baseModels.includes('LightGBM') ? 'bg-cyan-500/10 border-cyan-500/40 dark:border-cyan-500/30' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'}`}>
+                                        <div className="text-xs font-bold text-cyan-700 dark:text-cyan-300 mb-1">The HFT Scalper</div>
+                                        <div className="text-[9px] text-slate-500 dark:text-slate-400">1D-CNN + Transformer + LightGBM</div>
                                     </div>
-                                    <div onClick={() => setPreset(['PPO-RL', 'LSTM', 'QR-DQN'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('PPO-RL') && baseModels.includes('QR-DQN') ? 'bg-cyan-500/10 border-cyan-500/30' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
-                                        <div className="text-xs font-bold text-cyan-300 mb-1">The RL Alpha Seeker</div>
-                                        <div className="text-[9px] text-slate-400">PPO-RL + LSTM + QR-DQN</div>
+                                    <div onClick={() => setPreset(['PPO-RL', 'LSTM', 'QR-DQN'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('PPO-RL') && baseModels.includes('QR-DQN') ? 'bg-cyan-500/10 border-cyan-500/40 dark:border-cyan-500/30' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'}`}>
+                                        <div className="text-xs font-bold text-cyan-700 dark:text-cyan-300 mb-1">The RL Alpha Seeker</div>
+                                        <div className="text-[9px] text-slate-500 dark:text-slate-400">PPO-RL + LSTM + QR-DQN</div>
                                     </div>
-                                    <div onClick={() => setPreset(['HMM', 'GRU', 'CatBoost'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('HMM') && baseModels.includes('CatBoost') ? 'bg-cyan-500/10 border-cyan-500/30' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
-                                        <div className="text-xs font-bold text-cyan-300 mb-1">The Regime & Trend Follower</div>
-                                        <div className="text-[9px] text-slate-400">HMM + GRU + CatBoost</div>
+                                    <div onClick={() => setPreset(['HMM', 'GRU', 'CatBoost'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('HMM') && baseModels.includes('CatBoost') ? 'bg-cyan-500/10 border-cyan-500/40 dark:border-cyan-500/30' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'}`}>
+                                        <div className="text-xs font-bold text-cyan-700 dark:text-cyan-300 mb-1">The Regime & Trend Follower</div>
+                                        <div className="text-[9px] text-slate-500 dark:text-slate-400">HMM + GRU + CatBoost</div>
                                     </div>
-                                    <div onClick={() => setPreset(['Auto-Encoder', 'QR-DQN', 'XGBoost'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('Auto-Encoder') ? 'bg-cyan-500/10 border-cyan-500/30' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
-                                        <div className="text-xs font-bold text-cyan-300 mb-1">The Anomaly & Risk Protector</div>
-                                        <div className="text-[9px] text-slate-400">Auto-Encoder + QR-DQN + XGBoost</div>
+                                    <div onClick={() => setPreset(['Auto-Encoder', 'QR-DQN', 'XGBoost'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('Auto-Encoder') ? 'bg-cyan-500/10 border-cyan-500/40 dark:border-cyan-500/30' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'}`}>
+                                        <div className="text-xs font-bold text-cyan-700 dark:text-cyan-300 mb-1">The Anomaly & Risk Protector</div>
+                                        <div className="text-[9px] text-slate-500 dark:text-slate-400">Auto-Encoder + QR-DQN + XGBoost</div>
                                     </div>
-                                    <div onClick={() => setPreset(['Liquid-NN', 'Decision-Transformer', 'DeepLOB'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('Liquid-NN') ? 'bg-cyan-500/10 border-cyan-500/30' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
-                                        <div className="text-xs font-bold text-cyan-300 mb-1">The Ultimate Deep Quant</div>
-                                        <div className="text-[9px] text-slate-400">Liquid-NN + Decision-Transformer + DeepLOB</div>
+                                    <div onClick={() => setPreset(['Liquid-NN', 'Decision-Transformer', 'DeepLOB'])} className={`p-3 rounded-xl border cursor-pointer transition-all ${baseModels.length === 3 && baseModels.includes('Liquid-NN') ? 'bg-cyan-500/10 border-cyan-500/40 dark:border-cyan-500/30' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'}`}>
+                                        <div className="text-xs font-bold text-cyan-700 dark:text-cyan-300 mb-1">The Ultimate Deep Quant</div>
+                                        <div className="text-[9px] text-slate-500 dark:text-slate-400">Liquid-NN + Decision-Transformer + DeepLOB</div>
                                     </div>
                                 </div>
                             ) : (
@@ -341,14 +341,14 @@ const EnsembleBuilder: React.FC<EnsembleBuilderProps> = ({
                                             <div 
                                                 key={model.id}
                                                 onClick={() => toggleBaseModel(model.id)}
-                                                className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all ${baseModels.includes(model.id) ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.1)]' : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all ${baseModels.includes(model.id) ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.1)]' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
-                                                <div className={`mt-0.5 min-w-[16px] h-4 rounded flex items-center justify-center border transition-colors ${baseModels.includes(model.id) ? 'bg-cyan-500 border-cyan-400' : 'border-slate-500'}`}>
-                                                    {baseModels.includes(model.id) && <Check className="w-3 h-3 text-black" />}
+                                                <div className={`mt-0.5 min-w-[16px] h-4 rounded flex items-center justify-center border transition-colors ${baseModels.includes(model.id) ? 'bg-cyan-500 border-cyan-400' : 'border-slate-300 dark:border-slate-500'}`}>
+                                                    {baseModels.includes(model.id) && <Check className="w-3 h-3 text-white dark:text-black" />}
                                                 </div>
                                                 <div className="flex flex-col">
-                                                    <div className={`text-[11px] font-bold tracking-wide ${baseModels.includes(model.id) ? 'text-cyan-300' : 'text-slate-200'}`}>{model.id}</div>
-                                                    <div className="text-[8.5px] font-medium text-emerald-400/80 mb-0.5">{model.desc}</div>
+                                                    <div className={`text-[11px] font-bold tracking-wide ${baseModels.includes(model.id) ? 'text-cyan-700 dark:text-cyan-300' : 'text-slate-800 dark:text-slate-200'}`}>{model.id}</div>
+                                                    <div className="text-[8.5px] font-medium text-emerald-600 dark:text-emerald-400/80 mb-0.5">{model.desc}</div>
                                                     <div className="text-[8px] text-slate-500/80 uppercase tracking-wider">{model.type}</div>
                                                 </div>
                                             </div>
@@ -363,8 +363,8 @@ const EnsembleBuilder: React.FC<EnsembleBuilderProps> = ({
                                                 exit={{ opacity: 0, y: -5 }}
                                                 className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl"
                                             >
-                                                <div className="text-xs font-bold text-yellow-500 mb-0.5">⚠️ Warning: Low Model Diversity</div>
-                                                <div className="text-[10px] text-yellow-400/80 leading-relaxed">
+                                                <div className="text-xs font-bold text-amber-700 dark:text-yellow-500 mb-0.5">⚠️ Warning: Low Model Diversity</div>
+                                                <div className="text-[10px] text-amber-600 dark:text-yellow-400/80 leading-relaxed">
                                                     For optimal Mixture of Experts performance, it is highly recommended to select models from diverse categories (e.g., combine a Tree-based model with a Deep Learning model).
                                                 </div>
                                             </motion.div>
@@ -376,16 +376,16 @@ const EnsembleBuilder: React.FC<EnsembleBuilderProps> = ({
                             {/* Feature Subspacing Toggle */}
                             <div className="flex items-center justify-between p-3 mt-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
                                 <div className="flex items-center gap-2">
-                                    <Dna className="w-4 h-4 text-emerald-400" />
+                                    <Dna className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                                     <div>
-                                        <div className="text-xs font-bold text-emerald-300">Feature Subspacing</div>
-                                        <div className="text-[8px] text-emerald-500/70 uppercase">Reduces model correlation</div>
+                                        <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300">Feature Subspacing</div>
+                                        <div className="text-[8px] text-emerald-600 dark:text-emerald-500/70 uppercase">Reduces model correlation</div>
                                     </div>
                                 </div>
                                 <button
                                     onClick={() => setFeatureSubspacing(!featureSubspacing)}
                                     disabled={disabled}
-                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${featureSubspacing ? 'bg-emerald-500' : 'bg-slate-600'} ${disabled ? 'opacity-50' : ''}`}
+                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${featureSubspacing ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'} ${disabled ? 'opacity-50' : ''}`}
                                 >
                                     <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${featureSubspacing ? 'translate-x-5' : 'translate-x-1'}`} />
                                 </button>
@@ -399,10 +399,10 @@ const EnsembleBuilder: React.FC<EnsembleBuilderProps> = ({
                                     initial={{ opacity: 0, height: 0 }}
                                     animate={{ opacity: 1, height: 'auto' }}
                                     exit={{ opacity: 0, height: 0 }}
-                                    className="space-y-3 pt-2 border-t border-white/10"
+                                    className="space-y-3 pt-2 border-t border-slate-200 dark:border-white/10"
                                 >
-                                    <h5 className="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                                        <span className="flex items-center justify-center w-4 h-4 rounded-full bg-purple-500/20 text-purple-400 text-[9px]">3</span>
+                                    <h5 className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                                        <span className="flex items-center justify-center w-4 h-4 rounded-full bg-purple-500/20 text-purple-700 dark:text-purple-400 text-[9px]">3</span>
                                         Select Meta-Model
                                     </h5>
                                     <div className="space-y-2">
@@ -410,13 +410,13 @@ const EnsembleBuilder: React.FC<EnsembleBuilderProps> = ({
                                             <div 
                                                 key={model.id}
                                                 onClick={() => !disabled && setMetaModel(model.id)}
-                                                className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer transition-all ${metaModel === model.id ? 'bg-amber-500/10 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 'bg-white/5 border-white/5 hover:bg-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer transition-all ${metaModel === model.id ? 'bg-amber-500/10 border-amber-500/40 dark:border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
-                                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center flex-shrink-0 ${metaModel === model.id ? 'border-amber-400' : 'border-slate-500'}`}>
-                                                    {metaModel === model.id && <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_5px_#f59e0b]"></div>}
+                                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center flex-shrink-0 ${metaModel === model.id ? 'border-amber-500 dark:border-amber-400' : 'border-slate-300 dark:border-slate-500'}`}>
+                                                    {metaModel === model.id && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 shadow-[0_0_5px_#f59e0b]"></div>}
                                                 </div>
                                                 <div>
-                                                    <div className={`text-xs font-bold ${metaModel === model.id ? 'text-amber-300' : 'text-slate-300'}`}>{model.id}</div>
+                                                    <div className={`text-xs font-bold ${metaModel === model.id ? 'text-amber-700 dark:text-amber-300' : 'text-slate-700 dark:text-slate-300'}`}>{model.id}</div>
                                                     <div className="text-[9px] text-slate-500">{model.desc}</div>
                                                 </div>
                                             </div>

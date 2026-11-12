@@ -162,7 +162,7 @@ export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = ({
             onClick={() => setIsOpen(false)}
         >
             <div
-                className="bg-white dark:bg-[#050505] w-full max-w-5xl max-h-[90vh] rounded-3xl shadow-2xl border border-white/10 overflow-hidden flex flex-col relative animate-in zoom-in-95 duration-200"
+                className="bg-white dark:bg-[#050505] w-full max-w-5xl max-h-[90vh] rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden flex flex-col relative animate-in zoom-in-95 duration-200"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Modal Header */}
@@ -183,16 +183,16 @@ export const SentimentCommandCenter: React.FC<SentimentCommandCenterProps> = ({
                     </div>
                     <div className="flex items-center gap-3">
                         {/* Language Toggle */}
-                        <div className="flex bg-slate-100 dark:bg-[#0A0A0A] rounded-lg p-1 mr-2">
+                        <div className="flex bg-slate-100 dark:bg-[#141414] border border-slate-200 dark:border-white/10 rounded-lg p-1 mr-2">
                             <button
                                 onClick={() => setLanguage('en')}
-                                className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${language === 'en' ? 'bg-white dark:bg-[#0A0A0A] shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700'}`}
+                                className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${language === 'en' ? 'bg-white dark:bg-[#0A0A0A] shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
                             >
                                 EN
                             </button>
                             <button
                                 onClick={() => setLanguage('bn')}
-                                className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${language === 'bn' ? 'bg-white dark:bg-[#0A0A0A] shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700'}`}
+                                className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${language === 'bn' ? 'bg-white dark:bg-[#0A0A0A] shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
                             >
                                 BN
                             </button>

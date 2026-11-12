@@ -18,8 +18,8 @@ const FeatureImportanceChart: React.FC<FeatureImportanceChartProps> = ({ data })
     if (sortedFeatures.length === 0) return null;
 
     return (
-        <div className="mt-6 p-4 bg-gradient-to-br from-cyan-900/20 to-blue-900/10 rounded-2xl border border-cyan-500/20 shadow-inner">
-            <h4 className="text-xs font-bold text-cyan-400 mb-4 flex items-center gap-2 tracking-widest uppercase">
+        <div className="mt-6 p-4 bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/10 rounded-2xl border border-cyan-200 dark:border-cyan-500/20 shadow-inner">
+            <h4 className="text-xs font-bold text-cyan-700 dark:text-cyan-400 mb-4 flex items-center gap-2 tracking-widest uppercase">
                 <BarChart3 className="w-4 h-4" /> Feature Importance (Top 5)
             </h4>
             <div className="space-y-3">
@@ -27,16 +27,16 @@ const FeatureImportanceChart: React.FC<FeatureImportanceChartProps> = ({ data })
                     const pct = (importance / maxVal) * 100;
                     return (
                         <div key={feature}>
-                            <div className="flex justify-between text-[10px] font-mono text-cyan-100 mb-1">
+                            <div className="flex justify-between text-[10px] font-mono text-slate-700 dark:text-cyan-100 mb-1">
                                 <span>{feature}</span>
                                 <span>{(importance * 100).toFixed(1)}%</span>
                             </div>
-                            <div className="h-1.5 w-full bg-black/50 rounded-full overflow-hidden">
+                            <div className="h-1.5 w-full bg-slate-200 dark:bg-black/50 rounded-full overflow-hidden">
                                 <motion.div 
                                     initial={{ width: 0 }}
                                     animate={{ width: `${pct}%` }}
                                     transition={{ duration: 1, delay: idx * 0.1 }}
-                                    className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 shadow-[0_0_10px_#22d3ee]"
+                                    className="h-full bg-gradient-to-r from-cyan-500 to-blue-600 dark:from-cyan-400 dark:to-blue-500 dark:shadow-[0_0_10px_#22d3ee]"
                                 />
                             </div>
                         </div>

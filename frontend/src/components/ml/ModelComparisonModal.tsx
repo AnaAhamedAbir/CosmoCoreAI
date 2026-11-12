@@ -175,24 +175,24 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-3 sm:p-6 backdrop-blur-md"
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 dark:bg-black/80 p-3 sm:p-6 backdrop-blur-md"
       onClick={onClose}
     >
       <div
-        className="relative flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl border border-cyan-500/30 bg-[#0B1121]/95 shadow-[0_0_60px_rgba(6,182,212,0.18)]"
+        className="relative flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl border border-cyan-200 dark:border-cyan-500/30 bg-white dark:bg-[#0B1121]/95 shadow-2xl dark:shadow-[0_0_60px_rgba(6,182,212,0.18)]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-white/[0.02] px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-white/[0.02] px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/20 via-purple-500/20 to-emerald-500/20 text-cyan-300">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/15 via-purple-500/15 to-emerald-500/15 text-cyan-600 dark:text-cyan-300">
               <GitCompare className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white sm:text-lg">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white sm:text-lg">
                 Crypto ML Model Comparison Matrix
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Compare accuracy, risk-adjusted returns, Optuna trials, and run live OOS replay
               </p>
             </div>
@@ -206,7 +206,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Filter symbol, algo, feature..."
-                className="w-56 rounded-xl border border-slate-700/80 bg-slate-900/90 py-1.5 pl-8 pr-3 text-xs text-white placeholder-slate-500 outline-none transition-colors focus:border-cyan-500"
+                className="w-56 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-900/90 py-1.5 pl-8 pr-3 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none transition-colors focus:border-cyan-500"
               />
             </div>
 
@@ -214,7 +214,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
               type="button"
               onClick={() => void loadModels()}
               disabled={loading}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-cyan-500/40 hover:text-white disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors hover:border-cyan-500/40 hover:text-slate-900 dark:hover:text-white disabled:opacity-50"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
@@ -223,7 +223,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+              className="rounded-xl p-2 text-slate-500 dark:text-slate-400 transition-colors hover:bg-slate-200 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white"
               aria-label="Close model comparison modal"
             >
               <X className="h-5 w-5" />
@@ -234,23 +234,23 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
         {/* Scrollable Content */}
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
           {error && (
-            <div className="flex items-start gap-2 rounded-2xl border border-rose-500/35 bg-rose-500/10 p-3.5 text-xs text-rose-300">
-              <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+            <div className="flex items-start gap-2 rounded-2xl border border-rose-500/35 bg-rose-500/10 p-3.5 text-xs text-rose-700 dark:text-rose-300">
+              <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
               <span>{error}</span>
             </div>
           )}
 
           {loading && models.length === 0 ? (
-            <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-slate-800 bg-slate-900/50">
-              <Loader2 className="h-7 w-7 animate-spin text-cyan-400" />
-              <p className="mt-2.5 text-xs text-slate-400">
+            <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+              <Loader2 className="h-7 w-7 animate-spin text-cyan-600 dark:text-cyan-400" />
+              <p className="mt-2.5 text-xs text-slate-500 dark:text-slate-400">
                 Loading trained Crypto ML models & backtest telemetry...
               </p>
             </div>
           ) : filteredAndSorted.length === 0 ? (
-            <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-center">
-              <Cpu className="mb-2 h-7 w-7 text-slate-500" />
-              <p className="text-sm font-semibold text-slate-300">No matching models found</p>
+            <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-6 text-center">
+              <Cpu className="mb-2 h-7 w-7 text-slate-400 dark:text-slate-500" />
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">No matching models found</p>
               <p className="mt-1 text-xs text-slate-500">
                 {searchQuery
                   ? 'Try clearing your search filter.'
@@ -258,9 +258,9 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/60">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60">
               <table className="w-full min-w-[1040px] text-left text-xs">
-                <thead className="border-b border-slate-800 bg-slate-900/90 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <thead className="border-b border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900/90 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                   <tr>
                     <th className="px-4 py-3">Model / Features</th>
                     {SORT_COLUMNS.map((col) => {
@@ -270,8 +270,8 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                           <button
                             type="button"
                             onClick={() => handleSort(col.key)}
-                            className={`inline-flex items-center gap-1 transition-colors hover:text-cyan-300 ${
-                              active ? 'text-cyan-400' : 'text-slate-400'
+                            className={`inline-flex items-center gap-1 transition-colors hover:text-cyan-600 dark:hover:text-cyan-300 ${
+                              active ? 'text-cyan-700 dark:text-cyan-400' : 'text-slate-600 dark:text-slate-400'
                             }`}
                           >
                             <span>{col.label}</span>
@@ -292,7 +292,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-800/80">
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80">
                   {filteredAndSorted.map((m) => {
                     const isSelected = selectedModel?.model_id === m.model_id;
                     const isRetraining = Boolean(retrainingIds[m.model_id]);
@@ -304,25 +304,25 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                         className={`transition-colors ${
                           isSelected
                             ? 'bg-cyan-500/10'
-                            : 'hover:bg-white/[0.025]'
+                            : 'hover:bg-slate-50 dark:hover:bg-white/[0.025]'
                         }`}
                       >
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-bold text-white">{m.name}</span>
-                            <span className="rounded-md border border-purple-500/35 bg-purple-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-purple-300">
+                            <span className="font-bold text-slate-900 dark:text-white">{m.name}</span>
+                            <span className="rounded-md border border-purple-500/35 bg-purple-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 dark:text-purple-300">
                               {m.algorithm}
                             </span>
                             {m.optuna_trials_count > 0 && (
-                              <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/35 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
+                              <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/35 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
                                 <Sparkles className="h-2.5 w-2.5" />
                                 {m.optuna_trials_count} Optuna
                               </span>
                             )}
                           </div>
 
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
-                            {m.symbol && <span className="font-mono text-cyan-300">{m.symbol}</span>}
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                            {m.symbol && <span className="font-mono text-cyan-700 dark:text-cyan-300">{m.symbol}</span>}
                             {m.timeframe && <span>• {m.timeframe}</span>}
                             {m.data_source && <span>• {m.data_source}</span>}
                             {m.version !== null && m.version !== undefined && (
@@ -335,7 +335,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                               {topThree.map((feat) => (
                                 <span
                                   key={feat.name}
-                                  className="rounded border border-slate-700/80 bg-slate-900/90 px-1.5 py-0.5 font-mono text-[10px] text-slate-300"
+                                  className="rounded border border-slate-200 dark:border-slate-700/80 bg-slate-100 dark:bg-slate-900/90 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:text-slate-300"
                                   title={`Importance: ${feat.importance.toFixed(4)}`}
                                 >
                                   {feat.name}
@@ -345,11 +345,11 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-3 py-3 font-mono font-semibold text-cyan-300">
+                        <td className="whitespace-nowrap px-3 py-3 font-mono font-semibold text-cyan-700 dark:text-cyan-300">
                           {formatPercentAuto(m.accuracy, 1)}
                         </td>
 
-                        <td className="whitespace-nowrap px-3 py-3 font-mono font-semibold text-slate-200">
+                        <td className="whitespace-nowrap px-3 py-3 font-mono font-semibold text-slate-800 dark:text-slate-200">
                           {typeof m.f1_score === 'number' && Number.isFinite(m.f1_score)
                             ? m.f1_score <= 1
                               ? m.f1_score.toFixed(3)
@@ -361,27 +361,27 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                           className={`whitespace-nowrap px-3 py-3 font-mono font-bold ${
                             typeof m.profit_pct === 'number'
                               ? m.profit_pct >= 0
-                                ? 'text-emerald-400'
-                                : 'text-rose-400'
-                              : 'text-slate-400'
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-rose-600 dark:text-rose-400'
+                              : 'text-slate-500 dark:text-slate-400'
                           }`}
                         >
                           {formatPctDirect(m.profit_pct, true)}
                         </td>
 
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-slate-200">
+                        <td className="whitespace-nowrap px-3 py-3 font-mono text-slate-800 dark:text-slate-200">
                           {formatPctDirect(m.win_rate)}
                         </td>
 
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-rose-300">
+                        <td className="whitespace-nowrap px-3 py-3 font-mono text-rose-600 dark:text-rose-300">
                           {formatPctDirect(m.max_drawdown)}
                         </td>
 
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-purple-300">
+                        <td className="whitespace-nowrap px-3 py-3 font-mono text-purple-700 dark:text-purple-300">
                           {formatPctDirect(m.kelly_pct)}
                         </td>
 
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-slate-300">
+                        <td className="whitespace-nowrap px-3 py-3 font-mono text-slate-700 dark:text-slate-300">
                           {typeof m.latency === 'number' && Number.isFinite(m.latency)
                             ? `${m.latency.toFixed(1)} ms`
                             : '--'}
@@ -398,8 +398,8 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                               }
                               className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all ${
                                 isSelected
-                                  ? 'border-cyan-400 bg-cyan-500/20 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
-                                  : 'border-slate-700 bg-slate-900/80 text-slate-200 hover:border-cyan-500/50 hover:text-cyan-300'
+                                  ? 'border-cyan-500 dark:border-cyan-400 bg-cyan-500/15 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+                                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/80 text-slate-700 dark:text-slate-200 hover:border-cyan-500/50 hover:text-cyan-700 dark:hover:text-cyan-300'
                               }`}
                             >
                               <BarChart2 className="h-3.5 w-3.5" />
@@ -410,7 +410,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                               <button
                                 type="button"
                                 onClick={() => onOpenDeploy(m.model_id)}
-                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/25"
+                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 transition-colors hover:bg-emerald-500/25"
                               >
                                 <Rocket className="h-3.5 w-3.5" />
                                 Deploy
@@ -421,7 +421,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                               type="button"
                               onClick={() => void handleRetrain(m)}
                               disabled={isRetraining}
-                              className="inline-flex items-center gap-1 rounded-lg border border-purple-500/40 bg-purple-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-purple-200 transition-colors hover:bg-purple-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="inline-flex items-center gap-1 rounded-lg border border-purple-500/40 bg-purple-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-purple-700 dark:text-purple-200 transition-colors hover:bg-purple-500/25 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               {isRetraining ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -442,18 +442,18 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
 
           {/* Inline Split Detail Drawer: Optuna & Paper Replay */}
           {selectedModel && (
-            <div className="rounded-2xl border border-cyan-500/35 bg-slate-950/80 p-4 shadow-[0_0_30px_rgba(6,182,212,0.1)]">
-              <div className="mb-3 flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <div className="rounded-2xl border border-cyan-200 dark:border-cyan-500/35 bg-slate-50 dark:bg-slate-950/80 p-4 shadow-sm dark:shadow-[0_0_30px_rgba(6,182,212,0.1)]">
+              <div className="mb-3 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-cyan-400" />
-                  <h3 className="text-sm font-bold text-white">
+                  <Sparkles className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                     Deep Inspection: {selectedModel.name}
                   </h3>
-                  <span className="rounded-md border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-purple-300">
+                  <span className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:text-purple-300">
                     {selectedModel.algorithm}
                   </span>
                   {selectedModel.symbol && (
-                    <span className="font-mono text-xs text-cyan-300">
+                    <span className="font-mono text-xs text-cyan-700 dark:text-cyan-300">
                       {selectedModel.symbol}
                     </span>
                   )}
@@ -462,7 +462,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedModel(null)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1 text-[11px] text-slate-600 dark:text-slate-300 transition-colors hover:border-slate-400 dark:hover:border-slate-500 hover:text-slate-900 dark:hover:text-white"
                 >
                   <X className="h-3.5 w-3.5" />
                   Close Drawer

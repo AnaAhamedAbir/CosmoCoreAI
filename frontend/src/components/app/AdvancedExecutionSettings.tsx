@@ -22,12 +22,12 @@ export const AdvancedExecutionSettings: React.FC<AdvancedExecutionSettingsProps>
     setTwapDuration
 }) => {
     return (
-        <div className="bg-black/40 border border-white/10 rounded-2xl p-5 shadow-inner mt-4">
+        <div className="bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-2xl p-5 shadow-sm dark:shadow-inner mt-4">
             <div className="flex items-center justify-between mb-4">
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
-                    <Activity className="w-4 h-4 text-emerald-400" /> Advanced Execution Strategy
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                    <Activity className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Advanced Execution Strategy
                 </label>
-                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20 uppercase tracking-wider">
+                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20 uppercase tracking-wider">
                     {executionStrategy.toUpperCase()}
                 </span>
             </div>
@@ -48,12 +48,12 @@ export const AdvancedExecutionSettings: React.FC<AdvancedExecutionSettingsProps>
                             className={`p-3 rounded-xl border text-left transition-all duration-300 flex flex-col items-start gap-1.5 ${
                                 isSelected 
                                     ? 'bg-emerald-500/10 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.15)] scale-[1.02]' 
-                                    : 'bg-black/60 border-white/5 hover:border-emerald-500/30 hover:bg-white/5'
+                                    : 'bg-slate-50 dark:bg-black/60 border-slate-200 dark:border-white/5 hover:border-emerald-500/30 hover:bg-slate-100 dark:hover:bg-white/5'
                             } disabled:opacity-50 disabled:cursor-not-allowed`}
                         >
-                            <Icon className={`w-4 h-4 ${isSelected ? 'text-emerald-400' : 'text-slate-500'}`} />
+                            <Icon className={`w-4 h-4 ${isSelected ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}`} />
                             <div>
-                                <div className={`text-xs font-bold ${isSelected ? 'text-emerald-300' : 'text-slate-300'}`}>
+                                <div className={`text-xs font-bold ${isSelected ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-300'}`}>
                                     {strat.label}
                                 </div>
                                 <div className="text-[9px] text-slate-500">{strat.desc}</div>
@@ -69,11 +69,11 @@ export const AdvancedExecutionSettings: React.FC<AdvancedExecutionSettingsProps>
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="bg-emerald-900/10 border border-emerald-500/20 rounded-xl p-4 overflow-hidden"
+                        className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-4 overflow-hidden"
                     >
                         <div className="flex justify-between items-center mb-3">
-                            <label className="text-xs font-semibold text-emerald-300">Total Slices</label>
-                            <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
+                            <label className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Total Slices</label>
+                            <span className="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 dark:bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
                                 {icebergSlices} slices
                             </span>
                         </div>
@@ -85,9 +85,9 @@ export const AdvancedExecutionSettings: React.FC<AdvancedExecutionSettingsProps>
                             value={icebergSlices}
                             onChange={(e) => setIcebergSlices(parseInt(e.target.value))}
                             disabled={isTraining}
-                            className="w-full h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                            className="w-full h-1.5 bg-slate-200 dark:bg-black/50 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                         />
-                        <p className="text-[10px] text-slate-500 mt-2">
+                        <p className="text-[10px] text-slate-600 dark:text-slate-500 mt-2">
                             The algorithm will split the total order quantity into {icebergSlices} smaller hidden parts to minimize market impact.
                         </p>
                     </motion.div>
@@ -98,11 +98,11 @@ export const AdvancedExecutionSettings: React.FC<AdvancedExecutionSettingsProps>
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="bg-emerald-900/10 border border-emerald-500/20 rounded-xl p-4 overflow-hidden"
+                        className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-4 overflow-hidden"
                     >
                         <div className="flex justify-between items-center mb-3">
-                            <label className="text-xs font-semibold text-emerald-300">Execution Duration (Minutes)</label>
-                            <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
+                            <label className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Execution Duration (Minutes)</label>
+                            <span className="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 dark:bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
                                 {twapDuration} min
                             </span>
                         </div>
@@ -114,9 +114,9 @@ export const AdvancedExecutionSettings: React.FC<AdvancedExecutionSettingsProps>
                             value={twapDuration}
                             onChange={(e) => setTwapDuration(parseInt(e.target.value))}
                             disabled={isTraining}
-                            className="w-full h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                            className="w-full h-1.5 bg-slate-200 dark:bg-black/50 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                         />
-                        <p className="text-[10px] text-slate-500 mt-2">
+                        <p className="text-[10px] text-slate-600 dark:text-slate-500 mt-2">
                             The algorithm will distribute the order execution evenly over {twapDuration} minutes.
                         </p>
                     </motion.div>

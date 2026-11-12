@@ -90,7 +90,7 @@ export const GodModeFeaturesSettings: React.FC<GodModeFeaturesSettingsProps> = (
     };
 
     return (
-        <div className="bg-black/40 border border-brand-primary/20 rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-xl mb-4">
+        <div className="bg-white dark:bg-black/40 border border-brand-primary/20 rounded-xl overflow-hidden shadow-md dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-xl mb-4">
             <div className="p-3 border-b border-brand-primary/20 bg-brand-primary/5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Crosshair className="w-4 h-4 text-brand-primary animate-pulse" />
@@ -107,7 +107,7 @@ export const GodModeFeaturesSettings: React.FC<GodModeFeaturesSettingsProps> = (
                 </button>
             </div>
             
-            <div className="p-4 bg-gradient-to-br from-black/60 to-brand-primary/5">
+            <div className="p-4 bg-gradient-to-br from-slate-50 dark:from-black/60 to-brand-primary/5">
                 <div className="grid grid-cols-2 gap-3">
                     {GOD_MODE_FEATURES.map((feat) => {
                         const isSelected = selectedFeatures.includes(feat.id);
@@ -119,27 +119,27 @@ export const GodModeFeaturesSettings: React.FC<GodModeFeaturesSettingsProps> = (
                                 onClick={() => handleToggle(feat.id)}
                                 className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
                                     isSelected 
-                                    ? 'bg-brand-primary/20 border-brand-primary/50 shadow-[0_0_15px_rgba(168,85,247,0.2)]' 
-                                    : 'bg-black/40 border-white/5 hover:bg-white/5'
+                                    ? 'bg-brand-primary/10 dark:bg-brand-primary/20 border-brand-primary/50 shadow-[0_0_15px_rgba(168,85,247,0.2)]' 
+                                    : 'bg-white dark:bg-black/40 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/5'
                                 }`}
                             >
                                 <div className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center ${
-                                    isSelected ? 'bg-brand-primary/30 text-brand-primary' : 'bg-white/5 text-slate-500'
+                                    isSelected ? 'bg-brand-primary/20 dark:bg-brand-primary/30 text-brand-primary' : 'bg-slate-100 dark:bg-white/5 text-slate-500'
                                 }`}>
                                     <feat.icon className="w-3.5 h-3.5" />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between mb-1">
-                                        <div className={`text-[11px] font-bold truncate ${isSelected ? 'text-brand-primary' : 'text-slate-300'}`}>
+                                        <div className={`text-[11px] font-bold truncate ${isSelected ? 'text-brand-primary' : 'text-slate-800 dark:text-slate-300'}`}>
                                             {feat.name}
                                         </div>
                                         <div className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center transition-colors flex-shrink-0 ${
-                                            isSelected ? 'bg-brand-primary border-brand-primary' : 'border-white/20'
+                                            isSelected ? 'bg-brand-primary border-brand-primary' : 'border-slate-300 dark:border-white/20'
                                         }`}>
-                                            {isSelected && <CheckCircle2 className="w-2.5 h-2.5 text-black" />}
+                                            {isSelected && <CheckCircle2 className="w-2.5 h-2.5 text-white dark:text-black" />}
                                         </div>
                                     </div>
-                                    <p className="text-[9px] text-slate-500 leading-snug line-clamp-2">
+                                    <p className="text-[9px] text-slate-600 dark:text-slate-500 leading-snug line-clamp-2">
                                         {feat.desc}
                                     </p>
                                 </div>
@@ -148,11 +148,11 @@ export const GodModeFeaturesSettings: React.FC<GodModeFeaturesSettingsProps> = (
                     })}
                 </div>
                 
-                <div className="mt-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex gap-3 items-start">
-                    <Shield className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                <div className="mt-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 flex gap-3 items-start">
+                    <Shield className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
                     <div>
-                        <p className="text-[10px] font-bold text-emerald-400 mb-0.5">Real-Time Hybrid Integration</p>
-                        <p className="text-[9px] text-emerald-400/70 leading-relaxed">
+                        <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 mb-0.5">Real-Time Hybrid Integration</p>
+                        <p className="text-[9px] text-emerald-700/80 dark:text-emerald-400/70 leading-relaxed">
                             These features are dynamically calculated during the L2 WebSocket scraping phase. No historical simulation is required, ensuring 100% data integrity with live market conditions.
                         </p>
                     </div>

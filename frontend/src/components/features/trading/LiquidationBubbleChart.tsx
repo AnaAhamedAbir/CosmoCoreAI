@@ -79,18 +79,18 @@ const LiquidationBubbleChart: React.FC<LiquidationBubbleChartProps> = ({ data, a
                 const glowClass = isLong ? 'shadow-[0_0_15px_rgba(244,63,94,0.3)]' : 'shadow-[0_0_15px_rgba(16,185,129,0.3)]';
 
                 return (
-                    <div className={`p-3 rounded-xl border backdrop-blur-md bg-black/60 ${borderColor} ${glowClass} text-xs font-mono z-50 min-w-[180px]`}>
-                        <div className="flex items-center justify-between mb-2 border-b border-white/10 pb-2">
+                    <div className={`p-3 rounded-xl border backdrop-blur-md bg-white/95 dark:bg-black/60 ${borderColor} ${glowClass} text-xs font-mono z-50 min-w-[180px]`}>
+                        <div className="flex items-center justify-between mb-2 border-b border-slate-200 dark:border-white/10 pb-2">
                             <span className={`font-bold uppercase tracking-wider ${colorClass}`}>{dataPoint.type} REKT</span>
-                            <span className="text-[10px] text-gray-400">{dataPoint.time}</span>
+                            <span className="text-[10px] text-slate-500 dark:text-gray-400">{dataPoint.time}</span>
                         </div>
                         <div className="space-y-1.5">
                             <div className="flex justify-between">
-                                <span className="text-gray-400">Price</span>
-                                <span className="font-bold text-white">${dataPoint.price.toLocaleString()}</span>
+                                <span className="text-slate-500 dark:text-gray-400">Price</span>
+                                <span className="font-bold text-slate-900 dark:text-white">${dataPoint.price.toLocaleString()}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-gray-400">Initial Pos</span>
+                                <span className="text-slate-500 dark:text-gray-400">Initial Pos</span>
                                 <span className={`font-bold ${colorClass}`}>${(dataPoint.amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                             </div>
                         </div>
@@ -99,10 +99,10 @@ const LiquidationBubbleChart: React.FC<LiquidationBubbleChartProps> = ({ data, a
             }
             // Candle/Line Tooltip
             return (
-                <div className="p-2 rounded-lg border border-[#1F1F1F]/50 bg-[#050505]/80 backdrop-blur-sm shadow-xl text-xs font-mono z-50">
-                    <p className="font-bold text-slate-300 mb-1">Price Action</p>
-                    <div className="text-white">${dataPoint.close?.toLocaleString()}</div>
-                    <div className="text-[10px] text-gray-500 mt-1">{new Date(dataPoint.time).toLocaleTimeString()}</div>
+                <div className="p-2 rounded-lg border border-slate-200 dark:border-[#1F1F1F]/50 bg-white/95 dark:bg-[#050505]/80 backdrop-blur-sm shadow-xl text-xs font-mono z-50">
+                    <p className="font-bold text-slate-600 dark:text-slate-300 mb-1">Price Action</p>
+                    <div className="text-slate-900 dark:text-white">${dataPoint.close?.toLocaleString()}</div>
+                    <div className="text-[10px] text-slate-500 dark:text-gray-500 mt-1">{new Date(dataPoint.time).toLocaleTimeString()}</div>
                 </div>
             );
         }
@@ -167,7 +167,7 @@ const LiquidationBubbleChart: React.FC<LiquidationBubbleChartProps> = ({ data, a
                         stroke="#94a3b8"
                         strokeWidth={1.5}
                         dot={false}
-                        activeDot={{ r: 4, fill: '#fff' }}
+                        activeDot={{ r: 4, fill: theme === 'dark' ? '#fff' : '#0f172a' }}
                         opacity={0.3}
                         isAnimationActive={false}
                     />

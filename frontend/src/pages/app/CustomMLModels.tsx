@@ -14,6 +14,7 @@ import ReactFlow, { Background, Controls } from 'reactflow';
 import 'reactflow/dist/style.css';
 import RLTrainingVisualizer from '@/components/ml/RLTrainingVisualizer';
 import { Layers } from 'lucide-react';
+import { useTheme } from '@/context/ThemeContext';
 // --- Visual Components ---
 
 const NeuralMeshBackground = () => (
@@ -30,26 +31,26 @@ const NeuralMeshBackground = () => (
 );
 
 const MetricBadge: React.FC<{ label: string; value: string; color: string }> = ({ label, value, color }) => (
-    <div className="flex flex-col items-center justify-center p-2 bg-white/5 border border-white/10 rounded-lg min-w-[80px]">
-        <span className="text-[10px] uppercase tracking-wider text-gray-400 mb-1">{label}</span>
+    <div className="flex flex-col items-center justify-center p-2 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg min-w-[80px]">
+        <span className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-gray-400 mb-1">{label}</span>
         <span className={`text-sm font-bold font-mono ${color}`}>{value}</span>
     </div>
 );
 
 const StatusPill: React.FC<{ status: ModelVersion['status'] }> = ({ status }) => {
-    let colorClass = 'bg-gray-500/10 border-gray-500/20 text-gray-400 shadow-[0_0_10px_rgba(107,114,128,0.1)]';
+    let colorClass = 'bg-slate-500/10 border-slate-500/20 text-slate-600 dark:text-gray-400 shadow-sm dark:shadow-[0_0_10px_rgba(107,114,128,0.1)]';
     let icon = <ClockIcon className="w-3.5 h-3.5" />;
     let animate = '';
 
     if (status === 'Ready') {
-        colorClass = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] hover:border-emerald-400/50';
+        colorClass = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 shadow-sm dark:shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] hover:border-emerald-400/50';
         icon = <CheckCircleIcon className="w-3.5 h-3.5 drop-shadow-[0_0_5px_rgba(16,185,129,0.8)]" />;
     } else if (status === 'Processing') {
-        colorClass = 'bg-amber-500/10 border-amber-500/30 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)] hover:shadow-[0_0_25px_rgba(245,158,11,0.4)] hover:border-amber-400/50';
+        colorClass = 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 shadow-sm dark:shadow-[0_0_15px_rgba(245,158,11,0.2)] hover:shadow-[0_0_25px_rgba(245,158,11,0.4)] hover:border-amber-400/50';
         icon = <svg className="animate-spin w-3.5 h-3.5 drop-shadow-[0_0_5px_rgba(245,158,11,0.8)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" strokeLinecap="round" strokeLinejoin="round" /></svg>;
         animate = 'animate-pulse';
     } else if (status === 'Error') {
-        colorClass = 'bg-rose-500/10 border-rose-500/30 text-rose-400 shadow-[0_0_15px_rgba(243,24,113,0.2)] hover:shadow-[0_0_25px_rgba(243,24,113,0.4)] hover:border-rose-400/50';
+        colorClass = 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400 shadow-sm dark:shadow-[0_0_15px_rgba(243,24,113,0.2)] hover:shadow-[0_0_25px_rgba(243,24,113,0.4)] hover:border-rose-400/50';
         icon = <ExclamationCircleIcon className="w-3.5 h-3.5 drop-shadow-[0_0_5px_rgba(243,24,113,0.8)]" />;
     }
 
@@ -92,20 +93,20 @@ const UploadModelModal: React.FC<{
         }
     };
 
-    const inputBaseClasses = "w-full bg-[#050505]/50 border border-gray-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-brand-primary focus:border-transparent outline-none transition-all placeholder-gray-500";
+    const inputBaseClasses = "w-full bg-slate-50 dark:bg-[#050505]/50 border border-slate-300 dark:border-gray-700 rounded-xl p-3 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-primary focus:border-transparent outline-none transition-all placeholder-slate-400 dark:placeholder-gray-500";
 
     return (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-backdrop-fade-in" onClick={onClose}>
-            <div className="bg-[#000000] w-full max-w-lg rounded-3xl shadow-2xl border border-gray-800 flex flex-col overflow-hidden animate-modal-content-slide-down relative" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/70 dark:bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-backdrop-fade-in" onClick={onClose}>
+            <div className="bg-white dark:bg-[#000000] w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 dark:border-gray-800 flex flex-col overflow-hidden animate-modal-content-slide-down relative" onClick={e => e.stopPropagation()}>
                 {/* Decoration */}
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-brand-primary via-purple-500 to-brand-primary"></div>
 
-                <div className="p-6 border-b border-gray-800 flex justify-between items-center">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <div className="p-6 border-b border-slate-200 dark:border-gray-800 flex justify-between items-center">
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-brand-primary animate-pulse"></span>
                         {isNewVersionMode ? `New Version: ${existingModel.name}` : 'Initialize New Model'}
                     </h2>
-                    <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">&times;</button>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">&times;</button>
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-8 space-y-5">
@@ -179,7 +180,7 @@ const UploadModelModal: React.FC<{
                         <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe changes, e.g. 'Increased epoch count'" className={inputBaseClasses} required />
                     </div>
 
-                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-800">
+                    <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-gray-800">
                         <Button type="button" variant="secondary" onClick={onClose}>Abort</Button>
                         <Button type="submit" variant="primary" className="shadow-lg shadow-brand-primary/20">Deploy to Registry</Button>
                     </div>
@@ -218,14 +219,16 @@ export const SignalModal: React.FC<{
     modelName: string;
     onClose: () => void;
 }> = ({ result, modelName, onClose }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
     const cfgMap = {
         BUY: {
             outerGlow: 'shadow-emerald-500/30',
             ring: 'from-emerald-400 to-teal-300',
             ringBg: 'bg-emerald-500/10',
             border: 'border-emerald-500/30',
-            text: 'text-emerald-400',
-            badge: 'bg-emerald-500/20 border-emerald-500/40',
+            text: 'text-emerald-600 dark:text-emerald-400',
+            badge: 'bg-emerald-500/15 dark:bg-emerald-500/20 border-emerald-500/40',
             accent: 'from-emerald-500 via-teal-400 to-emerald-600',
             label: 'BUY',
             icon: '▲',
@@ -236,8 +239,8 @@ export const SignalModal: React.FC<{
             ring: 'from-rose-400 to-pink-300',
             ringBg: 'bg-rose-500/10',
             border: 'border-rose-500/30',
-            text: 'text-rose-400',
-            badge: 'bg-rose-500/20 border-rose-500/40',
+            text: 'text-rose-600 dark:text-rose-400',
+            badge: 'bg-rose-500/15 dark:bg-rose-500/20 border-rose-500/40',
             accent: 'from-rose-500 via-pink-400 to-rose-600',
             label: 'SELL',
             icon: '▼',
@@ -248,8 +251,8 @@ export const SignalModal: React.FC<{
             ring: 'from-amber-400 to-yellow-300',
             ringBg: 'bg-amber-500/10',
             border: 'border-amber-500/30',
-            text: 'text-amber-400',
-            badge: 'bg-amber-500/20 border-amber-500/40',
+            text: 'text-amber-600 dark:text-amber-400',
+            badge: 'bg-amber-500/15 dark:bg-amber-500/20 border-amber-500/40',
             accent: 'from-amber-500 via-yellow-400 to-amber-600',
             label: 'HOLD',
             icon: '■',
@@ -266,8 +269,8 @@ export const SignalModal: React.FC<{
         ring: isCrash ? 'from-rose-400 to-pink-300' : isPump ? 'from-emerald-400 to-teal-300' : 'from-cyan-400 to-blue-300',
         ringBg: isCrash ? 'bg-rose-500/10' : isPump ? 'bg-emerald-500/10' : 'bg-cyan-500/10',
         border: isCrash ? 'border-rose-500/30' : isPump ? 'border-emerald-500/30' : 'border-cyan-500/30',
-        text: isCrash ? 'text-rose-400' : isPump ? 'text-emerald-400' : 'text-cyan-400',
-        badge: isCrash ? 'bg-rose-500/20 border-rose-500/40' : isPump ? 'bg-emerald-500/20 border-emerald-500/40' : 'bg-cyan-500/20 border-cyan-500/40',
+        text: isCrash ? 'text-rose-600 dark:text-rose-400' : isPump ? 'text-emerald-600 dark:text-emerald-400' : 'text-cyan-600 dark:text-cyan-400',
+        badge: isCrash ? 'bg-rose-500/15 dark:bg-rose-500/20 border-rose-500/40' : isPump ? 'bg-emerald-500/15 dark:bg-emerald-500/20 border-emerald-500/40' : 'bg-cyan-500/15 dark:bg-cyan-500/20 border-cyan-500/40',
         accent: isCrash ? 'from-rose-500 via-pink-400 to-rose-600' : isPump ? 'from-emerald-500 via-teal-400 to-emerald-600' : 'from-cyan-500 via-blue-400 to-cyan-600',
         label: result.signal.toUpperCase(),
         icon: isCrash ? '▼' : isPump ? '▲' : '⚡',
@@ -283,12 +286,15 @@ export const SignalModal: React.FC<{
     return (
         <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-            style={{ backgroundColor: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(12px)' }}
+            style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.75)' : 'rgba(15,23,42,0.55)', backdropFilter: 'blur(12px)' }}
             onClick={onClose}
         >
             <div
                 className={`relative w-full max-w-xs rounded-3xl border ${cfg.border} shadow-2xl ${cfg.outerGlow} overflow-hidden`}
-                style={{ background: 'linear-gradient(135deg, #0a0a0a 60%, #111)', boxShadow: `0 0 80px 0 ${cfg.glow}, 0 25px 50px rgba(0,0,0,0.6)` }}
+                style={{
+                    background: isDark ? 'linear-gradient(135deg, #0a0a0a 60%, #111)' : 'linear-gradient(135deg, #ffffff 60%, #f8fafc)',
+                    boxShadow: isDark ? `0 0 80px 0 ${cfg.glow}, 0 25px 50px rgba(0,0,0,0.6)` : `0 0 60px 0 ${cfg.glow}, 0 25px 50px rgba(15,23,42,0.18)`
+                }}
                 onClick={e => e.stopPropagation()}
             >
                 {/* Top gradient accent bar */}
@@ -300,14 +306,14 @@ export const SignalModal: React.FC<{
                 <div className="relative z-10 p-7 flex flex-col items-center text-center gap-4">
 
                     {/* Model name */}
-                    <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-gray-500">{modelName}</p>
+                    <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-slate-500 dark:text-gray-500">{modelName}</p>
 
                     {/* Confidence ring + Signal label */}
                     <div className="relative flex items-center justify-center">
                         {/* SVG ring */}
                         <svg width="110" height="110" className="-rotate-90">
                             {/* Track */}
-                            <circle cx="55" cy="55" r={radius} stroke="rgba(255,255,255,0.06)" strokeWidth="8" fill="none" />
+                            <circle cx="55" cy="55" r={radius} stroke={isDark ? "rgba(255,255,255,0.06)" : "rgba(15,23,42,0.08)"} strokeWidth="8" fill="none" />
                             {/* Progress */}
                             <circle
                                 cx="55" cy="55" r={radius}
@@ -326,7 +332,7 @@ export const SignalModal: React.FC<{
                         {/* Centre content */}
                         <div className="absolute inset-0 flex flex-col items-center justify-center">
                             <span className={`text-2xl font-black ${cfg.text}`}>{cfg.icon}</span>
-                            <span className="text-xs font-bold text-gray-400 mt-0.5">{pct}%</span>
+                            <span className="text-xs font-bold text-slate-500 dark:text-gray-400 mt-0.5">{pct}%</span>
                         </div>
                     </div>
 
@@ -336,36 +342,36 @@ export const SignalModal: React.FC<{
                     </div>
 
                     {/* Confidence label */}
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-slate-500 dark:text-gray-500">
                         Confidence — <span className={`font-bold ${cfg.text}`}>{pct}%</span>
                     </p>
 
                     {/* Info rows */}
-                    <div className="w-full bg-white/4 rounded-2xl border border-white/6 p-4 space-y-2.5 text-left">
+                    <div className="w-full bg-slate-50 dark:bg-white/4 rounded-2xl border border-slate-200 dark:border-white/6 p-4 space-y-2.5 text-left">
                         {[
-                            { label: 'Entry Price', value: `$${formatPrice(result.price)}`, color: 'text-white' },
-                            ...(result.tp !== undefined ? [{ label: 'Take Profit', value: `$${formatPrice(result.tp)}`, color: 'text-emerald-400' }] : []),
-                            ...(result.sl !== undefined ? [{ label: 'Stop Loss', value: `$${formatPrice(result.sl)}`, color: 'text-rose-400' }] : []),
-                            ...(result.predicted_return !== undefined ? [{ label: 'Pred. Movement', value: `${result.predicted_return > 0 ? '+' : ''}${(result.predicted_return * 100).toFixed(2)}%`, color: result.predicted_return > 0 ? 'text-emerald-400' : 'text-rose-400' }] : []),
-                            { label: 'Symbol', value: result.symbol, color: 'text-gray-300' },
-                            { label: 'Algorithm', value: result.algorithm, color: 'text-purple-400' },
-                            ...(result.features_used ? [{ label: 'Features', value: `${result.features_used} features`, color: 'text-gray-400' }] : []),
+                            { label: 'Entry Price', value: `$${formatPrice(result.price)}`, color: 'text-slate-900 dark:text-white' },
+                            ...(result.tp !== undefined ? [{ label: 'Take Profit', value: `$${formatPrice(result.tp)}`, color: 'text-emerald-600 dark:text-emerald-400' }] : []),
+                            ...(result.sl !== undefined ? [{ label: 'Stop Loss', value: `$${formatPrice(result.sl)}`, color: 'text-rose-600 dark:text-rose-400' }] : []),
+                            ...(result.predicted_return !== undefined ? [{ label: 'Pred. Movement', value: `${result.predicted_return > 0 ? '+' : ''}${(result.predicted_return * 100).toFixed(2)}%`, color: result.predicted_return > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400' }] : []),
+                            { label: 'Symbol', value: result.symbol, color: 'text-slate-700 dark:text-gray-300' },
+                            { label: 'Algorithm', value: result.algorithm, color: 'text-purple-600 dark:text-purple-400' },
+                            ...(result.features_used ? [{ label: 'Features', value: `${result.features_used} features`, color: 'text-slate-500 dark:text-gray-400' }] : []),
                         ].map(({ label, value, color }) => (
                             <div key={label} className="flex justify-between items-center">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600">{label}</span>
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-gray-600">{label}</span>
                                 <span className={`text-xs font-mono font-bold ${color}`}>{value}</span>
                             </div>
                         ))}
-                        <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600">Generated</span>
-                            <span className="text-[10px] font-mono text-gray-600">{new Date(result.timestamp).toLocaleTimeString()}</span>
+                        <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-white/5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-gray-600">Generated</span>
+                            <span className="text-[10px] font-mono text-slate-500 dark:text-gray-600">{new Date(result.timestamp).toLocaleTimeString()}</span>
                         </div>
                     </div>
 
                     {/* Close button */}
                     <button
                         onClick={onClose}
-                        className="w-full py-2.5 mt-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-sm font-bold text-gray-500 hover:text-white transition-all duration-200"
+                        className="w-full py-2.5 mt-1 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 text-sm font-bold text-slate-600 dark:text-gray-500 hover:text-slate-900 dark:hover:text-white transition-all duration-200"
                     >
                         Close
                     </button>
@@ -377,44 +383,53 @@ export const SignalModal: React.FC<{
 
 
 const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data, algorithm }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+    const tooltipStyle = {
+        backgroundColor: isDark ? '#111' : '#fff',
+        borderColor: isDark ? '#333' : '#e2e8f0',
+        borderRadius: '8px',
+        color: isDark ? '#fff' : '#0f172a'
+    };
+
     if (!data || Object.keys(data).length === 0) {
-        return <div className="text-center py-10 text-gray-500 font-bold">No explainability data available for this version. Please retrain.</div>;
+        return <div className="text-center py-10 text-slate-500 dark:text-gray-500 font-bold">No explainability data available for this version. Please retrain.</div>;
     }
 
     if (algorithm === 'PPO-RL' || data.total_return_pct !== undefined) {
         return (
             <div className="space-y-6 animate-fade-in pb-10">
-                <div className="bg-purple-900/10 border border-purple-500/20 rounded-xl p-6 shadow-inner">
-                    <h3 className="text-sm font-bold text-purple-400 mb-6 flex items-center gap-2">
+                <div className="bg-purple-50 dark:bg-purple-900/10 border border-purple-500/20 rounded-xl p-6 shadow-inner">
+                    <h3 className="text-sm font-bold text-purple-600 dark:text-purple-400 mb-6 flex items-center gap-2">
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                         RL Agent Performance Metrics
                     </h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-4 text-center">
-                            <p className="text-[10px] text-gray-500 font-bold uppercase mb-2">Total Return</p>
-                            <p className={`text-xl font-mono font-bold ${data.total_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{data.total_return_pct?.toFixed(2)}%</p>
+                        <div className="bg-white dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg p-4 text-center">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase mb-2">Total Return</p>
+                            <p className={`text-xl font-mono font-bold ${data.total_return_pct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{data.total_return_pct?.toFixed(2)}%</p>
                         </div>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-4 text-center">
-                            <p className="text-[10px] text-gray-500 font-bold uppercase mb-2">Win Rate</p>
-                            <p className="text-xl font-mono font-bold text-emerald-400">{data.win_rate?.toFixed(2)}%</p>
+                        <div className="bg-white dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg p-4 text-center">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase mb-2">Win Rate</p>
+                            <p className="text-xl font-mono font-bold text-emerald-600 dark:text-emerald-400">{data.win_rate?.toFixed(2)}%</p>
                         </div>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-4 text-center">
-                            <p className="text-[10px] text-gray-500 font-bold uppercase mb-2">Sharpe Ratio</p>
-                            <p className="text-xl font-mono font-bold text-blue-400">{data.sharpe_ratio?.toFixed(2)}</p>
+                        <div className="bg-white dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg p-4 text-center">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase mb-2">Sharpe Ratio</p>
+                            <p className="text-xl font-mono font-bold text-blue-600 dark:text-blue-400">{data.sharpe_ratio?.toFixed(2)}</p>
                         </div>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-4 text-center">
-                            <p className="text-[10px] text-gray-500 font-bold uppercase mb-2">Trades Executed</p>
-                            <p className="text-xl font-mono font-bold text-purple-400">{data.trades_count}</p>
+                        <div className="bg-white dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg p-4 text-center">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase mb-2">Trades Executed</p>
+                            <p className="text-xl font-mono font-bold text-purple-600 dark:text-purple-400">{data.trades_count}</p>
                         </div>
                     </div>
                 </div>
 
-                <div className="bg-white/5 border border-white/10 rounded-xl p-6 text-center">
-                    <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl p-6 text-center">
+                    <div className="w-12 h-12 bg-slate-200 dark:bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-6 h-6 text-slate-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     </div>
-                    <h4 className="text-white font-bold text-sm mb-2">Deep Policy Network (PPO)</h4>
-                    <p className="text-xs text-gray-400 max-w-lg mx-auto leading-relaxed">
+                    <h4 className="text-slate-900 dark:text-white font-bold text-sm mb-2">Deep Policy Network (PPO)</h4>
+                    <p className="text-xs text-slate-600 dark:text-gray-400 max-w-lg mx-auto leading-relaxed">
                         Reinforcement Learning models do not use traditional feature importance or decision trees.
                         They learn optimal trading policies through continuous trial and error (reward maximization).
                         <br /><br />
@@ -430,14 +445,14 @@ const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data,
     return (
         <div className="space-y-6 animate-fade-in pb-10">
             {/* 1. Feature Importance */}
-            <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-                <h3 className="text-sm font-bold text-gray-300 mb-4 flex items-center gap-2"><svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg> Feature Importance</h3>
+            <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl p-5">
+                <h3 className="text-sm font-bold text-slate-700 dark:text-gray-300 mb-4 flex items-center gap-2"><svg className="w-4 h-4 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg> Feature Importance</h3>
                 <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={data.featureImportance} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
                             <XAxis type="number" hide />
-                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 12 }} width={120} />
-                            <RechartsTooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ backgroundColor: '#111', borderColor: '#333', borderRadius: '8px' }} />
+                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: isDark ? '#9CA3AF' : '#475569', fontSize: 12 }} width={120} />
+                            <RechartsTooltip cursor={{ fill: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.05)' }} contentStyle={tooltipStyle} />
                             <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                                 {data.featureImportance?.map((entry: any, index: number) => (
                                     <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
@@ -450,8 +465,8 @@ const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data,
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* 2. Partial Dependence (PDP) */}
-                <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-                    <h3 className="text-sm font-bold text-gray-300 mb-4 flex items-center gap-2">Partial Dependence Plot</h3>
+                <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl p-5">
+                    <h3 className="text-sm font-bold text-slate-700 dark:text-gray-300 mb-4 flex items-center gap-2">Partial Dependence Plot</h3>
                     <div className="h-48">
                         <ResponsiveContainer width="100%" height="100%">
                             <AreaChart data={data.pdpData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
@@ -463,7 +478,7 @@ const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data,
                                 </defs>
                                 <XAxis dataKey="x" tick={{ fill: '#6B7280', fontSize: 10 }} tickLine={false} axisLine={false} />
                                 <YAxis tick={{ fill: '#6B7280', fontSize: 10 }} tickLine={false} axisLine={false} />
-                                <RechartsTooltip contentStyle={{ backgroundColor: '#111', borderColor: '#333', borderRadius: '8px' }} />
+                                <RechartsTooltip contentStyle={tooltipStyle} />
                                 <Area type="monotone" dataKey="y" stroke="#14B8A6" fillOpacity={1} fill="url(#colorY)" />
                             </AreaChart>
                         </ResponsiveContainer>
@@ -471,14 +486,14 @@ const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data,
                 </div>
 
                 {/* 3. Actual vs Predicted */}
-                <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-                    <h3 className="text-sm font-bold text-gray-300 mb-4 flex items-center gap-2">Actual vs Predicted (Test Set)</h3>
+                <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl p-5">
+                    <h3 className="text-sm font-bold text-slate-700 dark:text-gray-300 mb-4 flex items-center gap-2">Actual vs Predicted (Test Set)</h3>
                     <div className="h-48">
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={data.timeSeriesData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
                                 <XAxis dataKey="time" hide />
                                 <YAxis domain={['auto', 'auto']} tick={{ fill: '#6B7280', fontSize: 10 }} tickLine={false} axisLine={false} />
-                                <RechartsTooltip contentStyle={{ backgroundColor: '#111', borderColor: '#333', borderRadius: '8px' }} />
+                                <RechartsTooltip contentStyle={tooltipStyle} />
                                 <Line type="monotone" dataKey="actual" stroke="#6B7280" strokeWidth={2} dot={false} name="Actual" />
                                 <Line type="monotone" dataKey="predicted" stroke="#6366F1" strokeWidth={2} strokeDasharray="3 3" dot={false} name="Predicted" />
                             </LineChart>
@@ -489,20 +504,20 @@ const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data,
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* 4. Confusion Matrix */}
-                <div className="bg-white/5 border border-white/10 rounded-xl p-5 flex flex-col">
-                    <h3 className="text-sm font-bold text-gray-300 mb-4 flex items-center gap-2">Confusion Matrix</h3>
+                <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl p-5 flex flex-col">
+                    <h3 className="text-sm font-bold text-slate-700 dark:text-gray-300 mb-4 flex items-center gap-2">Confusion Matrix</h3>
                     <div className="flex-1 flex items-center justify-center">
                         <div className="grid grid-cols-4 gap-1 w-full max-w-[240px]">
                             <div className="col-span-1"></div>
-                            {data.confusionMatrix?.classes.map((c: string) => <div key={`col-${c}`} className="text-center text-[10px] text-gray-500 font-bold">{c}</div>)}
+                            {data.confusionMatrix?.classes.map((c: string) => <div key={`col-${c}`} className="text-center text-[10px] text-slate-500 dark:text-gray-500 font-bold">{c}</div>)}
 
                             {data.confusionMatrix?.matrix.map((row: number[], i: number) => (
                                 <React.Fragment key={`row-${i}`}>
-                                    <div className="text-right text-[10px] text-gray-500 font-bold pr-2 flex items-center justify-end">{data.confusionMatrix.classes[i]}</div>
+                                    <div className="text-right text-[10px] text-slate-500 dark:text-gray-500 font-bold pr-2 flex items-center justify-end">{data.confusionMatrix.classes[i]}</div>
                                     {row.map((val: number, j: number) => {
                                         const intensity = val / 100;
                                         return (
-                                            <div key={`cell-${i}-${j}`} className="aspect-square flex items-center justify-center rounded text-sm font-mono font-bold" style={{ backgroundColor: i === j ? `rgba(16, 185, 129, ${0.1 + intensity * 0.9})` : `rgba(239, 68, 68, ${0.1 + intensity * 0.5})`, color: intensity > 0.5 ? 'white' : '#9CA3AF' }}>
+                                            <div key={`cell-${i}-${j}`} className="aspect-square flex items-center justify-center rounded text-sm font-mono font-bold" style={{ backgroundColor: i === j ? `rgba(16, 185, 129, ${0.1 + intensity * 0.9})` : `rgba(239, 68, 68, ${0.1 + intensity * 0.5})`, color: intensity > 0.5 ? 'white' : (isDark ? '#9CA3AF' : '#334155') }}>
                                                 {val}
                                             </div>
                                         )
@@ -514,16 +529,16 @@ const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data,
                 </div>
 
                 {/* 5. SHAP Summary */}
-                <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-                    <h3 className="text-sm font-bold text-gray-300 mb-4 flex items-center gap-2">SHAP Summary (Impact)</h3>
+                <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl p-5">
+                    <h3 className="text-sm font-bold text-slate-700 dark:text-gray-300 mb-4 flex items-center gap-2">SHAP Summary (Impact)</h3>
                     <div className="space-y-4">
                         {['Level2_Imbalance', 'Volume_Profile', 'RSI_14'].map(feature => {
                             const dots = data.shapSummary?.filter((s: any) => s.feature === feature) || [];
                             return (
                                 <div key={feature} className="flex items-center gap-2">
-                                    <div className="w-28 text-[10px] text-gray-400 truncate text-right font-bold">{feature}</div>
-                                    <div className="flex-1 relative h-6 bg-white/5 rounded">
-                                        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-gray-600"></div>
+                                    <div className="w-28 text-[10px] text-slate-600 dark:text-gray-400 truncate text-right font-bold">{feature}</div>
+                                    <div className="flex-1 relative h-6 bg-slate-200 dark:bg-white/5 rounded">
+                                        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-slate-400 dark:bg-gray-600"></div>
                                         {dots.map((d: any, i: number) => {
                                             const left = 50 + (d.impact * 500);
                                             const color = d.value === 'High' ? '#EF4444' : '#3B82F6';
@@ -535,7 +550,7 @@ const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data,
                                 </div>
                             );
                         })}
-                        <div className="flex justify-between text-[10px] text-gray-500 pt-2 border-t border-gray-800">
+                        <div className="flex justify-between text-[10px] text-slate-500 dark:text-gray-500 pt-2 border-t border-slate-200 dark:border-gray-800">
                             <span>Negative</span>
                             <span>Value: <span className="text-blue-500">Low</span> / <span className="text-red-500">High</span></span>
                             <span>Positive</span>
@@ -545,9 +560,9 @@ const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data,
             </div>
 
             {/* 6. Decision Tree */}
-            <div className="bg-white/5 border border-white/10 rounded-xl p-5 h-80 flex flex-col">
-                <h3 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">Decision Tree Logic</h3>
-                <div className="flex-1 border border-white/5 rounded-lg overflow-hidden bg-[#050505]">
+            <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl p-5 h-80 flex flex-col">
+                <h3 className="text-sm font-bold text-slate-700 dark:text-gray-300 mb-2 flex items-center gap-2">Decision Tree Logic</h3>
+                <div className="flex-1 border border-slate-200 dark:border-white/5 rounded-lg overflow-hidden bg-white dark:bg-[#050505]">
                     <ReactFlow
                         nodes={data.decisionTree?.nodes.map((n: any) => ({
                             id: n.id,
@@ -556,62 +571,67 @@ const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data,
                                 y: n.id === '1' ? 20 : ['2', '3'].includes(n.id) ? 120 : 220
                             },
                             data: { label: n.label },
-                            style: { background: n.type === 'leaf' ? (n.color === 'green' ? '#10B981' : n.color === 'red' ? '#EF4444' : '#6B7280') : '#1E1B4B', color: '#fff', border: '1px solid #4338CA', borderRadius: '8px', padding: '8px 10px', fontSize: '10px', fontWeight: 'bold', width: 140, textAlign: 'center' }
+                            style: {
+                                background: n.type === 'leaf' ? (n.color === 'green' ? '#10B981' : n.color === 'red' ? '#EF4444' : '#6B7280') : (isDark ? '#1E1B4B' : '#EEF2FF'),
+                                color: n.type === 'leaf' ? '#fff' : (isDark ? '#fff' : '#1E1B4B'),
+                                border: isDark ? '1px solid #4338CA' : '1px solid #818CF8',
+                                borderRadius: '8px', padding: '8px 10px', fontSize: '10px', fontWeight: 'bold', width: 140, textAlign: 'center'
+                            }
                         })) || []}
                         edges={data.decisionTree?.edges.map((e: any) => ({
                             id: `e${e.source}-${e.target}`,
                             source: e.source,
                             target: e.target,
                             label: e.label,
-                            labelStyle: { fill: '#9CA3AF', fontSize: 10, fontWeight: 'bold' },
-                            style: { stroke: '#4B5563' },
+                            labelStyle: { fill: isDark ? '#9CA3AF' : '#475569', fontSize: 10, fontWeight: 'bold' },
+                            style: { stroke: isDark ? '#4B5563' : '#94A3B8' },
                             animated: true
                         })) || []}
                         fitView
                         attributionPosition="bottom-right"
                     >
-                        <Background color="#333" gap={16} />
-                        <Controls className="bg-white/10 border-white/20 fill-white" showInteractive={false} />
+                        <Background color={isDark ? "#333" : "#cbd5e1"} gap={16} />
+                        <Controls className="bg-white dark:bg-white/10 border-slate-200 dark:border-white/20" showInteractive={false} />
                     </ReactFlow>
                 </div>
             </div>
 
             {/* 7. Backtest Performance Card */}
             {data.backtest_result && (
-                <div className="bg-emerald-900/10 border border-emerald-500/20 rounded-xl p-5">
-                    <h3 className="text-sm font-bold text-emerald-400 mb-4 flex items-center gap-2">
+                <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-500/20 rounded-xl p-5">
+                    <h3 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mb-4 flex items-center gap-2">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
                         Post-Training Backtest Performance
-                        <span className="ml-auto text-[10px] text-gray-500 font-normal">Initial: ${data.backtest_result.initial_balance?.toLocaleString()}</span>
+                        <span className="ml-auto text-[10px] text-slate-500 dark:text-gray-500 font-normal">Initial: ${data.backtest_result.initial_balance?.toLocaleString()}</span>
                     </h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-3 text-center">
-                            <p className="text-[10px] text-gray-500 font-bold uppercase mb-1">Return</p>
-                            <p className={`text-xl font-mono font-bold ${data.backtest_result.profit_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <div className="bg-white dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg p-3 text-center">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase mb-1">Return</p>
+                            <p className={`text-xl font-mono font-bold ${data.backtest_result.profit_pct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                                 {data.backtest_result.profit_pct >= 0 ? '+' : ''}{data.backtest_result.profit_pct?.toFixed(2)}%
                             </p>
                         </div>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-3 text-center">
-                            <p className="text-[10px] text-gray-500 font-bold uppercase mb-1">Win Rate</p>
-                            <p className="text-xl font-mono font-bold text-blue-400">{data.backtest_result.win_rate?.toFixed(1)}%</p>
+                        <div className="bg-white dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg p-3 text-center">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase mb-1">Win Rate</p>
+                            <p className="text-xl font-mono font-bold text-blue-600 dark:text-blue-400">{data.backtest_result.win_rate?.toFixed(1)}%</p>
                         </div>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-3 text-center">
-                            <p className="text-[10px] text-gray-500 font-bold uppercase mb-1">Max DD</p>
-                            <p className="text-xl font-mono font-bold text-rose-400">-{data.backtest_result.max_drawdown?.toFixed(2)}%</p>
+                        <div className="bg-white dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg p-3 text-center">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase mb-1">Max DD</p>
+                            <p className="text-xl font-mono font-bold text-rose-600 dark:text-rose-400">-{data.backtest_result.max_drawdown?.toFixed(2)}%</p>
                         </div>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-3 text-center">
-                            <p className="text-[10px] text-gray-500 font-bold uppercase mb-1">Kelly %</p>
-                            <p className="text-xl font-mono font-bold text-teal-400">{data.backtest_result.kelly_pct !== undefined ? data.backtest_result.kelly_pct.toFixed(1) + '%' : 'N/A'}</p>
+                        <div className="bg-white dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg p-3 text-center">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase mb-1">Kelly %</p>
+                            <p className="text-xl font-mono font-bold text-teal-600 dark:text-teal-400">{data.backtest_result.kelly_pct !== undefined ? data.backtest_result.kelly_pct.toFixed(1) + '%' : 'N/A'}</p>
                         </div>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-3 text-center">
-                            <p className="text-[10px] text-gray-500 font-bold uppercase mb-1">MC Ruin Risk</p>
-                            <p className={`text-xl font-mono font-bold ${data.backtest_result.risk_of_ruin > 5 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        <div className="bg-white dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg p-3 text-center">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase mb-1">MC Ruin Risk</p>
+                            <p className={`text-xl font-mono font-bold ${data.backtest_result.risk_of_ruin > 5 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                                 {data.backtest_result.risk_of_ruin !== undefined ? data.backtest_result.risk_of_ruin.toFixed(1) + '%' : 'N/A'}
                             </p>
                         </div>
-                        <div className="bg-black/40 border border-white/5 rounded-lg p-3 text-center">
-                            <p className="text-[10px] text-gray-500 font-bold uppercase mb-1">Trades</p>
-                            <p className="text-xl font-mono font-bold text-purple-400">{data.backtest_result.total_trades}</p>
+                        <div className="bg-white dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg p-3 text-center">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase mb-1">Trades</p>
+                            <p className="text-xl font-mono font-bold text-purple-600 dark:text-purple-400">{data.backtest_result.total_trades}</p>
                         </div>
                     </div>
                 </div>
@@ -619,8 +639,8 @@ const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data,
 
             {/* 8. Walk-Forward CV Scores */}
             {data.cv_scores && data.cv_scores.cv_scores?.length > 0 && (
-                <div className="bg-blue-900/10 border border-blue-500/20 rounded-xl p-5">
-                    <h3 className="text-sm font-bold text-blue-400 mb-4 flex items-center gap-2">
+                <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-500/20 rounded-xl p-5">
+                    <h3 className="text-sm font-bold text-blue-600 dark:text-blue-400 mb-4 flex items-center gap-2">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
                         Walk-Forward CV Results
                     </h3>
@@ -628,14 +648,14 @@ const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data,
                         {data.cv_scores.cv_scores.map((score: number, i: number) => (
                             <div key={i} className="flex-1 text-center">
                                 <div className="bg-blue-500/20 rounded-t" style={{ height: `${Math.max(4, score * 80)}px` }}></div>
-                                <p className="text-[10px] text-blue-400 font-mono mt-1">{(score * 100).toFixed(1)}%</p>
-                                <p className="text-[9px] text-gray-600">F{i + 1}</p>
+                                <p className="text-[10px] text-blue-600 dark:text-blue-400 font-mono mt-1">{(score * 100).toFixed(1)}%</p>
+                                <p className="text-[9px] text-slate-500 dark:text-gray-600">F{i + 1}</p>
                             </div>
                         ))}
-                        <div className="flex-1 text-center border-l border-white/10 pl-2">
-                            <p className="text-[10px] text-gray-500 uppercase font-bold">Avg</p>
-                            <p className="text-sm font-mono font-bold text-blue-400">{((data.cv_scores.cv_avg || 0) * 100).toFixed(1)}%</p>
-                            <p className="text-[9px] text-gray-500">&plusmn;{((data.cv_scores.cv_std || 0) * 100).toFixed(1)}%</p>
+                        <div className="flex-1 text-center border-l border-slate-200 dark:border-white/10 pl-2">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-500 uppercase font-bold">Avg</p>
+                            <p className="text-sm font-mono font-bold text-blue-600 dark:text-blue-400">{((data.cv_scores.cv_avg || 0) * 100).toFixed(1)}%</p>
+                            <p className="text-[9px] text-slate-500 dark:text-gray-500">&plusmn;{((data.cv_scores.cv_std || 0) * 100).toFixed(1)}%</p>
                         </div>
                     </div>
                 </div>
@@ -650,6 +670,8 @@ const ModelDetailsModal: React.FC<{
     modelName: string;
     onClose: () => void;
 }> = ({ modelId, modelName, onClose }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
     const [config, setConfig] = useState<any>(null);
     const [explainData, setExplainData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -686,14 +708,14 @@ const ModelDetailsModal: React.FC<{
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-backdrop-fade-in" onClick={onClose}>
-            {/* Dark blur backdrop with subtle ambient light */}
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-md"></div>
+            {/* blur backdrop with subtle ambient light */}
+            <div className="absolute inset-0 bg-slate-900/50 dark:bg-black/60 backdrop-blur-md"></div>
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(56,189,248,0.15)_0%,transparent_50%)] pointer-events-none"></div>
 
             <div className="w-full max-w-3xl rounded-3xl flex flex-col overflow-hidden relative animate-modal-content-slide-down z-10"
                 style={{
-                    background: 'linear-gradient(145deg, rgba(15,20,30,0.95) 0%, rgba(5,10,15,0.98) 100%)',
-                    boxShadow: '0 0 0 1px rgba(255,255,255,0.05), 0 30px 60px -10px rgba(0,0,0,0.8), 0 0 80px rgba(56,189,248,0.15)',
+                    background: isDark ? 'linear-gradient(145deg, rgba(15,20,30,0.95) 0%, rgba(5,10,15,0.98) 100%)' : 'linear-gradient(145deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%)',
+                    boxShadow: isDark ? '0 0 0 1px rgba(255,255,255,0.05), 0 30px 60px -10px rgba(0,0,0,0.8), 0 0 80px rgba(56,189,248,0.15)' : '0 0 0 1px rgba(15,23,42,0.08), 0 25px 50px -10px rgba(15,23,42,0.2)',
                 }}
                 onClick={e => e.stopPropagation()}
             >
@@ -705,16 +727,16 @@ const ModelDetailsModal: React.FC<{
                 <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/10 rounded-full blur-[80px] pointer-events-none"></div>
 
                 {/* Header */}
-                <div className="p-6 relative z-10 flex justify-between items-center border-b border-white/[0.05]">
+                <div className="p-6 relative z-10 flex justify-between items-center border-b border-slate-200 dark:border-white/[0.05]">
                     <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 flex items-center justify-center border border-cyan-500/30 shadow-[inset_0_0_20px_rgba(56,189,248,0.1)]">
-                            <svg className="w-6 h-6 text-cyan-400 drop-shadow-[0_0_8px_rgba(56,189,248,0.8)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+                            <svg className="w-6 h-6 text-cyan-600 dark:text-cyan-400 drop-shadow-[0_0_8px_rgba(56,189,248,0.8)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
                         </div>
                         <div>
-                            <h2 className="text-2xl font-black tracking-tight text-white">
-                                <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 via-blue-400 to-purple-400">Model Inspector</span>
+                            <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                                <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-600 via-blue-600 to-purple-600 dark:from-cyan-300 dark:via-blue-400 dark:to-purple-400">Model Inspector</span>
                             </h2>
-                            <p className="text-xs text-gray-400 font-medium tracking-wide mt-1 uppercase">ID: {modelName}</p>
+                            <p className="text-xs text-slate-500 dark:text-gray-400 font-medium tracking-wide mt-1 uppercase">ID: {modelName}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -727,7 +749,7 @@ const ModelDetailsModal: React.FC<{
                         >
                             <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                             <div className="absolute inset-0 rounded-xl border border-emerald-500/30 group-hover:border-emerald-400/50 transition-colors duration-300"></div>
-                            <div className="relative flex items-center gap-2 text-emerald-400 group-hover:text-emerald-300 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]">
+                            <div className="relative flex items-center gap-2 text-emerald-600 dark:text-emerald-400 group-hover:text-emerald-700 dark:group-hover:text-emerald-300 dark:drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]">
                                 {isDownloading ? (
                                     <>
                                         <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -742,7 +764,7 @@ const ModelDetailsModal: React.FC<{
                             </div>
                         </button>
 
-                        <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all border border-white/5 hover:border-white/10">
+                        <button onClick={onClose} className="w-10 h-10 rounded-full bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white transition-all border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10">
                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
                     </div>
@@ -750,17 +772,17 @@ const ModelDetailsModal: React.FC<{
 
                 {/* Modern Segmented Control for Tabs */}
                 <div className="px-6 pt-6 relative z-10">
-                    <div className="flex p-1 bg-black/40 rounded-2xl border border-white/5 shadow-inner relative">
-                        <div className="absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-white/10 shadow-[0_2px_10px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-out" style={{ transform: activeTab === 'config' ? 'translateX(0)' : 'translateX(calc(100% + 8px))' }}></div>
+                    <div className="flex p-1 bg-slate-100 dark:bg-black/40 rounded-2xl border border-slate-200 dark:border-white/5 shadow-inner relative">
+                        <div className="absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-white dark:bg-white/10 shadow-sm dark:shadow-[0_2px_10px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-out" style={{ transform: activeTab === 'config' ? 'translateX(0)' : 'translateX(calc(100% + 8px))' }}></div>
                         <button
                             onClick={() => setActiveTab('config')}
-                            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider relative z-10 transition-colors duration-300 ${activeTab === 'config' ? 'text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider relative z-10 transition-colors duration-300 ${activeTab === 'config' ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-300'}`}
                         >
                             Configuration & Features
                         </button>
                         <button
                             onClick={() => setActiveTab('explain')}
-                            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider relative z-10 transition-colors duration-300 ${activeTab === 'explain' ? 'text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider relative z-10 transition-colors duration-300 ${activeTab === 'explain' ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-300'}`}
                         >
                             Model Insights & Explainability
                         </button>
@@ -776,7 +798,7 @@ const ModelDetailsModal: React.FC<{
                                 <div className="absolute inset-2 rounded-full border-r-2 border-purple-500 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
                                 <div className="absolute inset-4 rounded-full border-b-2 border-emerald-500 animate-spin" style={{ animationDuration: '2s' }}></div>
                             </div>
-                            <p className="text-gray-400 font-mono text-sm animate-pulse">Loading Tensor Artifacts...</p>
+                            <p className="text-slate-500 dark:text-gray-400 font-mono text-sm animate-pulse">Loading Tensor Artifacts...</p>
                         </div>
                     ) : activeTab === 'config' ? (
                         config ? (
@@ -790,13 +812,13 @@ const ModelDetailsModal: React.FC<{
                                         { label: 'Algorithm', value: config.config?.is_ensemble ? `Ensemble (${config.config?.ensemble_method || 'Voting'})` : (config.algorithm || 'N/A'), icon: 'M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z', color: 'purple' },
                                         { label: 'Prediction Target', value: config.config?.prediction_target || 'N/A', icon: 'M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122', color: 'amber' },
                                     ].map((stat, i) => (
-                                        <div key={i} className={`group relative bg-white/[0.02] border border-white/[0.05] rounded-2xl p-5 hover:bg-white/[0.04] hover:border-${stat.color}-500/30 transition-all overflow-hidden`}>
+                                        <div key={i} className={`group relative bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.05] rounded-2xl p-5 hover:bg-white dark:hover:bg-white/[0.04] hover:border-${stat.color}-500/30 transition-all overflow-hidden`}>
                                             <div className={`absolute -right-4 -top-4 w-24 h-24 bg-${stat.color}-500/10 rounded-full blur-2xl group-hover:bg-${stat.color}-500/20 transition-all`}></div>
-                                            <svg className={`w-5 h-5 text-${stat.color}-400 mb-3 opacity-70 group-hover:opacity-100 transition-opacity`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <svg className={`w-5 h-5 text-${stat.color}-600 dark:text-${stat.color}-400 mb-3 opacity-80 dark:opacity-70 group-hover:opacity-100 transition-opacity`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={stat.icon} />
                                             </svg>
-                                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">{stat.label}</p>
-                                            <p className="text-lg font-mono font-bold text-white drop-shadow-md">{stat.value}</p>
+                                            <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase tracking-wider mb-1">{stat.label}</p>
+                                            <p className="text-lg font-mono font-bold text-slate-900 dark:text-white dark:drop-shadow-md">{stat.value}</p>
                                         </div>
                                     ))}
 
@@ -809,19 +831,19 @@ const ModelDetailsModal: React.FC<{
                                         const epochVal = config.config?.epochs;
                                         const displayVal = epochVal != null ? epochVal.toLocaleString() : null;
                                         return (
-                                            <div className="group relative bg-white/[0.02] border border-white/[0.05] rounded-2xl p-5 hover:bg-white/[0.04] hover:border-emerald-500/30 transition-all overflow-hidden">
+                                            <div className="group relative bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.05] rounded-2xl p-5 hover:bg-white dark:hover:bg-white/[0.04] hover:border-emerald-500/30 transition-all overflow-hidden">
                                                 <div className="absolute -right-4 -top-4 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl group-hover:bg-emerald-500/20 transition-all"></div>
-                                                <svg className="w-5 h-5 text-emerald-400 mb-3 opacity-70 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mb-3 opacity-80 dark:opacity-70 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                                 </svg>
-                                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">{epochLabel}</p>
+                                                <p className="text-[10px] text-slate-500 dark:text-gray-500 font-bold uppercase tracking-wider mb-1">{epochLabel}</p>
                                                 {displayVal ? (
-                                                    <p className="text-lg font-mono font-bold text-white drop-shadow-md">{displayVal}</p>
+                                                    <p className="text-lg font-mono font-bold text-slate-900 dark:text-white dark:drop-shadow-md">{displayVal}</p>
                                                 ) : (
                                                     <div className="flex flex-col gap-1">
-                                                        <p className="text-lg font-mono font-bold text-gray-600">N/A</p>
-                                                        <p className="text-[9px] text-gray-600 leading-tight">
-                                                            Add <span className="text-emerald-700 font-mono">{isRL ? '"total_timesteps"' : isTree ? '"n_estimators"' : '"epochs"'}</span> to metadata.json
+                                                        <p className="text-lg font-mono font-bold text-slate-400 dark:text-gray-600">N/A</p>
+                                                        <p className="text-[9px] text-slate-500 dark:text-gray-600 leading-tight">
+                                                            Add <span className="text-emerald-600 dark:text-emerald-700 font-mono">{isRL ? '"total_timesteps"' : isTree ? '"n_estimators"' : '"epochs"'}</span> to metadata.json
                                                         </p>
                                                     </div>
                                                 )}
@@ -833,46 +855,46 @@ const ModelDetailsModal: React.FC<{
 
                                 {/* Advanced Training Configurations */}
                                 {(config.config?.split_method || config.config?.eval_metric || config.config?.imbalance_strategy || config.config?.forecast_horizon || config.config?.lookback_window) && (
-                                    <div className="bg-black/20 border border-rose-500/10 rounded-2xl p-5 shadow-inner relative overflow-hidden">
+                                    <div className="bg-slate-50 dark:bg-black/20 border border-rose-500/15 dark:border-rose-500/10 rounded-2xl p-5 shadow-inner relative overflow-hidden">
                                         <div className="absolute top-0 left-0 w-1 h-full bg-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.5)]"></div>
-                                        <h3 className="text-sm font-bold text-rose-400 mb-4 flex items-center gap-2">
+                                        <h3 className="text-sm font-bold text-rose-600 dark:text-rose-400 mb-4 flex items-center gap-2">
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                             Advanced Training Configuration
                                         </h3>
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                             {config.config?.split_method && (
-                                                <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-white/[0.06] transition-colors">
-                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Split Method</span>
-                                                    <span className="text-sm font-mono font-bold text-white capitalize">{config.config.split_method}</span>
+                                                <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors">
+                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-gray-500">Split Method</span>
+                                                    <span className="text-sm font-mono font-bold text-slate-900 dark:text-white capitalize">{config.config.split_method}</span>
                                                     {config.config?.train_ratio && (
-                                                        <span className="text-[10px] text-gray-500 font-mono mt-1">
+                                                        <span className="text-[10px] text-slate-500 dark:text-gray-500 font-mono mt-1">
                                                             Train: {config.config.train_ratio}% | Test: {config.config.test_ratio || (100 - config.config.train_ratio - (config.config.val_ratio || 0))}%
                                                         </span>
                                                     )}
                                                 </div>
                                             )}
                                             {config.config?.imbalance_strategy && (
-                                                <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-white/[0.06] transition-colors">
-                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Imbalance Strategy</span>
-                                                    <span className="text-sm font-mono font-bold text-white capitalize">{config.config.imbalance_strategy.replace('_', ' ')}</span>
+                                                <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors">
+                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-gray-500">Imbalance Strategy</span>
+                                                    <span className="text-sm font-mono font-bold text-slate-900 dark:text-white capitalize">{config.config.imbalance_strategy.replace('_', ' ')}</span>
                                                 </div>
                                             )}
                                             {config.config?.eval_metric && (
-                                                <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-white/[0.06] transition-colors">
-                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Evaluation Metric</span>
-                                                    <span className="text-sm font-mono font-bold text-white uppercase">{config.config.eval_metric.replace('_', ' ')}</span>
+                                                <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors">
+                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-gray-500">Evaluation Metric</span>
+                                                    <span className="text-sm font-mono font-bold text-slate-900 dark:text-white uppercase">{config.config.eval_metric.replace('_', ' ')}</span>
                                                 </div>
                                             )}
                                             {config.config?.forecast_horizon && (
-                                                <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-white/[0.06] transition-colors">
-                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Forecast Horizon</span>
-                                                    <span className="text-sm font-mono font-bold text-white">{config.config.forecast_horizon} Steps</span>
+                                                <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors">
+                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-gray-500">Forecast Horizon</span>
+                                                    <span className="text-sm font-mono font-bold text-slate-900 dark:text-white">{config.config.forecast_horizon} Steps</span>
                                                 </div>
                                             )}
                                             {config.config?.lookback_window && (
-                                                <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-white/[0.06] transition-colors">
-                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Lookback Window</span>
-                                                    <span className="text-sm font-mono font-bold text-white">{config.config.lookback_window} Steps</span>
+                                                <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors">
+                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-gray-500">Lookback Window</span>
+                                                    <span className="text-sm font-mono font-bold text-slate-900 dark:text-white">{config.config.lookback_window} Steps</span>
                                                 </div>
                                             )}
                                         </div>
@@ -883,17 +905,17 @@ const ModelDetailsModal: React.FC<{
                                 <div className="space-y-6">
                                     {/* OHLCV */}
                                     {config.config?.indicators && config.config.indicators.length > 0 && (
-                                        <div className="bg-black/20 border border-cyan-500/10 rounded-2xl p-5 shadow-inner relative overflow-hidden">
+                                        <div className="bg-slate-50 dark:bg-black/20 border border-cyan-500/15 dark:border-cyan-500/10 rounded-2xl p-5 shadow-inner relative overflow-hidden">
                                             <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.5)]"></div>
-                                            <h3 className="text-sm font-bold text-cyan-400 mb-4 flex items-center gap-2">
+                                            <h3 className="text-sm font-bold text-cyan-600 dark:text-cyan-400 mb-4 flex items-center gap-2">
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
                                                 Technical Indicators (OHLCV)
                                             </h3>
                                             <div className="flex flex-wrap gap-2">
                                                 {config.config.indicators.map((ind: string) => (
-                                                    <div key={ind} className="px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl flex items-center gap-2 hover:bg-cyan-500/20 hover:border-cyan-400/50 transition-colors shadow-[0_0_10px_rgba(6,182,212,0.1)]">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_5px_rgba(6,182,212,0.8)]"></span>
-                                                        <span className="text-xs font-mono font-bold text-cyan-100">{ind}</span>
+                                                    <div key={ind} className="px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl flex items-center gap-2 hover:bg-cyan-500/20 hover:border-cyan-400/50 transition-colors shadow-sm dark:shadow-[0_0_10px_rgba(6,182,212,0.1)]">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 dark:bg-cyan-400 shadow-[0_0_5px_rgba(6,182,212,0.8)]"></span>
+                                                        <span className="text-xs font-mono font-bold text-cyan-800 dark:text-cyan-100">{ind}</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -902,9 +924,9 @@ const ModelDetailsModal: React.FC<{
 
                                     {/* Tick & Volume Features */}
                                     {config.config?.trade_features && config.config.trade_features.length > 0 && (
-                                        <div className="bg-black/20 border border-amber-500/10 rounded-2xl p-5 shadow-inner relative overflow-hidden">
+                                        <div className="bg-slate-50 dark:bg-black/20 border border-amber-500/15 dark:border-amber-500/10 rounded-2xl p-5 shadow-inner relative overflow-hidden">
                                             <div className="absolute top-0 left-0 w-1 h-full bg-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.5)]"></div>
-                                            <h3 className="text-sm font-bold text-amber-400 mb-4 flex items-center gap-2">
+                                            <h3 className="text-sm font-bold text-amber-600 dark:text-amber-400 mb-4 flex items-center gap-2">
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
                                                 Tick &amp; Volume Flow
                                             </h3>
@@ -922,9 +944,9 @@ const ModelDetailsModal: React.FC<{
                                                         rolling_cvd_20: 'Rolling CVD (20)',
                                                     };
                                                     return (
-                                                        <div key={feat} className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2 hover:bg-amber-500/20 hover:border-amber-400/50 transition-colors shadow-[0_0_10px_rgba(245,158,11,0.1)]">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_5px_rgba(245,158,11,0.8)]"></span>
-                                                            <span className="text-xs font-mono font-bold text-amber-100">{labelMap[feat] || feat}</span>
+                                                        <div key={feat} className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2 hover:bg-amber-500/20 hover:border-amber-400/50 transition-colors shadow-sm dark:shadow-[0_0_10px_rgba(245,158,11,0.1)]">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 shadow-[0_0_5px_rgba(245,158,11,0.8)]"></span>
+                                                            <span className="text-xs font-mono font-bold text-amber-800 dark:text-amber-100">{labelMap[feat] || feat}</span>
                                                         </div>
                                                     );
                                                 })}
@@ -934,17 +956,17 @@ const ModelDetailsModal: React.FC<{
 
                                     {/* Orderbook Features */}
                                     {config.config?.l2_features && config.config.l2_features.length > 0 && (
-                                        <div className="bg-black/20 border border-emerald-500/10 rounded-2xl p-5 shadow-inner relative overflow-hidden">
+                                        <div className="bg-slate-50 dark:bg-black/20 border border-emerald-500/15 dark:border-emerald-500/10 rounded-2xl p-5 shadow-inner relative overflow-hidden">
                                             <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
-                                            <h3 className="text-sm font-bold text-emerald-400 mb-4 flex items-center gap-2">
+                                            <h3 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mb-4 flex items-center gap-2">
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
                                                 Orderbook Imbalance (L2)
                                             </h3>
                                             <div className="flex flex-wrap gap-2">
                                                 {config.config.l2_features.map((feat: string) => (
-                                                    <div key={feat} className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2 hover:bg-emerald-500/20 hover:border-emerald-400/50 transition-colors shadow-[0_0_10px_rgba(16,185,129,0.1)]">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_rgba(16,185,129,0.8)]"></span>
-                                                        <span className="text-xs font-mono font-bold text-emerald-100">{feat}</span>
+                                                    <div key={feat} className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2 hover:bg-emerald-500/20 hover:border-emerald-400/50 transition-colors shadow-sm dark:shadow-[0_0_10px_rgba(16,185,129,0.1)]">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 shadow-[0_0_5px_rgba(16,185,129,0.8)]"></span>
+                                                        <span className="text-xs font-mono font-bold text-emerald-800 dark:text-emerald-100">{feat}</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -953,17 +975,17 @@ const ModelDetailsModal: React.FC<{
 
                                     {/* PLP Features */}
                                     {config.config?.plp_features && config.config.plp_features.length > 0 && (
-                                        <div className="bg-black/20 border border-purple-500/10 rounded-2xl p-5 shadow-inner relative overflow-hidden">
+                                        <div className="bg-slate-50 dark:bg-black/20 border border-purple-500/15 dark:border-purple-500/10 rounded-2xl p-5 shadow-inner relative overflow-hidden">
                                             <div className="absolute top-0 left-0 w-1 h-full bg-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.5)]"></div>
-                                            <h3 className="text-sm font-bold text-purple-400 mb-4 flex items-center gap-2">
+                                            <h3 className="text-sm font-bold text-purple-600 dark:text-purple-400 mb-4 flex items-center gap-2">
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
                                                 Predatory Liquidity Pipeline (PLP)
                                             </h3>
                                             <div className="flex flex-wrap gap-2">
                                                 {config.config.plp_features.map((feat: string) => (
-                                                    <div key={feat} className="px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center gap-2 hover:bg-purple-500/20 hover:border-purple-400/50 transition-colors shadow-[0_0_10px_rgba(168,85,247,0.1)]">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_5px_rgba(168,85,247,0.8)]"></span>
-                                                        <span className="text-xs font-mono font-bold text-purple-100">{feat}</span>
+                                                    <div key={feat} className="px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center gap-2 hover:bg-purple-500/20 hover:border-purple-400/50 transition-colors shadow-sm dark:shadow-[0_0_10px_rgba(168,85,247,0.1)]">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500 dark:bg-purple-400 shadow-[0_0_5px_rgba(168,85,247,0.8)]"></span>
+                                                        <span className="text-xs font-mono font-bold text-purple-800 dark:text-purple-100">{feat}</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -974,20 +996,20 @@ const ModelDetailsModal: React.FC<{
                                         <div className="space-y-4">
                                             {/* If from metadata JSON, show raw training metrics as key-value grid */}
                                             {config._source === 'metadata_json' && config.config && Object.keys(config.config).filter(k => !['indicators', 'l2_features', 'trade_features', 'plp_features', '_raw_metadata'].includes(k) && config.config[k] !== null && config.config[k] !== undefined && typeof config.config[k] !== 'object').length > 0 ? (
-                                                <div className="bg-black/20 border border-violet-500/20 rounded-2xl p-5 shadow-inner relative overflow-hidden">
+                                                <div className="bg-slate-50 dark:bg-black/20 border border-violet-500/20 rounded-2xl p-5 shadow-inner relative overflow-hidden">
                                                     <div className="absolute top-0 left-0 w-1 h-full bg-violet-500/50 shadow-[0_0_10px_rgba(139,92,246,0.5)]"></div>
-                                                    <h3 className="text-sm font-bold text-violet-400 mb-4 flex items-center gap-2">
+                                                    <h3 className="text-sm font-bold text-violet-600 dark:text-violet-400 mb-4 flex items-center gap-2">
                                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                                                         Training Metrics
-                                                        <span className="ml-auto text-[9px] bg-violet-500/20 border border-violet-500/30 text-violet-400 px-2 py-0.5 rounded-full font-bold tracking-wider uppercase">from metadata.json</span>
+                                                        <span className="ml-auto text-[9px] bg-violet-500/15 dark:bg-violet-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-full font-bold tracking-wider uppercase">from metadata.json</span>
                                                     </h3>
                                                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                                         {Object.entries(config.config)
                                                             .filter(([k, v]) => !['indicators', 'l2_features', 'trade_features', 'plp_features', '_raw_metadata'].includes(k) && v !== null && v !== undefined && typeof v !== 'object')
                                                             .map(([key, value]) => (
-                                                                <div key={key} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-white/[0.06] transition-colors">
-                                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">{key.replace(/_/g, ' ')}</span>
-                                                                    <span className="text-sm font-mono font-bold text-white">
+                                                                <div key={key} className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] rounded-xl p-3 flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors">
+                                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-gray-500">{key.replace(/_/g, ' ')}</span>
+                                                                    <span className="text-sm font-mono font-bold text-slate-900 dark:text-white">
                                                                         {typeof value === 'number'
                                                                             ? (value > 0 && value < 1 ? `${(value * 100).toFixed(2)}%` : value.toLocaleString())
                                                                             : String(value)
@@ -998,10 +1020,10 @@ const ModelDetailsModal: React.FC<{
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <div className="flex flex-col items-center justify-center py-10 text-center border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
-                                                    <svg className="w-10 h-10 text-gray-600 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                                                    <p className="text-sm font-bold text-gray-400">No Feature Data Available</p>
-                                                    <p className="text-xs text-gray-500 mt-1 max-w-sm">This model may have been trained without specific feature tracking or was manually uploaded.</p>
+                                                <div className="flex flex-col items-center justify-center py-10 text-center border border-dashed border-slate-300 dark:border-white/10 rounded-2xl bg-slate-50 dark:bg-white/[0.02]">
+                                                    <svg className="w-10 h-10 text-slate-400 dark:text-gray-600 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                                                    <p className="text-sm font-bold text-slate-600 dark:text-gray-400">No Feature Data Available</p>
+                                                    <p className="text-xs text-slate-500 dark:text-gray-500 mt-1 max-w-sm">This model may have been trained without specific feature tracking or was manually uploaded.</p>
                                                 </div>
                                             )}
                                         </div>
@@ -1014,8 +1036,8 @@ const ModelDetailsModal: React.FC<{
                                 <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mb-4">
                                     <svg className="w-8 h-8 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                                 </div>
-                                <h3 className="text-lg font-bold text-white mb-1">Configuration Missing</h3>
-                                <p className="text-sm text-gray-400 max-w-md">The configuration details for this model could not be loaded. They might have been deleted or the file is corrupted.</p>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Configuration Missing</h3>
+                                <p className="text-sm text-slate-500 dark:text-gray-400 max-w-md">The configuration details for this model could not be loaded. They might have been deleted or the file is corrupted.</p>
                             </div>
                         )
                     ) : (
@@ -1037,6 +1059,8 @@ const ModelCard: React.FC<{
     onDownloadDataset: (modelId: string, modelName: string) => void;
     animationDelay: number;
 }> = ({ model, onDelete, onUploadVersion, onSetActiveVersion, onRetrain, onViewDetails, onDownloadDataset, animationDelay }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
     const [isExpanded, setIsExpanded] = useState(false);
 
     const [signalResult, setSignalResult] = useState<SignalResult | null>(null);
@@ -1146,8 +1170,8 @@ const ModelCard: React.FC<{
             className="group relative rounded-3xl overflow-hidden transition-all duration-500 animate-fade-in-slide-up"
             style={{
                 animationDelay: `${animationDelay}ms`,
-                background: 'linear-gradient(145deg, rgba(15,20,30,0.6) 0%, rgba(5,10,15,0.8) 100%)',
-                boxShadow: '0 0 0 1px rgba(255,255,255,0.05), 0 20px 40px -10px rgba(0,0,0,0.5)',
+                background: isDark ? 'linear-gradient(145deg, rgba(15,20,30,0.6) 0%, rgba(5,10,15,0.8) 100%)' : 'linear-gradient(145deg, rgba(255,255,255,0.96) 0%, rgba(248,250,252,0.96) 100%)',
+                boxShadow: isDark ? '0 0 0 1px rgba(255,255,255,0.05), 0 20px 40px -10px rgba(0,0,0,0.5)' : '0 0 0 1px rgba(15,23,42,0.08), 0 15px 35px -10px rgba(15,23,42,0.1)',
                 backdropFilter: 'blur(16px)'
             }}
         >
@@ -1169,20 +1193,20 @@ const ModelCard: React.FC<{
                 {/* Signal Settings & Progress Modal */}
                 {showSettingsModal && ReactDOM.createPortal(
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-                        <div className="bg-slate-900 border border-slate-700/50 rounded-2xl w-full max-w-md p-6 shadow-2xl relative overflow-hidden">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/50 rounded-2xl w-full max-w-md p-6 shadow-2xl relative overflow-hidden">
                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-orange-500"></div>
 
-                            <h3 className="text-xl font-bold text-white mb-2 tracking-tight flex items-center gap-2">
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2 tracking-tight flex items-center gap-2">
                                 <svg className="w-5 h-5 text-amber-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" /></svg>
                                 Generate Signal
                             </h3>
-                            <p className="text-sm text-slate-400 mb-6">
+                            <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
                                 Configure the analysis window for {model.name}.
                             </p>
 
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Number of Rows (Sequence Length)</label>
+                                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Number of Rows (Sequence Length)</label>
                                     <input
                                         type="number"
                                         min="1"
@@ -1190,20 +1214,20 @@ const ModelCard: React.FC<{
                                         value={sequenceLength}
                                         onChange={(e) => setSequenceLength(parseInt(e.target.value) || 1)}
                                         disabled={isAnalyzing}
-                                        className="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 transition-colors"
+                                        className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 transition-colors"
                                     />
-                                    <p className="text-xs text-slate-500 mt-2">
+                                    <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
                                         For Deep Learning (LSTM/CNN), 60-100 is recommended. For Tree-based, 1 is usually enough unless rolling features were used.
                                     </p>
                                 </div>
 
                                 {isAnalyzing && (
                                     <div className="mt-6">
-                                        <div className="flex justify-between text-xs text-slate-400 mb-1.5 font-mono">
+                                        <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400 mb-1.5 font-mono">
                                             <span>Analyzing Data...</span>
                                             <span>{Math.round(signalProgress)}%</span>
                                         </div>
-                                        <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                        <div className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                                             <div
                                                 className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-300 ease-out"
                                                 style={{ width: `${signalProgress}%` }}
@@ -1234,7 +1258,7 @@ const ModelCard: React.FC<{
                                 <button
                                     onClick={() => setShowSettingsModal(false)}
                                     disabled={isAnalyzing}
-                                    className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors disabled:opacity-50"
+                                    className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-transparent hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors disabled:opacity-50"
                                 >
                                     Cancel
                                 </button>
@@ -1259,17 +1283,17 @@ const ModelCard: React.FC<{
                 {/* Header */}
                 <div className="flex justify-between items-start mb-6">
                     <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500/10 to-purple-600/10 border border-white/5 flex items-center justify-center text-white shadow-[inset_0_0_20px_rgba(255,255,255,0.02)] group-hover:border-cyan-500/30 group-hover:shadow-[inset_0_0_20px_rgba(6,182,212,0.1)] transition-all duration-500">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500/10 to-purple-600/10 border border-slate-200 dark:border-white/5 flex items-center justify-center text-slate-900 dark:text-white shadow-[inset_0_0_20px_rgba(255,255,255,0.02)] group-hover:border-cyan-500/30 group-hover:shadow-[inset_0_0_20px_rgba(6,182,212,0.1)] transition-all duration-500">
                             {modelIcons[model.modelType as keyof typeof modelIcons] || (isRL ? <OtherModelIcon className="w-8 h-8 drop-shadow-[0_0_8px_rgba(234,179,8,0.8)]" /> : <OtherModelIcon className="w-8 h-8 drop-shadow-[0_0_8px_rgba(148,163,184,0.8)]" />)}
                         </div>
                         <div>
-                            <h3 className="text-xl font-bold text-white group-hover:text-cyan-300 transition-colors tracking-tight">{model.name}</h3>
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors tracking-tight">{model.name}</h3>
                             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                <span className="px-2.5 py-1 bg-white/5 rounded-md text-[10px] font-bold uppercase tracking-wider text-gray-400 border border-white/5 shadow-sm">{model.modelType}</span>
-                                <span className="px-2.5 py-1 bg-cyan-500/10 rounded-md text-[10px] font-mono font-bold text-cyan-400 border border-cyan-500/20 shadow-sm">v{activeVersion?.version.toFixed(1)}</span>
+                                <span className="px-2.5 py-1 bg-slate-100 dark:bg-white/5 rounded-md text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-gray-400 border border-slate-200 dark:border-white/5 shadow-sm">{model.modelType}</span>
+                                <span className="px-2.5 py-1 bg-cyan-500/10 rounded-md text-[10px] font-mono font-bold text-cyan-700 dark:text-cyan-400 border border-cyan-500/20 shadow-sm">v{activeVersion?.version.toFixed(1)}</span>
                                 <StatusPill status={activeVersion?.status || 'Error'} />
                                 {activeVersion?.explainability?.prediction_target && (
-                                    <span className="px-2.5 py-1 bg-amber-500/10 rounded-md text-[10px] font-bold uppercase tracking-wider text-amber-400 border border-amber-500/20 shadow-sm">
+                                    <span className="px-2.5 py-1 bg-amber-500/10 rounded-md text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 border border-amber-500/20 shadow-sm">
                                         {activeVersion.explainability.prediction_target}
                                     </span>
                                 )}
@@ -1278,7 +1302,7 @@ const ModelCard: React.FC<{
                     </div>
                     <button
                         onClick={(e) => { e.stopPropagation(); onDelete(model.id); }}
-                        className="w-10 h-10 rounded-full bg-white/5 hover:bg-rose-500/20 flex items-center justify-center text-gray-500 hover:text-rose-400 transition-all border border-transparent hover:border-rose-500/30 group/btn"
+                        className="w-10 h-10 rounded-full bg-slate-100 dark:bg-white/5 hover:bg-rose-500/15 dark:hover:bg-rose-500/20 flex items-center justify-center text-slate-400 dark:text-gray-500 hover:text-rose-500 dark:hover:text-rose-400 transition-all border border-transparent hover:border-rose-500/30 group/btn"
                         title="Delete Model"
                     >
                         <svg className="w-5 h-5 group-hover/btn:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -1287,20 +1311,20 @@ const ModelCard: React.FC<{
 
                 {/* Metrics Grid */}
                 <div className="grid grid-cols-3 gap-3 mb-6">
-                    <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3 flex flex-col items-center justify-center relative overflow-hidden group/metric">
+                    <div className="bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.05] rounded-xl p-3 flex flex-col items-center justify-center relative overflow-hidden group/metric">
                         <div className="absolute inset-0 bg-emerald-500/5 opacity-0 group-hover/metric:opacity-100 transition-opacity"></div>
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-1 z-10">{accLabel}</span>
-                        <span className="text-base font-mono font-bold text-emerald-400 drop-shadow-[0_0_5px_rgba(16,185,129,0.4)] z-10">{accuracyDisplay}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-gray-500 mb-1 z-10">{accLabel}</span>
+                        <span className="text-base font-mono font-bold text-emerald-600 dark:text-emerald-400 dark:drop-shadow-[0_0_5px_rgba(16,185,129,0.4)] z-10">{accuracyDisplay}</span>
                     </div>
-                    <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3 flex flex-col items-center justify-center relative overflow-hidden group/metric">
+                    <div className="bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.05] rounded-xl p-3 flex flex-col items-center justify-center relative overflow-hidden group/metric">
                         <div className="absolute inset-0 bg-blue-500/5 opacity-0 group-hover/metric:opacity-100 transition-opacity"></div>
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-1 z-10">{f1Label}</span>
-                        <span className="text-base font-mono font-bold text-blue-400 drop-shadow-[0_0_5px_rgba(59,130,246,0.4)] z-10">{f1Display}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-gray-500 mb-1 z-10">{f1Label}</span>
+                        <span className="text-base font-mono font-bold text-blue-600 dark:text-blue-400 dark:drop-shadow-[0_0_5px_rgba(59,130,246,0.4)] z-10">{f1Display}</span>
                     </div>
-                    <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3 flex flex-col items-center justify-center relative overflow-hidden group/metric">
+                    <div className="bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.05] rounded-xl p-3 flex flex-col items-center justify-center relative overflow-hidden group/metric">
                         <div className="absolute inset-0 bg-purple-500/5 opacity-0 group-hover/metric:opacity-100 transition-opacity"></div>
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-1 z-10">Latency</span>
-                        <span className="text-base font-mono font-bold text-purple-400 drop-shadow-[0_0_5px_rgba(168,85,247,0.4)] z-10">{latencyDisplay}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-gray-500 mb-1 z-10">Latency</span>
+                        <span className="text-base font-mono font-bold text-purple-600 dark:text-purple-400 dark:drop-shadow-[0_0_5px_rgba(168,85,247,0.4)] z-10">{latencyDisplay}</span>
                     </div>
                 </div>
 
@@ -1309,7 +1333,7 @@ const ModelCard: React.FC<{
                     <div className="flex flex-wrap gap-2 justify-center w-full">
                         <button
                             onClick={(e) => { e.stopPropagation(); onViewDetails(model.id, model.name); }}
-                            className="relative px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 hover:border-indigo-400/60 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(99,102,241,0.15)] hover:shadow-[0_0_25px_rgba(99,102,241,0.35)] flex items-center gap-1.5 group/details overflow-hidden backdrop-blur-md"
+                            className="relative px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 hover:border-indigo-400/60 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] hover:shadow-[0_0_25px_rgba(99,102,241,0.35)] flex items-center gap-1.5 group/details overflow-hidden backdrop-blur-md"
                         >
                             <div className="absolute inset-0 bg-gradient-to-r from-indigo-400/0 via-indigo-400/10 to-indigo-400/0 translate-x-[-100%] group-hover/details:translate-x-[100%] transition-transform duration-1000"></div>
                             <svg className="w-3 h-3 group-hover/details:scale-110 transition-transform drop-shadow-[0_0_5px_rgba(99,102,241,0.8)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -1318,7 +1342,7 @@ const ModelCard: React.FC<{
 
                         <button
                             onClick={() => setIsExpanded(!isExpanded)}
-                            className={`relative px-3 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:border-purple-400/60 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:shadow-[0_0_25px_rgba(168,85,247,0.35)] flex items-center gap-1.5 group/history overflow-hidden backdrop-blur-md ${isExpanded ? 'border-purple-500/50 text-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.3)] bg-purple-500/20' : ''}`}
+                            className={`relative px-3 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 hover:border-purple-400/60 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm dark:shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:shadow-[0_0_25px_rgba(168,85,247,0.35)] flex items-center gap-1.5 group/history overflow-hidden backdrop-blur-md ${isExpanded ? 'border-purple-500/50 text-purple-700 dark:text-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.3)] bg-purple-500/20' : ''}`}
                         >
                             <div className="absolute inset-0 bg-gradient-to-r from-purple-400/0 via-purple-400/10 to-purple-400/0 translate-x-[-100%] group-hover/history:translate-x-[100%] transition-transform duration-1000"></div>
                             <svg className={`w-3 h-3 transition-transform duration-300 drop-shadow-[0_0_5px_rgba(168,85,247,0.8)] ${isExpanded ? 'rotate-180 scale-110' : 'group-hover/history:scale-110'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
@@ -1328,7 +1352,7 @@ const ModelCard: React.FC<{
                         <button
                             onClick={handleOpenSettings}
                             disabled={isAnalyzing || activeVersion?.status !== 'Ready'}
-                            className="relative px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:border-amber-400/60 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(245,158,11,0.15)] hover:shadow-[0_0_25px_rgba(245,158,11,0.35)] flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed group/signal overflow-hidden backdrop-blur-md"
+                            className="relative px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 hover:border-amber-400/60 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm dark:shadow-[0_0_15px_rgba(245,158,11,0.15)] hover:shadow-[0_0_25px_rgba(245,158,11,0.35)] flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed group/signal overflow-hidden backdrop-blur-md"
                         >
                             <div className="absolute inset-0 bg-gradient-to-r from-amber-400/0 via-amber-400/10 to-amber-400/0 translate-x-[-100%] group-hover/signal:translate-x-[100%] transition-transform duration-1000"></div>
                             {isAnalyzing ? (
@@ -1341,7 +1365,7 @@ const ModelCard: React.FC<{
 
                         <button
                             onClick={(e) => { e.stopPropagation(); onRetrain(model.id); }}
-                            className="relative px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:border-cyan-400/60 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(6,182,212,0.15)] hover:shadow-[0_0_25px_rgba(6,182,212,0.35)] flex items-center gap-1.5 group/retrain overflow-hidden backdrop-blur-md"
+                            className="relative px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 border border-cyan-500/30 hover:border-cyan-400/60 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm dark:shadow-[0_0_15px_rgba(6,182,212,0.15)] hover:shadow-[0_0_25px_rgba(6,182,212,0.35)] flex items-center gap-1.5 group/retrain overflow-hidden backdrop-blur-md"
                         >
                             <div className="absolute inset-0 bg-gradient-to-r from-cyan-400/0 via-cyan-400/10 to-cyan-400/0 translate-x-[-100%] group-hover/retrain:translate-x-[100%] transition-transform duration-1000"></div>
                             <svg className="w-3 h-3 opacity-80 group-hover/retrain:rotate-180 transition-transform duration-500 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -1350,7 +1374,7 @@ const ModelCard: React.FC<{
 
                         <button
                             onClick={(e) => { e.stopPropagation(); onDownloadDataset(model.id, model.name); }}
-                            className="relative px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:border-emerald-400/60 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:shadow-[0_0_25px_rgba(16,185,129,0.35)] flex items-center gap-1.5 group/dataset overflow-hidden backdrop-blur-md"
+                            className="relative px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:border-emerald-400/60 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm dark:shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:shadow-[0_0_25px_rgba(16,185,129,0.35)] flex items-center gap-1.5 group/dataset overflow-hidden backdrop-blur-md"
                         >
                             <div className="absolute inset-0 bg-gradient-to-r from-emerald-400/0 via-emerald-400/10 to-emerald-400/0 translate-x-[-100%] group-hover/dataset:translate-x-[100%] transition-transform duration-1000"></div>
                             <svg className="w-3 h-3 opacity-80 group-hover/dataset:scale-110 transition-transform duration-500 drop-shadow-[0_0_5px_rgba(16,185,129,0.8)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
@@ -1364,21 +1388,21 @@ const ModelCard: React.FC<{
             {/* Expandable History Panel */}
             <div className={`transition-all duration-500 ease-in-out overflow-hidden relative ${isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
                 {/* Divider Line */}
-                <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+                <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-slate-300 dark:via-white/10 to-transparent"></div>
 
-                <div className="p-6 pt-4 space-y-3 bg-black/40 overflow-y-auto max-h-80 custom-scrollbar inset-shadow-sm">
+                <div className="p-6 pt-4 space-y-3 bg-slate-50 dark:bg-black/40 overflow-y-auto max-h-80 custom-scrollbar inset-shadow-sm">
                     {model.versions.map(version => (
-                        <div key={version.id} className="group/row relative flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.05] hover:border-cyan-500/30 transition-all overflow-hidden">
+                        <div key={version.id} className="group/row relative flex items-center justify-between p-4 rounded-2xl bg-white dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.05] hover:bg-cyan-50/40 dark:hover:bg-white/[0.05] hover:border-cyan-500/30 transition-all overflow-hidden">
                             <div className="flex items-center gap-4 relative z-10">
-                                <div className={`w-2 h-10 rounded-full ${version.id === model.activeVersionId ? 'bg-gradient-to-b from-cyan-400 to-blue-500 shadow-[0_0_10px_rgba(6,182,212,0.5)]' : 'bg-gray-700'}`}></div>
+                                <div className={`w-2 h-10 rounded-full ${version.id === model.activeVersionId ? 'bg-gradient-to-b from-cyan-400 to-blue-500 shadow-[0_0_10px_rgba(6,182,212,0.5)]' : 'bg-slate-300 dark:bg-gray-700'}`}></div>
                                 <div>
                                     <div className="flex items-center gap-3 mb-1">
-                                        <span className={`font-mono font-bold text-sm ${version.id === model.activeVersionId ? 'text-white' : 'text-gray-400'}`}>v{version.version.toFixed(1)}</span>
+                                        <span className={`font-mono font-bold text-sm ${version.id === model.activeVersionId ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-gray-400'}`}>v{version.version.toFixed(1)}</span>
                                         {version.id === model.activeVersionId && (
-                                            <span className="text-[9px] font-black tracking-widest bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded-md border border-cyan-500/30">ACTIVE</span>
+                                            <span className="text-[9px] font-black tracking-widest bg-cyan-500/15 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 px-2 py-0.5 rounded-md border border-cyan-500/30">ACTIVE</span>
                                         )}
                                     </div>
-                                    <p className="text-xs text-gray-500 truncate w-48 font-medium">{version.description}</p>
+                                    <p className="text-xs text-slate-500 dark:text-gray-500 truncate w-48 font-medium">{version.description}</p>
                                 </div>
                             </div>
 
@@ -1386,12 +1410,12 @@ const ModelCard: React.FC<{
                                 {version.status === 'Ready' && version.id !== model.activeVersionId ? (
                                     <button
                                         onClick={() => onSetActiveVersion(model.id, version.id)}
-                                        className="px-4 py-1.5 bg-white/5 hover:bg-cyan-500/20 text-gray-400 hover:text-cyan-300 border border-white/10 hover:border-cyan-500/50 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
+                                        className="px-4 py-1.5 bg-slate-100 dark:bg-white/5 hover:bg-cyan-500/20 text-slate-600 dark:text-gray-400 hover:text-cyan-700 dark:hover:text-cyan-300 border border-slate-200 dark:border-white/10 hover:border-cyan-500/50 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
                                     >
                                         Activate
                                     </button>
                                 ) : (
-                                    <span className="text-[10px] text-gray-500 font-mono">{new Date(version.uploadDate).toLocaleString()}</span>
+                                    <span className="text-[10px] text-slate-500 dark:text-gray-500 font-mono">{new Date(version.uploadDate).toLocaleString()}</span>
                                 )}
                             </div>
                         </div>
@@ -1399,9 +1423,9 @@ const ModelCard: React.FC<{
 
                     <button
                         onClick={() => onUploadVersion(model)}
-                        className="w-full py-4 mt-2 border border-dashed border-white/10 rounded-2xl text-xs font-bold text-gray-400 hover:text-cyan-300 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all flex items-center justify-center gap-2 group/upload"
+                        className="w-full py-4 mt-2 border border-dashed border-slate-300 dark:border-white/10 rounded-2xl text-xs font-bold text-slate-500 dark:text-gray-400 hover:text-cyan-600 dark:hover:text-cyan-300 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all flex items-center justify-center gap-2 group/upload"
                     >
-                        <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center group-hover/upload:bg-cyan-500/20 transition-colors">
+                        <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center group-hover/upload:bg-cyan-500/20 transition-colors">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                         </div>
                         Upload New Version
@@ -1418,8 +1442,8 @@ const ActiveTrainingJobsSection: React.FC<{ jobs: any[], onCancel: (id: string) 
     if (!jobs || jobs.length === 0) return null;
 
     return (
-        <div className="bg-white/80 dark:bg-[#0A0A0A]/60 backdrop-blur-lg border border-cyan-500/30 p-6 rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.1)] mb-8">
-            <h3 className="text-lg font-black text-cyan-400 uppercase tracking-widest flex items-center gap-2 mb-4">
+        <div className="bg-white/90 dark:bg-[#0A0A0A]/60 backdrop-blur-lg border border-cyan-500/30 p-6 rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.1)] mb-8">
+            <h3 className="text-lg font-black text-cyan-600 dark:text-cyan-400 uppercase tracking-widest flex items-center gap-2 mb-4">
                 <svg className="w-5 h-5 animate-spin-slow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                 Active Celery Training Jobs ({jobs.length})
             </h3>
@@ -1427,28 +1451,28 @@ const ActiveTrainingJobsSection: React.FC<{ jobs: any[], onCancel: (id: string) 
                 {jobs.map(job => {
                     const pct = Math.min(100, Math.max(0, job.progress || 0));
                     return (
-                        <div key={job.id} className="relative bg-black/40 border border-white/10 rounded-xl p-4 overflow-hidden group">
+                        <div key={job.id} className="relative bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-xl p-4 overflow-hidden group">
                             {/* Animated Background Progress */}
                             <div className="absolute inset-0 bg-cyan-500/10 transition-all duration-500 ease-out" style={{ width: `${pct}%` }}></div>
 
                             <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-4">
                                 <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-1">
-                                        <span className="text-sm font-bold text-white">{job.symbol}</span>
-                                        <span className="text-[10px] font-black text-cyan-300 bg-cyan-500/20 px-2 py-0.5 rounded border border-cyan-500/30 uppercase">
+                                        <span className="text-sm font-bold text-slate-900 dark:text-white">{job.symbol}</span>
+                                        <span className="text-[10px] font-black text-cyan-700 dark:text-cyan-300 bg-cyan-500/15 dark:bg-cyan-500/20 px-2 py-0.5 rounded border border-cyan-500/30 uppercase">
                                             {job.algorithm}
                                         </span>
-                                        <span className="text-[10px] font-mono text-gray-500">{job.id}</span>
+                                        <span className="text-[10px] font-mono text-slate-500 dark:text-gray-500">{job.id}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                                            <div className="h-full bg-cyan-400 rounded-full relative" style={{ width: `${pct}%` }}>
+                                        <div className="flex-1 h-1.5 bg-slate-200 dark:bg-gray-800 rounded-full overflow-hidden">
+                                            <div className="h-full bg-cyan-500 dark:bg-cyan-400 rounded-full relative" style={{ width: `${pct}%` }}>
                                                 <div className="absolute top-0 right-0 bottom-0 left-0 bg-gradient-to-r from-transparent via-white/40 to-transparent w-full animate-shimmer"></div>
                                             </div>
                                         </div>
-                                        <span className="text-xs font-mono font-bold text-cyan-400 w-10 text-right">{pct.toFixed(0)}%</span>
+                                        <span className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400 w-10 text-right">{pct.toFixed(0)}%</span>
                                     </div>
-                                    <p className="text-[10px] text-gray-400 mt-2 font-mono truncate max-w-xl">
+                                    <p className="text-[10px] text-slate-500 dark:text-gray-400 mt-2 font-mono truncate max-w-xl">
                                         {job.logs && job.logs.length > 0 ? job.logs[job.logs.length - 1] : 'Initializing...'}
                                     </p>
                                 </div>

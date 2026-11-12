@@ -2,6 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, BrainCircuit, BarChart2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { useTheme } from '@/context/ThemeContext';
 
 interface ShapDataPoint {
     feature: string;
@@ -16,6 +17,9 @@ interface ShapValueModalProps {
 }
 
 export const ShapValueModal: React.FC<ShapValueModalProps> = ({ isOpen, onClose, data, method }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
     if (!isOpen) return null;
 
     return (
@@ -32,19 +36,19 @@ export const ShapValueModal: React.FC<ShapValueModalProps> = ({ isOpen, onClose,
                     initial={{ scale: 0.95, opacity: 0, y: 20 }}
                     animate={{ scale: 1, opacity: 1, y: 0 }}
                     exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                    className="relative w-full max-w-4xl bg-[#0B1121] border border-cyan-500/30 rounded-2xl shadow-[0_0_40px_rgba(6,182,212,0.15)] overflow-hidden flex flex-col max-h-[90vh]"
+                    className="relative w-full max-w-4xl bg-white dark:bg-[#0B1121] border border-cyan-200 dark:border-cyan-500/30 rounded-2xl shadow-2xl dark:shadow-[0_0_40px_rgba(6,182,212,0.15)] overflow-hidden flex flex-col max-h-[90vh]"
                 >
                     {/* Header */}
-                    <div className="flex items-center justify-between p-5 border-b border-white/5 bg-white/[0.02]">
+                    <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02]">
                         <div className="flex items-center gap-3">
-                            <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400">
+                            <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
                                 <BrainCircuit className="w-6 h-6" />
                             </div>
                             <div>
-                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                                     God-Tier AutoML Analysis
                                 </h3>
-                                <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5">
                                     <BarChart2 className="w-3.5 h-3.5" />
                                     Powered by {method || 'XGBoost + SHAP'}
                                 </p>
@@ -52,7 +56,7 @@ export const ShapValueModal: React.FC<ShapValueModalProps> = ({ isOpen, onClose,
                         </div>
                         <button 
                             onClick={onClose}
-                            className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                            className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg transition-colors"
                         >
                             <X className="w-5 h-5" />
                         </button>
@@ -60,7 +64,7 @@ export const ShapValueModal: React.FC<ShapValueModalProps> = ({ isOpen, onClose,
 
                     {/* Chart Container */}
                     <div className="p-6 flex-1 overflow-hidden min-h-[500px]">
-                        <div className="h-full w-full bg-black/20 rounded-xl border border-white/5 p-4 pt-6" style={{ minHeight: '500px' }}>
+                        <div className="h-full w-full bg-slate-50 dark:bg-black/20 rounded-xl border border-slate-200 dark:border-white/5 p-4 pt-6" style={{ minHeight: '500px' }}>
                             <ResponsiveContainer width="100%" height={450}>
                                 <BarChart
                                     data={data}
@@ -73,18 +77,18 @@ export const ShapValueModal: React.FC<ShapValueModalProps> = ({ isOpen, onClose,
                                         dataKey="feature" 
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 500 }}
+                                        tick={{ fill: isDark ? '#94a3b8' : '#475569', fontSize: 12, fontWeight: 500 }}
                                         width={140}
                                     />
                                     <Tooltip
-                                        cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                                        cursor={{ fill: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.05)' }}
                                         content={({ active, payload }) => {
                                             if (active && payload && payload.length) {
                                                 return (
-                                                    <div className="bg-[#0f172a] border border-cyan-500/30 p-3 rounded-xl shadow-xl">
-                                                        <p className="text-cyan-400 font-bold mb-1">{payload[0].payload.feature}</p>
-                                                        <p className="text-slate-300 text-sm">
-                                                            Impact Score: <span className="text-white font-mono">{Number(payload[0].value).toFixed(4)}</span>
+                                                    <div className="bg-white dark:bg-[#0f172a] border border-cyan-200 dark:border-cyan-500/30 p-3 rounded-xl shadow-xl">
+                                                        <p className="text-cyan-600 dark:text-cyan-400 font-bold mb-1">{payload[0].payload.feature}</p>
+                                                        <p className="text-slate-600 dark:text-slate-300 text-sm">
+                                                            Impact Score: <span className="text-slate-900 dark:text-white font-mono">{Number(payload[0].value).toFixed(4)}</span>
                                                         </p>
                                                     </div>
                                                 );
@@ -111,7 +115,7 @@ export const ShapValueModal: React.FC<ShapValueModalProps> = ({ isOpen, onClose,
                     </div>
 
                     {/* Footer */}
-                    <div className="p-4 border-t border-white/5 bg-white/[0.01] flex justify-between items-center">
+                    <div className="p-4 border-t border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/[0.01] flex justify-between items-center">
                         <p className="text-xs text-slate-500">
                             * Features with higher scores have a more significant impact on predicting future price movements.
                         </p>

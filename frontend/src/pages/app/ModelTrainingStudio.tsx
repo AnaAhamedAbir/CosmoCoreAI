@@ -26,13 +26,13 @@ const ModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = ({ ret
     return (
         <div className="h-full flex flex-col relative w-full overflow-visible">
             {/* Global Market Mode Toggle */}
-            <div className="absolute -top-6 laptop:top-0 right-6 laptop:right-3 z-[100] flex items-center gap-2 bg-[#0a0f1a]/80 backdrop-blur-xl p-1.5 rounded-full border border-white/10 shadow-[0_0_30px_rgba(168,85,247,0.15)] ring-1 ring-white/5">
+            <div className="absolute -top-6 laptop:top-0 right-6 laptop:right-3 z-[100] flex items-center gap-2 bg-white/90 dark:bg-[#0a0f1a]/80 backdrop-blur-xl p-1.5 rounded-full border border-slate-200 dark:border-white/10 shadow-lg dark:shadow-[0_0_30px_rgba(168,85,247,0.15)] ring-1 ring-slate-200/60 dark:ring-white/5">
                 <button
                     onClick={() => setMode('crypto')}
                     className={`relative flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest transition-all duration-500 overflow-hidden group ${
                         mode === 'crypto' 
                         ? 'text-white shadow-[0_0_25px_rgba(168,85,247,0.6)]' 
-                        : 'text-slate-500 hover:text-white hover:bg-white/5'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
                     }`}
                 >
                     {mode === 'crypto' && (
@@ -48,7 +48,7 @@ const ModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = ({ ret
                     className={`relative flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest transition-all duration-500 overflow-hidden group ${
                         mode === 'forex' 
                         ? 'text-white shadow-[0_0_25px_rgba(20,184,166,0.6)]' 
-                        : 'text-slate-500 hover:text-white hover:bg-white/5'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
                     }`}
                 >
                     {mode === 'forex' && (

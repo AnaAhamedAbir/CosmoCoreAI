@@ -12,31 +12,31 @@ const ModernHeatmapContent = (props: any) => {
     if (!width || !height || width < 0 || height < 0) return null;
 
     // Dynamic Styling based on Score
-    let gradient = "from-slate-700/50 to-slate-900/90";
-    let borderColor = "border-slate-600/30";
-    let textColor = "text-slate-200";
-    let scoreColor = "text-slate-400";
+    let gradient = "from-slate-100 to-slate-200 dark:from-slate-700/50 dark:to-slate-900/90";
+    let borderColor = "border-slate-300 dark:border-slate-600/30";
+    let textColor = "text-slate-800 dark:text-slate-200";
+    let scoreColor = "text-slate-600 dark:text-slate-400";
 
     if (score > 0.5) {
-        gradient = "from-emerald-500/30 via-emerald-600/20 to-emerald-900/90";
-        borderColor = "border-emerald-500/50";
-        textColor = "text-emerald-100";
-        scoreColor = "text-emerald-400";
+        gradient = "from-emerald-100 via-emerald-50 to-emerald-200/80 dark:from-emerald-500/30 dark:via-emerald-600/20 dark:to-emerald-900/90";
+        borderColor = "border-emerald-400 dark:border-emerald-500/50";
+        textColor = "text-emerald-950 dark:text-emerald-100";
+        scoreColor = "text-emerald-700 dark:text-emerald-400";
     } else if (score > 0.1) {
-        gradient = "from-teal-500/20 via-teal-600/10 to-slate-900/90";
-        borderColor = "border-teal-500/40";
-        textColor = "text-teal-50";
-        scoreColor = "text-teal-400";
+        gradient = "from-teal-50 via-teal-100/70 to-slate-100 dark:from-teal-500/20 dark:via-teal-600/10 dark:to-slate-900/90";
+        borderColor = "border-teal-400/70 dark:border-teal-500/40";
+        textColor = "text-teal-950 dark:text-teal-50";
+        scoreColor = "text-teal-700 dark:text-teal-400";
     } else if (score < -0.5) {
-        gradient = "from-rose-500/30 via-rose-600/20 to-rose-900/90";
-        borderColor = "border-rose-500/50";
-        textColor = "text-rose-100";
-        scoreColor = "text-rose-400";
+        gradient = "from-rose-100 via-rose-50 to-rose-200/80 dark:from-rose-500/30 dark:via-rose-600/20 dark:to-rose-900/90";
+        borderColor = "border-rose-400 dark:border-rose-500/50";
+        textColor = "text-rose-950 dark:text-rose-100";
+        scoreColor = "text-rose-700 dark:text-rose-400";
     } else if (score < -0.1) {
-        gradient = "from-orange-500/20 via-orange-600/10 to-slate-900/90";
-        borderColor = "border-orange-500/40";
-        textColor = "text-orange-50";
-        scoreColor = "text-orange-400";
+        gradient = "from-orange-50 via-orange-100/70 to-slate-100 dark:from-orange-500/20 dark:via-orange-600/10 dark:to-slate-900/90";
+        borderColor = "border-orange-400/70 dark:border-orange-500/40";
+        textColor = "text-orange-950 dark:text-orange-50";
+        scoreColor = "text-orange-700 dark:text-orange-400";
     }
 
     const showDetail = width > 60 && height > 50;
@@ -45,12 +45,12 @@ const ModernHeatmapContent = (props: any) => {
     return (
         <foreignObject x={x + 2} y={y + 2} width={width - 4} height={height - 4}>
             <div
-                className={`w-full h-full rounded-xl border ${borderColor} bg-gradient-to-br ${gradient} backdrop-blur-md flex flex-col items-center justify-center transition-all duration-300 hover:scale-[0.98] hover:brightness-110 overflow-hidden relative group`}
+                className={`w-full h-full rounded-xl border ${borderColor} bg-gradient-to-br ${gradient} backdrop-blur-md flex flex-col items-center justify-center transition-all duration-300 hover:scale-[0.98] hover:brightness-105 dark:hover:brightness-110 overflow-hidden relative group`}
             >
                 <div className="absolute inset-0 opacity-10 bg-[url('/noise.svg')] mix-blend-overlay"></div>
                 <div className="z-10 flex flex-col items-center text-center p-1">
                     {showMini && (
-                        <span className={`font-black tracking-tighter ${width < 50 ? 'text-[10px]' : 'text-sm'} ${textColor} drop-shadow-md`}>
+                        <span className={`font-black tracking-tighter ${width < 50 ? 'text-[10px]' : 'text-sm'} ${textColor} dark:drop-shadow-md`}>
                             {name}
                         </span>
                     )}
@@ -59,7 +59,7 @@ const ModernHeatmapContent = (props: any) => {
                             <span className={`text-[10px] font-mono mt-0.5 font-bold ${scoreColor}`}>
                                 {score > 0 ? '+' : ''}{score.toFixed(2)}
                             </span>
-                            <span className="text-[8px] opacity-60 text-white mt-1 uppercase tracking-widest scale-75">
+                            <span className="text-[8px] opacity-60 text-slate-600 dark:text-white mt-1 uppercase tracking-widest scale-75">
                                 {(marketCap / 1_000_000_000).toFixed(0)}B
                             </span>
                         </>

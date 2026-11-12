@@ -38,14 +38,14 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = ({
                     <p className="text-xs text-gray-500">Dual-axis analysis of market sentiment and price action.</p>
                 </div>
                 <div className="flex gap-4 text-xs font-mono">
-                    <div className="flex bg-slate-100 dark:bg-[#0A0A0A] rounded-lg p-1 mr-4">
+                    <div className="flex bg-slate-100 dark:bg-[#141414] border border-slate-200 dark:border-white/5 rounded-lg p-1 mr-4">
                         {timeframes.map((tf) => (
                             <button
                                 key={tf.value}
                                 onClick={() => setTimeframe(tf.value)}
                                 className={`px-3 py-1 rounded-md transition-all ${timeframe === tf.value
                                     ? 'bg-white dark:bg-[#0A0A0A] text-brand-primary shadow-sm font-bold'
-                                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                                     }`}
                             >
                                 {tf.label}
@@ -96,7 +96,7 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = ({
                                 content={<ChartTooltip />}
                                 cursor={{ stroke: theme === 'dark' ? '#ffffff' : '#000000', strokeWidth: 1, strokeDasharray: '4 4', opacity: 0.3 }}
                             />
-                            <Brush dataKey="time" height={30} stroke="#6366f1" tickFormatter={() => ''} />
+                            <Brush dataKey="time" height={30} stroke="#6366f1" fill={theme === 'dark' ? '#0A0A0A' : '#F8FAFC'} tickFormatter={() => ''} />
 
                             <Bar yAxisId="vol" dataKey="social_volume" fill="url(#volumeGradient)" barSize={6} radius={[2, 2, 0, 0]} />
                             <Area yAxisId="left" type="monotone" dataKey="score" stroke="#818cf8" strokeWidth={3} fill="url(#sentimentGradient)" filter="url(#neonGlow)" activeDot={{ r: 6, strokeWidth: 0, fill: '#818cf8' }} />

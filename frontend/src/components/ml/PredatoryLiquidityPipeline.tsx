@@ -72,19 +72,19 @@ const PredatoryLiquidityPipeline: React.FC<PredatoryLiquidityPipelineProps> = ({
     };
 
     return (
-        <div className="mt-6 p-1 rounded-3xl bg-gradient-to-b from-rose-500/20 to-purple-900/20 shadow-[0_0_30px_rgba(225,29,72,0.15)] relative overflow-hidden">
+        <div className="mt-6 p-1 rounded-3xl bg-gradient-to-b from-rose-500/20 to-purple-500/20 dark:to-purple-900/20 shadow-lg dark:shadow-[0_0_30px_rgba(225,29,72,0.15)] relative overflow-hidden">
             {/* Ambient Background Effects */}
             <div className="absolute top-0 right-0 w-64 h-64 bg-rose-600/10 blur-[100px] rounded-full pointer-events-none"></div>
             <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-600/10 blur-[100px] rounded-full pointer-events-none"></div>
             
-            <div className="bg-[#0A0A0A]/90 backdrop-blur-xl rounded-[22px] border border-rose-500/20 p-5 relative z-10">
+            <div className="bg-white/95 dark:bg-[#0A0A0A]/90 backdrop-blur-xl rounded-[22px] border border-rose-200 dark:border-rose-500/20 p-5 relative z-10">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                     <div>
-                        <h3 className="text-lg font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-purple-500 flex items-center gap-3 uppercase">
+                        <h3 className="text-lg font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-rose-600 to-purple-600 dark:from-rose-400 dark:to-purple-500 flex items-center gap-3 uppercase">
                             <Target className="w-5 h-5 text-rose-500" />
                             Predatory Liquidity Pipeline (PLP)
                         </h3>
-                        <p className="text-xs text-slate-400 mt-1.5 font-medium max-w-xl">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1.5 font-medium max-w-xl">
                             Advanced feature engineering engine mapping institutional stop-hunts, liquidation cascades, and margin squeeze dynamics in real-time.
                         </p>
                     </div>
@@ -92,7 +92,7 @@ const PredatoryLiquidityPipeline: React.FC<PredatoryLiquidityPipelineProps> = ({
                     <button
                         onClick={handleAutoSuggest}
                         disabled={isTraining || isSuggesting}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-lg ${isSuggesting ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-wait' : 'bg-gradient-to-r from-rose-600 to-orange-600 text-white hover:shadow-[0_0_20px_rgba(225,29,72,0.4)] border border-rose-400/50 hover:scale-105'}`}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-lg ${isSuggesting ? 'bg-rose-500/15 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30 cursor-wait' : 'bg-gradient-to-r from-rose-600 to-orange-600 text-white hover:shadow-[0_0_20px_rgba(225,29,72,0.4)] border border-rose-400/50 hover:scale-105'}`}
                     >
                         {isSuggesting ? (
                             <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing Live Market...</>
@@ -102,8 +102,8 @@ const PredatoryLiquidityPipeline: React.FC<PredatoryLiquidityPipelineProps> = ({
                     </button>
                 </div>
 
-                <div className="flex items-center gap-3 mb-5 px-3 py-2 bg-rose-950/30 border border-rose-500/10 rounded-xl">
-                    <div className="text-xs font-bold bg-rose-500/20 text-rose-400 px-3 py-1 rounded-full border border-rose-500/30">
+                <div className="flex items-center gap-3 mb-5 px-3 py-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-500/10 rounded-xl">
+                    <div className="text-xs font-bold bg-rose-500/15 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 px-3 py-1 rounded-full border border-rose-300 dark:border-rose-500/30">
                         {selectedFeatures.length} / {PLP_MODULES.reduce((acc, mod) => acc + mod.features.length, 0)} Features Selected
                     </div>
                     <p className="text-[10px] text-slate-500 font-medium">
@@ -122,28 +122,28 @@ const PredatoryLiquidityPipeline: React.FC<PredatoryLiquidityPipelineProps> = ({
                         // Dynamic color classes based on module.color
                         const borderColors: Record<string, string> = { rose: 'border-rose-500/30', orange: 'border-orange-500/30', red: 'border-red-500/30', purple: 'border-purple-500/30', pink: 'border-pink-500/30', cyan: 'border-cyan-500/30' };
                         const bgColors: Record<string, string> = { rose: 'bg-rose-500/10', orange: 'bg-orange-500/10', red: 'bg-red-500/10', purple: 'bg-purple-500/10', pink: 'bg-pink-500/10', cyan: 'bg-cyan-500/10' };
-                        const textColors: Record<string, string> = { rose: 'text-rose-400', orange: 'text-orange-400', red: 'text-red-400', purple: 'text-purple-400', pink: 'text-pink-400', cyan: 'text-cyan-400' };
+                        const textColors: Record<string, string> = { rose: 'text-rose-600 dark:text-rose-400', orange: 'text-orange-600 dark:text-orange-400', red: 'text-red-600 dark:text-red-400', purple: 'text-purple-600 dark:text-purple-400', pink: 'text-pink-600 dark:text-pink-400', cyan: 'text-cyan-600 dark:text-cyan-400' };
 
                         return (
-                            <div key={module.id} className={`rounded-2xl border transition-all duration-300 overflow-hidden ${isExpanded ? `${borderColors[module.color]} ${bgColors[module.color]}` : 'border-white/5 bg-black/40 hover:border-white/10'}`}>
+                            <div key={module.id} className={`rounded-2xl border transition-all duration-300 overflow-hidden ${isExpanded ? `${borderColors[module.color]} ${bgColors[module.color]}` : 'border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black/40 hover:border-slate-300 dark:hover:border-white/10'}`}>
                                 <div 
                                     className="flex items-center justify-between p-4 cursor-pointer"
                                     onClick={() => setExpandedModule(isExpanded ? null : module.id)}
                                 >
                                     <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-xl ${isExpanded ? `bg-${module.color}-500/20 ${textColors[module.color]}` : 'bg-white/5 text-slate-400'}`}>
+                                        <div className={`p-2 rounded-xl ${isExpanded ? `bg-${module.color}-500/20 ${textColors[module.color]}` : 'bg-slate-200/70 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}>
                                             <Icon className="w-5 h-5" />
                                         </div>
                                         <div>
-                                            <h4 className={`text-sm font-bold ${isExpanded ? 'text-white' : 'text-slate-300'}`}>{module.name}</h4>
+                                            <h4 className={`text-sm font-bold ${isExpanded ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>{module.name}</h4>
                                             <p className="text-[10px] text-slate-500 font-medium mt-0.5">{module.desc}</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-4">
-                                        <span className="text-[10px] font-bold text-slate-400 bg-black/50 px-2 py-1 rounded-lg">
+                                        <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 bg-white dark:bg-black/50 border border-slate-200 dark:border-transparent px-2 py-1 rounded-lg">
                                             {selectedInModule.length} / {moduleFeatureIds.length}
                                         </span>
-                                        <svg className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                        <svg className={`w-4 h-4 text-slate-500 dark:text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                                     </div>
                                 </div>
 
@@ -155,12 +155,12 @@ const PredatoryLiquidityPipeline: React.FC<PredatoryLiquidityPipelineProps> = ({
                                             exit={{ height: 0, opacity: 0 }}
                                             className="overflow-hidden"
                                         >
-                                            <div className="p-4 pt-0 border-t border-white/5 mt-2">
+                                            <div className="p-4 pt-0 border-t border-slate-200 dark:border-white/5 mt-2">
                                                 <div className="flex justify-end mb-3">
                                                     <button 
                                                         onClick={(e) => { e.stopPropagation(); handleSelectAll(module.id, module.features, isAllSelected); }}
                                                         disabled={isTraining}
-                                                        className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${isAllSelected ? 'bg-white/10 text-white border-white/20' : `${textColors[module.color]} ${bgColors[module.color]} ${borderColors[module.color]}`}`}
+                                                        className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${isAllSelected ? 'bg-slate-200 dark:bg-white/10 text-slate-900 dark:text-white border-slate-300 dark:border-white/20' : `${textColors[module.color]} ${bgColors[module.color]} ${borderColors[module.color]}`}`}
                                                     >
                                                         {isAllSelected ? <Square className="w-3 h-3" /> : <CheckSquare className="w-3 h-3" />}
                                                         {isAllSelected ? 'Deselect All' : 'Select All'}
@@ -184,11 +184,11 @@ const PredatoryLiquidityPipeline: React.FC<PredatoryLiquidityPipelineProps> = ({
                                                                 className={`flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all duration-200 ${
                                                                     isSelected 
                                                                         ? `${bgColors[module.color]} ${borderColors[module.color]}` 
-                                                                        : 'bg-[#0A0A0A] border-white/5 hover:border-white/20'
+                                                                        : 'bg-white dark:bg-[#0A0A0A] border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/20'
                                                                 } ${feat.mandatory && isSelected ? 'cursor-not-allowed opacity-90' : ''}`}
                                                             >
                                                                 <div className={`w-4 h-4 mt-0.5 rounded flex-shrink-0 border flex items-center justify-center transition-colors relative ${
-                                                                    isSelected ? (isRetrainMode && initialLoadedFeatures.includes(feat.id) ? `bg-${module.color}-500 border-${module.color}-400` : `bg-${module.color}-500 border-${module.color}-500`) : 'border-slate-600'
+                                                                    isSelected ? (isRetrainMode && initialLoadedFeatures.includes(feat.id) ? `bg-${module.color}-500 border-${module.color}-400` : `bg-${module.color}-500 border-${module.color}-500`) : 'border-slate-300 dark:border-slate-600'
                                                                 }`}>
                                                                     {isSelected && <svg className="w-3 h-3 text-white relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                                                                     {isRetrainMode && initialLoadedFeatures.includes(feat.id) && isSelected && (
@@ -196,11 +196,11 @@ const PredatoryLiquidityPipeline: React.FC<PredatoryLiquidityPipelineProps> = ({
                                                                     )}
                                                                 </div>
                                                                 <div>
-                                                                    <span className={`text-[11px] font-bold block leading-tight ${isSelected ? 'text-white' : 'text-slate-400'}`}>
+                                                                    <span className={`text-[11px] font-bold block leading-tight ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'}`}>
                                                                         {feat.name}
                                                                     </span>
                                                                     {feat.mandatory && (
-                                                                        <span className={`text-[9px] font-black uppercase mt-1 inline-block px-1.5 py-0.5 rounded bg-${module.color}-900/50 ${textColors[module.color]}`}>
+                                                                        <span className={`text-[9px] font-black uppercase mt-1 inline-block px-1.5 py-0.5 rounded bg-${module.color}-500/15 dark:bg-${module.color}-900/50 ${textColors[module.color]}`}>
                                                                             Mandatory
                                                                         </span>
                                                                     )}

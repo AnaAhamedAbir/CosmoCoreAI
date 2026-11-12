@@ -22,16 +22,16 @@ const FearGreedWidget: React.FC = () => {
 
     if (loading) {
         return (
-            <div className="bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-center h-48 border border-gray-700 animate-pulse">
-                <span className="text-gray-400 text-sm">Loading...</span>
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-md dark:shadow-lg flex items-center justify-center h-48 border border-slate-200 dark:border-gray-700 animate-pulse">
+                <span className="text-slate-500 dark:text-gray-400 text-sm">Loading...</span>
             </div>
         );
     }
 
     if (!data) {
         return (
-            <div className="bg-gray-800 rounded-xl p-4 shadow-lg h-48 border border-gray-700 flex items-center justify-center">
-                <span className="text-red-400 text-sm">Unavailable</span>
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-md dark:shadow-lg h-48 border border-slate-200 dark:border-gray-700 flex items-center justify-center">
+                <span className="text-red-500 dark:text-red-400 text-sm">Unavailable</span>
             </div>
         );
     }
@@ -64,25 +64,25 @@ const FearGreedWidget: React.FC = () => {
     const rotation = (value / 100) * 180 - 90;
 
     return (
-        <div className="bg-gray-800 rounded-xl p-4 shadow-lg border border-gray-700 flex flex-col items-center justify-between h-auto py-6 relative overflow-hidden group hover:border-blue-500/30 transition-all duration-300">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-md dark:shadow-lg border border-slate-200 dark:border-gray-700 flex flex-col items-center justify-between h-auto py-6 relative overflow-hidden group hover:border-blue-500/30 transition-all duration-300">
             {/* Background Glow */}
-            <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-gray-800/50 to-gray-900/50 -z-10" />
+            <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-slate-50/80 to-white/80 dark:from-gray-800/50 dark:to-gray-900/50 -z-10" />
             <div
                 className="absolute top-1/2 left-1/2 w-24 h-24 rounded-full blur-2xl -z-10 opacity-20 transform -translate-x-1/2 -translate-y-1/2"
                 style={{ backgroundColor: progressColor }}
             />
 
-            <h3 className="text-base font-semibold text-gray-100 mb-1 z-10">Crypto Fear & Greed</h3>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-gray-100 mb-1 z-10">Crypto Fear & Greed</h3>
 
             <div className="relative w-32 h-16 mt-2 overflow-hidden">
                 {/* Semi-circle background */}
-                <div className="absolute top-0 left-0 w-full h-full border-4 border-gray-700 rounded-t-full" style={{ borderBottom: 'none' }}></div>
+                <div className="absolute top-0 left-0 w-full h-full border-4 border-slate-200 dark:border-gray-700 rounded-t-full" style={{ borderBottom: 'none' }}></div>
 
                 {/* Simple Needle/Bar Indication using CSS rotation is complex for exact semi-circle,
              let's use a simpler SVG approach for precision and aesthetics */}
                 <svg viewBox="0 0 100 50" className="w-full h-full transform translate-y-[2%]">
                     {/* Background Arc */}
-                    <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#374151" strokeWidth="6" strokeLinecap="round" />
+                    <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" className="stroke-slate-200 dark:stroke-[#374151]" strokeWidth="6" strokeLinecap="round" />
 
                     {/* Progress Arc */}
                     <path

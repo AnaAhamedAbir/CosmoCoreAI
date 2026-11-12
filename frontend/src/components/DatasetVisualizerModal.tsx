@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createChart, IChartApi, ISeriesApi, Time, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
 import { X, Maximize2, Minimize2, Activity } from 'lucide-react';
+import { useTheme } from '@/context/ThemeContext';
 
 interface DatasetVisualizerModalProps {
     isOpen: boolean;
@@ -27,6 +28,28 @@ export const DatasetVisualizerModal: React.FC<DatasetVisualizerModalProps> = ({
     const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
     const [stats, setStats] = useState({ rows: 0, lastPrice: 0, type: 'Waiting for data...' });
     const wsRef = useRef<WebSocket | null>(null);
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
+    // Update chart options dynamically when theme changes
+    useEffect(() => {
+        if (!chartRef.current) return;
+        chartRef.current.applyOptions({
+            layout: {
+                textColor: isDark ? '#9CA3AF' : '#475569',
+            },
+            grid: {
+                vertLines: { color: isDark ? 'rgba(31, 41, 55, 0.5)' : 'rgba(203, 213, 225, 0.7)' },
+                horzLines: { color: isDark ? 'rgba(31, 41, 55, 0.5)' : 'rgba(203, 213, 225, 0.7)' },
+            },
+            timeScale: {
+                borderColor: isDark ? 'rgba(31, 41, 55, 0.5)' : 'rgba(203, 213, 225, 0.9)',
+            },
+            rightPriceScale: {
+                borderColor: isDark ? 'rgba(31, 41, 55, 0.5)' : 'rgba(203, 213, 225, 0.9)',
+            },
+        });
+    }, [isDark, isOpen]);
 
     // Initialize chart
     useEffect(() => {
@@ -44,19 +67,19 @@ export const DatasetVisualizerModal: React.FC<DatasetVisualizerModalProps> = ({
         const chart = createChart(chartContainerRef.current, {
             layout: {
                 background: { color: 'transparent' },
-                textColor: '#9CA3AF',
+                textColor: isDark ? '#9CA3AF' : '#475569',
             },
             grid: {
-                vertLines: { color: 'rgba(31, 41, 55, 0.5)' },
-                horzLines: { color: 'rgba(31, 41, 55, 0.5)' },
+                vertLines: { color: isDark ? 'rgba(31, 41, 55, 0.5)' : 'rgba(203, 213, 225, 0.7)' },
+                horzLines: { color: isDark ? 'rgba(31, 41, 55, 0.5)' : 'rgba(203, 213, 225, 0.7)' },
             },
             timeScale: {
                 timeVisible: true,
                 secondsVisible: true,
-                borderColor: 'rgba(31, 41, 55, 0.5)',
+                borderColor: isDark ? 'rgba(31, 41, 55, 0.5)' : 'rgba(203, 213, 225, 0.9)',
             },
             rightPriceScale: {
-                borderColor: 'rgba(31, 41, 55, 0.5)',
+                borderColor: isDark ? 'rgba(31, 41, 55, 0.5)' : 'rgba(203, 213, 225, 0.9)',
             },
             crosshair: {
                 mode: 0,
@@ -259,33 +282,33 @@ export const DatasetVisualizerModal: React.FC<DatasetVisualizerModalProps> = ({
                 initial={{ opacity: 0, y: 50, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 50, scale: 0.95 }}
-                className={`fixed z-[9999] bg-gray-900 border border-gray-700 shadow-2xl overflow-hidden flex flex-col ${
+                className={`fixed z-[9999] bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-700 shadow-2xl overflow-hidden flex flex-col ${
                     isExpanded 
                         ? 'inset-4 rounded-xl' 
                         : 'bottom-6 right-6 w-[500px] h-[350px] rounded-lg'
                 }`}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700 select-none">
+                <div className="flex items-center justify-between px-4 py-2 bg-slate-100 dark:bg-gray-800 border-b border-slate-200 dark:border-gray-700 select-none">
                     <div className="flex items-center gap-2">
-                        <Activity className={`w-4 h-4 ${connectionStatus === 'connected' ? 'text-green-400 animate-pulse' : 'text-gray-500'}`} />
-                        <h3 className="text-sm font-semibold text-white">
-                            Dataset Visualizer <span className="text-gray-400 font-normal">({symbol})</span>
+                        <Activity className={`w-4 h-4 ${connectionStatus === 'connected' ? 'text-emerald-600 dark:text-green-400 animate-pulse' : 'text-slate-400 dark:text-gray-500'}`} />
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                            Dataset Visualizer <span className="text-slate-500 dark:text-gray-400 font-normal">({symbol})</span>
                         </h3>
                     </div>
                     <div className="flex items-center gap-2">
-                        <span className="text-xs text-blue-400 mr-2 bg-blue-900/30 px-2 py-0.5 rounded">
+                        <span className="text-xs text-blue-700 dark:text-blue-400 mr-2 bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 rounded">
                             {stats.type}
                         </span>
                         <button 
                             onClick={() => setIsExpanded(!isExpanded)}
-                            className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+                            className="p-1 hover:bg-slate-200 dark:hover:bg-gray-700 rounded text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                         >
                             {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
                         </button>
                         <button 
                             onClick={onClose}
-                            className="p-1 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400 transition-colors"
+                            className="p-1 hover:bg-red-500/15 dark:hover:bg-red-500/20 rounded text-slate-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                         >
                             <X className="w-4 h-4" />
                         </button>
@@ -293,19 +316,19 @@ export const DatasetVisualizerModal: React.FC<DatasetVisualizerModalProps> = ({
                 </div>
 
                 {/* Stats Bar */}
-                <div className="flex px-4 py-1.5 bg-gray-800/50 border-b border-gray-700 gap-4 text-xs">
+                <div className="flex px-4 py-1.5 bg-slate-50 dark:bg-gray-800/50 border-b border-slate-200 dark:border-gray-700 gap-4 text-xs">
                     <div className="flex flex-col">
-                        <span className="text-gray-500">Rows Scraped</span>
-                        <span className="font-mono text-white">{stats.rows}</span>
+                        <span className="text-slate-500 dark:text-gray-500">Rows Scraped</span>
+                        <span className="font-mono text-slate-900 dark:text-white">{stats.rows}</span>
                     </div>
                     <div className="flex flex-col">
-                        <span className="text-gray-500">Last Price</span>
-                        <span className="font-mono text-green-400">{stats.lastPrice.toFixed(4)}</span>
+                        <span className="text-slate-500 dark:text-gray-500">Last Price</span>
+                        <span className="font-mono text-emerald-600 dark:text-green-400">{stats.lastPrice.toFixed(4)}</span>
                     </div>
                 </div>
 
                 {/* Chart Container */}
-                <div className="flex-1 relative bg-[#131722]">
+                <div className="flex-1 relative bg-white dark:bg-[#131722]">
                     <div ref={chartContainerRef} className="absolute inset-0" />
                 </div>
             </motion.div>

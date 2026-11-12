@@ -38,7 +38,7 @@ const KillFeedItem: React.FC<{ event: LiquidationEvent; activePair: string }> = 
     const label = `${baseToken} ${isLong ? 'Long Rekt' : 'Short Rekt'}`;
 
     return (
-        <div className={`relative flex items-center justify-between p-3 mb-2 rounded-xl border ${borderColor} ${bgColor} ${event.isNew ? 'animate-fade-in-right' : ''} group overflow-hidden transition-colors hover:bg-white/5`}>
+        <div className={`relative flex items-center justify-between p-3 mb-2 rounded-xl border ${borderColor} ${bgColor} ${event.isNew ? 'animate-fade-in-right' : ''} group overflow-hidden transition-colors hover:bg-slate-100/80 dark:hover:bg-white/5`}>
             {/* Flash effect overlay */}
             {event.isNew && <div className={`absolute inset-0 opacity-20 ${isLong ? 'bg-rose-500' : 'bg-emerald-500'} animate-ping rounded-xl pointer-events-none`}></div>}
             {/* Hover Glow */}
@@ -52,9 +52,9 @@ const KillFeedItem: React.FC<{ event: LiquidationEvent; activePair: string }> = 
                 <div className="flex flex-col gap-0.5">
                     <div className="flex items-center gap-2">
                         <span className={`text-[10px] font-bold uppercase tracking-wider ${textColor}`}>{label}</span>
-                        <span className="text-[9px] text-gray-500 font-mono bg-black/30 px-1 py-0.5 rounded border border-white/5">{event.time}</span>
+                        <span className="text-[9px] text-slate-500 dark:text-gray-500 font-mono bg-slate-100 dark:bg-black/30 px-1 py-0.5 rounded border border-slate-200 dark:border-white/5">{event.time}</span>
                     </div>
-                    <div className="text-sm font-mono font-bold text-white tracking-tight drop-shadow-[0_0_5px_rgba(255,255,255,0.2)]">
+                    <div className="text-sm font-mono font-bold text-slate-900 dark:text-white tracking-tight dark:drop-shadow-[0_0_5px_rgba(255,255,255,0.2)]">
                         ${event.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </div>
                 </div>
@@ -198,7 +198,7 @@ const StandardLiquidationView: React.FC = () => {
             {/* High-Tech HUD */}
             <div className="flex-shrink-0 grid grid-cols-1 md:grid-cols-5 gap-4 staggered-fade-in relative z-50">
                 {/* Search & Price */}
-                <Card className="md:col-span-1 flex flex-col justify-center !p-5 relative bg-gradient-to-br from-[#000000] to-[#111827] border-white/5 shadow-2xl rounded-2xl group z-[60]">
+                <Card className="md:col-span-1 flex flex-col justify-center !p-5 relative bg-gradient-to-br from-white to-slate-50 dark:from-[#000000] dark:to-[#111827] border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl rounded-2xl group z-[60]">
                     <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/10 via-transparent to-transparent opacity-50 group-hover:opacity-100 transition-opacity duration-700 rounded-2xl pointer-events-none"></div>
                     <div className="absolute -right-10 -top-10 w-32 h-32 bg-brand-primary/20 blur-[50px] rounded-full pointer-events-none"></div>
                     
@@ -210,9 +210,9 @@ const StandardLiquidationView: React.FC = () => {
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-primary opacity-75"></span>
                                   <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-primary"></span>
                                 </div>
-                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Market</span>
+                                <span className="text-[10px] text-slate-500 dark:text-gray-400 font-bold uppercase tracking-widest">Market</span>
                             </div>
-                            <div className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-gray-400">
+                            <div className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-500 dark:text-gray-400">
                                 Live
                             </div>
                         </div>
@@ -222,23 +222,23 @@ const StandardLiquidationView: React.FC = () => {
                             {/* Exchange Selector */}
                             <div className="relative group/select">
                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <svg className="w-3.5 h-3.5 text-gray-400 group-hover/select:text-brand-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <svg className="w-3.5 h-3.5 text-slate-400 dark:text-gray-400 group-hover/select:text-brand-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                                     </svg>
                                 </div>
                                 <select
                                     value={selectedExchange}
                                     onChange={(e) => setSelectedExchange(e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 hover:border-white/20 rounded-lg py-2 pl-9 pr-8 text-xs font-bold font-mono text-white appearance-none cursor-pointer focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/50 outline-none transition-all shadow-inner"
+                                    className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 rounded-lg py-2 pl-9 pr-8 text-xs font-bold font-mono text-slate-900 dark:text-white appearance-none cursor-pointer focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/50 outline-none transition-all shadow-inner"
                                 >
                                     {exchanges.map((ex) => (
-                                        <option key={ex} value={ex} className="bg-[#050505] text-white font-mono">
+                                        <option key={ex} value={ex} className="bg-white dark:bg-[#050505] text-slate-900 dark:text-white font-mono">
                                             {ex.toUpperCase()}
                                         </option>
                                     ))}
                                 </select>
                                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                                    <svg className="w-3.5 h-3.5 text-gray-500 group-hover/select:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <svg className="w-3.5 h-3.5 text-slate-400 dark:text-gray-500 group-hover/select:text-slate-700 dark:group-hover/select:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                     </svg>
                                 </div>
@@ -251,10 +251,10 @@ const StandardLiquidationView: React.FC = () => {
                                 options={availablePairs.map(m => m.symbol)}
                                 disabled={isPairsLoading}
                                 placeholder={isPairsLoading ? "Loading..." : "Search pair..."}
-                                inputClassName="!bg-black/40 !border-white/10 hover:!border-white/20 !rounded-lg !py-2 !text-xs !font-bold !font-mono shadow-inner transition-all group-hover/combo:border-white/20 focus:!border-brand-primary"
+                                inputClassName="!bg-slate-50 dark:!bg-black/40 !border-slate-200 dark:!border-white/10 hover:!border-slate-300 dark:hover:!border-white/20 !text-slate-900 dark:!text-white !rounded-lg !py-2 !text-xs !font-bold !font-mono shadow-inner transition-all focus:!border-brand-primary"
                                 className="group/combo"
                                 icon={
-                                    <svg className="w-3.5 h-3.5 text-gray-400 group-hover/combo:text-brand-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <svg className="w-3.5 h-3.5 text-slate-400 dark:text-gray-400 group-hover/combo:text-brand-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                     </svg>
                                 }
@@ -264,23 +264,23 @@ const StandardLiquidationView: React.FC = () => {
                 </Card>
 
                 {/* Filter Control */}
-                <Card className="md:col-span-1 flex flex-col justify-center !p-5 relative overflow-hidden bg-gradient-to-br from-[#000000] to-[#111827] border-white/5 shadow-2xl rounded-2xl group">
+                <Card className="md:col-span-1 flex flex-col justify-center !p-5 relative overflow-hidden bg-gradient-to-br from-white to-slate-50 dark:from-[#000000] dark:to-[#111827] border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl rounded-2xl group">
                     <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/5 via-transparent to-transparent opacity-30 group-hover:opacity-100 transition-opacity duration-700"></div>
                     {minLiquidationThreshold > 50000 && (
                         <div className="absolute top-0 right-0 p-1">
-                            <span className="text-[9px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded-bl-lg uppercase font-bold border-b border-l border-yellow-500/30 shadow-[0_0_10px_rgba(234,179,8,0.3)] animate-pulse">
+                            <span className="text-[9px] bg-yellow-500/20 text-yellow-600 dark:text-yellow-500 px-1.5 py-0.5 rounded-bl-lg uppercase font-bold border-b border-l border-yellow-500/30 shadow-[0_0_10px_rgba(234,179,8,0.3)] animate-pulse">
                                 Whale
                             </span>
                         </div>
                     )}
                     <div className="relative z-10 flex flex-col h-full justify-between">
                         <div className="flex justify-between items-center">
-                            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Min Threshold</p>
+                            <p className="text-[10px] text-slate-500 dark:text-gray-400 uppercase tracking-widest font-bold">Min Threshold</p>
                             <p className="text-sm font-mono font-bold text-brand-primary drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]">${(minLiquidationThreshold / 1000).toFixed(0)}k</p>
                         </div>
                         <div className="mt-4 relative pt-1">
                             <div className="flex items-center gap-3">
-                                <span className="text-[9px] text-gray-500 font-mono font-bold">0</span>
+                                <span className="text-[9px] text-slate-500 dark:text-gray-500 font-mono font-bold">0</span>
                                 <div className="relative flex-1 group/slider">
                                     <input
                                         type="range"
@@ -289,18 +289,18 @@ const StandardLiquidationView: React.FC = () => {
                                         step="1000"
                                         value={minLiquidationThreshold}
                                         onChange={(e) => setMinLiquidationThreshold(Number(e.target.value))}
-                                        className="w-full h-1.5 bg-gray-800/50 rounded-lg appearance-none cursor-pointer accent-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/50 relative z-10"
+                                        className="w-full h-1.5 bg-slate-200 dark:bg-gray-800/50 rounded-lg appearance-none cursor-pointer accent-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/50 relative z-10"
                                     />
                                     <div className="absolute top-1/2 -translate-y-1/2 left-0 h-1.5 bg-brand-primary rounded-l-lg pointer-events-none transition-all duration-150 shadow-[0_0_10px_rgba(59,130,246,0.6)]" style={{ width: `${(minLiquidationThreshold / 100000) * 100}%` }}></div>
                                 </div>
-                                <span className="text-[9px] text-gray-500 font-mono font-bold">100k</span>
+                                <span className="text-[9px] text-slate-500 dark:text-gray-500 font-mono font-bold">100k</span>
                             </div>
                         </div>
                     </div>
                 </Card>
 
                 {/* Stats: Total Vol */}
-                <Card className="md:col-span-1 flex flex-col justify-center !p-5 relative overflow-hidden bg-gradient-to-br from-[#000000] to-[#111827] border-white/5 shadow-2xl rounded-2xl group">
+                <Card className="md:col-span-1 flex flex-col justify-center !p-5 relative overflow-hidden bg-gradient-to-br from-white to-slate-50 dark:from-[#000000] dark:to-[#111827] border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl rounded-2xl group">
                     <div className="absolute inset-0 bg-gradient-to-br from-rose-500/5 via-transparent to-transparent opacity-30 group-hover:opacity-100 transition-opacity duration-700"></div>
                     <div className="absolute -right-8 -bottom-8 w-24 h-24 bg-rose-500/10 blur-[30px] rounded-full"></div>
                     <div className="relative z-10 flex items-center gap-4">
@@ -309,8 +309,8 @@ const StandardLiquidationView: React.FC = () => {
                              <FireIcon className="w-5 h-5 relative z-10 drop-shadow-[0_0_8px_rgba(244,63,94,0.8)]" />
                         </div>
                         <div className="flex flex-col">
-                            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-0.5">Total Rekt (Session)</p>
-                            <p className="text-2xl font-bold font-mono text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">
+                            <p className="text-[10px] text-slate-500 dark:text-gray-400 uppercase tracking-widest font-bold mb-0.5">Total Rekt (Session)</p>
+                            <p className="text-2xl font-bold font-mono text-slate-900 dark:text-white dark:drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">
                                 ${(aggregatedStats.totalVol / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}k
                             </p>
                         </div>
@@ -318,33 +318,33 @@ const StandardLiquidationView: React.FC = () => {
                 </Card>
 
                 {/* Stats: Ratio Bar */}
-                <Card className="md:col-span-2 flex flex-col justify-center !p-5 relative overflow-hidden bg-gradient-to-br from-[#000000] to-[#111827] border-white/5 shadow-2xl rounded-2xl group">
+                <Card className="md:col-span-2 flex flex-col justify-center !p-5 relative overflow-hidden bg-gradient-to-br from-white to-slate-50 dark:from-[#000000] dark:to-[#111827] border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl rounded-2xl group">
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.02)_0%,transparent_100%)] pointer-events-none"></div>
                     <div className="relative z-10 flex flex-col h-full justify-center gap-4">
                         <div className="flex justify-between items-end">
                             <div className="flex flex-col gap-1">
                                 <div className="flex items-center gap-1.5">
                                     <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)] animate-pulse"></div>
-                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Longs Rekt</p>
+                                    <p className="text-[10px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-widest">Longs Rekt</p>
                                 </div>
-                                <p className="text-xl font-mono font-bold text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.5)]">${(aggregatedStats.longLiqs / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}k</p>
+                                <p className="text-xl font-mono font-bold text-rose-600 dark:text-rose-400 dark:drop-shadow-[0_0_8px_rgba(244,63,94,0.5)]">${(aggregatedStats.longLiqs / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}k</p>
                             </div>
                             
-                            <div className="flex flex-col items-center justify-center opacity-80 backdrop-blur-sm bg-black/20 px-3 py-1.5 rounded-xl border border-white/5">
-                                 <span className="text-[9px] text-gray-500 uppercase font-mono font-bold tracking-widest">Ratio</span>
-                                 <span className="text-xs font-bold font-mono text-white mt-0.5">{longRatio.toFixed(1)}% <span className="text-gray-600">|</span> {(100 - longRatio).toFixed(1)}%</span>
+                            <div className="flex flex-col items-center justify-center opacity-90 backdrop-blur-sm bg-slate-100 dark:bg-black/20 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/5">
+                                 <span className="text-[9px] text-slate-500 dark:text-gray-500 uppercase font-mono font-bold tracking-widest">Ratio</span>
+                                 <span className="text-xs font-bold font-mono text-slate-900 dark:text-white mt-0.5">{longRatio.toFixed(1)}% <span className="text-slate-400 dark:text-gray-600">|</span> {(100 - longRatio).toFixed(1)}%</span>
                             </div>
 
                             <div className="flex flex-col gap-1 items-end">
                                 <div className="flex items-center gap-1.5">
-                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Shorts Rekt</p>
+                                    <p className="text-[10px] font-bold text-slate-500 dark:text-gray-400 uppercase tracking-widest">Shorts Rekt</p>
                                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse"></div>
                                 </div>
-                                <p className="text-xl font-mono font-bold text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]">${(aggregatedStats.shortLiqs / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}k</p>
+                                <p className="text-xl font-mono font-bold text-emerald-600 dark:text-emerald-400 dark:drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]">${(aggregatedStats.shortLiqs / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}k</p>
                             </div>
                         </div>
                         {/* The Ratio Bar */}
-                        <div className="w-full h-2.5 bg-black/60 rounded-full overflow-hidden relative flex border border-white/5 shadow-inner">
+                        <div className="w-full h-2.5 bg-slate-200 dark:bg-black/60 rounded-full overflow-hidden relative flex border border-slate-200 dark:border-white/5 shadow-inner">
                             <div className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-700 ease-out relative" style={{ width: `${longRatio}%` }}>
                                 <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.15)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.15)_50%,rgba(255,255,255,0.15)_75%,transparent_75%,transparent)] bg-[length:1rem_1rem] opacity-50"></div>
                             </div>
@@ -352,7 +352,7 @@ const StandardLiquidationView: React.FC = () => {
                                 <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.15)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.15)_50%,rgba(255,255,255,0.15)_75%,transparent_75%,transparent)] bg-[length:1rem_1rem] opacity-50"></div>
                             </div>
                             {/* Center Marker */}
-                            <div className="absolute top-[-2px] bottom-[-2px] left-1/2 w-0.5 bg-white z-10 shadow-[0_0_8px_rgba(255,255,255,1)]"></div>
+                            <div className="absolute top-[-2px] bottom-[-2px] left-1/2 w-0.5 bg-slate-700 dark:bg-white z-10 shadow-sm dark:shadow-[0_0_8px_rgba(255,255,255,1)]"></div>
                         </div>
                     </div>
                 </Card>
@@ -364,7 +364,7 @@ const StandardLiquidationView: React.FC = () => {
 
                 {/* Left: Chart */}
                 <div className="h-full flex flex-col transition-all duration-75 relative" style={{ width: `${chartWidth}%` }}>
-                    <Card className="flex-1 min-h-0 relative p-0 overflow-hidden border-white/5 shadow-2xl bg-[#000000] rounded-2xl group">
+                    <Card className="flex-1 min-h-0 relative p-0 overflow-hidden border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl bg-white dark:bg-[#000000] rounded-2xl group">
                         {/* High-tech border effects */}
                         <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none z-0"></div>
                         <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-brand-primary/50 to-transparent opacity-50 z-10"></div>
@@ -372,27 +372,27 @@ const StandardLiquidationView: React.FC = () => {
 
                         {/* View Switcher and Price (Absolute Top-Left) */}
                         <div className="absolute top-4 left-4 z-20 flex items-center gap-4">
-                            <div className="flex bg-black/60 backdrop-blur-md rounded-xl p-1 shadow-[0_4px_20px_rgba(0,0,0,0.5)] border border-white/10 overflow-hidden">
+                            <div className="flex bg-white/90 dark:bg-black/60 backdrop-blur-md rounded-xl p-1 shadow-md dark:shadow-[0_4px_20px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-white/10 overflow-hidden">
                                 <button
                                     onClick={() => setChartView('price')}
-                                    className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all duration-300 relative ${chartView === 'price' ? 'text-white' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}
+                                    className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all duration-300 relative ${chartView === 'price' ? 'text-brand-primary dark:text-white' : 'text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5'}`}
                                 >
-                                    {chartView === 'price' && <div className="absolute inset-0 bg-brand-primary/20 bg-gradient-to-r from-brand-primary/40 to-brand-primary/10 rounded-lg -z-10 shadow-[inner_0_0_10px_rgba(59,130,246,0.3)] border border-brand-primary/50"></div>}
+                                    {chartView === 'price' && <div className="absolute inset-0 bg-brand-primary/15 dark:bg-brand-primary/20 bg-gradient-to-r from-brand-primary/25 dark:from-brand-primary/40 to-brand-primary/10 rounded-lg -z-10 shadow-[inner_0_0_10px_rgba(59,130,246,0.3)] border border-brand-primary/50"></div>}
                                     Price Action
                                 </button>
                                 <button
                                     onClick={() => setChartView('bubbles')}
-                                    className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all duration-300 relative ${chartView === 'bubbles' ? 'text-white' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}
+                                    className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all duration-300 relative ${chartView === 'bubbles' ? 'text-brand-primary dark:text-white' : 'text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5'}`}
                                 >
-                                    {chartView === 'bubbles' && <div className="absolute inset-0 bg-brand-primary/20 bg-gradient-to-r from-brand-primary/40 to-brand-primary/10 rounded-lg -z-10 shadow-[inner_0_0_10px_rgba(59,130,246,0.3)] border border-brand-primary/50"></div>}
+                                    {chartView === 'bubbles' && <div className="absolute inset-0 bg-brand-primary/15 dark:bg-brand-primary/20 bg-gradient-to-r from-brand-primary/25 dark:from-brand-primary/40 to-brand-primary/10 rounded-lg -z-10 shadow-[inner_0_0_10px_rgba(59,130,246,0.3)] border border-brand-primary/50"></div>}
                                     Liquidations
                                 </button>
                             </div>
 
                            {/* Embedded Price Display */}
-                           <div className="flex items-center gap-3 bg-black/60 backdrop-blur-md rounded-xl px-4 py-1 shadow-[0_4px_20px_rgba(0,0,0,0.5)] border border-white/10 h-[34px]">
-                                <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Oracle</span>
-                                <span className={`text-base font-mono font-bold tracking-tight transition-colors duration-300 ${priceUpdateStatus === 'up' ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]' : priceUpdateStatus === 'down' ? 'text-rose-400 drop-shadow-[0_0_8px_rgba(251,113,133,0.5)]' : 'text-white drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]'}`}>
+                           <div className="flex items-center gap-3 bg-white/90 dark:bg-black/60 backdrop-blur-md rounded-xl px-4 py-1 shadow-md dark:shadow-[0_4px_20px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-white/10 h-[34px]">
+                                <span className="text-[10px] text-slate-500 dark:text-gray-500 uppercase tracking-widest font-bold">Oracle</span>
+                                <span className={`text-base font-mono font-bold tracking-tight transition-colors duration-300 ${priceUpdateStatus === 'up' ? 'text-emerald-600 dark:text-emerald-400 dark:drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]' : priceUpdateStatus === 'down' ? 'text-rose-600 dark:text-rose-400 dark:drop-shadow-[0_0_8px_rgba(251,113,133,0.5)]' : 'text-slate-900 dark:text-white dark:drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]'}`}>
                                     {wsPrice > 0 ? `$${wsPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---'}
                                 </span>
                                 {!isConnected && (
@@ -415,15 +415,15 @@ const StandardLiquidationView: React.FC = () => {
 
                         {/* Floating Toolbar for Highlights */}
                         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-none w-full max-w-lg px-4 transition-transform duration-500 group-hover:-translate-y-2">
-                            <div className="bg-[#000000]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-2.5 flex items-center justify-between gap-3 shadow-[0_10px_30px_rgba(0,0,0,0.5)] pointer-events-auto relative overflow-hidden group/toolbar">
+                            <div className="bg-white/95 dark:bg-[#000000]/80 backdrop-blur-xl border border-slate-200 dark:border-white/10 rounded-2xl p-2.5 flex items-center justify-between gap-3 shadow-lg dark:shadow-[0_10px_30px_rgba(0,0,0,0.5)] pointer-events-auto relative overflow-hidden group/toolbar">
                                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-brand-primary/5 to-transparent -translate-x-full group-hover/toolbar:animate-[shimmer_2s_infinite]"></div>
                                 
-                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-2 whitespace-nowrap flex items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-slate-600 dark:text-gray-400 uppercase tracking-widest px-2 whitespace-nowrap flex items-center gap-1.5">
                                     <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_5px_rgba(234,179,8,0.8)]"></div>
                                     Track Levels
                                 </span>
                                 
-                                <div className="h-6 w-px bg-white/10 mx-1"></div>
+                                <div className="h-6 w-px bg-slate-200 dark:bg-white/10 mx-1"></div>
                                 
                                 <form onSubmit={handleHighlightSubmit} className="flex gap-2 w-40 shrink-0">
                                     <input
@@ -431,26 +431,26 @@ const StandardLiquidationView: React.FC = () => {
                                         value={highlightLevelInput}
                                         onChange={(e) => setHighlightLevelInput(e.target.value)}
                                         placeholder="Price..."
-                                        className="bg-black/40 border border-white/5 rounded-lg px-2.5 py-1 text-xs text-white placeholder-gray-600 focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50 outline-none w-full font-mono transition-all"
+                                        className="bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg px-2.5 py-1 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-600 focus:border-brand-primary/50 focus:ring-1 focus:ring-brand-primary/50 outline-none w-full font-mono transition-all"
                                     />
                                     <button type="submit" className="bg-brand-primary/20 hover:bg-brand-primary/40 text-brand-primary border border-brand-primary/30 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors">+</button>
                                 </form>
 
                                 <div className="flex-1 flex gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
                                     {highlightedLevels.map(level => (
-                                        <span key={level} className="flex flex-shrink-0 items-center gap-1 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 rounded-md px-2 py-0.5 text-[10px] font-mono font-bold whitespace-nowrap group/tag transition-all hover:bg-yellow-500/20 hover:border-yellow-500/40">
+                                        <span key={level} className="flex flex-shrink-0 items-center gap-1 bg-yellow-500/10 text-yellow-600 dark:text-yellow-500 border border-yellow-500/20 rounded-md px-2 py-0.5 text-[10px] font-mono font-bold whitespace-nowrap group/tag transition-all hover:bg-yellow-500/20 hover:border-yellow-500/40">
                                             ${level}
-                                            <button onClick={() => handleRemoveHighlight(level)} className="text-yellow-500/50 group-hover/tag:text-yellow-500 hover:!text-red-400 focus:outline-none transition-colors ml-0.5" type="button">&times;</button>
+                                            <button onClick={() => handleRemoveHighlight(level)} className="text-yellow-600/60 dark:text-yellow-500/50 group-hover/tag:text-yellow-600 dark:group-hover/tag:text-yellow-500 hover:!text-red-500 dark:hover:!text-red-400 focus:outline-none transition-colors ml-0.5" type="button">&times;</button>
                                         </span>
                                     ))}
                                     {highlightedLevels.length === 0 && (
-                                        <span className="text-[10px] text-gray-600 italic px-2 py-1 whitespace-nowrap">No levels tracked</span>
+                                        <span className="text-[10px] text-slate-400 dark:text-gray-600 italic px-2 py-1 whitespace-nowrap">No levels tracked</span>
                                     )}
                                 </div>
                             </div>
                         </div>
 
-                        <button onClick={toggleFullScreen} className="absolute top-4 right-4 z-20 p-2.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.5)]">
+                        <button onClick={toggleFullScreen} className="absolute top-4 right-4 z-20 p-2.5 bg-white/90 dark:bg-black/40 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 transition-all shadow-md dark:shadow-[0_4px_15px_rgba(0,0,0,0.5)]">
                             <ExpandIcon />
                         </button>
                     </Card>
@@ -461,22 +461,22 @@ const StandardLiquidationView: React.FC = () => {
                     className="w-1.5 cursor-col-resize flex items-center justify-center group flex-shrink-0 hover:scale-x-150 transition-transform"
                     onMouseDown={handleMouseDown}
                 >
-                    <div className={`h-16 w-1 rounded-full bg-white/10 group-hover:bg-brand-primary transition-all duration-300 ${isResizing ? 'bg-brand-primary shadow-[0_0_10px_rgba(59,130,246,0.8)]' : ''}`}></div>
+                    <div className={`h-16 w-1 rounded-full bg-slate-300 dark:bg-white/10 group-hover:bg-brand-primary transition-all duration-300 ${isResizing ? 'bg-brand-primary shadow-[0_0_10px_rgba(59,130,246,0.8)]' : ''}`}></div>
                 </div>
 
                 {/* Right: Kill Feed & CLD */}
                 <div className="h-full flex flex-col gap-4" style={{ width: `calc(${100 - chartWidth}% - 22px)` }}>
-                    <Card className="flex-1 flex flex-col min-h-0 !p-0 border-white/5 shadow-2xl bg-[#000000] rounded-2xl overflow-hidden relative">
+                    <Card className="flex-1 flex flex-col min-h-0 !p-0 border-slate-200 dark:border-white/5 shadow-lg dark:shadow-2xl bg-white dark:bg-[#000000] rounded-2xl overflow-hidden relative">
                         {/* High-tech border effects */}
                         <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/5 via-transparent to-transparent opacity-50 z-0 pointer-events-none"></div>
 
                         {/* Tab Switcher */}
-                        <div className="flex border-b border-white/10 bg-black/40 relative z-10 w-full overflow-hidden shrink-0">
-                            <button onClick={() => setRightPanelTab('feed')} className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-300 relative truncate px-2 ${rightPanelTab === 'feed' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>
+                        <div className="flex border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/40 relative z-10 w-full overflow-hidden shrink-0">
+                            <button onClick={() => setRightPanelTab('feed')} className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-300 relative truncate px-2 ${rightPanelTab === 'feed' ? 'text-brand-primary bg-brand-primary/5 dark:bg-white/5' : 'text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5'}`}>
                                 Live Feed
                                 {rightPanelTab === 'feed' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-brand-primary shadow-[0_-2px_8px_rgba(59,130,246,0.8)]"></div>}
                             </button>
-                            <button onClick={() => setRightPanelTab('cld')} className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-300 relative truncate px-2 ${rightPanelTab === 'cld' ? 'text-brand-primary bg-white/5' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'}`}>
+                            <button onClick={() => setRightPanelTab('cld')} className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-300 relative truncate px-2 ${rightPanelTab === 'cld' ? 'text-brand-primary bg-brand-primary/5 dark:bg-white/5' : 'text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-gray-300 hover:bg-slate-100 dark:hover:bg-white/5'}`}>
                                 Analytics
                                 {rightPanelTab === 'cld' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-brand-primary shadow-[0_-2px_8px_rgba(59,130,246,0.8)]"></div>}
                             </button>
@@ -503,7 +503,7 @@ const StandardLiquidationView: React.FC = () => {
                             ) : (
                                 <div className="absolute inset-0 flex flex-col p-5">
                                     <div className="flex items-center justify-between mb-4">
-                                        <h3 className="text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                        <h3 className="text-[10px] sm:text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2">
                                             <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
                                             </svg>
@@ -511,14 +511,14 @@ const StandardLiquidationView: React.FC = () => {
                                             <span className="inline sm:hidden">CVD</span>
                                         </h3>
                                         {cldData.length > 0 && (
-                                            <span className={`text-[10px] sm:text-xs font-mono font-bold px-2 py-1 rounded bg-black/40 border border-white/5 ${cldData[cldData.length-1].value >= 0 ? 'text-emerald-400 drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]' : 'text-rose-400 drop-shadow-[0_0_5px_rgba(244,63,94,0.5)]'}`}>
+                                            <span className={`text-[10px] sm:text-xs font-mono font-bold px-2 py-1 rounded bg-slate-100 dark:bg-black/40 border border-slate-200 dark:border-white/5 ${cldData[cldData.length-1].value >= 0 ? 'text-emerald-600 dark:text-emerald-400 dark:drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]' : 'text-rose-600 dark:text-rose-400 dark:drop-shadow-[0_0_5px_rgba(244,63,94,0.5)]'}`}>
                                                 {cldData[cldData.length-1].value >= 0 ? '+' : ''}{(cldData[cldData.length-1].value / 1000).toFixed(1)}k
                                             </span>
                                         )}
                                     </div>
                                     
                                     <div className="flex-1 relative min-h-0">
-                                        <div className="absolute inset-0 bg-black/20 rounded-xl border border-white/5 p-2">
+                                        <div className="absolute inset-0 bg-slate-50 dark:bg-black/20 rounded-xl border border-slate-200 dark:border-white/5 p-2">
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <AreaChart data={cldData}>
                                                     <defs>
@@ -528,14 +528,14 @@ const StandardLiquidationView: React.FC = () => {
                                                         </linearGradient>
                                                     </defs>
                                                     <Tooltip
-                                                        contentStyle={{ backgroundColor: 'rgba(11, 17, 32, 0.9)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)', borderRadius: '0.5rem', color: '#fff', fontSize: '12px', fontFamily: 'monospace' }}
+                                                        contentStyle={{ backgroundColor: theme === 'dark' ? 'rgba(11, 17, 32, 0.9)' : 'rgba(255, 255, 255, 0.95)', border: theme === 'dark' ? '1px solid rgba(255,255,255,0.1)' : '1px solid #e2e8f0', backdropFilter: 'blur(8px)', borderRadius: '0.5rem', color: theme === 'dark' ? '#fff' : '#0f172a', fontSize: '12px', fontFamily: 'monospace' }}
                                                         formatter={(v: number) => {
                                                             const isPos = v >= 0;
-                                                            return [<span className={isPos ? 'text-emerald-400' : 'text-rose-400'}>{isPos ? '+' : ''}${(v).toLocaleString()}</span>, 'Delta'];
+                                                            return [<span className={isPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>{isPos ? '+' : ''}${(v).toLocaleString()}</span>, 'Delta'];
                                                         }}
                                                         labelFormatter={() => ''}
                                                     />
-                                                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" strokeDasharray="3 3" />
+                                                    <ReferenceLine y={0} stroke={theme === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(15,23,42,0.2)'} strokeDasharray="3 3" />
                                                     <Area
                                                         type="monotone"
                                                         dataKey="value"
@@ -548,7 +548,7 @@ const StandardLiquidationView: React.FC = () => {
                                             </ResponsiveContainer>
                                         </div>
                                     </div>
-                                    <div className="mt-4 flex flex-col sm:flex-row justify-between items-start sm:items-center text-[9px] sm:text-[10px] font-mono border-t border-white/5 pt-3 gap-2 shrink-0">
+                                    <div className="mt-4 flex flex-col sm:flex-row justify-between items-start sm:items-center text-[9px] sm:text-[10px] font-mono border-t border-slate-200 dark:border-white/5 pt-3 gap-2 shrink-0">
                                         <div className="flex items-center gap-1.5 text-emerald-500">
                                             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></div>
                                             Positive = Buy Pressure
@@ -569,7 +569,7 @@ const StandardLiquidationView: React.FC = () => {
             {isChartFullScreen && (
                 <div className="fixed inset-0 z-[100] bg-white dark:bg-[#000000] p-0 animate-modal-fade-in">
                     <div id={`tradingview_fullscreen_liquidation_chart_${widgetKey}`} className="w-full h-full" />
-                    <button onClick={toggleFullScreen} className="absolute top-4 right-4 z-20 p-2 bg-[#000000]/50 backdrop-blur-md rounded-lg text-white hover:bg-[#000000] transition-colors">
+                    <button onClick={toggleFullScreen} className="absolute top-4 right-4 z-20 p-2 bg-white/90 dark:bg-[#000000]/50 backdrop-blur-md rounded-lg text-slate-800 dark:text-white border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#000000] transition-colors">
                         <CollapseIcon />
                     </button>
                 </div>

@@ -784,15 +784,15 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
     };
 
     return (
-        <div className="flex flex-col h-full bg-[#0A0A0A]/90 border border-teal-500/30 rounded-[22px] shadow-[0_0_20px_rgba(20,184,166,0.1)] overflow-hidden relative">
+        <div className="flex flex-col h-full bg-white/90 dark:bg-[#0A0A0A]/90 border border-teal-500/30 rounded-[22px] shadow-sm dark:shadow-[0_0_20px_rgba(20,184,166,0.1)] overflow-hidden relative">
             {/* Ambient Background Effects */}
             <div className="absolute top-0 right-0 w-48 h-48 bg-teal-600/10 blur-[80px] rounded-full pointer-events-none"></div>
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-600/10 blur-[80px] rounded-full pointer-events-none"></div>
             
-            <div className="p-5 bg-black/40 border-b border-white/10 flex-shrink-0 relative z-20">
+            <div className="p-5 bg-slate-50 dark:bg-black/40 border-b border-slate-200 dark:border-white/10 flex-shrink-0 relative z-20">
                 <div className="flex items-center justify-between mb-4">
-                    <label className="flex items-center gap-2 text-sm font-medium text-white">
-                        <Database className="w-5 h-5 text-cyan-400" /> Data Source Engine
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-white">
+                        <Database className="w-5 h-5 text-cyan-600 dark:text-cyan-400" /> Data Source Engine
                     </label>
                 </div>
                 
@@ -800,21 +800,21 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
                     <button
                         onClick={() => { setDataSource('ohlcv'); setExpandedModule('smc_order_flow'); }}
                         disabled={props.isTraining}
-                        className={`py-2 rounded-xl text-[11px] font-bold transition-all duration-300 ${dataSource === 'ohlcv' ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'}`}
+                        className={`py-2 rounded-xl text-[11px] font-bold transition-all duration-300 ${dataSource === 'ohlcv' ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'}`}
                     >
                         Standard OHLCV
                     </button>
                     <button
                         onClick={() => { setDataSource('l2_orderbook'); setExpandedModule('l2_price_spread'); }}
                         disabled={props.isTraining}
-                        className={`py-2 rounded-xl text-[11px] font-bold transition-all duration-300 ${dataSource === 'l2_orderbook' ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'}`}
+                        className={`py-2 rounded-xl text-[11px] font-bold transition-all duration-300 ${dataSource === 'l2_orderbook' ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'}`}
                     >
                         Level 2 Orderbook
                     </button>
                     <button
                         onClick={() => { setDataSource('hybrid_ohlcv_tick'); setExpandedModule(null); }}
                         disabled={props.isTraining}
-                        className={`py-2 rounded-xl text-[11px] font-bold transition-all duration-300 ${dataSource === 'hybrid_ohlcv_tick' ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-[0_0_15px_rgba(99,102,241,0.4)]' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'}`}
+                        className={`py-2 rounded-xl text-[11px] font-bold transition-all duration-300 ${dataSource === 'hybrid_ohlcv_tick' ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-[0_0_15px_rgba(99,102,241,0.4)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'}`}
                     >
                         Hybrid Standard OHLCV + Historical Ticks
                     </button>
@@ -822,7 +822,7 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
                     <button
                         onClick={() => { setDataSource('alt_data'); setExpandedModule('alt_data'); }}
                         disabled={props.isTraining}
-                        className={`py-2 rounded-xl text-[11px] font-bold transition-all duration-300 ${dataSource === 'alt_data' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'}`}
+                        className={`py-2 rounded-xl text-[11px] font-bold transition-all duration-300 ${dataSource === 'alt_data' ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'}`}
                     >
                         Alternative Data
                     </button>
@@ -832,26 +832,26 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
             <div className="p-4 overflow-y-auto custom-scrollbar h-full relative z-10 space-y-3">
                 {/* OHLCV SCRAPER INJECTION */}
                 {dataSource === 'ohlcv' && (
-                    <div className="mb-4 p-4 border border-white/10 rounded-xl bg-white/[0.02]">
+                    <div className="mb-4 p-4 border border-slate-200 dark:border-white/10 rounded-xl bg-slate-50/70 dark:bg-white/[0.02]">
                         <div className="mb-4">
-                            <label className="block text-sm font-bold text-slate-300 mb-2">Select Dataset Snapshot (Parquet)</label>
+                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Select Dataset Snapshot (Parquet)</label>
                             <div className="flex items-center gap-2">
                                 <select 
                                     value={props.selectedForexFile} 
                                     onChange={e => props.setSelectedForexFile(e.target.value)}
                                     disabled={props.isTraining}
-                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-teal-500/50 outline-none"
+                                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-500/50 outline-none"
                                 >
-                                    {props.forexSnapshotFiles.length === 0 && <option value="" className="text-slate-500">No snapshots available. Please collect data first.</option>}
+                                    {props.forexSnapshotFiles.length === 0 && <option value="" className="bg-white dark:bg-gray-900 text-slate-500">No snapshots available. Please collect data first.</option>}
                                     {props.forexSnapshotFiles.map(f => (
-                                        <option key={f} value={f} className="bg-gray-900 text-white">{f}</option>
+                                        <option key={f} value={f} className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">{f}</option>
                                     ))}
                                 </select>
                                 {props.selectedForexFile && (
                                     <button
                                         onClick={props.handleDeleteSnapshot}
                                         disabled={props.isTraining}
-                                        className="p-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl border border-red-500/20 transition-all flex items-center justify-center"
+                                        className="p-3 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-xl border border-red-500/20 transition-all flex items-center justify-center"
                                         title="Delete selected snapshot"
                                     >
                                         <Trash2 className="w-5 h-5" />
@@ -874,31 +874,31 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
 
                 {/* LEVEL 2 CSV UPLOAD INJECTION */}
                 {dataSource === 'l2_orderbook' && (
-                    <div className="mb-4 p-5 border border-purple-500/30 rounded-xl bg-purple-500/5 shadow-[inset_0_0_20px_rgba(168,85,247,0.05)]">
+                    <div className="mb-4 p-5 border border-purple-500/30 rounded-xl bg-purple-50/70 dark:bg-purple-500/5 shadow-[inset_0_0_20px_rgba(168,85,247,0.05)]">
                         <div className="mb-5 text-center">
-                            <h4 className="text-sm font-bold text-purple-400 mb-1">Custom L2 Orderbook Data</h4>
-                            <p className="text-[10px] text-slate-400">Upload CSV files containing historical DOM/L2 data.</p>
+                            <h4 className="text-sm font-bold text-purple-600 dark:text-purple-400 mb-1">Custom L2 Orderbook Data</h4>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400">Upload CSV files containing historical DOM/L2 data.</p>
                         </div>
                         
                         <div className="mb-5">
-                            <label className="block text-[11px] font-bold text-slate-300 mb-2 uppercase tracking-wider">Select L2 Dataset (CSV)</label>
+                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Select L2 Dataset (CSV)</label>
                             <div className="flex items-center gap-2">
                                 <select 
                                     value={props.selectedL2File} 
                                     onChange={e => props.setSelectedL2File(e.target.value)}
                                     disabled={props.isTraining || props.isUploadingL2}
-                                    className="w-full bg-black/40 border border-purple-500/20 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-purple-500/50 outline-none"
+                                    className="w-full bg-white dark:bg-black/40 border border-purple-300 dark:border-purple-500/20 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500/50 outline-none"
                                 >
-                                    {props.l2OrderbookFiles.length === 0 && <option value="" className="text-slate-500">No L2 datasets available. Please upload one.</option>}
+                                    {props.l2OrderbookFiles.length === 0 && <option value="" className="bg-white dark:bg-gray-900 text-slate-500">No L2 datasets available. Please upload one.</option>}
                                     {props.l2OrderbookFiles.map(f => (
-                                        <option key={f} value={f} className="bg-gray-900 text-white">{f}</option>
+                                        <option key={f} value={f} className="bg-white dark:bg-gray-900 text-slate-900 dark:text-white">{f}</option>
                                     ))}
                                 </select>
                                 {props.selectedL2File && (
                                     <button
                                         onClick={props.handleDeleteL2Snapshot}
                                         disabled={props.isTraining || props.isUploadingL2}
-                                        className="p-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl border border-red-500/20 transition-all flex items-center justify-center"
+                                        className="p-3 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-xl border border-red-500/20 transition-all flex items-center justify-center"
                                         title="Delete selected L2 dataset"
                                     >
                                         <Trash2 className="w-5 h-5" />
@@ -907,7 +907,7 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
                             </div>
                         </div>
 
-                        <div className="relative border-2 border-dashed border-purple-500/30 hover:border-purple-400/60 rounded-xl p-6 text-center transition-all bg-black/20 group">
+                        <div className="relative border-2 border-dashed border-purple-400/50 dark:border-purple-500/30 hover:border-purple-500 dark:hover:border-purple-400/60 rounded-xl p-6 text-center transition-all bg-white dark:bg-black/20 group">
                             <input 
                                 type="file" 
                                 accept=".csv"
@@ -916,10 +916,10 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
                                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                             />
                             <div className="flex flex-col items-center justify-center pointer-events-none">
-                                <div className="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                                    <Database className="w-5 h-5 text-purple-400" />
+                                <div className="w-10 h-10 bg-purple-500/15 dark:bg-purple-500/20 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                    <Database className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                                 </div>
-                                <span className="text-sm font-bold text-slate-300 group-hover:text-purple-300 transition-colors">
+                                <span className="text-sm font-bold text-slate-700 dark:text-slate-300 group-hover:text-purple-600 dark:group-hover:text-purple-300 transition-colors">
                                     {props.isUploadingL2 ? 'Uploading...' : 'Click or Drag to Upload CSV'}
                                 </span>
                                 <span className="text-[10px] text-slate-500 mt-1">Only .csv format is supported</span>
@@ -978,7 +978,7 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
                     return (
                         <div 
                             key={module.id} 
-                            className={`rounded-xl border transition-all duration-300 overflow-hidden ${isExpanded ? 'border-teal-500/40 bg-teal-500/5' : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.04]'}`}
+                            className={`rounded-xl border transition-all duration-300 overflow-hidden ${isExpanded ? 'border-teal-500/40 bg-teal-50/70 dark:bg-teal-500/5' : 'border-slate-200 dark:border-white/5 bg-slate-50/70 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.04]'}`}
                         >
                             {/* Accordion Header */}
                             <div 
@@ -986,11 +986,11 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
                                 onClick={() => setExpandedModule(isExpanded ? null : module.id)}
                             >
                                 <div className="flex items-center gap-3">
-                                    <div className={`p-2 rounded-lg transition-colors ${isExpanded ? 'bg-teal-500/20 text-teal-300' : 'bg-white/5 text-slate-400'}`}>
+                                    <div className={`p-2 rounded-lg transition-colors ${isExpanded ? 'bg-teal-500/15 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}>
                                         <ModuleIcon className="w-4 h-4" />
                                     </div>
                                     <div>
-                                        <h4 className={`text-sm font-bold tracking-wide transition-colors ${isExpanded ? 'text-teal-300' : 'text-slate-300'}`}>
+                                        <h4 className={`text-sm font-bold tracking-wide transition-colors ${isExpanded ? 'text-teal-700 dark:text-teal-300' : 'text-slate-800 dark:text-slate-300'}`}>
                                             {module.title}
                                         </h4>
                                         {!isExpanded && (
@@ -999,7 +999,7 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <div className="text-[10px] font-mono text-teal-400 bg-teal-400/10 px-2 py-0.5 rounded-md">
+                                    <div className="text-[10px] font-mono text-teal-700 dark:text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded-md">
                                         {selectedInModule.length} / {module.features.length}
                                     </div>
                                     <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
@@ -1008,13 +1008,13 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
 
                             {/* Accordion Body */}
                             {isExpanded && (
-                                <div className="p-3 pt-0 border-t border-white/5 mt-2 space-y-1">
-                                    <div className="flex items-center justify-between mb-3 px-2 py-1 bg-white/5 rounded-md">
-                                        <span className="text-xs text-slate-400 font-medium">{module.description}</span>
+                                <div className="p-3 pt-0 border-t border-slate-200 dark:border-white/5 mt-2 space-y-1">
+                                    <div className="flex items-center justify-between mb-3 px-2 py-1 bg-slate-100 dark:bg-white/5 rounded-md">
+                                        <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">{module.description}</span>
                                         <button 
                                             disabled={props.disabled}
                                             onClick={(e) => { e.stopPropagation(); handleSelectAll(module.id, module.features, isAllSelected); }}
-                                            className="text-[10px] uppercase font-bold tracking-wider text-teal-400 hover:text-teal-300 px-2 py-1 rounded hover:bg-teal-400/10 transition-colors"
+                                            className="text-[10px] uppercase font-bold tracking-wider text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 px-2 py-1 rounded hover:bg-teal-400/10 transition-colors"
                                         >
                                             {isAllSelected ? 'Deselect All' : 'Select All'}
                                         </button>
@@ -1027,12 +1027,12 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
                                                 <div 
                                                     key={feature.id}
                                                     onClick={() => !props.disabled && props.onToggleFeature(feature.id)}
-                                                    className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-teal-500/10 hover:bg-teal-500/20' : 'hover:bg-white/5'} ${props.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                    className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-teal-500/10 hover:bg-teal-500/20' : 'hover:bg-slate-100 dark:hover:bg-white/5'} ${props.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                 >
-                                                    <div className={`transition-colors ${isSelected ? 'text-teal-400' : 'text-slate-600'}`}>
+                                                    <div className={`transition-colors ${isSelected ? 'text-teal-600 dark:text-teal-400' : 'text-slate-400 dark:text-slate-600'}`}>
                                                         {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
                                                     </div>
-                                                    <span className={`text-xs font-medium ${isSelected ? 'text-teal-200' : 'text-slate-400'}`}>
+                                                    <span className={`text-xs font-medium ${isSelected ? 'text-teal-800 dark:text-teal-200' : 'text-slate-700 dark:text-slate-400'}`}>
                                                         {feature.name}
                                                     </span>
                                                 </div>

@@ -21,29 +21,29 @@ export const TripleBarrierToggle: React.FC<TripleBarrierToggleProps> = ({
     isTraining
 }) => {
     return (
-        <div className="mt-4 p-4 bg-black/20 border border-white/5 rounded-xl">
+        <div className="mt-4 p-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/5 rounded-xl">
             <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                    <Target className="w-4 h-4 text-purple-400" />
+                    <Target className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                     <div>
-                        <h4 className="text-sm font-semibold text-white">Triple Barrier Method</h4>
-                        <p className="text-[10px] text-slate-400">Risk-Adjusted Target (TP/SL/Time)</p>
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Triple Barrier Method</h4>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">Risk-Adjusted Target (TP/SL/Time)</p>
                     </div>
                 </div>
                 <button
                     disabled={isTraining}
                     onClick={() => setUseTripleBarrier(!useTripleBarrier)}
-                    className={`relative w-10 h-5 rounded-full transition-colors ${useTripleBarrier ? 'bg-purple-500' : 'bg-slate-600'}`}
+                    className={`relative w-10 h-5 rounded-full transition-colors ${useTripleBarrier ? 'bg-purple-500' : 'bg-slate-300 dark:bg-slate-600'}`}
                 >
                     <span className={`absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform ${useTripleBarrier ? 'translate-x-5' : 'translate-x-0'}`} />
                 </button>
             </div>
             
             {useTripleBarrier && (
-                <div className="mt-3 pt-3 border-t border-white/10">
+                <div className="mt-3 pt-3 border-t border-slate-200 dark:border-white/10">
                     <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-300">PT / SL Ratio</span>
-                        <span className="text-purple-400 font-bold">{ptSlRatio}x</span>
+                        <span className="text-slate-700 dark:text-slate-300">PT / SL Ratio</span>
+                        <span className="text-purple-600 dark:text-purple-400 font-bold">{ptSlRatio}x</span>
                     </div>
                     <input 
                         type="range"
@@ -59,8 +59,8 @@ export const TripleBarrierToggle: React.FC<TripleBarrierToggleProps> = ({
                     </div>
 
                     <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-300">Time Barrier (Bars)</span>
-                        <span className="text-purple-400 font-bold">{barrierTimeout}</span>
+                        <span className="text-slate-700 dark:text-slate-300">Time Barrier (Bars)</span>
+                        <span className="text-purple-600 dark:text-purple-400 font-bold">{barrierTimeout}</span>
                     </div>
                     <input 
                         type="range"

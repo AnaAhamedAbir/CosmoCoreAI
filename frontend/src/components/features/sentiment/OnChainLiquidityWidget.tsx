@@ -39,8 +39,8 @@ const OnChainLiquidityWidget: React.FC<{ symbol: string }> = ({ symbol }) => {
         return () => clearInterval(interval);
     }, [symbol]);
 
-    if (loading) return <div className="animate-pulse h-32 bg-gray-800 rounded-xl"></div>;
-    if (!data) return <div className="text-gray-400">No On-Chain Data</div>;
+    if (loading) return <div className="animate-pulse h-32 bg-slate-100 dark:bg-gray-800 rounded-xl"></div>;
+    if (!data) return <div className="text-slate-500 dark:text-gray-400">No On-Chain Data</div>;
 
     const totalVol = data.exchange_inflow_volume + data.exchange_outflow_volume;
     const inflowPct = totalVol ? (data.exchange_inflow_volume / totalVol) * 100 : 50;
@@ -49,25 +49,25 @@ const OnChainLiquidityWidget: React.FC<{ symbol: string }> = ({ symbol }) => {
     const isBearish = data.net_flow_status === 'High Sell Pressure';
 
     return (
-        <div className="bg-gray-900 border border-gray-800 p-4 rounded-xl shadow-lg hover:shadow-cyan-500/10 transition-all">
-            <h3 className="text-lg font-bold text-gray-100 mb-2 flex items-center justify-between">
+        <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 p-4 rounded-xl shadow-md dark:shadow-lg hover:shadow-cyan-500/10 transition-all">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-gray-100 mb-2 flex items-center justify-between">
                 On-Chain Exchange Flow
-                <span className={`text-xs px-2 py-1 rounded-full border ${isBullish ? 'bg-green-900/40 text-green-400 border-green-800' :
-                    isBearish ? 'bg-red-900/40 text-red-400 border-red-800' :
-                        'bg-gray-700 text-gray-300'
+                <span className={`text-xs px-2 py-1 rounded-full border ${isBullish ? 'bg-green-50 dark:bg-green-900/40 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800' :
+                    isBearish ? 'bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800' :
+                        'bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300 border-slate-200 dark:border-gray-600'
                     }`}>
                     {data.net_flow_status}
                 </span>
             </h3>
 
             <div className="mt-4 space-y-2">
-                <div className="flex justify-between text-sm text-gray-400">
-                    <span>Inflow (Sell Pressure): <span className="text-red-400">${data.exchange_inflow_volume.toLocaleString()}</span></span>
-                    <span>Outflow (Buy Pressure): <span className="text-green-400">${data.exchange_outflow_volume.toLocaleString()}</span></span>
+                <div className="flex justify-between text-sm text-slate-500 dark:text-gray-400">
+                    <span>Inflow (Sell Pressure): <span className="text-red-600 dark:text-red-400 font-semibold">${data.exchange_inflow_volume.toLocaleString()}</span></span>
+                    <span>Outflow (Buy Pressure): <span className="text-green-600 dark:text-green-400 font-semibold">${data.exchange_outflow_volume.toLocaleString()}</span></span>
                 </div>
 
                 {/* Comparison Bar */}
-                <div className="h-4 bg-gray-700 rounded-full overflow-hidden flex relative">
+                <div className="h-4 bg-slate-200 dark:bg-gray-700 rounded-full overflow-hidden flex relative">
                     <div
                         className="h-full bg-gradient-to-r from-red-600 to-red-400 transition-all duration-500"
                         style={{ width: `${inflowPct}%` }}

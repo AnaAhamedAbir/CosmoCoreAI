@@ -97,11 +97,11 @@ const SmartExecutionWidget: React.FC = () => {
                         <button
                             onClick={() => setStrategy('TWAP')}
                             className={`p-3 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all group ${strategy === 'TWAP'
-                                ? 'bg-blue-500/10 border-blue-500 text-blue-500 ring-1 ring-blue-500/50'
-                                : 'bg-white dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-400 hover:border-blue-500/30 hover:bg-white/10'
+                                ? 'bg-blue-500/10 border-blue-500 text-blue-600 dark:text-blue-400 ring-1 ring-blue-500/50'
+                                : 'bg-white dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:border-blue-500/30 hover:bg-slate-50 dark:hover:bg-white/10'
                                 }`}
                         >
-                            <Clock size={20} className={strategy === 'TWAP' ? 'text-blue-500' : 'text-gray-400 group-hover:text-blue-400'} />
+                            <Clock size={20} className={strategy === 'TWAP' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400'} />
                             <div className="text-center">
                                 <span className="text-xs font-bold block">TWAP</span>
                                 <span className="text-[9px] opacity-70">Time Weighted</span>
@@ -110,11 +110,11 @@ const SmartExecutionWidget: React.FC = () => {
                         <button
                             onClick={() => setStrategy('VWAP')}
                             className={`p-3 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all group ${strategy === 'VWAP'
-                                ? 'bg-purple-500/10 border-purple-500 text-purple-500 ring-1 ring-purple-500/50'
-                                : 'bg-white dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-400 hover:border-purple-500/30 hover:bg-white/10'
+                                ? 'bg-purple-500/10 border-purple-500 text-purple-600 dark:text-purple-400 ring-1 ring-purple-500/50'
+                                : 'bg-white dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:border-purple-500/30 hover:bg-slate-50 dark:hover:bg-white/10'
                                 }`}
                         >
-                            <BarChart2 size={20} className={strategy === 'VWAP' ? 'text-purple-500' : 'text-gray-400 group-hover:text-purple-400'} />
+                            <BarChart2 size={20} className={strategy === 'VWAP' ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 group-hover:text-purple-500 dark:group-hover:text-purple-400'} />
                             <div className="text-center">
                                 <span className="text-xs font-bold block">VWAP</span>
                                 <span className="text-[9px] opacity-70">Volume Weighted</span>
@@ -126,16 +126,16 @@ const SmartExecutionWidget: React.FC = () => {
                 {/* 2. Parameters */}
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Total Amount (BTC)</label>
+                        <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Total Amount (BTC)</label>
                         <input
                             type="number"
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
-                            className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-brand-primary outline-none transition-all"
+                            className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2.5 text-sm font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-primary outline-none transition-all"
                         />
                     </div>
                     <div>
-                        <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Slippage Tolerance</label>
+                        <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Slippage Tolerance</label>
                         <div className="flex items-center gap-2 h-[42px] px-3 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg">
                             <input
                                 type="range"
@@ -146,7 +146,7 @@ const SmartExecutionWidget: React.FC = () => {
                                 onChange={(e) => setSlippage(parseFloat(e.target.value))}
                                 className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer accent-brand-primary"
                             />
-                            <span className="text-xs font-mono w-10 text-right">{slippage}%</span>
+                            <span className="text-xs font-mono text-slate-900 dark:text-white w-10 text-right">{slippage}%</span>
                         </div>
                     </div>
                 </div>
@@ -199,8 +199,8 @@ const SmartExecutionWidget: React.FC = () => {
 
                         <div className="mt-4 pt-4 border-t border-dashed border-gray-200 dark:border-white/10">
                             <div className="flex justify-between items-center mb-4 text-xs">
-                                <span className="text-gray-500">Avg. Execution Price Est.</span>
-                                <span className="font-mono font-bold">$96,420.50</span>
+                                <span className="text-gray-500 dark:text-gray-400">Avg. Execution Price Est.</span>
+                                <span className="font-mono font-bold text-slate-900 dark:text-white">$96,420.50</span>
                             </div>
                             <Button
                                 className="w-full py-4 text-base font-bold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 shadow-lg shadow-purple-500/20 active:scale-[0.98] transition-all"

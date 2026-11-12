@@ -475,15 +475,15 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
     };
 
     return (
-        <div className="mt-4 overflow-hidden rounded-2xl border border-indigo-500/20 shadow-[0_0_20px_rgba(99,102,241,0.07)] bg-black/40 backdrop-blur-sm">
+        <div className="mt-4 overflow-hidden rounded-2xl border border-indigo-200 dark:border-indigo-500/20 shadow-sm dark:shadow-[0_0_20px_rgba(99,102,241,0.07)] bg-white dark:bg-black/40 backdrop-blur-sm">
             {/* ── Header ── */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 bg-gradient-to-r from-indigo-900/20 to-purple-900/10">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/5 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/10">
                 <div className="flex items-center gap-3">
                     <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-                        <Zap className="w-4 h-4 text-indigo-400" />
+                        <Zap className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     </div>
                     <div>
-                        <h4 className="text-sm font-black text-white uppercase tracking-widest">
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">
                             Sentiment &amp; Macro Intelligence
                         </h4>
                         <p className="text-[10px] text-slate-500 font-medium mt-0.5">
@@ -496,7 +496,7 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                         <motion.div
                             initial={{ scale: 0.8, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
-                            className="text-xs font-black text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-3 py-1 rounded-full"
+                            className="text-xs font-black text-indigo-700 dark:text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-3 py-1 rounded-full"
                         >
                             {totalSelected}/{totalFeatures} Active
                         </motion.div>
@@ -506,12 +506,12 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
 
             {/* ── Live Snapshot Bar ── */}
             {(fng !== null || netFlow !== null || fundingRate !== null || nlpScore !== null) && (
-                <div className="flex items-center gap-4 px-5 py-2.5 bg-black/30 border-b border-white/5 overflow-x-auto whitespace-nowrap hide-scrollbar">
+                <div className="flex items-center gap-4 px-5 py-2.5 bg-slate-50 dark:bg-black/30 border-b border-slate-200 dark:border-white/5 overflow-x-auto whitespace-nowrap hide-scrollbar">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex-shrink-0">Live Pulse:</span>
                     {fng !== null && (
                         <div className="flex items-center gap-1.5">
                             <span className="text-[10px] text-slate-500">F&amp;G</span>
-                            <span className={`text-xs font-black font-mono ${fng < 25 ? 'text-rose-400' : fng > 75 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            <span className={`text-xs font-black font-mono ${fng < 25 ? 'text-rose-600 dark:text-rose-400' : fng > 75 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                                 {fng}
                             </span>
                             <span className={`text-[9px] font-bold ${fng < 25 ? 'text-rose-500' : fng > 75 ? 'text-emerald-500' : 'text-amber-500'}`}>
@@ -521,10 +521,10 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                     )}
                     {netFlow !== null && (
                         <>
-                            <div className="w-px h-4 bg-white/10" />
+                            <div className="w-px h-4 bg-slate-200 dark:bg-white/10" />
                             <div className="flex items-center gap-1.5">
                                 <span className="text-[10px] text-slate-500">Net Flow</span>
-                                <span className={`text-xs font-black font-mono ${netFlow > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                <span className={`text-xs font-black font-mono ${netFlow > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                                     {netFlow > 0 ? '+' : ''}{netFlow.toFixed(2)} ETH
                                 </span>
                                 <span className={`text-[9px] font-bold ${netFlow > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
@@ -535,10 +535,10 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                     )}
                     {fundingRate !== null && (
                         <>
-                            <div className="w-px h-4 bg-white/10 flex-shrink-0" />
+                            <div className="w-px h-4 bg-slate-200 dark:bg-white/10 flex-shrink-0" />
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                                 <span className="text-[10px] text-slate-500">Funding</span>
-                                <span className={`text-xs font-black font-mono ${fundingRate < 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                <span className={`text-xs font-black font-mono ${fundingRate < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                                     {fundingRate > 0 ? '+' : ''}{fundingRate.toFixed(4)}%
                                 </span>
                             </div>
@@ -546,10 +546,10 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                     )}
                     {nlpScore !== null && (
                         <>
-                            <div className="w-px h-4 bg-white/10 flex-shrink-0" />
+                            <div className="w-px h-4 bg-slate-200 dark:bg-white/10 flex-shrink-0" />
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                                 <span className="text-[10px] text-slate-500">NLP</span>
-                                <span className={`text-xs font-black font-mono ${nlpScore < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                <span className={`text-xs font-black font-mono ${nlpScore < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                                     {nlpScore.toFixed(2)}
                                 </span>
                             </div>
@@ -559,9 +559,9 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                 </div>
             )}
             
-            <div className="px-5 py-2.5 bg-indigo-500/10 border-b border-indigo-500/20">
-                 <p className="text-[10px] text-indigo-300 font-medium">
-                     <span className="font-bold text-indigo-200">System Notice:</span> 
+            <div className="px-5 py-2.5 bg-indigo-50/80 dark:bg-indigo-500/10 border-b border-indigo-200 dark:border-indigo-500/20">
+                 <p className="text-[10px] text-indigo-700 dark:text-indigo-300 font-medium">
+                     <span className="font-bold text-indigo-900 dark:text-indigo-200">System Notice:</span> 
                      Currently, Derivatives (Funding Rate/OI) and NLP Sentiment use robust API placeholders. 
                      In the future, you can replace the Python service methods (`get_funding_rate`, `get_live_score`) with real API keys (e.g., Binance Futures, Twitter API).
                  </p>
@@ -577,20 +577,20 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                     return (
                         <div
                             key={cat.key}
-                            className={`rounded-xl overflow-hidden border transition-all duration-300 ${isOpen ? 'border-white/10 shadow-inner' : 'border-white/5'}`}
+                            className={`rounded-xl overflow-hidden border transition-all duration-300 ${isOpen ? 'border-slate-200 dark:border-white/10 shadow-sm dark:shadow-inner' : 'border-slate-200/70 dark:border-white/5'}`}
                         >
                             {/* Category Header (Accordion Toggle) */}
                             <button
                                 onClick={() => toggleCategory(cat.key)}
-                                className="w-full flex items-center justify-between p-3 bg-black/30 hover:bg-white/5 transition-colors text-left"
+                                className="w-full flex items-center justify-between p-3 bg-slate-50 dark:bg-black/30 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors text-left"
                             >
                                 <div className="flex items-center gap-2">
-                                    <CatIcon className="w-3.5 h-3.5 text-slate-400" />
-                                    <span className="text-xs font-black text-slate-300 uppercase tracking-wider">
+                                    <CatIcon className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                                    <span className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                                         {cat.label}
                                     </span>
                                     {selectedInCat > 0 && (
-                                        <span className="text-[9px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded-full">
+                                        <span className="text-[9px] font-bold bg-indigo-500/15 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded-full">
                                             {selectedInCat} on
                                         </span>
                                     )}
@@ -625,22 +625,22 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                                                             onMouseLeave={() => setHoveredFeature(null)}
                                                             className={`w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-all duration-200 group ${
                                                                 isSelected
-                                                                    ? `${feature.bg} ${feature.border} shadow-[0_0_12px_rgba(255,255,255,0.04)]`
-                                                                    : 'bg-black/40 border-white/5 hover:border-white/15 hover:bg-white/5'
+                                                                    ? `${feature.bg} ${feature.border} shadow-sm dark:shadow-[0_0_12px_rgba(255,255,255,0.04)]`
+                                                                    : 'bg-slate-50/70 dark:bg-black/40 border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/15 hover:bg-slate-100 dark:hover:bg-white/5'
                                                             } disabled:opacity-50 disabled:cursor-not-allowed`}
                                                         >
                                                             {/* Left: Icon + Checkbox */}
                                                             <div className="flex flex-col items-center gap-1.5 flex-shrink-0 pt-0.5">
                                                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
-                                                                    isSelected ? feature.bg : 'bg-white/5'
+                                                                    isSelected ? feature.bg : 'bg-slate-200/70 dark:bg-white/5'
                                                                 }`}>
-                                                                    <Icon className={`w-3.5 h-3.5 ${isSelected ? feature.color : 'text-slate-600'}`} />
+                                                                    <Icon className={`w-3.5 h-3.5 ${isSelected ? feature.color : 'text-slate-500 dark:text-slate-600'}`} />
                                                                 </div>
                                                                 {/* Checkbox */}
                                                                 <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
                                                                     isSelected
                                                                         ? `${feature.border} ${feature.bg}`
-                                                                        : 'border-slate-700 bg-transparent'
+                                                                        : 'border-slate-300 dark:border-slate-700 bg-transparent'
                                                                 }`}>
                                                                     {isSelected && (
                                                                         <motion.div
@@ -655,7 +655,7 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                                                             {/* Right: Text */}
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="flex items-center gap-2 flex-wrap mb-1">
-                                                                    <span className={`text-xs font-bold ${isSelected ? 'text-white' : 'text-slate-300'}`}>
+                                                                    <span className={`text-xs font-bold ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
                                                                         {feature.name}
                                                                     </span>
                                                                     {STATUS_BADGE[feature.status]}
@@ -666,7 +666,7 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                                                                         </span>
                                                                     </span>
                                                                 </div>
-                                                                <p className={`text-[10px] leading-relaxed ${isSelected ? 'text-slate-400' : 'text-slate-600'}`}>
+                                                                <p className={`text-[10px] leading-relaxed ${isSelected ? 'text-slate-600 dark:text-slate-400' : 'text-slate-500 dark:text-slate-600'}`}>
                                                                     {feature.desc}
                                                                 </p>
                                                             </div>
@@ -679,11 +679,11 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                                                                     initial={{ opacity: 0, y: 4 }}
                                                                     animate={{ opacity: 1, y: 0 }}
                                                                     exit={{ opacity: 0, y: 4 }}
-                                                                    className="absolute bottom-full left-0 mb-2 z-50 bg-[#0a0a14] border border-indigo-500/20 rounded-xl p-3 shadow-xl shadow-black/50 max-w-[280px] pointer-events-none"
+                                                                    className="absolute bottom-full left-0 mb-2 z-50 bg-white dark:bg-[#0a0a14] border border-indigo-200 dark:border-indigo-500/20 rounded-xl p-3 shadow-xl shadow-slate-900/10 dark:shadow-black/50 max-w-[280px] pointer-events-none"
                                                                 >
                                                                     <div className="flex items-start gap-2">
-                                                                        <Info className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0 mt-0.5" />
-                                                                        <p className="text-[10px] text-slate-300 leading-relaxed">{feature.tooltip}</p>
+                                                                        <Info className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
+                                                                        <p className="text-[10px] text-slate-700 dark:text-slate-300 leading-relaxed">{feature.tooltip}</p>
                                                                     </div>
                                                                 </motion.div>
                                                             )}
@@ -707,12 +707,12 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden border-t border-white/5"
+                        className="overflow-hidden border-t border-slate-200 dark:border-white/5"
                     >
-                        <div className="px-5 py-3 bg-gradient-to-r from-indigo-900/10 to-transparent">
+                        <div className="px-5 py-3 bg-gradient-to-r from-indigo-50 to-transparent dark:from-indigo-900/10 dark:to-transparent">
                             <div className="flex items-center gap-2 mb-2">
-                                <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                                <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider">
                                     Active Alternative Features ({selectedAltFeatures.length})
                                 </p>
                             </div>

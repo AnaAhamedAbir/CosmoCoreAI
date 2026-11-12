@@ -23,6 +23,7 @@ import {
     Badge
 } from '@chakra-ui/react';
 import { SettingsIcon } from '@chakra-ui/icons';
+import { useTheme } from '@/context/ThemeContext';
 
 // --- Types ---
 type UnusualVolumeSpikeWithStatus = UnusualVolumeSpike & { isUpdated?: boolean };
@@ -86,16 +87,16 @@ const TradeRow: React.FC<{ trade: BlockTrade; maxTradeValue: number; isNew: bool
 
             {/* Content */}
             <div className="relative z-10 flex items-center gap-4 w-1/3">
-                <span className="text-xs font-mono text-gray-400">{timeString}</span>
+                <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{timeString}</span>
                 <div className="flex items-center gap-2">
-                    <span className={`font-bold text-base ${isWhale ? 'text-amber-400' : 'text-slate-900 dark:text-white'}`}>{trade.symbol}</span>
-                    {isWhale && <span className="text-[10px] font-bold bg-amber-400/20 text-amber-400 px-1.5 rounded border border-amber-400/30">WHALE</span>}
+                    <span className={`font-bold text-base ${isWhale ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'}`}>{trade.symbol}</span>
+                    {isWhale && <span className="text-[10px] font-bold bg-amber-500/15 dark:bg-amber-400/20 text-amber-600 dark:text-amber-400 px-1.5 rounded border border-amber-500/30 dark:border-amber-400/30">WHALE</span>}
                 </div>
             </div>
 
             <div className="relative z-10 w-1/3 text-right">
                 <span className="text-sm font-mono text-gray-600 dark:text-gray-300">{trade.amount.toLocaleString()} @ </span>
-                <span className={`text-sm font-mono font-semibold ${trade.side === 'buy' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                <span className={`text-sm font-mono font-semibold ${trade.side === 'buy' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                     {trade.price.toLocaleString()}
                 </span>
             </div>
@@ -120,19 +121,20 @@ const WhaleMovementRow: React.FC<{ trade: BlockTrade; isNew: boolean }> = ({ tra
         <div>
             <div className="flex items-center gap-2">
                 <span className="font-bold text-slate-900 dark:text-white">{trade.symbol}</span>
-                <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 rounded border border-purple-500/30 uppercase">Whale Alert</span>
+                <span className="text-[10px] bg-purple-500/15 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 px-1.5 rounded border border-purple-500/30 uppercase">Whale Alert</span>
             </div>
-            <p className="text-xs text-gray-500 mt-0.5">{new Date(trade.timestamp).toLocaleTimeString()} • {trade.exchange}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{new Date(trade.timestamp).toLocaleTimeString()} • {trade.exchange}</p>
         </div>
         <div className="text-right">
-            <p className="font-bold text-purple-400">{formatValue(trade.value)}</p>
-            <p className="text-xs text-gray-500">Amt: {trade.amount.toLocaleString()}</p>
+            <p className="font-bold text-purple-600 dark:text-purple-400">{formatValue(trade.value)}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Amt: {trade.amount.toLocaleString()}</p>
         </div>
     </div>
 );
 
 const BlockTradeDetector: React.FC = () => {
     // Hooks
+    const { theme } = useTheme();
     const { trades: liveTrades, isConnected } = useBlockTradeSocket();
     const { config, updateConfig, isLoading: isConfigLoading } = useBlockTradeConfig();
 
@@ -227,7 +229,7 @@ const BlockTradeDetector: React.FC = () => {
             {/* Config Modal */}
             <Modal isOpen={isOpen} onClose={onClose} isCentered>
                 <ModalOverlay />
-                <ModalContent bg="gray.800" color="white">
+                <ModalContent bg={theme === 'dark' ? 'gray.800' : 'white'} color={theme === 'dark' ? 'white' : 'gray.900'}>
                     <ModalHeader>Scanner Settings</ModalHeader>
                     <ModalCloseButton />
                     <ModalBody>
@@ -259,16 +261,16 @@ const BlockTradeDetector: React.FC = () => {
 
             {/* Header / Sonar Panel */}
             <div className="flex-shrink-0 grid grid-cols-1 md:grid-cols-3 gap-6 staggered-fade-in">
-                <Card className="flex items-center justify-between !p-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white border-[#1F1F1F]">
+                <Card className="flex items-center justify-between !p-4 bg-gradient-to-r from-white to-slate-50 dark:from-slate-900 dark:to-slate-800 text-slate-900 dark:text-white border-gray-200 dark:border-[#1F1F1F]">
                     <div className="flex items-center gap-4">
                         <LiquidityRadar isActive={isConnected} />
                         <div>
                             <h2 className="text-lg font-bold">Liquidity Scanner</h2>
-                            <p className="text-xs text-slate-400 font-mono">{isConnected ? 'SCANNING LIT MARKETS...' : 'CONNECTING...'}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">{isConnected ? 'SCANNING LIT MARKETS...' : 'CONNECTING...'}</p>
                         </div>
                     </div>
                     <div className="text-right">
-                        <p className="text-xs text-slate-400 uppercase tracking-wider">Session Flow</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider">Session Flow</p>
                         <p className="text-xl font-mono font-bold text-brand-primary">{formatValue(totalFlow)}</p>
                     </div>
                 </Card>
@@ -287,7 +289,7 @@ const BlockTradeDetector: React.FC = () => {
                 </Card>
 
                 <div className="flex gap-2">
-                    <button onClick={onOpen} className="flex-1 rounded-xl border font-bold transition-all bg-white dark:bg-white/5 border-gray-200 dark:border-white/10 hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-center gap-2">
+                    <button onClick={onOpen} className="flex-1 rounded-xl border font-bold transition-all bg-white dark:bg-white/5 text-slate-700 dark:text-white border-gray-200 dark:border-white/10 hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-center gap-2">
                         <SettingsIcon /> Settings
                     </button>
                 </div>
@@ -337,13 +339,13 @@ const BlockTradeDetector: React.FC = () => {
                 <div className="flex flex-col gap-6 min-h-0 staggered-fade-in" style={{ animationDelay: '200ms' }}>
 
                     {/* Whale Movements Section */}
-                    <Card className="flex-1 flex flex-col !p-0 border-purple-500/20 overflow-hidden bg-[#0A0A0A] dark:bg-[#0A0A0A] relative">
-                        {/* Background pattern for "Dark" feel */}
+                    <Card className="flex-1 flex flex-col !p-0 border-purple-500/20 overflow-hidden bg-white dark:bg-[#0A0A0A] relative">
+                        {/* Background pattern */}
                         <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#A855F7 1px, transparent 1px)', backgroundSize: '10px 10px' }}></div>
 
-                        <div className="p-4 border-b border-purple-500/20 flex justify-between items-center relative z-10 bg-purple-900/10">
-                            <h3 className="font-bold text-white flex items-center gap-2">
-                                <ShieldIcon className="text-purple-400" />
+                        <div className="p-4 border-b border-purple-500/20 flex justify-between items-center relative z-10 bg-purple-50 dark:bg-purple-900/10">
+                            <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <ShieldIcon className="text-purple-600 dark:text-purple-400" />
                                 Whale Movements
                             </h3>
                             <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span>
@@ -379,7 +381,7 @@ const BlockTradeDetector: React.FC = () => {
                                         <tr key={spike.ticker} className={`border-b border-brand-border-light/30 dark:border-[#1A1A1A]/30 last:border-0 ${spike.isUpdated ? 'animate-flash-blue' : ''}`}>
                                             <td className="p-2 font-bold text-slate-900 dark:text-white">{spike.ticker}</td>
                                             <td className="p-2 text-right font-mono text-brand-warning">{spike.volumeRatio.toFixed(1)}x</td>
-                                            <td className="p-2 text-right font-mono text-gray-400">${spike.lastPrice.toFixed(2)}</td>
+                                            <td className="p-2 text-right font-mono text-gray-500 dark:text-gray-400">${spike.lastPrice.toFixed(2)}</td>
                                         </tr>
                                     ))}
                                 </tbody>

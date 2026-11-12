@@ -37,25 +37,25 @@ const STATUS_STYLES: Record<
   }
 > = {
   PASS: {
-    badge: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+    badge: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
     ring: '#10b981',
     bar: 'from-emerald-400 to-cyan-400',
-    text: 'text-emerald-400',
-    icon: <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />,
+    text: 'text-emerald-600 dark:text-emerald-400',
+    icon: <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />,
   },
   WARN: {
-    badge: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
+    badge: 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300',
     ring: '#f59e0b',
     bar: 'from-amber-400 to-yellow-400',
-    text: 'text-amber-400',
-    icon: <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />,
+    text: 'text-amber-600 dark:text-amber-400',
+    icon: <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />,
   },
   FAIL: {
-    badge: 'border-rose-500/40 bg-rose-500/15 text-rose-300',
+    badge: 'border-rose-500/40 bg-rose-500/15 text-rose-700 dark:text-rose-300',
     ring: '#f43f5e',
     bar: 'from-rose-500 to-orange-400',
-    text: 'text-rose-400',
-    icon: <XCircle className="h-3.5 w-3.5 text-rose-400" />,
+    text: 'text-rose-600 dark:text-rose-400',
+    icon: <XCircle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />,
   },
 };
 
@@ -140,16 +140,16 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
   const balance = result ? resolveClassBalance(result.class_balance) : null;
 
   return (
-    <div className="rounded-2xl border border-slate-700/70 bg-slate-900/65 p-4 backdrop-blur-xl shadow-[0_0_30px_rgba(6,182,212,0.06)]">
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-900/65 p-4 backdrop-blur-xl shadow-sm dark:shadow-[0_0_30px_rgba(6,182,212,0.06)]">
       {/* Header Row */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/20 via-purple-500/15 to-emerald-500/15 text-cyan-300">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/15 via-purple-500/15 to-emerald-500/15 text-cyan-600 dark:text-cyan-300">
             <ShieldCheck className="h-4.5 w-4.5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold tracking-wide text-white">
+              <h3 className="text-sm font-bold tracking-wide text-slate-900 dark:text-white">
                 Pre-Flight Dataset Health
               </h3>
               {result && statusStyle && (
@@ -161,9 +161,9 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
               Audit NaNs, leakage risks, outliers & class balance before training{' '}
-              <span className="font-mono text-slate-300">{symbol || 'dataset'}</span>
+              <span className="font-mono text-slate-700 dark:text-slate-300">{symbol || 'dataset'}</span>
             </p>
           </div>
         </div>
@@ -172,7 +172,7 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
           type="button"
           onClick={handleRunCheck}
           disabled={loading || disabled || !symbol}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-gradient-to-r from-cyan-600/80 via-purple-600/70 to-emerald-600/75 px-3.5 py-2 text-xs font-semibold text-white shadow-[0_0_16px_rgba(6,182,212,0.2)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-gradient-to-r from-cyan-600 via-purple-600 to-emerald-600 dark:from-cyan-600/80 dark:via-purple-600/70 dark:to-emerald-600/75 px-3.5 py-2 text-xs font-semibold text-white shadow-[0_0_16px_rgba(6,182,212,0.2)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? (
             <>
@@ -190,18 +190,18 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
 
       {/* Error State */}
       {error && (
-        <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-500/35 bg-rose-500/10 p-3 text-xs text-rose-300">
-          <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+        <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-500/35 bg-rose-500/10 p-3 text-xs text-rose-700 dark:text-rose-300">
+          <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Idle placeholder */}
       {!result && !error && !loading && (
-        <div className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-slate-700/70 bg-slate-950/40 px-3.5 py-2.5 text-xs text-slate-400">
-          <Database className="h-4 w-4 shrink-0 text-slate-500" />
+        <div className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-700/70 bg-slate-50 dark:bg-slate-950/40 px-3.5 py-2.5 text-xs text-slate-500 dark:text-slate-400">
+          <Database className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
           <span>
-            Run a quick pre-flight check on <span className="text-slate-200">{symbol}</span> (
+            Run a quick pre-flight check on <span className="font-semibold text-slate-800 dark:text-slate-200">{symbol}</span> (
             {timeframe} • {dataSource}) to catch data leakage or quality issues early.
           </span>
         </div>
@@ -212,7 +212,7 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
         <div className="mt-4 space-y-3.5">
           {/* Health score ring + 4-stat grid */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
-            <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3 sm:col-span-4">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-3 sm:col-span-4">
               <div className="relative flex h-14 w-14 shrink-0 items-center justify-center">
                 <svg className="h-14 w-14 -rotate-90" viewBox="0 0 60 60">
                   <circle
@@ -241,57 +241,57 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
                 </span>
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Health Score
                 </div>
-                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                   <div
                     className={`h-full rounded-full bg-gradient-to-r ${statusStyle.bar} transition-all duration-700`}
                     style={{ width: `${score}%` }}
                   />
                 </div>
-                <div className="mt-1 text-[10px] text-slate-400">
+                <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
                   {result.feature_count} features analyzed
                 </div>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2 sm:col-span-8 sm:grid-cols-4">
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-2.5">
-                <div className="text-[10px] uppercase tracking-wider text-slate-400">Rows</div>
-                <div className="mt-1 font-mono text-sm font-bold text-white">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-2.5">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Rows</div>
+                <div className="mt-1 font-mono text-sm font-bold text-slate-900 dark:text-white">
                   {result.total_rows.toLocaleString()}
                 </div>
               </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-2.5">
-                <div className="text-[10px] uppercase tracking-wider text-slate-400">Missing %</div>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-2.5">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Missing %</div>
                 <div
                   className={`mt-1 font-mono text-sm font-bold ${
                     result.missing_pct > 5
-                      ? 'text-rose-400'
+                      ? 'text-rose-600 dark:text-rose-400'
                       : result.missing_pct > 0
-                        ? 'text-amber-300'
-                        : 'text-emerald-400'
+                        ? 'text-amber-600 dark:text-amber-300'
+                        : 'text-emerald-600 dark:text-emerald-400'
                   }`}
                 >
                   {result.missing_pct.toFixed(2)}%
                 </div>
               </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-2.5">
-                <div className="text-[10px] uppercase tracking-wider text-slate-400">Outliers %</div>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-2.5">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Outliers %</div>
                 <div
                   className={`mt-1 font-mono text-sm font-bold ${
-                    result.outlier_pct > 5 ? 'text-amber-300' : 'text-cyan-300'
+                    result.outlier_pct > 5 ? 'text-amber-600 dark:text-amber-300' : 'text-cyan-700 dark:text-cyan-300'
                   }`}
                 >
                   {result.outlier_pct.toFixed(2)}%
                 </div>
               </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-2.5">
-                <div className="text-[10px] uppercase tracking-wider text-slate-400">Duplicates</div>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-2.5">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Duplicates</div>
                 <div
                   className={`mt-1 font-mono text-sm font-bold ${
-                    result.duplicate_rows > 0 ? 'text-amber-300' : 'text-emerald-400'
+                    result.duplicate_rows > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-emerald-600 dark:text-emerald-400'
                   }`}
                 >
                   {result.duplicate_rows.toLocaleString()}
@@ -302,18 +302,18 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
 
           {/* Class Balance Split Bar */}
           {balance && (
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-3">
               <div className="mb-1.5 flex items-center justify-between text-[11px]">
-                <span className="font-semibold uppercase tracking-wider text-slate-400">
+                <span className="font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Target Class Balance
                 </span>
-                <span className="font-mono text-slate-300">
-                  <span className="text-emerald-400">UP {balance.upPct.toFixed(1)}%</span>
-                  <span className="mx-1.5 text-slate-600">/</span>
-                  <span className="text-rose-400">DOWN {balance.downPct.toFixed(1)}%</span>
+                <span className="font-mono text-slate-700 dark:text-slate-300">
+                  <span className="text-emerald-600 dark:text-emerald-400">UP {balance.upPct.toFixed(1)}%</span>
+                  <span className="mx-1.5 text-slate-400 dark:text-slate-600">/</span>
+                  <span className="text-rose-600 dark:text-rose-400">DOWN {balance.downPct.toFixed(1)}%</span>
                 </span>
               </div>
-              <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
+              <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                 <div
                   className="bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-500"
                   style={{ width: `${balance.upPct}%` }}
@@ -329,21 +329,21 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
           {/* Leakage Risks */}
           {result.leakage_risks.length > 0 && (
             <div className="rounded-xl border border-rose-500/35 bg-rose-500/10 p-3">
-              <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-rose-300">
-                <ShieldAlert className="h-4 w-4 text-rose-400" />
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-rose-700 dark:text-rose-300">
+                <ShieldAlert className="h-4 w-4 text-rose-600 dark:text-rose-400" />
                 Potential Leakage Risks ({result.leakage_risks.length})
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {result.leakage_risks.map((risk, idx) => (
                   <span
                     key={`${risk.column}-${idx}`}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-950/60 px-2.5 py-1 text-[11px] text-rose-200"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 dark:border-rose-500/40 bg-rose-50 dark:bg-rose-950/60 px-2.5 py-1 text-[11px] text-rose-800 dark:text-rose-200"
                     title={risk.reason}
                   >
-                    <span className="font-mono font-bold text-rose-300">{risk.column}</span>
-                    <span className="text-rose-300/80">— {risk.reason}</span>
+                    <span className="font-mono font-bold text-rose-700 dark:text-rose-300">{risk.column}</span>
+                    <span className="text-rose-600 dark:text-rose-300/80">— {risk.reason}</span>
                     {typeof risk.correlation === 'number' && (
-                      <span className="rounded bg-rose-500/20 px-1 py-0.5 font-mono text-[10px] text-rose-200">
+                      <span className="rounded bg-rose-200/70 dark:bg-rose-500/20 px-1 py-0.5 font-mono text-[10px] text-rose-800 dark:text-rose-200">
                         r={risk.correlation.toFixed(2)}
                       </span>
                     )}
@@ -357,21 +357,21 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
           {(result.nan_columns.length > 0 || result.constant_columns.length > 0) && (
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               {result.nan_columns.length > 0 && (
-                <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-300">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-3">
+                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
                     NaN Columns ({result.nan_columns.length})
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {result.nan_columns.slice(0, 8).map((col) => (
                       <span
                         key={col.column}
-                        className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] text-amber-200"
+                        className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] text-amber-800 dark:text-amber-200"
                       >
                         {col.column} ({col.missing_pct.toFixed(1)}%)
                       </span>
                     ))}
                     {result.nan_columns.length > 8 && (
-                      <span className="px-1 text-[10px] text-slate-400">
+                      <span className="px-1 text-[10px] text-slate-500 dark:text-slate-400">
                         +{result.nan_columns.length - 8} more
                       </span>
                     )}
@@ -380,21 +380,21 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
               )}
 
               {result.constant_columns.length > 0 && (
-                <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-purple-300">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-3">
+                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-purple-700 dark:text-purple-300">
                     Constant Columns ({result.constant_columns.length})
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {result.constant_columns.slice(0, 8).map((col) => (
                       <span
                         key={col}
-                        className="rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 font-mono text-[10px] text-purple-200"
+                        className="rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 font-mono text-[10px] text-purple-800 dark:text-purple-200"
                       >
                         {col}
                       </span>
                     ))}
                     {result.constant_columns.length > 8 && (
-                      <span className="px-1 text-[10px] text-slate-400">
+                      <span className="px-1 text-[10px] text-slate-500 dark:text-slate-400">
                         +{result.constant_columns.length - 8} more
                       </span>
                     )}
@@ -409,14 +409,14 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               {result.warnings.length > 0 && (
                 <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
-                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-300">
+                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     Warnings
                   </div>
-                  <ul className="space-y-1 text-xs text-slate-300">
+                  <ul className="space-y-1 text-xs text-slate-700 dark:text-slate-300">
                     {result.warnings.map((w, idx) => (
                       <li key={idx} className="flex items-start gap-1.5">
-                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-amber-400" />
+                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-amber-500 dark:bg-amber-400" />
                         <span>{w}</span>
                       </li>
                     ))}
@@ -426,14 +426,14 @@ export const PreFlightHealthCard: React.FC<PreFlightHealthCardProps> = ({
 
               {result.recommendations.length > 0 && (
                 <div className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-3">
-                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-cyan-300">
+                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">
                     <Lightbulb className="h-3.5 w-3.5" />
                     Recommendations
                   </div>
-                  <ul className="space-y-1 text-xs text-slate-300">
+                  <ul className="space-y-1 text-xs text-slate-700 dark:text-slate-300">
                     {result.recommendations.map((rec, idx) => (
                       <li key={idx} className="flex items-start gap-1.5">
-                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-cyan-400" />
+                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-cyan-500 dark:bg-cyan-400" />
                         <span>{rec}</span>
                       </li>
                     ))}

@@ -40,8 +40,8 @@ const TargetSelection: React.FC<TargetSelectionProps> = ({ predictionTarget, set
 
     return (
         <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2 flex items-center gap-2">
-                <Target className="w-4 h-4 text-cyan-400" /> Prediction Target
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
+                <Target className="w-4 h-4 text-cyan-600 dark:text-cyan-400" /> Prediction Target
             </label>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <button
@@ -50,10 +50,10 @@ const TargetSelection: React.FC<TargetSelectionProps> = ({ predictionTarget, set
                     title={isRlOnly ? "Not applicable for advanced RL engines" : ""}
                     className={`py-3 rounded-xl text-sm font-bold transition-all duration-300 ${
                         isRlOnly
-                            ? 'bg-white/5 text-slate-500 border border-white/5 opacity-40 cursor-not-allowed grayscale'
+                            ? 'bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-white/5 opacity-40 cursor-not-allowed grayscale'
                             : predictionTarget === 'classification' 
                                 ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(99,102,241,0.4)] border border-indigo-400/50' 
-                                : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'
+                                : 'bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'
                     }`}
                 >
                     <span className="block">Direction (Up/Down)</span>
@@ -65,10 +65,10 @@ const TargetSelection: React.FC<TargetSelectionProps> = ({ predictionTarget, set
                     title={isRlOnly ? "Not applicable for advanced RL engines" : ""}
                     className={`py-3 rounded-xl text-sm font-bold transition-all duration-300 ${
                         isRlOnly
-                            ? 'bg-white/5 text-slate-500 border border-white/5 opacity-40 cursor-not-allowed grayscale'
+                            ? 'bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-white/5 opacity-40 cursor-not-allowed grayscale'
                             : predictionTarget === 'regression' 
                                 ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-[0_0_15px_rgba(225,29,72,0.4)] border border-rose-400/50' 
-                                : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'
+                                : 'bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'
                     }`}
                 >
                     <span className="block">Exact Price</span>
@@ -80,10 +80,10 @@ const TargetSelection: React.FC<TargetSelectionProps> = ({ predictionTarget, set
                     title={!isAdvancedSupported ? `Not supported by ${selectedAlgorithm || 'this algorithm'}` : ''}
                     className={`py-3 rounded-xl text-sm font-bold transition-all duration-300 ${
                         !isAdvancedSupported 
-                            ? 'bg-white/5 text-slate-500 border border-white/5 opacity-50 cursor-not-allowed grayscale'
+                            ? 'bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-white/5 opacity-50 cursor-not-allowed grayscale'
                             : predictionTarget === 'advanced_setup' 
                                 ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-[0_0_15px_rgba(8,145,178,0.4)] border border-cyan-400/50' 
-                                : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'
+                                : 'bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'
                     }`}
                 >
                     <span className="block">Advanced Setup (SL/TP)</span>
@@ -95,10 +95,10 @@ const TargetSelection: React.FC<TargetSelectionProps> = ({ predictionTarget, set
                     title={!isMtlSupported ? `Not supported by ${selectedAlgorithm || 'this algorithm'}` : ''}
                     className={`py-3 rounded-xl text-sm font-bold transition-all duration-300 ${
                         !isMtlSupported 
-                            ? 'bg-white/5 text-slate-500 border border-white/5 opacity-50 cursor-not-allowed grayscale'
+                            ? 'bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-white/5 opacity-50 cursor-not-allowed grayscale'
                             : predictionTarget === 'multi_task' 
                                 ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)] border border-emerald-400/50' 
-                                : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5 hover:text-white'
+                                : 'bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 hover:text-slate-900 dark:hover:text-white'
                     }`}
                 >
                     <span className="block">Multi-Task</span>

@@ -2620,7 +2620,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       data-no-drag="true"
                       onMouseDown={(e) => e.stopPropagation()}
                       onTouchStart={(e) => e.stopPropagation()}
-                      className="rounded-lg bg-[#04070e]/90 border border-white/[0.08] px-2 py-1 space-y-1 shadow-[inset_0_1px_6px_rgba(0,0,0,0.65)]"
+                      className="rounded-lg bg-slate-50 dark:bg-[#04070e]/90 border border-slate-200 dark:border-white/[0.08] px-2 py-1 space-y-1 shadow-inner dark:shadow-[inset_0_1px_6px_rgba(0,0,0,0.65)]"
                     >
                       {/* Line 2A: Unit Switch + Size Input + 4 Shortcut Points (25, 50, 75, 100%) + Active % Badge */}
                       <div className="flex items-center justify-between gap-1">
@@ -2701,7 +2701,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                       {/* Line 2B: 0% to 100% Interactive Slide Bar with Milestone Track Points */}
                       <div className="relative h-3 flex items-center select-none px-1">
-                        <div className="w-full h-1 rounded-full bg-[#0c1424] border border-white/10 relative overflow-visible">
+                        <div className="w-full h-1 rounded-full bg-slate-200 dark:bg-[#0c1424] border border-slate-300 dark:border-white/10 relative overflow-visible">
                           <div
                             style={{ width: `${sliderPercentValue}%` }}
                             className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-sky-400 to-emerald-400 shadow-[0_0_8px_rgba(6,182,212,0.65)] transition-all duration-75"
@@ -2843,18 +2843,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           handleTrade('Buy');
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className="relative overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 bg-gradient-to-b from-emerald-500/30 via-emerald-600/25 to-green-900/40 hover:from-emerald-500 hover:via-emerald-600 hover:to-green-700 text-emerald-300 hover:text-white border border-emerald-400/50 hover:border-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.5)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
+                        className="relative overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 bg-emerald-500/15 dark:bg-gradient-to-b dark:from-emerald-500/30 dark:via-emerald-600/25 dark:to-green-900/40 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:via-emerald-600 dark:hover:to-green-700 text-emerald-700 dark:text-emerald-300 hover:text-white border border-emerald-500/40 dark:border-emerald-400/50 hover:border-emerald-400 dark:hover:border-emerald-300 shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
                       >
                         {isSubmitting && submittingSide === 'Buy' ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-300 shrink-0" />
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-300 shrink-0" />
                         ) : (
-                          <TrendingUp className="w-3.5 h-3.5 text-emerald-400 group-hover:text-white transition-transform shrink-0" />
+                          <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 group-hover:text-white transition-transform shrink-0" />
                         )}
                         <span className="text-[11px] uppercase tracking-wider font-black leading-none">
                           {isSubmitting && submittingSide === 'Buy' ? 'Buying...' : isFutures ? 'BUY / LONG' : 'BUY'}
                         </span>
                         {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
-                          <span className="text-[9px] font-mono text-emerald-200/90 group-hover:text-white font-semibold truncate">
+                          <span className="text-[9px] font-mono text-emerald-700/90 dark:text-emerald-200/90 group-hover:text-white font-semibold truncate">
                             • ${sizeMode === 'quote' ? Number(size).toFixed(0) : (Number(size) * effectiveOrderPrice).toFixed(0)}
                           </span>
                         )}
@@ -2868,18 +2868,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           handleTrade('Sell');
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className="relative overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 bg-gradient-to-b from-rose-500/30 via-rose-600/25 to-red-900/40 hover:from-rose-500 hover:via-rose-600 hover:to-red-700 text-rose-300 hover:text-white border border-rose-400/50 hover:border-rose-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.5)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
+                        className="relative overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 bg-rose-500/15 dark:bg-gradient-to-b dark:from-rose-500/30 dark:via-rose-600/25 dark:to-red-900/40 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:via-rose-600 dark:hover:to-red-700 text-rose-700 dark:text-rose-300 hover:text-white border border-rose-500/40 dark:border-rose-400/50 hover:border-rose-400 dark:hover:border-rose-300 shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
                       >
                         {isSubmitting && submittingSide === 'Sell' ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-300 shrink-0" />
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600 dark:text-rose-300 shrink-0" />
                         ) : (
-                          <TrendingDown className="w-3.5 h-3.5 text-rose-400 group-hover:text-white transition-transform shrink-0" />
+                          <TrendingDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 group-hover:text-white transition-transform shrink-0" />
                         )}
                         <span className="text-[11px] uppercase tracking-wider font-black leading-none">
                           {isSubmitting && submittingSide === 'Sell' ? 'Selling...' : isFutures ? 'SELL / SHORT' : 'SELL'}
                         </span>
                         {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
-                          <span className="text-[9px] font-mono text-rose-200/90 group-hover:text-white font-semibold truncate">
+                          <span className="text-[9px] font-mono text-rose-700/90 dark:text-rose-200/90 group-hover:text-white font-semibold truncate">
                             • ${sizeMode === 'quote' ? Number(size).toFixed(0) : (Number(size) * effectiveOrderPrice).toFixed(0)}
                           </span>
                         )}
@@ -2937,7 +2937,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       data-no-drag="true"
                       onMouseDown={(e) => e.stopPropagation()}
                       onTouchStart={(e) => e.stopPropagation()}
-                      className="rounded-lg bg-gradient-to-r from-[#13070c]/95 via-[#090d18]/95 to-[#061310]/95 border border-amber-500/35 px-2 py-1 space-y-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                      className="rounded-lg bg-slate-50 dark:bg-gradient-to-r dark:from-[#13070c]/95 dark:via-[#090d18]/95 dark:to-[#061310]/95 border border-amber-500/35 px-2 py-1 space-y-1 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
                     >
                       {/* Sub-Row 4A: Target Order Selector (Select which specific Open Order / Bracket to Force Buy/Sell, or ALL) */}
                       <div className="flex items-center justify-between gap-1">
@@ -3122,10 +3122,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             className={`flex-1 py-1 px-1.5 rounded font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${
                               selectedForceTarget?.side === 'sell'
                                 ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed select-none'
-                                : `bg-gradient-to-r from-emerald-600/35 to-cyan-600/35 hover:from-emerald-500 hover:to-cyan-500 border hover:border-white text-emerald-200 hover:text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:shadow-[0_0_14px_rgba(16,185,129,0.6)] cursor-pointer active:scale-95 disabled:opacity-50 ${
+                                : `bg-emerald-500/15 dark:bg-gradient-to-r dark:from-emerald-600/35 dark:to-cyan-600/35 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:to-cyan-500 border hover:border-emerald-400 dark:hover:border-white text-emerald-700 dark:text-emerald-200 hover:text-white dark:hover:text-slate-950 shadow-sm dark:shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:shadow-[0_0_14px_rgba(16,185,129,0.5)] cursor-pointer active:scale-95 disabled:opacity-50 ${
                                     selectedForceTarget?.side === 'buy'
-                                      ? 'border-emerald-300 ring-1 ring-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.45)]'
-                                      : 'border-emerald-400/60'
+                                      ? 'border-emerald-500 dark:border-emerald-300 ring-1 ring-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.35)]'
+                                      : 'border-emerald-500/50 dark:border-emerald-400/60'
                                   }`
                             }`}
                             title={
@@ -3172,10 +3172,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             className={`flex-1 py-1 px-1.5 rounded font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${
                               selectedForceTarget?.side === 'buy'
                                 ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed select-none'
-                                : `bg-gradient-to-r from-rose-600/40 to-amber-600/35 hover:from-rose-500 hover:to-amber-500 border hover:border-white text-rose-200 hover:text-white shadow-[0_0_10px_rgba(244,63,94,0.25)] hover:shadow-[0_0_14px_rgba(244,63,94,0.65)] cursor-pointer active:scale-95 disabled:opacity-50 ${
+                                : `bg-rose-500/15 dark:bg-gradient-to-r dark:from-rose-600/40 dark:to-amber-600/35 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:to-amber-500 border hover:border-rose-400 dark:hover:border-white text-rose-700 dark:text-rose-200 hover:text-white shadow-sm dark:shadow-[0_0_10px_rgba(244,63,94,0.25)] hover:shadow-[0_0_14px_rgba(244,63,94,0.55)] cursor-pointer active:scale-95 disabled:opacity-50 ${
                                     selectedForceTarget?.side === 'sell'
-                                      ? 'border-rose-300 ring-1 ring-rose-400/60 shadow-[0_0_12px_rgba(244,63,94,0.45)]'
-                                      : 'border-rose-400/60'
+                                      ? 'border-rose-500 dark:border-rose-300 ring-1 ring-rose-400/60 shadow-[0_0_12px_rgba(244,63,94,0.35)]'
+                                      : 'border-rose-500/50 dark:border-rose-400/60'
                                   }`
                             }`}
                             title={

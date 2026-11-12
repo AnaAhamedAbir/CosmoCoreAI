@@ -1818,11 +1818,16 @@ html.light .cosmo-theme-modal {
 /* Map dark inner card/panel/row backgrounds to crisp light surfaces */
 html.light .cosmo-theme-modal [class*="bg-[#0"],
 html.light .cosmo-theme-modal [class*="bg-[#1"],
+html.light .cosmo-theme-modal [class*="from-[#0"],
+html.light .cosmo-theme-modal [class*="from-[#1"],
 html.light .cosmo-theme-modal [class*="bg-black"],
 html.light .cosmo-theme-modal [class*="bg-slate-9"],
 html.light .cosmo-theme-modal [class*="bg-slate-8"],
 html.light .cosmo-theme-modal [class*="bg-gray-9"],
 html.light .cosmo-theme-modal [class*="bg-gray-8"],
+html.light .cosmo-theme-modal [class*="bg-blue-95"],
+html.light .cosmo-theme-modal [class*="bg-emerald-95"],
+html.light .cosmo-theme-modal [class*="bg-rose-95"],
 html.light .cosmo-theme-modal [class*="bg-white/"],
 html.light .cosmo-theme-modal [class*="bg-white\\["] {
   background-color: #f8fafc !important;
@@ -1852,7 +1857,8 @@ html.light .cosmo-theme-modal [class*="text-gray-7"] {
   color: #475569 !important;
 }
 
-/* Light-friendly accessible contrast for bright pastel 300/400 accents */
+/* Light-friendly accessible contrast for bright pastel 200/300/400 accents */
+html.light .cosmo-theme-modal [class*="text-emerald-2"],
 html.light .cosmo-theme-modal [class*="text-emerald-3"],
 html.light .cosmo-theme-modal [class*="text-emerald-4"],
 html.light .cosmo-theme-modal [class*="text-green-4"] {
@@ -1867,6 +1873,7 @@ html.light .cosmo-theme-modal [class*="text-yellow-4"] {
   color: #b45309 !important;
 }
 
+html.light .cosmo-theme-modal [class*="text-cyan-2"],
 html.light .cosmo-theme-modal [class*="text-cyan-3"],
 html.light .cosmo-theme-modal [class*="text-cyan-4"],
 html.light .cosmo-theme-modal [class*="text-sky-3"],
@@ -1874,6 +1881,7 @@ html.light .cosmo-theme-modal [class*="text-sky-4"] {
   color: #0369a1 !important;
 }
 
+html.light .cosmo-theme-modal [class*="text-blue-2"],
 html.light .cosmo-theme-modal [class*="text-indigo-3"],
 html.light .cosmo-theme-modal [class*="text-indigo-4"],
 html.light .cosmo-theme-modal [class*="text-violet-3"],
@@ -1889,6 +1897,7 @@ html.light .cosmo-theme-modal [class*="text-pink-4"] {
   color: #7e22ce !important;
 }
 
+html.light .cosmo-theme-modal [class*="text-rose-2"],
 html.light .cosmo-theme-modal [class*="text-rose-3"],
 html.light .cosmo-theme-modal [class*="text-rose-4"],
 html.light .cosmo-theme-modal [class*="text-red-4"],
@@ -1982,11 +1991,11 @@ html.light .cosmo-theme-modal .bg-clip-text.text-transparent {
   color: transparent !important;
 }
 
-/* Dark-text CTA pills (e.g., bright amber gradient with text-slate-950) */
-html.light .cosmo-theme-modal button[class*="text-slate-950"],
-html.light .cosmo-theme-modal button[class*="text-slate-950"] *,
-html.light .cosmo-theme-modal [class*="text-slate-950"],
-html.light .cosmo-theme-modal [class*="text-slate-950"] * {
+/* Dark-text CTA pills (e.g., bright amber gradient with active text-slate-950, excluding hover:text-slate-950) */
+html.light .cosmo-theme-modal button[class~="text-slate-950"],
+html.light .cosmo-theme-modal button[class~="text-slate-950"] *,
+html.light .cosmo-theme-modal [class~="text-slate-950"],
+html.light .cosmo-theme-modal [class~="text-slate-950"] * {
   color: #020617 !important;
 }
 

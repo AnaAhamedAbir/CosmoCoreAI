@@ -6,6 +6,18 @@ interface AdvancedRiskManagerProps {
     quoteAsset?: string;
 }
 
+const getNumericValue = (value: unknown, fallback: number): number | string => {
+    if (value === '') return '';
+    if (typeof value === 'number') return Number.isNaN(value) ? '' : value;
+    return (value ?? fallback) as number | string;
+};
+
+const parseNumericInput = (raw: string): number | '' => {
+    if (raw === '') return '';
+    const parsed = parseFloat(raw);
+    return Number.isNaN(parsed) ? '' : parsed;
+};
+
 export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, setForm, quoteAsset = 'USDT' }) => {
     const handleFormChange = (field: string, value: any) => {
         setForm((prev: any) => ({ ...prev, [field]: value }));
@@ -52,8 +64,8 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                                 type="number"
                                 step={form.breakevenType === 'usd' ? "1" : "0.1"}
                                 className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500/50"
-                                value={form.breakevenActivationPct || 1.0}
-                                onChange={(e) => handleFormChange('breakevenActivationPct', parseFloat(e.target.value))}
+                                value={getNumericValue(form.breakevenActivationPct, 1.0)}
+                                onChange={(e) => handleFormChange('breakevenActivationPct', parseNumericInput(e.target.value))}
                             />
                         </div>
                         <div>
@@ -64,8 +76,8 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                                 type="number"
                                 step={form.breakevenType === 'usd' ? "0.5" : "0.05"}
                                 className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500/50"
-                                value={form.breakevenFeeBufferPct || 0.2}
-                                onChange={(e) => handleFormChange('breakevenFeeBufferPct', parseFloat(e.target.value))}
+                                value={getNumericValue(form.breakevenFeeBufferPct, 0.2)}
+                                onChange={(e) => handleFormChange('breakevenFeeBufferPct', parseNumericInput(e.target.value))}
                             />
                         </div>
                         <div className="flex items-center justify-between col-span-2 bg-black/40 p-1.5 rounded-lg">
@@ -113,8 +125,8 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                                                 type="number"
                                                 step={form.trailingBreakevenType === 'usd' ? "1" : "0.1"}
                                                 className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500/50"
-                                                value={form.trailingBreakevenDistance || 0}
-                                                onChange={(e) => handleFormChange('trailingBreakevenDistance', parseFloat(e.target.value))}
+                                                value={getNumericValue(form.trailingBreakevenDistance, 0)}
+                                                onChange={(e) => handleFormChange('trailingBreakevenDistance', parseNumericInput(e.target.value))}
                                             />
                                         </div>
                                     </>
@@ -140,8 +152,8 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                                 <input
                                     type="number"
                                     className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500/50"
-                                    value={form.breakevenCooldownMins || 0}
-                                    onChange={(e) => handleFormChange('breakevenCooldownMins', parseFloat(e.target.value))}
+                                    value={getNumericValue(form.breakevenCooldownMins, 0)}
+                                    onChange={(e) => handleFormChange('breakevenCooldownMins', parseNumericInput(e.target.value))}
                                 />
                             </div>
                         )}
@@ -175,8 +187,8 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                                 type="number"
                                 step="1"
                                 className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-emerald-400 focus:outline-none focus:border-emerald-500/50"
-                                value={form.globalTpTarget || 0}
-                                onChange={(e) => handleFormChange('globalTpTarget', parseFloat(e.target.value))}
+                                value={getNumericValue(form.globalTpTarget, 0)}
+                                onChange={(e) => handleFormChange('globalTpTarget', parseNumericInput(e.target.value))}
                             />
                         </div>
                         <div>
@@ -257,8 +269,8 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                                                 type="number"
                                                 step={form.trailingGlobalTpType === 'usd' ? "1" : "0.1"}
                                                 className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50"
-                                                value={form.trailingGlobalTpDistance || 0}
-                                                onChange={(e) => handleFormChange('trailingGlobalTpDistance', parseFloat(e.target.value))}
+                                                value={getNumericValue(form.trailingGlobalTpDistance, 0)}
+                                                onChange={(e) => handleFormChange('trailingGlobalTpDistance', parseNumericInput(e.target.value))}
                                             />
                                         </div>
                                     </>

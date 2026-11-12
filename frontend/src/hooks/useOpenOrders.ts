@@ -68,7 +68,19 @@ export const useOpenOrders = (
             type: sl.type
           }))
           .filter((sl: any) => sl.price > 0);
-        setOrders([...limitOrders, ...softwareSLs]);
+        const deduped = new Map<string, OpenLimitOrder>();
+        for (const o of limitOrders) {
+          if (o?.id !== undefined && o?.id !== null && String(o.id) !== '') {
+            const id = String(o.id);
+            deduped.set(id, { ...o, id });
+          }
+        }
+        for (const sl of softwareSLs) {
+          if (sl.id) {
+            deduped.set(String(sl.id), sl);
+          }
+        }
+        setOrders(Array.from(deduped.values()));
       }
     } catch (err) {
       // BUG-11 fix: dev-only logging, silent in production

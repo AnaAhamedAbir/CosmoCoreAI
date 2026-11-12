@@ -22,7 +22,7 @@ export const GodModeBotTriggerSettings: React.FC<GodModeBotTriggerSettingsProps>
                     </div>
                     <span className="text-[10px] font-black text-white uppercase tracking-wider flex items-center gap-1">
                         🤖 God Mode ML Trigger
-                        <div className="group relative">
+                        <div className="group relative" onClick={(e) => e.stopPropagation()}>
                             <span className="text-gray-500 hover:text-indigo-400 ml-0.5 text-[10px]">ⓘ</span>
                             <div className="absolute -left-16 bottom-full mb-1.5 w-44 p-2 bg-black/95 border border-white/10 rounded-md text-[8.5px] text-gray-300 font-normal hidden group-hover:block z-50 text-left shadow-xl">
                                 Uses Deep Hybrid ML model to scan L2 Orderbook for Magnet Zones and Liquidation Cascades.

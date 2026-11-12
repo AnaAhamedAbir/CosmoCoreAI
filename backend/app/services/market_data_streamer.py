@@ -3,7 +3,7 @@ import json
 import logging
 import time
 import ccxt.pro as ccxtpro
-from typing import Dict, Set
+from typing import Dict, Set, Tuple
 
 from app.core.redis import redis_manager
 from app.helpers.orderbook_math import calculate_dynamic_wall_threshold
@@ -33,15 +33,25 @@ class MarketDataStreamer:
         self._lock = asyncio.Lock()
         self._initialized = True
 
+    @staticmethod
+    def _normalize_exchange_and_key(exchange_id: str, symbol: str = "") -> Tuple[str, str, bool]:
+        """Normalizes exchange ID (handling KuCoin/Kraken Futures) and builds a Spot/Futures cache key."""
+        norm_ex = str(exchange_id or "").lower()
+        is_futures = ':' in str(symbol or "")
+        if norm_ex == 'kucoin' and is_futures:
+            norm_ex = 'kucoinfutures'
+        elif norm_ex == 'kraken' and is_futures:
+            norm_ex = 'krakenfutures'
+        if norm_ex.endswith('futures'):
+            is_futures = True
+        cache_key = f"{norm_ex}_{'futures' if is_futures else 'spot'}"
+        return norm_ex, cache_key, is_futures
+
     async def start_streaming(self, exchange_id: str, symbol: str):
         """Starts streaming order book data for a given exchange and symbol if not already running."""
         # For Kucoin/Kraken Futures, we need to use specific exchange IDs internally if the symbol has ':'
-        internal_exchange_id = exchange_id.lower()
-        if internal_exchange_id == 'kucoin' and ':' in symbol:
-            internal_exchange_id = 'kucoinfutures'
-        elif internal_exchange_id == 'kraken' and ':' in symbol:
-            internal_exchange_id = 'krakenfutures'
-            
+        internal_exchange_id, _, _ = self._normalize_exchange_and_key(exchange_id, symbol)
+
         stream_key = f"{internal_exchange_id}:{symbol}"
         if stream_key in self._active_streams:
             return
@@ -54,33 +64,29 @@ class MarketDataStreamer:
         self._tasks[stream_key] = [task_ob, task_trades]
 
     async def _get_exchange_instance(self, exchange_id: str, symbol: str) -> ccxtpro.Exchange:
-        # Resolve to specific futures class if needed
-        is_futures = ':' in symbol
-        if exchange_id.lower() == 'kucoin' and is_futures:
-            exchange_id = 'kucoinfutures'
-        elif exchange_id.lower() == 'kraken' and is_futures:
-            exchange_id = 'krakenfutures'
-            
+        # Resolve to specific futures class & separate Spot/Futures cache key
+        exchange_id, cache_key, is_futures = self._normalize_exchange_and_key(exchange_id, symbol)
+
         async with self._lock:
-            if exchange_id not in self._exchange_instances:
-                exchange_class = getattr(ccxtpro, exchange_id.lower(), None)
+            if cache_key not in self._exchange_instances:
+                exchange_class = getattr(ccxtpro, exchange_id, None)
                 if not exchange_class:
                     raise ValueError(f"Exchange {exchange_id} not supported")
                 
                 options = {'enableRateLimit': True}
-                if is_futures and exchange_id.lower() == 'binance':
-                    options['options'] = {'defaultType': 'swap'}
+                if exchange_id == 'binance':
+                    options['options'] = {'defaultType': 'swap' if is_futures else 'spot'}
                 exchange = exchange_class(options)
                 
                 # ⚡ Copy pre-warmed markets from ccxt_service if available (0ms)
                 try:
                     from app.services.ccxt_service import ccxt_service
                     market_type = 'swap' if is_futures else 'spot'
-                    cache_id = f"{exchange_id.lower()}_{market_type}"
+                    cache_id = f"{exchange_id}_{market_type}"
                     prewarmed = ccxt_service._market_cache.get(cache_id)
                     if prewarmed and hasattr(exchange, 'set_markets'):
                         exchange.set_markets(prewarmed)
-                        logger.info(f"Streamer ⚡ Copied {len(prewarmed)} pre-warmed markets for {exchange_id} (0ms)")
+                        logger.info(f"Streamer ⚡ Copied {len(prewarmed)} pre-warmed markets for {cache_key} (0ms)")
                 except Exception as cp_err:
                     logger.debug(f"Streamer pre-warmed copy fallback: {cp_err}")
 
@@ -88,11 +94,11 @@ class MarketDataStreamer:
                     try:
                         await exchange.load_markets()
                     except Exception as e:
-                        logger.warning(f"Streamer failed to load markets for {exchange_id}: {e}")
+                        logger.warning(f"Streamer failed to load markets for {cache_key}: {e}")
                     
-                self._exchange_instances[exchange_id] = exchange
+                self._exchange_instances[cache_key] = exchange
                 
-        return self._exchange_instances[exchange_id]
+        return self._exchange_instances[cache_key]
         
     def _normalize_order_book_limit(self, exchange_id: str, limit: int) -> int:
         """Normalizes the order book limit based on exchange-specific requirements."""
@@ -287,16 +293,21 @@ class MarketDataStreamer:
                     task.cancel()
             del self._tasks[stream_key]
             
-        # Clean up exchange connection if no other streams are active for this exchange
+        # Clean up exchange connection if no other streams are active for this exchange/market-type
         try:
-            exchange_id = stream_key.split(':')[0]
-            prefix = f"{exchange_id}:"
-            remaining = any(k.startswith(prefix) for k in self._active_streams)
-            
-            if not remaining and exchange_id in self._exchange_instances:
-                exchange = self._exchange_instances.pop(exchange_id)
+            parts = stream_key.split(':', 1)
+            ex_id = parts[0]
+            sym = parts[1] if len(parts) > 1 else ""
+            _, cache_key, _ = self._normalize_exchange_and_key(ex_id, sym)
+            remaining = any(
+                self._normalize_exchange_and_key(*(k.split(':', 1) + [""])[:2])[1] == cache_key
+                for k in self._active_streams
+            )
+
+            if not remaining and cache_key in self._exchange_instances:
+                exchange = self._exchange_instances.pop(cache_key)
                 await exchange.close()
-                logger.info(f"🔌 Closed CCXT exchange instance for {exchange_id} as no streams remain.")
+                logger.info(f"🔌 Closed CCXT exchange instance for {cache_key} as no streams remain.")
         except Exception as e:
             logger.error(f"Error while cleaning up exchange connection for {stream_key}: {e}")
 

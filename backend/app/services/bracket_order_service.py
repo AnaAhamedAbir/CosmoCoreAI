@@ -806,28 +806,43 @@ class BracketOrderService:
         t0 = time.perf_counter()
         sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
         if not sl_meta:
-            from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
+            from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES, _compute_max_chase_price
             if sl_id in ACTIVE_SMART_CHASES:
-                ACTIVE_SMART_CHASES[sl_id]['original_sl'] = new_price
-                ACTIVE_SMART_CHASES[sl_id]['current_maker_price'] = new_price
+                chase_meta = ACTIVE_SMART_CHASES[sl_id]
+                chase_ex = chase_meta.get('exchange')
+                chase_sym = chase_meta.get('symbol', '')
+                prec_price = float(new_price)
+                if chase_ex and getattr(chase_ex, 'markets', None) and chase_sym in chase_ex.markets:
+                    prec_price = BracketOrderService._safe_price_to_precision(chase_ex, chase_sym, new_price) or float(new_price)
+                chase_side = str(chase_meta.get('side', 'sell')).lower()
+                chase_dev = float(chase_meta.get('max_deviation_pct') if chase_meta.get('max_deviation_pct') is not None else 1.0)
+                new_max_chase = _compute_max_chase_price(prec_price, chase_dev, chase_side)
+                chase_meta['original_sl'] = prec_price
+                chase_meta['max_chase_price'] = new_max_chase
+                chase_meta['current_maker_price'] = prec_price
+                chase_meta['target_updated'] = True
                 total_ms = int((time.perf_counter() - t0) * 1000)
-                logger.info(f"🎯 Updated active smart chase target for {sl_id} to {new_price} in {total_ms}ms")
-                if user_id:
+                logger.info(
+                    f"🎯 Updated active smart chase target for {sl_id} to {prec_price} "
+                    f"(max_chase_price={new_max_chase}) in {total_ms}ms"
+                )
+                if user_id and send_notify:
                     asyncio.create_task(BracketOrderService._send_sl_modified_notification(
                         user_id=user_id,
-                        symbol=ACTIVE_SMART_CHASES[sl_id].get('symbol', ''),
-                        side=ACTIVE_SMART_CHASES[sl_id].get('side', ''),
-                        amount=float(ACTIVE_SMART_CHASES[sl_id].get('amount', 0.0)),
-                        new_price=new_price,
+                        symbol=chase_sym,
+                        side=chase_meta.get('side', ''),
+                        amount=float(chase_meta.get('amount', 0.0)),
+                        new_price=prec_price,
                         latency_ms=total_ms,
                         mode_label="Smart Chase Target"
                     ))
                 return {
                     "status": "success",
                     "sl_id": sl_id,
-                    "new_price": new_price,
+                    "new_price": prec_price,
+                    "max_chase_price": new_max_chase,
                     "execution_speed_ms": total_ms,
-                    "message": f"Updated active Smart Chase target to {new_price}"
+                    "message": f"Updated active Smart Chase target to {prec_price}"
                 }
             raise HTTPException(status_code=404, detail="Software SL bracket not found or already triggered/closed.")
 
@@ -1106,6 +1121,33 @@ class BracketOrderService:
         )
 
     @staticmethod
+    def _mark_entry_bracket_closed(entry_order_id: str = None, tp_order_id: str = None):
+        """Marks matching ACTIVE_ENTRY_BRACKETS entries closed/cancelled, removes them, and discards stale TP IDs."""
+        entry_str = str(entry_order_id) if entry_order_id else None
+        tp_str = str(tp_order_id) if tp_order_id else None
+
+        if tp_str:
+            BracketOrderService.KNOWN_TP_ORDER_IDS.discard(tp_str)
+
+        if not entry_str and not tp_str:
+            return
+
+        for eb_key, eb_data in list(BracketOrderService.ACTIVE_ENTRY_BRACKETS.items()):
+            if not isinstance(eb_data, dict):
+                continue
+            eb_entry = str(eb_data.get('entry_order_id') or '')
+            eb_tp = str(eb_data.get('tp_order_id') or '')
+            matched = (
+                (entry_str and (str(eb_key) == entry_str or eb_entry == entry_str))
+                or (tp_str and (str(eb_key) == f"tp:{tp_str}" or eb_tp == tp_str))
+            )
+            if matched:
+                eb_data['cancelled'] = True
+                if eb_tp:
+                    BracketOrderService.KNOWN_TP_ORDER_IDS.discard(eb_tp)
+                BracketOrderService.ACTIVE_ENTRY_BRACKETS.pop(eb_key, None)
+
+    @staticmethod
     async def _check_linked_tp_filled(
         exchange,
         symbol: str,
@@ -1130,6 +1172,10 @@ class BracketOrderService:
             )
             if tp_chk and str(tp_chk.get('status', '')).lower() in ['closed', 'filled']:
                 logger.info(f"🎯 TP order {curr_tp_id} filled! Closing {context_label} for {symbol}.")
+                BracketOrderService._mark_entry_bracket_closed(
+                    entry_order_id=sl_meta.get('entry_order_id'),
+                    tp_order_id=curr_tp_id,
+                )
                 try:
                     api_key_id = sl_meta.get('api_key_id')
                     if api_key_id is not None:
@@ -1338,6 +1384,8 @@ class BracketOrderService:
                         cons_tp_ms = max(1, int((time.perf_counter() - t_cons_tp_start) * 1000))
                         if tp_res and tp_res.get('id'):
                             new_tp_id = str(tp_res.get('id'))
+                            if old_tp_id and str(old_tp_id) != new_tp_id:
+                                BracketOrderService.KNOWN_TP_ORDER_IDS.discard(str(old_tp_id))
                             tp_order_id = new_tp_id
                             resolved_tp_price = float(final_tp_price)
                             existing_sl['tp_order_id'] = new_tp_id
@@ -2046,11 +2094,19 @@ class BracketOrderService:
             sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
             if not sl_meta or sl_meta.get('cancelled'):
                 logger.info(f"🛑 Trailing SL monitor cancelled by user for {symbol}.")
+                BracketOrderService._mark_entry_bracket_closed(
+                    entry_order_id=(sl_meta.get('entry_order_id') if sl_meta else entry_order_id),
+                    tp_order_id=((sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id),
+                )
                 if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
                     del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
                 return
 
-            # Keep dynamic TP, settings, and disaster order IDs synchronized
+            # Keep dynamic entry_price, amount, TP, settings, and disaster order IDs synchronized
+            if sl_meta.get('entry_price'):
+                entry_price = float(sl_meta['entry_price'])
+            if sl_meta.get('amount') is not None:
+                amount = float(sl_meta['amount'])
             if sl_meta.get('tp_order_id'):
                 tp_order_id = sl_meta['tp_order_id']
             if sl_meta.get('max_attempts') is not None:
@@ -2104,6 +2160,10 @@ class BracketOrderService:
                             curr_tp = sl_meta.get('tp_order_id') or tp_order_id
                             if curr_tp:
                                 await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp, symbol)
+                            BracketOrderService._mark_entry_bracket_closed(
+                                entry_order_id=sl_meta.get('entry_order_id'),
+                                tp_order_id=curr_tp,
+                            )
                             break
                     except Exception as pos_e:
                         logger.debug(f"Position check non-fatal error: {pos_e}")
@@ -2260,18 +2320,21 @@ class BracketOrderService:
                 logger.debug(f"Trailing SL tick error: {e}")
                 
         # Close the position!
+        curr_entry_id = (sl_meta.get('entry_order_id') if sl_meta else None) or entry_order_id
+        curr_tp_id = (sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id
         if not sl_triggered:
+            BracketOrderService._mark_entry_bracket_closed(entry_order_id=curr_entry_id, tp_order_id=curr_tp_id)
             if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
                 del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
             return
 
         try:
-            curr_tp_id = (sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id
             curr_amount = float(sl_meta.get('amount') if (sl_meta and sl_meta.get('amount') is not None) else amount)
             if curr_tp_id:
                 await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp_id, symbol)
                 logger.info(f"Cancelled TP order {curr_tp_id} before executing SL.")
                 await asyncio.sleep(0.15)
+            BracketOrderService._mark_entry_bracket_closed(entry_order_id=curr_entry_id, tp_order_id=curr_tp_id)
 
             final_amount = curr_amount
             if not is_futures and opposite_side.lower() == 'sell':
@@ -2338,6 +2401,7 @@ class BracketOrderService:
         except Exception as e:
             logger.error(f"❌ Failed to execute Trailing SL: {e}")
         finally:
+            BracketOrderService._mark_entry_bracket_closed(entry_order_id=curr_entry_id, tp_order_id=curr_tp_id)
             if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
                 del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
 
@@ -2391,12 +2455,20 @@ class BracketOrderService:
                 sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
                 if not sl_meta or sl_meta.get('cancelled'):
                     logger.info(f"🛑 Fixed SL Auto-Breakeven monitor cancelled by user for {symbol}.")
+                    BracketOrderService._mark_entry_bracket_closed(
+                        entry_order_id=(sl_meta.get('entry_order_id') if sl_meta else entry_order_id),
+                        tp_order_id=((sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id),
+                    )
                     curr_disaster = (sl_meta.get('disaster_sl_order_id') if sl_meta else None) or disaster_sl_order_id
                     if curr_disaster:
                         await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
                     return
 
-                # Synchronize dynamic order IDs
+                # Synchronize dynamic entry_price, amount, and order IDs
+                if sl_meta.get('entry_price'):
+                    entry_price = float(sl_meta['entry_price'])
+                if sl_meta.get('amount') is not None:
+                    amount = float(sl_meta['amount'])
                 if sl_meta.get('tp_order_id'):
                     tp_order_id = sl_meta['tp_order_id']
                 if sl_meta.get('disaster_sl_order_id'):
@@ -2412,6 +2484,10 @@ class BracketOrderService:
                         )
                         if tp_chk and str(tp_chk.get('status', '')).lower() in ['closed', 'filled']:
                             logger.info(f"🎯 TP order {curr_tp_id} filled! Cancelling SL and closing Fixed SL monitor for {symbol}.")
+                            BracketOrderService._mark_entry_bracket_closed(
+                                entry_order_id=sl_meta.get('entry_order_id'),
+                                tp_order_id=curr_tp_id,
+                            )
                             exit_price = float(tp_chk.get('average') or tp_chk.get('price') or 0.0)
                             if user_id:
                                 try:
@@ -2444,6 +2520,10 @@ class BracketOrderService:
                         )
                         if sl_chk and str(sl_chk.get('status', '')).lower() in ['closed', 'filled']:
                             logger.info(f"🛡️ Native Fixed SL order {curr_disaster} filled! Cancelling TP and closing monitor for {symbol}.")
+                            BracketOrderService._mark_entry_bracket_closed(
+                                entry_order_id=sl_meta.get('entry_order_id'),
+                                tp_order_id=curr_tp_id,
+                            )
                             exit_p = float(sl_chk.get('average') or sl_chk.get('price') or sl_chk.get('stopPrice') or initial_sl_price)
                             if user_id:
                                 asyncio.create_task(
@@ -2476,6 +2556,10 @@ class BracketOrderService:
                             await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
                         if curr_tp_id:
                             await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp_id, symbol)
+                        BracketOrderService._mark_entry_bracket_closed(
+                            entry_order_id=sl_meta.get('entry_order_id'),
+                            tp_order_id=curr_tp_id,
+                        )
                         return
 
                 ticker = await exchange.fetch_ticker(symbol)
@@ -2541,6 +2625,10 @@ class BracketOrderService:
                             if curr_tp_id:
                                 await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp_id, symbol)
                                 await asyncio.sleep(0.15)
+                            BracketOrderService._mark_entry_bracket_closed(
+                                entry_order_id=sl_meta.get('entry_order_id') or entry_order_id,
+                                tp_order_id=curr_tp_id,
+                            )
                             sell_amt = curr_amount
                             if not is_futures and opposite_side.lower() == 'sell':
                                 try:
@@ -2574,6 +2662,11 @@ class BracketOrderService:
         except Exception as loop_err:
             logger.error(f"Error in Fixed SL Auto-Breakeven loop: {loop_err}")
         finally:
+            curr_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
+            BracketOrderService._mark_entry_bracket_closed(
+                entry_order_id=(curr_meta.get('entry_order_id') if curr_meta else None) or entry_order_id,
+                tp_order_id=(curr_meta.get('tp_order_id') if curr_meta else None) or tp_order_id,
+            )
             if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
                 del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
 
@@ -2642,6 +2735,10 @@ class BracketOrderService:
             sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
             if not sl_meta or sl_meta.get('cancelled'):
                 logger.info(f"🛑 Smart Chase monitor cancelled by user for {symbol}.")
+                BracketOrderService._mark_entry_bracket_closed(
+                    entry_order_id=(sl_meta.get('entry_order_id') if sl_meta else entry_order_id),
+                    tp_order_id=((sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id),
+                )
                 curr_disaster = (sl_meta.get('disaster_sl_order_id') if sl_meta else None) or disaster_sl_order_id
                 if curr_disaster:
                     await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
@@ -2649,7 +2746,9 @@ class BracketOrderService:
                     del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
                 return
 
-            # Keep dynamic TP, disaster SL, and amount synchronized from sl_meta (e.g. if edited via chart drag)
+            # Keep dynamic entry_price, TP, disaster SL, and amount synchronized from sl_meta (e.g. if edited via chart drag or partial fill)
+            if sl_meta.get('entry_price'):
+                entry_price = float(sl_meta['entry_price'])
             if sl_meta.get('tp_order_id'):
                 if str(sl_meta['tp_order_id']) != str(tp_order_id or ''):
                     was_tp_touched = False
@@ -2778,6 +2877,10 @@ class BracketOrderService:
                                 curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
                                 if curr_disaster:
                                     await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
+                                BracketOrderService._mark_entry_bracket_closed(
+                                    entry_order_id=sl_meta.get('entry_order_id'),
+                                    tp_order_id=sl_meta.get('tp_order_id') or tp_order_id,
+                                )
                                 sl_triggered = False
                                 break
 
@@ -2875,6 +2978,10 @@ class BracketOrderService:
                         curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
                         if curr_disaster:
                             await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
+                        BracketOrderService._mark_entry_bracket_closed(
+                            entry_order_id=sl_meta.get('entry_order_id'),
+                            tp_order_id=curr_tp_id,
+                        )
                         sl_triggered = False
                         break
 
@@ -2885,6 +2992,9 @@ class BracketOrderService:
             await asyncio.sleep(0.5)
 
         # ── EXTRACT LATEST DYNAMIC PARAMS BEFORE REMOVING FROM ACTIVE_SOFTWARE_SL ──
+        curr_entry_id = (sl_meta.get('entry_order_id') if sl_meta else None) or entry_order_id
+        if sl_meta and sl_meta.get('entry_price'):
+            entry_price = float(sl_meta['entry_price'])
         curr_disaster_id = (sl_meta.get('disaster_sl_order_id') if sl_meta else None) or disaster_sl_order_id
         curr_tp_id = (sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id
         curr_sl_price = float(sl_meta.get('trigger_price') if (sl_meta and sl_meta.get('trigger_price') is not None) else sl_price)
@@ -2895,6 +3005,8 @@ class BracketOrderService:
         # Removing now ensures the chart clears the trigger line instantly!
         if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
             del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
+
+        BracketOrderService._mark_entry_bracket_closed(entry_order_id=curr_entry_id, tp_order_id=curr_tp_id)
 
         if not sl_triggered:
             return
@@ -2925,6 +3037,7 @@ class BracketOrderService:
         except Exception as exec_err:
             logger.error(f"❌ Error invoking execute_manual_smart_chase: {exec_err}")
         finally:
+            BracketOrderService._mark_entry_bracket_closed(entry_order_id=curr_entry_id, tp_order_id=curr_tp_id)
             if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
                 del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
 

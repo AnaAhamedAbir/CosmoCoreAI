@@ -647,12 +647,33 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             }
         };
 
-        const handleChartDragBracketMove = (type: 'tp' | 'sl', clientX: number, clientY: number): number | null => {
-            if (!candlestickSeriesRef.current || !chartContainerRef.current) return null;
+        const resolveChartBracketPrice = (clientX: number, clientY: number): { inChart: boolean; price: number | null } => {
+            if (!candlestickSeriesRef.current || !chartContainerRef.current) return { inChart: false, price: null };
             const rect = chartContainerRef.current.getBoundingClientRect();
             const coordinate = clientY - rect.top;
 
             if (coordinate < 0 || coordinate > rect.height || clientX < rect.left || clientX > rect.right) {
+                return { inChart: false, price: null };
+            }
+
+            let rawPrice = candlestickSeriesRef.current.coordinateToPrice(coordinate as any);
+            if (rawPrice === null || rawPrice === undefined) {
+                const timeScaleHeight = chartRef.current?.timeScale?.().height?.() || 0;
+                const effectiveTimeScaleHeight = Math.max(timeScaleHeight, 28);
+                if (coordinate > rect.height - effectiveTimeScaleHeight - 2) {
+                    const clampedCoordinate = Math.max(0, rect.height - effectiveTimeScaleHeight - 2);
+                    rawPrice = candlestickSeriesRef.current.coordinateToPrice(clampedCoordinate as any);
+                }
+            }
+            const price = typeof rawPrice === 'number' ? rawPrice : parseFloat(rawPrice as any);
+            if (!Number.isFinite(price) || price <= 0) return { inChart: false, price: null };
+
+            return { inChart: true, price };
+        };
+
+        const handleChartDragBracketMove = (type: 'tp' | 'sl', clientX: number, clientY: number): number | null => {
+            const { inChart, price } = resolveChartBracketPrice(clientX, clientY);
+            if (!inChart || price === null) {
                 if (chartBracketGhostLineRef.current && candlestickSeriesRef.current) {
                     try { candlestickSeriesRef.current.removePriceLine(chartBracketGhostLineRef.current); } catch {}
                     chartBracketGhostLineRef.current = null;
@@ -660,17 +681,13 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 return null;
             }
 
-            const rawPrice = candlestickSeriesRef.current.coordinateToPrice(coordinate as any);
-            const price = typeof rawPrice === 'number' ? rawPrice : parseFloat(rawPrice as any);
-            if (isNaN(price) || price <= 0) return null;
-
             const isTP = type === 'tp';
             const color = isTP ? '#22c55e' : '#ef4444';
             const formattedPrice = price < 1 ? price.toFixed(6) : price.toFixed(4);
             const title = isTP ? `🎯 DROP TO SET TP (${formattedPrice})` : `🛡️ DROP TO SET SL (${formattedPrice})`;
 
             if (!chartBracketGhostLineRef.current) {
-                chartBracketGhostLineRef.current = candlestickSeriesRef.current.createPriceLine({
+                chartBracketGhostLineRef.current = candlestickSeriesRef.current?.createPriceLine({
                     price: price,
                     color: color,
                     lineWidth: 1,
@@ -696,19 +713,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 chartBracketGhostLineRef.current = null;
             }
 
-            if (!candlestickSeriesRef.current || !chartContainerRef.current) return { inChart: false, price: null };
-            const rect = chartContainerRef.current.getBoundingClientRect();
-            const coordinate = clientY - rect.top;
-
-            if (coordinate < 0 || coordinate > rect.height || clientX < rect.left || clientX > rect.right) {
-                return { inChart: false, price: null };
-            }
-
-            const rawPrice = candlestickSeriesRef.current.coordinateToPrice(coordinate as any);
-            const price = typeof rawPrice === 'number' ? rawPrice : parseFloat(rawPrice as any);
-            if (isNaN(price) || price <= 0) return { inChart: false, price: null };
-
-            return { inChart: true, price };
+            return resolveChartBracketPrice(clientX, clientY);
         };
 
         (window as any)._handleChartDragBracketStart = handleChartDragBracketStart;
@@ -2269,13 +2274,14 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 const speedText = res?.execution_speed_ms ? ` (${res.execution_speed_ms}ms ⚡)` : '';
                 toast.success(`🎯 ${mod.modeName} Stop-Loss updated to ${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)}${speedText}`);
             } else {
+                const editAmount = mod.targetOrder.remaining > 0 ? mod.targetOrder.remaining : mod.targetOrder.amount;
                 const res = await manualTradeService.editOrder(
                     parseInt(selectedApiKeyId),
                     mod.orderId,
                     {
                         symbol: mod.symbol,
                         side: mod.targetOrder.side,
-                        amount: mod.targetOrder.amount,
+                        amount: editAmount,
                         new_price: mod.newPrice
                     }
                 );
@@ -2515,27 +2521,42 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             if (!newPrice || !targetOrder || !selectedApiKeyId) return;
 
             const livePrice = currentPriceRef.current || currentPrice;
+            const livePriceStr = livePrice < 1 ? livePrice.toFixed(6) : livePrice.toFixed(4);
+            const isTpOrder = targetOrder.mode?.toUpperCase() === 'TP';
 
-            // Stop-Loss Direction Validation vs Regular Limit Order PostOnly Capping
-            if (targetOrder.isSoftwareSL) {
-                // For Long position, SL is SELL side, and trigger price MUST be below current market price
-                if (targetOrder.side === 'sell' && newPrice >= livePrice) {
-                    toast.error(`⚠️ Long Stop-Loss must be placed below market price (${livePrice < 1 ? livePrice.toFixed(6) : livePrice.toFixed(4)})`);
-                    return;
-                }
-                // For Short position, SL is BUY side, and trigger price MUST be above current market price
-                if (targetOrder.side === 'buy' && newPrice <= livePrice) {
-                    toast.error(`⚠️ Short Stop-Loss must be placed above market price (${livePrice < 1 ? livePrice.toFixed(6) : livePrice.toFixed(4)})`);
-                    return;
-                }
-            } else {
-                // Auto-adjust price to prevent PostOnly rejection (Capping at current market price for limit orders)
-                if (targetOrder.side === 'buy' && newPrice > livePrice) {
-                    newPrice = livePrice;
-                    toast.success('Buy price capped at current market price (PostOnly)');
-                } else if (targetOrder.side === 'sell' && newPrice < livePrice) {
-                    newPrice = livePrice;
-                    toast.success('Sell price floored at current market price (PostOnly)');
+            // Stop-Loss / Take-Profit Direction Validation vs Regular Limit Order PostOnly Capping
+            if (livePrice > 0) {
+                if (targetOrder.isSoftwareSL) {
+                    // For Long position, SL is SELL side, and trigger price MUST be below current market price
+                    if (targetOrder.side === 'sell' && newPrice >= livePrice) {
+                        toast.error(`⚠️ Long Stop-Loss must be placed below market price (${livePriceStr})`);
+                        return;
+                    }
+                    // For Short position, SL is BUY side, and trigger price MUST be above current market price
+                    if (targetOrder.side === 'buy' && newPrice <= livePrice) {
+                        toast.error(`⚠️ Short Stop-Loss must be placed above market price (${livePriceStr})`);
+                        return;
+                    }
+                } else if (isTpOrder) {
+                    // For Long TP (SELL exit), target price MUST stay above current market price
+                    if (targetOrder.side === 'sell' && newPrice <= livePrice) {
+                        toast.error(`⚠️ Long Take-Profit must be placed above market price (${livePriceStr})`);
+                        return;
+                    }
+                    // For Short TP (BUY exit), target price MUST stay below current market price
+                    if (targetOrder.side === 'buy' && newPrice >= livePrice) {
+                        toast.error(`⚠️ Short Take-Profit must be placed below market price (${livePriceStr})`);
+                        return;
+                    }
+                } else {
+                    // Auto-adjust price to prevent PostOnly rejection (Capping at current market price for limit orders)
+                    if (targetOrder.side === 'buy' && newPrice > livePrice) {
+                        newPrice = livePrice;
+                        toast.success('Buy price capped at current market price (PostOnly)');
+                    } else if (targetOrder.side === 'sell' && newPrice < livePrice) {
+                        newPrice = livePrice;
+                        toast.success('Sell price floored at current market price (PostOnly)');
+                    }
                 }
             }
 
@@ -2543,6 +2564,9 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
             if (Math.abs(targetOrder.price - newPrice) < (targetOrder.price * 0.0001)) return;
 
             const modeName = targetOrder.mode ? targetOrder.mode.toUpperCase() : (targetOrder.isSoftwareSL ? 'SL' : 'LIMIT');
+            const resolvedAmount = !targetOrder.isSoftwareSL && targetOrder.remaining > 0
+                ? targetOrder.remaining
+                : targetOrder.amount;
             const modData: PendingOrderModification = {
                 orderId,
                 targetOrder,
@@ -2553,7 +2577,7 @@ const OrderFlowChart: React.FC<{ exchange: string; symbol: string; interval: str
                 isSL: Boolean(targetOrder.isSoftwareSL),
                 modeName,
                 side: targetOrder.side,
-                amount: targetOrder.amount
+                amount: resolvedAmount
             };
 
             const key = `order-${orderId}`;

@@ -10,12 +10,14 @@ CCXT Exchange অবজেক্টগুলো মেমোরিতে Cache �
 """
 
 import asyncio
+import copy
 import time
 import logging
 try:
-    import ccxt.pro as ccxt
+    import ccxt.pro as ccxtpro
 except ImportError:
-    import ccxt.async_support as ccxt
+    ccxtpro = None
+import ccxt.async_support as ccxt_async
 from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -116,7 +118,10 @@ async def get_or_create_exchange(
         # Cache Miss — নতুন Exchange তৈরি করুন
         logger.info(f"[ExchangePool] 🆕 Cache MISS — creating new exchange instance for key={api_key_id} purpose={purpose}")
 
-        exchange_class = getattr(ccxt, exchange_name.lower(), None)
+        ex_id = exchange_name.lower()
+        exchange_class = getattr(ccxtpro, ex_id, None) if ccxtpro else None
+        if not exchange_class:
+            exchange_class = getattr(ccxt_async, ex_id, None)
         if not exchange_class:
             raise ValueError(f"Unsupported exchange: {exchange_name}")
 
@@ -150,12 +155,21 @@ async def get_or_create_exchange(
         general_key = _make_cache_key(api_key_id, is_futures, purpose="general")
         if general_key in _pool and getattr(_pool[general_key][0], 'markets', None):
             gen_ex = _pool[general_key][0]
-            exchange.markets = gen_ex.markets
-            exchange.symbols = getattr(gen_ex, 'symbols', list(gen_ex.markets.keys()))
-            exchange.currencies = getattr(gen_ex, 'currencies', {})
-            exchange.ids = getattr(gen_ex, 'ids', list(gen_ex.markets.keys()))
-            exchange.markets_by_id = getattr(gen_ex, 'markets_by_id', {})
-            exchange.currencies_by_id = getattr(gen_ex, 'currencies_by_id', {})
+            copied = False
+            if hasattr(exchange, 'set_markets'):
+                try:
+                    currencies_copy = copy.deepcopy(getattr(gen_ex, 'currencies', None))
+                    exchange.set_markets(copy.deepcopy(list(gen_ex.markets.values())), currencies_copy)
+                    copied = True
+                except Exception as sm_err:
+                    logger.debug(f"[ExchangePool] set_markets copy fallback: {sm_err}")
+            if not copied:
+                exchange.markets = copy.deepcopy(gen_ex.markets)
+                exchange.symbols = list(exchange.markets.keys())
+                exchange.currencies = copy.deepcopy(getattr(gen_ex, 'currencies', {}))
+                exchange.ids = copy.deepcopy(getattr(gen_ex, 'ids', list(exchange.markets.keys())))
+                exchange.markets_by_id = copy.deepcopy(getattr(gen_ex, 'markets_by_id', {}))
+                exchange.currencies_by_id = copy.deepcopy(getattr(gen_ex, 'currencies_by_id', {}))
             logger.info(f"[ExchangePool] ⚡ Copied pre-loaded markets from general instance for key={api_key_id} purpose={purpose} (0ms)")
         else:
             # ⚡ Check ccxt_service pre-warmed markets cache (0ms)

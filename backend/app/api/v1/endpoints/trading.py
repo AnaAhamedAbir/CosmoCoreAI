@@ -185,6 +185,32 @@ class UpdateSoftwareBracketRequest(BaseModel):
     new_price: float
     amount: Optional[float] = None
 
+def _update_smart_chase_target(chase_meta: dict, new_price: float, fallback_side: str = ""):
+    """Update an active Smart Chase target price and recompute its circuit breaker limit."""
+    chase_meta['original_sl'] = new_price
+    chase_meta['current_maker_price'] = new_price
+    chase_meta['target_updated'] = True
+    max_dev = chase_meta.get('max_deviation_pct')
+    if max_dev is not None:
+        max_dev_f = float(max_dev)
+        new_px_f = float(new_price)
+        chase_side = str(chase_meta.get('side') or fallback_side or 'sell').lower()
+        chase_meta['max_chase_price'] = (
+            new_px_f * (1.0 - (max_dev_f / 100.0))
+            if chase_side == 'sell'
+            else new_px_f * (1.0 + (max_dev_f / 100.0))
+        )
+
+
+def _sym_scope_matches(sym_a: str, sym_b: str) -> bool:
+    """Match symbols by base/quote while preserving Spot vs Futures (':') boundary."""
+    sa = str(sym_a or '').strip()
+    sb = str(sym_b or '').strip()
+    if (':' in sa) != (':' in sb):
+        return False
+    return sa.split(':')[0].upper() == sb.split(':')[0].upper()
+
+
 @router.put("/order/{api_key_id}/{order_id}")
 async def edit_order(
     api_key_id: int,
@@ -206,8 +232,7 @@ async def edit_order(
         
         from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
         if order_id in ACTIVE_SMART_CHASES:
-            ACTIVE_SMART_CHASES[order_id]['original_sl'] = request.new_price
-            ACTIVE_SMART_CHASES[order_id]['current_maker_price'] = request.new_price
+            _update_smart_chase_target(ACTIVE_SMART_CHASES[order_id], request.new_price, request.side)
             asyncio.create_task(BracketOrderService._send_sl_modified_notification(
                 user_id=current_user.id,
                 symbol=request.symbol,
@@ -237,15 +262,30 @@ async def edit_order(
             new_price=request.new_price
         )
         new_order_id = edit_res.get('id') if isinstance(edit_res, dict) else None
-        if new_order_id and str(new_order_id) != str(order_id):
-            clean_sym = str(request.symbol).split(':')[0].upper()
-            for s_id, s_meta in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
-                s_sym = str(s_meta.get('symbol', '')).split(':')[0].upper()
-                s_api = s_meta.get('api_key_id')
-                if s_sym == clean_sym and (s_api is None or int(s_api) == int(api_key_id)):
-                    if str(s_meta.get('tp_order_id')) == str(order_id):
-                        s_meta['tp_order_id'] = str(new_order_id)
-                        logger.info(f"🔄 Linked software bracket {s_id} TP order updated: {order_id} -> {new_order_id}")
+        resolved_order_id = str(new_order_id) if new_order_id else str(order_id)
+        resolved_price = float(edit_res.get('price') or request.new_price) if isinstance(edit_res, dict) else float(request.new_price)
+
+        if str(order_id) in BracketOrderService.KNOWN_TP_ORDER_IDS and resolved_order_id != str(order_id):
+            BracketOrderService.KNOWN_TP_ORDER_IDS.discard(str(order_id))
+            BracketOrderService.KNOWN_TP_ORDER_IDS.add(resolved_order_id)
+
+        for s_id, s_meta in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+            s_api = s_meta.get('api_key_id')
+            if _sym_scope_matches(s_meta.get('symbol', ''), request.symbol) and (s_api is None or int(s_api) == int(api_key_id)):
+                if str(s_meta.get('tp_order_id') or '') == str(order_id):
+                    s_meta['tp_order_id'] = resolved_order_id
+                    s_meta['tp_price'] = resolved_price
+                    logger.info(f"🔄 Linked software bracket {s_id} TP order updated: {order_id} -> {resolved_order_id} @ {resolved_price}")
+
+        for eb_id, eb_meta in list(BracketOrderService.ACTIVE_ENTRY_BRACKETS.items()):
+            if eb_meta.get('cancelled'):
+                continue
+            eb_api = eb_meta.get('api_key_id')
+            if _sym_scope_matches(eb_meta.get('symbol', ''), request.symbol) and (eb_api is None or int(eb_api) == int(api_key_id)):
+                if str(eb_meta.get('tp_order_id') or '') == str(order_id):
+                    eb_meta['tp_order_id'] = resolved_order_id
+                    eb_meta['tp_price'] = resolved_price
+                    logger.info(f"🔄 Linked entry bracket {eb_id} TP order updated: {order_id} -> {resolved_order_id} @ {resolved_price}")
         return edit_res
     except HTTPException as he:
         raise he
@@ -274,8 +314,7 @@ async def update_software_bracket_endpoint(
         
         from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
         if sl_id in ACTIVE_SMART_CHASES:
-            ACTIVE_SMART_CHASES[sl_id]['original_sl'] = req.new_price
-            ACTIVE_SMART_CHASES[sl_id]['current_maker_price'] = req.new_price
+            _update_smart_chase_target(ACTIVE_SMART_CHASES[sl_id], req.new_price, req.side)
             asyncio.create_task(BracketOrderService._send_sl_modified_notification(
                 user_id=current_user.id,
                 symbol=ACTIVE_SMART_CHASES[sl_id].get('symbol', ''),
@@ -319,6 +358,137 @@ def _drag_matches_scope(meta: dict, api_key_id: int, symbol: str, expected_side:
     if expected_side is not None and str(meta.get('side', '')).lower() != expected_side.lower():
         return False
     return True
+
+
+def _flip_side(side: Optional[str]) -> Optional[str]:
+    """Return opposite order side ('buy' <-> 'sell') when side is valid."""
+    s = str(side or '').strip().lower()
+    if s == 'buy':
+        return 'sell'
+    if s == 'sell':
+        return 'buy'
+    return None
+
+
+def _infer_entry_side_from_open_order(order: dict, pos_entry_side: Optional[str], known_tp_ids: set) -> Optional[str]:
+    """Infer entry side from an exchange open order, flipping exit/TP/reduceOnly orders."""
+    o_side = str(order.get('side') or '').lower()
+    if o_side not in ('buy', 'sell'):
+        return None
+    o_id = str(order.get('id') or '')
+    o_info = order.get('info') if isinstance(order.get('info'), dict) else {}
+    o_type = str(order.get('type') or o_info.get('type') or o_info.get('origType') or '').lower()
+    is_reduce = bool(
+        order.get('reduceOnly')
+        or o_info.get('reduceOnly') in (True, 'true', 'True')
+        or o_info.get('closePosition') in (True, 'true', 'True')
+    )
+    is_exit = (
+        o_id in known_tp_ids
+        or is_reduce
+        or ('stop' in o_type or 'take_profit' in o_type)
+        or (pos_entry_side is not None and o_side != pos_entry_side)
+    )
+    return _flip_side(o_side) if is_exit else o_side
+
+
+async def _resolve_drag_target_ref(
+    exchange,
+    symbol: str,
+    api_key_id: int,
+    ref_str: str,
+    is_futures: bool,
+    pos_entry_side: Optional[str],
+    initial_amount: float,
+    initial_entry_side: Optional[str],
+):
+    """Resolve (amount, entry_side, matched_target_amount, cached_open_orders) for a target_order_id."""
+    from app.services.bracket_order_service import BracketOrderService
+
+    amount = initial_amount
+    entry_side = initial_entry_side
+    matched_target_amount = 0.0
+    cached_open_orders = None
+
+    def _apply_match(cand_amt: float, cand_entry_side: Optional[str]):
+        nonlocal amount, entry_side, matched_target_amount
+        if cand_amt > 0:
+            matched_target_amount = matched_target_amount or cand_amt
+            if amount <= 0:
+                amount = cand_amt
+        if entry_side is None and cand_entry_side in ('buy', 'sell'):
+            entry_side = cand_entry_side
+
+    # 1. ACTIVE_ENTRY_BRACKETS (note: eb['side'] stores opposite_side = exit side)
+    eb_direct = BracketOrderService.ACTIVE_ENTRY_BRACKETS.get(ref_str)
+    matched_eb = (
+        eb_direct
+        if (eb_direct and not eb_direct.get('cancelled') and _drag_matches_scope(eb_direct, api_key_id, symbol))
+        else next(
+            (
+                eb for eb in list(BracketOrderService.ACTIVE_ENTRY_BRACKETS.values())
+                if not eb.get('cancelled')
+                and _drag_matches_scope(eb, api_key_id, symbol)
+                and (str(eb.get('tp_order_id') or '') == ref_str or str(eb.get('entry_order_id') or '') == ref_str)
+            ),
+            None,
+        )
+    )
+    if matched_eb:
+        _apply_match(float(matched_eb.get('amount') or 0.0), _flip_side(matched_eb.get('side')))
+
+    # 2. ACTIVE_SOFTWARE_SL (note: sdata['side'] stores opposite_side = exit side)
+    if amount <= 0 or entry_side is None:
+        for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+            if sdata.get('cancelled') or sdata.get('status') != 'monitoring':
+                continue
+            if _drag_matches_scope(sdata, api_key_id, symbol) and (
+                BracketOrderService._matches_bracket_ref(sid, sdata, ref_str)
+                or str(sdata.get('disaster_sl_order_id') or '') == ref_str
+            ):
+                _apply_match(float(sdata.get('amount') or 0.0), _flip_side(sdata.get('side')))
+                break
+
+    # 3. ACTIVE_SMART_PEGS (entry side) & ACTIVE_SMART_CHASES (exit side)
+    if amount <= 0 or entry_side is None:
+        try:
+            from app.services.smart_peg_entry_executor import ACTIVE_SMART_PEGS
+            pdata = ACTIVE_SMART_PEGS.get(ref_str)
+            if pdata and _drag_matches_scope(pdata, api_key_id, symbol):
+                p_side = str(pdata.get('side') or '').lower()
+                _apply_match(float(pdata.get('amount') or 0.0), p_side if p_side in ('buy', 'sell') else None)
+        except Exception:
+            pass
+        try:
+            from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
+            cdata = ACTIVE_SMART_CHASES.get(ref_str)
+            if cdata and _drag_matches_scope(cdata, api_key_id, symbol):
+                _apply_match(float(cdata.get('amount') or 0.0), _flip_side(cdata.get('side')))
+        except Exception:
+            pass
+
+    # 4. Exchange open orders (pending Futures limit orders & Spot open orders)
+    if amount <= 0 or entry_side is None:
+        try:
+            cached_open_orders = await exchange.fetch_open_orders(symbol)
+            if is_futures and not any(str(o.get('id') or '') == ref_str for o in (cached_open_orders or [])):
+                try:
+                    cond_orders = await exchange.fetch_open_orders(symbol, params={'stop': True})
+                    if cond_orders:
+                        cached_open_orders = list(cached_open_orders or []) + list(cond_orders)
+                except Exception:
+                    pass
+            for o in cached_open_orders or []:
+                if str(o.get('id') or '') == ref_str:
+                    _apply_match(
+                        float(o.get('remaining') or o.get('amount') or 0.0),
+                        _infer_entry_side_from_open_order(o, pos_entry_side, BracketOrderService.KNOWN_TP_ORDER_IDS),
+                    )
+                    break
+        except Exception:
+            pass
+
+    return amount, entry_side, matched_target_amount, cached_open_orders
 
 
 def _drag_amounts_close(a: float, b: float) -> bool:
@@ -427,6 +597,55 @@ async def _resolve_drag_tp_link(
         and str(eb.get('tp_order_id')) not in bound_tp_ids
         and _drag_matches_scope(eb, api_key_id, symbol, opposite_side)
     ]
+
+    prefetched_open_orders = None
+    open_orders_fetched = False
+    if eb_candidates:
+        try:
+            prefetched_open_orders = await exchange.fetch_open_orders(symbol)
+            open_orders_fetched = True
+        except Exception:
+            prefetched_open_orders = None
+
+        open_ids = (
+            {str(o.get('id')) for o in (prefetched_open_orders or []) if o and o.get('id')}
+            if open_orders_fetched else None
+        )
+
+        live_eb_candidates = []
+        for eb in eb_candidates:
+            tp_oid = str(eb.get('tp_order_id'))
+            is_still_open = False
+            if open_ids is not None and tp_oid in open_ids:
+                is_still_open = True
+            else:
+                ord_chk = None
+                fetch_failed = False
+                if hasattr(exchange, 'fetch_order'):
+                    try:
+                        ord_chk = await exchange.fetch_order(tp_oid, symbol)
+                    except Exception:
+                        fetch_failed = True
+                else:
+                    fetch_failed = True
+
+                if isinstance(ord_chk, dict):
+                    st = str(ord_chk.get('status') or '').lower()
+                    if st in ('open', 'new', 'partially_filled', 'partiallyfilled'):
+                        is_still_open = True
+                    else:
+                        eb['cancelled'] = True
+                elif open_orders_fetched:
+                    eb['cancelled'] = True
+                elif fetch_failed:
+                    is_still_open = True
+                else:
+                    eb['cancelled'] = True
+
+            if is_still_open:
+                live_eb_candidates.append(eb)
+        eb_candidates = live_eb_candidates
+
     amt_eb = [c for c in eb_candidates if _drag_amounts_close(float(c.get('amount') or 0.0), final_amount)]
     if len(amt_eb) == 1:
         c = amt_eb[0]
@@ -436,7 +655,7 @@ async def _resolve_drag_tp_link(
         return str(c['tp_order_id']), (str(c['entry_order_id']) if c.get('entry_order_id') else None), (float(c.get('tp_price') or 0.0) or None)
 
     try:
-        open_orders = await exchange.fetch_open_orders(symbol)
+        open_orders = prefetched_open_orders if open_orders_fetched else await exchange.fetch_open_orders(symbol)
         open_tp_cands = [
             o for o in (open_orders or [])
             if str(o.get('id') or '') not in bound_tp_ids
@@ -497,71 +716,129 @@ async def place_drag_bracket_endpoint(
             current_px = req.price
 
         bracket_type = req.bracket_type.lower()
-        amount = req.amount or 0.0
-        entry_side = None
+        amount = float(req.amount or 0.0)
+        req_side_clean = str(req.side or '').strip().lower()
+        entry_side = {'buy': 'buy', 'sell': 'sell', 'long': 'buy', 'short': 'sell'}.get(req_side_clean)
 
-        # 3. Resolve entry side and amount based on market context and chart drop position
+        # 3. Resolve entry side and amount based on market context, target order/bracket, and chart drop position
+        pos_info = {}
+        pos_amt = 0.0
+        pos_contracts = 0.0
+        pos_entry_side = None
+        is_inverse = False
         if is_futures:
-            pos_info = await manual_trade_service.get_active_position(db, current_user.id, req.api_key_id, req.symbol)
+            pos_info = await manual_trade_service.get_active_position(db, current_user.id, req.api_key_id, req.symbol) or {}
             pos_amt = float(pos_info.get('amount') or 0.0)
-            if pos_amt > 0:
-                if amount <= 0:
-                    amount = pos_amt
-                entry_side = 'buy' if str(pos_info.get('side', '')).lower() == 'long' else 'sell'
-            else:
-                if bracket_type == 'tp':
-                    entry_side = 'buy' if final_price > current_px else 'sell'
-                else:
-                    entry_side = 'buy' if final_price < current_px else 'sell'
-        else:
-            # Spot balance check & intelligent chart drop direction inference
-            bal = await manual_trade_service.get_fast_balance(db, current_user.id, req.api_key_id, req.symbol)
-            base_free = float(bal.get('base_free') or 0.0)
-            quote_free = float(bal.get('quote_free') or 0.0)
+            pos_contracts = float(pos_info.get('contracts') or 0.0)
+            mkt = (getattr(exchange, 'markets', None) or {}).get(req.symbol, {}) if exchange else {}
+            settle_base_match = False
+            if ':' in req.symbol and '/' in req.symbol:
+                p_parts = req.symbol.split('/')
+                if len(p_parts) > 1 and ':' in p_parts[1]:
+                    settle_base_match = (p_parts[0].upper() == p_parts[1].split(':')[1].upper())
+            is_inverse = bool(
+                pos_info.get('is_inverse')
+                or mkt.get('inverse')
+                or mkt.get('subType') == 'inverse'
+                or settle_base_match
+            )
+            if pos_amt > 0 or pos_contracts > 0:
+                p_side_raw = str(pos_info.get('side', '')).lower()
+                if p_side_raw in ('long', 'short'):
+                    pos_entry_side = 'buy' if p_side_raw == 'long' else 'sell'
 
-            # Chart drop position determines trade intent:
-            # TP above market = Sell TP (Long) | TP below market = Buy TP (Dip Buy-Back)
-            # SL below market = Sell SL (Long) | SL above market = Buy SL (Smart Chase Buy-Back)
+        # Unified target_order_id / active bracket / open order resolution (Spot & Futures)
+        cached_open_orders = None
+        matched_target_amount = 0.0
+        if req.target_order_id:
+            amount, entry_side, matched_target_amount, cached_open_orders = await _resolve_drag_target_ref(
+                exchange=exchange,
+                symbol=req.symbol,
+                api_key_id=req.api_key_id,
+                ref_str=str(req.target_order_id),
+                is_futures=is_futures,
+                pos_entry_side=pos_entry_side,
+                initial_amount=amount,
+                initial_entry_side=entry_side,
+            )
+
+        if is_futures and (pos_amt > 0 or pos_contracts > 0):
+            if entry_side is None and pos_entry_side:
+                entry_side = pos_entry_side
+            if is_inverse and pos_contracts > 0:
+                if amount <= 0:
+                    amount = pos_contracts
+                elif (
+                    pos_amt > 0
+                    and _drag_amounts_close(amount, pos_amt)
+                    and not _drag_amounts_close(amount, pos_contracts)
+                    and not (matched_target_amount > 0 and _drag_amounts_close(matched_target_amount, amount))
+                ):
+                    amount = pos_contracts
+            elif amount <= 0:
+                amount = pos_contracts if (is_inverse and pos_contracts > 0) else pos_amt
+        elif amount <= 0 and not req.target_order_id:
+            if bracket_type == 'sl' or is_futures:
+                for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+                    if sdata.get('cancelled') or sdata.get('status') != 'monitoring':
+                        continue
+                    if _drag_matches_scope(sdata, req.api_key_id, req.symbol):
+                        amount = float(sdata.get('amount') or 0.0)
+                        if amount > 0:
+                            if entry_side is None:
+                                entry_side = _flip_side(sdata.get('side')) or entry_side
+                            break
+            if is_futures and amount <= 0:
+                scoped_ebs = [
+                    eb for eb in list(BracketOrderService.ACTIVE_ENTRY_BRACKETS.values())
+                    if not eb.get('cancelled') and _drag_matches_scope(eb, req.api_key_id, req.symbol)
+                ]
+                if len(scoped_ebs) == 1 and float(scoped_ebs[0].get('amount') or 0.0) > 0:
+                    amount = float(scoped_ebs[0]['amount'])
+                    if entry_side is None:
+                        entry_side = _flip_side(scoped_ebs[0].get('side')) or entry_side
+                else:
+                    try:
+                        cached_open_orders = await exchange.fetch_open_orders(req.symbol)
+                        if len(cached_open_orders or []) == 1:
+                            o = cached_open_orders[0]
+                            ord_amt = float(o.get('remaining') or o.get('amount') or 0.0)
+                            if ord_amt > 0:
+                                amount = ord_amt
+                            if entry_side is None:
+                                entry_side = _infer_entry_side_from_open_order(o, pos_entry_side, BracketOrderService.KNOWN_TP_ORDER_IDS) or entry_side
+                    except Exception:
+                        pass
+
+        # Chart drop position heuristic fallback ONLY when entry_side wasn't explicitly provided or resolved from target/position:
+        # TP above market = Sell TP (Long) | TP below market = Buy TP (Dip Buy-Back)
+        # SL below market = Sell SL (Long) | SL above market = Buy SL (Smart Chase Buy-Back)
+        if entry_side is None:
             if bracket_type == 'tp':
                 entry_side = 'buy' if final_price > current_px else 'sell'
             else:
                 entry_side = 'buy' if final_price < current_px else 'sell'
 
-            if amount <= 0:
-                # Check if we are updating an existing active bracket or order
-                if req.target_order_id:
-                    ref_str = str(req.target_order_id)
-                    if ref_str in BracketOrderService.ACTIVE_ENTRY_BRACKETS:
-                        amount = float(BracketOrderService.ACTIVE_ENTRY_BRACKETS[ref_str].get('amount') or 0.0)
-                    else:
-                        for eb in list(BracketOrderService.ACTIVE_ENTRY_BRACKETS.values()):
-                            if not eb.get('cancelled') and str(eb.get('tp_order_id') or '') == ref_str and _drag_matches_scope(eb, req.api_key_id, req.symbol):
-                                amount = float(eb.get('amount') or 0.0)
-                                if amount > 0:
-                                    break
-                if amount <= 0 and bracket_type == 'sl':
-                    for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
-                        if sdata.get('cancelled') or sdata.get('status') != 'monitoring':
-                            continue
-                        if _drag_matches_scope(sdata, req.api_key_id, req.symbol):
-                            if not req.target_order_id or BracketOrderService._matches_bracket_ref(sid, sdata, req.target_order_id):
-                                amount = float(sdata.get('amount') or 0.0)
-                                if amount > 0:
-                                    break
-                if amount <= 0:
-                    if entry_side == 'sell':
-                        if quote_free > 0 and final_price > 0:
-                            amount = quote_free / final_price
-                        elif base_free > 0:
-                            amount = base_free
-                    else:
-                        if base_free > 0:
-                            amount = base_free
-                        elif quote_free > 0 and final_price > 0:
-                            amount = quote_free / final_price
+        if not is_futures and amount <= 0:
+            # Spot swing balance fallback when no target_order_id / active bracket / open order matched
+            bal = await manual_trade_service.get_fast_balance(db, current_user.id, req.api_key_id, req.symbol)
+            base_free = float(bal.get('base_free') or 0.0)
+            quote_free = float(bal.get('quote_free') or 0.0)
+            if entry_side == 'sell':
+                if quote_free > 0 and final_price > 0:
+                    amount = quote_free / final_price
+                elif base_free > 0:
+                    amount = base_free
+            else:
+                if base_free > 0:
+                    amount = base_free
+                elif quote_free > 0 and final_price > 0:
+                    amount = quote_free / final_price
 
         # 4. Format amount with exchange precision
         final_amount = BracketOrderService._safe_amount_to_precision(exchange, req.symbol, amount)
+        if is_futures and is_inverse and final_amount > 0:
+            final_amount = float(max(1.0, round(final_amount)))
         if final_amount <= 0:
             raise HTTPException(
                 status_code=400, 
@@ -627,7 +904,7 @@ async def place_drag_bracket_endpoint(
                     if req.sl_config.get('type'):
                         sl_meta['type'] = req.sl_config.get('type')
                     if req.sl_config.get('mode'):
-                        sl_meta['mode'] = str(req.sl_config.get('type') or sl_meta.get('mode')).upper()
+                        sl_meta['mode'] = str(req.sl_config.get('mode') or sl_meta.get('mode') or 'ABSOLUTE').upper()
 
                     sl_meta['max_attempts'] = int(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_max_attempts', 'smartChaseMaxAttempts', sl_meta.get('max_attempts', 10000)))
                     sl_meta['chase_delay_ms'] = int(BracketOrderService._get_sl_param(req.sl_config, 'smart_chase_delay_ms', 'smartChaseDelayMs', sl_meta.get('chase_delay_ms', 1500)))
@@ -769,7 +1046,7 @@ async def place_drag_bracket_endpoint(
                 elif target_ref not in BracketOrderService.ACTIVE_SOFTWARE_SL:
                     is_exchange_exit = False
                     try:
-                        open_orders = await exchange.fetch_open_orders(req.symbol)
+                        open_orders = cached_open_orders if cached_open_orders is not None else await exchange.fetch_open_orders(req.symbol)
                         for o in open_orders or []:
                             if str(o.get('id') or '') == target_ref:
                                 if str(o.get('side') or '').lower() == opposite_side:

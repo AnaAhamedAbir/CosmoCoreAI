@@ -623,8 +623,9 @@ async def startup_event():
             # Pre-warm market_data_streamer exchange instances into memory
             try:
                 from app.services.market_data_streamer import market_data_streamer
+                await market_data_streamer._get_exchange_instance('binance', 'BTC/USDT')
                 await market_data_streamer._get_exchange_instance('binance', 'BTC/USDT:USDT')
-                logger.info("✅ MarketDataStreamer Binance futures instance pre-warmed!")
+                logger.info("✅ MarketDataStreamer Binance spot & futures instances pre-warmed!")
             except Exception as mdse:
                 logger.warning(f"Could not pre-warm MarketDataStreamer: {mdse}")
         except Exception as e:

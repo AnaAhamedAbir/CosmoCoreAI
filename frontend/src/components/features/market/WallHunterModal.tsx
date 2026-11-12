@@ -13,6 +13,33 @@ import { CustomMLModel } from '../../../types';
 import { AdvancedRiskManager } from './AdvancedRiskManager';
 import { GodModeBotTriggerSettings } from './GodModeBotTriggerSettings';
 
+const getDefaultProxySymbol = (nativeSym: string) =>
+    nativeSym ? `${nativeSym.split('/')[0]}/USDT` : 'BTC/USDT';
+
+const parseIntInput = (raw: string): number | '' => {
+    if (raw === '') return '';
+    const parsed = parseInt(raw, 10);
+    return Number.isNaN(parsed) ? '' : parsed;
+};
+
+const parseFloatInput = (raw: string): number | '' => {
+    if (raw === '') return '';
+    const parsed = parseFloat(raw);
+    return Number.isNaN(parsed) ? '' : parsed;
+};
+
+const toSafeNumber = (val: unknown, fallback: number): number => {
+    if (val === '' || val === null || val === undefined) return fallback;
+    const parsed = Number(val);
+    return Number.isNaN(parsed) ? fallback : parsed;
+};
+
+const toSafeInt = (val: unknown, fallback: number): number => {
+    if (val === '' || val === null || val === undefined) return fallback;
+    const parsed = parseInt(String(val), 10);
+    return Number.isNaN(parsed) ? fallback : parsed;
+};
+
 export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol: string; exchange?: string; bids?: any[]; asks?: any[]; onDeploySuccess?: (botId: number) => void }> = ({ isOpen, onClose, symbol, exchange = 'binance', bids = [], asks = [], onDeploySuccess }) => {
     const [savedKeys, setSavedKeys] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -79,6 +106,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         maxY: 1000
     });
     const modalContainerRef = useRef<HTMLDivElement>(null);
+    const activeDragCleanupRef = useRef<(() => void) | null>(null);
 
     // --- NEW: Trading Mode State ---
     const [tradingMode, setTradingMode] = useState<'spot' | 'futures'>('spot');
@@ -324,8 +352,18 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
     // 'update' = update the existing bot | 'new' = deploy a brand new bot regardless
     const [deployMode, setDeployMode] = useState<'update' | 'new'>('update');
 
+    const effectiveProxySymbol = form.proxySymbol || getDefaultProxySymbol(form.symbol);
+    const cleanQuoteAsset = (form.symbol ? (form.symbol.split('/')[1] || 'USDT').split(':')[0] : 'USDT') || 'USDT';
+
     useEffect(() => {
-        setForm(prev => ({ ...prev, symbol, exchange }));
+        setForm(prev => ({
+            ...prev,
+            symbol,
+            exchange,
+            proxySymbol: (!prev.enableProxyWall || !prev.proxySymbol || prev.proxySymbol === getDefaultProxySymbol(prev.symbol))
+                ? (prev.enableProxyWall ? getDefaultProxySymbol(symbol) : '')
+                : prev.proxySymbol,
+        }));
     }, [symbol, exchange]);
 
     // Smart default calculation on first load
@@ -526,7 +564,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             // Proxy Wall Support
                             enableProxyWall: c.enable_proxy_wall !== undefined ? c.enable_proxy_wall : false,
                             proxyExchange: c.proxy_exchange || 'binance',
-                            proxySymbol: c.proxy_symbol || '',
+                            proxySymbol: c.proxy_symbol || (c.enable_proxy_wall ? getDefaultProxySymbol(symbol) : ''),
 
                             // Smart Wick SR
                             enableWickSr: c.enable_wick_sr !== undefined ? c.enable_wick_sr : false,
@@ -701,6 +739,8 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         }
         e.stopPropagation();
 
+        activeDragCleanupRef.current?.();
+
         const modalEl = modalContainerRef.current;
         const winW = typeof window !== 'undefined' ? (window.visualViewport?.width || window.innerWidth) : 1920;
         const winH = typeof window !== 'undefined' ? (window.visualViewport?.height || window.innerHeight) : 1080;
@@ -770,13 +810,15 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             applyMove(touch.clientX, touch.clientY);
         };
 
-        const onUp = () => {
-            if (!drag.isDragging) return;
+        const cleanupDrag = () => {
             drag.isDragging = false;
-            document.body.style.userSelect = '';
-            document.body.style.cursor = '';
-            document.body.style.pointerEvents = '';
+            if (typeof document !== 'undefined') {
+                document.body.style.userSelect = '';
+                document.body.style.cursor = '';
+                document.body.style.pointerEvents = '';
+            }
             if (modalEl) {
+                modalEl.style.pointerEvents = '';
                 modalEl.style.backdropFilter = '';
                 (modalEl.style as any).webkitBackdropFilter = '';
                 modalEl.style.backgroundColor = '';
@@ -787,6 +829,18 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             window.removeEventListener('touchmove', onTouchMove);
             window.removeEventListener('touchend', onUp);
             window.removeEventListener('touchcancel', onUp);
+            window.removeEventListener('blur', onUp);
+            if (activeDragCleanupRef.current === cleanupDrag) {
+                activeDragCleanupRef.current = null;
+            }
+        };
+
+        const onUp = () => {
+            if (!drag.isDragging) {
+                cleanupDrag();
+                return;
+            }
+            cleanupDrag();
 
             const finalX = drag.currentX;
             const finalY = drag.currentY;
@@ -797,12 +851,27 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             } catch {}
         };
 
+        activeDragCleanupRef.current = cleanupDrag;
+
         window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mouseup', onUp);
         window.addEventListener('touchmove', onTouchMove, { passive: false });
         window.addEventListener('touchend', onUp);
         window.addEventListener('touchcancel', onUp);
+        window.addEventListener('blur', onUp);
     }, [modalPos.x, modalPos.y]);
+
+    useEffect(() => {
+        if (!isOpen) {
+            activeDragCleanupRef.current?.();
+        }
+    }, [isOpen]);
+
+    useEffect(() => {
+        return () => {
+            activeDragCleanupRef.current?.();
+        };
+    }, []);
 
     if (!isOpen || typeof document === 'undefined') return null;
 
@@ -812,7 +881,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
         try {
             // 1. Fetch Deep Order Book (limit=200)
-            const detectSymbol = form.enableProxyWall && form.proxySymbol ? form.proxySymbol : form.symbol;
+            const detectSymbol = form.enableProxyWall ? effectiveProxySymbol : form.symbol;
             const detectExchange = form.enableProxyWall && form.proxyExchange ? form.proxyExchange : form.exchange;
             const deepBook = await marketDepthService.getRawOrderBook(detectSymbol, detectExchange, 200);
             const deepBids = deepBook.bids || [];
@@ -959,19 +1028,31 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         }
 
         if (form.selectedStrategy !== 'cascading_bb') {
-            if (!form.enableWallTrigger && !form.enableLiqTrigger && !form.enableMlFilter && !form.enableGodModeEntryTrigger) {
-                if (!form.enableUtBot && !form.enableDualEngine && !form.enableSupertrendBot && !form.enableWickSr) {
-                    setErrorMsg("Please enable at least one Entry Trigger (Orderbook Wall, Liquidation, ML Filter, Dual Engine, UT Bot, Supertrend, Wick S/R, or God Mode ML).");
-                    return;
-                }
-                if (form.enableUtBot && !form.enableUtEntryTrigger && !form.enableDualEngine && !form.enableSupertrendBot) {
-                    setErrorMsg("UT Bot Alerts is ON, but 'Entry Trigger' sub-option is OFF. Please enable it to use UT Bot as a trigger.");
-                    return;
-                }
-                if (form.enableSupertrendBot && !form.enableSupertrendEntryTrigger && !form.enableDualEngine && !form.enableUtBot) {
-                    setErrorMsg("Supertrend is ON, but 'Entry Trigger' is OFF. Please enable it to use Supertrend as a trigger.");
-                    return;
-                }
+            const hasPrimaryTrigger =
+                form.enableWallTrigger ||
+                form.enableLiqTrigger ||
+                form.enableMlFilter ||
+                form.enableGodModeEntryTrigger ||
+                form.enableIcebergTrigger ||
+                form.enableVWAPSDSnipe ||
+                form.enableDualEngine ||
+                form.enableWickSr;
+
+            if (
+                !hasPrimaryTrigger &&
+                !form.enableUtBot &&
+                !form.enableSupertrendBot
+            ) {
+                setErrorMsg("Please enable at least one Entry Trigger (Orderbook Wall, Liquidation, Iceberg, VWAP SD, ML Filter, Dual Engine, UT Bot, Supertrend, Wick S/R, or God Mode ML).");
+                return;
+            }
+            if (form.enableUtBot && !form.enableUtEntryTrigger && !hasPrimaryTrigger && !(form.enableSupertrendBot && form.enableSupertrendEntryTrigger)) {
+                setErrorMsg("UT Bot Alerts is ON, but 'Entry Trigger' sub-option is OFF. Please enable it to use UT Bot as a trigger.");
+                return;
+            }
+            if (form.enableSupertrendBot && !form.enableSupertrendEntryTrigger && !hasPrimaryTrigger && !(form.enableUtBot && form.enableUtEntryTrigger)) {
+                setErrorMsg("Supertrend is ON, but 'Entry Trigger' is OFF. Please enable it to use Supertrend as a trigger.");
+                return;
             }
         }
 
@@ -979,6 +1060,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         setIsLoading(true);
 
         try {
+            const parsedAmountBase = form.amount_base !== '' ? parseFloat(String(form.amount_base)) : NaN;
             const defaultName = `${tradingMode === 'futures' ? 'Perp Hunter' : 'L2 Hunter'}: ${form.symbol}`;
             const payload = {
                 name: form.botName && form.botName.trim() !== '' ? form.botName.trim() : defaultName,
@@ -1001,10 +1083,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     // Proxy Orderbook Routing (Cross-Exchange Support)
                     enable_proxy_wall: form.enableProxyWall,
                     proxy_exchange: form.enableProxyWall ? form.proxyExchange : null,
-                    proxy_symbol: form.enableProxyWall ? form.proxySymbol : null,
+                    proxy_symbol: form.enableProxyWall ? effectiveProxySymbol : null,
 
                     amount_per_trade: form.amount,
-                    amount_base_per_trade: form.amount_base ? parseFloat(form.amount_base as any) : null,
+                    amount_base_per_trade: !Number.isNaN(parsedAmountBase) ? parsedAmountBase : null,
                     target_spread: form.spread,
                     trailing_stop: form.enableTsl ? form.tsl : 0.0,
                     tsl_activation_pct: form.tslActivationPct,
@@ -1096,7 +1178,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     enable_dual_engine: form.enableDualEngine,
                     dual_engine_mode: form.dualEngineMode,
                     dual_engine_confluence_mode: form.dualEngineConfluenceMode,
-                    dual_engine_min_confluence: form.dualEngineMinConfluence,
+                    dual_engine_min_confluence: toSafeInt(form.dualEngineMinConfluence, 3),
                     dual_engine_ema_filter: form.dualEngineEmaFilter,
                     dual_engine_triple_ema_filter: form.dualEngineTripleEmaFilter,
                     dual_engine_rsi_filter: form.dualEngineRsiFilter,
@@ -1105,23 +1187,23 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     dual_engine_squeeze_filter: form.dualEngineSqueezeFilter,
                     dual_engine_adx_filter: form.dualEngineAdxFilter,
                     dual_engine_vol_filter: form.dualEngineVolFilter,
-                    dual_engine_ema_length: form.dualEngineEmaLength,
-                    dual_engine_ema_fast: form.dualEngineEmaFast,
-                    dual_engine_ema_med: form.dualEngineEmaMed,
-                    dual_engine_ema_slow: form.dualEngineEmaSlow,
-                    dual_engine_rsi_length: form.dualEngineRsiLength,
-                    dual_engine_rsi_ob: form.dualEngineRsiOb,
-                    dual_engine_rsi_os: form.dualEngineRsiOs,
-                    dual_engine_macd_fast: form.dualEngineMacdFast,
-                    dual_engine_macd_slow: form.dualEngineMacdSlow,
-                    dual_engine_macd_signal: form.dualEngineMacdSignal,
-                    dual_engine_squeeze_length: form.dualEngineSqueezeLength,
-                    dual_engine_squeeze_bb_mult: form.dualEngineSqueezeBbMult,
-                    dual_engine_squeeze_kc_mult: form.dualEngineSqueezeKcMult,
-                    dual_engine_adx_length: form.dualEngineAdxLength,
-                    dual_engine_adx_threshold: form.dualEngineAdxThreshold,
-                    dual_engine_vol_length: form.dualEngineVolLength,
-                    dual_engine_vol_multiplier: form.dualEngineVolMultiplier,
+                    dual_engine_ema_length: toSafeInt(form.dualEngineEmaLength, 100),
+                    dual_engine_ema_fast: toSafeInt(form.dualEngineEmaFast, 10),
+                    dual_engine_ema_med: toSafeInt(form.dualEngineEmaMed, 15),
+                    dual_engine_ema_slow: toSafeInt(form.dualEngineEmaSlow, 27),
+                    dual_engine_rsi_length: toSafeInt(form.dualEngineRsiLength, 14),
+                    dual_engine_rsi_ob: toSafeInt(form.dualEngineRsiOb, 70),
+                    dual_engine_rsi_os: toSafeInt(form.dualEngineRsiOs, 30),
+                    dual_engine_macd_fast: toSafeInt(form.dualEngineMacdFast, 12),
+                    dual_engine_macd_slow: toSafeInt(form.dualEngineMacdSlow, 26),
+                    dual_engine_macd_signal: toSafeInt(form.dualEngineMacdSignal, 9),
+                    dual_engine_squeeze_length: toSafeInt(form.dualEngineSqueezeLength, 20),
+                    dual_engine_squeeze_bb_mult: toSafeNumber(form.dualEngineSqueezeBbMult, 2.0),
+                    dual_engine_squeeze_kc_mult: toSafeNumber(form.dualEngineSqueezeKcMult, 1.5),
+                    dual_engine_adx_length: toSafeInt(form.dualEngineAdxLength, 14),
+                    dual_engine_adx_threshold: toSafeInt(form.dualEngineAdxThreshold, 25),
+                    dual_engine_vol_length: toSafeInt(form.dualEngineVolLength, 20),
+                    dual_engine_vol_multiplier: toSafeNumber(form.dualEngineVolMultiplier, 1.5),
                     dual_engine_timeframe: form.dualEngineTimeframe,
 
                     // Modular UT Bot Alerts
@@ -1191,24 +1273,24 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     // Advanced Risk Management
                     enable_breakeven_stop: form.enableBreakevenStop,
                     breakeven_type: form.breakevenType,
-                    breakeven_activation_pct: form.breakevenActivationPct,
-                    breakeven_fee_buffer_pct: form.breakevenFeeBufferPct,
+                    breakeven_activation_pct: toSafeNumber(form.breakevenActivationPct, 1.0),
+                    breakeven_fee_buffer_pct: toSafeNumber(form.breakevenFeeBufferPct, 0.2),
                     enable_trailing_breakeven: form.enableTrailingBreakeven,
                     trailing_breakeven_mode: form.trailingBreakevenMode,
                     trailing_breakeven_type: form.trailingBreakevenType,
-                    trailing_breakeven_distance: form.trailingBreakevenDistance,
+                    trailing_breakeven_distance: toSafeNumber(form.trailingBreakevenDistance, 0.0),
                     enable_breakeven_cooldown: form.enableBreakevenCooldown,
-                    breakeven_cooldown_mins: form.breakevenCooldownMins,
+                    breakeven_cooldown_mins: toSafeNumber(form.breakevenCooldownMins, 15),
 
                     enable_global_tp: form.enableGlobalTp,
-                    global_tp_target: form.globalTpTarget,
+                    global_tp_target: toSafeNumber(form.globalTpTarget, 0.0),
                     global_tp_type: form.globalTpType,
                     global_tp_close_mode: form.globalTpCloseMode,
                     global_tp_action: form.globalTpAction,
                     enable_trailing_global_tp: form.enableTrailingGlobalTp,
                     trailing_global_tp_mode: form.trailingGlobalTpMode,
                     trailing_global_tp_type: form.trailingGlobalTpType,
-                    trailing_global_tp_distance: form.trailingGlobalTpDistance
+                    trailing_global_tp_distance: toSafeNumber(form.trailingGlobalTpDistance, 0.0)
                 }
             };
 
@@ -1306,6 +1388,14 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 atrEnabled: false,
                 enableUtTrailingSl: false,
                 enableSupertrendTrailingSl: false,
+            }));
+            return;
+        }
+        if (field === 'enableProxyWall' && value === true) {
+            setForm(prev => ({
+                ...prev,
+                enableProxyWall: true,
+                proxySymbol: prev.proxySymbol || getDefaultProxySymbol(prev.symbol),
             }));
             return;
         }
@@ -1842,10 +1932,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             {tradingMode === 'spot' && strategyMode === 'auto' ? (
                                 <div className="grid grid-cols-2 gap-2">
                                     <div className="min-w-0">
-                                        <InputField label={`Margin Allocation (${form.symbol ? form.symbol.split('/')[1] || 'USDT' : 'USDT'})`} value={form.amount} onChange={(v: number) => setForm({ ...form, amount: v })} step={10} />
+                                        <InputField label={`Margin Allocation (${cleanQuoteAsset})`} value={form.amount} onChange={(v: number | '') => setForm({ ...form, amount: v === '' || Number.isNaN(Number(v)) ? 0 : Number(v) })} step={10} />
                                     </div>
                                     <div className="min-w-0">
-                                        <InputField label={`Margin Allocation (${form.symbol ? form.symbol.split('/')[0] : 'Base'})`} value={form.amount_base} onChange={(v: any) => setForm({ ...form, amount_base: v === '' ? '' : String(v) })} step={1} />
+                                        <InputField label={`Margin Allocation (${form.symbol ? form.symbol.split('/')[0] : 'Base'})`} value={form.amount_base} onChange={(v: number | '') => setForm({ ...form, amount_base: v === '' || Number.isNaN(Number(v)) ? '' : String(v) })} step={1} />
                                         {!form.amount_base && (
                                             <div className="mt-0.5 text-[7.5px] text-gray-500 italic text-right">
                                                 Auto Calculate
@@ -1854,7 +1944,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                     </div>
                                 </div>
                             ) : (
-                                <InputField label={`Margin Allocation (${form.symbol ? (tradingMode === 'spot' && strategyMode === 'short' ? form.symbol.split('/')[0] : (form.symbol.split('/')[1] || 'USDT')) : 'USDT'})`} value={form.amount} onChange={(v: number) => setForm({ ...form, amount: v })} step={10} />
+                                <InputField label={`Margin Allocation (${form.symbol ? (tradingMode === 'spot' && strategyMode === 'short' ? form.symbol.split('/')[0] : cleanQuoteAsset) : 'USDT'})`} value={form.amount} onChange={(v: number | '') => setForm({ ...form, amount: v === '' || Number.isNaN(Number(v)) ? 0 : Number(v) })} step={10} />
                             )}
 
                             {/* --- NATIVE TOKEN FEE TOGGLE --- */}
@@ -2057,7 +2147,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                             <HeatmapSymbolSelector
                                                                 compact
                                                                 exchange={form.proxyExchange}
-                                                                symbol={form.proxySymbol || (form.symbol ? form.symbol.split('/')[0] + '/USDT' : 'BTC/USDT')}
+                                                                symbol={effectiveProxySymbol}
                                                                 onExchangeChange={(ex) => handleFormChange('proxyExchange', ex)}
                                                                 onSymbolChange={(sym) => handleFormChange('proxySymbol', sym)}
                                                             />
@@ -2960,7 +3050,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     </div>
                                                     <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                                                         {form.dualEngineConfluenceMode && (
-                                                            <input type="number" min="1" max="8" className="bg-black/50 text-center text-yellow-400 font-mono text-[10px] w-9 border border-yellow-500/30 rounded py-0.5 outline-none" value={form.dualEngineMinConfluence} onChange={(e) => handleFormChange('dualEngineMinConfluence', parseInt(e.target.value))} title="Min Confluence Count" />
+                                                            <input type="number" min="1" max="8" className="bg-black/50 text-center text-yellow-400 font-mono text-[10px] w-9 border border-yellow-500/30 rounded py-0.5 outline-none" value={form.dualEngineMinConfluence} onChange={(e) => handleFormChange('dualEngineMinConfluence', parseIntInput(e.target.value))} title="Min Confluence Count" />
                                                         )}
                                                         <div className={`w-8 h-4 rounded-full p-0.5 flex items-center transition-colors duration-200 ${form.dualEngineConfluenceMode ? 'bg-yellow-500' : 'bg-gray-700'}`} onClick={() => handleFormChange('dualEngineConfluenceMode', !form.dualEngineConfluenceMode)}>
                                                             <div className={`w-3 h-3 bg-white rounded-full transform transition-transform duration-200 ${form.dualEngineConfluenceMode ? 'translate-x-4' : 'translate-x-0'}`}></div>
@@ -3007,21 +3097,21 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     {form.dualEngineEmaFilter && (
                                                         <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
                                                             <span className="text-[9px] font-bold text-gray-300 uppercase">EMA Length</span>
-                                                            <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-14 outline-none" value={form.dualEngineEmaLength} onChange={(e) => handleFormChange('dualEngineEmaLength', e.target.value)} />
+                                                            <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-14 outline-none" value={form.dualEngineEmaLength} onChange={(e) => handleFormChange('dualEngineEmaLength', parseIntInput(e.target.value))} />
                                                         </div>
                                                     )}
                                                     {form.dualEngineRsiFilter && (
                                                         <div className="flex gap-1.5">
                                                             <div className="flex-1 flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2 border border-yellow-500/10">
                                                                 <span className="text-[9px] font-bold text-gray-300 uppercase">RSI Len</span>
-                                                                <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-10 outline-none" value={form.dualEngineRsiLength} onChange={(e) => handleFormChange('dualEngineRsiLength', e.target.value)} />
+                                                                <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-10 outline-none" value={form.dualEngineRsiLength} onChange={(e) => handleFormChange('dualEngineRsiLength', parseIntInput(e.target.value))} />
                                                             </div>
                                                             <div className="flex-1 flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2 border border-yellow-500/10">
                                                                 <span className="text-[9px] font-bold text-gray-300 uppercase">OB/OS</span>
                                                                 <div className="flex items-center gap-1">
-                                                                    <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineRsiOb} onChange={(e) => handleFormChange('dualEngineRsiOb', e.target.value)} />
+                                                                    <input type="number" className="bg-transparent text-right text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineRsiOb} onChange={(e) => handleFormChange('dualEngineRsiOb', parseIntInput(e.target.value))} />
                                                                     <span className="text-gray-500 text-[9px]">/</span>
-                                                                    <input type="number" className="bg-transparent text-left text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineRsiOs} onChange={(e) => handleFormChange('dualEngineRsiOs', e.target.value)} />
+                                                                    <input type="number" className="bg-transparent text-left text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineRsiOs} onChange={(e) => handleFormChange('dualEngineRsiOs', parseIntInput(e.target.value))} />
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -3030,9 +3120,9 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                         <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
                                                             <span className="text-[9px] font-bold text-gray-300 uppercase">MACD Fast / Slow / Signal</span>
                                                             <div className="flex items-center gap-1.5">
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineMacdFast} onChange={(e) => handleFormChange('dualEngineMacdFast', e.target.value)} />
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineMacdSlow} onChange={(e) => handleFormChange('dualEngineMacdSlow', e.target.value)} />
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineMacdSignal} onChange={(e) => handleFormChange('dualEngineMacdSignal', e.target.value)} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineMacdFast} onChange={(e) => handleFormChange('dualEngineMacdFast', parseIntInput(e.target.value))} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineMacdSlow} onChange={(e) => handleFormChange('dualEngineMacdSlow', parseIntInput(e.target.value))} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineMacdSignal} onChange={(e) => handleFormChange('dualEngineMacdSignal', parseIntInput(e.target.value))} />
                                                             </div>
                                                         </div>
                                                     )}
@@ -3040,9 +3130,9 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                         <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
                                                             <span className="text-[9px] font-bold text-gray-300 uppercase">Squeeze Len / BB / KC</span>
                                                             <div className="flex items-center gap-1.5">
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineSqueezeLength} onChange={(e) => handleFormChange('dualEngineSqueezeLength', e.target.value)} />
-                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-9 outline-none" value={form.dualEngineSqueezeBbMult} onChange={(e) => handleFormChange('dualEngineSqueezeBbMult', e.target.value)} />
-                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-9 outline-none" value={form.dualEngineSqueezeKcMult} onChange={(e) => handleFormChange('dualEngineSqueezeKcMult', e.target.value)} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineSqueezeLength} onChange={(e) => handleFormChange('dualEngineSqueezeLength', parseIntInput(e.target.value))} />
+                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-9 outline-none" value={form.dualEngineSqueezeBbMult} onChange={(e) => handleFormChange('dualEngineSqueezeBbMult', parseFloatInput(e.target.value))} />
+                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-9 outline-none" value={form.dualEngineSqueezeKcMult} onChange={(e) => handleFormChange('dualEngineSqueezeKcMult', parseFloatInput(e.target.value))} />
                                                             </div>
                                                         </div>
                                                     )}
@@ -3050,9 +3140,9 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                         <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
                                                             <span className="text-[9px] font-bold text-gray-300 uppercase">Fast / Med / Slow</span>
                                                             <div className="flex items-center gap-1.5">
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineEmaFast} onChange={(e) => handleFormChange('dualEngineEmaFast', e.target.value)} />
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineEmaMed} onChange={(e) => handleFormChange('dualEngineEmaMed', e.target.value)} />
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineEmaSlow} onChange={(e) => handleFormChange('dualEngineEmaSlow', e.target.value)} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineEmaFast} onChange={(e) => handleFormChange('dualEngineEmaFast', parseIntInput(e.target.value))} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineEmaMed} onChange={(e) => handleFormChange('dualEngineEmaMed', parseIntInput(e.target.value))} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineEmaSlow} onChange={(e) => handleFormChange('dualEngineEmaSlow', parseIntInput(e.target.value))} />
                                                             </div>
                                                         </div>
                                                     )}
@@ -3060,8 +3150,8 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                         <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
                                                             <span className="text-[9px] font-bold text-gray-300 uppercase">ADX Length / Threshold</span>
                                                             <div className="flex items-center gap-1.5">
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineAdxLength} onChange={(e) => handleFormChange('dualEngineAdxLength', e.target.value)} />
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineAdxThreshold} onChange={(e) => handleFormChange('dualEngineAdxThreshold', e.target.value)} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineAdxLength} onChange={(e) => handleFormChange('dualEngineAdxLength', parseIntInput(e.target.value))} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineAdxThreshold} onChange={(e) => handleFormChange('dualEngineAdxThreshold', parseIntInput(e.target.value))} />
                                                             </div>
                                                         </div>
                                                     )}
@@ -3069,8 +3159,8 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                         <div className="flex justify-between items-center bg-white/5 rounded-lg p-1.5 px-2.5 border border-yellow-500/10">
                                                             <span className="text-[9px] font-bold text-gray-300 uppercase">Vol Length / Multiplier</span>
                                                             <div className="flex items-center gap-1.5">
-                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineVolLength} onChange={(e) => handleFormChange('dualEngineVolLength', e.target.value)} />
-                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-9 outline-none" value={form.dualEngineVolMultiplier} onChange={(e) => handleFormChange('dualEngineVolMultiplier', e.target.value)} />
+                                                                <input type="number" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-7 outline-none" value={form.dualEngineVolLength} onChange={(e) => handleFormChange('dualEngineVolLength', parseIntInput(e.target.value))} />
+                                                                <input type="number" step="0.1" className="bg-transparent text-center text-yellow-400 font-mono text-xs w-9 outline-none" value={form.dualEngineVolMultiplier} onChange={(e) => handleFormChange('dualEngineVolMultiplier', parseFloatInput(e.target.value))} />
                                                             </div>
                                                         </div>
                                                     )}
@@ -3111,7 +3201,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             )}
                             
                             {/* ADVANCED RISK MANAGER (AUTO-STOP LIMITS) */}
-                            <AdvancedRiskManager form={form} setForm={setForm} quoteAsset={form.symbol ? form.symbol.split('/')[1] || 'USDT' : 'USDT'} />
+                            <AdvancedRiskManager form={form} setForm={setForm} quoteAsset={cleanQuoteAsset} />
 
                             {/* --- RISK SL ORDER TYPE --- */}
                             <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 flex gap-2 items-center shadow-[0_4px_20px_rgba(0,0,0,0.1)]">
@@ -3501,7 +3591,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             </div>
 
                             <div className="grid grid-cols-2 gap-2">
-                                <InputField label="Spoof Detect Time (Seconds)" value={form.spoofTime} onChange={(v: number) => setForm({ ...form, spoofTime: v })} step={0.5} />
+                                <InputField label="Spoof Detect Time (Seconds)" value={form.spoofTime} onChange={(v: number | '') => setForm({ ...form, spoofTime: v === '' || Number.isNaN(Number(v)) ? 0 : Number(v) })} step={0.5} />
 
                                 {/* TA Snapshot Configuration */}
                                 <div className="bg-black/20 border border-white/5 rounded-lg p-2">
@@ -3790,7 +3880,21 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 const InputField = ({ label, value, onChange, step = 1 }: any) => (
     <div>
         <label className="text-[9px] font-bold text-gray-500 uppercase mb-0.5 block">{label}</label>
-        <input type="number" step={step} className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-white text-xs font-mono outline-none focus:border-brand-primary" value={value} onChange={(e) => onChange(parseFloat(e.target.value))} />
+        <input
+            type="number"
+            step={step}
+            className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-white text-xs font-mono outline-none focus:border-brand-primary"
+            value={Number.isNaN(value) ? '' : (value ?? '')}
+            onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === '') {
+                    onChange('');
+                    return;
+                }
+                const parsed = parseFloat(raw);
+                onChange(Number.isNaN(parsed) ? '' : parsed);
+            }}
+        />
     </div>
 );
 

@@ -118,6 +118,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     pointerId: number;
     isDragging: boolean;
   } | null>(null);
+  const activeDragCleanupRef = React.useRef<(() => void) | null>(null);
 
   // Sync internal activeSymbol whenever parent symbol prop updates
   React.useEffect(() => {
@@ -503,7 +504,6 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     if (isOpen) {
       fetchMlModels();
       setTradeSide('Sell');
-      setIsIceberg(true);
       setIcebergMode('qty');
       setIcebergCustomQty((prev) => (!prev || prev === '0' ? '250' : prev));
     }
@@ -576,6 +576,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       price: number;
       mode: string;
       label: string;
+      isSoftwareSL?: boolean;
     }> = [];
     const mergedBracketIds = new Set<string>();
     const seenOrderIds = new Set<string>();
@@ -604,13 +605,17 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         mergedBracketIds.add(String(linkedSl.id));
         const slPrice = Number(linkedSl.trigger_price || linkedSl.price || 0);
         const effAmt = amt || Number(linkedSl.amount || 0);
+        const isLinkedTp = String(linkedSl.tp_order_id || '') === oid || mode === 'TP';
+        const resolvedMode = isLinkedTp ? 'TP' : mode;
+        const tagPrefix = isLinkedTp ? '🎯 [TP+SL]' : '📌 [ENTRY+SL]';
         items.push({
           id: oid,
           side: sideLower,
           amount: effAmt,
           price,
-          mode: 'TP',
-          label: `🎯 [TP+SL] ${sideLabel} ${Number(effAmt.toFixed(4))} @ $${formatDisplayPrice(price)}${
+          mode: resolvedMode,
+          isSoftwareSL: !isLinkedTp && Boolean(ord.isSoftwareSL || mode === 'STOP'),
+          label: `${tagPrefix} ${sideLabel} ${Number(effAmt.toFixed(4))} @ $${formatDisplayPrice(price)}${
             slPrice > 0 ? ` / SL $${formatDisplayPrice(slPrice)}` : ''
           }`
         });
@@ -622,6 +627,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
           amount: amt,
           price,
           mode,
+          isSoftwareSL: Boolean(ord.isSoftwareSL || mode === 'STOP'),
           label: `${icon} [${mode}] ${sideLabel} ${Number(amt.toFixed(4))} @ $${formatDisplayPrice(price)}`
         });
       }
@@ -644,6 +650,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
           : totalAmt;
       const price = Number(b.current_maker_price || b.trigger_price || b.price || 0);
       const mode = String(b.mode || b.type || 'SMART_CHASE').toUpperCase();
+      const isPegEntry = b.status === 'pegging' || String(b.type || '').toLowerCase() === 'smart_peg';
       const tag =
         b.status === 'pegging'
           ? '⚡ [PEG]'
@@ -659,6 +666,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         amount: remAmt,
         price,
         mode,
+        isSoftwareSL: !isPegEntry,
         label: `${tag} ${sideLabel} ${Number(remAmt.toFixed(4))} @ $${formatDisplayPrice(price)}`
       });
     }
@@ -788,12 +796,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       if (targetObj) {
         if (targetObj.side === 'buy' && side === 'Sell') {
           toast.error('Cannot Force Sell a pending BUY order. Wait for fill or cancel order.');
-          setIsEmergencySubmitting(false);
           return;
         }
         if (targetObj.side === 'sell' && side === 'Buy') {
           toast.error('Cannot Force Buy a pending SELL / Exit order.');
-          setIsEmergencySubmitting(false);
           return;
         }
       }
@@ -808,8 +814,13 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
           : selectedPercent
             ? Math.max(1, Math.min(100, Number(selectedPercent.replace('%', '')) || 100))
             : 100;
+      const refOrderPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
       const customBaseAmt = hasCustomTypedSize
-        ? (sizeMode === 'quote' && effectiveOrderPrice > 0 ? Number(size) / effectiveOrderPrice : Number(size))
+        ? (isInverseFutures && contractSize > 0
+            ? (sizeMode === 'quote'
+                ? Math.max(1, Math.floor(Number(size) / contractSize))
+                : Math.max(1, Math.round((Number(size) * refOrderPrice) / contractSize)))
+            : (sizeMode === 'quote' && refOrderPrice > 0 ? Number(size) / refOrderPrice : Number(size)))
         : undefined;
 
       const attachedTpPayload =
@@ -1456,33 +1467,36 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
     // Support Coin-Margined Inverse Futures (e.g. DOGE/USD:DOGE)
     if (isInverseFutures) {
+      const formatInverseSize = (targetCont: number) => {
+        if (mode === 'quote') {
+          return (targetCont * contractSize).toString();
+        }
+        const baseAmt = (targetCont * contractSize) / price;
+        return baseAmt < 1
+          ? Number(baseAmt.toFixed(6)).toString()
+          : Number(baseAmt.toFixed(4)).toString();
+      };
       if (redOnly && pos && ((pos.contracts && pos.contracts > 0) || pos.amount > 0)) {
         const totalCont = (pos.contracts && pos.contracts > 0)
           ? pos.contracts
           : Math.max(1, Math.round((pos.amount * price) / contractSize));
         const targetCont = Math.max(1, Math.floor(totalCont * percentage));
-        if (mode === 'quote') {
-          return (targetCont * contractSize).toString();
-        } else {
-          const dogeAmt = (targetCont * contractSize) / price;
-          return dogeAmt.toFixed(2);
-        }
+        return formatInverseSize(targetCont);
       }
       const totalNotionalUSD = (balance.base_free || 0) * 0.99 * price * lev;
       const targetCont = Math.floor((totalNotionalUSD * percentage) / contractSize);
       if (targetCont <= 0) return '';
-      if (mode === 'quote') {
-        return (targetCont * contractSize).toString();
-      } else {
-        const dogeAmt = (targetCont * contractSize) / price;
-        return dogeAmt.toFixed(2);
-      }
+      return formatInverseSize(targetCont);
     }
 
     let maxValue = 0;
     if (mode === 'quote') {
       if (futures) {
-        maxValue = (balance.quote_free || 0) * lev;
+        if (redOnly && pos && pos.amount > 0) {
+          maxValue = pos.amount * price;
+        } else {
+          maxValue = (balance.quote_free || 0) * lev;
+        }
       } else if (side === 'Buy') {
         maxValue = balance.quote_free || 0;
       } else {
@@ -1671,6 +1685,8 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
     e.preventDefault();
     e.stopPropagation();
 
+    activeDragCleanupRef.current?.();
+
     if (!selectedApi) {
       toast.error('Please select an API Key first.');
       return;
@@ -1709,14 +1725,31 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       });
     };
 
-    const onPointerUp = async (ev: PointerEvent) => {
+    const cleanupDrag = (clearGhostLine: boolean) => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('pointercancel', onPointerUp);
+      window.removeEventListener('pointercancel', onDragAbort);
+      window.removeEventListener('blur', onDragAbort);
+      activeDragCleanupRef.current = null;
 
       try {
         targetEl.releasePointerCapture(pointerId);
       } catch {}
+
+      if (clearGhostLine) {
+        activeDragLineRef.current = null;
+        setActiveDragLine(null);
+        const endFn = onChartDragBracketEnd || (typeof window !== 'undefined' ? (window as any)._handleChartDragBracketEnd : null);
+        endFn?.(type, -1, -1);
+      }
+    };
+
+    const onDragAbort = () => {
+      cleanupDrag(true);
+    };
+
+    const onPointerUp = async (ev: PointerEvent) => {
+      cleanupDrag(false);
 
       const wasDragging = activeDragLineRef.current?.isDragging;
       activeDragLineRef.current = null;
@@ -1740,19 +1773,49 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
         let targetSide: string | undefined = undefined;
         let targetOrderId: string | undefined = undefined;
 
-        // 1. If user has a specific order selected in the HUD dropdown (Row 4), use that order's exact amount!
+        const resolveTargetFromForceOrder = (target: (typeof forceOrderTargets)[number]) => {
+          const isExitOrder = Boolean(target.isSoftwareSL || target.mode === 'TP');
+          const resolvedSide: 'buy' | 'sell' = isExitOrder
+            ? (target.side === 'buy' ? 'sell' : 'buy')
+            : (target.side === 'buy' ? 'buy' : 'sell');
+          let resolvedAmount = target.amount;
+          if (
+            isInverseFutures &&
+            positionData &&
+            positionData.contracts &&
+            positionData.contracts > 0 &&
+            positionData.amount > 0 &&
+            Math.abs(target.amount - positionData.amount) <= Math.max(1e-8, positionData.amount * 0.02) &&
+            Math.abs(target.amount - positionData.contracts) > Math.max(1e-8, positionData.contracts * 0.02)
+          ) {
+            resolvedAmount = positionData.contracts;
+          }
+          return {
+            amount: resolvedAmount,
+            orderId: target.id,
+            side: resolvedSide
+          };
+        };
+
+        // 1. If user has a specific order selected in the HUD dropdown (Row 4), use that order's exact target!
         if (selectedForceTarget && selectedForceTarget.amount > 0) {
-          targetAmount = selectedForceTarget.amount;
-          targetOrderId = selectedForceTarget.id;
-          targetSide = selectedForceTarget.side === 'buy' ? 'buy' : 'sell';
-        } else if (forceOrderTargets.length > 0 && selectedForceOrderId === 'all' && forceOrderTargets[0].amount > 0) {
-          // If there is an active open order and user hasn't specified another, use that order's exact amount
-          targetAmount = forceOrderTargets[0].amount;
-          targetOrderId = forceOrderTargets[0].id;
-          targetSide = forceOrderTargets[0].side === 'buy' ? 'buy' : 'sell';
+          const resolved = resolveTargetFromForceOrder(selectedForceTarget);
+          targetAmount = resolved.amount;
+          targetOrderId = resolved.orderId;
+          targetSide = resolved.side;
         } else if (isFutures && positionData && positionData.amount > 0) {
-          targetAmount = positionData.amount;
+          // 2. When 'all' is selected in Futures with an active position, target the position directly before any open order fallback
+          targetAmount = (isInverseFutures && positionData.contracts && positionData.contracts > 0)
+            ? positionData.contracts
+            : positionData.amount;
           targetSide = positionData.side.toLowerCase() === 'long' ? 'buy' : 'sell';
+          targetOrderId = undefined;
+        } else if (forceOrderTargets.length > 0 && selectedForceOrderId === 'all' && forceOrderTargets[0].amount > 0) {
+          // 3. Fallback to first active open order/bracket when no futures position is active
+          const resolved = resolveTargetFromForceOrder(forceOrderTargets[0]);
+          targetAmount = resolved.amount;
+          targetOrderId = resolved.orderId;
+          targetSide = resolved.side;
         } else {
           // Spot or no active futures position: infer side from chart drop price
           const currentPx = effectiveCurrentPrice || 0;
@@ -1830,10 +1893,21 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       }
     };
 
+    activeDragCleanupRef.current = () => cleanupDrag(true);
+
     window.addEventListener('pointermove', onPointerMove, { passive: true });
     window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onPointerUp);
-  }, [selectedApi, onChartDragBracketStart, onChartDragBracketMove, onChartDragBracketEnd, effectiveCurrentPrice, isFutures, positionData, balanceData, size, sizeMode, effectiveOrderPrice, tradeSide, activeSymbol, tpConfig, slConfig, fetchBalance, fetchActiveBrackets, hasLivePendingOrPosition, selectedForceTarget, forceOrderTargets, selectedForceOrderId]);
+    window.addEventListener('pointercancel', onDragAbort);
+    window.addEventListener('blur', onDragAbort);
+  }, [selectedApi, onChartDragBracketStart, onChartDragBracketMove, onChartDragBracketEnd, effectiveCurrentPrice, isFutures, isInverseFutures, positionData, balanceData, size, sizeMode, effectiveOrderPrice, tradeSide, activeSymbol, tpConfig, slConfig, fetchBalance, fetchActiveBrackets, hasLivePendingOrPosition, selectedForceTarget, forceOrderTargets, selectedForceOrderId]);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      activeDragCleanupRef.current?.();
+    }
+  }, [isOpen]);
+
+  React.useEffect(() => () => activeDragCleanupRef.current?.(), []);
 
   const handleTrade = async (side: 'Buy' | 'Sell') => {
     if (!selectedApi) {

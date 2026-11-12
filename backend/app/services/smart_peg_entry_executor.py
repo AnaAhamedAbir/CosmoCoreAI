@@ -100,6 +100,8 @@ async def execute_smart_peg_entry(
     margin_mode: Optional[str] = None,
     ai_filter_info: Optional[str] = None,
     contract_size: float = 1.0,
+    is_inverse: Optional[bool] = None,
+    send_initial_notify: bool = True,
 ) -> Optional[Dict[str, Any]]:
     """
     Executes a continuous Dynamic BBO Maker Peg Entry.
@@ -142,7 +144,7 @@ async def execute_smart_peg_entry(
 
     # Detect Binance Hedge Mode on Futures
     is_hedge_mode = False
-    is_inverse = _is_inverse_market(exchange, symbol)
+    is_inverse = bool(is_inverse) if is_inverse is not None else _is_inverse_market(exchange, symbol)
     if is_futures and exchange_name.lower().startswith('binance'):
         methods = (
             ['dapiPrivateGetPositionSideDual', 'fapiPrivateGetPositionSideDual']
@@ -460,11 +462,11 @@ async def execute_smart_peg_entry(
         logger.info(f"✅ [Smart Peg Entry] Order #{order_id} ACTIVE at {target_maker_price} (Queue Priority Active)")
 
         # Send Telegram notification for first Smart Peg order placed (with accurate latency_ms)
-        if attempts == 1 and user_id:
+        if send_initial_notify and attempts == 1 and user_id:
             try:
                 from app.services.manual_trade_service import _send_trade_fired_notification
                 t_placed = time.perf_counter()
-                t_base = start_time if start_time > 0 else t_peg_start
+                t_base = start_time if (start_time and start_time > 0) else t_peg_start
                 first_order_latency_ms = max(1, int((t_placed - t_base) * 1000))
                 asyncio.create_task(
                     _send_trade_fired_notification(

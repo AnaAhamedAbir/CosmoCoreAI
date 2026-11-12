@@ -308,6 +308,20 @@ class ManualTradeService:
             raise e
 
     @staticmethod
+    def _extract_asset_balance(bal: dict, asset: str) -> Tuple[float, float, float]:
+        """Extract (free, used, total) for an asset from raw CCXT balance dicts."""
+        if not isinstance(bal, dict) or not asset:
+            return 0.0, 0.0, 0.0
+        info = bal.get(asset) if isinstance(bal.get(asset), dict) else {}
+        free_map = bal.get('free') if isinstance(bal.get('free'), dict) else {}
+        used_map = bal.get('used') if isinstance(bal.get('used'), dict) else {}
+        total_map = bal.get('total') if isinstance(bal.get('total'), dict) else {}
+        free_val = float(info.get('free', 0.0) or free_map.get(asset, 0.0) or 0.0)
+        used_val = float(info.get('used', 0.0) or used_map.get(asset, 0.0) or 0.0)
+        total_val = float(info.get('total', 0.0) or total_map.get(asset, 0.0) or (free_val + used_val))
+        return free_val, used_val, total_val
+
+    @staticmethod
     async def _is_binance_hedge_mode(exchange, symbol: str, is_inverse: bool = False) -> bool:
         """
         Binance Futures er khetre Hedge Mode (Dual Position Side) on kina check kore.
@@ -1548,7 +1562,8 @@ class ManualTradeService:
                         leverage=params.get('leverage') if is_futures else None,
                         margin_mode=params.get('marginMode') if is_futures else None,
                         ai_filter_info=ai_filter_info,
-                        contract_size=contract_size
+                        contract_size=contract_size,
+                        is_inverse=is_inverse
                     )
                 )
 
@@ -1677,6 +1692,7 @@ class ManualTradeService:
                     payload["workingIcebergQty"] = str(bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, valid_iceberg))
                     logger.info(f"🧊 Attaching workingIcebergQty={payload['workingIcebergQty']} to Native Binance OTO/OTOCO")
                 
+                t_order_start = time.perf_counter()
                 try:
                     if has_tp and has_sl:
                         if order_req.side.lower() == 'buy':
@@ -1767,21 +1783,23 @@ class ManualTradeService:
                     ex_params['timeInForce'] = 'GTC'
                 logger.info(f"🧊 Configured icebergQty={ex_params['icebergQty']} on Spot limit order")
 
-            if not is_ws_success and exchange.has.get('createOrderWs') and not ex_params.get('postOnly'):
-                try:
-                    logger.info(f"⚡ Attempting WebSocket order execution for {order_req.symbol}...")
-                    order_type = order_req.type.lower()
-                    price = order_req.price if order_type == 'limit' else None
-                    response = await exchange.create_order_ws(
-                        order_req.symbol, order_type, order_req.side, order_req.amount, price, ex_params
-                    )
-                    is_ws_success = True
-                    logger.info("✅ WebSocket Order execution successful!")
-                except Exception as ws_e:
-                    logger.warning(f"⚠️ WebSocket Order Failed ({ws_e}). Falling back to REST API.")
-
-            t_order_start = time.perf_counter()
             if not is_ws_success:
+                t_order_start = time.perf_counter()
+                if exchange.has.get('createOrderWs') and not ex_params.get('postOnly'):
+                    try:
+                        logger.info(f"⚡ Attempting WebSocket order execution for {order_req.symbol}...")
+                        order_type = order_req.type.lower()
+                        price = order_req.price if order_type == 'limit' else None
+                        response = await exchange.create_order_ws(
+                            order_req.symbol, order_type, order_req.side, order_req.amount, price, ex_params
+                        )
+                        is_ws_success = True
+                        logger.info("✅ WebSocket Order execution successful!")
+                    except Exception as ws_e:
+                        logger.warning(f"⚠️ WebSocket Order Failed ({ws_e}). Falling back to REST API.")
+
+            if not is_ws_success:
+                t_order_start = time.perf_counter()
                 logger.info(f"🌐 Using REST API order execution for {order_req.symbol}...")
                 if order_req.type.lower() == 'market':
                     try:
@@ -2137,24 +2155,32 @@ class ManualTradeService:
                         )
                 api_ms = int((time.perf_counter() - t_fallback) * 1000)
 
-            # Synchronize new order ID with any active software bracket (TP or Disaster SL)
+            # Synchronize new order ID & price with any active software bracket (TP or Disaster SL)
             new_order_id = str(response.get('id')) if response and response.get('id') else None
-            if new_order_id:
-                try:
-                    if str(order_id) in bracket_order_service.KNOWN_TP_ORDER_IDS:
-                        bracket_order_service.KNOWN_TP_ORDER_IDS.discard(str(order_id))
-                        bracket_order_service.KNOWN_TP_ORDER_IDS.add(str(new_order_id))
-                    for s_data in bracket_order_service.ACTIVE_SOFTWARE_SL.values():
-                        if str(s_data.get('tp_order_id')) == str(order_id):
-                            s_data['tp_order_id'] = new_order_id
-                            logger.info(f"🔄 Updated active bracket tp_order_id: {order_id} -> {new_order_id}")
-                        if str(s_data.get('disaster_sl_order_id')) == str(order_id):
-                            s_data['disaster_sl_order_id'] = new_order_id
-                            s_data['trigger_price'] = new_price
-                            s_data['price'] = new_price
-                            logger.info(f"🔄 Updated active bracket disaster_sl_order_id: {order_id} -> {new_order_id} @ {new_price}")
-                except Exception as sync_err:
-                    logger.debug(f"Bracket ID sync notice: {sync_err}")
+            resolved_order_id = new_order_id or str(order_id)
+            try:
+                if str(order_id) in bracket_order_service.KNOWN_TP_ORDER_IDS and resolved_order_id != str(order_id):
+                    bracket_order_service.KNOWN_TP_ORDER_IDS.discard(str(order_id))
+                    bracket_order_service.KNOWN_TP_ORDER_IDS.add(resolved_order_id)
+                for s_data in list(bracket_order_service.ACTIVE_SOFTWARE_SL.values()):
+                    if str(s_data.get('tp_order_id') or '') == str(order_id):
+                        s_data['tp_order_id'] = resolved_order_id
+                        s_data['tp_price'] = float(new_price)
+                        logger.info(f"🔄 Updated active bracket tp_order_id: {order_id} -> {resolved_order_id} @ {new_price}")
+                    if str(s_data.get('disaster_sl_order_id') or '') == str(order_id):
+                        s_data['disaster_sl_order_id'] = resolved_order_id
+                        s_data['trigger_price'] = new_price
+                        s_data['price'] = new_price
+                        logger.info(f"🔄 Updated active bracket disaster_sl_order_id: {order_id} -> {resolved_order_id} @ {new_price}")
+                for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
+                    if eb_data.get('cancelled'):
+                        continue
+                    if str(eb_data.get('tp_order_id') or '') == str(order_id):
+                        eb_data['tp_order_id'] = resolved_order_id
+                        eb_data['tp_price'] = float(new_price)
+                        logger.info(f"🔄 Updated active entry bracket {eb_id} tp_order_id: {order_id} -> {resolved_order_id} @ {new_price}")
+            except Exception as sync_err:
+                logger.debug(f"Bracket ID sync notice: {sync_err}")
 
             total_ms = int((time.perf_counter() - t0) * 1000)
             logger.info(f"⚡ [EXEC TIMING] Order Modified | Total={total_ms}ms | BinanceAPI={api_ms}ms")
@@ -2509,6 +2535,13 @@ class ManualTradeService:
 
             pct = float(size_pct) if (size_pct is not None and float(size_pct) > 0) else 100.0
             pct_ratio = min(1.0, max(0.01, pct / 100.0))
+            has_custom_amount = False
+            if custom_amount is not None and (size_pct is None or float(size_pct) <= 0):
+                try:
+                    if float(custom_amount) > 0:
+                        has_custom_amount = True
+                except (ValueError, TypeError):
+                    has_custom_amount = False
 
             has_cancelled_orders = bool(
                 cancelled_open_orders > 0 or cancelled_brackets > 0 or stopped_pegs > 0 or stopped_chases > 0
@@ -2561,16 +2594,23 @@ class ManualTradeService:
                     pos_info = None
 
                 pos_amt = float((pos_info or {}).get('amount') or 0.0)
+                pos_contracts = float((pos_info or {}).get('contracts') or 0.0)
                 pos_side = str((pos_info or {}).get('side') or 'none').lower()
-                if pos_amt > 0 and ((pos_side == 'long' and side_lower == 'sell') or (pos_side == 'short' and side_lower == 'buy')):
+                if (pos_amt > 0 or pos_contracts > 0) and ((pos_side == 'long' and side_lower == 'sell') or (pos_side == 'short' and side_lower == 'buy')):
                     is_closing_position = True
                     if specific_oid and resolved_specific_amt > 0:
-                        target_amount = min(pos_amt if not is_inverse else float(pos_info.get('contracts') or pos_amt), resolved_specific_amt * pct_ratio)
+                        target_amount = min(pos_amt if not is_inverse else (pos_contracts or pos_amt), resolved_specific_amt * pct_ratio)
                     elif is_inverse:
-                        total_cont = float(pos_info.get('contracts') or max(1, round((pos_amt * ref_price) / contract_size)))
-                        target_amount = max(1.0, round(total_cont * pct_ratio))
+                        total_cont = float(pos_contracts or max(1, round((pos_amt * ref_price) / contract_size)))
+                        if has_custom_amount:
+                            target_amount = max(1.0, min(total_cont, float(round(float(custom_amount)))))
+                        else:
+                            target_amount = max(1.0, round(total_cont * pct_ratio))
                     else:
-                        target_amount = pos_amt * pct_ratio
+                        if has_custom_amount:
+                            target_amount = min(pos_amt, float(custom_amount))
+                        else:
+                            target_amount = pos_amt * pct_ratio
                 else:
                     # Opening / adding to Futures position -> sync margin mode & leverage
                     if margin_mode:
@@ -2606,6 +2646,8 @@ class ManualTradeService:
                         max_cont = max(1.0, math.floor(total_notional_usd / contract_size))
                         if specific_oid and resolved_specific_amt > 0:
                             target_amount = min(max_cont, max(1.0, round(resolved_specific_amt * pct_ratio)))
+                        elif has_custom_amount:
+                            target_amount = max(1.0, min(max_cont, float(round(float(custom_amount)))))
                         else:
                             target_amount = max(1.0, math.floor((total_notional_usd * pct_ratio) / contract_size))
                     else:
@@ -2624,7 +2666,7 @@ class ManualTradeService:
                         max_afford = (effective_quote * lev * safety) / ref_price
                         if specific_oid and resolved_specific_amt > 0:
                             target_amount = min(max_afford, resolved_specific_amt * pct_ratio)
-                        elif custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
+                        elif has_custom_amount:
                             target_amount = min(float(custom_amount), max_afford)
                         else:
                             target_amount = max_afford * pct_ratio
@@ -2644,7 +2686,7 @@ class ManualTradeService:
                         raise HTTPException(status_code=400, detail=f"Insufficient {base_part} balance (0 available) for Emergency Force Sell.")
                     if specific_oid and resolved_specific_amt > 0:
                         target_amount = min(effective_base * 0.9995, resolved_specific_amt * pct_ratio)
-                    elif custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
+                    elif has_custom_amount:
                         target_amount = min(float(custom_amount), effective_base * 0.9995)
                     else:
                         target_amount = effective_base * pct_ratio * (0.9995 if pct_ratio >= 0.99 else 1.0)
@@ -2664,12 +2706,14 @@ class ManualTradeService:
                     max_afford_spot = (effective_quote * safety) / ref_price
                     if specific_oid and resolved_specific_amt > 0:
                         target_amount = min(max_afford_spot, resolved_specific_amt * pct_ratio)
-                    elif custom_amount and float(custom_amount) > 0 and (size_pct is None or float(size_pct) <= 0):
+                    elif has_custom_amount:
                         target_amount = min(float(custom_amount), max_afford_spot)
                     else:
                         target_amount = max_afford_spot * pct_ratio
 
             target_amount = bracket_order_service._safe_amount_to_precision(exchange, symbol, target_amount)
+            if is_futures and is_inverse and target_amount > 0:
+                target_amount = float(max(1.0, round(target_amount)))
             if target_amount <= 0:
                 raise HTTPException(status_code=400, detail=f"Calculated emergency order size is 0 for {symbol}.")
 
@@ -2704,29 +2748,14 @@ class ManualTradeService:
                         max_chase_deviation_pct=10.0,
                         peg_id=peg_cid,
                         reduce_only=is_closing_position,
-                        urgent_mode=True
-                    )
-                )
-
-                asyncio.create_task(
-                    _send_trade_fired_notification(
-                        user_id=user_id,
-                        exchange_name=api_key_record.exchange,
-                        symbol=symbol,
-                        side=side_lower,
-                        order_type='EmergencyMakerPeg',
-                        amount=target_amount,
-                        fill_price=ref_price,
-                        latency_ms=int((time.perf_counter() - start_time) * 1000) if start_time else 0,
-                        attached_tp=attached_tp if has_tp else None,
-                        attached_sl=attached_sl if has_sl else None,
+                        urgent_mode=True,
+                        start_time=start_time or 0.0,
                         leverage=leverage if is_futures else None,
                         margin_mode=margin_mode if is_futures else None,
-                        is_futures=is_futures,
-                        max_dev=10.0,
+                        ai_filter_info=ai_filter_info,
                         contract_size=contract_size,
                         is_inverse=is_inverse,
-                        ai_filter_info=ai_filter_info
+                        send_initial_notify=True
                     )
                 )
 
@@ -3153,21 +3182,22 @@ class ManualTradeService:
                 }
             else:
                 # Spot market position exit: cancel open sell orders and sell base coin to quote currency
+                base_part = meta.get('base')
                 bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta)
-                base_free = float(bal.get('base_free') or 0.0)
+                base_free, base_used, _ = ManualTradeService._extract_asset_balance(bal, base_part)
 
                 # If there are open orders, cancel them to unlock base tokens
-                if float(bal.get('base_used') or 0.0) > 0:
+                if base_used > 0:
                     try:
                         if hasattr(exchange, 'cancel_all_orders'):
                             await exchange.cancel_all_orders(symbol)
                     except Exception:
                         pass
                     bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta)
-                    base_free = float(bal.get('base_free') or 0.0)
+                    base_free, base_used, _ = ManualTradeService._extract_asset_balance(bal, base_part)
 
                 if base_free <= 0:
-                    raise HTTPException(status_code=400, detail=f"No {meta.get('base', 'base coin')} balance available to close on {symbol}.")
+                    raise HTTPException(status_code=400, detail=f"No {base_part or 'base coin'} balance available to close on {symbol}.")
 
                 safe_amt = bracket_order_service._safe_amount_to_precision(exchange, symbol, base_free)
                 res = await exchange.create_market_order(symbol, 'sell', safe_amt)

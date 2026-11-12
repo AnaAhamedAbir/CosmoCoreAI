@@ -163,3 +163,16 @@ async def health_check(
         return JSONResponse(status_code=503, content=status_data)
         
     return status_data
+
+
+@router.get("/hardware-telemetry")
+async def get_vps_hardware_telemetry(
+    current_user: models.User = Depends(deps.get_current_active_user)
+):
+    """Return live VPS host CPU, RAM, disk/ROM, uptime, and temperature telemetry."""
+    try:
+        data = SystemService.get_hardware_telemetry()
+        data["timestamp"] = datetime.now(pytz.utc).isoformat()
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read VPS telemetry: {str(e)}")

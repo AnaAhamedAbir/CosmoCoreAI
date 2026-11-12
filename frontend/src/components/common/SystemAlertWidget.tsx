@@ -10,6 +10,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useSystemAlerts, type SystemAlert, type AlertSeverity } from '@/hooks/useSystemAlerts';
 import { useTheme } from '@/context/ThemeContext';
+import DeviceTelemetryPanel from '@/components/common/DeviceTelemetryPanel';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -367,7 +369,7 @@ const SystemAlertWidget: React.FC = () => {
   const { alerts, unreadCount, connected, clearAlerts, markAllRead } = useSystemAlerts();
 
   const [open, setOpen]       = useState(false);
-  const [tab, setTab]         = useState<'alerts' | 'logs'>('alerts');
+  const [tab, setTab]         = useState<'alerts' | 'logs' | 'device'>('alerts');
   const [toasts, setToasts]   = useState<SystemAlert[]>([]);
   const [logBatches, setLogBatches] = useState<Map<string, ContainerLogBatch>>(new Map());
   const [logFilter, setLogFilter]   = useState<string | null>(null);
@@ -621,9 +623,11 @@ const SystemAlertWidget: React.FC = () => {
         >
           <div className="rounded-2xl overflow-hidden flex flex-col" style={{
             height: 'min(530px, calc(100vh - 30px))',
-            background: document.documentElement.classList.contains('dark') ? 'rgba(8,8,18,0.85)' : 'rgba(248,250,252,0.92)',
-            backdropFilter: 'blur(30px)',
-            WebkitBackdropFilter: 'blur(30px)',
+            background: document.documentElement.classList.contains('dark')
+              ? (isThermalGuardActive() ? 'rgba(8,8,18,0.96)' : 'rgba(8,8,18,0.85)')
+              : (isThermalGuardActive() ? 'rgba(248,250,252,0.98)' : 'rgba(248,250,252,0.92)'),
+            backdropFilter: open && !isThermalGuardActive() ? 'blur(30px)' : 'none',
+            WebkitBackdropFilter: open && !isThermalGuardActive() ? 'blur(30px)' : 'none',
           }}>
             {/* Scanline overlay */}
             <div className="absolute inset-0 pointer-events-none rounded-2xl overflow-hidden z-10 opacity-[0.025]"
@@ -708,9 +712,9 @@ const SystemAlertWidget: React.FC = () => {
 
             {/* ── Tab Bar ── */}
             <div className="flex-shrink-0 flex border-b" style={{ borderColor: document.documentElement.classList.contains('dark') ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.08)' }}>
-              {(['alerts', 'logs'] as const).map(t => (
+              {(['alerts', 'logs', 'device'] as const).map(t => (
                 <button key={t} onClick={() => setTab(t)}
-                  className={`flex-1 py-2.5 text-[10px] font-black tracking-[0.2em] uppercase transition-all relative overflow-hidden ${tab === t ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-700 hover:text-gray-600 dark:hover:text-gray-400'}`}
+                  className={`flex-1 py-2.5 text-[10px] font-black tracking-[0.16em] uppercase transition-all relative overflow-hidden ${tab === t ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-700 hover:text-gray-600 dark:hover:text-gray-400'}`}
                 >
                   {tab === t && (
                     <>
@@ -720,7 +724,11 @@ const SystemAlertWidget: React.FC = () => {
                         style={{ background: 'linear-gradient(90deg, #7c3aed, #06b6d4)', boxShadow: '0 0 8px #7c3aed' }} />
                     </>
                   )}
-                  {t === 'alerts' ? `⬡ Alerts${alerts.length > 0 ? ` [${alerts.length}]` : ''}` : '⬡ Live Feed'}
+                  {t === 'alerts'
+                    ? `⬡ Alerts${alerts.length > 0 ? ` [${alerts.length}]` : ''}`
+                    : t === 'logs'
+                      ? '⬡ Live Feed'
+                      : '⬡ Device / VPS'}
                 </button>
               ))}
             </div>
@@ -762,8 +770,10 @@ const SystemAlertWidget: React.FC = () => {
                     )}
                   </div>
                 </>
-              ) : (
+              ) : tab === 'logs' ? (
                 <LogTerminal batches={logBatches} filter={logFilter} onFilter={setLogFilter} />
+              ) : (
+                <DeviceTelemetryPanel active={open && tab === 'device'} />
               )}
             </div>
 

@@ -928,17 +928,17 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
 
         if (!showEMA) {
             emaSeriesMapRef.current.forEach((series) => {
-                try { series.applyOptions({ visible: false, lastValueVisible: false }); } catch {}
+                try { series.applyOptions({ visible: false, lastValueVisible: false, title: '' }); } catch {}
             });
             if (emaSeriesRef.current) {
-                try { emaSeriesRef.current.applyOptions({ visible: false, lastValueVisible: false }); } catch {}
+                try { emaSeriesRef.current.applyOptions({ visible: false, lastValueVisible: false, title: '' }); } catch {}
             }
             setMtfEmaValues({});
             return;
         }
 
         if (emaSeriesRef.current) {
-            try { emaSeriesRef.current.applyOptions({ visible: false, lastValueVisible: false }); } catch {}
+            try { emaSeriesRef.current.applyOptions({ visible: false, lastValueVisible: false, title: '' }); } catch {}
         }
 
         // Clean up series for removed timeframes
@@ -962,7 +962,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                     color,
                     lineWidth: 1,
                     priceScaleId: 'right',
-                    title: `EMA ${period} (${tf})`,
+                    title: showPriceLabels ? `EMA ${period} (${tf})` : '',
                     lastValueVisible: showPriceLabels,
                     priceLineVisible: false,
                     crosshairMarkerVisible: true,
@@ -978,9 +978,10 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                 series.applyOptions({
                     color,
                     lineWidth: 1,
-                    title: `EMA ${period} (${tf})`,
+                    title: showPriceLabels ? `EMA ${period} (${tf})` : '',
                     visible: true,
                     lastValueVisible: showPriceLabels,
+                    priceLineVisible: false,
                 });
             }
 
@@ -1140,6 +1141,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         }
 
     }, [
+        syncMtfEma,
         indicatorSettings.showBB,
         indicatorSettings.bbPeriod,
         indicatorSettings.bbStdDev,
@@ -1154,7 +1156,9 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         indicatorSettings.showEMA,
         indicatorSettings.emaPeriod,
         indicatorSettings.emaTimeframes,
-        indicatorSettings.emaRenderMode
+        indicatorSettings.emaRenderMode,
+        indicatorSettings.emaShowPriceLabels,
+        indicatorSettings.emaCustomColors
     ]);
 
     // ML Prediction Lines handled by MLPredictionRenderer component in JSX

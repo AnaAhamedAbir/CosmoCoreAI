@@ -2073,4 +2073,20 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   letter-spacing: -0.02em;
 }
 
+/* ==========================================================================
+   Mobile & Tablet Thermal Guard (Redmi Pad / Samsung Galaxy / Android Chrome)
+   Shields mobile GPUs from overheating by eliminating heavy backdrop blur filters
+   and throttles expensive CSS recalculations.
+   ========================================================================== */
+.mobile-thermal-guard .cosmo-theme-modal {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.mobile-thermal-guard * {
+  /* Prevent browser text subpixel thrashing during rapid DOM updates */
+  text-rendering: optimizeSpeed;
+}
+
+
 

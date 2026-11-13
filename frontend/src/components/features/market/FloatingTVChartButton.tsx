@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BarChart2, X, RefreshCw, ChevronDown } from 'lucide-react';
+import { BarChart2, X, RefreshCw, ChevronDown, GripVertical } from 'lucide-react';
 import {
   createChart,
   ISeriesApi,
@@ -19,6 +20,7 @@ import {
 import { HeatmapSymbolSelector } from './HeatmapSymbolSelector';
 import { TimeframeSelector } from './TimeframeSelector';
 import { useTheme } from '../../../context/ThemeContext';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 
 const MotionButton = motion.button as any;
 const MotionDiv   = motion.div   as any;
@@ -62,9 +64,10 @@ interface MiniChartProps {
   exchange: string;
   interval: string;
   ind:      IndSettings;
+  isThermalGuard?: boolean;
 }
 
-const MiniOrderFlowChart: React.FC<MiniChartProps> = ({ symbol, exchange, interval, ind }) => {
+const MiniOrderFlowChart: React.FC<MiniChartProps> = React.memo(({ symbol, exchange, interval, ind, isThermalGuard = false }) => {
   const { theme } = useTheme();
   const isLight = theme === 'light';
   const containerRef     = useRef<HTMLDivElement>(null);
@@ -81,6 +84,8 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = ({ symbol, exchange, interv
   const macdHistRef      = useRef<ISeriesApi<'Histogram'>   | null>(null);
   const priceLineRef     = useRef<any>(null);
   const lastCandleRef    = useRef<any>(null);
+  const priceBadgeRef    = useRef<HTMLSpanElement>(null);
+  const lastTickTimeRef  = useRef<number>(0);
   const wsRef            = useRef<WebSocket | null>(null);
   const mountedRef       = useRef(true);
 
@@ -217,8 +222,9 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = ({ symbol, exchange, interv
     priceLineRef.current = null;
 
     const clean = stripFutures(symbol).toUpperCase();
+    const candleLimit = isThermalGuard ? 350 : 1500;
 
-    marketDepthService.getOHLCV(clean, exchange, interval, 2000)
+    marketDepthService.getOHLCV(clean, exchange, interval, candleLimit)
       .then((data: any[]) => {
         if (cancelled) return;
         if (!candleRef.current || !volRef.current) return;
@@ -282,6 +288,9 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = ({ symbol, exchange, interv
             priceLineRef.current = pl;
           }
           setLivePrice(last);
+          if (priceBadgeRef.current) {
+            priceBadgeRef.current.textContent = fmtPrice(last);
+          }
         }
 
         chartRef.current?.timeScale().fitContent();
@@ -332,6 +341,9 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = ({ symbol, exchange, interv
 
         sock.onmessage = (ev) => {
           if (!mountedRef.current) return;
+          // When app is in background, tab hidden, or screen locked on tablet/mobile, stop CPU/GPU work
+          if (typeof document !== 'undefined' && document.hidden) return;
+
           try {
             const msg = JSON.parse(ev.data);
             const price = msg.type === 'ticker'
@@ -339,7 +351,18 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = ({ symbol, exchange, interv
               : msg.price ? parseFloat(msg.price) : NaN;
             if (isNaN(price) || price <= 0) return;
 
-            setLivePrice(price);
+            const now = performance.now();
+            // Throttle tick renders to 75ms on mobile/thermal guard (prevents phone heating) and 16ms on desktop
+            const throttleMs = isThermalGuard ? 75 : 16;
+            if (now - lastTickTimeRef.current < throttleMs) {
+              return;
+            }
+            lastTickTimeRef.current = now;
+
+            // Direct DOM update eliminates full React re-render of MiniOrderFlowChart on each tick!
+            if (priceBadgeRef.current) {
+              priceBadgeRef.current.textContent = fmtPrice(price);
+            }
 
             if (priceLineRef.current) {
               try { priceLineRef.current.applyOptions({ price }); } catch { /* ignore */ }
@@ -365,7 +388,7 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = ({ symbol, exchange, interv
       sock?.close();
       mountedRef.current = true;
     };
-  }, [symbol]);
+  }, [symbol, isThermalGuard]);
 
   return (
     <div className="relative w-full h-full bg-[#070C17]">
@@ -384,17 +407,17 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = ({ symbol, exchange, interv
       <div ref={containerRef} className="w-full h-full" />
 
       {/* Live price badge */}
-      {livePrice !== null && !loading && (
+      {!loading && (
         <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 pointer-events-none">
-          <span className="text-[11px] font-mono font-black text-white bg-black/70 backdrop-blur-sm px-2 py-0.5 rounded-lg border border-white/10">
-            {fmtPrice(livePrice)}
+          <span ref={priceBadgeRef} className="text-[11px] font-mono font-black text-white bg-black/70 backdrop-blur-sm px-2 py-0.5 rounded-lg border border-white/10">
+            {livePrice !== null ? fmtPrice(livePrice) : '---'}
           </span>
           <span className={`w-1.5 h-1.5 rounded-full ${wsOk ? 'bg-green-400 shadow-[0_0_5px_rgba(34,197,94,0.9)] animate-pulse' : 'bg-orange-400'}`} />
         </div>
       )}
     </div>
   );
-};
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Small toggle pill for indicator toolbar
@@ -434,6 +457,9 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
   exchange = 'bybit',
   size = 'md',
 }) => {
+  const deviceProfile = useDeviceProfile();
+  const { isThermalGuardActive, isPhone } = deviceProfile;
+
   const [isOpen,      setIsOpen]      = useState(false);
   const [chartExchange, setChartExchange] = useState(exchange);
   const [chartSym,    setChartSym]    = useState(symbol);
@@ -442,32 +468,241 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
   const [ind,         setInd]         = useState<IndSettings>(DEFAULT_IND);
   const [showEmaPick, setShowEmaPick] = useState(false);
 
-  // ── Dragging ──────────────────────────────────────────────────────────────
-  const [pos, setPos]       = useState({ x: 0, y: 0 });
-  const [dragging, setDrag] = useState(false);
-  const dragRef = useRef({ mx: 0, my: 0, px: 0, py: 0 });
+  // ── Ultra-Smooth 120fps GPU Dragging Implementation (Zero React Re-render direct transform) ──
+  const modalContainerRef = useRef<HTMLDivElement>(null);
+  const chartContentRef = useRef<HTMLDivElement>(null);
 
-  const initPos = useCallback(() => {
-    setPos({ x: window.innerWidth - 540 - 32, y: window.innerHeight - 560 - 220 });
+  const [modalPos, setModalPos] = useState<{ x: number; y: number }>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('cosmo_floating_tv_chart_pos_v2');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+            return {
+              x: Math.max(6, Math.min(Math.max(6, winW - 550), parsed.x)),
+              y: Math.max(6, Math.min(Math.max(6, winH - 530), parsed.y)),
+            };
+          }
+        }
+      } catch {}
+    }
+    const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+    const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+    const isMobile = winW < 640;
+    return {
+      x: isMobile ? 8 : Math.max(10, Math.min(winW - 560, winW - 572)),
+      y: isMobile ? 45 : Math.max(10, Math.min(winH - 540, winH - 600)),
+    };
+  });
+
+  const dragRef = useRef({
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+    currentX: 0,
+    currentY: 0,
+    minX: 6,
+    maxX: 1200,
+    minY: 6,
+    maxY: 800,
+  });
+
+  const clampPos = useCallback((rawX: number, rawY: number) => {
+    const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+    const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+    const modalW = modalContainerRef.current?.offsetWidth || 540;
+    const modalH = modalContainerRef.current?.offsetHeight || 520;
+    const minX = 6;
+    const maxX = Math.max(minX, winW - modalW - 6);
+    const minY = 6;
+    const maxY = Math.max(minY, winH - modalH - 6);
+    return {
+      x: Math.max(minX, Math.min(maxX, Math.round(rawX))),
+      y: Math.max(minY, Math.min(maxY, Math.round(rawY))),
+    };
   }, []);
 
-  useEffect(() => { initPos(); }, [initPos]);
-
-  const onDragStart = (e: React.MouseEvent) => {
-    e.preventDefault(); setDrag(true);
-    dragRef.current = { mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y };
-  };
-
+  // Synchronize modal position and observe live window resize
   useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!dragging) return;
-      setPos({ x: dragRef.current.px + e.clientX - dragRef.current.mx,
-               y: dragRef.current.py + e.clientY - dragRef.current.my });
+    if (!isOpen || typeof window === 'undefined') return;
+    const modalEl = modalContainerRef.current;
+    if (!modalEl) return;
+
+    const clamped = clampPos(modalPos.x, modalPos.y);
+    modalEl.style.transform = `translate3d(${clamped.x}px, ${clamped.y}px, 0)`;
+    dragRef.current.currentX = clamped.x;
+    dragRef.current.currentY = clamped.y;
+
+    if (clamped.x !== modalPos.x || clamped.y !== modalPos.y) {
+      setModalPos(clamped);
+    }
+
+    const onWindowResize = () => {
+      if (dragRef.current.isDragging) return;
+      const nextClamped = clampPos(modalPos.x, modalPos.y);
+      if (modalContainerRef.current) {
+        modalContainerRef.current.style.transform = `translate3d(${nextClamped.x}px, ${nextClamped.y}px, 0)`;
+      }
+      dragRef.current.currentX = nextClamped.x;
+      dragRef.current.currentY = nextClamped.y;
+      if (nextClamped.x !== modalPos.x || nextClamped.y !== modalPos.y) {
+        setModalPos(nextClamped);
+      }
     };
-    const onUp = () => setDrag(false);
-    if (dragging) { window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp); }
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-  }, [dragging]);
+
+    window.addEventListener('resize', onWindowResize);
+    return () => window.removeEventListener('resize', onWindowResize);
+  }, [isOpen, clampPos, modalPos.x, modalPos.y]);
+
+  // Ultra-Smooth 120fps GPU Mouse & Touch Drag Handler (Zero React re-renders during drag)
+  const handleStartDrag = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      const isTouch = 'touches' in e;
+      if (!isTouch && (e as React.MouseEvent).button !== 0) return;
+
+      const target = e.target as HTMLElement;
+      if (
+        target.closest('button') ||
+        target.closest('input') ||
+        target.closest('select') ||
+        target.closest('[data-no-drag="true"]')
+      ) {
+        return;
+      }
+
+      const startClientX = isTouch ? e.touches[0]?.clientX : (e as React.MouseEvent).clientX;
+      const startClientY = isTouch ? e.touches[0]?.clientY : (e as React.MouseEvent).clientY;
+      if (startClientX === undefined || startClientY === undefined) return;
+
+      if (!isTouch && e.cancelable) {
+        e.preventDefault();
+      }
+      e.stopPropagation();
+
+      const modalEl = modalContainerRef.current;
+      const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+      const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+      const modalW = modalEl?.offsetWidth || 540;
+      const modalH = modalEl?.offsetHeight || 520;
+
+      const drag = dragRef.current;
+      drag.isDragging = true;
+      drag.startX = startClientX;
+      drag.startY = startClientY;
+      drag.originX = modalPos.x;
+      drag.originY = modalPos.y;
+      drag.currentX = modalPos.x;
+      drag.currentY = modalPos.y;
+      drag.minX = 6;
+      drag.maxX = Math.max(6, winW - modalW - 6);
+      drag.minY = 6;
+      drag.maxY = Math.max(6, winH - modalH - 6);
+
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'grabbing';
+      // Shield background OrderFlowHeatmap and canvas from mouse/pointer events during drag
+      document.body.style.pointerEvents = 'none';
+
+      if (modalEl) {
+        modalEl.style.pointerEvents = 'auto';
+        modalEl.style.transition = 'none';
+        modalEl.style.backdropFilter = 'none';
+        (modalEl.style as any).webkitBackdropFilter = 'none';
+        modalEl.style.backgroundColor =
+          typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+            ? 'rgba(255, 255, 255, 0.98)'
+            : 'rgba(7, 12, 23, 0.98)';
+      }
+
+      // Temporarily disable pointer events on inner chart canvas during drag
+      if (chartContentRef.current) {
+        chartContentRef.current.style.pointerEvents = 'none';
+      }
+
+      const applyMove = (clientX: number, clientY: number) => {
+        if (!drag.isDragging) return;
+        const rawX = drag.originX + (clientX - drag.startX);
+        const rawY = drag.originY + (clientY - drag.startY);
+
+        const clampedX = Math.max(drag.minX, Math.min(drag.maxX, rawX));
+        const clampedY = Math.max(drag.minY, Math.min(drag.maxY, rawY));
+
+        drag.currentX = clampedX;
+        drag.currentY = clampedY;
+
+        if (modalContainerRef.current) {
+          modalContainerRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
+        }
+      };
+
+      const onMouseMove = (mv: MouseEvent) => {
+        applyMove(mv.clientX, mv.clientY);
+      };
+
+      const onTouchMove = (tv: TouchEvent) => {
+        if (!drag.isDragging) return;
+        if (tv.cancelable) tv.preventDefault();
+        const touch = tv.touches[0];
+        if (!touch) return;
+        applyMove(touch.clientX, touch.clientY);
+      };
+
+      const onUp = () => {
+        if (!drag.isDragging) return;
+        drag.isDragging = false;
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        document.body.style.pointerEvents = '';
+
+        if (modalContainerRef.current) {
+          modalContainerRef.current.style.pointerEvents = '';
+          modalContainerRef.current.style.transition = '';
+          modalContainerRef.current.style.backdropFilter = '';
+          (modalContainerRef.current.style as any).webkitBackdropFilter = '';
+          modalContainerRef.current.style.backgroundColor = '';
+        }
+
+        if (chartContentRef.current) {
+          chartContentRef.current.style.pointerEvents = '';
+        }
+
+        const finalPos = { x: drag.currentX, y: drag.currentY };
+        setModalPos(finalPos);
+        try {
+          localStorage.setItem('cosmo_floating_tv_chart_pos_v2', JSON.stringify(finalPos));
+        } catch {}
+
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('touchmove', onTouchMove);
+        window.removeEventListener('touchend', onUp);
+        window.removeEventListener('touchcancel', onUp);
+        window.removeEventListener('blur', onUp);
+      };
+
+      window.addEventListener('mousemove', onMouseMove, { passive: true });
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchmove', onTouchMove, { passive: false });
+      window.addEventListener('touchend', onUp);
+      window.addEventListener('touchcancel', onUp);
+      window.addEventListener('blur', onUp);
+    },
+    [modalPos, clampPos]
+  );
+
+  // Safety cleanup on unmount
+  useEffect(() => {
+    return () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.body.style.pointerEvents = '';
+    };
+  }, []);
 
   // Sync heatmap symbol+exchange → chart (only when panel closed)
   useEffect(() => {
@@ -491,6 +726,13 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
     setInd(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const modalWidthClass = isPhone
+    ? 'w-[calc(100vw-16px)] max-w-[440px]'
+    : 'w-[540px] max-w-[calc(100vw-24px)]';
+  const modalHeight = isPhone
+    ? (ind.showRSI || ind.showMACD ? 450 : 395)
+    : (ind.showRSI || ind.showMACD ? 560 : 520);
+
   return (
     <>
       {/* ── FAB ─────────────────────────────────────────────────────────── */}
@@ -507,121 +749,171 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
         )}
       </AnimatePresence>
 
-      {/* ── Floating Panel ───────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {isOpen && (
-          <MotionDiv
-            initial={{ opacity: 0, scale: 0.93, y: 16 }}
-            animate={{ opacity: 1, scale: 1,    y: 0  }}
-            exit={{    opacity: 0, scale: 0.93, y: 16  }}
-            transition={{ type: 'spring', stiffness: 340, damping: 28 }}
-            style={{
-              left: pos.x, top: pos.y, position: 'fixed',
-              height: ind.showRSI || ind.showMACD ? 560 : 520,
-              zIndex: 9999,
-            }}
-            className="cosmo-theme-modal w-[540px] max-w-[calc(100vw-24px)] rounded-2xl bg-white dark:bg-[#070C17] border border-slate-200 dark:border-violet-500/20 shadow-[0_16px_64px_rgba(0,0,0,0.85),0_0_0_1px_rgba(139,92,246,0.07)] flex flex-col overflow-hidden"
-          >
-            {/* ── DRAG HANDLE ─────────────────────────────────────────── */}
+      {/* ── Floating Panel (Portaled to document.body for zero-lag screen-wide GPU drag) ── */}
+      {typeof document !== 'undefined' &&
+        createPortal(
+          isOpen ? (
             <div
-              className="flex items-center justify-between px-3 py-2 bg-black/50 border-b border-white/[0.05] cursor-move select-none flex-shrink-0"
-              onMouseDown={onDragStart}
+              ref={modalContainerRef}
+              style={{
+                position: 'fixed',
+                left: 0,
+                top: 0,
+                transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : modalPos.x}px, ${dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y}px, 0)`,
+                willChange: 'transform',
+                height: modalHeight,
+                zIndex: 100000,
+              }}
+              className={`cosmo-theme-modal fixed ${modalWidthClass} rounded-2xl ${
+                isThermalGuardActive
+                  ? 'bg-[#070C17] border-violet-500/30 shadow-[0_12px_36px_rgba(0,0,0,0.92)]'
+                  : 'bg-white dark:bg-[#070C17] backdrop-blur-xl border border-slate-200 dark:border-violet-500/20 shadow-[0_16px_64px_rgba(0,0,0,0.85)]'
+              } flex flex-col overflow-hidden select-none animate-in fade-in duration-150`}
             >
-              <div className="flex items-center gap-2 pointer-events-none">
-                <div className="w-5 h-5 rounded-md bg-violet-600/30 flex items-center justify-center">
-                  <BarChart2 className="w-3 h-3 text-violet-400" />
+              {/* ── DRAG HANDLE ─────────────────────────────────────────── */}
+              <div
+                onMouseDown={handleStartDrag}
+                onTouchStart={handleStartDrag}
+                style={{ touchAction: 'none' }}
+                className="flex items-center justify-between px-3 py-2 bg-black/50 border-b border-white/[0.05] cursor-grab active:cursor-grabbing select-none flex-shrink-0"
+                title="Drag to move TVChart"
+              >
+                <div className="flex items-center gap-2 pointer-events-none">
+                  <GripVertical className="w-3.5 h-3.5 text-violet-400/70 shrink-0" />
+                  <div className="w-5 h-5 rounded-md bg-violet-600/30 flex items-center justify-center">
+                    <BarChart2 className="w-3 h-3 text-violet-400" />
+                  </div>
+                  <span className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">TVChart</span>
+                  <span className="text-[9px] text-gray-400 font-mono">
+                    · {stripFutures(chartSym)} · {interval}
+                  </span>
                 </div>
-                <span className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">TVChart</span>
-                <span className="text-[9px] text-gray-600 font-mono">· {stripFutures(chartSym)} · {interval}</span>
+                <div
+                  className="flex items-center gap-1 pointer-events-auto"
+                  data-no-drag="true"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setChartKey((k) => k + 1)}
+                    className="p-1 rounded-md hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                    title="Refresh"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsOpen(false)}
+                    className="p-1 rounded-md hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
+                    title="Close"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-1 pointer-events-auto" onMouseDown={e => e.stopPropagation()}>
-                <button onClick={() => setChartKey(k => k + 1)}
-                  className="p-1 rounded-md hover:bg-white/10 text-gray-600 hover:text-white transition-colors" title="Refresh">
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={() => setIsOpen(false)}
-                  className="p-1 rounded-md hover:bg-red-500/20 text-gray-600 hover:text-red-400 transition-colors" title="Close">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
 
-            {/* ── SYMBOL + INTERVAL SELECTOR ───────────────────────────── */}
-            <div
-              className="flex-shrink-0 bg-[#000000] border-b border-white/[0.05] px-3 py-2 flex flex-col gap-1.5"
-              onMouseDown={e => e.stopPropagation()}
-            >
-              {/* Symbol + Timeframe on same row, side by side */}
-              <div className="flex items-center gap-2">
-                <HeatmapSymbolSelector
+              {/* ── SYMBOL + INTERVAL SELECTOR ───────────────────────────── */}
+              <div
+                className="flex-shrink-0 bg-[#000000] border-b border-white/[0.05] px-3 py-2 flex flex-col gap-1.5"
+                data-no-drag="true"
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
+                {/* Symbol + Timeframe on same row, side by side */}
+                <div className="flex items-center gap-2">
+                  <HeatmapSymbolSelector
+                    symbol={chartSym}
+                    exchange={chartExchange}
+                    onSymbolChange={handleSymbolChange}
+                    onExchangeChange={handleExchangeChange}
+                  />
+                  <TimeframeSelector
+                    interval={interval}
+                    onIntervalChange={(tf) => {
+                      setInterval(tf);
+                      setChartKey((k) => k + 1);
+                    }}
+                  />
+                </div>
+
+                {/* ── Row 3: INDICATOR TOOLBAR ─────────────────────────────── */}
+                <div className="flex items-center gap-1.5 pt-0.5 border-t border-white/[0.06] flex-wrap">
+                  <span className="text-[9px] text-gray-700 uppercase tracking-widest font-bold flex-shrink-0">Ind</span>
+
+                  {/* EMA pill with period sub-menu */}
+                  <div className="relative">
+                    <div className="flex items-center">
+                      <IndPill
+                        label={`EMA${ind.emaPeriod}`}
+                        active={ind.showEMA}
+                        color="#d97706"
+                        onClick={() => toggle('showEMA')}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowEmaPick((v) => !v)}
+                        className="ml-0.5 px-1 py-0.5 rounded text-gray-600 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                      >
+                        <ChevronDown className={`w-2.5 h-2.5 transition-transform ${showEmaPick ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
+                    <AnimatePresence>
+                      {showEmaPick && (
+                        <MotionDiv
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.1 }}
+                          className="absolute top-full left-0 mt-1 bg-[#000000] border border-white/10 rounded-xl shadow-2xl p-1 z-50 flex gap-0.5"
+                        >
+                          {EMA_PERIODS.map((p) => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => {
+                                setInd((prev) => ({ ...prev, emaPeriod: p, showEMA: true }));
+                                setShowEmaPick(false);
+                              }}
+                              className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-colors cursor-pointer ${
+                                ind.emaPeriod === p ? 'bg-amber-500 text-black' : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          ))}
+                        </MotionDiv>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  <IndPill label="BB" active={ind.showBB} color="#0ea5e9" onClick={() => toggle('showBB')} />
+                  <IndPill label="RSI" active={ind.showRSI} color="#db2777" onClick={() => toggle('showRSI')} />
+                  <IndPill label="MACD" active={ind.showMACD} color="#3b82f6" onClick={() => toggle('showMACD')} />
+                  <IndPill label="VOL" active={ind.showVol} color="#6366f1" onClick={() => toggle('showVol')} />
+
+                  {/* RSI/MACD note */}
+                  {(ind.showRSI || ind.showMACD) && (
+                    <span className="ml-auto text-[8px] text-gray-700 font-mono">sub-pane ↓</span>
+                  )}
+                </div>
+              </div>
+
+              {/* ── MINI CHART ───────────────────────────────────────────── */}
+              <div ref={chartContentRef} className="flex-1 min-h-0 overflow-hidden">
+                <MiniOrderFlowChart
+                  key={`${chartKey}-${chartSym}-${chartExchange}-${interval}`}
                   symbol={chartSym}
                   exchange={chartExchange}
-                  onSymbolChange={handleSymbolChange}
-                  onExchangeChange={handleExchangeChange}
-                />
-                <TimeframeSelector
                   interval={interval}
-                  onIntervalChange={(tf) => { setInterval(tf); setChartKey(k => k + 1); }}
+                  ind={ind}
+                  isThermalGuard={isThermalGuardActive}
                 />
               </div>
-
-              {/* ── Row 3: INDICATOR TOOLBAR ─────────────────────────────── */}
-              <div className="flex items-center gap-1.5 pt-0.5 border-t border-white/[0.06] flex-wrap">
-                <span className="text-[9px] text-gray-700 uppercase tracking-widest font-bold flex-shrink-0">Ind</span>
-
-                {/* EMA pill with period sub-menu */}
-                <div className="relative">
-                  <div className="flex items-center">
-                    <IndPill label={`EMA${ind.emaPeriod}`} active={ind.showEMA} color="#d97706" onClick={() => toggle('showEMA')} />
-                    <button
-                      onClick={() => setShowEmaPick(v => !v)}
-                      className="ml-0.5 px-1 py-0.5 rounded text-gray-600 hover:text-white hover:bg-white/10 transition-colors"
-                    >
-                      <ChevronDown className={`w-2.5 h-2.5 transition-transform ${showEmaPick ? 'rotate-180' : ''}`} />
-                    </button>
-                  </div>
-                  <AnimatePresence>
-                    {showEmaPick && (
-                      <MotionDiv initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.1 }}
-                        className="absolute top-full left-0 mt-1 bg-[#000000] border border-white/10 rounded-xl shadow-2xl p-1 z-50 flex gap-0.5">
-                        {EMA_PERIODS.map(p => (
-                          <button key={p}
-                            onClick={() => { setInd(prev => ({ ...prev, emaPeriod: p, showEMA: true })); setShowEmaPick(false); }}
-                            className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-colors ${
-                              ind.emaPeriod === p ? 'bg-amber-500 text-black' : 'text-gray-400 hover:bg-white/5 hover:text-white'
-                            }`}>{p}</button>
-                        ))}
-                      </MotionDiv>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                <IndPill label="BB"   active={ind.showBB}   color="#0ea5e9" onClick={() => toggle('showBB')} />
-                <IndPill label="RSI"  active={ind.showRSI}  color="#db2777" onClick={() => toggle('showRSI')} />
-                <IndPill label="MACD" active={ind.showMACD} color="#3b82f6" onClick={() => toggle('showMACD')} />
-                <IndPill label="VOL"  active={ind.showVol}  color="#6366f1" onClick={() => toggle('showVol')} />
-
-                {/* RSI/MACD note */}
-                {(ind.showRSI || ind.showMACD) && (
-                  <span className="ml-auto text-[8px] text-gray-700 font-mono">sub-pane ↓</span>
-                )}
-              </div>
             </div>
-
-            {/* ── MINI CHART ───────────────────────────────────────────── */}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <MiniOrderFlowChart
-                key={`${chartKey}-${chartSym}-${chartExchange}-${interval}`}
-                symbol={chartSym}
-                exchange={chartExchange}
-                interval={interval}
-                ind={ind}
-              />
-            </div>
-          </MotionDiv>
+          ) : null,
+          document.body
         )}
-      </AnimatePresence>
     </>
   );
 };

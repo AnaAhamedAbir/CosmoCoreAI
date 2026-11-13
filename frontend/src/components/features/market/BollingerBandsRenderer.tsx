@@ -1,5 +1,13 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import { IChartApi, ISeriesApi } from 'lightweight-charts';
+import React, { useEffect, useRef } from 'react';
+import {
+    IChartApi,
+    ISeriesApi,
+    ISeriesPrimitive,
+    IPrimitivePaneView,
+    IPrimitivePaneRenderer,
+    SeriesAttachedParameter
+} from 'lightweight-charts';
+import { CanvasRenderingTarget2D } from 'fancy-canvas';
 import { BollingerBandsDataPoint } from '../../../utils/indicators';
 import { useTheme } from '../../../context/ThemeContext';
 
@@ -10,35 +18,28 @@ interface BollingerBandsRendererProps {
     visible: boolean;
 }
 
-export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ chart, series, data, visible }) => {
-    const { theme } = useTheme();
-    const isDark = theme === 'dark';
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const drawRequested = useRef<boolean>(false);
+class BollingerBandsCloudRenderer implements IPrimitivePaneRenderer {
+    private _primitive: BollingerBandsCloudPrimitive;
 
-    const drawShading = useCallback(() => {
-        if (!canvasRef.current) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+    constructor(primitive: BollingerBandsCloudPrimitive) {
+        this._primitive = primitive;
+    }
 
-        const parent = canvas.parentElement;
-        if (parent) {
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            const targetW = Math.round(parent.clientWidth * dpr);
-            const targetH = Math.round(parent.clientHeight * dpr);
-            if (canvas.width !== targetW || canvas.height !== targetH) {
-                canvas.width = targetW;
-                canvas.height = targetH;
-                canvas.style.width = `${parent.clientWidth}px`;
-                canvas.style.height = `${parent.clientHeight}px`;
-            }
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        }
+    draw(target: CanvasRenderingTarget2D): void {
+        target.useMediaCoordinateSpace((scope) => {
+            const ctx = scope.context;
+            this._drawContent(ctx, scope.mediaSize.width, scope.mediaSize.height);
+        });
+    }
 
-        ctx.clearRect(0, 0, canvas.parentElement?.clientWidth || canvas.width, canvas.parentElement?.clientHeight || canvas.height);
+    private _drawContent(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        const chart = this._primitive.chart;
+        const series = this._primitive.series;
+        const data = this._primitive.data;
+        const isDark = this._primitive.isDark;
+        const visible = this._primitive.visible;
 
-        if (!chart || !series || !visible || data.length === 0) return;
+        if (!visible || !chart || !series || !data || data.length === 0) return;
 
         const timeScale = chart.timeScale();
         const priceScale = series.priceScale();
@@ -47,30 +48,43 @@ export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ 
         const logicalRange = timeScale.getVisibleLogicalRange();
         if (!logicalRange) return;
 
-        // Define shading color:
-        // Dark Mode: soft cyber cyan cloud matching the dark background
-        // Light Mode: crisp, clearly visible sky-blue tint (20% opacity) that stands out cleanly on light canvas
-        ctx.fillStyle = isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(2, 132, 199, 0.20)';
+        let startIdx = 0;
+        let endIdx = data.length - 1;
 
-        const getX = (i: number) => {
-            if (i >= 0 && i < data.length) {
-                return timeScale.timeToCoordinate(data[i].time as any);
+        if (logicalRange) {
+            startIdx = Math.max(0, Math.floor(logicalRange.from) - 2);
+            endIdx = Math.min(data.length - 1, Math.ceil(logicalRange.to) + 2);
+        }
+
+        // Expand bounds outward to guarantee zero edge truncation on pan / zoom
+        while (startIdx > 0) {
+            const prevX = timeScale.timeToCoordinate(data[startIdx].time as any);
+            if (prevX !== null && prevX < 0) {
+                break;
             }
-            return null;
-        };
+            startIdx--;
+        }
 
-        const startIdx = Math.max(0, Math.floor(logicalRange.from) - 2);
-        const endIdx = Math.min(data.length - 1, Math.ceil(logicalRange.to) + 2);
+        while (endIdx < data.length - 1) {
+            const nextX = timeScale.timeToCoordinate(data[endIdx].time as any);
+            if (nextX !== null && nextX > width) {
+                break;
+            }
+            endIdx++;
+        }
+
         if (startIdx >= endIdx) return;
 
         // Collect coordinates for upper cloud & lower cloud
         const pts: { x: number; yUpper: number; yMid: number; yLow: number }[] = [];
         for (let i = startIdx; i <= endIdx; i++) {
-            const x = getX(i);
+            const pt = data[i];
+            if (!pt) continue;
+            const x = timeScale.timeToCoordinate(pt.time as any);
             if (x === null) continue;
-            const yUpper = series.priceToCoordinate(data[i].upper);
-            const yMid = series.priceToCoordinate(data[i].middle);
-            const yLow = series.priceToCoordinate(data[i].lower);
+            const yUpper = series.priceToCoordinate(pt.upper);
+            const yMid = series.priceToCoordinate(pt.middle);
+            const yLow = series.priceToCoordinate(pt.lower);
 
             if (yUpper !== null && yMid !== null && yLow !== null) {
                 pts.push({ x, yUpper, yMid, yLow });
@@ -79,7 +93,12 @@ export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ 
 
         if (pts.length < 2) return;
 
-        // 1. Upper Cloud (Upper forward, Middle backward) in ONE batched fill
+        ctx.save();
+        // Dark Mode: soft cyber cyan cloud matching the dark background
+        // Light Mode: crisp, clearly visible sky-blue tint (20% opacity) that stands out cleanly on light canvas
+        ctx.fillStyle = isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(2, 132, 199, 0.20)';
+
+        // 1. Upper Cloud (Upper forward, Middle backward)
         ctx.beginPath();
         ctx.moveTo(pts[0].x, pts[0].yUpper);
         for (let i = 1; i < pts.length; i++) {
@@ -91,7 +110,7 @@ export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ 
         ctx.closePath();
         ctx.fill();
 
-        // 2. Lower Cloud (Middle forward, Lower backward) in ONE batched fill
+        // 2. Lower Cloud (Middle forward, Lower backward)
         ctx.beginPath();
         ctx.moveTo(pts[0].x, pts[0].yMid);
         for (let i = 1; i < pts.length; i++) {
@@ -103,40 +122,103 @@ export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ 
         ctx.closePath();
         ctx.fill();
 
-    }, [chart, series, data, visible, isDark]);
+        ctx.restore();
+    }
+}
 
-    const drawShadingRef = useRef(drawShading);
-    drawShadingRef.current = drawShading;
+class BollingerBandsCloudPaneView implements IPrimitivePaneView {
+    private _renderer: BollingerBandsCloudRenderer;
 
-    const requestDraw = useCallback(() => {
-        if (!drawRequested.current) {
-            drawRequested.current = true;
-            requestAnimationFrame(() => {
-                drawRequested.current = false;
-                drawShadingRef.current();
-            });
-        }
-    }, []);
+    constructor(primitive: BollingerBandsCloudPrimitive) {
+        this._renderer = new BollingerBandsCloudRenderer(primitive);
+    }
+
+    zOrder(): 'bottom' {
+        return 'bottom';
+    }
+
+    renderer(): IPrimitivePaneRenderer | null {
+        return this._renderer;
+    }
+}
+
+class BollingerBandsCloudPrimitive implements ISeriesPrimitive<any> {
+    public chart: IChartApi | null = null;
+    public series: ISeriesApi<'Candlestick'> | null = null;
+    public data: BollingerBandsDataPoint[] = [];
+    public isDark: boolean = true;
+    public visible: boolean = true;
+
+    private _requestUpdate?: () => void;
+    private _paneViews: BollingerBandsCloudPaneView[];
+
+    constructor(isDark: boolean, visible: boolean, data: BollingerBandsDataPoint[]) {
+        this.isDark = isDark;
+        this.visible = visible;
+        this.data = data;
+        this._paneViews = [new BollingerBandsCloudPaneView(this)];
+    }
+
+    attached(param: SeriesAttachedParameter<any, any>): void {
+        this.chart = param.chart as unknown as IChartApi;
+        this.series = param.series as unknown as ISeriesApi<'Candlestick'>;
+        this._requestUpdate = param.requestUpdate;
+        this.requestUpdate();
+    }
+
+    detached(): void {
+        this.chart = null;
+        this.series = null;
+        this._requestUpdate = undefined;
+    }
+
+    updateParams(data: BollingerBandsDataPoint[], isDark: boolean, visible: boolean): void {
+        this.data = data;
+        this.isDark = isDark;
+        this.visible = visible;
+        this.requestUpdate();
+    }
+
+    requestUpdate(): void {
+        this._requestUpdate?.();
+    }
+
+    updateAllViews(): void {
+        // Called by Lightweight Charts when coordinates, size, or viewport changes
+    }
+
+    paneViews(): readonly IPrimitivePaneView[] {
+        return this._paneViews;
+    }
+}
+
+export const BollingerBandsRenderer: React.FC<BollingerBandsRendererProps> = ({ chart, series, data, visible }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+    const primitiveRef = useRef<BollingerBandsCloudPrimitive | null>(null);
 
     useEffect(() => {
-        requestDraw();
-    }, [data, visible, isDark, requestDraw]);
+        if (!series || !chart) return;
 
-    useEffect(() => {
-        if (!chart || !series) return;
-        requestDraw();
-        const timeScale = chart.timeScale();
-        timeScale.subscribeVisibleTimeRangeChange(requestDraw);
+        const primitive = new BollingerBandsCloudPrimitive(isDark, visible, data);
+        primitiveRef.current = primitive;
+        series.attachPrimitive(primitive);
+
         return () => {
-            timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
+            try {
+                series.detachPrimitive(primitive);
+            } catch (e) {
+                // Ignore detachment error if series already destroyed
+            }
+            primitiveRef.current = null;
         };
-    }, [chart, series, requestDraw]);
+    }, [chart, series]);
 
-    return (
-        <canvas
-            ref={canvasRef}
-            className="absolute top-0 left-0 pointer-events-none"
-            style={{ zIndex: 0 }} // Lower zIndex to stay behind candles if needed, but in overlay container
-        />
-    );
+    useEffect(() => {
+        if (primitiveRef.current) {
+            primitiveRef.current.updateParams(data, isDark, visible);
+        }
+    }, [data, isDark, visible]);
+
+    return null;
 };

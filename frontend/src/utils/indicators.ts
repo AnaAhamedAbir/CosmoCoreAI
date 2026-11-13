@@ -275,14 +275,15 @@ export const calculateMTFEMA = (
 export const calculateBollingerBands = (data: { time: any; close: number }[], period: number = 20, stdDev: number = 2): BollingerBandsDataPoint[] => {
     const p = Math.max(1, Math.floor(Number(period) || 20));
     const sdMult = Number.isFinite(Number(stdDev)) && Number(stdDev) > 0 ? Number(stdDev) : 2;
-    if (!Array.isArray(data) || data.length < p) return [];
+    if (!Array.isArray(data) || data.length === 0) return [];
 
     const result: BollingerBandsDataPoint[] = [];
-    for (let i = p - 1; i < data.length; i++) {
+    for (let i = 0; i < data.length; i++) {
         if (!data[i] || data[i].time === undefined) continue;
+        const count = Math.min(i + 1, p);
         let sum = 0;
         let valid = true;
-        for (let j = 0; j < p; j++) {
+        for (let j = 0; j < count; j++) {
             const item = data[i - j];
             if (!item || typeof item.close !== 'number' || isNaN(item.close)) {
                 valid = false;
@@ -292,13 +293,13 @@ export const calculateBollingerBands = (data: { time: any; close: number }[], pe
         }
         if (!valid) continue;
 
-        const middle = sum / p;
+        const middle = sum / count;
 
         let varianceSum = 0;
-        for (let j = 0; j < p; j++) {
+        for (let j = 0; j < count; j++) {
             varianceSum += Math.pow((data[i - j].close || 0) - middle, 2);
         }
-        const variance = varianceSum / p;
+        const variance = varianceSum / count;
         const sd = Math.sqrt(variance);
 
         result.push({

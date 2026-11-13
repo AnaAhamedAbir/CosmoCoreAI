@@ -66,9 +66,11 @@ interface MiniChartProps {
   ind:      IndSettings;
   isThermalGuard?: boolean;
   isDraggingRef?: React.MutableRefObject<boolean>;
+  controlRef?: React.MutableRefObject<{ freeze: () => void; unfreeze: () => void } | null>;
 }
 
-const MiniOrderFlowChart: React.FC<MiniChartProps> = React.memo(({ symbol, exchange, interval, ind, isThermalGuard = false, isDraggingRef }) => {
+const MiniOrderFlowChart: React.FC<MiniChartProps> = React.memo(({ symbol, exchange, interval, ind, isThermalGuard = false, isDraggingRef, controlRef }) => {
+  const snapRef = useRef<HTMLDivElement>(null);
   const { theme } = useTheme();
   const isLight = theme === 'light';
   const containerRef     = useRef<HTMLDivElement>(null);
@@ -93,6 +95,35 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = React.memo(({ symbol, excha
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [wsOk,      setWsOk]      = useState(false);
   const [loading,   setLoading]   = useState(true);
+
+  // Drag freeze: swap live canvases for a static screenshot so GPU only moves a flat bitmap
+  useEffect(() => {
+    if (!controlRef) return;
+    controlRef.current = {
+      freeze: () => {
+        const chart = chartRef.current;
+        const snap = snapRef.current;
+        const cont = containerRef.current;
+        if (!chart || !snap || !cont) return;
+        try {
+          const c: HTMLCanvasElement = chart.takeScreenshot();
+          c.style.width = '100%';
+          c.style.height = '100%';
+          c.style.display = 'block';
+          snap.replaceChildren(c);
+          snap.style.display = 'block';
+          cont.style.visibility = 'hidden';
+        } catch { /* ignore */ }
+      },
+      unfreeze: () => {
+        const snap = snapRef.current;
+        const cont = containerRef.current;
+        if (snap) { snap.style.display = 'none'; snap.replaceChildren(); }
+        if (cont) cont.style.visibility = 'visible';
+      },
+    };
+    return () => { controlRef.current = null; };
+  }, [controlRef]);
 
   // ── CHART INIT (once per mount) ──────────────────────────────────────────
   useEffect(() => {
@@ -408,6 +439,7 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = React.memo(({ symbol, excha
       </AnimatePresence>
 
       <div ref={containerRef} className="w-full h-full" />
+      <div ref={snapRef} className="absolute inset-0 pointer-events-none z-[5]" style={{ display: 'none' }} />
 
       {/* Live price badge */}
       {!loading && (
@@ -476,6 +508,7 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
   const chartContentRef = useRef<HTMLDivElement>(null);
   const activeDragCleanupRef = useRef<(() => void) | null>(null);
   const isDraggingRef = useRef(false);
+  const chartControlRef = useRef<{ freeze: () => void; unfreeze: () => void } | null>(null);
 
   const [modalPos, setModalPos] = useState<{ x: number; y: number }>(() => {
     if (typeof window !== 'undefined') {
@@ -627,6 +660,7 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
       if (modalEl) {
         modalEl.style.pointerEvents = 'auto';
         modalEl.style.transition = 'none';
+        modalEl.style.boxShadow = 'none';
         modalEl.style.backdropFilter = 'none';
         (modalEl.style as any).webkitBackdropFilter = 'none';
         modalEl.style.backgroundColor =
@@ -639,6 +673,8 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
       if (chartContentRef.current) {
         chartContentRef.current.style.pointerEvents = 'none';
       }
+      // Replace live chart canvases with a static screenshot while dragging
+      chartControlRef.current?.freeze();
 
       let rafId: number | null = null;
       let targetX = currentPos.x;
@@ -701,11 +737,13 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
           modalContainerRef.current.style.backdropFilter = '';
           (modalContainerRef.current.style as any).webkitBackdropFilter = '';
           modalContainerRef.current.style.backgroundColor = '';
+          modalContainerRef.current.style.boxShadow = '';
         }
 
         if (chartContentRef.current) {
           chartContentRef.current.style.pointerEvents = '';
         }
+        chartControlRef.current?.unfreeze();
 
         window.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('mouseup', onUp);
@@ -820,7 +858,7 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
                 isThermalGuardActive
                   ? 'bg-[#070C17] border-violet-500/30 shadow-[0_12px_36px_rgba(0,0,0,0.92)]'
                   : 'bg-white dark:bg-[#070C17] backdrop-blur-xl border border-slate-200 dark:border-violet-500/20 shadow-[0_16px_64px_rgba(0,0,0,0.85)]'
-              } flex flex-col overflow-hidden select-none animate-in fade-in duration-150`}
+              } flex flex-col overflow-hidden select-none`}
             >
               {/* ── DRAG HANDLE ─────────────────────────────────────────── */}
               <div
@@ -961,6 +999,7 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
                   ind={ind}
                   isThermalGuard={isThermalGuardActive}
                   isDraggingRef={isDraggingRef}
+                  controlRef={chartControlRef}
                 />
               </div>
             </div>

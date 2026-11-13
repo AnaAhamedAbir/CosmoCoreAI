@@ -1051,87 +1051,91 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                 <span className="ml-3 text-sm font-semibold text-gray-900 dark:text-gray-100 transition-colors">Adaptive Trend Finder</span>
                             </label>
                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                                <div className="flex items-center gap-1 bg-gray-100 dark:bg-white/10 px-1.5 py-1 rounded border border-gray-200 dark:border-transparent">
-                                    <span className="text-gray-600 dark:text-gray-400 text-[10px] font-medium">Lookback:</span>
-                                    <input
-                                        type="number"
-                                        value={settings.trendFinderLookback}
-                                        onChange={(e) => updateSetting('trendFinderLookback', Number(e.target.value))}
-                                        className="w-12 bg-transparent text-gray-800 dark:text-gray-200 focus:outline-none focus:text-brand-primary text-[10px] font-bold"
-                                        min={20} max={2000} step={10}
-                                    />
-                                </div>
-                                <div className="flex items-center gap-1 bg-gray-100 dark:bg-white/10 px-1.5 py-1 rounded border border-gray-200 dark:border-transparent">
-                                    <span className="text-gray-600 dark:text-gray-400 text-[10px] font-medium">Dev:</span>
-                                    <input
-                                        type="number"
-                                        value={settings.trendFinderDev}
-                                        onChange={(e) => updateSetting('trendFinderDev', Number(e.target.value))}
-                                        className="w-10 bg-transparent text-gray-800 dark:text-gray-200 focus:outline-none focus:text-brand-primary text-[10px] font-bold"
-                                        min={0.1} max={5.0} step={0.1}
-                                    />
-                                </div>
-                           </div>
-                           <div className="flex flex-col gap-1 mt-1">
-                                <label className="text-gray-600 dark:text-gray-400 text-[10px] font-bold uppercase">Min. Confidence:</label>
-                                <select 
-                                    className="w-full bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/5 rounded p-1 text-gray-800 dark:text-gray-200 text-[10px] focus:outline-none focus:border-brand-primary font-medium"
-                                    value={settings.trendFinderThreshold || 'Strong'}
-                                    onChange={(e) => onSettingsChange({ ...settings, trendFinderThreshold: e.target.value })}
-                                >
-                                    <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Moderate">Moderate (0.7+)</option>
-                                    <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Moderately Strong">Moderately Strong (0.8+)</option>
-                                    <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Mostly Strong">Mostly Strong (0.9+)</option>
-                                    <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Strong">Strong (0.92+)</option>
-                                    <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Very Strong">Very Strong (0.94+)</option>
-                                    <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Exceptionally Strong">Exceptionally Strong (0.96+)</option>
-                                    <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Ultra Strong">Ultra Strong (0.98+)</option>
-                                </select>
-                           </div>
-                           <div className="flex flex-col gap-1 mt-1">
-                                <label className="flex items-center cursor-pointer group">
-                                    <input
-                                        type="checkbox"
-                                        checked={settings.hideLowConfidenceTrend}
-                                        onChange={() => onSettingsChange({ ...settings, hideLowConfidenceTrend: !settings.hideLowConfidenceTrend })}
-                                        className="w-3.5 h-3.5 text-brand-primary bg-white border-gray-300 rounded focus:ring-brand-primary dark:focus:ring-brand-primary dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 cursor-pointer"
-                                    />
-                                    <span className="ml-2 text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase group-hover:text-brand-primary transition-colors italic">Hide Below Min. Conf.</span>
-                                </label>
-                           </div>
-                           <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-gray-200/80 dark:border-white/5">
-                                <label className="flex items-center cursor-pointer group">
-                                    <input
-                                        type="checkbox"
-                                        checked={settings.enableTrendFinderVolumeFilter}
-                                        onChange={() => onSettingsChange({ ...settings, enableTrendFinderVolumeFilter: !settings.enableTrendFinderVolumeFilter })}
-                                        className="w-3.5 h-3.5 text-brand-primary bg-white border-gray-300 rounded focus:ring-brand-primary dark:focus:ring-brand-primary dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 cursor-pointer"
-                                    />
-                                    <span className="ml-2 text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase group-hover:text-brand-primary transition-colors italic">Volume Filter (Confirmation)</span>
-                                </label>
-                                {settings.enableTrendFinderVolumeFilter && (
-                                    <div className="flex items-center justify-between bg-gray-100 dark:bg-white/5 p-1.5 rounded border border-gray-200 dark:border-transparent animate-fadeIn">
-                                        <span className="text-[10px] text-gray-600 dark:text-gray-400 font-medium">Multiplier:</span>
-                                        <input
-                                            type="text"
-                                            value={multiplierLocal}
-                                            onChange={(e) => {
-                                                const val = e.target.value;
-                                                if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                                    setMultiplierLocal(val);
-                                                    const num = parseFloat(val);
-                                                    if (!isNaN(num)) {
-                                                        onSettingsChange({ ...settings, trendFinderVolumeMultiplier: num });
-                                                    }
-                                                }
-                                            }}
-                                            className="w-12 bg-transparent text-gray-800 dark:text-gray-200 focus:outline-none text-[10px] text-right font-mono font-bold"
-                                            placeholder="1.5"
-                                        />
-                                    </div>
-                                )}
-                           </div>
+                           {settings.showTrendFinder && (
+                               <div className="flex flex-col gap-2 pl-7 animate-in slide-in-from-top-1 duration-200">
+                                   <div className="flex items-center gap-2 mt-1">
+                                       <div className="flex items-center gap-1 bg-gray-100 dark:bg-white/10 px-1.5 py-1 rounded border border-gray-200 dark:border-transparent">
+                                           <span className="text-gray-600 dark:text-gray-400 text-[10px] font-medium">Lookback:</span>
+                                           <input
+                                               type="number"
+                                               value={settings.trendFinderLookback}
+                                               onChange={(e) => updateSetting('trendFinderLookback', Number(e.target.value))}
+                                               className="w-12 bg-transparent text-gray-800 dark:text-gray-200 focus:outline-none focus:text-brand-primary text-[10px] font-bold"
+                                               min={20} max={2000} step={10}
+                                           />
+                                       </div>
+                                       <div className="flex items-center gap-1 bg-gray-100 dark:bg-white/10 px-1.5 py-1 rounded border border-gray-200 dark:border-transparent">
+                                           <span className="text-gray-600 dark:text-gray-400 text-[10px] font-medium">Dev:</span>
+                                           <input
+                                               type="number"
+                                               value={settings.trendFinderDev}
+                                               onChange={(e) => updateSetting('trendFinderDev', Number(e.target.value))}
+                                               className="w-10 bg-transparent text-gray-800 dark:text-gray-200 focus:outline-none focus:text-brand-primary text-[10px] font-bold"
+                                               min={0.1} max={5.0} step={0.1}
+                                           />
+                                       </div>
+                                  </div>
+                                  <div className="flex flex-col gap-1 mt-1">
+                                       <label className="text-gray-600 dark:text-gray-400 text-[10px] font-bold uppercase">Min. Confidence:</label>
+                                       <select 
+                                           className="w-full bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/5 rounded p-1 text-gray-800 dark:text-gray-200 text-[10px] focus:outline-none focus:border-brand-primary font-medium"
+                                           value={settings.trendFinderThreshold || 'Strong'}
+                                           onChange={(e) => onSettingsChange({ ...settings, trendFinderThreshold: e.target.value })}
+                                       >
+                                           <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Moderate">Moderate (0.7+)</option>
+                                           <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Moderately Strong">Moderately Strong (0.8+)</option>
+                                           <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Mostly Strong">Mostly Strong (0.9+)</option>
+                                           <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Strong">Strong (0.92+)</option>
+                                           <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Very Strong">Very Strong (0.94+)</option>
+                                           <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Exceptionally Strong">Exceptionally Strong (0.96+)</option>
+                                           <option className="bg-white dark:bg-[#0c0e14] text-gray-900 dark:text-gray-100" value="Ultra Strong">Ultra Strong (0.98+)</option>
+                                       </select>
+                                  </div>
+                                  <div className="flex flex-col gap-1 mt-1">
+                                       <label className="flex items-center cursor-pointer group">
+                                           <input
+                                               type="checkbox"
+                                               checked={settings.hideLowConfidenceTrend}
+                                               onChange={() => onSettingsChange({ ...settings, hideLowConfidenceTrend: !settings.hideLowConfidenceTrend })}
+                                               className="w-3.5 h-3.5 text-brand-primary bg-white border-gray-300 rounded focus:ring-brand-primary dark:focus:ring-brand-primary dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 cursor-pointer"
+                                           />
+                                           <span className="ml-2 text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase group-hover:text-brand-primary transition-colors italic">Hide Below Min. Conf.</span>
+                                       </label>
+                                  </div>
+                                  <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-gray-200/80 dark:border-white/5">
+                                       <label className="flex items-center cursor-pointer group">
+                                           <input
+                                               type="checkbox"
+                                               checked={settings.enableTrendFinderVolumeFilter}
+                                               onChange={() => onSettingsChange({ ...settings, enableTrendFinderVolumeFilter: !settings.enableTrendFinderVolumeFilter })}
+                                               className="w-3.5 h-3.5 text-brand-primary bg-white border-gray-300 rounded focus:ring-brand-primary dark:focus:ring-brand-primary dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 cursor-pointer"
+                                           />
+                                           <span className="ml-2 text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase group-hover:text-brand-primary transition-colors italic">Volume Filter (Confirmation)</span>
+                                       </label>
+                                       {settings.enableTrendFinderVolumeFilter && (
+                                           <div className="flex items-center justify-between bg-gray-100 dark:bg-white/5 p-1.5 rounded border border-gray-200 dark:border-transparent animate-fadeIn">
+                                               <span className="text-[10px] text-gray-600 dark:text-gray-400 font-medium">Multiplier:</span>
+                                               <input
+                                                   type="text"
+                                                   value={multiplierLocal}
+                                                   onChange={(e) => {
+                                                       const val = e.target.value;
+                                                       if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                                           setMultiplierLocal(val);
+                                                           const num = parseFloat(val);
+                                                           if (!isNaN(num)) {
+                                                               onSettingsChange({ ...settings, trendFinderVolumeMultiplier: num });
+                                                           }
+                                                       }
+                                                   }}
+                                                   className="w-12 bg-transparent text-gray-800 dark:text-gray-200 focus:outline-none text-[10px] text-right font-mono font-bold"
+                                                   placeholder="1.5"
+                                               />
+                                           </div>
+                                       )}
+                                  </div>
+                               </div>
+                           )}
                          </div>
                          
                          {/* UT Bot Alerts Block */}

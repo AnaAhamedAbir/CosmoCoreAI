@@ -1667,24 +1667,14 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
 
         return () => clearInterval(intervalId);
     }, [
-        indicatorSettings.showICTKillzones,
-        indicatorSettings.ictAsiaSession,
-        indicatorSettings.ictLondonSession,
-        indicatorSettings.ictNyAmSession,
-        indicatorSettings.ictNyLunchSession,
-        indicatorSettings.ictNyPmSession,
-        indicatorSettings.ictShowMidnightOpen,
-        indicatorSettings.ictShowPivots,
-        indicatorSettings.ictShowDWM,
-        indicatorSettings.ictShowOpeningPrices,
-        indicatorSettings.ictShowTimestamps,
-        indicatorSettings.ictPivotsExtend,
-        indicatorSettings.ictShowSilverBullet,
-        indicatorSettings.ictShowConfluence,
-        indicatorSettings.ictShowAMD,
-        indicatorSettings.ictShowGaps,
-        indicatorSettings.ictShowVolatility,
-        indicatorSettings.ictShowEquilibrium,
+        indicatorSettings.showVWAPSD,
+        indicatorSettings.vwapAnchor,
+        indicatorSettings.timezoneOffset,
+        indicatorSettings.vwapSDMultiplier1,
+        indicatorSettings.vwapSDMultiplier2,
+        indicatorSettings.vwapSDMultiplier3,
+        symbol,
+        interval,
         isThermalGuard
     ]);
 

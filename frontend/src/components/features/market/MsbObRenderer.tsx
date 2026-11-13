@@ -20,37 +20,41 @@ export const MsbObRenderer: React.FC<MsbObRendererProps> = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
 
-    const requestDraw = useCallback(() => {
-        if (!drawRequested.current) {
-            drawRequested.current = true;
-            requestAnimationFrame(() => {
-                drawRequested.current = false;
-                drawMsbOb();
-            });
-        }
-    }, [chart, series, data, ohlcData, showZigzag]);
-
     const drawMsbOb = useCallback(() => {
         if (!canvasRef.current || !chart || !series || data.points.length === 0) return;
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         
-        // Handle resizing
+        // Handle resizing with Retina/AMOLED High-DPI scaling
         const parent = canvas.parentElement;
         if (parent) {
-            if (canvas.width !== parent.clientWidth) canvas.width = parent.clientWidth;
-            if (canvas.height !== parent.clientHeight) canvas.height = parent.clientHeight;
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const targetW = Math.round(parent.clientWidth * dpr);
+            const targetH = Math.round(parent.clientHeight * dpr);
+            if (canvas.width !== targetW || canvas.height !== targetH) {
+                canvas.width = targetW;
+                canvas.height = targetH;
+                canvas.style.width = `${parent.clientWidth}px`;
+                canvas.style.height = `${parent.clientHeight}px`;
+            }
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, canvas.parentElement?.clientWidth || canvas.width, canvas.parentElement?.clientHeight || canvas.height);
 
         const timeScale = chart.timeScale();
         const priceScale = series.priceScale();
         if (!timeScale || !priceScale) return;
 
+        const logicalRange = timeScale.getVisibleLogicalRange();
+        if (!logicalRange) return;
+
         const getX = (time: any) => timeScale.timeToCoordinate(time);
         const getY = (price: number) => series.priceToCoordinate(price);
+
+        const startIdx = Math.max(0, Math.floor(logicalRange.from) - 5);
+        const endIdx = Math.min(data.points.length - 1, Math.ceil(logicalRange.to) + 5);
 
         // --- 1. Draw ZigZag ---
         if (showZigzag) {
@@ -62,8 +66,9 @@ export const MsbObRenderer: React.FC<MsbObRendererProps> = ({
             ctx.strokeStyle = '#f97316'; // Orange-500
             ctx.lineWidth = 1;
 
-            data.points.forEach((pt) => {
-                if (pt.zigzagPrice !== null) {
+            for (let i = startIdx; i <= endIdx; i++) {
+                const pt = data.points[i];
+                if (pt && pt.zigzagPrice !== null) {
                     const x = getX(pt.time);
                     const y = getY(pt.zigzagPrice);
                     if (x !== null && y !== null) {
@@ -75,15 +80,19 @@ export const MsbObRenderer: React.FC<MsbObRendererProps> = ({
                         lastY = y;
                     }
                 }
-            });
+            }
             ctx.stroke();
             ctx.setLineDash([]);
         }
 
         // --- 2. Draw Zones (OB/BB) ---
+        const viewWidth = parent?.clientWidth || canvas.width;
         data.zones.forEach((zone) => {
             const startX = getX(ohlcData[zone.startX]?.time);
-            const endX = getX(ohlcData[Math.min(zone.endX, ohlcData.length - 1)]?.time) || canvas.width + 50;
+            const endX = getX(ohlcData[Math.min(zone.endX, ohlcData.length - 1)]?.time) || viewWidth + 50;
+            if (startX !== null && endX < -50) return;
+            if (startX !== null && startX > viewWidth + 50) return;
+
             const topY = getY(zone.top);
             const bottomY = getY(zone.bottom);
 
@@ -107,13 +116,14 @@ export const MsbObRenderer: React.FC<MsbObRendererProps> = ({
                 ctx.font = 'bold 9px Inter, sans-serif';
                 ctx.fillStyle = textColor;
                 ctx.textAlign = 'right';
-                ctx.fillText(zone.type, Math.min(canvas.width - 5, endX - 2), topY + 12);
+                ctx.fillText(zone.type, Math.min(viewWidth - 5, endX - 2), topY + 12);
             }
         });
 
         // --- 3. Draw MSB Labels & Lines ---
-        data.points.forEach((pt, i) => {
-            if (pt.msbType && pt.msbPrice !== null) {
+        for (let i = startIdx; i <= endIdx; i++) {
+            const pt = data.points[i];
+            if (pt && pt.msbType && pt.msbPrice !== null) {
                 const x = getX(pt.time);
                 const y = getY(pt.msbPrice);
                 
@@ -139,9 +149,26 @@ export const MsbObRenderer: React.FC<MsbObRendererProps> = ({
                     ctx.fillText('MSB', x, labelY);
                 }
             }
-        });
+        }
 
     }, [chart, series, data, ohlcData, showZigzag]);
+
+    const drawMsbObRef = useRef(drawMsbOb);
+    drawMsbObRef.current = drawMsbOb;
+
+    const requestDraw = useCallback(() => {
+        if (!drawRequested.current) {
+            drawRequested.current = true;
+            requestAnimationFrame(() => {
+                drawRequested.current = false;
+                drawMsbObRef.current();
+            });
+        }
+    }, []);
+
+    useEffect(() => {
+        requestDraw();
+    }, [data, showZigzag, requestDraw]);
 
     useEffect(() => {
         if (!chart || !series) return;

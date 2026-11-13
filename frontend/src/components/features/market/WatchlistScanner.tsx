@@ -164,7 +164,7 @@ export const WatchlistScanner: React.FC<WatchlistScannerProps> = ({ settings, ex
 
     const scannerElement = (
         <div 
-            className={`fixed z-[9998] pointer-events-auto flex flex-col bg-[#1e222d]/95 backdrop-blur-xl border border-indigo-500/30 rounded-lg shadow-2xl w-[380px] font-sans ${isDragging ? 'cursor-grabbing' : ''}`}
+            className={`fixed z-[9998] pointer-events-auto flex flex-col bg-white/95 dark:bg-[#1e222d]/95 backdrop-blur-xl border border-gray-200 dark:border-indigo-500/30 rounded-xl shadow-2xl w-[380px] font-sans ${isDragging ? 'cursor-grabbing' : ''}`}
             style={{ 
                 bottom: `24px`, 
                 left: `24px`,
@@ -173,20 +173,25 @@ export const WatchlistScanner: React.FC<WatchlistScannerProps> = ({ settings, ex
         >
             {/* Header */}
             <div 
-                className="flex items-center justify-between bg-[#2a2e39] border-b border-indigo-500/30 p-2 cursor-move select-none rounded-t-lg"
+                className="flex items-center justify-between bg-gray-100 dark:bg-[#2a2e39] border-b border-gray-200 dark:border-indigo-500/30 p-2.5 cursor-move select-none rounded-t-xl"
                 onMouseDown={handleMouseDown}
             >
                 <div className="flex items-center gap-2 pointer-events-none">
-                    <div className={`w-2 h-2 rounded-full ${isScanning ? 'bg-yellow-400 animate-bounce shadow-[0_0_8px_rgba(250,204,21,0.8)]' : 'bg-green-400 shadow-[0_0_8px_rgba(34,197,94,0.8)]'}`} />
-                    <h2 className="text-xs font-black text-indigo-400 uppercase tracking-widest">Live Watchlist Scanner</h2>
+                    <div className={`w-2 h-2 rounded-full ${isScanning ? 'bg-yellow-500 animate-bounce shadow-[0_0_8px_rgba(250,204,21,0.8)]' : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]'}`} />
+                    <h2 className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Live Watchlist Scanner</h2>
                 </div>
-                <div className="text-[9px] text-gray-400 font-mono pointer-events-none">
-                    {lastScanTime ? lastScanTime.toLocaleTimeString() : 'WAIT'}
+                <div className="flex items-center gap-2">
+                    <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300 pointer-events-none">
+                        DRAG ME
+                    </span>
+                    <div className="text-[9px] text-gray-500 dark:text-gray-400 font-mono pointer-events-none">
+                        {lastScanTime ? lastScanTime.toLocaleTimeString() : 'WAIT'}
+                    </div>
                 </div>
             </div>
 
             {/* Grid Header */}
-            <div className="flex bg-[#12141a] text-[9px] font-bold text-gray-500 px-2 py-1 uppercase border-b border-gray-600/30">
+            <div className="flex bg-gray-50 dark:bg-[#12141a] text-[9px] font-bold text-gray-600 dark:text-gray-400 px-2 py-1 uppercase border-b border-gray-200 dark:border-gray-600/30">
                 <div className="w-1/4">Symbol</div>
                 <div className="w-[15%] text-center">HTF</div>
                 <div className="w-[15%] text-center">LTF</div>
@@ -197,18 +202,18 @@ export const WatchlistScanner: React.FC<WatchlistScannerProps> = ({ settings, ex
             {/* Grid Body */}
             <div className="flex flex-col max-h-[300px] overflow-y-auto custom-scrollbar p-1 gap-[1px]">
                 {scanData.map((row) => (
-                    <div key={row.symbol} className="flex items-center bg-[#2a2e39]/60 hover:bg-[#2a2e39] transition-colors rounded px-2 py-1.5 text-[10px]">
-                        <div className="w-1/4 font-bold text-white flex flex-col">
+                    <div key={row.symbol} className="flex items-center bg-gray-50/80 dark:bg-[#2a2e39]/60 hover:bg-gray-100 dark:hover:bg-[#2a2e39] transition-colors rounded px-2 py-1.5 text-[10px]">
+                        <div className="w-1/4 font-bold text-gray-900 dark:text-white flex flex-col">
                             <span>{row.symbol.replace('/USDT', '')}</span>
-                            <span className="text-[8px] text-gray-400 font-mono">${row.price < 1 ? row.price.toFixed(4) : row.price.toFixed(2)}</span>
+                            <span className="text-[8px] text-gray-500 dark:text-gray-400 font-mono">${row.price < 1 ? row.price.toFixed(4) : row.price.toFixed(2)}</span>
                         </div>
-                        <div className={`w-[15%] text-center font-bold ${row.htfTrend === 'BULL' ? 'text-green-500' : 'text-red-500'}`}>
+                        <div className={`w-[15%] text-center font-bold ${row.htfTrend === 'BULL' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                             {row.htfTrend}
                         </div>
-                        <div className={`w-[15%] text-center font-bold ${row.ltfTrend === 'BULL' ? 'text-green-500' : 'text-red-500'}`}>
+                        <div className={`w-[15%] text-center font-bold ${row.ltfTrend === 'BULL' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                             {row.ltfTrend}
                         </div>
-                        <div className={`w-[15%] text-center font-bold ${row.macd === 'UP' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <div className={`w-[15%] text-center font-bold ${row.macd === 'UP' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                             {row.macd}
                         </div>
                         <div className="flex-1 ml-1 flex items-center justify-center">
@@ -228,7 +233,7 @@ export const WatchlistScanner: React.FC<WatchlistScannerProps> = ({ settings, ex
             </div>
             
             {/* Footer */}
-            <div className="bg-[#12141a] p-1.5 text-center text-[8px] text-gray-500 rounded-b-lg border-t border-gray-600/30 font-mono flex items-center justify-between px-3">
+            <div className="bg-gray-100 dark:bg-[#12141a] p-1.5 text-center text-[8px] text-gray-600 dark:text-gray-400 rounded-b-xl border-t border-gray-200 dark:border-gray-600/30 font-mono flex items-center justify-between px-3">
                  <span>TGT: {interval}</span>
                  <span>PULL: 45s</span>
             </div>

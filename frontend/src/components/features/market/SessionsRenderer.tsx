@@ -208,8 +208,13 @@ export const SessionsRenderer: React.FC<SessionsRendererProps> = ({ chart, serie
         if (!parent) return;
 
         const resize = () => {
-            canvas.width = parent.clientWidth;
-            canvas.height = parent.clientHeight;
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            canvas.width = Math.round(parent.clientWidth * dpr);
+            canvas.height = Math.round(parent.clientHeight * dpr);
+            canvas.style.width = `${parent.clientWidth}px`;
+            canvas.style.height = `${parent.clientHeight}px`;
+            const ctx = canvas.getContext('2d');
+            if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             requestDraw();
         };
 

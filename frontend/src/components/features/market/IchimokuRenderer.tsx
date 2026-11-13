@@ -13,34 +13,33 @@ export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, serie
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
 
-    const requestDraw = useCallback(() => {
-        if (!drawRequested.current) {
-            drawRequested.current = true;
-            requestAnimationFrame(() => {
-                drawRequested.current = false;
-                drawIchimoku();
-            });
-        }
-    }, [chart, series, data, displacement]);
-
     const drawIchimoku = useCallback(() => {
         if (!canvasRef.current) return;
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const parent = canvas.parentElement;
+        if (parent) {
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const targetW = Math.round(parent.clientWidth * dpr);
+            const targetH = Math.round(parent.clientHeight * dpr);
+            if (canvas.width !== targetW || canvas.height !== targetH) {
+                canvas.width = targetW;
+                canvas.height = targetH;
+                canvas.style.width = `${parent.clientWidth}px`;
+                canvas.style.height = `${parent.clientHeight}px`;
+            }
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        ctx.clearRect(0, 0, canvas.parentElement?.clientWidth || canvas.width, canvas.parentElement?.clientHeight || canvas.height);
 
         if (!chart || !series || data.length === 0) return;
 
         const timeScale = chart.timeScale();
         const priceScale = series.priceScale();
         if (!timeScale || !priceScale) return;
-
-        const parent = canvas.parentElement;
-        if (parent) {
-            if (canvas.width !== parent.clientWidth) canvas.width = parent.clientWidth;
-            if (canvas.height !== parent.clientHeight) canvas.height = parent.clientHeight;
-        }
 
         const logicalRange = timeScale.getVisibleLogicalRange();
         if (!logicalRange) return;
@@ -57,107 +56,110 @@ export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, serie
         };
 
         const timeWidth = timeScale.width();
-        
-        // We need to handle the fact that Senkou Spans go into the future
-        // and Chikou goes into the past.
-        
-        // 1. Draw Kumo (Cloud)
-        // We draw the cloud by iterating through all points where Senkou A and B overlap
-        // A Senkou A value calculated at index i is plotted at i + displacement.
-        // So we iterate i, and plot at i + displacement.
-        
         const barSpacing = timeWidth / (logicalRange.to - logicalRange.from);
 
-        ctx.beginPath();
-        let firstPoint = true;
-        
         const getX = (i: number) => {
-            // Estimate X for index i (including future/past)
-            // timeToCoordinate only works for existing times
-            // For future/past, we pivot from the last known time
             if (i >= 0 && i < data.length) {
                 return timeScale.timeToCoordinate(data[i].time as any);
             }
-            
-            // Extrapolate
             const lastIdx = data.length - 1;
             const lastX = timeScale.timeToCoordinate(data[lastIdx].time as any);
             if (lastX === null) return null;
             return lastX + (i - lastIdx) * barSpacing;
         };
 
-        // Draw Cloud
-        for (let i = 0; i < data.length; i++) {
+        const startIdx = Math.max(0, Math.floor(logicalRange.from) - displacement - 3);
+        const endIdx = Math.min(data.length - 1, Math.ceil(logicalRange.to) + displacement + 3);
+
+        // 1. Draw Kumo (Cloud) for visible range
+        for (let i = startIdx; i <= endIdx; i++) {
             const pt = data[i];
-            if (pt.senkouA === null || pt.senkouB === null) continue;
+            if (!pt || pt.senkouA === null || pt.senkouB === null) continue;
 
             const futureIdx = i + displacement;
             const x = getX(futureIdx);
             const xNext = getX(futureIdx + 1);
             if (x === null || xNext === null) continue;
+            if (xNext < 0 || x > canvas.width) continue;
 
             const yA = series.priceToCoordinate(pt.senkouA);
             const yB = series.priceToCoordinate(pt.senkouB);
             if (yA === null || yB === null) continue;
 
             ctx.fillStyle = pt.senkouA > pt.senkouB ? colors.cloudUp : colors.cloudDown;
-            ctx.fillRect(x, Math.min(yA, yB), xNext - x, Math.abs(yA - yB));
-            
-            // Draw Senkou A and B lines manually for the cloud edges
-            ctx.strokeStyle = pt.senkouA > pt.senkouB ? 'rgba(0, 255, 0, 0.3)' : 'rgba(255, 0, 0, 0.3)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(x, yA); ctx.lineTo(xNext, yA);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(x, yB); ctx.lineTo(xNext, yB);
-            ctx.stroke();
+            ctx.fillRect(x, Math.min(yA, yB), Math.max(1, xNext - x), Math.abs(yA - yB));
         }
 
-        // 2. Draw Tenkan and Kijun (Current)
+        // 2. Draw Tenkan Line (Single continuous path)
         ctx.setLineDash([]);
-        for (let i = 0; i < data.length - 1; i++) {
-            const x1 = getX(i);
-            const x2 = getX(i + 1);
-            if (x1 === null || x2 === null) continue;
-
-            // Tenkan
-            if (data[i].tenkan !== null && data[i+1].tenkan !== null) {
-                const y1 = series.priceToCoordinate(data[i].tenkan!);
-                const y2 = series.priceToCoordinate(data[i+1].tenkan!);
-                if (y1 !== null && y2 !== null) {
-                    ctx.strokeStyle = colors.tenkan;
-                    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-                }
-            }
-            // Kijun
-            if (data[i].kijun !== null && data[i+1].kijun !== null) {
-                const y1 = series.priceToCoordinate(data[i].kijun!);
-                const y2 = series.priceToCoordinate(data[i+1].kijun!);
-                if (y1 !== null && y2 !== null) {
-                    ctx.strokeStyle = colors.kijun;
-                    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        ctx.strokeStyle = colors.tenkan;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        let tenkanStarted = false;
+        for (let i = startIdx; i <= endIdx; i++) {
+            if (data[i] && data[i].tenkan !== null) {
+                const x = getX(i);
+                const y = series.priceToCoordinate(data[i].tenkan!);
+                if (x !== null && y !== null) {
+                    if (!tenkanStarted) { ctx.moveTo(x, y); tenkanStarted = true; }
+                    else { ctx.lineTo(x, y); }
                 }
             }
         }
+        if (tenkanStarted) ctx.stroke();
 
-        // 3. Draw Chikou Span
-        for (let i = 0; i < data.length - 1; i++) {
-            const x1 = getX(i);
-            const x2 = getX(i + 1);
-            if (x1 === null || x2 === null) continue;
-
-            if (data[i].chikou !== null && data[i+1].chikou !== null) {
-                const y1 = series.priceToCoordinate(data[i].chikou!);
-                const y2 = series.priceToCoordinate(data[i+1].chikou!);
-                if (y1 !== null && y2 !== null) {
-                    ctx.strokeStyle = colors.chikou;
-                    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        // 3. Draw Kijun Line (Single continuous path)
+        ctx.strokeStyle = colors.kijun;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        let kijunStarted = false;
+        for (let i = startIdx; i <= endIdx; i++) {
+            if (data[i] && data[i].kijun !== null) {
+                const x = getX(i);
+                const y = series.priceToCoordinate(data[i].kijun!);
+                if (x !== null && y !== null) {
+                    if (!kijunStarted) { ctx.moveTo(x, y); kijunStarted = true; }
+                    else { ctx.lineTo(x, y); }
                 }
             }
         }
+        if (kijunStarted) ctx.stroke();
+
+        // 4. Draw Chikou Span (Single continuous path)
+        ctx.strokeStyle = colors.chikou;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        let chikouStarted = false;
+        for (let i = startIdx; i <= endIdx; i++) {
+            if (data[i] && data[i].chikou !== null) {
+                const x = getX(i);
+                const y = series.priceToCoordinate(data[i].chikou!);
+                if (x !== null && y !== null) {
+                    if (!chikouStarted) { ctx.moveTo(x, y); chikouStarted = true; }
+                    else { ctx.lineTo(x, y); }
+                }
+            }
+        }
+        if (chikouStarted) ctx.stroke();
 
     }, [chart, series, data, displacement]);
+
+    const drawIchimokuRef = useRef(drawIchimoku);
+    drawIchimokuRef.current = drawIchimoku;
+
+    const requestDraw = useCallback(() => {
+        if (!drawRequested.current) {
+            drawRequested.current = true;
+            requestAnimationFrame(() => {
+                drawRequested.current = false;
+                drawIchimokuRef.current();
+            });
+        }
+    }, []);
+
+    useEffect(() => {
+        requestDraw();
+    }, [data, displacement, requestDraw]);
 
     useEffect(() => {
         if (!chart || !series) return;

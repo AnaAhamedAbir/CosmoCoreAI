@@ -11,6 +11,9 @@ export interface SupertrendDataPoint {
     isSell: boolean;
     upLine: number | null;
     dnLine: number | null;
+    ohlc4?: number;
+    high?: number;
+    low?: number;
 }
 
 export interface BollingerBandsDataPoint {
@@ -521,21 +524,24 @@ export const calculateIchimoku = (
     const result: IchimokuDataPoint[] = [];
     if (!Array.isArray(data) || data.length < Math.min(tp, kp, sbp)) return result;
 
-    const getExtremes = (slice: { high: number; low: number }[]) => {
+    const getExtremesRange = (arr: { high: number; low: number }[], start: number, end: number) => {
         let h = -Infinity;
         let l = Infinity;
-        for (const p of slice) {
-            if (p && p.high > h) h = p.high;
-            if (p && p.low < l) l = p.low;
+        for (let k = start; k <= end; k++) {
+            const p = arr[k];
+            if (p) {
+                if (p.high > h) h = p.high;
+                if (p.low < l) l = p.low;
+            }
         }
         return (h + l) / 2;
     };
 
     for (let i = 0; i < data.length; i++) {
         if (!data[i] || data[i].time === undefined) continue;
-        const tenkan = i >= tp - 1 ? getExtremes(data.slice(i - tp + 1, i + 1)) : null;
-        const kijun = i >= kp - 1 ? getExtremes(data.slice(i - kp + 1, i + 1)) : null;
-        const senkouB = i >= sbp - 1 ? getExtremes(data.slice(i - sbp + 1, i + 1)) : null;
+        const tenkan = i >= tp - 1 ? getExtremesRange(data, i - tp + 1, i) : null;
+        const kijun = i >= kp - 1 ? getExtremesRange(data, i - kp + 1, i) : null;
+        const senkouB = i >= sbp - 1 ? getExtremesRange(data, i - sbp + 1, i) : null;
         
         let senkouA = null;
         if (tenkan !== null && kijun !== null) {
@@ -614,7 +620,7 @@ export const calculateAdaptiveTrendFinder = (
     let bestPeriod = periods[0];
     let bestPearsonR = -1; // We compare absolute values, so start negative
     let bestStdDev = 0;
-    let MathLogStr: { [key: number]: number } = {};
+    const MathLogStr = new Float64Array(data.length);
     
     // Cache logarithms to speed up calculation
     for (let i = 0; i < data.length; i++) {
@@ -1075,7 +1081,7 @@ export const calculateMACD = (
  * @param changeATR If true, use standard ATR (RMA). If false, use SMA of TR.
  */
 export const calculateSupertrend = (
-    data: { time: any; high: number; low: number; close: number }[],
+    data: { time: any; high: number; low: number; close: number; open?: number }[],
     period: number = 10,
     multiplier: number = 3.0,
     changeATR: boolean = true
@@ -1125,6 +1131,7 @@ export const calculateSupertrend = (
 
     for (let i = 0; i < data.length; i++) {
         if (!data[i] || data[i].time === undefined) continue;
+        const ohlc4 = (data[i].high + data[i].low + data[i].close + (data[i].open ?? data[i].close)) / 4;
         if (i < p) {
             result.push({ 
                 time: data[i].time, 
@@ -1133,7 +1140,10 @@ export const calculateSupertrend = (
                 isBuy: false, 
                 isSell: false,
                 upLine: null,
-                dnLine: null
+                dnLine: null,
+                ohlc4,
+                high: data[i].high,
+                low: data[i].low
             });
             continue;
         }
@@ -1172,7 +1182,10 @@ export const calculateSupertrend = (
             isBuy,
             isSell,
             upLine: currentTrend === 1 ? up : null,
-            dnLine: currentTrend === -1 ? dn : null
+            dnLine: currentTrend === -1 ? dn : null,
+            ohlc4,
+            high: data[i].high,
+            low: data[i].low
         });
 
         prevUp = up;

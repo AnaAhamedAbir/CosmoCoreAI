@@ -255,23 +255,23 @@ export const DualEngineDashboard: React.FC<DualEngineDashboardProps> = ({ settin
         // ==========================================
         //         FULL LEGACY DASHBOARD
         // ==========================================
-        <div className={`backdrop-blur-xl border border-gray-600/50 rounded-lg p-2 w-[340px] shadow-2xl bg-[#1e222d]/95 font-sans`}>
+        <div className={`backdrop-blur-xl border border-gray-200 dark:border-gray-600/50 rounded-xl p-2.5 w-[340px] shadow-2xl bg-white/95 dark:bg-[#1e222d]/95 font-sans`}>
             {/* Overall Insight Score */}
             <div 
-                className="flex justify-between items-center bg-[#2a2e39] border border-gray-600/50 p-1.5 mb-2 cursor-move select-none"
+                className="flex justify-between items-center bg-gray-100 dark:bg-[#2a2e39] border border-gray-200 dark:border-gray-600/50 p-1.5 mb-2 rounded-lg cursor-move select-none"
                 onMouseDown={handleMouseDown}
             >
-                <span className="text-[10px] text-white font-semibold">OVERALL INSIGHT (DRAG ME)</span>
-                <span className={`text-[10px] font-bold px-3 py-0.5 rounded-sm ${getStatusColor(engineState.insightStatus)}`}>
+                <span className="text-[10px] text-gray-900 dark:text-white font-bold uppercase tracking-wider">OVERALL INSIGHT (DRAG ME)</span>
+                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded ${getStatusColor(engineState.insightStatus)}`}>
                     {engineState.insightStatus}
                 </span>
             </div>
 
             {/* Separator */}
-            <div className="h-[1px] bg-gray-600/50 mb-2 w-full" />
+            <div className="h-[1px] bg-gray-200 dark:bg-gray-600/50 mb-2 w-full" />
 
             {/* Table Generator */}
-            <div className="flex flex-col gap-[1px] bg-[#2a2e39] text-[10px]">
+            <div className="flex flex-col gap-[1px] bg-gray-200 dark:bg-gray-700/50 rounded-lg overflow-hidden text-[10px]">
                 {[
                     { label: "HTF Proxy Trend", status: engineState.htfBullish ? 'BULLISH' : engineState.htfBearish ? 'BEARISH' : 'NEUTRAL' },
                     { label: "LTF Trend", status: engineState.trendBullish ? 'UP' : 'DOWN' },
@@ -285,12 +285,12 @@ export const DualEngineDashboard: React.FC<DualEngineDashboardProps> = ({ settin
                     { label: "Price vs BB", status: engineState.squeeze.squeezeOn ? 'SQUEEZE' : 'INSIDE/EXPANDED' },
                     { label: "US CPI Status", status: cpiStatus }
                 ].map((row, idx) => (
-                    <div key={idx} className="flex bg-[#1e222d] hover:bg-[#2a2e39] transition-colors border border-gray-600/20">
-                        <div className="w-1/2 p-2 border-r border-gray-600/50 text-gray-300 flex items-center">
+                    <div key={idx} className="flex bg-white dark:bg-[#1e222d] hover:bg-gray-50 dark:hover:bg-[#2a2e39] transition-colors">
+                        <div className="w-1/2 p-2 border-r border-gray-200 dark:border-gray-600/50 text-gray-700 dark:text-gray-300 font-medium flex items-center">
                             {row.label}
                         </div>
                         <div className={`w-1/2 p-1.5 flex justify-center items-center font-bold`}>
-                            <span className={`w-full py-1 text-center rounded-sm ${getStatusColor(row.status)}`}>
+                            <span className={`w-full py-0.5 text-center rounded ${getStatusColor(row.status)}`}>
                                 {row.status}
                             </span>
                         </div>
@@ -302,31 +302,33 @@ export const DualEngineDashboard: React.FC<DualEngineDashboardProps> = ({ settin
         // ==========================================
         //         HYBRID MODERN HUD
         // ==========================================
-        <div className={`backdrop-blur-xl border rounded-2xl p-4 w-72 shadow-2xl transition-colors duration-500 ${engineState.signalBg}`}>
+        <div className={`backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl p-4 w-72 shadow-2xl transition-colors duration-500 bg-white/95 dark:bg-[#121624]/95`}>
             
             {/* Header */}
             <div 
-                className="flex items-center justify-between mb-4 border-b border-white/5 pb-2 cursor-move select-none"
+                className="flex items-center justify-between mb-3 border-b border-gray-200 dark:border-white/10 pb-2 cursor-move select-none"
                 onMouseDown={handleMouseDown}
             >
                 <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                    <h2 className="text-xs font-black text-white uppercase tracking-widest opacity-90">Dual Engine HUD (DRAG ME)</h2>
+                    <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+                    <h2 className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-widest">Command Center HUD</h2>
                 </div>
+                <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300">
+                    DRAG ME
+                </span>
             </div>
 
             {/* Overall Insight - Added to Hybrid Mode */}
-            <div className="mb-3 px-2 py-1.5 rounded bg-black/30 border border-white/5 flex justify-between items-center text-[9px]">
-                <span className="text-gray-400 font-bold uppercase tracking-wider">Overall Insight</span>
+            <div className="mb-3 px-2 py-1.5 rounded-lg bg-gray-100 dark:bg-black/30 border border-gray-200 dark:border-white/10 flex justify-between items-center text-[9px]">
+                <span className="text-gray-600 dark:text-gray-400 font-bold uppercase tracking-wider">Overall Insight</span>
                 <span className={`font-black tracking-wider px-2 py-0.5 rounded ${getStatusColor(engineState.insightStatus)}`}>
                     {engineState.insightStatus}
                 </span>
             </div>
 
             {/* Final Signal Element */}
-            <div className="flex flex-col items-center justify-center py-3 mb-4 bg-black/40 rounded-xl border border-white/5 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none" />
-                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1 z-10">System Signal</span>
+            <div className="flex flex-col items-center justify-center py-3 mb-3 bg-gray-50 dark:bg-black/40 rounded-xl border border-gray-200 dark:border-white/10 relative overflow-hidden">
+                <span className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-widest mb-1 z-10">System Signal</span>
                 <span className={`text-2xl font-black italic tracking-tighter z-10 transition-colors ${engineState.signalColor}`}>
                     {engineState.signal}
                 </span>
@@ -335,45 +337,45 @@ export const DualEngineDashboard: React.FC<DualEngineDashboardProps> = ({ settin
             {/* Conditions Grid */}
             <div className="grid grid-cols-2 gap-2">
                 {/* Trend Block */}
-                <div className="p-2 bg-black/20 rounded-lg border border-white/5">
+                <div className="p-2 bg-gray-50 dark:bg-black/20 rounded-lg border border-gray-200 dark:border-white/10">
                     <div className="flex justify-between items-center mb-1">
-                        <span className="text-[9px] text-gray-500 font-bold uppercase">EMA Trend</span>
+                        <span className="text-[9px] text-gray-500 dark:text-gray-400 font-bold uppercase">EMA Trend</span>
                         <div className={`w-1.5 h-1.5 rounded-full ${engineState.trendBullish ? 'bg-green-500 shadow-[0_0_5px_rgba(34,197,94,1)]' : 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,1)]'}`} />
                     </div>
-                    <div className="text-xs font-bold text-white">
+                    <div className={`text-xs font-bold ${engineState.trendBullish ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         {engineState.trendBullish ? 'BULLISH' : 'BEARISH'}
                     </div>
                 </div>
 
                 {/* RSI Block */}
-                <div className="p-2 bg-black/20 rounded-lg border border-white/5">
+                <div className="p-2 bg-gray-50 dark:bg-black/20 rounded-lg border border-gray-200 dark:border-white/10">
                     <div className="flex justify-between items-center mb-1">
-                        <span className="text-[9px] text-gray-500 font-bold uppercase">RSI Mom</span>
+                        <span className="text-[9px] text-gray-500 dark:text-gray-400 font-bold uppercase">RSI Mom</span>
                         <div className={`w-1.5 h-1.5 rounded-full ${(engineState.rsiBullish || engineState.rsiBearish) ? 'bg-green-500 shadow-[0_0_5px_rgba(34,197,94,1)]' : 'bg-yellow-500 shadow-[0_0_5px_rgba(234,179,8,1)]'}`} />
                     </div>
-                    <div className={`text-xs font-bold ${engineState.rsi > settings.dualEngineRsiOB ? 'text-red-400' : engineState.rsi < settings.dualEngineRsiOS ? 'text-green-400' : 'text-gray-300'}`}>
+                    <div className={`text-xs font-bold ${engineState.rsi > settings.dualEngineRsiOB ? 'text-red-600 dark:text-red-400' : engineState.rsi < settings.dualEngineRsiOS ? 'text-green-600 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'}`}>
                         {engineState.rsi > settings.dualEngineRsiOB ? 'OVERBOUGHT' : engineState.rsi < settings.dualEngineRsiOS ? 'OVERSOLD' : 'NEUTRAL'}
                     </div>
                 </div>
 
                 {/* MACD Block */}
-                <div className="p-2 bg-black/20 rounded-lg border border-white/5">
+                <div className="p-2 bg-gray-50 dark:bg-black/20 rounded-lg border border-gray-200 dark:border-white/10">
                     <div className="flex justify-between items-center mb-1">
-                        <span className="text-[9px] text-gray-500 font-bold uppercase">MACD Flow</span>
-                        <div className={`w-1.5 h-1.5 rounded-full ${engineState.macdBullish ? 'bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,1)]' : 'bg-rose-400 shadow-[0_0_5px_rgba(251,113,133,1)]'}`} />
+                        <span className="text-[9px] text-gray-500 dark:text-gray-400 font-bold uppercase">MACD Flow</span>
+                        <div className={`w-1.5 h-1.5 rounded-full ${engineState.macdBullish ? 'bg-emerald-500 shadow-[0_0_5px_rgba(52,211,153,1)]' : 'bg-rose-500 shadow-[0_0_5px_rgba(251,113,133,1)]'}`} />
                     </div>
-                    <div className={`text-xs font-bold ${engineState.macdBullish ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <div className={`text-xs font-bold ${engineState.macdBullish ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                         {engineState.macdBullish ? 'POSITIVE' : 'NEGATIVE'}
                     </div>
                 </div>
 
                 {/* Squeeze Block */}
-                <div className="p-2 bg-black/20 rounded-lg border border-white/5">
+                <div className="p-2 bg-gray-50 dark:bg-black/20 rounded-lg border border-gray-200 dark:border-white/10">
                     <div className="flex justify-between items-center mb-1">
-                        <span className="text-[9px] text-gray-500 font-bold uppercase">Squeeze</span>
+                        <span className="text-[9px] text-gray-500 dark:text-gray-400 font-bold uppercase">Squeeze</span>
                         <div className={`w-1.5 h-1.5 rounded-full ${engineState.squeeze.squeezeOn ? 'bg-yellow-400 shadow-[0_0_5px_rgba(250,204,21,1)]' : 'bg-blue-400 shadow-[0_0_5px_rgba(96,165,250,1)]'}`} />
                     </div>
-                    <div className="text-xs font-bold text-white">
+                    <div className={`text-xs font-bold ${engineState.squeeze.squeezeOn ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'}`}>
                         {engineState.squeeze.squeezeOn ? 'BUILDING ⚠️' : 'FIRED 💥'}
                     </div>
                 </div>

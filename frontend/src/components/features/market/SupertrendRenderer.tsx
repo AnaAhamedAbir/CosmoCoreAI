@@ -22,22 +22,27 @@ export const SupertrendRenderer: React.FC<SupertrendRendererProps> = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
 
-    const requestDraw = useCallback(() => {
-        if (!drawRequested.current) {
-            drawRequested.current = true;
-            requestAnimationFrame(() => {
-                drawRequested.current = false;
-                drawSupertrend();
-            });
-        }
-    }, [chart, series, data, ohlcData, showSignals, highlighter]);
-
     const drawSupertrend = useCallback(() => {
         if (!canvasRef.current) return;
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const parent = canvas.parentElement;
+        if (parent) {
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const targetW = Math.round(parent.clientWidth * dpr);
+            const targetH = Math.round(parent.clientHeight * dpr);
+            if (canvas.width !== targetW || canvas.height !== targetH) {
+                canvas.width = targetW;
+                canvas.height = targetH;
+                canvas.style.width = `${parent.clientWidth}px`;
+                canvas.style.height = `${parent.clientHeight}px`;
+            }
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        ctx.clearRect(0, 0, canvas.parentElement?.clientWidth || canvas.width, canvas.parentElement?.clientHeight || canvas.height);
 
         if (!chart || !series || data.length === 0) return;
 
@@ -45,27 +50,24 @@ export const SupertrendRenderer: React.FC<SupertrendRendererProps> = ({
         const priceScale = series.priceScale();
         if (!timeScale || !priceScale) return;
 
-        const parent = canvas.parentElement;
-        if (parent) {
-            if (canvas.width !== parent.clientWidth) canvas.width = parent.clientWidth;
-            if (canvas.height !== parent.clientHeight) canvas.height = parent.clientHeight;
-        }
-
         const logicalRange = timeScale.getVisibleLogicalRange();
         if (!logicalRange) return;
 
         const getX = (time: any) => timeScale.timeToCoordinate(time);
 
+        // Visible range bounds for fast culling
+        const startIdx = Math.max(0, Math.floor(logicalRange.from) - 2);
+        const endIdx = Math.min(data.length - 1, Math.ceil(logicalRange.to) + 2);
+
         // --- 1. Draw Trend Lines and Highlighter ---
-        for (let i = 0; i < data.length - 1; i++) {
+        for (let i = startIdx; i < endIdx; i++) {
             const pt1 = data[i];
             const pt2 = data[i + 1];
 
-            // Skip points not in visible range for performance (optional, lightweight-charts handle some of this but canvas needs help)
             const x1 = getX(pt1.time);
             const x2 = getX(pt2.time);
             if (x1 === null || x2 === null) continue;
-            if (x2 < 0 || x1 > canvas.width) continue;
+            if (x2 < 0 || x1 > (parent?.clientWidth || canvas.width)) continue;
 
             const isUp = pt2.trend === 1;
             const color = isUp ? '#22c55e' : '#ef4444'; // Green / Red
@@ -83,26 +85,22 @@ export const SupertrendRenderer: React.FC<SupertrendRendererProps> = ({
                     ctx.lineTo(x2, y2);
                     ctx.stroke();
 
-                    // Highlighter (Area fill between Supertrend and OHLC4)
+                    // Highlighter (Area fill between Supertrend and OHLC4) - Instant O(1)
                     if (highlighter) {
-                        const ohlc1 = ohlcData.find(d => d.time === pt1.time);
-                        const ohlc2 = ohlcData.find(d => d.time === pt2.time);
-                        if (ohlc1 && ohlc2) {
-                            const p1 = (ohlc1.high + ohlc1.low + ohlc1.close + ohlc1.open) / 4;
-                            const p2 = (ohlc2.high + ohlc2.low + ohlc2.close + ohlc2.open) / 4;
-                            const py1 = series.priceToCoordinate(p1);
-                            const py2 = series.priceToCoordinate(p2);
+                        const p1 = pt1.ohlc4 !== undefined ? pt1.ohlc4 : pt1.value;
+                        const p2 = pt2.ohlc4 !== undefined ? pt2.ohlc4 : pt2.value;
+                        const py1 = series.priceToCoordinate(p1);
+                        const py2 = series.priceToCoordinate(p2);
 
-                            if (py1 !== null && py2 !== null) {
-                                ctx.beginPath();
-                                ctx.fillStyle = isUp ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)';
-                                ctx.moveTo(x1, y1);
-                                ctx.lineTo(x2, y2);
-                                ctx.lineTo(x2, py2);
-                                ctx.lineTo(x1, py1);
-                                ctx.closePath();
-                                ctx.fill();
-                            }
+                        if (py1 !== null && py2 !== null) {
+                            ctx.beginPath();
+                            ctx.fillStyle = isUp ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)';
+                            ctx.moveTo(x1, y1);
+                            ctx.lineTo(x2, y2);
+                            ctx.lineTo(x2, py2);
+                            ctx.lineTo(x1, py1);
+                            ctx.closePath();
+                            ctx.fill();
                         }
                     }
                 }
@@ -111,18 +109,17 @@ export const SupertrendRenderer: React.FC<SupertrendRendererProps> = ({
 
         // --- 2. Draw Buy/Sell Signals ---
         if (showSignals) {
-            data.forEach((pt, i) => {
-                if (!pt.isBuy && !pt.isSell) return;
+            for (let i = startIdx; i <= endIdx; i++) {
+                const pt = data[i];
+                if (!pt || (!pt.isBuy && !pt.isSell)) continue;
 
                 const x = getX(pt.time);
-                if (x === null || x < 0 || x > canvas.width) return;
-
-                const ohlc = ohlcData.find(d => d.time === pt.time);
-                if (!ohlc) return;
+                if (x === null || x < 0 || x > (parent?.clientWidth || canvas.width)) continue;
 
                 if (pt.isBuy) {
-                    const y = series.priceToCoordinate(ohlc.low);
-                    if (y === null) return;
+                    const low = pt.low !== undefined ? pt.low : pt.value;
+                    const y = series.priceToCoordinate(low);
+                    if (y === null) continue;
 
                     const buyY = y + 100; // Increased to 100 pixels
                     const width = 45;
@@ -165,8 +162,9 @@ export const SupertrendRenderer: React.FC<SupertrendRendererProps> = ({
                     ctx.textAlign = 'left';
                     ctx.fillText('BUY', x, buyY + 15);
                 } else if (pt.isSell) {
-                    const y = series.priceToCoordinate(ohlc.high);
-                    if (y === null) return;
+                    const high = pt.high !== undefined ? pt.high : pt.value;
+                    const y = series.priceToCoordinate(high);
+                    if (y === null) continue;
 
                     const sellY = y - 100; // Increased to 100 pixels
                     const width = 45;
@@ -209,10 +207,27 @@ export const SupertrendRenderer: React.FC<SupertrendRendererProps> = ({
                     ctx.textAlign = 'left';
                     ctx.fillText('SELL', x, sellY + 15);
                 }
-            });
+            }
         }
 
-    }, [chart, series, data, ohlcData, showSignals, highlighter]);
+    }, [chart, series, data, showSignals, highlighter]);
+
+    const drawSupertrendRef = useRef(drawSupertrend);
+    drawSupertrendRef.current = drawSupertrend;
+
+    const requestDraw = useCallback(() => {
+        if (!drawRequested.current) {
+            drawRequested.current = true;
+            requestAnimationFrame(() => {
+                drawRequested.current = false;
+                drawSupertrendRef.current();
+            });
+        }
+    }, []);
+
+    useEffect(() => {
+        requestDraw();
+    }, [data, showSignals, highlighter, requestDraw]);
 
     useEffect(() => {
         if (!chart || !series) return;

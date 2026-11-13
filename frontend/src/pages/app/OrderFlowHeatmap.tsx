@@ -193,6 +193,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
     const rsiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
     const utBotSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const prevUTBotStateRef = useRef<boolean>(false);
     const utBotMarkersRef = useRef<any[]>([]);
     const mlPredictionMarkersRef = useRef<any[]>([]);
     const quantumAiMarkersRef = useRef<any[]>([]);
@@ -227,6 +228,8 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
     const [fiboData, setFiboData] = useState<FibonacciData | null>(null);
     const [ichimokuData, setIchimokuData] = useState<IchimokuDataPoint[]>([]);
     const [trendFinderData, setTrendFinderData] = useState<TrendFinderResult | null>(null);
+    const indicatorSettingsRef = useRef(indicatorSettings);
+    indicatorSettingsRef.current = indicatorSettings;
     const isOrderFlowOverlayActive = Boolean(showVPVR || showCVD || showFootprint || indicatorSettings.showQuantumAI);
     const { vpvrData, cvdData, footprintData } = useOrderFlowData(symbol, exchange, interval, isOrderFlowOverlayActive);
     const showHeatmapOverlay = Boolean(showVPVR || indicatorSettings.showHeatmap);
@@ -1046,7 +1049,15 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             });
             return next;
         });
-    }, [interval, symbol, exchange, indicatorSettings]);
+    }, [
+        interval, symbol, exchange,
+        indicatorSettings.showEMA,
+        indicatorSettings.emaPeriod,
+        indicatorSettings.emaTimeframes,
+        indicatorSettings.emaRenderMode,
+        indicatorSettings.emaShowPriceLabels,
+        indicatorSettings.emaCustomColors
+    ]);
 
     // Update Indicators
     useEffect(() => {
@@ -1082,17 +1093,23 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             bbMiddleSeriesRef.current.setData(bbResult.map(d => ({ time: d.time, value: d.middle })) as any);
             bbLowerSeriesRef.current.setData(bbResult.map(d => ({ time: d.time, value: d.lower })) as any);
             setBbData(bbResult);
+        } else if (!showBB && bbData.length > 0) {
+            setBbData([]);
         }
         if (indicatorSettings.showRSI && rsiSeriesRef.current) {
             rsiSeriesRef.current.setData(calculateRSI(data, rsiP) as any);
         }
 
         if (indicatorSettings.showUTBot && utBotSeriesRef.current) {
+            prevUTBotStateRef.current = true;
             const utData = calculateUTBotAlerts(data, indicatorSettings.utBotSensitivity, indicatorSettings.utBotAtrPeriod, indicatorSettings.utBotUseHeikinAshi);
             utBotSeriesRef.current.setData(utData.map(d => ({ time: d.time, value: d.trailingStop })) as any);
 
+            const utMap = new Map<any, any>();
+            for (let i = 0; i < utData.length; i++) utMap.set(utData[i].time, utData[i]);
+
             const newCandles = data.map(c => {
-                const utPoint = utData.find(d => d.time === c.time);
+                const utPoint = utMap.get(c.time);
                 if (utPoint) {
                     const color = utPoint.color === 'green' ? '#22c55e' : utPoint.color === 'red' ? '#ef4444' : '#3b82f6';
                     return { ...c, color, wickColor: color };
@@ -1111,7 +1128,9 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             }));
 
             setTimeout(safeSetMarkers, 50);
-        } else if (!indicatorSettings.showUTBot && utBotSeriesRef.current) {
+        } else if (!indicatorSettings.showUTBot && utBotSeriesRef.current && prevUTBotStateRef.current) {
+            // Only reset candle colors once when UT Bot transitions from enabled -> disabled
+            prevUTBotStateRef.current = false;
             const newCandles = data.map(c => ({ ...c, color: undefined, wickColor: undefined }));
             candlestickSeriesRef.current?.setData(newCandles);
             allCandlesRef.current = newCandles;
@@ -1120,7 +1139,23 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             setTimeout(safeSetMarkers, 50);
         }
 
-    }, [indicatorSettings]);
+    }, [
+        indicatorSettings.showBB,
+        indicatorSettings.bbPeriod,
+        indicatorSettings.bbStdDev,
+        indicatorSettings.showRSI,
+        indicatorSettings.rsiPeriod,
+        indicatorSettings.showUTBot,
+        indicatorSettings.utBotSensitivity,
+        indicatorSettings.utBotAtrPeriod,
+        indicatorSettings.utBotUseHeikinAshi,
+        indicatorSettings.showVolume,
+        indicatorSettings.showMACD,
+        indicatorSettings.showEMA,
+        indicatorSettings.emaPeriod,
+        indicatorSettings.emaTimeframes,
+        indicatorSettings.emaRenderMode
+    ]);
 
     // ML Prediction Lines handled by MLPredictionRenderer component in JSX
 
@@ -1196,7 +1231,39 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             isCancelled = true;
             clearInterval(intervalId);
         };
-    }, [indicatorSettings, isThermalGuard]);
+    }, [
+        indicatorSettings.showSMC,
+        indicatorSettings.smcMode,
+        indicatorSettings.smcStyle,
+        indicatorSettings.smcShowInternals,
+        indicatorSettings.smcInternalBullFilter,
+        indicatorSettings.smcInternalBearFilter,
+        indicatorSettings.smcConfluenceFilter,
+        indicatorSettings.smcShowSwing,
+        indicatorSettings.smcSwingBullFilter,
+        indicatorSettings.smcSwingBearFilter,
+        indicatorSettings.smcSwingLength,
+        indicatorSettings.smcShowStrongWeakHL,
+        indicatorSettings.smcShowInternalOB,
+        indicatorSettings.smcInternalOBCount,
+        indicatorSettings.smcShowSwingOB,
+        indicatorSettings.smcSwingOBCount,
+        indicatorSettings.smcOBFilter,
+        indicatorSettings.smcOBMitigation,
+        indicatorSettings.smcShowEqualHL,
+        indicatorSettings.smcEqualHLLength,
+        indicatorSettings.smcEqualHLThreshold,
+        indicatorSettings.smcShowFVG,
+        indicatorSettings.smcFVGAutoThreshold,
+        indicatorSettings.smcFVGExtendBars,
+        indicatorSettings.smcShowPDZones,
+        indicatorSettings.smcL2Validation,
+        indicatorSettings.smcCVDTrap,
+        indicatorSettings.smcMicroFVG,
+        indicatorSettings.smcSweepDetection,
+        indicatorSettings.smcShowSwingPatterns,
+        isThermalGuard
+    ]);
 
     // ICT Killzones Calculation Effect (Throttled)
     useEffect(() => {
@@ -1257,7 +1324,27 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         const intervalId = setInterval(runIctCalc, isThermalGuard ? 6000 : 4000);
 
         return () => clearInterval(intervalId);
-    }, [indicatorSettings, isThermalGuard]);
+    }, [
+        indicatorSettings.showICTKillzones,
+        indicatorSettings.ictAsiaSession,
+        indicatorSettings.ictLondonSession,
+        indicatorSettings.ictNyAmSession,
+        indicatorSettings.ictNyLunchSession,
+        indicatorSettings.ictNyPmSession,
+        indicatorSettings.ictShowMidnightOpen,
+        indicatorSettings.ictShowPivots,
+        indicatorSettings.ictShowDWM,
+        indicatorSettings.ictShowOpeningPrices,
+        indicatorSettings.ictShowTimestamps,
+        indicatorSettings.ictPivotsExtend,
+        indicatorSettings.ictShowSilverBullet,
+        indicatorSettings.ictShowConfluence,
+        indicatorSettings.ictShowAMD,
+        indicatorSettings.ictShowGaps,
+        indicatorSettings.ictShowVolatility,
+        indicatorSettings.ictShowEquilibrium,
+        isThermalGuard
+    ]);
 
     // LuxAlgo ICT Concepts Engine
     useEffect(() => {
@@ -1311,7 +1398,37 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
 
         const timer = setTimeout(runLux, 400);
         return () => clearTimeout(timer);
-    }, [indicatorSettings]);
+    }, [
+        indicatorSettings.luxShowIndicator,
+        indicatorSettings.luxMode,
+        indicatorSettings.luxShowMS,
+        indicatorSettings.luxSwingLength,
+        indicatorSettings.luxShowMSS,
+        indicatorSettings.luxShowBOS,
+        indicatorSettings.luxShowDisplacement,
+        indicatorSettings.luxPercBody,
+        indicatorSettings.luxShowVIMB,
+        indicatorSettings.luxVIMBThreshold,
+        indicatorSettings.luxShowOB,
+        indicatorSettings.luxOBLookback,
+        indicatorSettings.luxShowBullOB,
+        indicatorSettings.luxShowBearOB,
+        indicatorSettings.luxShowOBLabels,
+        indicatorSettings.luxShowLiq,
+        indicatorSettings.luxLiqMargin,
+        indicatorSettings.luxLiqVisibleCount,
+        indicatorSettings.luxShowFVG,
+        indicatorSettings.luxBPR,
+        indicatorSettings.luxFVGType,
+        indicatorSettings.luxFVGVisibleCount,
+        indicatorSettings.luxShowNWOG,
+        indicatorSettings.luxNWOGMax,
+        indicatorSettings.luxShowNDOG,
+        indicatorSettings.luxNDOGMax,
+        indicatorSettings.luxFibMode,
+        indicatorSettings.luxFibExtend,
+        indicatorSettings.luxShowKillzones
+    ]);
 
     // Fetch ICT PO3 Data from Backend API
     useEffect(() => {
@@ -1362,11 +1479,17 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             }
         };
 
-        setTimeout(runSupertrendCalc, 0);
+        runSupertrendCalc();
         const intervalId = setInterval(runSupertrendCalc, isThermalGuard ? 7500 : 5000);
 
         return () => clearInterval(intervalId);
-    }, [indicatorSettings, isThermalGuard]);
+    }, [
+        indicatorSettings.showSupertrend,
+        indicatorSettings.supertrendAtrPeriod,
+        indicatorSettings.supertrendMultiplier,
+        indicatorSettings.supertrendChangeATR,
+        isThermalGuard
+    ]);
 
     // MSB-OB Calculation Effect (Throttled)
     useEffect(() => {
@@ -1399,7 +1522,27 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         const intervalId = setInterval(runMsbObCalc, isThermalGuard ? 7500 : 5000);
 
         return () => clearInterval(intervalId);
-    }, [indicatorSettings, isThermalGuard]);
+    }, [
+        indicatorSettings.showICTKillzones,
+        indicatorSettings.ictAsiaSession,
+        indicatorSettings.ictLondonSession,
+        indicatorSettings.ictNyAmSession,
+        indicatorSettings.ictNyLunchSession,
+        indicatorSettings.ictNyPmSession,
+        indicatorSettings.ictShowMidnightOpen,
+        indicatorSettings.ictShowPivots,
+        indicatorSettings.ictShowDWM,
+        indicatorSettings.ictShowOpeningPrices,
+        indicatorSettings.ictShowTimestamps,
+        indicatorSettings.ictPivotsExtend,
+        indicatorSettings.ictShowSilverBullet,
+        indicatorSettings.ictShowConfluence,
+        indicatorSettings.ictShowAMD,
+        indicatorSettings.ictShowGaps,
+        indicatorSettings.ictShowVolatility,
+        indicatorSettings.ictShowEquilibrium,
+        isThermalGuard
+    ]);
 
     // ── Wick Rejection S/R Calculation Effect ──
     useEffect(() => {
@@ -1458,7 +1601,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         const runQuantumCalc = () => {
             if (document.hidden) return;
             const candles = allCandlesRef.current;
-            if (!candles || candles.length < 200) return;
+            if (!candles || candles.length < 50) return;
             if (lastVersion === candlesVersionRef.current) return;
             lastVersion = candlesVersionRef.current;
             try {
@@ -1479,7 +1622,15 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         const intervalId = setInterval(runQuantumCalc, isThermalGuard ? 7500 : 5000);
 
         return () => clearInterval(intervalId);
-    }, [indicatorSettings, isThermalGuard]);
+    }, [
+        indicatorSettings.showQuantumAI,
+        indicatorSettings.quantumMinConf,
+        indicatorSettings.quantumVolatilityFilter,
+        indicatorSettings.quantumVolThreshold,
+        symbol,
+        interval,
+        isThermalGuard
+    ]);
 
     // ── VWAP Standard Deviation Bands Effect ──
     useEffect(() => {
@@ -1515,7 +1666,27 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         const intervalId = setInterval(runVwapSDCalc, isThermalGuard ? 7500 : 5000);
 
         return () => clearInterval(intervalId);
-    }, [indicatorSettings, isThermalGuard]);
+    }, [
+        indicatorSettings.showICTKillzones,
+        indicatorSettings.ictAsiaSession,
+        indicatorSettings.ictLondonSession,
+        indicatorSettings.ictNyAmSession,
+        indicatorSettings.ictNyLunchSession,
+        indicatorSettings.ictNyPmSession,
+        indicatorSettings.ictShowMidnightOpen,
+        indicatorSettings.ictShowPivots,
+        indicatorSettings.ictShowDWM,
+        indicatorSettings.ictShowOpeningPrices,
+        indicatorSettings.ictShowTimestamps,
+        indicatorSettings.ictPivotsExtend,
+        indicatorSettings.ictShowSilverBullet,
+        indicatorSettings.ictShowConfluence,
+        indicatorSettings.ictShowAMD,
+        indicatorSettings.ictShowGaps,
+        indicatorSettings.ictShowVolatility,
+        indicatorSettings.ictShowEquilibrium,
+        isThermalGuard
+    ]);
 
     // ── Safe Marker Setter Utility ──
     const safeSetMarkers = () => {
@@ -1890,23 +2061,24 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             try {
                 const curData = allCandlesRef.current;
                 const lastCandle = lastCandleRef.current as any;
+                const currentSettings = indicatorSettingsRef.current;
                 if (curData && curData.length > 0) {
-                    const emaTfsKey = (indicatorSettings.emaTimeframes || ['1m']).join(',');
-                    const toggleSig = `${indicatorSettings.showEMA ? 1 : 0}:${indicatorSettings.emaPeriod}:${indicatorSettings.emaRenderMode}:${emaTfsKey}|${indicatorSettings.showBB ? 1 : 0}:${indicatorSettings.bbPeriod}:${indicatorSettings.bbStdDev}|${indicatorSettings.showRSI ? 1 : 0}:${indicatorSettings.rsiPeriod}|${indicatorSettings.showUTBot ? 1 : 0}:${indicatorSettings.utBotSensitivity}:${indicatorSettings.utBotAtrPeriod}:${indicatorSettings.utBotUseHeikinAshi ? 1 : 0}|${indicatorSettings.showSessions ? 1 : 0}:${indicatorSettings.timezoneOffset || 0}:${indicatorSettings.sessionA?.session}:${indicatorSettings.sessionB?.session}:${indicatorSettings.sessionC?.session}:${indicatorSettings.sessionD?.session}`;
+                    const emaTfsKey = (currentSettings.emaTimeframes || ['1m']).join(',');
+                    const toggleSig = `${currentSettings.showEMA ? 1 : 0}:${currentSettings.emaPeriod}:${currentSettings.emaRenderMode}:${emaTfsKey}|${currentSettings.showBB ? 1 : 0}:${currentSettings.bbPeriod}:${currentSettings.bbStdDev}|${currentSettings.showRSI ? 1 : 0}:${currentSettings.rsiPeriod}|${currentSettings.showUTBot ? 1 : 0}:${currentSettings.utBotSensitivity}:${currentSettings.utBotAtrPeriod}:${currentSettings.utBotUseHeikinAshi ? 1 : 0}|${currentSettings.showSessions ? 1 : 0}:${currentSettings.timezoneOffset || 0}:${currentSettings.sessionA?.session}:${currentSettings.sessionB?.session}:${currentSettings.sessionC?.session}:${currentSettings.sessionD?.session}`;
                     const candleKey = `${curData.length}:${lastCandle?.time}:${lastCandle?.close}:${lastCandle?.volume}|${toggleSig}`;
                     if (candleKey === lastProcessedCandleKeyRef.current) return;
                     lastProcessedCandleKeyRef.current = candleKey;
 
-                    const bbP = Math.max(1, Math.floor(Number(indicatorSettings.bbPeriod) || 20));
-                    const bbDev = Number.isFinite(Number(indicatorSettings.bbStdDev)) && Number(indicatorSettings.bbStdDev) > 0 ? Number(indicatorSettings.bbStdDev) : 2;
-                    const rsiP = Math.max(1, Math.floor(Number(indicatorSettings.rsiPeriod) || 14));
+                    const bbP = Math.max(1, Math.floor(Number(currentSettings.bbPeriod) || 20));
+                    const bbDev = Number.isFinite(Number(currentSettings.bbStdDev)) && Number(currentSettings.bbStdDev) > 0 ? Number(currentSettings.bbStdDev) : 2;
+                    const rsiP = Math.max(1, Math.floor(Number(currentSettings.rsiPeriod) || 14));
 
-                    if (indicatorSettings.showEMA && emaSeriesMapRef.current.size > 0) {
-                        const activeTfs = indicatorSettings.emaTimeframes && indicatorSettings.emaTimeframes.length > 0
-                            ? indicatorSettings.emaTimeframes
+                    if (currentSettings.showEMA && emaSeriesMapRef.current.size > 0) {
+                        const activeTfs = currentSettings.emaTimeframes && currentSettings.emaTimeframes.length > 0
+                            ? currentSettings.emaTimeframes
                             : ['1m'];
-                        const period = Math.max(1, Math.floor(Number(indicatorSettings.emaPeriod) || 7));
-                        const mode = indicatorSettings.emaRenderMode || 'smooth';
+                        const period = Math.max(1, Math.floor(Number(currentSettings.emaPeriod) || 7));
+                        const mode = currentSettings.emaRenderMode || 'smooth';
                         const newLatestValues: Record<string, number> = {};
 
                         activeTfs.forEach((tf) => {
@@ -1956,21 +2128,27 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                             });
                         }
                     }
-                    if (indicatorSettings.showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current) {
-                        const bbData = calculateBollingerBands(curData, bbP, bbDev);
-                        if (bbData.length > 0) {
-                            const lastBB = bbData[bbData.length - 1];
-                            bbUpperSeriesRef.current.update({ time: lastBB.time, value: lastBB.upper } as any);
-                            bbMiddleSeriesRef.current.update({ time: lastBB.time, value: lastBB.middle } as any);
-                            bbLowerSeriesRef.current.update({ time: lastBB.time, value: lastBB.lower } as any);
-                        }
+                    if (currentSettings.showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current && curData.length >= bbP) {
+                        const recentSlice = curData.slice(-bbP);
+                        let sum = 0;
+                        for (let i = 0; i < bbP; i++) sum += recentSlice[i].close;
+                        const middle = sum / bbP;
+                        let varSum = 0;
+                        for (let i = 0; i < bbP; i++) varSum += Math.pow(recentSlice[i].close - middle, 2);
+                        const sd = Math.sqrt(varSum / bbP);
+                        const upper = middle + bbDev * sd;
+                        const lower = middle - bbDev * sd;
+                        const lastTime = recentSlice[recentSlice.length - 1].time;
+                        bbUpperSeriesRef.current.update({ time: lastTime, value: upper } as any);
+                        bbMiddleSeriesRef.current.update({ time: lastTime, value: middle } as any);
+                        bbLowerSeriesRef.current.update({ time: lastTime, value: lower } as any);
                     }
-                    if (indicatorSettings.showRSI && rsiSeriesRef.current) {
+                    if (currentSettings.showRSI && rsiSeriesRef.current) {
                         const rsiData = calculateRSI(curData, rsiP);
                         if (rsiData.length > 0) rsiSeriesRef.current.update(rsiData[rsiData.length - 1] as any);
                     }
-                    if (indicatorSettings.showUTBot && utBotSeriesRef.current) {
-                        const utData = calculateUTBotAlerts(curData, indicatorSettings.utBotSensitivity, indicatorSettings.utBotAtrPeriod, indicatorSettings.utBotUseHeikinAshi);
+                    if (currentSettings.showUTBot && utBotSeriesRef.current) {
+                        const utData = calculateUTBotAlerts(curData, currentSettings.utBotSensitivity, currentSettings.utBotAtrPeriod, currentSettings.utBotUseHeikinAshi);
                         if (utData.length > 0) {
                             const lastUT = utData[utData.length - 1];
                             utBotSeriesRef.current.update({ time: lastUT.time, value: lastUT.trailingStop } as any);
@@ -1997,21 +2175,21 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                     }
 
                     // --- SESSIONS CALCULATION (Only recalculates when candle count or minute bucket changes) ---
-                    if (indicatorSettings.showSessions) {
-                        const tz = indicatorSettings.timezoneOffset || 0;
+                    if (currentSettings.showSessions) {
+                        const tz = currentSettings.timezoneOffset || 0;
                         let rawTime = Number(lastCandle?.time || 0);
                         if (rawTime > 0 && rawTime < 10000000000) rawTime *= 1000;
                         const minuteBucket = Math.floor((rawTime || Date.now()) / 60000);
-                        const sessionsKey = `${curData.length}:${minuteBucket}:${tz}:${indicatorSettings.sessionA.session}:${indicatorSettings.sessionB.session}:${indicatorSettings.sessionC.session}:${indicatorSettings.sessionD.session}:${indicatorSettings.sessionA.name}:${indicatorSettings.sessionB.name}:${indicatorSettings.sessionC.name}:${indicatorSettings.sessionD.name}`;
+                        const sessionsKey = `${curData.length}:${minuteBucket}:${tz}:${currentSettings.sessionA.session}:${currentSettings.sessionB.session}:${currentSettings.sessionC.session}:${currentSettings.sessionD.session}:${currentSettings.sessionA.name}:${currentSettings.sessionB.name}:${currentSettings.sessionC.name}:${currentSettings.sessionD.name}`;
 
                         if (sessionsKey !== lastSessionsKeyRef.current) {
                             lastSessionsKeyRef.current = sessionsKey;
                             const sessData = allCandlesRef.current;
 
-                            const sa = calculateSessions(sessData, indicatorSettings.sessionA.session, tz);
-                            const sb = calculateSessions(sessData, indicatorSettings.sessionB.session, tz);
-                            const sc = calculateSessions(sessData, indicatorSettings.sessionC.session, tz);
-                            const sd = calculateSessions(sessData, indicatorSettings.sessionD.session, tz);
+                            const sa = calculateSessions(sessData, currentSettings.sessionA.session, tz);
+                            const sb = calculateSessions(sessData, currentSettings.sessionB.session, tz);
+                            const sc = calculateSessions(sessData, currentSettings.sessionC.session, tz);
+                            const sd = calculateSessions(sessData, currentSettings.sessionD.session, tz);
 
                             setSessionsData({ a: sa, b: sb, c: sc, d: sd });
 
@@ -2021,10 +2199,10 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                             const lastD = sd[sd.length - 1];
 
                             setSessionStatuses([
-                                { name: indicatorSettings.sessionA.name, isActive: lastA?.isSession || false, color: indicatorSettings.sessionA.color, r2: lastA?.linReg?.r2 || null, stdev: lastA?.linReg?.stdev || null, volume: null },
-                                { name: indicatorSettings.sessionB.name, isActive: lastB?.isSession || false, color: indicatorSettings.sessionB.color, r2: lastB?.linReg?.r2 || null, stdev: lastB?.linReg?.stdev || null, volume: null },
-                                { name: indicatorSettings.sessionC.name, isActive: lastC?.isSession || false, color: indicatorSettings.sessionC.color, r2: lastC?.linReg?.r2 || null, stdev: lastC?.linReg?.stdev || null, volume: null },
-                                { name: indicatorSettings.sessionD.name, isActive: lastD?.isSession || false, color: indicatorSettings.sessionD.color, r2: lastD?.linReg?.r2 || null, stdev: lastD?.linReg?.stdev || null, volume: null },
+                                { name: currentSettings.sessionA.name, isActive: lastA?.isSession || false, color: currentSettings.sessionA.color, r2: lastA?.linReg?.r2 || null, stdev: lastA?.linReg?.stdev || null, volume: null },
+                                { name: currentSettings.sessionB.name, isActive: lastB?.isSession || false, color: currentSettings.sessionB.color, r2: lastB?.linReg?.r2 || null, stdev: lastB?.linReg?.stdev || null, volume: null },
+                                { name: currentSettings.sessionC.name, isActive: lastC?.isSession || false, color: currentSettings.sessionC.color, r2: lastC?.linReg?.r2 || null, stdev: lastC?.linReg?.stdev || null, volume: null },
+                                { name: currentSettings.sessionD.name, isActive: lastD?.isSession || false, color: currentSettings.sessionD.color, r2: lastD?.linReg?.r2 || null, stdev: lastD?.linReg?.stdev || null, volume: null },
                             ]);
                         }
                     }
@@ -2035,7 +2213,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         }, indicatorIntervalMs);
 
         return () => clearInterval(updateInterval);
-    }, [indicatorSettings, indicatorIntervalMs, interval, exchange, symbol]);
+    }, [indicatorIntervalMs, interval, exchange, symbol]);
 
     // Auto Fibonacci Indicator
     useEffect(() => {
@@ -2098,7 +2276,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             levels
         });
 
-    }, [indicatorSettings.showAutoFibo, indicatorSettings.autoFiboLookback, allCandlesRef.current.length]);
+    }, [indicatorSettings.showAutoFibo, indicatorSettings.autoFiboLookback]);
 
     // Ichimoku Cloud Calculation
     useEffect(() => {
@@ -2121,8 +2299,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         indicatorSettings.tenkanPeriod,
         indicatorSettings.kijunPeriod,
         indicatorSettings.senkouBPeriod,
-        indicatorSettings.displacement,
-        allCandlesRef.current.length
+        indicatorSettings.displacement
     ]);
 
     // Adaptive Trend Finder Calculation
@@ -2145,7 +2322,9 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         indicatorSettings.showTrendFinder,
         indicatorSettings.trendFinderLookback,
         indicatorSettings.trendFinderDev,
-        allCandlesRef.current.length
+        indicatorSettings.trendFinderThreshold,
+        indicatorSettings.enableTrendFinderVolumeFilter,
+        indicatorSettings.trendFinderVolumeMultiplier
     ]);
 
     // Update horizontal price lines for walls intelligently without blindly clearing
@@ -3376,122 +3555,103 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                         <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, marginRight: 4 }} />
                     );
                     const HudSectionHeader = ({ label, color }: { label: string; color: string }) => (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, margin: '6px 0 2px' }}>
-                            <div style={{ flex: 1, height: 1, borderTop: '1px dashed rgba(255,255,255,0.12)' }} />
-                            <span style={{ fontSize: 9, fontWeight: 700, color, letterSpacing: '0.12em', whiteSpace: 'nowrap', padding: '0 4px' }}>{label}</span>
-                            <div style={{ flex: 1, height: 1, borderTop: '1px dashed rgba(255,255,255,0.12)' }} />
+                        <div className="flex items-center gap-1 my-1.5">
+                            <div className="flex-1 h-[1px] border-t border-dashed border-gray-300 dark:border-white/10" />
+                            <span style={{ color }} className="text-[9px] font-bold tracking-widest uppercase px-1 whitespace-nowrap">{label}</span>
+                            <div className="flex-1 h-[1px] border-t border-dashed border-gray-300 dark:border-white/10" />
                         </div>
                     );
                     const HudRow = ({ label, value, dot, valColor }: { label: string; value: string; dot?: string; valColor?: string }) => (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2.5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                            <span style={{ fontSize: 10, color: '#718096', letterSpacing: '0.04em' }}>{label}</span>
-                            <span style={{ display: 'flex', alignItems: 'center', fontSize: 10, fontWeight: 600, color: valColor || '#e2e8f0', fontFamily: 'monospace' }}>
+                        <div className="flex justify-between items-center py-0.5 border-b border-gray-100 dark:border-white/5">
+                            <span className="text-[10px] text-gray-600 dark:text-gray-400 tracking-wide">{label}</span>
+                            <span style={{ color: valColor }} className="flex items-center text-[10px] font-semibold text-gray-800 dark:text-gray-200 font-mono">
                                 {dot && <HudDot color={dot} />}{value}
                             </span>
                         </div>
                     );
 
-                    const signalColor = hasSignal ? (isBull ? '#00d4aa' : '#ff4d4d') : '#718096';
+                    const signalColor = hasSignal ? (isBull ? '#059669' : '#dc2626') : '#64748b';
                     const volLabel = last.isMarketVolatile ? 'Trending' : 'Ranging';
-                    const volColor = last.isMarketVolatile ? '#a78bfa' : '#718096';
+                    const volColor = last.isMarketVolatile ? '#8b5cf6' : '#64748b';
                     const signalLabel = hasSignal ? (isBull ? 'BUY' : 'SELL') : 'NO SIGNAL';
-                    const trendColor = last.emaBull ? '#00d4aa' : last.emaBear ? '#ff4d4d' : '#718096';
+                    const trendColor = last.emaBull ? '#059669' : last.emaBear ? '#dc2626' : '#64748b';
                     const trendLabel = last.emaBull ? 'Bullish' : last.emaBear ? 'Bearish' : 'Neutral';
-                    const htfTrendColor = last.htfTrend === 'Bullish' ? '#00d4aa' : '#ff4d4d';
-                    const mtfTrendColor = last.mtfTrend === 'Bullish' ? '#00d4aa' : '#ff4d4d';
-                    const ichiColor = last.ichimokuStatus.includes('Bullish') ? '#00d4aa' : last.ichimokuStatus.includes('Bearish') ? '#ff4d4d' : '#718096';
-                    const divColor = last.divergenceStatus.includes('Bullish') ? '#00d4aa' : last.divergenceStatus.includes('Bearish') ? '#ff4d4d' : '#718096';
+                    const htfTrendColor = last.htfTrend === 'Bullish' ? '#059669' : '#dc2626';
+                    const mtfTrendColor = last.mtfTrend === 'Bullish' ? '#059669' : '#dc2626';
+                    const ichiColor = last.ichimokuStatus.includes('Bullish') ? '#059669' : last.ichimokuStatus.includes('Bearish') ? '#dc2626' : '#64748b';
+                    const divColor = last.divergenceStatus.includes('Bullish') ? '#059669' : last.divergenceStatus.includes('Bearish') ? '#dc2626' : '#64748b';
 
                     const quantumHudElement = (
-                        <div className="fixed z-[9999] select-none" style={{
+                        <div className="fixed z-[9999] select-none pointer-events-auto" style={{
                             width: 280,
                             fontFamily: "'Inter', sans-serif",
                             left: `${quantumAiHudPos.x}px`,
                             top: `${quantumAiHudPos.y}px`
                         }}>
-                            <div style={{
-                                background: 'linear-gradient(180deg, #0e1724 0%, #0b1220 100%)',
-                                border: '1px solid rgba(100,120,180,0.3)',
-                                borderRadius: 10,
-                                overflow: 'hidden',
-                                boxShadow: '0 12px 40px rgba(0,0,0,0.7)',
-                            }}>
+                            <div className="bg-white/95 dark:bg-[#0b1220]/95 border border-gray-200 dark:border-indigo-500/30 rounded-xl overflow-hidden shadow-2xl backdrop-blur-xl">
                                 {/* Header */}
                                 <div
                                     onMouseDown={handleHudMouseDown}
+                                    className="bg-gray-100 dark:bg-gradient-to-r dark:from-[#1a1f3c] dark:to-[#12192e] border-b border-gray-200 dark:border-indigo-500/30 px-3.5 py-2.5 flex items-center gap-2 select-none"
                                     style={{
-                                        background: 'linear-gradient(90deg, #1a1f3c 0%, #12192e 100%)',
-                                        borderBottom: '1px solid rgba(100,120,200,0.25)',
-                                        padding: '10px 14px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 8,
                                         cursor: isDraggingQuantumAi ? 'grabbing' : 'grab'
                                     }}
                                 >
-                                    <span style={{ fontSize: 16 }}>🚀</span>
-                                    <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: '0.12em', background: 'linear-gradient(90deg, #a78bfa, #f0abfc)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                                        QUANTUM AI v8 - ENHANCED
+                                    <span className="text-base">🚀</span>
+                                    <span className="text-[11px] font-black tracking-widest uppercase text-indigo-600 dark:text-transparent dark:bg-clip-text dark:bg-gradient-to-r dark:from-purple-400 dark:to-pink-400">
+                                        QUANTUM AI v8
+                                    </span>
+                                    <span className="ml-auto text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-white/10 text-indigo-600 dark:text-indigo-300">
+                                        DRAG ME
                                     </span>
                                 </div>
 
                                 {/* Body */}
-                                <div style={{ padding: '10px 14px 12px' }}>
+                                <div className="p-3">
                                     {/* Signal rows */}
                                     <HudRow label="SIGNAL" value={signalLabel} dot={signalColor} valColor={signalColor} />
-                                    <HudRow label="REASON" value={last.signalReason || 'No Signal'} valColor="#94a3b8" />
-                                    <HudRow label="CONFIDENCE" value={`${Math.round(conf)}%`} valColor={conf >= 80 ? '#a78bfa' : conf >= 60 ? '#f59e0b' : '#718096'} />
-                                    <HudRow label="STRATEGY" value="Adaptive Quantum" valColor="#94a3b8" />
+                                    <HudRow label="REASON" value={last.signalReason || 'No Signal'} valColor="#64748b" />
+                                    <HudRow label="CONFIDENCE" value={`${Math.round(conf)}%`} valColor={conf >= 80 ? '#7c3aed' : conf >= 60 ? '#d97706' : '#64748b'} />
+                                    <HudRow label="STRATEGY" value="Adaptive Quantum" valColor="#64748b" />
 
                                     {/* Quantum AI Section */}
-                                    <HudSectionHeader label="QUANTUM AI" color="#a78bfa" />
-                                    <HudRow label="Quantum Power" value={`${qp}%`} valColor={qp >= 70 ? '#a78bfa' : qp >= 40 ? '#f59e0b' : '#718096'} />
+                                    <HudSectionHeader label="QUANTUM AI" color="#7c3aed" />
+                                    <HudRow label="Quantum Power" value={`${qp}%`} valColor={qp >= 70 ? '#7c3aed' : qp >= 40 ? '#d97706' : '#64748b'} />
 
                                     {/* Multi-Timeframe Section */}
-                                    <HudSectionHeader label="MULTI-TIMEFRAME" color="#f59e0b" />
+                                    <HudSectionHeader label="MULTI-TIMEFRAME" color="#d97706" />
                                     <HudRow label="HTF Trend" value={`${last.htfTrend || 'N/A'} (240)`} dot={htfTrendColor} valColor={htfTrendColor} />
                                     <HudRow label="MTF Trend" value={`${last.mtfTrend || 'N/A'} (60)`} dot={mtfTrendColor} valColor={mtfTrendColor} />
-                                    <HudRow label="Alignment" value={last.alignmentStatus || 'Mixed'} valColor="#e2e8f0" />
+                                    <HudRow label="Alignment" value={last.alignmentStatus || 'Mixed'} />
 
                                     {/* Ichimoku Section */}
-                                    <HudSectionHeader label="ICHIMOKU" color="#f59e0b" />
+                                    <HudSectionHeader label="ICHIMOKU" color="#d97706" />
                                     <HudRow label="Cloud Status" value={last.ichimokuStatus || 'N/A'} dot={ichiColor} valColor={ichiColor} />
-                                    <HudRow label="TK Cross" value={last.tkCross || 'N/A'} valColor="#e2e8f0" />
+                                    <HudRow label="TK Cross" value={last.tkCross || 'N/A'} />
 
                                     {/* Volume Profile Section */}
-                                    <HudSectionHeader label="VOLUME PROFILE" color="#f59e0b" />
-                                    <HudRow label="POC" value={`${last.close.toFixed(5)}`} valColor="#94a3b8" />
+                                    <HudSectionHeader label="VOLUME PROFILE" color="#d97706" />
+                                    <HudRow label="POC" value={`${last.close.toFixed(5)}`} valColor="#64748b" />
 
                                     {/* Active Patterns Section */}
-                                    <HudSectionHeader label="ACTIVE PATTERNS" color="#a78bfa" />
-                                    <HudRow label="Chart Pattern" value={last.activePattern || 'None'} valColor={last.activePattern !== 'None' ? '#00d4aa' : '#4a5568'} />
+                                    <HudSectionHeader label="ACTIVE PATTERNS" color="#7c3aed" />
+                                    <HudRow label="Chart Pattern" value={last.activePattern || 'None'} valColor={last.activePattern !== 'None' ? '#059669' : '#94a3b8'} />
                                     <HudRow label="Divergence" value={last.divergenceStatus || 'None'} dot={divColor} valColor={divColor} />
 
                                     {/* Market State Section */}
-                                    <HudSectionHeader label="MARKET STATE" color="#f59e0b" />
+                                    <HudSectionHeader label="MARKET STATE" color="#d97706" />
                                     <HudRow label="Volatility" value={volLabel} dot={volColor} valColor={volColor} />
                                     <HudRow label="Trend" value={trendLabel} dot={trendColor} valColor={trendColor} />
                                     <HudRow label="Quantum Signal" value={hasSignal ? signalLabel : '—'} valColor={signalColor} />
-
                                 </div>
 
                                 {/* Footer signal badge */}
-                                <div style={{
-                                    borderTop: '1px solid rgba(100,120,200,0.15)',
-                                    padding: '8px 14px',
-                                    textAlign: 'center',
-                                    background: hasSignal
-                                        ? isBull ? 'rgba(0,212,170,0.08)' : 'rgba(255,77,77,0.08)'
-                                        : 'rgba(255,255,255,0.03)',
-                                    animation: hasSignal ? 'pulse 2s infinite' : 'none',
-                                }}>
-                                    <span style={{
-                                        fontSize: 11,
-                                        fontWeight: 900,
-                                        letterSpacing: '0.18em',
-                                        color: signalColor,
-                                        textTransform: 'uppercase',
-                                    }}>
+                                <div className={`border-t border-gray-200 dark:border-white/10 px-3.5 py-2 text-center transition-all ${
+                                    hasSignal
+                                        ? isBull ? 'bg-emerald-50 dark:bg-emerald-500/10' : 'bg-rose-50 dark:bg-rose-500/10'
+                                        : 'bg-gray-50 dark:bg-white/5'
+                                }`}>
+                                    <span style={{ color: signalColor }} className="text-[11px] font-black tracking-widest uppercase">
                                         {hasSignal ? `⚡ ${signalLabel} SIGNAL` : '○ NO SIGNAL'}
                                     </span>
                                 </div>

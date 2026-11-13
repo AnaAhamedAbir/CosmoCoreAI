@@ -27,22 +27,27 @@ export const FibonacciCloudRenderer: React.FC<FibonacciCloudRendererProps> = ({ 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const drawRequested = useRef<boolean>(false);
 
-    const requestDraw = useCallback(() => {
-        if (!drawRequested.current) {
-            drawRequested.current = true;
-            requestAnimationFrame(() => {
-                drawRequested.current = false;
-                drawClouds();
-            });
-        }
-    }, [chart, series, data]);
-
     const drawClouds = useCallback(() => {
         if (!canvasRef.current) return;
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const parent = canvas.parentElement;
+        if (parent) {
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const targetW = Math.round(parent.clientWidth * dpr);
+            const targetH = Math.round(parent.clientHeight * dpr);
+            if (canvas.width !== targetW || canvas.height !== targetH) {
+                canvas.width = targetW;
+                canvas.height = targetH;
+                canvas.style.width = `${parent.clientWidth}px`;
+                canvas.style.height = `${parent.clientHeight}px`;
+            }
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        ctx.clearRect(0, 0, canvas.parentElement?.clientWidth || canvas.width, canvas.parentElement?.clientHeight || canvas.height);
 
         if (!chart || !series || !data) return;
 
@@ -51,11 +56,6 @@ export const FibonacciCloudRenderer: React.FC<FibonacciCloudRendererProps> = ({ 
         if (!timeScale || !priceScale) return;
 
         const timeWidth = timeScale.width();
-        const parent = canvas.parentElement;
-        if (parent) {
-            if (canvas.width !== parent.clientWidth) canvas.width = parent.clientWidth;
-            if (canvas.height !== parent.clientHeight) canvas.height = parent.clientHeight;
-        }
 
         const { levels, highest, lowest, highTime, lowTime } = data;
         
@@ -127,6 +127,23 @@ export const FibonacciCloudRenderer: React.FC<FibonacciCloudRendererProps> = ({ 
         }
 
     }, [chart, series, data]);
+
+    const drawCloudsRef = useRef(drawClouds);
+    drawCloudsRef.current = drawClouds;
+
+    const requestDraw = useCallback(() => {
+        if (!drawRequested.current) {
+            drawRequested.current = true;
+            requestAnimationFrame(() => {
+                drawRequested.current = false;
+                drawCloudsRef.current();
+            });
+        }
+    }, []);
+
+    useEffect(() => {
+        requestDraw();
+    }, [data, requestDraw]);
 
     useEffect(() => {
         if (!chart || !series) return;

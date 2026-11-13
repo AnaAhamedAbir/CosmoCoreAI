@@ -130,9 +130,11 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart,
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        if (!chart || !series || !visible || !data || data.points.length === 0) return;
+        if (!chart || !series || !visible || !data || data.points.length === 0) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            return;
+        }
 
         const timeScale = chart.timeScale();
         const priceScale = series.priceScale();
@@ -140,9 +142,19 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart,
 
         const parent = canvas.parentElement;
         if (parent) {
-            if (canvas.width !== parent.clientWidth) canvas.width = parent.clientWidth;
-            if (canvas.height !== parent.clientHeight) canvas.height = parent.clientHeight;
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const targetW = Math.round(parent.clientWidth * dpr);
+            const targetH = Math.round(parent.clientHeight * dpr);
+            if (canvas.width !== targetW || canvas.height !== targetH) {
+                canvas.width = targetW;
+                canvas.height = targetH;
+                canvas.style.width = `${parent.clientWidth}px`;
+                canvas.style.height = `${parent.clientHeight}px`;
+            }
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
+
+        ctx.clearRect(0, 0, canvas.parentElement?.clientWidth || canvas.width, canvas.parentElement?.clientHeight || canvas.height);
 
         const logicalRange = timeScale.getVisibleLogicalRange();
         if (!logicalRange) return;
@@ -222,7 +234,7 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart,
 
         // --- DRAW BOTTOM VOLUME BADGE ---
         const volBadgeX = 20;
-        const volBadgeY = ctx.canvas.height / window.devicePixelRatio - 55;
+        const volBadgeY = (parent?.clientHeight || 400) - 55;
         const volBadgeWidth = 180;
         const volBadgeHeight = 30;
 
@@ -291,15 +303,22 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart,
         }
     }, [chart, series, data, visible]);
 
+    const drawCloudRef = useRef(drawCloud);
+    drawCloudRef.current = drawCloud;
+
     const requestDraw = useCallback(() => {
         if (!drawRequested.current) {
             drawRequested.current = true;
             requestAnimationFrame(() => {
                 drawRequested.current = false;
-                drawCloud();
+                drawCloudRef.current();
             });
         }
-    }, [drawCloud]);
+    }, []);
+
+    useEffect(() => {
+        if (visible && data) requestDraw();
+    }, [data, visible, threshold, hideLowConfidenceTrend, requestDraw]);
 
     useEffect(() => {
         if (!chart || !series || !visible) {

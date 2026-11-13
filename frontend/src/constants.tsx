@@ -1530,8 +1530,23 @@ export const AssistantIcon = ({ className = "h-6 w-6" }: { className?: string })
 );
 export const Logo = ({ className }: { className?: string }) => (
     <div className={`flex flex-col items-center -mt-6 ${className}`}>
-        <img src="/logo.png" alt="CosmoQuantAI" className="h-32 w-auto object-contain" />
-        <span className="font-bold text-2xl text-slate-900 dark:text-white -mt-10">CosmoQuantAI</span>
+        <div className="relative flex items-center justify-center">
+            {/* Dark cosmic aura behind logo in light mode so the emblem retains its original rich dark cosmic colors */}
+            <div 
+                className="absolute w-24 h-24 rounded-full bg-[#070A13] blur-lg opacity-95 dark:opacity-0 transition-opacity pointer-events-none"
+                style={{
+                    boxShadow: '0 0 32px 18px #070A13'
+                }}
+            />
+            <img 
+                src="/logo.png" 
+                alt="CosmoQuantAI" 
+                className="relative z-10 h-32 w-auto object-contain drop-shadow-[0_0_12px_rgba(99,102,241,0.25)]" 
+            />
+        </div>
+        <span className="relative z-10 font-bold text-2xl text-slate-900 dark:text-white -mt-10 tracking-tight">
+            CosmoQuantAI
+        </span>
     </div>
 );
 

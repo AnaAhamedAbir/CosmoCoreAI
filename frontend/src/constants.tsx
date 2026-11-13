@@ -1528,23 +1528,22 @@ export const AssistantIcon = ({ className = "h-6 w-6" }: { className?: string })
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
     </svg>
 );
-export const Logo = ({ className }: { className?: string }) => (
-    <div className={`flex flex-col items-center -mt-6 ${className}`}>
-        <div className="relative flex items-center justify-center">
-            {/* Dark cosmic aura behind logo in light mode so the emblem retains its original rich dark cosmic colors */}
-            <div 
-                className="absolute w-24 h-24 rounded-full bg-[#070A13] blur-lg opacity-95 dark:opacity-0 transition-opacity pointer-events-none"
-                style={{
-                    boxShadow: '0 0 32px 18px #070A13'
-                }}
-            />
+export const Logo = ({ className = '' }: { className?: string }) => (
+    <div className={`flex flex-col items-center -mt-6 select-none ${className}`}>
+        <div className="relative flex flex-col items-center justify-center">
+            {/* The Logo Image with Realistic Multi-Layered Drop Shadow System */}
             <img 
                 src="/logo.png" 
                 alt="CosmoQuantAI" 
-                className="relative z-10 h-32 w-auto object-contain drop-shadow-[0_0_12px_rgba(99,102,241,0.25)]" 
+                className="relative z-10 h-32 w-auto object-contain transition-all duration-300 drop-shadow-[0_4px_6px_rgba(15,23,42,0.18)] drop-shadow-[0_12px_22px_rgba(15,23,42,0.14)] drop-shadow-[0_20px_35px_rgba(99,102,241,0.20)] dark:drop-shadow-[0_0_20px_rgba(99,102,241,0.45)]" 
+            />
+
+            {/* Floating 3D ground contact shadow directly under the emblem */}
+            <div 
+                className="w-24 h-2.5 rounded-[50%] bg-gradient-to-r from-transparent via-slate-800/25 dark:via-indigo-500/30 to-transparent blur-sm -mt-9 mb-1 pointer-events-none transition-all duration-300"
             />
         </div>
-        <span className="relative z-10 font-bold text-2xl text-slate-900 dark:text-white -mt-10 tracking-tight">
+        <span className="relative z-10 font-extrabold text-2xl text-slate-900 dark:text-white -mt-1 tracking-tight cosmo-3d-text">
             CosmoQuantAI
         </span>
     </div>

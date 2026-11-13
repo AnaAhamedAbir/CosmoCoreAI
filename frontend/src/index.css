@@ -2047,3 +2047,30 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   }
 }
 
+/* ==========================================================================
+   3D Typography & Shadow System for CosmoQuantAI Brand Logo
+   ========================================================================== */
+.cosmo-3d-text {
+  /* Light Mode: Multi-stage 3D extrusion, top specular bevel highlight, and deep ambient cast shadow */
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95),
+    0 1px 1px rgba(15, 23, 42, 0.35),
+    0 2px 3px rgba(15, 23, 42, 0.22),
+    0 4px 6px rgba(15, 23, 42, 0.16),
+    0 7px 12px rgba(15, 23, 42, 0.10),
+    0 12px 24px rgba(99, 102, 241, 0.14);
+  letter-spacing: -0.02em;
+}
+
+.dark .cosmo-3d-text {
+  /* Dark Mode: Deep 3D extrusion with vibrant cosmic neon violet edge illumination */
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.95),
+    0 2px 3px rgba(0, 0, 0, 0.75),
+    0 4px 6px rgba(0, 0, 0, 0.50),
+    0 0 14px rgba(99, 102, 241, 0.60),
+    0 0 28px rgba(99, 102, 241, 0.35);
+  letter-spacing: -0.02em;
+}
+
+

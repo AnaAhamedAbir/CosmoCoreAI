@@ -1502,11 +1502,12 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             return;
         }
 
+        let isCancelled = false;
         let lastVersion = -1;
         const runMsbObCalc = () => {
-            if (document.hidden) return;
+            if (document.hidden || isCancelled) return;
             const candles = allCandlesRef.current;
-            if (candles.length < 10) return;
+            if (!candles || candles.length < 10) return;
             if (lastVersion === candlesVersionRef.current) return;
             lastVersion = candlesVersionRef.current;
             try {
@@ -1516,35 +1517,27 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                     indicatorSettings.msbObFibFactor,
                     indicatorSettings.msbObDeleteBroken
                 );
-                setMsbObData(result);
+                if (!isCancelled) {
+                    setMsbObData(result);
+                }
             } catch (err) {
                 console.warn('MSB-OB calculation error:', err);
             }
         };
 
+        // Run immediately when settings change or indicator is enabled
         setTimeout(runMsbObCalc, 0);
-        const intervalId = setInterval(runMsbObCalc, isThermalGuard ? 7500 : 5000);
+        const intervalId = setInterval(runMsbObCalc, isThermalGuard ? 6000 : 4000);
 
-        return () => clearInterval(intervalId);
+        return () => {
+            isCancelled = true;
+            clearInterval(intervalId);
+        };
     }, [
-        indicatorSettings.showICTKillzones,
-        indicatorSettings.ictAsiaSession,
-        indicatorSettings.ictLondonSession,
-        indicatorSettings.ictNyAmSession,
-        indicatorSettings.ictNyLunchSession,
-        indicatorSettings.ictNyPmSession,
-        indicatorSettings.ictShowMidnightOpen,
-        indicatorSettings.ictShowPivots,
-        indicatorSettings.ictShowDWM,
-        indicatorSettings.ictShowOpeningPrices,
-        indicatorSettings.ictShowTimestamps,
-        indicatorSettings.ictPivotsExtend,
-        indicatorSettings.ictShowSilverBullet,
-        indicatorSettings.ictShowConfluence,
-        indicatorSettings.ictShowAMD,
-        indicatorSettings.ictShowGaps,
-        indicatorSettings.ictShowVolatility,
-        indicatorSettings.ictShowEquilibrium,
+        indicatorSettings.showMsbOb,
+        indicatorSettings.msbObZigzagLen,
+        indicatorSettings.msbObFibFactor,
+        indicatorSettings.msbObDeleteBroken,
         isThermalGuard
     ]);
 

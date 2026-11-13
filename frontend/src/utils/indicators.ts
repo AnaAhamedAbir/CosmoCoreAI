@@ -29,6 +29,8 @@ export interface MsbObZone {
     bottom: number;
     startX: number;
     endX: number;
+    startTime?: any;
+    endTime?: any;
     isBroken: boolean;
     id: string;
 }
@@ -48,6 +50,7 @@ export interface MsbObDataPoint {
 export interface MsbObResult {
     points: MsbObDataPoint[];
     zones: MsbObZone[];
+    zigzagPoints?: { time: any; price: number; type: 'high' | 'low'; idx: number }[];
 }
 
 // Simple Moving Average
@@ -1456,7 +1459,8 @@ export const calculateMsbOb = (
     const zl = Math.max(1, Math.floor(Number(zigzagLen) || 9));
     const points: MsbObDataPoint[] = [];
     const zones: MsbObZone[] = [];
-    if (!Array.isArray(data) || data.length < zl * 2) return { points, zones };
+    const zigzagPoints: { time: any; price: number; type: 'high' | 'low'; idx: number }[] = [];
+    if (!Array.isArray(data) || data.length < zl * 2) return { points, zones, zigzagPoints };
 
     const highPointsArr: { val: number; idx: number }[] = [];
     const lowPointsArr: { val: number; idx: number }[] = [];
@@ -1473,7 +1477,7 @@ export const calculateMsbOb = (
         // --- ZigZag Logic ---
         let highest = -Infinity;
         let lowest = Infinity;
-        for (let j = Math.max(0, i - zigzagLen + 1); j <= i; j++) {
+        for (let j = Math.max(0, i - zl + 1); j <= i; j++) {
             if (data[j].high > highest) highest = data[j].high;
             if (data[j].low < lowest) lowest = data[j].low;
         }
@@ -1500,6 +1504,12 @@ export const calculateMsbOb = (
                     }
                 }
                 lowPointsArr.push({ val: lowestVal, idx: lowestIdx });
+                zigzagPoints.push({
+                    time: data[lowestIdx].time,
+                    price: lowestVal,
+                    type: 'low',
+                    idx: lowestIdx
+                });
             } else {
                 // High point formed
                 let highestVal = -Infinity;
@@ -1511,6 +1521,12 @@ export const calculateMsbOb = (
                     }
                 }
                 highPointsArr.push({ val: highestVal, idx: highestIdx });
+                zigzagPoints.push({
+                    time: data[highestIdx].time,
+                    price: highestVal,
+                    type: 'high',
+                    idx: highestIdx
+                });
             }
             lastTrendChangeIdx = i;
         }
@@ -1551,14 +1567,16 @@ export const calculateMsbOb = (
                             bottom: data[buObIdx].low,
                             startX: buObIdx,
                             endX: i + 10,
+                            startTime: data[buObIdx].time,
+                            endTime: null,
                             isBroken: false,
                             id: `bu-ob-${buObIdx}-${i}`
                         });
                     }
 
-                    // Create Bu-BB: Last up candle between l1-zigzagLen and h1
+                    // Create Bu-BB: Last up candle between l1-zl and h1
                     let buBbIdx = -1;
-                    for (let j = Math.max(0, l1.idx - zigzagLen); j <= h1.idx; j++) {
+                    for (let j = Math.max(0, l1.idx - zl); j <= h1.idx; j++) {
                         if (data[j].open < data[j].close) buBbIdx = j;
                     }
                     if (buBbIdx !== -1) {
@@ -1568,6 +1586,8 @@ export const calculateMsbOb = (
                             bottom: data[buBbIdx].low,
                             startX: buBbIdx,
                             endX: i + 10,
+                            startTime: data[buBbIdx].time,
+                            endTime: null,
                             isBroken: false,
                             id: `bu-bb-${buBbIdx}-${i}`
                         });
@@ -1589,14 +1609,16 @@ export const calculateMsbOb = (
                             bottom: data[beObIdx].low,
                             startX: beObIdx,
                             endX: i + 10,
+                            startTime: data[beObIdx].time,
+                            endTime: null,
                             isBroken: false,
                             id: `be-ob-${beObIdx}-${i}`
                         });
                     }
 
-                    // Create Be-BB: Last down candle between h1-zigzagLen and l1
+                    // Create Be-BB: Last down candle between h1-zl and l1
                     let beBbIdx = -1;
-                    for (let j = Math.max(0, h1.idx - zigzagLen); j <= l1.idx; j++) {
+                    for (let j = Math.max(0, h1.idx - zl); j <= l1.idx; j++) {
                         if (data[j].open > data[j].close) beBbIdx = j;
                     }
                     if (beBbIdx !== -1) {
@@ -1606,6 +1628,8 @@ export const calculateMsbOb = (
                             bottom: data[beBbIdx].low,
                             startX: beBbIdx,
                             endX: i + 10,
+                            startTime: data[beBbIdx].time,
+                            endTime: null,
                             isBroken: false,
                             id: `be-bb-${beBbIdx}-${i}`
                         });
@@ -1622,9 +1646,15 @@ export const calculateMsbOb = (
             z.endX = i + 10;
             
             if (z.type.startsWith('Bu')) {
-                if (bar.close < z.bottom) z.isBroken = true;
+                if (bar.close < z.bottom) {
+                    z.isBroken = true;
+                    z.endTime = bar.time;
+                }
             } else {
-                if (bar.close > z.top) z.isBroken = true;
+                if (bar.close > z.top) {
+                    z.isBroken = true;
+                    z.endTime = bar.time;
+                }
             }
             
             if (deleteBroken && z.isBroken) {
@@ -1645,7 +1675,8 @@ export const calculateMsbOb = (
         });
     }
 
-    return { points, zones };
+    zigzagPoints.sort((a, b) => a.idx - b.idx);
+    return { points, zones, zigzagPoints };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

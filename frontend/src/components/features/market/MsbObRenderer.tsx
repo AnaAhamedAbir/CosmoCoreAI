@@ -48,8 +48,27 @@ class MsbObRendererImpl implements IPrimitivePaneRenderer {
         const logicalRange = timeScale.getVisibleLogicalRange();
         if (!logicalRange) return;
 
-        const getX = (time: any) => timeScale.timeToCoordinate(time);
-        const getY = (price: number) => series.priceToCoordinate(price);
+        const getX = (time: any): number | null => {
+            if (time === undefined || time === null) return null;
+            let ts = time;
+            if (typeof time === 'number' && time > 10_000_000_000) {
+                ts = Math.floor(time / 1000);
+            }
+            try {
+                return timeScale.timeToCoordinate(ts as any);
+            } catch {
+                return null;
+            }
+        };
+
+        const getY = (price: number): number | null => {
+            if (typeof price !== 'number' || isNaN(price)) return null;
+            try {
+                return series.priceToCoordinate(price);
+            } catch {
+                return null;
+            }
+        };
 
         const startIdx = Math.max(0, Math.floor(logicalRange.from) - 5);
         const endIdx = Math.min(data.points.length - 1, Math.ceil(logicalRange.to) + 5);
@@ -58,63 +77,87 @@ class MsbObRendererImpl implements IPrimitivePaneRenderer {
 
         // --- 1. Draw ZigZag ---
         if (showZigzag) {
-            let lastX: number | null = null;
-            let lastY: number | null = null;
+            const zPoints = (data.zigzagPoints && data.zigzagPoints.length > 0)
+                ? data.zigzagPoints
+                : data.points.filter((p) => p.isHigh || p.isLow);
 
-            ctx.beginPath();
-            ctx.setLineDash([2, 4]);
-            ctx.strokeStyle = '#f97316';
-            ctx.lineWidth = 1;
+            if (zPoints.length > 0) {
+                ctx.beginPath();
+                ctx.setLineDash([3, 3]);
+                ctx.strokeStyle = '#f97316';
+                ctx.lineWidth = 1.5;
 
-            for (let i = startIdx; i <= endIdx; i++) {
-                const pt = data.points[i];
-                if (pt && pt.zigzagPrice !== null) {
-                    const x = getX(pt.time);
-                    const y = getY(pt.zigzagPrice);
+                let started = false;
+                for (const zp of zPoints) {
+                    const x = getX(zp.time);
+                    const price = 'price' in zp ? (zp as any).price : (zp.isHigh ? zp.high : zp.low);
+                    const y = getY(price);
                     if (x !== null && y !== null) {
-                        if (lastX !== null && lastY !== null) {
-                            ctx.moveTo(lastX, lastY);
+                        if (!started) {
+                            ctx.moveTo(x, y);
+                            started = true;
+                        } else {
                             ctx.lineTo(x, y);
                         }
-                        lastX = x;
-                        lastY = y;
                     }
                 }
+                ctx.stroke();
+                ctx.setLineDash([]);
             }
-            ctx.stroke();
-            ctx.setLineDash([]);
         }
 
         // --- 2. Draw Zones (OB/BB) ---
         const viewWidth = width;
         data.zones.forEach((zone) => {
-            const startX = getX(ohlcData[zone.startX]?.time);
-            const endX = getX(ohlcData[Math.min(zone.endX, ohlcData.length - 1)]?.time) || viewWidth + 50;
-            if (startX !== null && endX < -50) return;
-            if (startX !== null && startX > viewWidth + 50) return;
+            const startTime = zone.startTime ?? ohlcData[zone.startX]?.time;
+            const startX = getX(startTime);
+
+            let endX: number | null = null;
+            if (zone.endTime) {
+                endX = getX(zone.endTime);
+            } else if (zone.endX < ohlcData.length) {
+                endX = getX(ohlcData[zone.endX]?.time);
+            }
+            if (endX === null) {
+                endX = viewWidth + 50;
+            }
+
+            // Allow zones starting prior to visible range to display across visible screen
+            let resolvedStartX = startX;
+            if (resolvedStartX === null) {
+                if (zone.startX < startIdx) {
+                    resolvedStartX = -10;
+                }
+            }
+
+            if (resolvedStartX === null) return;
+            if (endX < -50 || resolvedStartX > viewWidth + 50) return;
 
             const topY = getY(zone.top);
             const bottomY = getY(zone.bottom);
 
-            if (startX !== null && topY !== null && bottomY !== null) {
+            if (topY !== null && bottomY !== null) {
                 const isBull = zone.type.startsWith('Bu');
-                const bgColor = isBull ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)';
-                const borderColor = isBull ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)';
+                const bgColor = isBull ? 'rgba(34, 197, 94, 0.18)' : 'rgba(239, 68, 68, 0.18)';
+                const borderColor = isBull ? 'rgba(34, 197, 94, 0.65)' : 'rgba(239, 68, 68, 0.65)';
                 const textColor = isBull ? '#22c55e' : '#ef4444';
 
-                const zWidth = endX - startX;
-                const zHeight = bottomY - topY;
+                const boxLeft = Math.max(-10, Math.min(resolvedStartX, endX));
+                const boxRight = Math.min(viewWidth + 50, Math.max(resolvedStartX, endX));
+                const boxTop = Math.min(topY, bottomY);
+                const boxHeight = Math.max(2, Math.abs(bottomY - topY));
+                const boxWidth = Math.max(2, boxRight - boxLeft);
 
                 ctx.fillStyle = bgColor;
-                ctx.fillRect(startX, topY, zWidth, zHeight);
+                ctx.fillRect(boxLeft, boxTop, boxWidth, boxHeight);
                 ctx.strokeStyle = borderColor;
                 ctx.lineWidth = 1;
-                ctx.strokeRect(startX, topY, zWidth, zHeight);
+                ctx.strokeRect(boxLeft, boxTop, boxWidth, boxHeight);
 
                 ctx.font = 'bold 9px Inter, sans-serif';
                 ctx.fillStyle = textColor;
                 ctx.textAlign = 'right';
-                ctx.fillText(zone.type, Math.min(viewWidth - 5, endX - 2), topY + 12);
+                ctx.fillText(zone.type, Math.min(viewWidth - 6, boxRight - 4), boxTop + 11);
             }
         });
 
@@ -129,19 +172,23 @@ class MsbObRendererImpl implements IPrimitivePaneRenderer {
                     const isBull = pt.msbType === 'Bullish';
                     const color = isBull ? '#22c55e' : '#ef4444';
 
+                    ctx.save();
                     ctx.beginPath();
+                    ctx.setLineDash([4, 2]);
                     ctx.strokeStyle = color;
-                    ctx.lineWidth = 2;
-                    const startX = getX(ohlcData[Math.max(0, i - 10)]?.time) || x - 50;
-                    ctx.moveTo(startX, y);
+                    ctx.lineWidth = 1.5;
+                    const prevX = getX(ohlcData[Math.max(0, i - 10)]?.time);
+                    const lineStartX = prevX !== null ? prevX : x - 50;
+                    ctx.moveTo(lineStartX, y);
                     ctx.lineTo(x, y);
                     ctx.stroke();
 
                     ctx.font = 'bold 10px Inter, sans-serif';
                     ctx.fillStyle = color;
                     ctx.textAlign = 'center';
-                    const labelY = isBull ? y - 15 : y + 25;
-                    ctx.fillText('MSB', x, labelY);
+                    const labelY = isBull ? y - 12 : y + 20;
+                    ctx.fillText(`MSB (${isBull ? '▲' : '▼'})`, x, labelY);
+                    ctx.restore();
                 }
             }
         }

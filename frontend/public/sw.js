@@ -1,5 +1,5 @@
 // CosmoQuantAI PWA Service Worker
-const CACHE_NAME = 'cosmoquant-cache-v3';
+const CACHE_NAME = 'cosmoquant-cache-v4';
 const PRECACHE_ASSETS = [
   '/manifest.json',
   '/pwa-192.png',
@@ -79,9 +79,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first for HTML navigation so deployments always serve fresh UI
+  // Network-first (bypassing HTTP disk cache) for HTML navigation so deployments always serve fresh UI
   event.respondWith(
-    fetch(req).catch(async () => {
+    fetch(req, { cache: 'no-store' }).catch(async () => {
       const cachedResponse = await caches.match(req);
       if (cachedResponse) {
         return cachedResponse;

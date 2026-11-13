@@ -1,167 +1,55 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import { IChartApi, ISeriesApi, LineSeries } from 'lightweight-charts';
-import { TrendFinderResult, TrendFinderDataPoint } from '../../../utils/indicators';
+import React, { useEffect, useRef } from 'react';
+import {
+    IChartApi,
+    ISeriesApi,
+    LineSeries,
+    ISeriesPrimitive,
+    IPrimitivePaneView,
+    IPrimitivePaneRenderer,
+    SeriesAttachedParameter
+} from 'lightweight-charts';
+import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { TrendFinderResult } from '../../../utils/indicators';
 
 interface TrendFinderRendererProps {
     chart: IChartApi | null;
     series: ISeriesApi<'Candlestick'> | null;
     data: TrendFinderResult | null;
-    visible: boolean;
-    threshold: string;
-    hideLowConfidenceTrend: boolean;
+    visible?: boolean;
+    threshold?: string;
+    hideLowConfidenceTrend?: boolean;
 }
 
-export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart, series, data, visible, threshold, hideLowConfidenceTrend }) => {
-    const midlineRef = useRef<ISeriesApi<'Line'> | null>(null);
-    const upperLineRef = useRef<ISeriesApi<'Line'> | null>(null);
-    const lowerLineRef = useRef<ISeriesApi<'Line'> | null>(null);
-    const initedRef = useRef(false);
-    
-    // Canvas variables for Cloud Fill
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const drawRequested = useRef<boolean>(false);
+class TrendFinderPrimitiveRenderer implements IPrimitivePaneRenderer {
+    private _primitive: TrendFinderPrimitive;
 
-    useEffect(() => {
-        if (!chart || !series) return;
+    constructor(primitive: TrendFinderPrimitive) {
+        this._primitive = primitive;
+    }
 
-        if (!initedRef.current) {
-            midlineRef.current = chart.addSeries(LineSeries, {
-                color: 'rgba(59, 130, 246, 0.8)', // Blue
-                lineWidth: 2,
-                lineStyle: 2, // Dashed
-                crosshairMarkerVisible: false,
-                lastValueVisible: false,
-                priceLineVisible: false,
-            });
+    draw(target: CanvasRenderingTarget2D): void {
+        target.useMediaCoordinateSpace((scope) => {
+            const ctx = scope.context;
+            this._drawContent(ctx, scope.mediaSize.width, scope.mediaSize.height);
+        });
+    }
 
-            upperLineRef.current = chart.addSeries(LineSeries, {
-                color: 'rgba(156, 163, 175, 0.4)', // Gray
-                lineWidth: 1,
-                lineStyle: 0, // Solid
-                crosshairMarkerVisible: false,
-                lastValueVisible: false,
-                priceLineVisible: false,
-            });
+    private _drawContent(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        const chart = this._primitive.chart;
+        const series = this._primitive.series;
+        const data = this._primitive.data;
+        const visible = this._primitive.visible;
+        const threshold = this._primitive.threshold;
+        const hideLowConfidenceTrend = this._primitive.hideLowConfidenceTrend;
 
-            lowerLineRef.current = chart.addSeries(LineSeries, {
-                color: 'rgba(156, 163, 175, 0.4)', // Gray
-                lineWidth: 1,
-                lineStyle: 0, // Solid
-                crosshairMarkerVisible: false,
-                lastValueVisible: false,
-                priceLineVisible: false,
-            });
-
-            initedRef.current = true;
-        }
-
-        return () => {
-            if (chart && initedRef.current) {
-                if (midlineRef.current) {
-                    try { chart.removeSeries(midlineRef.current); } catch(e) {}
-                    midlineRef.current = null;
-                }
-                if (upperLineRef.current) {
-                    try { chart.removeSeries(upperLineRef.current); } catch(e) {}
-                    upperLineRef.current = null;
-                }
-                if (lowerLineRef.current) {
-                    try { chart.removeSeries(lowerLineRef.current); } catch(e) {}
-                    lowerLineRef.current = null;
-                }
-                initedRef.current = false;
-            }
-        };
-    }, [chart, series]);
-
-    useEffect(() => {
-        if (!visible || !data || !initedRef.current) {
-            midlineRef.current?.setData([]);
-            upperLineRef.current?.setData([]);
-            lowerLineRef.current?.setData([]);
-            return;
-        }
-
-        try {
-            const validPoints = data.points.filter((p: any) => 
-                p && p.time && 
-                !isNaN(p.value) && isFinite(p.value) &&
-                !isNaN(p.upper) && isFinite(p.upper) &&
-                !isNaN(p.lower) && isFinite(p.lower)
-            );
-
-            // Deduplicate by time and ensure strict ascending order
-            const deduplicated: any[] = [];
-            const seenTimes = new Set<number>();
-            
-            for (const p of validPoints) {
-                const t = Number(p.time);
-                if (!seenTimes.has(t)) {
-                    seenTimes.add(t);
-                    deduplicated.push(p);
-                }
-            }
-            
-            deduplicated.sort((a, b) => Number(a.time) - Number(b.time));
-
-            if (deduplicated.length > 0) {
-                const midData = deduplicated.map(p => ({ time: p.time as any, value: p.value }));
-                const upperData = deduplicated.map(p => ({ time: p.time as any, value: p.upper }));
-                const lowerData = deduplicated.map(p => ({ time: p.time as any, value: p.lower }));
-
-                midlineRef.current?.setData(midData);
-                upperLineRef.current?.setData(upperData);
-                lowerLineRef.current?.setData(lowerData);
-            } else {
-                midlineRef.current?.setData([]);
-                upperLineRef.current?.setData([]);
-                lowerLineRef.current?.setData([]);
-            }
-        } catch (err) {
-            console.error('[TrendFinderRenderer] Error setting data:', err);
-        }
-
-    }, [data, visible]);
-
-    // --- CANVAS CLOUD FILL LOGIC ---
-    
-    const drawCloud = useCallback(() => {
-        if (!canvasRef.current) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        if (!chart || !series || !visible || !data || data.points.length === 0) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            return;
-        }
+        if (!chart || !series || !visible || !data || data.points.length === 0) return;
 
         const timeScale = chart.timeScale();
         const priceScale = series.priceScale();
         if (!timeScale || !priceScale) return;
 
-        const parent = canvas.parentElement;
-        if (parent) {
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            const targetW = Math.round(parent.clientWidth * dpr);
-            const targetH = Math.round(parent.clientHeight * dpr);
-            if (canvas.width !== targetW || canvas.height !== targetH) {
-                canvas.width = targetW;
-                canvas.height = targetH;
-                canvas.style.width = `${parent.clientWidth}px`;
-                canvas.style.height = `${parent.clientHeight}px`;
-            }
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        }
-
-        ctx.clearRect(0, 0, canvas.parentElement?.clientWidth || canvas.width, canvas.parentElement?.clientHeight || canvas.height);
-
-        const logicalRange = timeScale.getVisibleLogicalRange();
-        if (!logicalRange) return;
-
         const isBearish = data.trendDirection === 'bearish';
-        
-        // --- NEW: Confidence Based Colors ---
+
         const confidence_levels: { [key: string]: number } = {
             'Extremely Weak': 0.1,
             'Very Weak': 0.2,
@@ -181,27 +69,13 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart,
         const currentConf = confidence_levels[data.confidence] || 0.1;
         const targetConf = confidence_levels[threshold] || 0.92;
         const isMet = currentConf >= targetConf;
-        
-        // --- NEW: Hiding logic ---
+
         if (hideLowConfidenceTrend && !isMet) {
-            // Clean up lines if they exist
-            if (midlineRef.current) midlineRef.current.setData([]);
-            if (upperLineRef.current) upperLineRef.current.setData([]);
-            if (lowerLineRef.current) lowerLineRef.current.setData([]);
             return;
         }
-        
-        // --- DRAW TOP TREND BADGE ---
-        const badgeX = 20;
-        const badgeY = 20;
-        const badgeWidth = 240; // Original width for trend only
-        const badgeHeight = 35;
-        
-        // Draw background
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.strokeStyle = isMet ? (isBearish ? '#ef4444' : '#22c55e') : 'rgba(255, 255, 255, 0.1)';
-        ctx.lineWidth = 1;
-        
+
+        ctx.save();
+
         // Rounded rect helper
         const roundedRect = (x: number, y: number, w: number, h: number, r: number) => {
             ctx.beginPath();
@@ -218,14 +92,22 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart,
             ctx.fill();
             ctx.stroke();
         };
-        
+
+        // --- DRAW TOP TREND BADGE ---
+        const badgeX = 20;
+        const badgeY = 20;
+        const badgeWidth = 240;
+        const badgeHeight = 35;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.strokeStyle = isMet ? (isBearish ? '#ef4444' : '#22c55e') : 'rgba(255, 255, 255, 0.1)';
+        ctx.lineWidth = 1;
         roundedRect(badgeX, badgeY, badgeWidth, badgeHeight, 8);
-        
-        // Text
+
         ctx.font = 'bold 10px Inter, sans-serif';
         ctx.fillStyle = '#94a3b8';
         ctx.fillText('TREND', badgeX + 10, badgeY + 22);
-        
+
         ctx.font = '900 12px Inter, sans-serif';
         const statusColor = isMet ? (isBearish ? '#ef4444' : '#22c55e') : '#64748b';
         ctx.fillStyle = statusColor;
@@ -234,27 +116,25 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart,
 
         // --- DRAW BOTTOM VOLUME BADGE ---
         const volBadgeX = 20;
-        const volBadgeY = (parent?.clientHeight || 400) - 55;
+        const volBadgeY = height - 55;
         const volBadgeWidth = 180;
         const volBadgeHeight = 30;
 
-        // Draw background
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.strokeStyle = data.volumeConfirmed ? '#22c55e' : '#ef4444';
         ctx.lineWidth = 1;
         roundedRect(volBadgeX, volBadgeY, volBadgeWidth, volBadgeHeight, 6);
 
-        // Text
         const formatVol = (v: number) => {
             if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
             if (v >= 1000) return (v / 1000).toFixed(1) + 'K';
             return v.toFixed(0);
         };
-        
+
         ctx.font = 'bold 9px Inter, sans-serif';
         ctx.fillStyle = '#94a3b8';
         ctx.fillText('VOL CONFIRMATION', volBadgeX + 10, volBadgeY + 18);
-        
+
         const volText = `${formatVol(data.currentVolume)} / ${formatVol(data.requiredVolume)}`;
         const volColor = data.volumeConfirmed ? '#22c55e' : '#ef4444';
         ctx.font = 'bold 10px Inter, sans-serif';
@@ -262,16 +142,14 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart,
         ctx.fillText(volText, volBadgeX + 105, volBadgeY + 18);
 
         // --- DRAW CLOUD ---
-        // Base colors with opacity linked to confidence
-        // If met, use stronger colors. If not, use dim colors.
         const opacity = isMet ? 0.25 : 0.08;
-        ctx.fillStyle = isBearish 
-            ? `rgba(239, 68, 68, ${opacity})` 
+        ctx.fillStyle = isBearish
+            ? `rgba(239, 68, 68, ${opacity})`
             : `rgba(34, 197, 94, ${opacity})`;
 
         ctx.beginPath();
         let started = false;
-        
+
         // 1. Draw top band going FORWARDS
         for (let i = 0; i < data.points.length; i++) {
             const pt = data.points[i];
@@ -286,7 +164,7 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart,
                 }
             }
         }
-        
+
         // 2. Draw bottom band going BACKWARDS
         for (let i = data.points.length - 1; i >= 0; i--) {
             const pt = data.points[i];
@@ -296,51 +174,216 @@ export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({ chart,
                 ctx.lineTo(x, yBot);
             }
         }
-        
+
         if (started) {
             ctx.closePath();
             ctx.fill();
         }
-    }, [chart, series, data, visible]);
 
-    const drawCloudRef = useRef(drawCloud);
-    drawCloudRef.current = drawCloud;
+        ctx.restore();
+    }
+}
 
-    const requestDraw = useCallback(() => {
-        if (!drawRequested.current) {
-            drawRequested.current = true;
-            requestAnimationFrame(() => {
-                drawRequested.current = false;
-                drawCloudRef.current();
+class TrendFinderPaneView implements IPrimitivePaneView {
+    private _renderer: TrendFinderPrimitiveRenderer;
+
+    constructor(primitive: TrendFinderPrimitive) {
+        this._renderer = new TrendFinderPrimitiveRenderer(primitive);
+    }
+
+    zOrder(): 'bottom' {
+        return 'bottom';
+    }
+
+    renderer(): IPrimitivePaneRenderer | null {
+        return this._renderer;
+    }
+}
+
+class TrendFinderPrimitive implements ISeriesPrimitive<any> {
+    public chart: IChartApi | null = null;
+    public series: ISeriesApi<'Candlestick'> | null = null;
+    public data: TrendFinderResult | null = null;
+    public visible: boolean = true;
+    public threshold: string = 'Strong';
+    public hideLowConfidenceTrend: boolean = false;
+
+    private _requestUpdate?: () => void;
+    private _paneViews: TrendFinderPaneView[];
+
+    constructor(
+        data: TrendFinderResult | null,
+        visible: boolean,
+        threshold: string,
+        hideLowConfidenceTrend: boolean
+    ) {
+        this.data = data;
+        this.visible = visible;
+        this.threshold = threshold;
+        this.hideLowConfidenceTrend = hideLowConfidenceTrend;
+        this._paneViews = [new TrendFinderPaneView(this)];
+    }
+
+    attached(param: SeriesAttachedParameter<any, any>): void {
+        this.chart = param.chart as unknown as IChartApi;
+        this.series = param.series as unknown as ISeriesApi<'Candlestick'>;
+        this._requestUpdate = param.requestUpdate;
+        this.requestUpdate();
+    }
+
+    detached(): void {
+        this.chart = null;
+        this.series = null;
+        this._requestUpdate = undefined;
+    }
+
+    updateParams(
+        data: TrendFinderResult | null,
+        visible: boolean,
+        threshold: string,
+        hideLowConfidenceTrend: boolean
+    ): void {
+        this.data = data;
+        this.visible = visible;
+        this.threshold = threshold;
+        this.hideLowConfidenceTrend = hideLowConfidenceTrend;
+        this.requestUpdate();
+    }
+
+    requestUpdate(): void {
+        this._requestUpdate?.();
+    }
+
+    updateAllViews(): void {}
+
+    paneViews(): readonly IPrimitivePaneView[] {
+        return this._paneViews;
+    }
+}
+
+export const TrendFinderRenderer: React.FC<TrendFinderRendererProps> = ({
+    chart,
+    series,
+    data,
+    visible = true,
+    threshold = 'Strong',
+    hideLowConfidenceTrend = false,
+}) => {
+    const midlineRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const upperLineRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const lowerLineRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const initedRef = useRef<boolean>(false);
+    const primitiveRef = useRef<TrendFinderPrimitive | null>(null);
+
+    // Setup native LineSeries for Mid/Upper/Lower
+    useEffect(() => {
+        if (!chart || !series) return;
+
+        if (!initedRef.current) {
+            midlineRef.current = chart.addSeries(LineSeries, {
+                color: '#3b82f6',
+                lineWidth: 1,
+                lastValueVisible: false,
+                priceLineVisible: false,
+                crosshairMarkerVisible: false,
             });
+
+            upperLineRef.current = chart.addSeries(LineSeries, {
+                color: '#22c55e',
+                lineWidth: 1,
+                lastValueVisible: false,
+                priceLineVisible: false,
+                crosshairMarkerVisible: false,
+            });
+
+            lowerLineRef.current = chart.addSeries(LineSeries, {
+                color: '#ef4444',
+                lineWidth: 1,
+                lastValueVisible: false,
+                priceLineVisible: false,
+                crosshairMarkerVisible: false,
+            });
+
+            initedRef.current = true;
         }
-    }, []);
 
-    useEffect(() => {
-        if (visible && data) requestDraw();
-    }, [data, visible, threshold, hideLowConfidenceTrend, requestDraw]);
+        const primitive = new TrendFinderPrimitive(data, visible, threshold, hideLowConfidenceTrend);
+        primitiveRef.current = primitive;
+        series.attachPrimitive(primitive);
 
-    useEffect(() => {
-        if (!chart || !series || !visible) {
-            if (canvasRef.current) {
-                const ctx = canvasRef.current.getContext('2d');
-                if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        return () => {
+            if (chart) {
+                if (midlineRef.current) {
+                    try { chart.removeSeries(midlineRef.current); } catch(e) {}
+                    midlineRef.current = null;
+                }
+                if (upperLineRef.current) {
+                    try { chart.removeSeries(upperLineRef.current); } catch(e) {}
+                    upperLineRef.current = null;
+                }
+                if (lowerLineRef.current) {
+                    try { chart.removeSeries(lowerLineRef.current); } catch(e) {}
+                    lowerLineRef.current = null;
+                }
+                initedRef.current = false;
             }
+            try {
+                series.detachPrimitive(primitive);
+            } catch (e) {}
+            primitiveRef.current = null;
+        };
+    }, [chart, series]);
+
+    useEffect(() => {
+        if (primitiveRef.current) {
+            primitiveRef.current.updateParams(data, visible, threshold, hideLowConfidenceTrend);
+        }
+
+        if (!visible || !data || !initedRef.current) {
+            midlineRef.current?.setData([]);
+            upperLineRef.current?.setData([]);
+            lowerLineRef.current?.setData([]);
             return;
         }
-        requestDraw();
-        const timeScale = chart.timeScale();
-        timeScale.subscribeVisibleTimeRangeChange(requestDraw);
-        return () => {
-            timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
-        };
-    }, [chart, series, requestDraw, visible]);
 
-    return (
-        <canvas
-            ref={canvasRef}
-            className="absolute top-0 left-0 pointer-events-none"
-            style={{ zIndex: 1,  width: '100%', height: '100%' }}
-        />
-    );
+        try {
+            const validPoints = data.points.filter((p: any) =>
+                p && p.time &&
+                !isNaN(p.value) && isFinite(p.value) &&
+                !isNaN(p.upper) && isFinite(p.upper) &&
+                !isNaN(p.lower) && isFinite(p.lower)
+            );
+
+            const deduplicated: any[] = [];
+            const seenTimes = new Set<number>();
+
+            for (const p of validPoints) {
+                const t = Number(p.time);
+                if (!seenTimes.has(t)) {
+                    seenTimes.add(t);
+                    deduplicated.push(p);
+                }
+            }
+
+            deduplicated.sort((a, b) => Number(a.time) - Number(b.time));
+
+            if (deduplicated.length > 0) {
+                const midData = deduplicated.map(p => ({ time: p.time as any, value: p.value }));
+                const upperData = deduplicated.map(p => ({ time: p.time as any, value: p.upper }));
+                const lowerData = deduplicated.map(p => ({ time: p.time as any, value: p.lower }));
+
+                midlineRef.current?.setData(midData);
+                upperLineRef.current?.setData(upperData);
+                lowerLineRef.current?.setData(lowerData);
+            } else {
+                midlineRef.current?.setData([]);
+                upperLineRef.current?.setData([]);
+                lowerLineRef.current?.setData([]);
+            }
+        } catch (err) {
+            console.error('[TrendFinderRenderer] Error setting data:', err);
+        }
+    }, [data, visible, threshold, hideLowConfidenceTrend]);
+
+    return null;
 };

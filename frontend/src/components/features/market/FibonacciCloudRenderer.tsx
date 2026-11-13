@@ -1,5 +1,13 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import { IChartApi, ISeriesApi } from 'lightweight-charts';
+import React, { useEffect, useRef } from 'react';
+import {
+    IChartApi,
+    ISeriesApi,
+    ISeriesPrimitive,
+    IPrimitivePaneView,
+    IPrimitivePaneRenderer,
+    SeriesAttachedParameter
+} from 'lightweight-charts';
+import { CanvasRenderingTarget2D } from 'fancy-canvas';
 
 export interface FibonacciLevel {
     level: number;
@@ -23,31 +31,24 @@ interface FibonacciCloudRendererProps {
     data: FibonacciData | null;
 }
 
-export const FibonacciCloudRenderer: React.FC<FibonacciCloudRendererProps> = ({ chart, series, data }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const drawRequested = useRef<boolean>(false);
+class FibonacciCloudRendererImpl implements IPrimitivePaneRenderer {
+    private _primitive: FibonacciCloudPrimitive;
 
-    const drawClouds = useCallback(() => {
-        if (!canvasRef.current) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+    constructor(primitive: FibonacciCloudPrimitive) {
+        this._primitive = primitive;
+    }
 
-        const parent = canvas.parentElement;
-        if (parent) {
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            const targetW = Math.round(parent.clientWidth * dpr);
-            const targetH = Math.round(parent.clientHeight * dpr);
-            if (canvas.width !== targetW || canvas.height !== targetH) {
-                canvas.width = targetW;
-                canvas.height = targetH;
-                canvas.style.width = `${parent.clientWidth}px`;
-                canvas.style.height = `${parent.clientHeight}px`;
-            }
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        }
+    draw(target: CanvasRenderingTarget2D): void {
+        target.useMediaCoordinateSpace((scope) => {
+            const ctx = scope.context;
+            this._drawContent(ctx, scope.mediaSize.width, scope.mediaSize.height);
+        });
+    }
 
-        ctx.clearRect(0, 0, canvas.parentElement?.clientWidth || canvas.width, canvas.parentElement?.clientHeight || canvas.height);
+    private _drawContent(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        const chart = this._primitive.chart;
+        const series = this._primitive.series;
+        const data = this._primitive.data;
 
         if (!chart || !series || !data) return;
 
@@ -55,10 +56,11 @@ export const FibonacciCloudRenderer: React.FC<FibonacciCloudRendererProps> = ({ 
         const priceScale = series.priceScale();
         if (!timeScale || !priceScale) return;
 
-        const timeWidth = timeScale.width();
-
+        const timeWidth = width;
         const { levels, highest, lowest, highTime, lowTime } = data;
-        
+
+        ctx.save();
+
         // 1. Draw Clouds
         for (let i = 0; i < levels.length - 1; i++) {
             const top = levels[i + 1];
@@ -73,10 +75,10 @@ export const FibonacciCloudRenderer: React.FC<FibonacciCloudRendererProps> = ({ 
                 const startTime = Math.min(highTime, lowTime);
                 const xStart = timeScale.timeToCoordinate(startTime as any);
                 const xEnd = timeWidth;
-                
+
                 const drawX = xStart !== null ? Math.max(0, xStart) : 0;
-                
-                ctx.fillRect(drawX, Math.min(yTop, yBottom), xEnd - drawX, Math.abs(yTop - yBottom));
+
+                ctx.fillRect(drawX, Math.min(yTop, yBottom), Math.max(0, xEnd - drawX), Math.abs(yTop - yBottom));
             }
         }
 
@@ -99,11 +101,15 @@ export const FibonacciCloudRenderer: React.FC<FibonacciCloudRendererProps> = ({ 
 
                 // Label: level(price)
                 ctx.fillStyle = lvl.color;
-                ctx.font = 'bold 11px font-mono, sans-serif';
+                ctx.font = 'bold 11px monospace, sans-serif';
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'bottom';
-                
-                const formattedPrice = lvl.price < 0.0001 ? lvl.price.toFixed(8) : lvl.price < 1 ? lvl.price.toFixed(5) : lvl.price.toFixed(2);
+
+                const formattedPrice = lvl.price < 0.0001
+                    ? lvl.price.toFixed(8)
+                    : lvl.price < 1
+                    ? lvl.price.toFixed(5)
+                    : lvl.price.toFixed(2);
                 const label = `${lvl.level}(${formattedPrice})`;
                 ctx.fillText(label, drawX + 8, y - 4);
             }
@@ -123,47 +129,96 @@ export const FibonacciCloudRenderer: React.FC<FibonacciCloudRendererProps> = ({ 
             ctx.moveTo(xHigh, yHigh);
             ctx.lineTo(xLow, yLow);
             ctx.stroke();
-            ctx.setLineDash([]); // Reset dash for subsequent draws
+            ctx.setLineDash([]);
         }
 
-    }, [chart, series, data]);
+        ctx.restore();
+    }
+}
 
-    const drawCloudsRef = useRef(drawClouds);
-    drawCloudsRef.current = drawClouds;
+class FibonacciCloudPaneView implements IPrimitivePaneView {
+    private _renderer: FibonacciCloudRendererImpl;
 
-    const requestDraw = useCallback(() => {
-        if (!drawRequested.current) {
-            drawRequested.current = true;
-            requestAnimationFrame(() => {
-                drawRequested.current = false;
-                drawCloudsRef.current();
-            });
-        }
-    }, []);
+    constructor(primitive: FibonacciCloudPrimitive) {
+        this._renderer = new FibonacciCloudRendererImpl(primitive);
+    }
+
+    zOrder(): 'bottom' {
+        return 'bottom';
+    }
+
+    renderer(): IPrimitivePaneRenderer | null {
+        return this._renderer;
+    }
+}
+
+class FibonacciCloudPrimitive implements ISeriesPrimitive<any> {
+    public chart: IChartApi | null = null;
+    public series: ISeriesApi<'Candlestick'> | null = null;
+    public data: FibonacciData | null = null;
+
+    private _requestUpdate?: () => void;
+    private _paneViews: FibonacciCloudPaneView[];
+
+    constructor(data: FibonacciData | null) {
+        this.data = data;
+        this._paneViews = [new FibonacciCloudPaneView(this)];
+    }
+
+    attached(param: SeriesAttachedParameter<any, any>): void {
+        this.chart = param.chart as unknown as IChartApi;
+        this.series = param.series as unknown as ISeriesApi<'Candlestick'>;
+        this._requestUpdate = param.requestUpdate;
+        this.requestUpdate();
+    }
+
+    detached(): void {
+        this.chart = null;
+        this.series = null;
+        this._requestUpdate = undefined;
+    }
+
+    updateParams(data: FibonacciData | null): void {
+        this.data = data;
+        this.requestUpdate();
+    }
+
+    requestUpdate(): void {
+        this._requestUpdate?.();
+    }
+
+    updateAllViews(): void {}
+
+    paneViews(): readonly IPrimitivePaneView[] {
+        return this._paneViews;
+    }
+}
+
+export const FibonacciCloudRenderer: React.FC<FibonacciCloudRendererProps> = ({ chart, series, data }) => {
+    const primitiveRef = useRef<FibonacciCloudPrimitive | null>(null);
 
     useEffect(() => {
-        requestDraw();
-    }, [data, requestDraw]);
+        if (!series || !chart) return;
 
-    useEffect(() => {
-        if (!chart || !series) return;
-        requestDraw();
-
-        const timeScale = chart.timeScale();
-        timeScale.subscribeVisibleTimeRangeChange(requestDraw);
-        timeScale.subscribeSizeChange(requestDraw);
+        const primitive = new FibonacciCloudPrimitive(data);
+        primitiveRef.current = primitive;
+        series.attachPrimitive(primitive);
 
         return () => {
-            timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
-            timeScale.unsubscribeSizeChange(requestDraw);
+            try {
+                series.detachPrimitive(primitive);
+            } catch (e) {
+                // Ignore if already destroyed
+            }
+            primitiveRef.current = null;
         };
-    }, [chart, series, requestDraw]);
+    }, [chart, series]);
 
-    return (
-        <canvas
-            ref={canvasRef}
-            className="absolute top-0 left-0 pointer-events-none"
-            style={{ zIndex: 1 }}
-        />
-    );
+    useEffect(() => {
+        if (primitiveRef.current) {
+            primitiveRef.current.updateParams(data);
+        }
+    }, [data]);
+
+    return null;
 };

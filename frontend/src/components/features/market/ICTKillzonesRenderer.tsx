@@ -1,5 +1,13 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import React, { useEffect, useRef } from 'react';
+import type {
+    IChartApi,
+    ISeriesApi,
+    ISeriesPrimitive,
+    IPrimitivePaneView,
+    IPrimitivePaneRenderer,
+    SeriesAttachedParameter
+} from 'lightweight-charts';
+import { CanvasRenderingTarget2D } from 'fancy-canvas';
 import { ICTResult } from '../../../utils/ictKillzones';
 
 interface ICTKillzonesRendererProps {
@@ -7,41 +15,46 @@ interface ICTKillzonesRendererProps {
     series: ISeriesApi<'Candlestick'> | null;
     data: ICTResult | null;
     visible: boolean;
-    settings: any; // Using any for now to simplify
+    settings: any;
 }
 
-export const ICTKillzonesRenderer: React.FC<ICTKillzonesRendererProps> = ({
-    chart,
-    series,
-    data,
-    visible,
-    settings,
-}) => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const animFrameRef = useRef<number>(0);
+const hexToRgba = (hex: string, alpha: number) => {
+    if (!hex || hex.length < 7) return `rgba(255, 255, 255, ${alpha})`;
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
 
-    const render = useCallback(() => {
-        if (!containerRef.current || !chart || !data || !visible) {
-            if (containerRef.current) containerRef.current.innerHTML = '';
-            return;
-        }
+class ICTKillzonesRendererImpl implements IPrimitivePaneRenderer {
+    private _primitive: ICTKillzonesPrimitive;
 
-        const el = containerRef.current;
-        el.innerHTML = ''; // Clear previous draw
+    constructor(primitive: ICTKillzonesPrimitive) {
+        this._primitive = primitive;
+    }
 
-        const chartRect = (chart as any).chartElement?.()?.getBoundingClientRect?.() ??
-            el.parentElement?.getBoundingClientRect();
-        if (!chartRect) return;
+    draw(target: CanvasRenderingTarget2D): void {
+        target.useMediaCoordinateSpace((scope) => {
+            const ctx = scope.context;
+            this._drawContent(ctx, scope.mediaSize.width, scope.mediaSize.height);
+        });
+    }
+
+    private _drawContent(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+        const chart = this._primitive.chart;
+        const series = this._primitive.series;
+        const data = this._primitive.data;
+        const visible = this._primitive.visible;
+        const settings = this._primitive.settings;
+
+        if (!chart || !series || !data || !visible) return;
 
         const timeScale = chart.timeScale();
-        const W = el.offsetWidth;
-        const H = el.offsetHeight;
-        if (!W || !H) return;
+        const priceScale = series.priceScale();
+        if (!timeScale || !priceScale) return;
 
-        /** Convert unix timestamp (ms) to pixel X */
         const toX = (time: number): number | null => {
             try {
-                // Ensure time is in seconds for lightweight-charts
                 const t = time < 10_000_000_000 ? time : Math.floor(time / 1000);
                 return timeScale.timeToCoordinate(t as any);
             } catch {
@@ -49,24 +62,15 @@ export const ICTKillzonesRenderer: React.FC<ICTKillzonesRendererProps> = ({
             }
         };
 
-        /** Convert price to pixel Y */
         const toY = (price: number): number | null => {
             try {
-                return series?.priceToCoordinate(price) ?? null;
+                return series.priceToCoordinate(price);
             } catch {
                 return null;
             }
         };
 
-        // ── Drawing Helpers ──────────────────────────────────────────────────
-
-        /** Helper to convert hex to rgba */
-        const hexToRgba = (hex: string, alpha: number) => {
-            const r = parseInt(hex.slice(1, 3), 16);
-            const g = parseInt(hex.slice(3, 5), 16);
-            const b = parseInt(hex.slice(5, 7), 16);
-            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-        };
+        ctx.save();
 
         const drawBox = (x1: number, y1: number, x2: number, y2: number, bg: string, border: string = 'transparent', text?: string) => {
             const left = Math.max(0, Math.min(x1, x2));
@@ -75,71 +79,44 @@ export const ICTKillzonesRenderer: React.FC<ICTKillzonesRendererProps> = ({
             const height = Math.abs(y2 - y1);
             if (width < 1 || height < 1) return;
 
-            const div = document.createElement('div');
-            div.style.cssText = `
-                position:absolute;
-                left:${left}px;top:${top}px;
-                width:${Math.min(width, W - left)}px;
-                height:${Math.min(height, H - top)}px;
-                background:${bg};
-                border:1px solid ${border};
-                pointer-events:none;
-                box-sizing:border-box;
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                overflow:hidden;
-            `;
-            
-            if (text) {
-                const span = document.createElement('span');
-                span.innerText = text;
-                span.style.cssText = `
-                    color:rgba(255,255,255,0.4);
-                    font-size:10px;
-                    font-weight:bold;
-                    text-transform:uppercase;
-                    white-space:nowrap;
-                `;
-                div.appendChild(span);
+            ctx.fillStyle = bg;
+            ctx.fillRect(left, top, Math.min(width, W - left), Math.min(height, H - top));
+
+            if (border && border !== 'transparent') {
+                ctx.strokeStyle = border;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(left, top, Math.min(width, W - left), Math.min(height, H - top));
             }
-            
-            el.appendChild(div);
+
+            if (text) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+                ctx.font = 'bold 10px Inter, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(text.toUpperCase(), left + width / 2, top + height / 2);
+            }
         };
 
         const drawLine = (x1: number, y1: number, x2: number, y2: number, color: string, style: 'solid' | 'dashed' | 'dotted' = 'solid', width: number = 1, label?: string) => {
-            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.style.cssText = `position:absolute;left:0;top:0;width:${W}px;height:${H}px;pointer-events:none;overflow:visible`;
-            
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', String(x1));
-            line.setAttribute('y1', String(y1));
-            line.setAttribute('x2', String(x2));
-            line.setAttribute('y2', String(y2));
-            line.setAttribute('stroke', color);
-            line.setAttribute('stroke-width', String(width));
-            
-            if (style === 'dashed') line.setAttribute('stroke-dasharray', '4,4');
-            if (style === 'dotted') line.setAttribute('stroke-dasharray', '2,2');
-            
-            svg.appendChild(line);
-            el.appendChild(svg);
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+
+            if (style === 'dashed') ctx.setLineDash([4, 4]);
+            else if (style === 'dotted') ctx.setLineDash([2, 2]);
+            else ctx.setLineDash([]);
+
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            ctx.setLineDash([]);
 
             if (label) {
-                const span = document.createElement('span');
-                span.innerText = label;
-                span.style.cssText = `
-                    position:absolute;
-                    left:${x2 + 4}px;
-                    top:${y2}px;
-                    color:${color};
-                    font-size:9px;
-                    font-weight:bold;
-                    text-shadow:0 0 4px rgba(0,0,0,1);
-                    transform:translateY(-50%);
-                    white-space:nowrap;
-                `;
-                el.appendChild(span);
+                ctx.fillStyle = color;
+                ctx.font = 'bold 9px Inter, sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, x2 + 4, y2);
             }
         };
 
@@ -150,7 +127,7 @@ export const ICTKillzonesRenderer: React.FC<ICTKillzonesRendererProps> = ({
             const y1 = toY(kz.high);
             const y2 = toY(kz.low);
             if (x1 === null || x2 === null || y1 === null || y2 === null) return;
-            
+
             drawBox(x1, y1, x2, y2, hexToRgba(kz.color, 0.15), kz.color, kz.name);
 
             // ── 1.a Equilibrium Line ──────────────────────────────────────────
@@ -158,18 +135,9 @@ export const ICTKillzonesRenderer: React.FC<ICTKillzonesRendererProps> = ({
                 const midPrice = (kz.high + kz.low) / 2;
                 const yMid = toY(midPrice);
                 if (yMid !== null) {
-                    // Draw a dashed midline across the box
-                    const div = document.createElement('div');
-                    div.style.cssText = `
-                        position:absolute;
-                        left:${Math.max(0, Math.min(x1, x2))}px;
-                        top:${yMid}px;
-                        width:${Math.abs(x2 - x1)}px;
-                        height:1px;
-                        border-top:1px dashed ${hexToRgba(kz.color, 0.5)};
-                        pointer-events:none;
-                    `;
-                    containerRef.current?.appendChild(div);
+                    const left = Math.max(0, Math.min(x1, x2));
+                    const right = Math.min(W, Math.max(x1, x2));
+                    drawLine(left, yMid, right, yMid, hexToRgba(kz.color, 0.6), 'dashed', 1);
                 }
             }
         });
@@ -189,13 +157,11 @@ export const ICTKillzonesRenderer: React.FC<ICTKillzonesRendererProps> = ({
 
         // ── 3. DWM Open & HL ────────────────────────────────────────────────
         if (settings.ictShowDWM && data.dwm) {
-             const { dayOpen, dayHigh, dayLow } = data.dwm;
-             if (dayOpen) {
-                 const x1 = 0; // Since it's for the current day
-                 const x2 = W;
-                 const y = toY(dayOpen);
-                 if (y !== null) drawLine(x1, y, x2, y, '#3b82f6', 'dashed', 1, 'D. OPEN');
-             }
+            const { dayOpen } = data.dwm;
+            if (dayOpen) {
+                const y = toY(dayOpen);
+                if (y !== null) drawLine(0, y, W, y, '#3b82f6', 'dashed', 1, 'D. OPEN');
+            }
         }
 
         // ── 3.a Silver Bullets ──────────────────────────────────────────────
@@ -206,9 +172,8 @@ export const ICTKillzonesRenderer: React.FC<ICTKillzonesRendererProps> = ({
                 const y1 = toY(sb.high);
                 const y2 = toY(sb.low);
                 if (x1 === null || x2 === null || y1 === null || y2 === null) return;
-                
-                // Silver bullets are drawn with a distinct gold color and border
-                drawBox(x1, y1, x2, y2, hexToRgba('#ffd700', 0.1), '#ffd700', sb.name);
+
+                drawBox(x1, y1, x2, y2, hexToRgba('#ffd700', 0.12), '#ffd700', sb.name);
             });
         }
 
@@ -218,8 +183,7 @@ export const ICTKillzonesRenderer: React.FC<ICTKillzonesRendererProps> = ({
                 const x = toX(gap.time);
                 const y = toY(gap.price);
                 if (x !== null && y !== null) {
-                    // Draw a line connecting across the screen from the point
-                    drawLine(x, y, W, y, gap.color, 'solid', 2, gap.type);
+                    drawLine(x, y, W, y, gap.color, 'solid', 1.5, gap.type);
                 }
             });
         }
@@ -250,39 +214,110 @@ export const ICTKillzonesRenderer: React.FC<ICTKillzonesRendererProps> = ({
             const x = toX(dl.time);
             if (x === null) return;
 
-            const span = document.createElement('span');
-            span.innerText = dl.text;
-            span.style.cssText = `
-                position:absolute;
-                left:${x}px;
-                bottom:20px;
-                color:rgba(255,255,255,0.2);
-                font-size:12px;
-                font-weight:900;
-                transform:translateX(-50%);
-                letter-spacing:0.2em;
-            `;
-            el.appendChild(span);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+            ctx.font = 'bold 11px Inter, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(dl.text, x, H - 20);
         });
 
-    }, [chart, series, data, visible, settings]);
+        ctx.restore();
+    }
+}
 
-    // Render loop
+class ICTKillzonesPaneView implements IPrimitivePaneView {
+    private _renderer: ICTKillzonesRendererImpl;
+
+    constructor(primitive: ICTKillzonesPrimitive) {
+        this._renderer = new ICTKillzonesRendererImpl(primitive);
+    }
+
+    zOrder(): 'bottom' {
+        return 'bottom';
+    }
+
+    renderer(): IPrimitivePaneRenderer | null {
+        return this._renderer;
+    }
+}
+
+class ICTKillzonesPrimitive implements ISeriesPrimitive<any> {
+    public chart: IChartApi | null = null;
+    public series: ISeriesApi<'Candlestick'> | null = null;
+    public data: ICTResult | null = null;
+    public visible: boolean = true;
+    public settings: any = {};
+
+    private _requestUpdate?: () => void;
+    private _paneViews: ICTKillzonesPaneView[];
+
+    constructor(data: ICTResult | null, visible: boolean, settings: any) {
+        this.data = data;
+        this.visible = visible;
+        this.settings = settings;
+        this._paneViews = [new ICTKillzonesPaneView(this)];
+    }
+
+    attached(param: SeriesAttachedParameter<any, any>): void {
+        this.chart = param.chart as unknown as IChartApi;
+        this.series = param.series as unknown as ISeriesApi<'Candlestick'>;
+        this._requestUpdate = param.requestUpdate;
+        this.requestUpdate();
+    }
+
+    detached(): void {
+        this.chart = null;
+        this.series = null;
+        this._requestUpdate = undefined;
+    }
+
+    updateParams(data: ICTResult | null, visible: boolean, settings: any): void {
+        this.data = data;
+        this.visible = visible;
+        this.settings = settings;
+        this.requestUpdate();
+    }
+
+    requestUpdate(): void {
+        this._requestUpdate?.();
+    }
+
+    updateAllViews(): void {}
+
+    paneViews(): readonly IPrimitivePaneView[] {
+        return this._paneViews;
+    }
+}
+
+export const ICTKillzonesRenderer: React.FC<ICTKillzonesRendererProps> = ({
+    chart,
+    series,
+    data,
+    visible,
+    settings,
+}) => {
+    const primitiveRef = useRef<ICTKillzonesPrimitive | null>(null);
+
     useEffect(() => {
-        if (!chart) return;
-        const update = () => {
-            cancelAnimationFrame(animFrameRef.current);
-            animFrameRef.current = requestAnimationFrame(render);
-        };
-        update();
-        chart.timeScale().subscribeVisibleTimeRangeChange(update);
-        return () => {
-            cancelAnimationFrame(animFrameRef.current);
-            chart.timeScale().unsubscribeVisibleTimeRangeChange(update);
-        };
-    }, [chart, render]);
+        if (!series || !chart) return;
 
-    return (
-        <div ref={containerRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 4 }} />
-    );
+        const primitive = new ICTKillzonesPrimitive(data, visible, settings);
+        primitiveRef.current = primitive;
+        series.attachPrimitive(primitive);
+
+        return () => {
+            try {
+                series.detachPrimitive(primitive);
+            } catch (e) {}
+            primitiveRef.current = null;
+        };
+    }, [chart, series]);
+
+    useEffect(() => {
+        if (primitiveRef.current) {
+            primitiveRef.current.updateParams(data, visible, settings);
+        }
+    }, [data, visible, settings]);
+
+    return null;
 };

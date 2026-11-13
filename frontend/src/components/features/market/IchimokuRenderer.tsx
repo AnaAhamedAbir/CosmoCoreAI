@@ -1,5 +1,13 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import { IChartApi, ISeriesApi } from 'lightweight-charts';
+import React, { useEffect, useRef } from 'react';
+import {
+    IChartApi,
+    ISeriesApi,
+    ISeriesPrimitive,
+    IPrimitivePaneView,
+    IPrimitivePaneRenderer,
+    SeriesAttachedParameter
+} from 'lightweight-charts';
+import { CanvasRenderingTarget2D } from 'fancy-canvas';
 import { IchimokuDataPoint } from '../../../utils/indicators';
 
 interface IchimokuRendererProps {
@@ -9,31 +17,25 @@ interface IchimokuRendererProps {
     displacement: number;
 }
 
-export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, series, data, displacement }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const drawRequested = useRef<boolean>(false);
+class IchimokuRendererImpl implements IPrimitivePaneRenderer {
+    private _primitive: IchimokuPrimitive;
 
-    const drawIchimoku = useCallback(() => {
-        if (!canvasRef.current) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+    constructor(primitive: IchimokuPrimitive) {
+        this._primitive = primitive;
+    }
 
-        const parent = canvas.parentElement;
-        if (parent) {
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            const targetW = Math.round(parent.clientWidth * dpr);
-            const targetH = Math.round(parent.clientHeight * dpr);
-            if (canvas.width !== targetW || canvas.height !== targetH) {
-                canvas.width = targetW;
-                canvas.height = targetH;
-                canvas.style.width = `${parent.clientWidth}px`;
-                canvas.style.height = `${parent.clientHeight}px`;
-            }
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        }
+    draw(target: CanvasRenderingTarget2D): void {
+        target.useMediaCoordinateSpace((scope) => {
+            const ctx = scope.context;
+            this._drawContent(ctx, scope.mediaSize.width, scope.mediaSize.height);
+        });
+    }
 
-        ctx.clearRect(0, 0, canvas.parentElement?.clientWidth || canvas.width, canvas.parentElement?.clientHeight || canvas.height);
+    private _drawContent(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        const chart = this._primitive.chart;
+        const series = this._primitive.series;
+        const data = this._primitive.data;
+        const displacement = this._primitive.displacement;
 
         if (!chart || !series || data.length === 0) return;
 
@@ -51,12 +53,12 @@ export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, serie
             senkouA: 'rgba(0, 255, 0, 0.5)', // Greenish
             senkouB: 'rgba(255, 0, 0, 0.5)', // Reddish
             chikou: '#9370db',  // Medium Purple
-            cloudUp: 'rgba(0, 255, 0, 0.1)',
-            cloudDown: 'rgba(255, 0, 0, 0.1)'
+            cloudUp: 'rgba(0, 255, 0, 0.12)',
+            cloudDown: 'rgba(255, 0, 0, 0.12)'
         };
 
-        const timeWidth = timeScale.width();
-        const barSpacing = timeWidth / (logicalRange.to - logicalRange.from);
+        const timeWidth = width;
+        const barSpacing = timeWidth / Math.max(1, (logicalRange.to - logicalRange.from));
 
         const getX = (i: number) => {
             if (i >= 0 && i < data.length) {
@@ -68,8 +70,11 @@ export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, serie
             return lastX + (i - lastIdx) * barSpacing;
         };
 
-        const startIdx = Math.max(0, Math.floor(logicalRange.from) - displacement - 3);
-        const endIdx = Math.min(data.length - 1, Math.ceil(logicalRange.to) + displacement + 3);
+        const startIdx = Math.max(0, Math.floor(logicalRange.from) - displacement - 5);
+        const endIdx = Math.min(data.length - 1, Math.ceil(logicalRange.to) + displacement + 5);
+        if (startIdx >= endIdx) return;
+
+        ctx.save();
 
         // 1. Draw Kumo (Cloud) for visible range
         for (let i = startIdx; i <= endIdx; i++) {
@@ -80,7 +85,7 @@ export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, serie
             const x = getX(futureIdx);
             const xNext = getX(futureIdx + 1);
             if (x === null || xNext === null) continue;
-            if (xNext < 0 || x > canvas.width) continue;
+            if (xNext < 0 || x > width) continue;
 
             const yA = series.priceToCoordinate(pt.senkouA);
             const yB = series.priceToCoordinate(pt.senkouB);
@@ -93,7 +98,7 @@ export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, serie
         // 2. Draw Tenkan Line (Single continuous path)
         ctx.setLineDash([]);
         ctx.strokeStyle = colors.tenkan;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         let tenkanStarted = false;
         for (let i = startIdx; i <= endIdx; i++) {
@@ -110,7 +115,7 @@ export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, serie
 
         // 3. Draw Kijun Line (Single continuous path)
         ctx.strokeStyle = colors.kijun;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         let kijunStarted = false;
         for (let i = startIdx; i <= endIdx; i++) {
@@ -127,7 +132,7 @@ export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, serie
 
         // 4. Draw Chikou Span (Single continuous path)
         ctx.strokeStyle = colors.chikou;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         let chikouStarted = false;
         for (let i = startIdx; i <= endIdx; i++) {
@@ -142,40 +147,96 @@ export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, serie
         }
         if (chikouStarted) ctx.stroke();
 
-    }, [chart, series, data, displacement]);
+        ctx.restore();
+    }
+}
 
-    const drawIchimokuRef = useRef(drawIchimoku);
-    drawIchimokuRef.current = drawIchimoku;
+class IchimokuPaneView implements IPrimitivePaneView {
+    private _renderer: IchimokuRendererImpl;
 
-    const requestDraw = useCallback(() => {
-        if (!drawRequested.current) {
-            drawRequested.current = true;
-            requestAnimationFrame(() => {
-                drawRequested.current = false;
-                drawIchimokuRef.current();
-            });
-        }
-    }, []);
+    constructor(primitive: IchimokuPrimitive) {
+        this._renderer = new IchimokuRendererImpl(primitive);
+    }
+
+    zOrder(): 'bottom' {
+        return 'bottom';
+    }
+
+    renderer(): IPrimitivePaneRenderer | null {
+        return this._renderer;
+    }
+}
+
+class IchimokuPrimitive implements ISeriesPrimitive<any> {
+    public chart: IChartApi | null = null;
+    public series: ISeriesApi<'Candlestick'> | null = null;
+    public data: IchimokuDataPoint[] = [];
+    public displacement: number = 26;
+
+    private _requestUpdate?: () => void;
+    private _paneViews: IchimokuPaneView[];
+
+    constructor(data: IchimokuDataPoint[], displacement: number) {
+        this.data = data;
+        this.displacement = displacement;
+        this._paneViews = [new IchimokuPaneView(this)];
+    }
+
+    attached(param: SeriesAttachedParameter<any, any>): void {
+        this.chart = param.chart as unknown as IChartApi;
+        this.series = param.series as unknown as ISeriesApi<'Candlestick'>;
+        this._requestUpdate = param.requestUpdate;
+        this.requestUpdate();
+    }
+
+    detached(): void {
+        this.chart = null;
+        this.series = null;
+        this._requestUpdate = undefined;
+    }
+
+    updateParams(data: IchimokuDataPoint[], displacement: number): void {
+        this.data = data;
+        this.displacement = displacement;
+        this.requestUpdate();
+    }
+
+    requestUpdate(): void {
+        this._requestUpdate?.();
+    }
+
+    updateAllViews(): void {}
+
+    paneViews(): readonly IPrimitivePaneView[] {
+        return this._paneViews;
+    }
+}
+
+export const IchimokuRenderer: React.FC<IchimokuRendererProps> = ({ chart, series, data, displacement }) => {
+    const primitiveRef = useRef<IchimokuPrimitive | null>(null);
 
     useEffect(() => {
-        requestDraw();
-    }, [data, displacement, requestDraw]);
+        if (!series || !chart) return;
 
-    useEffect(() => {
-        if (!chart || !series) return;
-        requestDraw();
-        const timeScale = chart.timeScale();
-        timeScale.subscribeVisibleTimeRangeChange(requestDraw);
+        const primitive = new IchimokuPrimitive(data, displacement);
+        primitiveRef.current = primitive;
+        series.attachPrimitive(primitive);
+
         return () => {
-            timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
+            try {
+                series.detachPrimitive(primitive);
+            } catch (e) {
+                // Ignore detachment error if series already destroyed
+            }
+            primitiveRef.current = null;
         };
-    }, [chart, series, requestDraw]);
+    }, [chart, series]);
 
-    return (
-        <canvas
-            ref={canvasRef}
-            className="absolute top-0 left-0 pointer-events-none"
-            style={{ zIndex: 1 }}
-        />
-    );
+    useEffect(() => {
+        if (primitiveRef.current) {
+            primitiveRef.current.updateParams(data, displacement);
+        }
+    }, [data, displacement]);
+
+    return null;
 };

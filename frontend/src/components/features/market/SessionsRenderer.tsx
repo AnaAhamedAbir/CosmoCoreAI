@@ -1,5 +1,13 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import { IChartApi, ISeriesApi } from 'lightweight-charts';
+import React, { useEffect, useRef } from 'react';
+import {
+    IChartApi,
+    ISeriesApi,
+    ISeriesPrimitive,
+    IPrimitivePaneView,
+    IPrimitivePaneRenderer,
+    SeriesAttachedParameter
+} from 'lightweight-charts';
+import { CanvasRenderingTarget2D } from 'fancy-canvas';
 import { SessionData } from '@/utils/indicators';
 import { IndicatorSettings, SessionSettings } from './IndicatorSelector';
 
@@ -15,35 +23,35 @@ interface SessionsRendererProps {
     settings: IndicatorSettings;
 }
 
-export const SessionsRenderer: React.FC<SessionsRendererProps> = ({ chart, series, sessionsData, settings }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const drawRequested = useRef<boolean>(false);
-    
-    // Stable refs for data to prevent rapid effect re-runs
-    const dataRef = useRef(sessionsData);
-    const settingsRef = useRef(settings);
+const hexToRgba = (hex: string, alpha: number) => {
+    let r, g, b;
+    if (hex.length === 4) {
+        r = parseInt(hex[1] + hex[1], 16);
+        g = parseInt(hex[2] + hex[2], 16);
+        b = parseInt(hex[3] + hex[3], 16);
+    } else {
+        r = parseInt(hex.slice(1, 3), 16);
+        g = parseInt(hex.slice(3, 5), 16);
+        b = parseInt(hex.slice(5, 7), 16);
+    }
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
 
-    useEffect(() => {
-        dataRef.current = sessionsData;
-        settingsRef.current = settings;
-        requestDraw();
-    }, [sessionsData, settings]);
+class SessionsRendererImpl implements IPrimitivePaneRenderer {
+    private _primitive: SessionsPrimitive;
 
-    const hexToRgba = useCallback((hex: string, alpha: number) => {
-        let r, g, b;
-        if (hex.length === 4) {
-            r = parseInt(hex[1] + hex[1], 16);
-            g = parseInt(hex[2] + hex[2], 16);
-            b = parseInt(hex[3] + hex[3], 16);
-        } else {
-            r = parseInt(hex.slice(1, 3), 16);
-            g = parseInt(hex.slice(3, 5), 16);
-            b = parseInt(hex.slice(5, 7), 16);
-        }
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    }, []);
+    constructor(primitive: SessionsPrimitive) {
+        this._primitive = primitive;
+    }
 
-    const renderSessionBlock = useCallback((
+    draw(target: CanvasRenderingTarget2D): void {
+        target.useMediaCoordinateSpace((scope) => {
+            const ctx = scope.context;
+            this._drawContent(ctx, scope.mediaSize.width, scope.mediaSize.height);
+        });
+    }
+
+    private _renderSessionBlock(
         ctx: CanvasRenderingContext2D,
         block: SessionData[],
         config: SessionSettings,
@@ -52,17 +60,17 @@ export const SessionsRenderer: React.FC<SessionsRendererProps> = ({ chart, serie
         timeScale: any,
         series: any,
         globalSettings: IndicatorSettings
-    ) => {
+    ): void {
         if (block.length === 0) return;
-        
+
         const first = block[0];
         const last = block[block.length - 1];
 
         const x1 = timeScale.timeToCoordinate(first.time);
         const x2 = timeScale.timeToCoordinate(last.time);
-        
+
         if (x1 === null || x2 === null) return;
-        
+
         const blockWidth = x2 - x1;
 
         // 1. Draw Range Box
@@ -74,7 +82,7 @@ export const SessionsRenderer: React.FC<SessionsRendererProps> = ({ chart, serie
         if (config.showRange && yHigh !== null && yLow !== null) {
             ctx.fillStyle = hexToRgba(color, alpha);
             ctx.fillRect(x1, yHigh, blockWidth, yLow - yHigh);
-            
+
             if (globalSettings.showOutline) {
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 1;
@@ -94,7 +102,7 @@ export const SessionsRenderer: React.FC<SessionsRendererProps> = ({ chart, serie
 
         // 3. Overlays
         ctx.lineWidth = 1.5;
-        
+
         if (config.showMean) {
             ctx.strokeStyle = color;
             ctx.beginPath();
@@ -137,111 +145,178 @@ export const SessionsRenderer: React.FC<SessionsRendererProps> = ({ chart, serie
             ctx.stroke();
             ctx.setLineDash([]);
         }
-
         if (config.showTrendline && last.linReg) {
             const y1LR = series.priceToCoordinate(last.linReg.y1);
             const y2LR = series.priceToCoordinate(last.linReg.y2);
             if (y1LR !== null && y2LR !== null) {
                 ctx.strokeStyle = color;
-                ctx.lineWidth = 2;
+                ctx.lineWidth = 1.5;
                 ctx.beginPath();
                 ctx.moveTo(x1, y1LR);
                 ctx.lineTo(x2, y2LR);
                 ctx.stroke();
             }
         }
-    }, [hexToRgba]);
+    }
 
-    const drawSessions = useCallback(() => {
-        if (!chart || !series || !canvasRef.current) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+    private _drawContent(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        const chart = this._primitive.chart;
+        const series = this._primitive.series;
+        const sessionsData = this._primitive.sessionsData;
+        const settings = this._primitive.settings;
+
+        if (!chart || !series || !settings.showSessions) return;
 
         const timeScale = chart.timeScale();
         const priceScale = series.priceScale();
         if (!timeScale || !priceScale) return;
 
-        const data = dataRef.current;
-        const currentSettings = settingsRef.current;
+        ctx.save();
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const sessionConfigs = [
+            { data: sessionsData.a, config: settings.sessionA, color: settings.sessionA.color, alpha: 0.15 },
+            { data: sessionsData.b, config: settings.sessionB, color: settings.sessionB.color, alpha: 0.15 },
+            { data: sessionsData.c, config: settings.sessionC, color: settings.sessionC.color, alpha: 0.15 },
+            { data: sessionsData.d, config: settings.sessionD, color: settings.sessionD.color, alpha: 0.15 }
+        ];
 
-        if (!currentSettings.showSessions) return;
+        sessionConfigs.forEach(({ data, config, color, alpha }) => {
+            if (!config.show || !data || data.length === 0) return;
 
-        const keys: (keyof typeof data)[] = ['a', 'b', 'c', 'd'];
-        
-        keys.forEach(key => {
-            const sessData = data[key];
-            const sessSettings = currentSettings[`session${key.toUpperCase()}` as keyof IndicatorSettings] as SessionSettings;
-            if (!sessSettings?.show || sessData.length === 0) return;
-
-            const color = sessSettings.color;
-            const alpha = currentSettings.rangeTransparency / 100;
-
+            // Group into contiguous session blocks
             let currentBlock: SessionData[] = [];
-            for (let i = 0; i < sessData.length; i++) {
-                const d = sessData[i];
-                if (d.isSession) currentBlock.push(d);
-                if ((!d.isSession || i === sessData.length - 1) && currentBlock.length > 0) {
-                    renderSessionBlock(ctx, currentBlock, sessSettings, color, alpha, timeScale, series, currentSettings);
-                    currentBlock = [];
+            for (let i = 0; i < data.length; i++) {
+                const current = data[i];
+                if (currentBlock.length === 0) {
+                    currentBlock.push(current);
+                } else {
+                    const prev = currentBlock[currentBlock.length - 1];
+                    const currentTime = typeof current.time === 'number' ? current.time : new Date(current.time).getTime() / 1000;
+                    const prevTime = typeof prev.time === 'number' ? prev.time : new Date(prev.time).getTime() / 1000;
+
+                    if (currentTime - prevTime <= 3600 * 2) {
+                        currentBlock.push(current);
+                    } else {
+                        this._renderSessionBlock(ctx, currentBlock, config, color, alpha, timeScale, series, settings);
+                        currentBlock = [current];
+                    }
                 }
             }
+
+            if (currentBlock.length > 0) {
+                this._renderSessionBlock(ctx, currentBlock, config, color, alpha, timeScale, series, settings);
+            }
         });
-    }, [chart, series, renderSessionBlock]);
 
-    const requestDraw = useCallback(() => {
-        if (!drawRequested.current) {
-            drawRequested.current = true;
-            requestAnimationFrame(() => {
-                drawRequested.current = false;
-                drawSessions();
-            });
-        }
-    }, [drawSessions]);
+        ctx.restore();
+    }
+}
+
+class SessionsPaneView implements IPrimitivePaneView {
+    private _renderer: SessionsRendererImpl;
+
+    constructor(primitive: SessionsPrimitive) {
+        this._renderer = new SessionsRendererImpl(primitive);
+    }
+
+    zOrder(): 'bottom' {
+        return 'bottom';
+    }
+
+    renderer(): IPrimitivePaneRenderer | null {
+        return this._renderer;
+    }
+}
+
+class SessionsPrimitive implements ISeriesPrimitive<any> {
+    public chart: IChartApi | null = null;
+    public series: ISeriesApi<'Candlestick'> | null = null;
+    public sessionsData: {
+        a: SessionData[];
+        b: SessionData[];
+        c: SessionData[];
+        d: SessionData[];
+    };
+    public settings: IndicatorSettings;
+
+    private _requestUpdate?: () => void;
+    private _paneViews: SessionsPaneView[];
+
+    constructor(
+        sessionsData: {
+            a: SessionData[];
+            b: SessionData[];
+            c: SessionData[];
+            d: SessionData[];
+        },
+        settings: IndicatorSettings
+    ) {
+        this.sessionsData = sessionsData;
+        this.settings = settings;
+        this._paneViews = [new SessionsPaneView(this)];
+    }
+
+    attached(param: SeriesAttachedParameter<any, any>): void {
+        this.chart = param.chart as unknown as IChartApi;
+        this.series = param.series as unknown as ISeriesApi<'Candlestick'>;
+        this._requestUpdate = param.requestUpdate;
+        this.requestUpdate();
+    }
+
+    detached(): void {
+        this.chart = null;
+        this.series = null;
+        this._requestUpdate = undefined;
+    }
+
+    updateParams(
+        sessionsData: {
+            a: SessionData[];
+            b: SessionData[];
+            c: SessionData[];
+            d: SessionData[];
+        },
+        settings: IndicatorSettings
+    ): void {
+        this.sessionsData = sessionsData;
+        this.settings = settings;
+        this.requestUpdate();
+    }
+
+    requestUpdate(): void {
+        this._requestUpdate?.();
+    }
+
+    updateAllViews(): void {}
+
+    paneViews(): readonly IPrimitivePaneView[] {
+        return this._paneViews;
+    }
+}
+
+export const SessionsRenderer: React.FC<SessionsRendererProps> = ({ chart, series, sessionsData, settings }) => {
+    const primitiveRef = useRef<SessionsPrimitive | null>(null);
 
     useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const parent = canvas.parentElement;
-        if (!parent) return;
+        if (!series || !chart) return;
 
-        const resize = () => {
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            canvas.width = Math.round(parent.clientWidth * dpr);
-            canvas.height = Math.round(parent.clientHeight * dpr);
-            canvas.style.width = `${parent.clientWidth}px`;
-            canvas.style.height = `${parent.clientHeight}px`;
-            const ctx = canvas.getContext('2d');
-            if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            requestDraw();
-        };
+        const primitive = new SessionsPrimitive(sessionsData, settings);
+        primitiveRef.current = primitive;
+        series.attachPrimitive(primitive);
 
-        resize();
-        const observer = new ResizeObserver(resize);
-        observer.observe(parent);
-        return () => observer.disconnect();
-    }, [requestDraw]);
-
-    useEffect(() => {
-        if (!chart || !series) return;
-        requestDraw();
-        const timeScale = chart.timeScale();
-        timeScale.subscribeVisibleTimeRangeChange(requestDraw);
-        timeScale.subscribeSizeChange(requestDraw);
-        
         return () => {
-            timeScale.unsubscribeVisibleTimeRangeChange(requestDraw);
-            timeScale.unsubscribeSizeChange(requestDraw);
+            try {
+                series.detachPrimitive(primitive);
+            } catch (e) {}
+            primitiveRef.current = null;
         };
-    }, [chart, series, requestDraw]);
+    }, [chart, series]);
 
-    return (
-        <canvas
-            ref={canvasRef}
-            className="absolute top-0 left-0 pointer-events-none"
-            style={{ zIndex: 5 }}
-        />
-    );
+    useEffect(() => {
+        if (primitiveRef.current) {
+            primitiveRef.current.updateParams(sessionsData, settings);
+        }
+    }, [sessionsData, settings]);
+
+    return null;
 };

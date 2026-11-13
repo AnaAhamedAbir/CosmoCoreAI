@@ -1,8 +1,15 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import React, { useEffect, useRef } from 'react';
+import type {
+    IChartApi,
+    ISeriesApi,
+    ISeriesPrimitive,
+    IPrimitivePaneView,
+    IPrimitivePaneRenderer,
+    SeriesAttachedParameter
+} from 'lightweight-charts';
+import { CanvasRenderingTarget2D } from 'fancy-canvas';
 import type { SMCResult, SMCSettings } from '../../../utils/smartMoneyConcepts';
 
-// ─── Color Palette ─────────────────────────────────────────────────────────────
 const COLORS = {
     bullish: '#089981',
     bearish: '#F23645',
@@ -28,43 +35,39 @@ interface SMCRendererProps {
     visible: boolean;
 }
 
-/**
- * Renders Smart Money Concepts overlays on top of a lightweight-charts canvas.
- * Uses absolutely-positioned DOM elements converted from price/time coordinates.
- */
-export const SMCRenderer: React.FC<SMCRendererProps> = ({
-    chart,
-    series,
-    data,
-    settings,
-    visible,
-}) => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const animFrameRef = useRef<number>(0);
+class SMCRendererImpl implements IPrimitivePaneRenderer {
+    private _primitive: SMCPrimitive;
 
-    const getColor = useCallback((type: 'bull' | 'bear', mono: boolean) => {
-        if (mono) return type === 'bull' ? COLORS.monoBull : COLORS.monoBear;
-        return type === 'bull' ? COLORS.bullish : COLORS.bearish;
-    }, []);
+    constructor(primitive: SMCPrimitive) {
+        this._primitive = primitive;
+    }
 
-    const isMono = settings.style === 'Monochrome';
+    draw(target: CanvasRenderingTarget2D): void {
+        target.useMediaCoordinateSpace((scope) => {
+            const ctx = scope.context;
+            this._drawContent(ctx, scope.mediaSize.width, scope.mediaSize.height);
+        });
+    }
 
-    const render = useCallback(() => {
-        if (!containerRef.current || !chart || !data || !visible) {
-            if (containerRef.current) containerRef.current.innerHTML = '';
-            return;
-        }
+    private _drawContent(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+        const chart = this._primitive.chart;
+        const series = this._primitive.series;
+        const data = this._primitive.data;
+        const settings = this._primitive.settings;
+        const visible = this._primitive.visible;
 
-        const el = containerRef.current;
-        el.innerHTML = ''; // Clear previous draw
-
-        const chartRect = (chart as any).chartElement?.()?.getBoundingClientRect?.() ??
-            el.parentElement?.getBoundingClientRect();
-        if (!chartRect) return;
+        if (!chart || !series || !data || !visible) return;
 
         const timeScale = chart.timeScale();
+        const priceScale = series.priceScale();
+        if (!timeScale || !priceScale) return;
 
-        /** Convert unix timestamp (seconds or ms) to pixel X */
+        const isMono = settings.style === 'Monochrome';
+        const getColor = (type: 'bull' | 'bear', mono: boolean) => {
+            if (mono) return type === 'bull' ? COLORS.monoBull : COLORS.monoBear;
+            return type === 'bull' ? COLORS.bullish : COLORS.bearish;
+        };
+
         const toX = (time: number): number | null => {
             try {
                 const t = time < 10_000_000_000 ? time : Math.floor(time / 1000);
@@ -74,22 +77,16 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
             }
         };
 
-        /** Convert price to pixel Y */
         const toY = (price: number): number | null => {
             try {
-                return series?.priceToCoordinate(price) ?? null;
+                return series.priceToCoordinate(price);
             } catch {
                 return null;
             }
         };
 
-        const W = el.offsetWidth;
-        const H = el.offsetHeight;
-        if (!W || !H) return;
+        ctx.save();
 
-        // ── Helpers ────────────────────────────────────────────────────────────
-
-        /** Draw an absolutely-positioned box */
         const drawBox = (
             x1: number, y1: number, x2: number, y2: number,
             bg: string, border: string = 'transparent', borderWidth: number = 0
@@ -98,24 +95,18 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
             const top = Math.max(0, Math.min(y1, y2));
             const width = Math.abs(x2 - x1);
             const height = Math.abs(y2 - y1);
-            if (width < 1 || height < 1) return null;
+            if (width < 1 || height < 1) return;
 
-            const div = document.createElement('div');
-            div.style.cssText = `
-                position:absolute;
-                left:${left}px;top:${top}px;
-                width:${Math.min(width, W - left)}px;
-                height:${Math.min(height, H - top)}px;
-                background:${bg};
-                border:${borderWidth}px solid ${border};
-                pointer-events:none;
-                box-sizing:border-box;
-            `;
-            el.appendChild(div);
-            return div;
+            ctx.fillStyle = bg;
+            ctx.fillRect(left, top, Math.min(width, W - left), Math.min(height, H - top));
+
+            if (borderWidth > 0 && border !== 'transparent') {
+                ctx.strokeStyle = border;
+                ctx.lineWidth = borderWidth;
+                ctx.strokeRect(left, top, Math.min(width, W - left), Math.min(height, H - top));
+            }
         };
 
-        /** Draw a horizontal label */
         const drawLabel = (
             x: number, y: number,
             text: string, color: string,
@@ -124,43 +115,27 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
             fontSize: number = 9,
             fontWeight: string = 'bold',
         ) => {
-            if (x < 0 || x > W || y < 0 || y > H) return;
-            const span = document.createElement('span');
-            span.innerText = text;
-            span.style.cssText = `
-                position:absolute;
-                left:${align === 'right' ? x - 60 : x}px;
-                top:${y + yOffset}px;
-                color:${color};
-                font-size:${fontSize}px;
-                font-weight:${fontWeight};
-                font-family:monospace;
-                pointer-events:none;
-                user-select:none;
-                white-space:nowrap;
-                text-shadow:0 0 6px rgba(0,0,0,0.9);
-                transform:translateY(-50%);
-            `;
-            el.appendChild(span);
+            if (x < -50 || x > W + 50 || y < -50 || y > H + 50) return;
+            ctx.fillStyle = color;
+            ctx.font = `${fontWeight} ${fontSize}px monospace, sans-serif`;
+            ctx.textAlign = align;
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, x, y + yOffset);
         };
 
-        /** Draw an SVG line (for EQH/EQL) */
         const drawLine = (
             x1: number, y1: number, x2: number, y2: number,
             color: string, dashed: boolean = false, width: number = 1
         ) => {
-            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.style.cssText = `position:absolute;left:0;top:0;width:${W}px;height:${H}px;pointer-events:none;overflow:visible`;
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', String(x1));
-            line.setAttribute('y1', String(y1));
-            line.setAttribute('x2', String(x2));
-            line.setAttribute('y2', String(y2));
-            line.setAttribute('stroke', color);
-            line.setAttribute('stroke-width', String(width));
-            if (dashed) line.setAttribute('stroke-dasharray', '4,4');
-            svg.appendChild(line);
-            el.appendChild(svg);
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            if (dashed) ctx.setLineDash([4, 4]);
+            else ctx.setLineDash([]);
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            ctx.setLineDash([]);
         };
 
         // ── 1. Order Blocks ────────────────────────────────────────────────────
@@ -171,8 +146,11 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
                 const y1 = toY(ob.barHigh);
                 const y2 = toY(ob.barLow);
                 if (x1 === null || y1 === null || y2 === null) return;
-                
-                let bg, border, borderWidth;
+
+                let bg: string;
+                let border: string;
+                let borderWidth: number;
+
                 if (ob.isValidated) {
                     bg = ob.bias === 'bearish' ? 'rgba(255, 0, 8, 0.25)' : 'rgba(0, 255, 104, 0.25)';
                     border = ob.bias === 'bearish' ? '#FF0008' : '#00FF68';
@@ -188,14 +166,12 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
                     border = 'transparent';
                     borderWidth = 0;
                 }
-                
-                const div = drawBox(x1, y1, x2, y2, bg, border, borderWidth);
-                if (div && ob.isValidated) div.style.boxShadow = `0 0 8px ${border}`;
-                
-                // OB label at right edge
+
+                drawBox(x1, y1, x2, y2, bg, border, borderWidth);
+
                 const xRight = Math.min(x2, W - 30);
                 const yMid = (y1 + y2) / 2;
-                const labelText = ob.isValidated ? (ob.bias === 'bullish' ? 'Valid OB' : 'Valid OB') : (ob.bias === 'bullish' ? 'Bull OB' : 'Bear OB');
+                const labelText = ob.isValidated ? 'Valid OB' : (ob.bias === 'bullish' ? 'Bull OB' : 'Bear OB');
                 drawLabel(xRight - 28, yMid, labelText,
                     ob.isValidated ? border : getColor(ob.bias === 'bullish' ? 'bull' : 'bear', isMono), 'right', 0, 8);
             });
@@ -208,8 +184,11 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
                 const y1 = toY(ob.barHigh);
                 const y2 = toY(ob.barLow);
                 if (x1 === null || y1 === null || y2 === null) return;
-                
-                let bg, border, borderWidth = 1;
+
+                let bg: string;
+                let border: string;
+                let borderWidth = 1;
+
                 if (ob.isValidated) {
                     bg = ob.bias === 'bearish' ? 'rgba(255, 0, 8, 0.3)' : 'rgba(0, 255, 104, 0.3)';
                     border = ob.bias === 'bearish' ? '#FF0008' : '#00FF68';
@@ -225,9 +204,9 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
                         ? (ob.bias === 'bearish' ? '#5d606b' : '#b2b5be')
                         : (ob.bias === 'bearish' ? '#b22833' : '#1848cc');
                 }
-                
-                const div = drawBox(x1, y1, x2, y2, bg, border, borderWidth);
-                if (div && ob.isValidated) div.style.boxShadow = `0 0 12px ${border}`;
+
+                drawBox(x1, y1, x2, y2, bg, border, borderWidth);
+
                 const xRight = Math.min(x2, W - 30);
                 const yMid = (y1 + y2) / 2;
                 const labelText = ob.isValidated ? 'OB +' : (ob.bias === 'bullish' ? 'OB ▲' : 'OB ▼');
@@ -246,9 +225,9 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
             let color = getColor(ev.bias === 'bullish' ? 'bull' : 'bear', isMono);
             let displayType: string = ev.type;
             let displayWeight = 'bold';
-            
+
             if (ev.isTrap) {
-                color = '#FFA500'; // Orange Trap color
+                color = '#FFA500';
                 displayType = `TRAP ${ev.bias === 'bullish' ? '▲' : '▼'}`;
                 displayWeight = '900';
             }
@@ -256,10 +235,7 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
             const xMid = (x1 + x2) / 2;
             const yOffset = ev.bias === 'bullish' ? -14 : 4;
 
-            // Horizontal line
             drawLine(x1, y, x2, y, color, ev.isInternal, ev.isTrap ? 2 : (ev.isInternal ? 1 : 1.5));
-
-            // Label
             const fontSize = ev.isInternal ? 9 : 10;
             drawLabel(xMid, y, displayType, color, 'center', yOffset, fontSize, displayWeight);
         });
@@ -280,9 +256,9 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
 
                 drawLine(x1, y, x2, y, color, true, 1);
                 drawLabel(xMid, y, eq.type, color, 'center', yOffset, 9);
-                
+
                 if (eq.isSweep) {
-                    const sweepColor = '#9400D3'; // Purple Inst. Sweep
+                    const sweepColor = '#9400D3';
                     yOffset += (eq.type === 'EQH' ? -12 : 12);
                     drawLabel(xMid, y, 'Inst. Sweep', sweepColor, 'center', yOffset, 10, '900');
                     drawLine(xMid - 20, y, xMid + 20, y, sweepColor, false, 2.5);
@@ -295,10 +271,8 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
             data.fairValueGaps.forEach(fvg => {
                 const x1 = toX(fvg.startTime);
                 let x2 = toX(fvg.endTime);
-
                 if (x1 === null || x2 === null) return;
 
-                // Extend by fvgExtendBars pixels (approximation)
                 const barWidthApprox = 8;
                 x2 = Math.min(W, x2 + settings.fvgExtendBars * barWidthApprox);
 
@@ -312,11 +286,9 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
                     ? (isMono ? COLORS.monoBull : COLORS.bullish)
                     : (isMono ? COLORS.monoBear : COLORS.bearish);
 
-                // Two sub-boxes (top half and bottom half) to match Pine's display
                 drawBox(x1, yTop, x2, yMid, bg, border, 0.5);
                 drawBox(x1, yMid, x2, yBot, bg, border, 0.5);
 
-                // Micro Imbalances Check
                 if (fvg.microImbalances && fvg.microImbalances.length > 0) {
                     const intenseBg = fvg.bias === 'bullish' ? '#00FF68' : '#FF0008';
                     fvg.microImbalances.forEach(price => {
@@ -327,7 +299,6 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
                     });
                 }
 
-                // Small FVG label
                 const xMid = (x1 + x2) / 2;
                 const yCenter = (yTop + yBot) / 2;
                 drawLabel(xMid, yCenter, 'FVG', border, 'center', 0, 8, '700');
@@ -343,15 +314,11 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
 
                 const isBullish = pat.type === 'bullish';
                 const isBearish = pat.type === 'bearish';
-                
-                const color = isBullish 
-                    ? getColor('bull', isMono) 
+                const color = isBullish
+                    ? getColor('bull', isMono)
                     : (isBearish ? getColor('bear', isMono) : '#888888');
 
-                // If it's a bullish pattern at a swing low, draw below the wick.
-                // If it's a bearish pattern at a swing high, draw above the wick.
                 const yOffset = isBullish ? 16 : -24;
-
                 drawLabel(x, y, pat.patternName, color, 'center', yOffset, 10, 'bold');
             });
         }
@@ -385,7 +352,7 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
             }
         }
 
-        // ── 6. Strong / Weak High / Low ────────────────────────────────────────
+        // ── 7. Strong / Weak High / Low ────────────────────────────────────────
         if (settings.showStrongWeakHL && data.trailingExtreme) {
             const te = data.trailingExtreme;
             const bullColor = getColor('bull', isMono);
@@ -410,49 +377,103 @@ export const SMCRenderer: React.FC<SMCRendererProps> = ({
             }
         }
 
-    }, [chart, series, data, settings, visible, isMono, getColor]);
+        ctx.restore();
+    }
+}
 
-    // Re-render on scroll/zoom
+class SMCPaneView implements IPrimitivePaneView {
+    private _renderer: SMCRendererImpl;
+
+    constructor(primitive: SMCPrimitive) {
+        this._renderer = new SMCRendererImpl(primitive);
+    }
+
+    zOrder(): 'bottom' {
+        return 'bottom';
+    }
+
+    renderer(): IPrimitivePaneRenderer | null {
+        return this._renderer;
+    }
+}
+
+class SMCPrimitive implements ISeriesPrimitive<any> {
+    public chart: IChartApi | null = null;
+    public series: ISeriesApi<'Candlestick'> | null = null;
+    public data: SMCResult | null = null;
+    public settings: SMCSettings;
+    public visible: boolean = true;
+
+    private _requestUpdate?: () => void;
+    private _paneViews: SMCPaneView[];
+
+    constructor(data: SMCResult | null, settings: SMCSettings, visible: boolean) {
+        this.data = data;
+        this.settings = settings;
+        this.visible = visible;
+        this._paneViews = [new SMCPaneView(this)];
+    }
+
+    attached(param: SeriesAttachedParameter<any, any>): void {
+        this.chart = param.chart as unknown as IChartApi;
+        this.series = param.series as unknown as ISeriesApi<'Candlestick'>;
+        this._requestUpdate = param.requestUpdate;
+        this.requestUpdate();
+    }
+
+    detached(): void {
+        this.chart = null;
+        this.series = null;
+        this._requestUpdate = undefined;
+    }
+
+    updateParams(data: SMCResult | null, settings: SMCSettings, visible: boolean): void {
+        this.data = data;
+        this.settings = settings;
+        this.visible = visible;
+        this.requestUpdate();
+    }
+
+    requestUpdate(): void {
+        this._requestUpdate?.();
+    }
+
+    updateAllViews(): void {}
+
+    paneViews(): readonly IPrimitivePaneView[] {
+        return this._paneViews;
+    }
+}
+
+export const SMCRenderer: React.FC<SMCRendererProps> = ({
+    chart,
+    series,
+    data,
+    settings,
+    visible,
+}) => {
+    const primitiveRef = useRef<SMCPrimitive | null>(null);
+
     useEffect(() => {
-        if (!chart || !visible) return;
+        if (!series || !chart) return;
 
-        const scheduleRender = () => {
-            cancelAnimationFrame(animFrameRef.current);
-            animFrameRef.current = requestAnimationFrame(render);
-        };
-
-        scheduleRender();
-
-        chart.timeScale().subscribeVisibleTimeRangeChange(scheduleRender);
-        chart.timeScale().subscribeVisibleLogicalRangeChange(scheduleRender);
+        const primitive = new SMCPrimitive(data, settings, visible);
+        primitiveRef.current = primitive;
+        series.attachPrimitive(primitive);
 
         return () => {
-            cancelAnimationFrame(animFrameRef.current);
-            chart.timeScale().unsubscribeVisibleTimeRangeChange(scheduleRender);
-            chart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleRender);
+            try {
+                series.detachPrimitive(primitive);
+            } catch (e) {}
+            primitiveRef.current = null;
         };
-    }, [chart, render, visible]);
+    }, [chart, series]);
 
-    // Re-render when data changes
     useEffect(() => {
-        if (!visible) return;
-        cancelAnimationFrame(animFrameRef.current);
-        animFrameRef.current = requestAnimationFrame(render);
-        return () => cancelAnimationFrame(animFrameRef.current);
-    }, [render, visible]);
+        if (primitiveRef.current) {
+            primitiveRef.current.updateParams(data, settings, visible);
+        }
+    }, [data, settings, visible]);
 
-    if (!visible) return null;
-
-    return (
-        <div
-            ref={containerRef}
-            style={{
-                position: 'absolute',
-                inset: 0,
-                pointerEvents: 'none',
-                zIndex: 5,
-                overflow: 'hidden',
-            }}
-        />
-    );
+    return null;
 };

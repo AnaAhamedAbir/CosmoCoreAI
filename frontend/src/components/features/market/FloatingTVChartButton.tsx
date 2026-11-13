@@ -65,9 +65,10 @@ interface MiniChartProps {
   interval: string;
   ind:      IndSettings;
   isThermalGuard?: boolean;
+  isDraggingRef?: React.MutableRefObject<boolean>;
 }
 
-const MiniOrderFlowChart: React.FC<MiniChartProps> = React.memo(({ symbol, exchange, interval, ind, isThermalGuard = false }) => {
+const MiniOrderFlowChart: React.FC<MiniChartProps> = React.memo(({ symbol, exchange, interval, ind, isThermalGuard = false, isDraggingRef }) => {
   const { theme } = useTheme();
   const isLight = theme === 'light';
   const containerRef     = useRef<HTMLDivElement>(null);
@@ -343,6 +344,8 @@ const MiniOrderFlowChart: React.FC<MiniChartProps> = React.memo(({ symbol, excha
           if (!mountedRef.current) return;
           // When app is in background, tab hidden, or screen locked on tablet/mobile, stop CPU/GPU work
           if (typeof document !== 'undefined' && document.hidden) return;
+          // When user is dragging modal across the screen, suspend canvas updates to guarantee silky-smooth 120fps GPU transform
+          if (isDraggingRef?.current) return;
 
           try {
             const msg = JSON.parse(ev.data);
@@ -452,7 +455,7 @@ interface FloatingTVChartButtonProps {
   size?: 'sm' | 'md';
 }
 
-export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
+const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
   symbol,
   exchange = 'bybit',
   size = 'md',
@@ -471,6 +474,8 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
   // ── Ultra-Smooth 120fps GPU Dragging Implementation (Zero React Re-render direct transform) ──
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const chartContentRef = useRef<HTMLDivElement>(null);
+  const activeDragCleanupRef = useRef<(() => void) | null>(null);
+  const isDraggingRef = useRef(false);
 
   const [modalPos, setModalPos] = useState<{ x: number; y: number }>(() => {
     if (typeof window !== 'undefined') {
@@ -497,6 +502,9 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
       y: isMobile ? 45 : Math.max(10, Math.min(winH - 540, winH - 600)),
     };
   });
+
+  const modalPosRef = useRef(modalPos);
+  modalPosRef.current = modalPos;
 
   const dragRef = useRef({
     isDragging: false,
@@ -527,39 +535,43 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
     };
   }, []);
 
-  // Synchronize modal position and observe live window resize
+  // Synchronize modal position and observe live window resize (Isolated from active dragging)
   useEffect(() => {
     if (!isOpen || typeof window === 'undefined') return;
     const modalEl = modalContainerRef.current;
     if (!modalEl) return;
 
-    const clamped = clampPos(modalPos.x, modalPos.y);
+    if (dragRef.current.isDragging) return;
+
+    const clamped = clampPos(modalPosRef.current.x, modalPosRef.current.y);
     modalEl.style.transform = `translate3d(${clamped.x}px, ${clamped.y}px, 0)`;
     dragRef.current.currentX = clamped.x;
     dragRef.current.currentY = clamped.y;
 
-    if (clamped.x !== modalPos.x || clamped.y !== modalPos.y) {
+    if (clamped.x !== modalPosRef.current.x || clamped.y !== modalPosRef.current.y) {
+      modalPosRef.current = clamped;
       setModalPos(clamped);
     }
 
     const onWindowResize = () => {
       if (dragRef.current.isDragging) return;
-      const nextClamped = clampPos(modalPos.x, modalPos.y);
+      const nextClamped = clampPos(modalPosRef.current.x, modalPosRef.current.y);
       if (modalContainerRef.current) {
         modalContainerRef.current.style.transform = `translate3d(${nextClamped.x}px, ${nextClamped.y}px, 0)`;
       }
       dragRef.current.currentX = nextClamped.x;
       dragRef.current.currentY = nextClamped.y;
-      if (nextClamped.x !== modalPos.x || nextClamped.y !== modalPos.y) {
+      if (nextClamped.x !== modalPosRef.current.x || nextClamped.y !== modalPosRef.current.y) {
+        modalPosRef.current = nextClamped;
         setModalPos(nextClamped);
       }
     };
 
     window.addEventListener('resize', onWindowResize);
     return () => window.removeEventListener('resize', onWindowResize);
-  }, [isOpen, clampPos, modalPos.x, modalPos.y]);
+  }, [isOpen, clampPos]);
 
-  // Ultra-Smooth 120fps GPU Mouse & Touch Drag Handler (Zero React re-renders during drag)
+  // Ultra-Smooth 120fps GPU Mouse & Touch Drag Handler with RAF synchronization
   const handleStartDrag = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
       const isTouch = 'touches' in e;
@@ -584,20 +596,24 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
       }
       e.stopPropagation();
 
+      activeDragCleanupRef.current?.();
+
       const modalEl = modalContainerRef.current;
       const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
       const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
       const modalW = modalEl?.offsetWidth || 540;
       const modalH = modalEl?.offsetHeight || 520;
 
+      const currentPos = modalPosRef.current;
       const drag = dragRef.current;
       drag.isDragging = true;
+      isDraggingRef.current = true;
       drag.startX = startClientX;
       drag.startY = startClientY;
-      drag.originX = modalPos.x;
-      drag.originY = modalPos.y;
-      drag.currentX = modalPos.x;
-      drag.currentY = modalPos.y;
+      drag.originX = currentPos.x;
+      drag.originY = currentPos.y;
+      drag.currentX = currentPos.x;
+      drag.currentY = currentPos.y;
       drag.minX = 6;
       drag.maxX = Math.max(6, winW - modalW - 6);
       drag.minY = 6;
@@ -624,13 +640,15 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
         chartContentRef.current.style.pointerEvents = 'none';
       }
 
-      const applyMove = (clientX: number, clientY: number) => {
-        if (!drag.isDragging) return;
-        const rawX = drag.originX + (clientX - drag.startX);
-        const rawY = drag.originY + (clientY - drag.startY);
+      let rafId: number | null = null;
+      let targetX = currentPos.x;
+      let targetY = currentPos.y;
 
-        const clampedX = Math.max(drag.minX, Math.min(drag.maxX, rawX));
-        const clampedY = Math.max(drag.minY, Math.min(drag.maxY, rawY));
+      const flushMove = () => {
+        rafId = null;
+        if (!drag.isDragging) return;
+        const clampedX = Math.max(drag.minX, Math.min(drag.maxX, targetX));
+        const clampedY = Math.max(drag.minY, Math.min(drag.maxY, targetY));
 
         drag.currentX = clampedX;
         drag.currentY = clampedY;
@@ -640,8 +658,18 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
         }
       };
 
+      const scheduleMove = (clientX: number, clientY: number) => {
+        if (!drag.isDragging) return;
+        targetX = drag.originX + (clientX - drag.startX);
+        targetY = drag.originY + (clientY - drag.startY);
+
+        if (rafId === null) {
+          rafId = requestAnimationFrame(flushMove);
+        }
+      };
+
       const onMouseMove = (mv: MouseEvent) => {
-        applyMove(mv.clientX, mv.clientY);
+        scheduleMove(mv.clientX, mv.clientY);
       };
 
       const onTouchMove = (tv: TouchEvent) => {
@@ -649,15 +677,23 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
         if (tv.cancelable) tv.preventDefault();
         const touch = tv.touches[0];
         if (!touch) return;
-        applyMove(touch.clientX, touch.clientY);
+        scheduleMove(touch.clientX, touch.clientY);
       };
 
-      const onUp = () => {
-        if (!drag.isDragging) return;
+      const cleanupDrag = () => {
         drag.isDragging = false;
-        document.body.style.userSelect = '';
-        document.body.style.cursor = '';
-        document.body.style.pointerEvents = '';
+        isDraggingRef.current = false;
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+          flushMove();
+        }
+
+        if (typeof document !== 'undefined') {
+          document.body.style.userSelect = '';
+          document.body.style.cursor = '';
+          document.body.style.pointerEvents = '';
+        }
 
         if (modalContainerRef.current) {
           modalContainerRef.current.style.pointerEvents = '';
@@ -671,20 +707,34 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
           chartContentRef.current.style.pointerEvents = '';
         }
 
-        const finalPos = { x: drag.currentX, y: drag.currentY };
-        setModalPos(finalPos);
-        try {
-          localStorage.setItem('cosmo_floating_tv_chart_pos_v2', JSON.stringify(finalPos));
-        } catch {}
-
         window.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('mouseup', onUp);
         window.removeEventListener('touchmove', onTouchMove);
         window.removeEventListener('touchend', onUp);
         window.removeEventListener('touchcancel', onUp);
         window.removeEventListener('blur', onUp);
+
+        if (activeDragCleanupRef.current === cleanupDrag) {
+          activeDragCleanupRef.current = null;
+        }
       };
 
+      const onUp = () => {
+        if (!drag.isDragging) {
+          cleanupDrag();
+          return;
+        }
+        cleanupDrag();
+
+        const finalPos = { x: drag.currentX, y: drag.currentY };
+        modalPosRef.current = finalPos;
+        setModalPos(finalPos);
+        try {
+          localStorage.setItem('cosmo_floating_tv_chart_pos_v2', JSON.stringify(finalPos));
+        } catch {}
+      };
+
+      activeDragCleanupRef.current = cleanupDrag;
       window.addEventListener('mousemove', onMouseMove, { passive: true });
       window.addEventListener('mouseup', onUp);
       window.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -692,12 +742,13 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
       window.addEventListener('touchcancel', onUp);
       window.addEventListener('blur', onUp);
     },
-    [modalPos, clampPos]
+    [clampPos]
   );
 
   // Safety cleanup on unmount
   useEffect(() => {
     return () => {
+      activeDragCleanupRef.current?.();
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
       document.body.style.pointerEvents = '';
@@ -761,6 +812,7 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
                 top: 0,
                 transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : modalPos.x}px, ${dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y}px, 0)`,
                 willChange: 'transform',
+                contain: 'layout paint',
                 height: modalHeight,
                 zIndex: 100000,
               }}
@@ -908,6 +960,7 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
                   interval={interval}
                   ind={ind}
                   isThermalGuard={isThermalGuardActive}
+                  isDraggingRef={isDraggingRef}
                 />
               </div>
             </div>
@@ -917,3 +970,5 @@ export const FloatingTVChartButton: React.FC<FloatingTVChartButtonProps> = ({
     </>
   );
 };
+
+export const FloatingTVChartButton = React.memo(FloatingTVChartButtonBase);

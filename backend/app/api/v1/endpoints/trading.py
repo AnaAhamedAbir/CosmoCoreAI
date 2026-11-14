@@ -1569,7 +1569,7 @@ async def emergency_force_order_endpoint(
         logger.error(f"Emergency Force Order failed: {e}")
         raise HTTPException(status_code=400, detail=f"Emergency Force Order Failed: {str(e)}")
 
-@router.delete("/order/{api_key_id}/{order_id}")
+@router.delete("/order/{api_key_id}/{order_id:path}")
 async def cancel_order_endpoint(
     api_key_id: int,
     order_id: str,

@@ -247,7 +247,7 @@ export const manualTradeService = {
   },
 
   cancelOrder: async (apiKeyId: number, orderId: string, symbol: string) => {
-    const response = await api.delete(`/trading/order/${apiKeyId}/${orderId}?symbol=${encodeURIComponent(symbol)}`);
+    const response = await api.delete(`/trading/order/${apiKeyId}/${encodeURIComponent(orderId)}?symbol=${encodeURIComponent(symbol)}`);
     return response.data;
   },
 

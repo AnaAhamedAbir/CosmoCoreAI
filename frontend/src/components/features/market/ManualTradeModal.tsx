@@ -37,15 +37,15 @@ interface ManualTradeModalProps {
   onChartDragBracketEnd?: (type: 'tp' | 'sl', clientX: number, clientY: number) => { inChart: boolean; price: number | null };
 }
 
-const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({ 
-  symbol, 
-  currentPrice, 
+const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
+  symbol,
+  currentPrice,
   availablePairs,
   onSelectPair,
-  onApiKeyChange, 
-  clickedPrice, 
-  openTrigger, 
-  buttonSize = 'md', 
+  onApiKeyChange,
+  clickedPrice,
+  openTrigger,
+  buttonSize = 'md',
   onClose,
   onOpenChange,
   onChartDragBracketStart,
@@ -72,7 +72,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           const parsed = JSON.parse(saved);
           if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') return parsed;
         }
-      } catch {}
+      } catch { }
     }
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
     return { x: 20, y: Math.max(8, winH - 104 - 180) };
@@ -86,7 +86,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           const parsed = JSON.parse(saved);
           if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') return parsed;
         }
-      } catch {}
+      } catch { }
     }
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
     return { x: 20, y: Math.max(16, winH - 104 - 620) };
@@ -334,9 +334,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     toast.custom(
       (t) => (
         <div
-          className={`${
-            t.visible ? 'animate-enter' : 'animate-leave'
-          } max-w-[390px] w-full ${isThermalGuardActive ? 'bg-[#0B0E14]/95' : 'bg-[#0b101b]/95 backdrop-blur-xl'} border border-amber-500/45 rounded-xl shadow-[0_14px_45px_rgba(0,0,0,0.85),0_0_25px_rgba(245,158,11,0.18)] p-3.5 text-white pointer-events-auto`}
+          className={`${t.visible ? 'animate-enter' : 'animate-leave'
+            } max-w-[390px] w-full ${isThermalGuardActive ? 'bg-[#0B0E14]/95' : 'bg-[#0b101b]/95 backdrop-blur-xl'} border border-amber-500/45 rounded-xl shadow-[0_14px_45px_rgba(0,0,0,0.85),0_0_25px_rgba(245,158,11,0.18)] p-3.5 text-white pointer-events-auto`}
         >
           <div className="flex items-start justify-between gap-2 pb-2 border-b border-white/10">
             <div className="flex items-center gap-2">
@@ -349,11 +348,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     AI Trade Shield
                   </span>
                   <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase border ${
-                      notice.side === 'BUY'
-                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                        : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
-                    }`}
+                    className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase border ${notice.side === 'BUY'
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                      : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                      }`}
                   >
                     {notice.side} Blocked
                   </span>
@@ -390,11 +388,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
               <div className="relative h-2 w-full bg-white/10 rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-300 ${
-                    notice.side === 'BUY'
-                      ? 'bg-gradient-to-r from-emerald-600 to-amber-400'
-                      : 'bg-gradient-to-r from-rose-600 to-amber-400'
-                  }`}
+                  className={`h-full rounded-full transition-all duration-300 ${notice.side === 'BUY'
+                    ? 'bg-gradient-to-r from-emerald-600 to-amber-400'
+                    : 'bg-gradient-to-r from-rose-600 to-amber-400'
+                    }`}
                   style={{ width: `${Math.min(100, Math.max(4, notice.calibratedProb))}%` }}
                 />
                 <div
@@ -680,9 +677,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           price,
           mode: resolvedMode,
           isSoftwareSL: !isLinkedTp && Boolean(ord.isSoftwareSL || mode === 'STOP'),
-          label: `${tagPrefix} ${sideLabel} ${Number(effAmt.toFixed(4))} @ $${formatDisplayPrice(price)}${
-            slPrice > 0 ? ` / SL $${formatDisplayPrice(slPrice)}` : ''
-          }`
+          label: `${tagPrefix} ${sideLabel} ${Number(effAmt.toFixed(4))} @ $${formatDisplayPrice(price)}${slPrice > 0 ? ` / SL $${formatDisplayPrice(slPrice)}` : ''
+            }`
         });
       } else {
         const icon = mode === 'TP' ? '🎯' : mode === 'STOP' ? '🛑' : '📌';
@@ -882,55 +878,55 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       const refOrderPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
       const customBaseAmt = hasCustomTypedSize
         ? (isInverseFutures && contractSize > 0
-            ? (sizeMode === 'quote'
-                ? Math.max(1, Math.floor(Number(size) / contractSize))
-                : Math.max(1, Math.round((Number(size) * refOrderPrice) / contractSize)))
-            : (sizeMode === 'quote' && refOrderPrice > 0 ? Number(size) / refOrderPrice : Number(size)))
+          ? (sizeMode === 'quote'
+            ? Math.max(1, Math.floor(Number(size) / contractSize))
+            : Math.max(1, Math.round((Number(size) * refOrderPrice) / contractSize)))
+          : (sizeMode === 'quote' && refOrderPrice > 0 ? Number(size) / refOrderPrice : Number(size)))
         : undefined;
 
       const attachedTpPayload =
         tpConfig.enabled && tpConfig.value && Number(tpConfig.value) > 0
           ? {
-              enabled: true,
-              mode: tpConfig.mode as 'percentage' | 'price' | 'absolute',
-              value: Number(tpConfig.value),
-              order_type: tpConfig.orderType,
-              timeout_mins: tpConfig.timeoutMins
-            }
+            enabled: true,
+            mode: tpConfig.mode as 'percentage' | 'price' | 'absolute',
+            value: Number(tpConfig.value),
+            order_type: tpConfig.orderType,
+            timeout_mins: tpConfig.timeoutMins
+          }
           : undefined;
 
       const attachedSlPayload =
         slConfig.enabled && (slConfig.mode === 'atr' || (slConfig.value && Number(slConfig.value) > 0))
           ? {
-              enabled: true,
-              type: slConfig.type,
-              mode: slConfig.mode,
-              value: Number(slConfig.value || 0),
-              atr_period: slConfig.atrPeriod,
-              atr_multiplier: slConfig.atrMultiplier,
-              atr_timeframe: slConfig.atrTimeframe,
-              timeout_mins: slConfig.timeoutMins,
-              smart_chase_deviation_pct: slConfig.smartChaseDeviationPct ?? 5.0,
-              smartChaseDeviationPct: slConfig.smartChaseDeviationPct ?? 5.0,
-              smart_chase_delay_ms: slConfig.smartChaseDelayMs ?? 1500,
-              smartChaseDelayMs: slConfig.smartChaseDelayMs ?? 1500,
-              smart_chase_max_attempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
-              smartChaseMaxAttempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
-              smart_chase_mode: slConfig.smartChaseMode || 'dynamic_bbo',
-              smartChaseMode: slConfig.smartChaseMode || 'dynamic_bbo',
-              smart_chase_trigger_source: slConfig.smartChaseTriggerSource || 'bid_ask',
-              smartChaseTriggerSource: slConfig.smartChaseTriggerSource || 'bid_ask',
-              smart_chase_peg_strategy: slConfig.smartChasePegStrategy || 'bbo',
-              smartChasePegStrategy: slConfig.smartChasePegStrategy || 'bbo',
-              smart_chase_wall_multiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
-              smartChaseWallMultiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
-              auto_breakeven_enabled: slConfig.autoBreakevenEnabled,
-              autoBreakevenEnabled: slConfig.autoBreakevenEnabled,
-              auto_breakeven_trigger_pct: slConfig.autoBreakevenTriggerPct ?? 1.0,
-              autoBreakevenTriggerPct: slConfig.autoBreakevenTriggerPct ?? 1.0,
-              auto_breakeven_buffer_pct: slConfig.autoBreakevenBufferPct ?? 0.05,
-              autoBreakevenBufferPct: slConfig.autoBreakevenBufferPct ?? 0.05
-            }
+            enabled: true,
+            type: slConfig.type,
+            mode: slConfig.mode,
+            value: Number(slConfig.value || 0),
+            atr_period: slConfig.atrPeriod,
+            atr_multiplier: slConfig.atrMultiplier,
+            atr_timeframe: slConfig.atrTimeframe,
+            timeout_mins: slConfig.timeoutMins,
+            smart_chase_deviation_pct: slConfig.smartChaseDeviationPct ?? 5.0,
+            smartChaseDeviationPct: slConfig.smartChaseDeviationPct ?? 5.0,
+            smart_chase_delay_ms: slConfig.smartChaseDelayMs ?? 1500,
+            smartChaseDelayMs: slConfig.smartChaseDelayMs ?? 1500,
+            smart_chase_max_attempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
+            smartChaseMaxAttempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
+            smart_chase_mode: slConfig.smartChaseMode || 'dynamic_bbo',
+            smartChaseMode: slConfig.smartChaseMode || 'dynamic_bbo',
+            smart_chase_trigger_source: slConfig.smartChaseTriggerSource || 'bid_ask',
+            smartChaseTriggerSource: slConfig.smartChaseTriggerSource || 'bid_ask',
+            smart_chase_peg_strategy: slConfig.smartChasePegStrategy || 'bbo',
+            smartChasePegStrategy: slConfig.smartChasePegStrategy || 'bbo',
+            smart_chase_wall_multiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
+            smartChaseWallMultiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
+            auto_breakeven_enabled: slConfig.autoBreakevenEnabled,
+            autoBreakevenEnabled: slConfig.autoBreakevenEnabled,
+            auto_breakeven_trigger_pct: slConfig.autoBreakevenTriggerPct ?? 1.0,
+            autoBreakevenTriggerPct: slConfig.autoBreakevenTriggerPct ?? 1.0,
+            auto_breakeven_buffer_pct: slConfig.autoBreakevenBufferPct ?? 0.05,
+            autoBreakevenBufferPct: slConfig.autoBreakevenBufferPct ?? 0.05
+          }
           : undefined;
 
       const res = await manualTradeService.emergencyForceOrder({
@@ -963,9 +959,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
       toast.success(
         res.message ||
-          (emergencyMode === 'limit_maker'
-            ? `⚡ Emergency Force ${side} (0% Fee Maker Peg) active for ${activeSymbol}!`
-            : `🚨 Emergency Force ${side} (Market) executed for ${activeSymbol}!`)
+        (emergencyMode === 'limit_maker'
+          ? `⚡ Emergency Force ${side} (0% Fee Maker Peg) active for ${activeSymbol}!`
+          : `🚨 Emergency Force ${side} (Market) executed for ${activeSymbol}!`)
       );
       fetchActiveBrackets(true);
       fetchBalance(true);
@@ -1368,13 +1364,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         setHudPos(finalPos);
         try {
           localStorage.setItem('cosmo_manual_trade_hud_pos_v2', JSON.stringify(finalPos));
-        } catch {}
+        } catch { }
       } else {
         hasUserDraggedModalRef.current = true;
         setModalPos(finalPos);
         try {
           localStorage.setItem('cosmo_manual_trade_full_pos_v2', JSON.stringify(finalPos));
-        } catch {}
+        } catch { }
       }
 
       window.removeEventListener('mousemove', onMouseMove);
@@ -1820,7 +1816,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     const targetEl = e.currentTarget as HTMLElement;
     try {
       targetEl.setPointerCapture(pointerId);
-    } catch {}
+    } catch { }
 
     activeDragLineRef.current = {
       type,
@@ -1858,7 +1854,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
       try {
         targetEl.releasePointerCapture(pointerId);
-      } catch {}
+      } catch { }
 
       if (clearGhostLine) {
         activeDragLineRef.current = null;
@@ -2248,6 +2244,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         return;
       }
       setAiRejectNotice(null);
+      toast.dismiss(toastId);
 
       const createdOrderId = orderRes?.id;
       const aiNote = orderRes?.ai_filter_info ? ` [🤖 ${orderRes.ai_filter_info}]` : '';
@@ -2255,11 +2252,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       toast.custom(
         (t) => (
           <div
-            className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border font-mono shadow-2xl backdrop-blur-xl ${
-              side === 'Buy'
-                ? 'bg-emerald-950/95 border-emerald-500/60 text-emerald-200'
-                : 'bg-rose-950/95 border-rose-500/60 text-rose-200'
-            }`}
+            className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border font-mono shadow-2xl backdrop-blur-xl ${side === 'Buy'
+              ? 'bg-emerald-950/95 border-emerald-500/60 text-emerald-200'
+              : 'bg-rose-950/95 border-rose-500/60 text-rose-200'
+              }`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="text-base shrink-0">{isSmartPeg ? '⚡' : '✅'}</span>
@@ -2340,7 +2336,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
         try {
           targetEl.setPointerCapture(pointerId);
-        } catch {}
+        } catch { }
 
         const startFn = onChartDragBracketStart || (typeof window !== 'undefined' ? (window as any)._handleChartDragBracketStart : null);
         startFn?.(dragType);
@@ -2373,7 +2369,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
       try {
         targetEl.releasePointerCapture(pointerId);
-      } catch {}
+      } catch { }
 
       if (abortGhost && hasStartedChartDrag) {
         setActiveDragLine(null);
@@ -2571,7 +2567,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       }
       baseAmount = Number(resolvedSizeStr) / convPrice;
     }
-    
+
     setIsSubmitting(true);
     setSubmittingSide(side);
     try {
@@ -2693,9 +2689,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       toast.custom(
         (t) => (
           <div
-            className={`${
-              t.visible ? 'animate-enter' : 'animate-leave'
-            } max-w-sm w-full ${isThermalGuardActive ? 'bg-[#0B0E14]/95' : 'bg-[#070b14]/95 backdrop-blur-xl'} border border-cyan-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.85)] p-3 text-white pointer-events-auto flex items-center justify-between gap-3`}
+            className={`${t.visible ? 'animate-enter' : 'animate-leave'
+              } max-w-sm w-full ${isThermalGuardActive ? 'bg-[#0B0E14]/95' : 'bg-[#070b14]/95 backdrop-blur-xl'} border border-cyan-500/40 rounded-xl shadow-[0_10px_35px_rgba(0,0,0,0.85)] p-3 text-white pointer-events-auto flex items-center justify-between gap-3`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="text-base shrink-0">{orderType === 'SmartPeg' ? '⚡' : '✅'}</span>
@@ -2789,11 +2784,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
               setIsOpen(true);
               setIsMinimized(false);
             }}
-            className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center border text-white ${isThermalGuardActive ? '' : 'backdrop-blur-md'} z-[999] transition-all focus:outline-none group ${
-              activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging')
-                ? 'bg-gradient-to-r from-red-600 via-amber-600 to-amber-500 border-amber-400 animate-pulse shadow-md dark:shadow-[0_0_20px_rgba(245,158,11,0.7)]'
-                : `bg-brand-primary hover:bg-blue-600 border-slate-900/15 dark:border-blue-400/30 shadow-md ${buttonSize === 'sm' ? 'dark:shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'dark:shadow-[0_0_20px_rgba(59,130,246,0.4)]'}`
-            }`}
+            className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center border text-white ${isThermalGuardActive ? '' : 'backdrop-blur-md'} z-[999] transition-all focus:outline-none group ${activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging')
+              ? 'bg-gradient-to-r from-red-600 via-amber-600 to-amber-500 border-amber-400 animate-pulse shadow-md dark:shadow-[0_0_20px_rgba(245,158,11,0.7)]'
+              : `bg-brand-primary hover:bg-blue-600 border-slate-900/15 dark:border-blue-400/30 shadow-md ${buttonSize === 'sm' ? 'dark:shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'dark:shadow-[0_0_20px_rgba(59,130,246,0.4)]'}`
+              }`}
             title={
               activeBrackets.some(b => b.status === 'pegging')
                 ? "⚡ Smart Peg Entry Active! Click to manage"
@@ -2840,7 +2834,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                   {activePeg ? `Entry Pegging • ${activeSymbol} (${activePeg.side?.toUpperCase()})` : `SL Chasing • ${activeSymbol}`}
                 </span>
                 <span className="text-[10px] text-amber-300 font-mono">
-                  {activePeg 
+                  {activePeg
                     ? `Attempt ${activePeg.current_attempt || 1}/${activePeg.max_attempts ? activePeg.max_attempts : '∞'} • Maker: ${activePeg.current_maker_price || 'Active'}`
                     : `Attempt ${activeChase?.current_attempt || 1}/${activeChase?.max_attempts ? activeChase.max_attempts : '∞'}`
                   }
@@ -2903,15 +2897,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                 transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : (isMinimized ? hudPos.x : modalPos.x)}px, ${dragRef.current.isDragging ? dragRef.current.currentY : (isMinimized ? hudPos.y : modalPos.y)}px, 0)`,
                 willChange: 'transform'
               }}
-              className={`cosmo-theme-modal fixed rounded-xl ${
-                isMinimized
-                  ? isThermalGuardActive
-                    ? 'w-[395px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
-                    : 'w-[395px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
-                  : isThermalGuardActive
-                    ? 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#0B0E14]/95 border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.85)]'
-                    : 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#000000]/80 border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl'
-              } border z-[99999] overflow-hidden transition-colors duration-200 select-none`}
+              className={`cosmo-theme-modal fixed rounded-xl ${isMinimized
+                ? isThermalGuardActive
+                  ? 'w-[395px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
+                  : 'w-[395px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
+                : isThermalGuardActive
+                  ? 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#0B0E14]/95 border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.85)]'
+                  : 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#000000]/80 border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl'
+                } border z-[99999] overflow-hidden transition-colors duration-200 select-none`}
             >
               {isMinimized ? (
                 /* ULTRA-SLIM PREMIUM MINIMIZED QUICK TRADE CYBER-HUD */
@@ -2938,11 +2931,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse shrink-0" />
                         <span className="font-black text-white text-[11px] tracking-tight truncate max-w-[85px]">{activeSymbol}</span>
                         <span
-                          className={`text-[8px] uppercase px-1 py-0.2 rounded font-mono font-extrabold border leading-tight shrink-0 ${
-                            isFutures
-                              ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
-                              : 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
-                          }`}
+                          className={`text-[8px] uppercase px-1 py-0.2 rounded font-mono font-extrabold border leading-tight shrink-0 ${isFutures
+                            ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
+                            : 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
+                            }`}
                         >
                           {isFutures ? `${leverage}x` : 'SPOT'}
                         </span>
@@ -2964,13 +2956,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             });
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
-                          className={`text-[8px] px-1.5 py-0.5 rounded font-mono font-black uppercase leading-tight shrink-0 pointer-events-auto cursor-pointer transition-all active:scale-95 border ${
-                            orderType === 'SmartPeg'
-                              ? 'bg-amber-500/25 border-amber-400/60 text-amber-300 hover:bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.35)]'
-                              : orderType === 'Market'
-                                ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-300 hover:bg-cyan-500/35 shadow-[0_0_8px_rgba(6,182,212,0.3)]'
-                                : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/10 hover:border-cyan-400/40 text-gray-300 hover:text-white'
-                          }`}
+                          className={`text-[8px] px-1.5 py-0.5 rounded font-mono font-black uppercase leading-tight shrink-0 pointer-events-auto cursor-pointer transition-all active:scale-95 border ${orderType === 'SmartPeg'
+                            ? 'bg-amber-500/25 border-amber-400/60 text-amber-300 hover:bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.35)]'
+                            : orderType === 'Market'
+                              ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-300 hover:bg-cyan-500/35 shadow-[0_0_8px_rgba(6,182,212,0.3)]'
+                              : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/10 hover:border-cyan-400/40 text-gray-300 hover:text-white'
+                            }`}
                           title="Click to switch Order Type: Limit ➔ Market ➔ Smart Peg"
                         >
                           {orderType === 'SmartPeg' ? '⚡PEG' : orderType === 'Market' ? 'MKT' : 'LMT'}
@@ -3007,11 +2998,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         )}
                         {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
                           <span
-                            className={`text-[8px] px-1 py-0.2 rounded font-mono font-black leading-tight border shrink-0 ${
-                              positionData.side.toLowerCase() === 'long'
-                                ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/50'
-                                : 'bg-rose-500/25 text-rose-300 border-rose-400/50'
-                            }`}
+                            className={`text-[8px] px-1 py-0.2 rounded font-mono font-black leading-tight border shrink-0 ${positionData.side.toLowerCase() === 'long'
+                              ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/50'
+                              : 'bg-rose-500/25 text-rose-300 border-rose-400/50'
+                              }`}
                             title={`Active Position: ${positionData.side.toUpperCase()} ${positionData.amount} ${baseCurrency}`}
                           >
                             POS:{positionData.side.toUpperCase()}
@@ -3036,9 +3026,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             fetchBalance(false);
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
-                          className={`p-1 rounded bg-white/[0.04] hover:bg-white/10 border border-white/[0.07] text-gray-400 hover:text-cyan-300 transition-all cursor-pointer ${
-                            isRefreshing ? 'text-cyan-400' : ''
-                          }`}
+                          className={`p-1 rounded bg-white/[0.04] hover:bg-white/10 border border-white/[0.07] text-gray-400 hover:text-cyan-300 transition-all cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''
+                            }`}
                           title="Refresh Balance"
                         >
                           <RefreshCw className={`w-2.5 h-2.5 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -3089,11 +3078,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               setSizeMode('base');
                               if (!selectedPercent) setSize('');
                             }}
-                            className={`px-1 py-0.2 rounded text-[8px] font-extrabold transition-all cursor-pointer leading-tight ${
-                              sizeMode === 'base'
-                                ? 'bg-cyan-500 text-slate-950'
-                                : 'text-gray-400 hover:text-white'
-                            }`}
+                            className={`px-1 py-0.2 rounded text-[8px] font-extrabold transition-all cursor-pointer leading-tight ${sizeMode === 'base'
+                              ? 'bg-cyan-500 text-slate-950'
+                              : 'text-gray-400 hover:text-white'
+                              }`}
                           >
                             {baseCurrency}
                           </button>
@@ -3103,11 +3091,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               setSizeMode('quote');
                               if (!selectedPercent) setSize('');
                             }}
-                            className={`px-1 py-0.2 rounded text-[8px] font-extrabold transition-all cursor-pointer leading-tight ${
-                              sizeMode === 'quote'
-                                ? 'bg-amber-400 text-slate-950'
-                                : 'text-gray-400 hover:text-white'
-                            }`}
+                            className={`px-1 py-0.2 rounded text-[8px] font-extrabold transition-all cursor-pointer leading-tight ${sizeMode === 'quote'
+                              ? 'bg-amber-400 text-slate-950'
+                              : 'text-gray-400 hover:text-white'
+                              }`}
                           >
                             {quoteCurrency}
                           </button>
@@ -3138,11 +3125,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   handlePercentSliderChange(pt);
                                 }}
                                 onPointerDown={(e) => e.stopPropagation()}
-                                className={`px-1.5 py-0.5 rounded font-mono text-[9px] font-extrabold border transition-all cursor-pointer active:scale-95 leading-tight ${
-                                  isSelected
-                                    ? 'bg-gradient-to-r from-cyan-500/35 to-emerald-500/30 border-cyan-400 text-cyan-200 shadow-[0_0_8px_rgba(6,182,212,0.35)]'
-                                    : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-cyan-500/40 text-gray-400 hover:text-white'
-                                }`}
+                                className={`px-1.5 py-0.5 rounded font-mono text-[9px] font-extrabold border transition-all cursor-pointer active:scale-95 leading-tight ${isSelected
+                                  ? 'bg-gradient-to-r from-cyan-500/35 to-emerald-500/30 border-cyan-400 text-cyan-200 shadow-[0_0_8px_rgba(6,182,212,0.35)]'
+                                  : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-cyan-500/40 text-gray-400 hover:text-white'
+                                  }`}
                               >
                                 {pt}%
                               </button>
@@ -3170,11 +3156,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               <div
                                 key={pt}
                                 style={{ left: `${pt}%` }}
-                                className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full border transition-all duration-150 ${
-                                  isReached
-                                    ? 'bg-cyan-300 border-white shadow-[0_0_5px_rgba(34,211,238,0.9)]'
-                                    : 'bg-[#152036] border-white/25'
-                                }`}
+                                className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full border transition-all duration-150 ${isReached
+                                  ? 'bg-cyan-300 border-white shadow-[0_0_5px_rgba(34,211,238,0.9)]'
+                                  : 'bg-[#152036] border-white/25'
+                                  }`}
                               />
                             );
                           })}
@@ -3206,11 +3191,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       data-no-drag="true"
                       onMouseDown={(e) => e.stopPropagation()}
                       onTouchStart={(e) => e.stopPropagation()}
-                      className={`flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg border transition-all ${
-                        mlFilterConfig.enabled
-                          ? 'bg-blue-950/40 border-blue-500/45 shadow-[0_0_10px_rgba(59,130,246,0.15)]'
-                          : 'bg-white/[0.02] border-white/10'
-                      }`}
+                      className={`flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg border transition-all ${mlFilterConfig.enabled
+                        ? 'bg-blue-950/40 border-blue-500/45 shadow-[0_0_10px_rgba(59,130,246,0.15)]'
+                        : 'bg-white/[0.02] border-white/10'
+                        }`}
                     >
                       <button
                         type="button"
@@ -3224,11 +3208,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           }));
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className={`px-1.5 py-0.5 rounded text-[8.5px] font-mono font-extrabold uppercase tracking-wider border transition-all cursor-pointer shrink-0 flex items-center gap-1 ${
-                          mlFilterConfig.enabled
-                            ? 'bg-blue-600/30 border-blue-400 text-blue-200 shadow-[0_0_8px_rgba(59,130,246,0.4)]'
-                            : 'bg-black/40 border-white/15 text-gray-400 hover:text-white'
-                        }`}
+                        className={`px-1.5 py-0.5 rounded text-[8.5px] font-mono font-extrabold uppercase tracking-wider border transition-all cursor-pointer shrink-0 flex items-center gap-1 ${mlFilterConfig.enabled
+                          ? 'bg-blue-600/30 border-blue-400 text-blue-200 shadow-[0_0_8px_rgba(59,130,246,0.4)]'
+                          : 'bg-black/40 border-white/15 text-gray-400 hover:text-white'
+                          }`}
                         title="Toggle L2 / Training Studio Machine Learning Entry Filter"
                       >
                         <span>🤖 AI {mlFilterConfig.enabled ? 'ON' : 'OFF'}</span>
@@ -3319,11 +3302,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             handleSideChange('Buy');
                           }}
                           style={{ touchAction: 'none' }}
-                          className={`px-2 py-1.5 rounded-md font-mono text-[9px] font-black uppercase tracking-wider transition-all cursor-grab active:cursor-grabbing leading-none select-none ${
-                            tradeSide === 'Buy'
-                              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.5)] border border-emerald-400/50'
-                              : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
-                          }`}
+                          className={`px-2 py-1.5 rounded-md font-mono text-[9px] font-black uppercase tracking-wider transition-all cursor-grab active:cursor-grabbing leading-none select-none ${tradeSide === 'Buy'
+                            ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.5)] border border-emerald-400/50'
+                            : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                            }`}
                           title="Click to select BUY, or Touch/Drag onto chart to place BUY at price level"
                         >
                           {isFutures ? 'LONG' : 'BUY'}
@@ -3343,11 +3325,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             handleSideChange('Sell');
                           }}
                           style={{ touchAction: 'none' }}
-                          className={`px-2 py-1.5 rounded-md font-mono text-[9px] font-black uppercase tracking-wider transition-all cursor-grab active:cursor-grabbing leading-none select-none ${
-                            tradeSide === 'Sell'
-                              ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)] border border-rose-400/50'
-                              : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
-                          }`}
+                          className={`px-2 py-1.5 rounded-md font-mono text-[9px] font-black uppercase tracking-wider transition-all cursor-grab active:cursor-grabbing leading-none select-none ${tradeSide === 'Sell'
+                            ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)] border border-rose-400/50'
+                            : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                            }`}
                           title="Click to select SELL, or Touch/Drag onto chart to place SELL at price level"
                         >
                           {isFutures ? 'SHORT' : 'SELL'}
@@ -3371,15 +3352,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           handleTrade(tradeSide);
                         }}
                         style={{ touchAction: 'none' }}
-                        className={`relative flex-1 overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 select-none cursor-grab active:cursor-grabbing group shadow-sm ${
-                          tradeSide === 'Buy'
-                            ? orderType === 'SmartPeg'
-                              ? 'bg-gradient-to-r from-amber-600/35 via-emerald-600/35 to-green-700/40 hover:from-amber-600 hover:to-green-600 text-emerald-300 hover:text-white border border-emerald-400/60 shadow-[0_2px_12px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)]'
-                              : 'bg-emerald-500/15 dark:bg-gradient-to-b dark:from-emerald-500/30 dark:via-emerald-600/25 dark:to-green-900/40 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:via-emerald-600 dark:hover:to-green-700 text-emerald-700 dark:text-emerald-300 hover:text-white border border-emerald-500/40 dark:border-emerald-400/50 hover:border-emerald-400 dark:hover:border-emerald-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)]'
-                            : orderType === 'SmartPeg'
-                              ? 'bg-gradient-to-r from-amber-600/35 via-rose-600/35 to-red-700/40 hover:from-amber-600 hover:to-red-600 text-rose-300 hover:text-white border border-rose-400/60 shadow-[0_2px_12px_rgba(244,63,94,0.3)] hover:shadow-[0_0_20px_rgba(244,63,94,0.5)]'
-                              : 'bg-rose-500/15 dark:bg-gradient-to-b dark:from-rose-500/30 dark:via-rose-600/25 dark:to-red-900/40 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:via-rose-600 dark:hover:to-red-700 text-rose-700 dark:text-rose-300 hover:text-white border border-rose-500/40 dark:border-rose-400/50 hover:border-rose-400 dark:hover:border-rose-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)]'
-                        }`}
+                        className={`relative flex-1 overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 select-none cursor-grab active:cursor-grabbing group shadow-sm ${tradeSide === 'Buy'
+                          ? orderType === 'SmartPeg'
+                            ? 'bg-gradient-to-r from-amber-600/35 via-emerald-600/35 to-green-700/40 hover:from-amber-600 hover:to-green-600 text-emerald-300 hover:text-white border border-emerald-400/60 shadow-[0_2px_12px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)]'
+                            : 'bg-emerald-500/15 dark:bg-gradient-to-b dark:from-emerald-500/30 dark:via-emerald-600/25 dark:to-green-900/40 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:via-emerald-600 dark:hover:to-green-700 text-emerald-700 dark:text-emerald-300 hover:text-white border border-emerald-500/40 dark:border-emerald-400/50 hover:border-emerald-400 dark:hover:border-emerald-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)]'
+                          : orderType === 'SmartPeg'
+                            ? 'bg-gradient-to-r from-amber-600/35 via-rose-600/35 to-red-700/40 hover:from-amber-600 hover:to-red-600 text-rose-300 hover:text-white border border-rose-400/60 shadow-[0_2px_12px_rgba(244,63,94,0.3)] hover:shadow-[0_0_20px_rgba(244,63,94,0.5)]'
+                            : 'bg-rose-500/15 dark:bg-gradient-to-b dark:from-rose-500/30 dark:via-rose-600/25 dark:to-red-900/40 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:via-rose-600 dark:hover:to-red-700 text-rose-700 dark:text-rose-300 hover:text-white border border-rose-500/40 dark:border-rose-400/50 hover:border-rose-400 dark:hover:border-rose-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)]'
+                          }`}
                         title={`Click for instant ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
                       >
                         {isSubmitting ? (
@@ -3404,11 +3384,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                         {(tpConfig.enabled || slConfig.enabled) && (
                           <span
-                            className={`text-[7.5px] font-mono px-1 py-0.2 rounded font-extrabold border shrink-0 leading-tight ${
-                              tradeSide === 'Buy'
-                                ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
-                                : 'bg-rose-950/80 border-rose-500/50 text-rose-300'
-                            }`}
+                            className={`text-[7.5px] font-mono px-1 py-0.2 rounded font-extrabold border shrink-0 leading-tight ${tradeSide === 'Buy'
+                              ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
+                              : 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+                              }`}
                             title={`Attached Brackets: ${[tpConfig.enabled && 'TP', slConfig.enabled && 'SL'].filter(Boolean).join(' + ')}`}
                           >
                             {tpConfig.enabled && slConfig.enabled ? 'TP+SL' : tpConfig.enabled ? 'TP' : 'SL'}
@@ -3486,11 +3465,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         >
                           <span>🎯 ORDER</span>
                           <span
-                            className={`px-1 py-0.2 rounded text-[7px] font-black leading-none border ${
-                              forceOrderTargets.length > 0
-                                ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
-                                : 'bg-white/5 border-white/10 text-gray-400'
-                            }`}
+                            className={`px-1 py-0.2 rounded text-[7px] font-black leading-none border ${forceOrderTargets.length > 0
+                              ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
+                              : 'bg-white/5 border-white/10 text-gray-400'
+                              }`}
                           >
                             {forceOrderTargets.length}
                           </span>
@@ -3582,11 +3560,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 setEmergencyMode('limit_maker');
                               }}
                               onPointerDown={(e) => e.stopPropagation()}
-                              className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${
-                                emergencyMode === 'limit_maker'
-                                  ? 'bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
-                                  : 'text-gray-400 hover:text-white'
-                              }`}
+                              className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${emergencyMode === 'limit_maker'
+                                ? 'bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
+                                : 'text-gray-400 hover:text-white'
+                                }`}
                               title="Option 1: Dynamic Limit Maker (0% Maker Fee — chases Best Bid/Ask until 100% filled)"
                             >
                               MAKER 0%
@@ -3598,11 +3575,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 setEmergencyMode('market');
                               }}
                               onPointerDown={(e) => e.stopPropagation()}
-                              className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${
-                                emergencyMode === 'market'
-                                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
-                                  : 'text-gray-400 hover:text-white'
-                              }`}
+                              className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${emergencyMode === 'market'
+                                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+                                : 'text-gray-400 hover:text-white'
+                                }`}
                               title="Option 2: Instant Market Price Sweep"
                             >
                               MARKET
@@ -3658,25 +3634,21 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               handleEmergencyForceTrade('Buy');
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
-                            className={`flex-1 py-1 px-1.5 rounded font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${
-                              selectedForceTarget?.side === 'sell'
-                                ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed select-none'
-                                : `bg-emerald-500/15 dark:bg-gradient-to-r dark:from-emerald-600/35 dark:to-cyan-600/35 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:to-cyan-500 border hover:border-emerald-400 dark:hover:border-white text-emerald-700 dark:text-emerald-200 hover:text-white dark:hover:text-slate-950 shadow-sm dark:shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:shadow-[0_0_14px_rgba(16,185,129,0.5)] cursor-pointer active:scale-95 disabled:opacity-50 ${
-                                    selectedForceTarget?.side === 'buy'
-                                      ? 'border-emerald-500 dark:border-emerald-300 ring-1 ring-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.35)]'
-                                      : 'border-emerald-500/50 dark:border-emerald-400/60'
-                                  }`
-                            }`}
+                            className={`flex-1 py-1 px-1.5 rounded font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${selectedForceTarget?.side === 'sell'
+                              ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed select-none'
+                              : `bg-emerald-500/15 dark:bg-gradient-to-r dark:from-emerald-600/35 dark:to-cyan-600/35 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:to-cyan-500 border hover:border-emerald-400 dark:hover:border-white text-emerald-700 dark:text-emerald-200 hover:text-white dark:hover:text-slate-950 shadow-sm dark:shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:shadow-[0_0_14px_rgba(16,185,129,0.5)] cursor-pointer active:scale-95 disabled:opacity-50 ${selectedForceTarget?.side === 'buy'
+                                ? 'border-emerald-500 dark:border-emerald-300 ring-1 ring-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.35)]'
+                                : 'border-emerald-500/50 dark:border-emerald-400/60'
+                              }`
+                              }`}
                             title={
                               selectedForceTarget?.side === 'sell'
                                 ? 'Cannot Force Buy: Selected order is a SELL / Exit order'
                                 : selectedForceTarget
-                                  ? `Force BUY Selected Order (${selectedForceTarget.label}) via ${
-                                      emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                    }`
-                                  : `Emergency Force BUY (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
-                                      emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                    }`
+                                  ? `Force BUY Selected Order (${selectedForceTarget.label}) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                  }`
+                                  : `Emergency Force BUY (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                  }`
                             }
                           >
                             {isEmergencySubmitting && emergencySubmittingSide === 'Buy' ? (
@@ -3708,25 +3680,21 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               handleEmergencyForceTrade('Sell');
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
-                            className={`flex-1 py-1 px-1.5 rounded font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${
-                              selectedForceTarget?.side === 'buy'
-                                ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed select-none'
-                                : `bg-rose-500/15 dark:bg-gradient-to-r dark:from-rose-600/40 dark:to-amber-600/35 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:to-amber-500 border hover:border-rose-400 dark:hover:border-white text-rose-700 dark:text-rose-200 hover:text-white shadow-sm dark:shadow-[0_0_10px_rgba(244,63,94,0.25)] hover:shadow-[0_0_14px_rgba(244,63,94,0.55)] cursor-pointer active:scale-95 disabled:opacity-50 ${
-                                    selectedForceTarget?.side === 'sell'
-                                      ? 'border-rose-500 dark:border-rose-300 ring-1 ring-rose-400/60 shadow-[0_0_12px_rgba(244,63,94,0.35)]'
-                                      : 'border-rose-500/50 dark:border-rose-400/60'
-                                  }`
-                            }`}
+                            className={`flex-1 py-1 px-1.5 rounded font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${selectedForceTarget?.side === 'buy'
+                              ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed select-none'
+                              : `bg-rose-500/15 dark:bg-gradient-to-r dark:from-rose-600/40 dark:to-amber-600/35 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:to-amber-500 border hover:border-rose-400 dark:hover:border-white text-rose-700 dark:text-rose-200 hover:text-white shadow-sm dark:shadow-[0_0_10px_rgba(244,63,94,0.25)] hover:shadow-[0_0_14px_rgba(244,63,94,0.55)] cursor-pointer active:scale-95 disabled:opacity-50 ${selectedForceTarget?.side === 'sell'
+                                ? 'border-rose-500 dark:border-rose-300 ring-1 ring-rose-400/60 shadow-[0_0_12px_rgba(244,63,94,0.35)]'
+                                : 'border-rose-500/50 dark:border-rose-400/60'
+                              }`
+                              }`}
                             title={
                               selectedForceTarget?.side === 'buy'
                                 ? 'Cannot Force Sell: Selected pending order is a BUY (Entry not filled yet)'
                                 : selectedForceTarget
-                                  ? `Force SELL Selected Order (${selectedForceTarget.label}) via ${
-                                      emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                    }`
-                                  : `Emergency Force SELL (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${
-                                      emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                    }`
+                                  ? `Force SELL Selected Order (${selectedForceTarget.label}) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                  }`
+                                  : `Emergency Force SELL (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                  }`
                             }
                           >
                             {isEmergencySubmitting && emergencySubmittingSide === 'Sell' ? (
@@ -3756,7 +3724,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
               ) : (
                 <>
                   {/* Header (Drag area) */}
-                  <div 
+                  <div
                     onMouseDown={handleStartDrag}
                     onTouchStart={handleStartDrag}
                     style={{ touchAction: 'none' }}
@@ -3799,10 +3767,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       >
                         <Minus className="w-4 h-4" />
                       </button>
-                      <button 
-                        onClick={(e) => { 
-                          e.stopPropagation(); 
-                          setIsOpen(false); 
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsOpen(false);
                           setIsMinimized(false);
                           onClose?.();
                         }}
@@ -3814,2075 +3782,2046 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     </div>
                   </div>
 
-              {/* Multi-Chart Pair Selector Dropdown */}
-              {availablePairs && availablePairs.length > 1 && (
-                <div className="px-4 py-2.5 bg-black/60 border-b border-white/10 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-pulse" />
-                      Select Chart Pair ({availablePairs.length} Open)
-                    </label>
-                  </div>
-                  <div className="relative">
-                    <select
-                      value={activeSymbol}
-                      onChange={(e) => {
-                        const targetSymbol = e.target.value;
-                        const selected = availablePairs.find(p => p.symbol === targetSymbol);
-                        if (selected) {
-                          handleSelectPair(selected);
-                        }
-                      }}
-                      className="w-full bg-[#0a0d16] border border-brand-primary/40 hover:border-brand-primary rounded-xl py-2 pl-3 pr-8 text-white font-bold text-xs focus:outline-none focus:ring-1 focus:ring-brand-primary/50 transition-all appearance-none cursor-pointer shadow-[0_0_12px_rgba(59,130,246,0.15)]"
+                  {/* Multi-Chart Pair Selector Dropdown */}
+                  {availablePairs && availablePairs.length > 1 && (
+                    <div className="px-4 py-2.5 bg-black/60 border-b border-white/10 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-pulse" />
+                          Select Chart Pair ({availablePairs.length} Open)
+                        </label>
+                      </div>
+                      <div className="relative">
+                        <select
+                          value={activeSymbol}
+                          onChange={(e) => {
+                            const targetSymbol = e.target.value;
+                            const selected = availablePairs.find(p => p.symbol === targetSymbol);
+                            if (selected) {
+                              handleSelectPair(selected);
+                            }
+                          }}
+                          className="w-full bg-[#0a0d16] border border-brand-primary/40 hover:border-brand-primary rounded-xl py-2 pl-3 pr-8 text-white font-bold text-xs focus:outline-none focus:ring-1 focus:ring-brand-primary/50 transition-all appearance-none cursor-pointer shadow-[0_0_12px_rgba(59,130,246,0.15)]"
+                        >
+                          {availablePairs.map((p) => {
+                            const pPrice = formatDisplayPrice(p.price);
+                            const label = `${p.symbol}${pPrice ? ` • $${pPrice}` : ''}${p.isMain ? ' (Main)' : ''}`;
+                            return (
+                              <option key={p.id} value={p.symbol} className="bg-[#0b0e17] text-white py-1">
+                                {label}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-[10px] w-4 h-4 text-brand-primary pointer-events-none" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Body */}
+                  <div
+                    className="p-4 flex flex-col cursor-default"
+                  >
+                    {/* Scrollable Content */}
+                    <div
+                      style={{ touchAction: 'pan-y' }}
+                      className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 pb-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/20"
                     >
-                      {availablePairs.map((p) => {
-                        const pPrice = formatDisplayPrice(p.price);
-                        const label = `${p.symbol}${pPrice ? ` • $${pPrice}` : ''}${p.isMain ? ' (Main)' : ''}`;
-                        return (
-                          <option key={p.id} value={p.symbol} className="bg-[#0b0e17] text-white py-1">
-                            {label}
-                          </option>
-                        );
-                      })}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-[10px] w-4 h-4 text-brand-primary pointer-events-none" />
-                  </div>
-                </div>
-              )}
 
-              {/* Body */}
-              <div 
-                className="p-4 flex flex-col cursor-default"
-              >
-              {/* Scrollable Content */}
-              <div
-                style={{ touchAction: 'pan-y' }}
-                className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 pb-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/20"
-              >
+                      {/* ACTIVE SMART CHASE / SOFTWARE SL / SMART PEG LIVE STATUS & CANCEL BUTTON */}
+                      {(() => {
+                        const activePeg = activeBrackets.find(b => b.status === 'pegging');
+                        const activeChase = activeBrackets.find(b => b.status === 'chasing');
+                        const activeSoftwareSls = activeBrackets.filter(b => b.status === 'monitoring' && (b.type === 'smart_chase' || b.type === 'trailing_chase' || b.type === 'trailing' || b.auto_breakeven_enabled));
 
-              {/* ACTIVE SMART CHASE / SOFTWARE SL / SMART PEG LIVE STATUS & CANCEL BUTTON */}
-              {(() => {
-                const activePeg = activeBrackets.find(b => b.status === 'pegging');
-                const activeChase = activeBrackets.find(b => b.status === 'chasing');
-                const activeSoftwareSls = activeBrackets.filter(b => b.status === 'monitoring' && (b.type === 'smart_chase' || b.type === 'trailing_chase' || b.type === 'trailing' || b.auto_breakeven_enabled));
-
-                if (activePeg) {
-                  return (
-                    <div className="p-3 rounded-xl bg-gradient-to-br from-amber-950/90 via-black to-amber-950/40 border border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.25)] flex flex-col gap-2.5 animate-fadeIn">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="relative flex h-2.5 w-2.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
-                          </span>
-                          <span className="text-xs font-black tracking-wide text-amber-200 uppercase flex items-center gap-1">
-                            <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                            Smart Peg Entry Active
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
-                          Attempt {activePeg.current_attempt || 1}/{activePeg.max_attempts ? activePeg.max_attempts : '∞'}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
-                        <div className="text-left">
-                          <span className="text-gray-400 block text-[9px] uppercase">Side</span>
-                          <span className={`font-bold ${activePeg.side?.toLowerCase() === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
-                            {activePeg.side?.toUpperCase()} (Maker)
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-gray-400 block text-[9px] uppercase">Best Maker Price</span>
-                          <span className="text-amber-300 font-bold">{activePeg.current_maker_price || 'Active'}</span>
-                        </div>
-                        <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
-                          <span className="text-gray-400">Target Size / Filled:</span>
-                          <span className="text-gray-200 font-semibold">{activePeg.filled_amount || 0} / {activePeg.amount}</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={isStoppingPeg}
-                        onClick={() => handleStopSmartPeg(activePeg)}
-                        className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                      >
-                        <Square className="w-3.5 h-3.5 fill-white" />
-                        {isStoppingPeg ? 'Stopping Peg...' : 'Stop Smart Peg Entry'}
-                      </button>
-                    </div>
-                  );
-                }
-
-                if (activeChase) {
-                  return (
-                    <div className="p-3 rounded-xl bg-gradient-to-br from-red-950/90 via-amber-950/70 to-black border border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.25)] flex flex-col gap-2.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="relative flex h-2.5 w-2.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                          </span>
-                          <span className="text-xs font-black tracking-wide text-red-200 uppercase flex items-center gap-1">
-                            <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                            {activeChase.chase_mode === 'dynamic_bbo' ? 'Dynamic BBO Peg Chasing' : 'Smart Chase SL Chasing'}
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
-                          Attempt {activeChase.current_attempt || 1}/{activeChase.max_attempts ? activeChase.max_attempts : '∞'}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
-                        <div className="text-left">
-                          <span className="text-gray-400 block text-[9px] uppercase">SL Trigger</span>
-                          <span className="text-white font-bold">
-                            {activeChase.trigger_price || '—'}
-                            {activeChase.trigger_source && (
-                              <span className="text-[8.5px] text-cyan-300 font-normal ml-1">
-                                ({activeChase.trigger_source === 'bid_ask' ? '⚡ Bid/Ask' : '📊 Last'})
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-gray-400 block text-[9px] uppercase">Maker Price</span>
-                          <span className="text-amber-300 font-bold">{activeChase.current_maker_price || 'Active'}</span>
-                        </div>
-                        <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
-                          <span className="text-gray-400">Position Remaining:</span>
-                          <span className="text-gray-200 font-semibold">{activeChase.amount} ({activeChase.side?.toUpperCase()})</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={isStoppingChase}
-                        onClick={() => handleStopSmartChase(activeChase)}
-                        className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                      >
-                        <Square className="w-3.5 h-3.5 fill-white" />
-                        {isStoppingChase ? 'Stopping Chase...' : 'Stop Smart Chase SL'}
-                      </button>
-                    </div>
-                  );
-                }
-
-                if (activeSoftwareSls.length > 0) {
-                  return (
-                    <div className="flex flex-col gap-1.5 animate-fadeIn">
-                      {activeSoftwareSls.map((activeSoftwareSl, idx) => {
-                        const isChase = activeSoftwareSl.type === 'smart_chase';
-                        const isTrailChase = activeSoftwareSl.type === 'trailing_chase';
-                        const baseLabel = isTrailChase 
-                          ? '⚡ Trailing Chase Armed' 
-                          : (isChase ? '⚡ Smart Chase Armed' : (activeSoftwareSl.type === 'trailing' ? '⚡ Trailing SL Armed' : '🛡️ Stop-Loss Armed'));
-                        const titleLabel = activeSoftwareSls.length > 1 ? `${baseLabel} #${idx + 1}` : baseLabel;
-
-                        return (
-                          <div key={activeSoftwareSl.id || idx} className="p-2.5 rounded-xl bg-blue-950/60 border border-blue-500/40 shadow-sm flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0" />
-                              <div className="flex flex-col text-left">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-[11px] font-bold text-cyan-300 uppercase leading-tight">{titleLabel}</span>
-                                  {activeSoftwareSl.peg_strategy === 'wall_aware' && (
-                                    <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
-                                      🧱 Wall-Aware
-                                    </span>
-                                  )}
-                                  {activeSoftwareSl.peg_strategy === 'inside_spread' && (
-                                    <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
-                                      🎯 Inside-Spread
-                                    </span>
-                                  )}
-                                  {activeSoftwareSl.auto_breakeven_enabled && (
-                                    <span className={`text-[8px] font-mono px-1 py-0.2 rounded font-bold border ${activeSoftwareSl.breakeven_activated ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'}`}>
-                                      {activeSoftwareSl.breakeven_activated ? '🛡️ BE Active' : '🛡️ Auto-BE'}
-                                    </span>
-                                  )}
+                        if (activePeg) {
+                          return (
+                            <div className="p-3 rounded-xl bg-gradient-to-br from-amber-950/90 via-black to-amber-950/40 border border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.25)] flex flex-col gap-2.5 animate-fadeIn">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="relative flex h-2.5 w-2.5">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                                  </span>
+                                  <span className="text-xs font-black tracking-wide text-amber-200 uppercase flex items-center gap-1">
+                                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                                    Smart Peg Entry Active
+                                  </span>
                                 </div>
-                                <span className="text-[10px] text-gray-300 font-mono">
-                                  SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
-                                  {activeSoftwareSl.trigger_source === 'bid_ask' ? ' • ⚡ Bid/Ask' : ' • 📊 Last'}
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                                  Attempt {activePeg.current_attempt || 1}/{activePeg.max_attempts ? activePeg.max_attempts : '∞'}
                                 </span>
                               </div>
+
+                              <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
+                                <div className="text-left">
+                                  <span className="text-gray-400 block text-[9px] uppercase">Side</span>
+                                  <span className={`font-bold ${activePeg.side?.toLowerCase() === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
+                                    {activePeg.side?.toUpperCase()} (Maker)
+                                  </span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-gray-400 block text-[9px] uppercase">Best Maker Price</span>
+                                  <span className="text-amber-300 font-bold">{activePeg.current_maker_price || 'Active'}</span>
+                                </div>
+                                <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
+                                  <span className="text-gray-400">Target Size / Filled:</span>
+                                  <span className="text-gray-200 font-semibold">{activePeg.filled_amount || 0} / {activePeg.amount}</span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={isStoppingPeg}
+                                onClick={() => handleStopSmartPeg(activePeg)}
+                                className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                              >
+                                <Square className="w-3.5 h-3.5 fill-white" />
+                                {isStoppingPeg ? 'Stopping Peg...' : 'Stop Smart Peg Entry'}
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              disabled={isStoppingChase}
-                              onClick={() => handleStopSmartChase(activeSoftwareSl)}
-                              className="py-1 px-2.5 rounded-md bg-white/5 hover:bg-red-950/80 hover:text-red-300 hover:border-red-500/50 border border-white/10 text-gray-300 text-[10px] font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50"
-                            >
-                              {isStoppingChase ? 'Cancelling...' : 'Cancel SL'}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                }
+                          );
+                        }
 
-                return null;
-              })()}
+                        if (activeChase) {
+                          return (
+                            <div className="p-3 rounded-xl bg-gradient-to-br from-red-950/90 via-amber-950/70 to-black border border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.25)] flex flex-col gap-2.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="relative flex h-2.5 w-2.5">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                                  </span>
+                                  <span className="text-xs font-black tracking-wide text-red-200 uppercase flex items-center gap-1">
+                                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                                    {activeChase.chase_mode === 'dynamic_bbo' ? 'Dynamic BBO Peg Chasing' : 'Smart Chase SL Chasing'}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                                  Attempt {activeChase.current_attempt || 1}/{activeChase.max_attempts ? activeChase.max_attempts : '∞'}
+                                </span>
+                              </div>
 
-              {/* ACTIVE POSITION LIVE STATUS & QUICK MARKET CLOSE */}
-              {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
-                <div className="p-2.5 rounded-xl bg-gradient-to-r from-[#170a14] via-[#0e101d] to-[#0a1518] border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)] flex items-center justify-between gap-2 animate-fadeIn mb-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]'} animate-pulse`} />
-                    <div className="flex flex-col text-left min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[10px] font-extrabold text-white uppercase tracking-tight">Active Position:</span>
-                        <span className={`text-[9px] font-mono font-black px-1.5 py-0.2 rounded border ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'}`}>
-                          {positionData.side.toUpperCase()}
-                        </span>
-                        <span className="text-[10px] font-mono font-bold text-gray-200">
-                          {isInverseFutures && positionData.contracts ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(2)} ${baseCurrency})` : `${positionData.amount} ${baseCurrency}`}
-                        </span>
-                      </div>
-                      <span className="text-[8.5px] text-gray-400 font-mono">
-                        Instant Market Exit / Flatten
-                      </span>
-                    </div>
-                  </div>
+                              <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
+                                <div className="text-left">
+                                  <span className="text-gray-400 block text-[9px] uppercase">SL Trigger</span>
+                                  <span className="text-white font-bold">
+                                    {activeChase.trigger_price || '—'}
+                                    {activeChase.trigger_source && (
+                                      <span className="text-[8.5px] text-cyan-300 font-normal ml-1">
+                                        ({activeChase.trigger_source === 'bid_ask' ? '⚡ Bid/Ask' : '📊 Last'})
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-gray-400 block text-[9px] uppercase">Maker Price</span>
+                                  <span className="text-amber-300 font-bold">{activeChase.current_maker_price || 'Active'}</span>
+                                </div>
+                                <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
+                                  <span className="text-gray-400">Position Remaining:</span>
+                                  <span className="text-gray-200 font-semibold">{activeChase.amount} ({activeChase.side?.toUpperCase()})</span>
+                                </div>
+                              </div>
 
-                  <button
-                    type="button"
-                    disabled={isClosingPosition}
-                    onClick={handleClosePosition}
-                    className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-mono text-[10px] font-black uppercase tracking-wider shadow-[0_0_12px_rgba(244,63,94,0.35)] transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
-                    title="Close active position immediately at Market price"
-                  >
-                    {isClosingPosition ? (
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Zap className="w-3 h-3 fill-current" />
-                    )}
-                    <span>{isClosingPosition ? 'Closing...' : 'Close Pos'}</span>
-                  </button>
-                </div>
-              )}
+                              <button
+                                type="button"
+                                disabled={isStoppingChase}
+                                onClick={() => handleStopSmartChase(activeChase)}
+                                className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                              >
+                                <Square className="w-3.5 h-3.5 fill-white" />
+                                {isStoppingChase ? 'Stopping Chase...' : 'Stop Smart Chase SL'}
+                              </button>
+                            </div>
+                          );
+                        }
 
-              {/* OPEN LIMIT ORDERS LIST & CANCEL ACTIONS */}
-              {openLimitOrders && openLimitOrders.length > 0 && (
-                <div className="p-2.5 rounded-xl bg-[#070b14]/90 border border-white/10 shadow-sm flex flex-col gap-2 animate-fadeIn mb-2">
-                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                    <div className="flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                      <span className="text-[11px] font-bold text-gray-200 uppercase tracking-wide">
-                        Open Orders ({openLimitOrders.length})
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isCancellingAll}
-                      onClick={handleCancelAllOrders}
-                      className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[9.5px] font-mono font-bold tracking-wider transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                      title="Cancel all open orders on this symbol"
-                    >
-                      {isCancellingAll ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Trash2 className="w-2.5 h-2.5" />}
-                      <span>{isCancellingAll ? 'Cancelling...' : 'Cancel All'}</span>
-                    </button>
-                  </div>
+                        if (activeSoftwareSls.length > 0) {
+                          return (
+                            <div className="flex flex-col gap-1.5 animate-fadeIn">
+                              {activeSoftwareSls.map((activeSoftwareSl, idx) => {
+                                const isChase = activeSoftwareSl.type === 'smart_chase';
+                                const isTrailChase = activeSoftwareSl.type === 'trailing_chase';
+                                const baseLabel = isTrailChase
+                                  ? '⚡ Trailing Chase Armed'
+                                  : (isChase ? '⚡ Smart Chase Armed' : (activeSoftwareSl.type === 'trailing' ? '⚡ Trailing SL Armed' : '🛡️ Stop-Loss Armed'));
+                                const titleLabel = activeSoftwareSls.length > 1 ? `${baseLabel} #${idx + 1}` : baseLabel;
 
-                  <div className="max-h-36 overflow-y-auto space-y-1.5 pr-0.5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
-                    {openLimitOrders.map((ord: any) => {
-                      const isBuy = String(ord.side).toLowerCase() === 'buy';
-                      const mode = ord.mode || 'LIMIT';
-                      const isCancelling = cancellingOrderId === String(ord.id);
-                      return (
-                        <div
-                          key={ord.id}
-                          className="p-1.5 rounded-lg bg-black/40 border border-white/5 flex items-center justify-between text-[10px] font-mono"
-                        >
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span
-                              className={`px-1 py-0.2 rounded text-[8px] font-bold uppercase ${
-                                isBuy
-                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                              }`}
-                            >
-                              {isBuy ? 'BUY' : 'SELL'}
-                            </span>
-                            <span className="text-[8px] text-gray-400 uppercase font-bold">[{mode}]</span>
-                            <span className="text-gray-200 truncate">
-                              {Number(ord.amount || ord.remaining || 0).toFixed(2)} @{' '}
-                              <strong className="text-white">${formatDisplayPrice(ord.price)}</strong>
-                            </span>
+                                return (
+                                  <div key={activeSoftwareSl.id || idx} className="p-2.5 rounded-xl bg-blue-950/60 border border-blue-500/40 shadow-sm flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0" />
+                                      <div className="flex flex-col text-left">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-[11px] font-bold text-cyan-300 uppercase leading-tight">{titleLabel}</span>
+                                          {activeSoftwareSl.peg_strategy === 'wall_aware' && (
+                                            <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                                              🧱 Wall-Aware
+                                            </span>
+                                          )}
+                                          {activeSoftwareSl.peg_strategy === 'inside_spread' && (
+                                            <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
+                                              🎯 Inside-Spread
+                                            </span>
+                                          )}
+                                          {activeSoftwareSl.auto_breakeven_enabled && (
+                                            <span className={`text-[8px] font-mono px-1 py-0.2 rounded font-bold border ${activeSoftwareSl.breakeven_activated ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'}`}>
+                                              {activeSoftwareSl.breakeven_activated ? '🛡️ BE Active' : '🛡️ Auto-BE'}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <span className="text-[10px] text-gray-300 font-mono">
+                                          SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
+                                          {activeSoftwareSl.trigger_source === 'bid_ask' ? ' • ⚡ Bid/Ask' : ' • 📊 Last'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      disabled={isStoppingChase}
+                                      onClick={() => handleStopSmartChase(activeSoftwareSl)}
+                                      className="py-1 px-2.5 rounded-md bg-white/5 hover:bg-red-950/80 hover:text-red-300 hover:border-red-500/50 border border-white/10 text-gray-300 text-[10px] font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                                    >
+                                      {isStoppingChase ? 'Cancelling...' : 'Cancel SL'}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        }
+
+                        return null;
+                      })()}
+
+                      {/* ACTIVE POSITION LIVE STATUS & QUICK MARKET CLOSE */}
+                      {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
+                        <div className="p-2.5 rounded-xl bg-gradient-to-r from-[#170a14] via-[#0e101d] to-[#0a1518] border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)] flex items-center justify-between gap-2 animate-fadeIn mb-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]'} animate-pulse`} />
+                            <div className="flex flex-col text-left min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[10px] font-extrabold text-white uppercase tracking-tight">Active Position:</span>
+                                <span className={`text-[9px] font-mono font-black px-1.5 py-0.2 rounded border ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'}`}>
+                                  {positionData.side.toUpperCase()}
+                                </span>
+                                <span className="text-[10px] font-mono font-bold text-gray-200">
+                                  {isInverseFutures && positionData.contracts ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(2)} ${baseCurrency})` : `${positionData.amount} ${baseCurrency}`}
+                                </span>
+                              </div>
+                              <span className="text-[8.5px] text-gray-400 font-mono">
+                                Instant Market Exit / Flatten
+                              </span>
+                            </div>
                           </div>
 
                           <button
                             type="button"
-                            disabled={isCancelling}
-                            onClick={() => handleCancelOrder(String(ord.id))}
-                            className="p-1 rounded hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-transparent hover:border-rose-500/30 transition-all cursor-pointer disabled:opacity-50 shrink-0 ml-1"
-                            title={`Cancel Order #${ord.id}`}
+                            disabled={isClosingPosition}
+                            onClick={handleClosePosition}
+                            className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-mono text-[10px] font-black uppercase tracking-wider shadow-[0_0_12px_rgba(244,63,94,0.35)] transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
+                            title="Close active position immediately at Market price"
                           >
-                            {isCancelling ? (
-                              <RefreshCw className="w-3 h-3 animate-spin text-rose-400" />
+                            {isClosingPosition ? (
+                              <RefreshCw className="w-3 h-3 animate-spin" />
                             ) : (
-                              <X className="w-3 h-3" />
+                              <Zap className="w-3 h-3 fill-current" />
                             )}
+                            <span>{isClosingPosition ? 'Closing...' : 'Close Pos'}</span>
                           </button>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                      )}
 
-              {/* Buy / Sell Tabs */}
-              <div className="flex p-1 rounded-lg bg-black/40 border border-white/5 mb-2">
-                <button
-                  type="button"
-                  onClick={() => handleSideChange('Buy')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all uppercase tracking-wider cursor-pointer ${
-                    tradeSide === 'Buy' 
-                      ? 'bg-green-500/20 text-green-400 border border-green-500/50 shadow-[0_0_10px_rgba(34,197,94,0.15)]' 
-                      : 'text-gray-500 hover:text-white hover:bg-white/5 border border-transparent'
-                  }`}
-                >
-                  {isFutures ? 'Long' : 'Buy'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSideChange('Sell')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all uppercase tracking-wider cursor-pointer ${
-                    tradeSide === 'Sell' 
-                      ? 'bg-red-500/20 text-red-400 border border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.15)]' 
-                      : 'text-gray-500 hover:text-white hover:bg-white/5 border border-transparent'
-                  }`}
-                >
-                  {isFutures ? 'Short' : 'Sell'}
-                </button>
-              </div>
-
-              {/* API Account Selector */}
-              <div className="space-y-1">
-                <div className="flex justify-between items-end">
-                    <label className="text-xs text-gray-400 font-medium">Execute With</label>
-                </div>
-                <div className="relative">
-                  <select 
-                    value={selectedApi}
-                    onChange={(e) => { setSelectedApi(e.target.value); onApiKeyChange?.(e.target.value); }}
-                    className="w-full bg-black/40 border border-white/10 rounded-lg py-2 pl-3 pr-8 text-white text-sm focus:outline-none focus:border-brand-primary/50 transition-colors appearance-none cursor-pointer hover:bg-black/60"
-                  >
-                    {apiKeys.map(k => (
-                       <option key={k.id} value={k.id} className="bg-[#000000]">
-                       {/* BUG-08 fix: Robust label fallback with exchange uppercase */}
-                       {k.name || k.label || k.key_name || `${k.exchange?.toUpperCase()} — Key #${k.id}`}
-                       </option>
-                    ))}
-                    {apiKeys.length === 0 && <option value="" disabled>No API Keys found</option>}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-[10px] w-4 h-4 text-gray-500 pointer-events-none" />
-                </div>
-              </div>
-
-              {/* Order Type Toggle: Market | Limit | ⚡ Smart Peg */}
-              <div className="flex p-1 rounded-lg bg-black/40 border border-white/5 gap-1">
-                {(['Market', 'Limit', 'SmartPeg'] as const).map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => setOrderType(type)}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1 ${
-                      orderType === type 
-                        ? type === 'SmartPeg'
-                          ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white shadow-md'
-                          : 'bg-brand-primary text-white shadow-sm' 
-                        : 'text-gray-400 hover:text-white hover:bg-white/5'
-                    }`}
-                  >
-                    {type === 'SmartPeg' ? (
-                      <>
-                        <Zap className="w-3 h-3 text-amber-300 fill-amber-300" />
-                        <span>Smart Peg</span>
-                      </>
-                    ) : (
-                      <span className="uppercase tracking-wider">{type}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              {/* Smart Peg Entry Explanatory & Settings Panel */}
-              <AnimatePresence>
-                {orderType === 'SmartPeg' && (
-                  <MotionDiv
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="p-2.5 rounded-xl bg-gradient-to-r from-amber-950/40 via-red-950/20 to-black border border-amber-500/30 text-[10px] space-y-2 overflow-hidden shadow-[0_0_15px_rgba(245,158,11,0.15)]"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 font-bold text-amber-300">
-                        <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                        <span>⚡ Dynamic Maker Peg Entry Active</span>
-                      </div>
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold">
-                        Post-Only Maker
-                      </span>
-                    </div>
-                    <p className="text-[9px] text-gray-400 leading-relaxed">
-                      Automatically shadows the top of the orderbook (Best Bid for Buy, Best Ask for Sell) at #1 Queue Priority until 100% filled.
-                    </p>
-                    <div className="space-y-1 pt-1 border-t border-white/5">
-                      <div className="flex justify-between items-center text-[9px] text-gray-400">
-                        <span>Max Chase Drift Guard</span>
-                        <span className="text-amber-400 font-bold font-mono">
-                          {smartPegMaxDev === 0 ? 'Unlimited (∞)' : `${smartPegMaxDev}%`}
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="5.0"
-                        step="0.1"
-                        value={smartPegMaxDev}
-                        onChange={(e) => setSmartPegMaxDev(parseFloat(e.target.value))}
-                        className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
-                      />
-                      <p className="text-[8px] text-gray-500">
-                        {smartPegMaxDev === 0 ? 'Chases continuously until filled.' : 'Stops chasing if price drifts too far away from initial entry.'}
-                      </p>
-                    </div>
-                  </MotionDiv>
-                )}
-              </AnimatePresence>
-
-              {/* Price (if limit) */}
-              <AnimatePresence>
-                {orderType === 'Limit' && (
-                  <MotionDiv 
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="space-y-3 overflow-hidden"
-                  >
-                    {/* Switch: Auto Best Limit */}
-                    <div className="flex items-center justify-between bg-black/20 p-2 rounded-lg border border-brand-primary/20 cursor-pointer" onClick={() => setIsAutoLimit(!isAutoLimit)}>
-                       <div className="flex flex-col">
-                          <span className="text-xs font-bold text-brand-primary">Auto Best Limit (Post-Only)</span>
-                          <span className="text-[10px] text-gray-500">Snipes entry at Best Bid/Ask without Taker Fees</span>
-                       </div>
-                       <div className={`relative w-8 h-4 rounded-full transition-colors ${isAutoLimit ? 'bg-brand-primary' : 'bg-gray-600'}`}>
-                          <MotionDiv 
-                             className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                             animate={{ x: isAutoLimit ? 16 : 0 }}
-                             transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                          />
-                       </div>
-                    </div>
-
-                    {!isAutoLimit && (
-                        <div className="space-y-1">
-                          <label className="text-xs text-gray-400 font-medium">Limit Price</label>
-                          <div className="relative">
-                            <input 
-                              type="number"
-                              value={limitPrice}
-                              disabled={isAutoLimit}
-                              onChange={(e) => setLimitPrice(e.target.value)}
-                              className="w-full bg-black/30 border border-white/10 rounded-lg py-2 px-3 pl-8 text-white text-sm focus:outline-none focus:border-brand-primary/50 transition-colors disabled:opacity-50"
-                            />
-                            <span className="absolute left-3 top-2 text-gray-500 text-sm">$</span>
-                          </div>
-                        </div>
-                    )}
-                  </MotionDiv>
-                )}
-              </AnimatePresence>
-
-              {/* Size */}
-              <div className="space-y-1">
-                {/* Label row: currency name + toggle switch + balance */}
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-gray-400 font-medium">
-                      Order Size
-                    </label>
-                    {/* Base / Quote toggle */}
-                    <div className="flex items-center gap-1 bg-black/40 rounded-full p-0.5 border border-white/10">
-                      <button
-                        onClick={() => {
-                          setSizeMode('base');
-                          if (!selectedPercent) setSize('');
-                        }}
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${
-                          sizeMode === 'base'
-                            ? 'bg-brand-primary text-white shadow'
-                            : 'text-gray-500 hover:text-gray-300'
-                        }`}
-                      >
-                        {baseCurrency}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSizeMode('quote');
-                          if (!selectedPercent) setSize('');
-                        }}
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${
-                          sizeMode === 'quote'
-                            ? 'bg-yellow-500 text-black shadow'
-                            : 'text-gray-500 hover:text-gray-300'
-                        }`}
-                      >
-                        {quoteCurrency}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="text-[10px] text-gray-500 text-right flex flex-col items-end">
-                    <div className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title={`Live Auto-Sync Active (${(timings.balancePollMs / 1000).toFixed(1)}s)`} />
-                      <span>Balance:</span>
-                      <span className="text-gray-200 font-semibold font-mono">
-                        {isLoadingBalance ? "..." : balanceData ? (
-                          isInverseFutures
-                            ? sizeMode === 'quote'
-                              ? `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency} (~$${(((balanceData.base_free || 0) * (effectiveOrderPrice || effectiveCurrentPrice || 0))).toFixed(2)})`
-                              : `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency}`
-                            : sizeMode === 'quote'
-                              ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                              : isFutures
-                                ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                                : tradeSide === 'Buy'
-                                  ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                                  : `${(balanceData.base_free || 0).toFixed(4)} ${baseCurrency}`
-                        ) : "N/A"}
-                      </span>
-                    </div>
-
-                    {/* Show helpful diagnostic badge if funds are located in USDⓈ-M or Spot wallet instead of COIN-M */}
-                    {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.usds_futures_free && balanceData.usds_futures_free > 0) && (
-                      <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in USDⓈ-M Futures wallet instead of COIN-M Futures">
-                        <span>⚠️ {balanceData?.usds_futures_free?.toFixed(2)} in USDⓈ-M! Transfer to COIN-M</span>
-                      </div>
-                    )}
-                    {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.spot_free && balanceData.spot_free > 0) && (
-                      <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in Spot wallet instead of COIN-M Futures">
-                        <span>⚠️ {balanceData?.spot_free?.toFixed(2)} in Spot! Transfer to COIN-M</span>
-                      </div>
-                    )}
-
-                    {/* Show Locked / In-Orders Balance if any */}
-                    {balanceData && (
-                      (() => {
-                        const isQuoteTarget = !isInverseFutures && (sizeMode === 'quote' || (isFutures ? true : tradeSide === 'Buy'));
-                        const lockedAmount = isQuoteTarget ? (balanceData.quote_used || 0) : (balanceData.base_used || 0);
-                        const curr = isQuoteTarget ? quoteCurrency : baseCurrency;
-                        if (lockedAmount > 0) {
-                          return (
-                            <div className="text-[9px] text-amber-400 font-mono flex items-center gap-1">
-                              <span>Locked:</span>
-                              <span>{isQuoteTarget ? lockedAmount.toFixed(2) : lockedAmount.toFixed(4)} {curr}</span>
+                      {/* OPEN LIMIT ORDERS LIST & CANCEL ACTIONS */}
+                      {openLimitOrders && openLimitOrders.length > 0 && (
+                        <div className="p-2.5 rounded-xl bg-[#070b14]/90 border border-white/10 shadow-sm flex flex-col gap-2 animate-fadeIn mb-2">
+                          <div className="flex items-center justify-between pb-1 border-b border-white/5">
+                            <div className="flex items-center gap-1.5">
+                              <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                              <span className="text-[11px] font-bold text-gray-200 uppercase tracking-wide">
+                                Open Orders ({openLimitOrders.length})
+                              </span>
                             </div>
-                          );
-                        }
-                        return null;
-                      })()
-                    )}
-
-                    {isFutures && reduceOnly && (
-                      <div className="text-[10px] text-brand-primary font-mono">
-                        Pos: {isLoadingPosition ? "..." : (positionData && positionData.amount > 0 ? (
-                          isInverseFutures && positionData.contracts
-                            ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(1)} ${baseCurrency})`
-                            : `${positionData.amount} (${positionData.side.toUpperCase()})`
-                        ) : "0")}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Input field */}
-                <div className="relative">
-                  <input
-                    type="number"
-                    value={size}
-                    onChange={(e) => {
-                      setSize(e.target.value);
-                      setSelectedPercent(null);
-                    }}
-                    placeholder={isInverseFutures ? `Min 1 Cont ($${contractSize})` : "0.00"}
-                    className="w-full bg-black/30 border border-white/10 rounded-lg py-2 px-3 pl-8 text-white text-sm focus:outline-none focus:border-brand-primary/50 transition-colors"
-                  />
-                  {/* Currency symbol badge */}
-                  <span className="absolute left-2.5 top-2 text-[11px] font-bold text-gray-500">
-                    {sizeMode === 'quote' ? '$' : baseCurrency.slice(0, 3)}
-                  </span>
-                </div>
-
-                {/* Live conversion estimate */}
-                {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
-                  <div className="flex items-center gap-1.5 px-1 pt-0.5 flex-wrap">
-                    <span className="text-[10px] text-gray-600">≈</span>
-                    {sizeMode === 'quote' ? (
-                      <span className="text-[10px] text-yellow-400 font-semibold">
-                        {(Number(size) / effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} {baseCurrency}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-yellow-400 font-semibold">
-                        ${(Number(size) * effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
-                      </span>
-                    )}
-                    {isInverseFutures && (
-                      <span className="text-[10px] bg-brand-primary/20 text-brand-primary px-1.5 py-0.2 rounded font-mono font-semibold">
-                        • {Math.max(1, Math.round(((sizeMode === 'quote' ? Number(size) : Number(size) * effectiveOrderPrice)) / contractSize))} Cont (${contractSize}/Cont)
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* % quick-fill buttons */}
-                <div className="flex justify-between mt-2 gap-2">
-                  {['25%', '50%', '75%', '100%'].map(pct => {
-                    const isSelected = selectedPercent === pct;
-                    return (
-                      <button
-                        key={pct}
-                        className={`flex-1 py-1 text-[10px] font-bold rounded border transition-colors ${
-                          isSelected
-                            ? 'bg-brand-primary text-white border-brand-primary shadow-[0_0_8px_rgba(59,130,246,0.4)]'
-                            : 'border-white/10 text-gray-400 hover:bg-white/10 hover:text-white'
-                        }`}
-                        onClick={() => {
-                          setSelectedPercent(pct);
-                          if (balanceData && effectiveOrderPrice > 0) {
-                            const newSize = calculateSize(
-                              pct,
-                              balanceData,
-                              effectiveOrderPrice,
-                              sizeMode,
-                              tradeSide,
-                              isFutures,
-                              leverage,
-                              reduceOnly,
-                              positionData
-                            );
-                            if (newSize) {
-                              setSize(newSize);
-                            }
-                          }
-                        }}
-                      >
-                        {pct}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Binance Native Iceberg Order Panel (Spot Limit Only) */}
-              {orderType === 'Limit' && !isFutures && (
-                <div className="space-y-2.5 bg-cyan-950/20 p-2.5 rounded-lg border border-cyan-500/20 transition-all">
-                  <div 
-                    className="flex justify-between items-center cursor-pointer select-none"
-                    onClick={() => setIsIceberg(!isIceberg)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="p-1 rounded bg-cyan-500/10 text-cyan-400">
-                        <Layers className="w-3.5 h-3.5" />
-                      </div>
-                      <div className="flex flex-col text-left">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-cyan-300">Binance Native Iceberg</span>
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold uppercase">Spot GTC</span>
-                        </div>
-                        <span className="text-[10px] text-gray-400">
-                          Splits limit order into smaller visible book slices
-                        </span>
-                      </div>
-                    </div>
-                    <div className={`relative w-8 h-4 rounded-full transition-colors ${isIceberg ? 'bg-cyan-500' : 'bg-gray-600'}`}>
-                      <MotionDiv 
-                        className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                        animate={{ x: isIceberg ? 16 : 0 }}
-                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                      />
-                    </div>
-                  </div>
-
-                  <AnimatePresence>
-                    {isIceberg && (
-                      <MotionDiv
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="space-y-2.5 overflow-hidden pt-2 border-t border-cyan-500/20"
-                      >
-                        {/* Slice Mode Selector */}
-                        <div className="flex items-center justify-between gap-2">
-                          <label className="text-[10px] text-gray-400 font-medium">Visible Slice Size</label>
-                          <div className="flex bg-black/40 rounded border border-white/10 p-0.5">
                             <button
                               type="button"
-                              onClick={() => setIcebergMode('percent')}
-                              className={`px-2 py-0.5 text-[10px] rounded transition-colors ${
-                                icebergMode === 'percent' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
-                              }`}
+                              disabled={isCancellingAll}
+                              onClick={handleCancelAllOrders}
+                              className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[9.5px] font-mono font-bold tracking-wider transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              title="Cancel all open orders on this symbol"
                             >
-                              % of Total
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIcebergMode('qty');
-                                if (!icebergCustomQty || icebergCustomQty === '0') {
-                                  setIcebergCustomQty('250');
-                                }
-                              }}
-                              className={`px-2 py-0.5 text-[10px] rounded transition-colors ${
-                                icebergMode === 'qty' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
-                              }`}
-                            >
-                              {baseCurrency}
+                              {isCancellingAll ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Trash2 className="w-2.5 h-2.5" />}
+                              <span>{isCancellingAll ? 'Cancelling...' : 'Cancel All'}</span>
                             </button>
                           </div>
-                        </div>
 
-                        {/* Percent Quick Buttons */}
-                        {icebergMode === 'percent' && (
-                          <div className="grid grid-cols-4 gap-1.5">
-                            {['10', '20', '25', '50'].map((pct) => (
-                              <button
-                                key={pct}
-                                type="button"
-                                onClick={() => setIcebergPercent(pct)}
-                                className={`py-1 text-[10px] font-mono rounded border transition-all ${
-                                  icebergPercent === pct
-                                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
-                                    : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
-                                }`}
-                              >
-                                {pct}%
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                          <div className="max-h-36 overflow-y-auto space-y-1.5 pr-0.5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
+                            {openLimitOrders.map((ord: any) => {
+                              const isBuy = String(ord.side).toLowerCase() === 'buy';
+                              const mode = ord.mode || 'LIMIT';
+                              const isCancelling = cancellingOrderId === String(ord.id);
+                              return (
+                                <div
+                                  key={ord.id}
+                                  className="p-1.5 rounded-lg bg-black/40 border border-white/5 flex items-center justify-between text-[10px] font-mono"
+                                >
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span
+                                      className={`px-1 py-0.2 rounded text-[8px] font-bold uppercase ${isBuy
+                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                        }`}
+                                    >
+                                      {isBuy ? 'BUY' : 'SELL'}
+                                    </span>
+                                    <span className="text-[8px] text-gray-400 uppercase font-bold">[{mode}]</span>
+                                    <span className="text-gray-200 truncate">
+                                      {Number(ord.amount || ord.remaining || 0).toFixed(2)} @{' '}
+                                      <strong className="text-white">${formatDisplayPrice(ord.price)}</strong>
+                                    </span>
+                                  </div>
 
-                        {/* Base Coin Qty Quick Buttons */}
-                        {icebergMode === 'qty' && (
-                          <div className="grid grid-cols-4 gap-1.5">
-                            {['100', '250', '500', '1000'].map((q) => (
-                              <button
-                                key={q}
-                                type="button"
-                                onClick={() => setIcebergCustomQty(q)}
-                                className={`py-1 text-[10px] font-mono rounded border transition-all ${
-                                  icebergCustomQty === q
-                                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
-                                    : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
-                                }`}
-                              >
-                                {q} {baseCurrency}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Input Field */}
-                        <div className="relative">
-                          <input 
-                            type="number"
-                            step="any"
-                            value={icebergMode === 'percent' ? icebergPercent : icebergCustomQty}
-                            onChange={(e) => {
-                              if (icebergMode === 'percent') {
-                                setIcebergPercent(e.target.value);
-                              } else {
-                                setIcebergCustomQty(e.target.value);
-                              }
-                            }}
-                            placeholder={icebergMode === 'percent' ? 'e.g. 20' : '250'}
-                            className="w-full bg-black/40 border border-cyan-500/30 rounded py-1.5 px-3 pr-14 text-white text-xs font-mono focus:outline-none focus:border-cyan-400 transition-colors"
-                          />
-                          <span className="absolute right-3 top-1.5 text-[10px] text-cyan-400 font-bold font-mono">
-                            {icebergMode === 'percent' ? '% SLICE' : baseCurrency}
-                          </span>
-                        </div>
-
-                        {/* Live Slice Calculation & Warning Pill */}
-                        {(() => {
-                          if (effectiveIcebergQty <= 0 || currentBaseAmount <= 0) return null;
-                          const refPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
-                          const sliceNotional = effectiveIcebergQty * refPrice;
-                          const minRequiredSlice = refPrice > 0 ? Math.ceil(5.05 / refPrice) : 65;
-
-                          if (effectiveIcebergQty >= currentBaseAmount) {
-                            return (
-                              <div className="p-2 rounded bg-amber-950/40 border border-amber-500/40 text-[10px] text-amber-300 flex items-center gap-1.5 font-mono">
-                                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                <span>Slice ({effectiveIcebergQty.toFixed(2)}) must be smaller than total order ({currentBaseAmount.toFixed(2)} {baseCurrency}).</span>
-                              </div>
-                            );
-                          }
-
-                          if (sliceNotional < 5.0) {
-                            return (
-                              <div className="p-2 rounded bg-red-950/50 border border-red-500/50 flex flex-col gap-1.5 text-[10px] animate-fadeIn">
-                                <div className="flex items-center justify-between text-red-300 font-bold">
-                                  <span className="flex items-center gap-1">
-                                    <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                                    Slice value (${sliceNotional.toFixed(2)}) is below Binance $5.00 Min Notional!
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between text-gray-300">
-                                  <span className="text-[9px]">Binance requires each slice ≥ $5.00 (~{minRequiredSlice} {baseCurrency})</span>
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setIcebergMode('qty');
-                                      setIcebergCustomQty(minRequiredSlice.toString());
-                                    }}
-                                    className="px-2 py-0.5 rounded bg-red-600/30 hover:bg-red-600/60 text-red-200 border border-red-500/50 font-bold uppercase tracking-wider text-[9px] transition-colors cursor-pointer"
+                                    disabled={isCancelling}
+                                    onClick={() => handleCancelOrder(String(ord.id))}
+                                    className="p-1 rounded hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-transparent hover:border-rose-500/30 transition-all cursor-pointer disabled:opacity-50 shrink-0 ml-1"
+                                    title={`Cancel Order #${ord.id}`}
                                   >
-                                    Auto-Set Min ({minRequiredSlice} {baseCurrency})
+                                    {isCancelling ? (
+                                      <RefreshCw className="w-3 h-3 animate-spin text-rose-400" />
+                                    ) : (
+                                      <X className="w-3 h-3" />
+                                    )}
                                   </button>
                                 </div>
-                              </div>
-                            );
-                          }
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
-                          return (
-                            <div className="p-2 rounded bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-between text-[10px] font-mono">
-                              <span className="text-gray-300">
-                                Order Book Shows: <strong className="text-cyan-300">{effectiveIcebergQty.toFixed(4)} {baseCurrency}</strong> (~${sliceNotional.toFixed(2)})
-                              </span>
-                              <span className="text-cyan-400 font-bold">
-                                ≈ {Math.max(1, Math.ceil(currentBaseAmount / effectiveIcebergQty))} Slices Total ✓
-                              </span>
-                            </div>
-                          );
-                        })()}
-                      </MotionDiv>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
-
-              {/* L2 / Training Studio Machine Learning Filter Panel (Prominent Top Placement) */}
-              <div className={`space-y-2.5 p-3 rounded-lg border transition-all ${mlFilterConfig.enabled ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.12)]' : 'bg-black/30 border-blue-500/20'}`}>
-                <div
-                  className="flex justify-between items-center cursor-pointer group"
-                  onClick={() => {
-                    hasManualMlOverrideRef.current = true;
-                    setMlFilterConfig(prev => ({
-                      ...prev,
-                      enabled: !prev.enabled,
-                      modelId: !prev.enabled && !prev.modelId && mlModels.length > 0 ? mlModels[0].id : prev.modelId
-                    }));
-                  }}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500/25 text-blue-300 border border-blue-400/50' : 'bg-white/5 text-blue-400/70'}`}>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                      </svg>
-                    </div>
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-gray-200 group-hover:text-white transition-colors">
-                          L2 Machine Learning Filter
-                        </span>
-                        <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${mlFilterConfig.enabled ? 'bg-blue-500/30 text-blue-200 border border-blue-400/40' : 'bg-white/5 text-gray-400'}`}>
-                          {mlFilterConfig.enabled ? 'ACTIVE' : 'OFF'}
-                        </span>
-                        {pinnedModelId && mlFilterConfig.modelId === pinnedModelId && (
-                          <span className="text-[8.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/35">
-                            PINNED
-                          </span>
-                        )}
+                      {/* Buy / Sell Tabs */}
+                      <div className="flex p-1 rounded-lg bg-black/40 border border-white/5 mb-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSideChange('Buy')}
+                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Buy'
+                            ? 'bg-green-500/20 text-green-400 border border-green-500/50 shadow-[0_0_10px_rgba(34,197,94,0.15)]'
+                            : 'text-gray-500 hover:text-white hover:bg-white/5 border border-transparent'
+                            }`}
+                        >
+                          {isFutures ? 'Long' : 'Buy'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSideChange('Sell')}
+                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Sell'
+                            ? 'bg-red-500/20 text-red-400 border border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.15)]'
+                            : 'text-gray-500 hover:text-white hover:bg-white/5 border border-transparent'
+                            }`}
+                        >
+                          {isFutures ? 'Short' : 'Sell'}
+                        </button>
                       </div>
-                      <span className="text-[10px] text-gray-400">
-                        🤖 Filter {tradeSide.toUpperCase()} entry using Training Studio / ML Registry model
-                      </span>
-                    </div>
-                  </div>
-                  <div className={`relative w-8 h-4 rounded-full transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500' : 'bg-gray-600'}`}>
-                    <MotionDiv
-                      className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                      animate={{ x: mlFilterConfig.enabled ? 16 : 0 }}
-                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                    />
-                  </div>
-                </div>
 
-                {/* Always-Visible ML Registry Model Selector Dropdown */}
-                <div className="bg-black/45 p-2 rounded-lg border border-blue-500/25 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
-                      Select Trained Model (ML Registry)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        fetchMlModels();
-                      }}
-                      className="p-1 rounded bg-white/5 hover:bg-blue-500/20 text-gray-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1 text-[9px]"
-                      title="Refresh Models from ML Registry"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isLoadingMlModels ? 'animate-spin text-blue-400' : ''}`} />
-                      <span>Refresh</span>
-                    </button>
-                  </div>
-
-                  {mlModels.length === 0 ? (
-                    <p className="text-[10px] text-amber-400/90 italic py-1">
-                      No models found in ML Registry. Train & save a model in Training Studio first.
-                    </p>
-                  ) : (
-                    <select
-                      className="w-full bg-black border border-blue-500/30 rounded-lg py-1.5 px-2.5 text-white outline-none focus:border-blue-400 text-xs font-bold cursor-pointer"
-                      value={mlFilterConfig.modelId}
-                      onChange={(e) => {
-                        hasManualMlOverrideRef.current = true;
-                        const val = e.target.value;
-                        const opt = getModelOptimalThresholds(val);
-                        setMlFilterConfig(prev => ({
-                          ...prev,
-                          modelId: val,
-                          enabled: Boolean(val) ? true : prev.enabled,
-                          bullishThreshold: prev.autoThreshold ? opt.bullish : prev.bullishThreshold,
-                          bearishThreshold: prev.autoThreshold ? opt.bearish : prev.bearishThreshold
-                        }));
-                      }}
-                    >
-                      <option value="">-- Select a Model from ML Registry --</option>
-                      {mlModels.map(m => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ({m.modelType}) - v{m.versions?.find(v => v.id === m.activeVersionId)?.version || '1.0'}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-
-                <AnimatePresence>
-                  {mlFilterConfig.enabled && (
-                    <MotionDiv
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="space-y-2.5 overflow-hidden pt-1 border-t border-white/5"
-                    >
-                      {/* Execution Mode Selector (Signal Only vs Dynamic Setup, matching WallHunterModal) */}
-                      <div className="bg-black/40 p-2 rounded-lg border border-white/5 space-y-1.5">
-                        <label className="text-[10px] font-bold text-blue-400 uppercase tracking-wider block">
-                          Execution Mode
-                        </label>
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'basic' }))}
-                            className={`py-1.5 px-2 rounded-lg font-bold text-[10px] transition-all border cursor-pointer ${
-                              mlFilterConfig.executionMode === 'basic'
-                                ? 'bg-blue-600/25 border-blue-500 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
-                                : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
-                            }`}
+                      {/* API Account Selector */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-end">
+                          <label className="text-xs text-gray-400 font-medium">Execute With</label>
+                        </div>
+                        <div className="relative">
+                          <select
+                            value={selectedApi}
+                            onChange={(e) => { setSelectedApi(e.target.value); onApiKeyChange?.(e.target.value); }}
+                            className="w-full bg-black/40 border border-white/10 rounded-lg py-2 pl-3 pr-8 text-white text-sm focus:outline-none focus:border-brand-primary/50 transition-colors appearance-none cursor-pointer hover:bg-black/60"
                           >
-                            Signal Only (Filter Entry)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'advanced' }))}
-                            className={`py-1.5 px-2 rounded-lg font-bold text-[10px] transition-all border cursor-pointer ${
-                              mlFilterConfig.executionMode === 'advanced'
-                                ? 'bg-purple-600/25 border-purple-500 text-purple-300 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
-                                : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
-                            }`}
-                          >
-                            Dynamic Setup (AI TP/SL)
-                          </button>
+                            {apiKeys.map(k => (
+                              <option key={k.id} value={k.id} className="bg-[#000000]">
+                                {/* BUG-08 fix: Robust label fallback with exchange uppercase */}
+                                {k.name || k.label || k.key_name || `${k.exchange?.toUpperCase()} — Key #${k.id}`}
+                              </option>
+                            ))}
+                            {apiKeys.length === 0 && <option value="" disabled>No API Keys found</option>}
+                          </select>
+                          <ChevronDown className="absolute right-3 top-[10px] w-4 h-4 text-gray-500 pointer-events-none" />
                         </div>
                       </div>
 
-                      {/* Smart Auto-Align to Model Toggle */}
-                      {(() => {
-                        const opt = getModelOptimalThresholds(mlFilterConfig.modelId);
-                        return (
-                          <div className="flex items-center justify-between p-2 rounded-lg bg-black/45 border border-blue-500/25">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Zap className={`w-3.5 h-3.5 shrink-0 ${mlFilterConfig.autoThreshold ? 'text-amber-400 fill-amber-400' : 'text-gray-500'}`} />
-                              <div className="flex flex-col min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] font-bold text-gray-200">
-                                    Smart Auto-Align to Model
-                                  </span>
-                                  <span className={`text-[8.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase border ${mlFilterConfig.autoThreshold ? 'bg-amber-500/20 text-amber-300 border-amber-500/35 shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-gray-400 border-white/5'}`}>
-                                    {mlFilterConfig.autoThreshold ? 'AUTO ON' : 'MANUAL'}
-                                  </span>
+                      {/* Order Type Toggle: Market | Limit | ⚡ Smart Peg */}
+                      <div className="flex p-1 rounded-lg bg-black/40 border border-white/5 gap-1">
+                        {(['Market', 'Limit', 'SmartPeg'] as const).map((type) => (
+                          <button
+                            key={type}
+                            onClick={() => setOrderType(type)}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1 ${orderType === type
+                              ? type === 'SmartPeg'
+                                ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white shadow-md'
+                                : 'bg-brand-primary text-white shadow-sm'
+                              : 'text-gray-400 hover:text-white hover:bg-white/5'
+                              }`}
+                          >
+                            {type === 'SmartPeg' ? (
+                              <>
+                                <Zap className="w-3 h-3 text-amber-300 fill-amber-300" />
+                                <span>Smart Peg</span>
+                              </>
+                            ) : (
+                              <span className="uppercase tracking-wider">{type}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Smart Peg Entry Explanatory & Settings Panel */}
+                      <AnimatePresence>
+                        {orderType === 'SmartPeg' && (
+                          <MotionDiv
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="p-2.5 rounded-xl bg-gradient-to-r from-amber-950/40 via-red-950/20 to-black border border-amber-500/30 text-[10px] space-y-2 overflow-hidden shadow-[0_0_15px_rgba(245,158,11,0.15)]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                                <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                                <span>⚡ Dynamic Maker Peg Entry Active</span>
+                              </div>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold">
+                                Post-Only Maker
+                              </span>
+                            </div>
+                            <p className="text-[9px] text-gray-400 leading-relaxed">
+                              Automatically shadows the top of the orderbook (Best Bid for Buy, Best Ask for Sell) at #1 Queue Priority until 100% filled.
+                            </p>
+                            <div className="space-y-1 pt-1 border-t border-white/5">
+                              <div className="flex justify-between items-center text-[9px] text-gray-400">
+                                <span>Max Chase Drift Guard</span>
+                                <span className="text-amber-400 font-bold font-mono">
+                                  {smartPegMaxDev === 0 ? 'Unlimited (∞)' : `${smartPegMaxDev}%`}
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="5.0"
+                                step="0.1"
+                                value={smartPegMaxDev}
+                                onChange={(e) => setSmartPegMaxDev(parseFloat(e.target.value))}
+                                className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                              />
+                              <p className="text-[8px] text-gray-500">
+                                {smartPegMaxDev === 0 ? 'Chases continuously until filled.' : 'Stops chasing if price drifts too far away from initial entry.'}
+                              </p>
+                            </div>
+                          </MotionDiv>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Price (if limit) */}
+                      <AnimatePresence>
+                        {orderType === 'Limit' && (
+                          <MotionDiv
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="space-y-3 overflow-hidden"
+                          >
+                            {/* Switch: Auto Best Limit */}
+                            <div className="flex items-center justify-between bg-black/20 p-2 rounded-lg border border-brand-primary/20 cursor-pointer" onClick={() => setIsAutoLimit(!isAutoLimit)}>
+                              <div className="flex flex-col">
+                                <span className="text-xs font-bold text-brand-primary">Auto Best Limit (Post-Only)</span>
+                                <span className="text-[10px] text-gray-500">Snipes entry at Best Bid/Ask without Taker Fees</span>
+                              </div>
+                              <div className={`relative w-8 h-4 rounded-full transition-colors ${isAutoLimit ? 'bg-brand-primary' : 'bg-gray-600'}`}>
+                                <MotionDiv
+                                  className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                                  animate={{ x: isAutoLimit ? 16 : 0 }}
+                                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                />
+                              </div>
+                            </div>
+
+                            {!isAutoLimit && (
+                              <div className="space-y-1">
+                                <label className="text-xs text-gray-400 font-medium">Limit Price</label>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    value={limitPrice}
+                                    disabled={isAutoLimit}
+                                    onChange={(e) => setLimitPrice(e.target.value)}
+                                    className="w-full bg-black/30 border border-white/10 rounded-lg py-2 px-3 pl-8 text-white text-sm focus:outline-none focus:border-brand-primary/50 transition-colors disabled:opacity-50"
+                                  />
+                                  <span className="absolute left-3 top-2 text-gray-500 text-sm">$</span>
                                 </div>
-                                <span className="text-[9px] text-gray-400 font-mono truncate">
-                                  {opt.note}
+                              </div>
+                            )}
+                          </MotionDiv>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Size */}
+                      <div className="space-y-1">
+                        {/* Label row: currency name + toggle switch + balance */}
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs text-gray-400 font-medium">
+                              Order Size
+                            </label>
+                            {/* Base / Quote toggle */}
+                            <div className="flex items-center gap-1 bg-black/40 rounded-full p-0.5 border border-white/10">
+                              <button
+                                onClick={() => {
+                                  setSizeMode('base');
+                                  if (!selectedPercent) setSize('');
+                                }}
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${sizeMode === 'base'
+                                  ? 'bg-brand-primary text-white shadow'
+                                  : 'text-gray-500 hover:text-gray-300'
+                                  }`}
+                              >
+                                {baseCurrency}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSizeMode('quote');
+                                  if (!selectedPercent) setSize('');
+                                }}
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${sizeMode === 'quote'
+                                  ? 'bg-yellow-500 text-black shadow'
+                                  : 'text-gray-500 hover:text-gray-300'
+                                  }`}
+                              >
+                                {quoteCurrency}
+                              </button>
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-gray-500 text-right flex flex-col items-end">
+                            <div className="flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title={`Live Auto-Sync Active (${(timings.balancePollMs / 1000).toFixed(1)}s)`} />
+                              <span>Balance:</span>
+                              <span className="text-gray-200 font-semibold font-mono">
+                                {isLoadingBalance ? "..." : balanceData ? (
+                                  isInverseFutures
+                                    ? sizeMode === 'quote'
+                                      ? `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency} (~$${(((balanceData.base_free || 0) * (effectiveOrderPrice || effectiveCurrentPrice || 0))).toFixed(2)})`
+                                      : `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency}`
+                                    : sizeMode === 'quote'
+                                      ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
+                                      : isFutures
+                                        ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
+                                        : tradeSide === 'Buy'
+                                          ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
+                                          : `${(balanceData.base_free || 0).toFixed(4)} ${baseCurrency}`
+                                ) : "N/A"}
+                              </span>
+                            </div>
+
+                            {/* Show helpful diagnostic badge if funds are located in USDⓈ-M or Spot wallet instead of COIN-M */}
+                            {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.usds_futures_free && balanceData.usds_futures_free > 0) && (
+                              <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in USDⓈ-M Futures wallet instead of COIN-M Futures">
+                                <span>⚠️ {balanceData?.usds_futures_free?.toFixed(2)} in USDⓈ-M! Transfer to COIN-M</span>
+                              </div>
+                            )}
+                            {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.spot_free && balanceData.spot_free > 0) && (
+                              <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in Spot wallet instead of COIN-M Futures">
+                                <span>⚠️ {balanceData?.spot_free?.toFixed(2)} in Spot! Transfer to COIN-M</span>
+                              </div>
+                            )}
+
+                            {/* Show Locked / In-Orders Balance if any */}
+                            {balanceData && (
+                              (() => {
+                                const isQuoteTarget = !isInverseFutures && (sizeMode === 'quote' || (isFutures ? true : tradeSide === 'Buy'));
+                                const lockedAmount = isQuoteTarget ? (balanceData.quote_used || 0) : (balanceData.base_used || 0);
+                                const curr = isQuoteTarget ? quoteCurrency : baseCurrency;
+                                if (lockedAmount > 0) {
+                                  return (
+                                    <div className="text-[9px] text-amber-400 font-mono flex items-center gap-1">
+                                      <span>Locked:</span>
+                                      <span>{isQuoteTarget ? lockedAmount.toFixed(2) : lockedAmount.toFixed(4)} {curr}</span>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()
+                            )}
+
+                            {isFutures && reduceOnly && (
+                              <div className="text-[10px] text-brand-primary font-mono">
+                                Pos: {isLoadingPosition ? "..." : (positionData && positionData.amount > 0 ? (
+                                  isInverseFutures && positionData.contracts
+                                    ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(1)} ${baseCurrency})`
+                                    : `${positionData.amount} (${positionData.side.toUpperCase()})`
+                                ) : "0")}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Input field */}
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={size}
+                            onChange={(e) => {
+                              setSize(e.target.value);
+                              setSelectedPercent(null);
+                            }}
+                            placeholder={isInverseFutures ? `Min 1 Cont ($${contractSize})` : "0.00"}
+                            className="w-full bg-black/30 border border-white/10 rounded-lg py-2 px-3 pl-8 text-white text-sm focus:outline-none focus:border-brand-primary/50 transition-colors"
+                          />
+                          {/* Currency symbol badge */}
+                          <span className="absolute left-2.5 top-2 text-[11px] font-bold text-gray-500">
+                            {sizeMode === 'quote' ? '$' : baseCurrency.slice(0, 3)}
+                          </span>
+                        </div>
+
+                        {/* Live conversion estimate */}
+                        {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
+                          <div className="flex items-center gap-1.5 px-1 pt-0.5 flex-wrap">
+                            <span className="text-[10px] text-gray-600">≈</span>
+                            {sizeMode === 'quote' ? (
+                              <span className="text-[10px] text-yellow-400 font-semibold">
+                                {(Number(size) / effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} {baseCurrency}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-yellow-400 font-semibold">
+                                ${(Number(size) * effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
+                              </span>
+                            )}
+                            {isInverseFutures && (
+                              <span className="text-[10px] bg-brand-primary/20 text-brand-primary px-1.5 py-0.2 rounded font-mono font-semibold">
+                                • {Math.max(1, Math.round(((sizeMode === 'quote' ? Number(size) : Number(size) * effectiveOrderPrice)) / contractSize))} Cont (${contractSize}/Cont)
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* % quick-fill buttons */}
+                        <div className="flex justify-between mt-2 gap-2">
+                          {['25%', '50%', '75%', '100%'].map(pct => {
+                            const isSelected = selectedPercent === pct;
+                            return (
+                              <button
+                                key={pct}
+                                className={`flex-1 py-1 text-[10px] font-bold rounded border transition-colors ${isSelected
+                                  ? 'bg-brand-primary text-white border-brand-primary shadow-[0_0_8px_rgba(59,130,246,0.4)]'
+                                  : 'border-white/10 text-gray-400 hover:bg-white/10 hover:text-white'
+                                  }`}
+                                onClick={() => {
+                                  setSelectedPercent(pct);
+                                  if (balanceData && effectiveOrderPrice > 0) {
+                                    const newSize = calculateSize(
+                                      pct,
+                                      balanceData,
+                                      effectiveOrderPrice,
+                                      sizeMode,
+                                      tradeSide,
+                                      isFutures,
+                                      leverage,
+                                      reduceOnly,
+                                      positionData
+                                    );
+                                    if (newSize) {
+                                      setSize(newSize);
+                                    }
+                                  }
+                                }}
+                              >
+                                {pct}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Binance Native Iceberg Order Panel (Spot Limit Only) */}
+                      {orderType === 'Limit' && !isFutures && (
+                        <div className="space-y-2.5 bg-cyan-950/20 p-2.5 rounded-lg border border-cyan-500/20 transition-all">
+                          <div
+                            className="flex justify-between items-center cursor-pointer select-none"
+                            onClick={() => setIsIceberg(!isIceberg)}
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="p-1 rounded bg-cyan-500/10 text-cyan-400">
+                                <Layers className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="flex flex-col text-left">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-bold text-cyan-300">Binance Native Iceberg</span>
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold uppercase">Spot GTC</span>
+                                </div>
+                                <span className="text-[10px] text-gray-400">
+                                  Splits limit order into smaller visible book slices
                                 </span>
                               </div>
                             </div>
-                            <div
-                              className={`relative w-7 h-3.5 rounded-full transition-colors cursor-pointer shrink-0 ${mlFilterConfig.autoThreshold ? 'bg-amber-500' : 'bg-gray-700'}`}
-                              onClick={() => {
-                                const newAuto = !mlFilterConfig.autoThreshold;
-                                setMlFilterConfig(prev => ({
-                                  ...prev,
-                                  autoThreshold: newAuto,
-                                  bullishThreshold: newAuto ? opt.bullish : prev.bullishThreshold,
-                                  bearishThreshold: newAuto ? opt.bearish : prev.bearishThreshold
-                                }));
-                              }}
-                              title={mlFilterConfig.autoThreshold ? "Click to set custom manual thresholds" : "Click to auto-tune thresholds to model"}
-                            >
+                            <div className={`relative w-8 h-4 rounded-full transition-colors ${isIceberg ? 'bg-cyan-500' : 'bg-gray-600'}`}>
                               <MotionDiv
-                                className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
-                                animate={{ x: mlFilterConfig.autoThreshold ? 14 : 0 }}
+                                className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                                animate={{ x: isIceberg ? 16 : 0 }}
                                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                               />
                             </div>
                           </div>
-                        );
-                      })()}
 
-                      {/* Bullish Threshold (Active for BUY orders) */}
-                      <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Buy' ? 'bg-emerald-950/25 border-emerald-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
-                        <div className="flex justify-between items-center mb-1">
-                          <label className="text-[10px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
-                            <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Buy' ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`}></span>
-                            <span>BUY Filter: Bullish Threshold</span>
-                          </label>
-                          <span className="text-xs font-mono font-bold text-emerald-400">
-                            {(mlFilterConfig.bullishThreshold * 100).toFixed(0)}%
-                          </span>
+                          <AnimatePresence>
+                            {isIceberg && (
+                              <MotionDiv
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="space-y-2.5 overflow-hidden pt-2 border-t border-cyan-500/20"
+                              >
+                                {/* Slice Mode Selector */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <label className="text-[10px] text-gray-400 font-medium">Visible Slice Size</label>
+                                  <div className="flex bg-black/40 rounded border border-white/10 p-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setIcebergMode('percent')}
+                                      className={`px-2 py-0.5 text-[10px] rounded transition-colors ${icebergMode === 'percent' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
+                                        }`}
+                                    >
+                                      % of Total
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setIcebergMode('qty');
+                                        if (!icebergCustomQty || icebergCustomQty === '0') {
+                                          setIcebergCustomQty('250');
+                                        }
+                                      }}
+                                      className={`px-2 py-0.5 text-[10px] rounded transition-colors ${icebergMode === 'qty' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
+                                        }`}
+                                    >
+                                      {baseCurrency}
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Percent Quick Buttons */}
+                                {icebergMode === 'percent' && (
+                                  <div className="grid grid-cols-4 gap-1.5">
+                                    {['10', '20', '25', '50'].map((pct) => (
+                                      <button
+                                        key={pct}
+                                        type="button"
+                                        onClick={() => setIcebergPercent(pct)}
+                                        className={`py-1 text-[10px] font-mono rounded border transition-all ${icebergPercent === pct
+                                          ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
+                                          : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
+                                          }`}
+                                      >
+                                        {pct}%
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Base Coin Qty Quick Buttons */}
+                                {icebergMode === 'qty' && (
+                                  <div className="grid grid-cols-4 gap-1.5">
+                                    {['100', '250', '500', '1000'].map((q) => (
+                                      <button
+                                        key={q}
+                                        type="button"
+                                        onClick={() => setIcebergCustomQty(q)}
+                                        className={`py-1 text-[10px] font-mono rounded border transition-all ${icebergCustomQty === q
+                                          ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
+                                          : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
+                                          }`}
+                                      >
+                                        {q} {baseCurrency}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Input Field */}
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    value={icebergMode === 'percent' ? icebergPercent : icebergCustomQty}
+                                    onChange={(e) => {
+                                      if (icebergMode === 'percent') {
+                                        setIcebergPercent(e.target.value);
+                                      } else {
+                                        setIcebergCustomQty(e.target.value);
+                                      }
+                                    }}
+                                    placeholder={icebergMode === 'percent' ? 'e.g. 20' : '250'}
+                                    className="w-full bg-black/40 border border-cyan-500/30 rounded py-1.5 px-3 pr-14 text-white text-xs font-mono focus:outline-none focus:border-cyan-400 transition-colors"
+                                  />
+                                  <span className="absolute right-3 top-1.5 text-[10px] text-cyan-400 font-bold font-mono">
+                                    {icebergMode === 'percent' ? '% SLICE' : baseCurrency}
+                                  </span>
+                                </div>
+
+                                {/* Live Slice Calculation & Warning Pill */}
+                                {(() => {
+                                  if (effectiveIcebergQty <= 0 || currentBaseAmount <= 0) return null;
+                                  const refPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
+                                  const sliceNotional = effectiveIcebergQty * refPrice;
+                                  const minRequiredSlice = refPrice > 0 ? Math.ceil(5.05 / refPrice) : 65;
+
+                                  if (effectiveIcebergQty >= currentBaseAmount) {
+                                    return (
+                                      <div className="p-2 rounded bg-amber-950/40 border border-amber-500/40 text-[10px] text-amber-300 flex items-center gap-1.5 font-mono">
+                                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                        <span>Slice ({effectiveIcebergQty.toFixed(2)}) must be smaller than total order ({currentBaseAmount.toFixed(2)} {baseCurrency}).</span>
+                                      </div>
+                                    );
+                                  }
+
+                                  if (sliceNotional < 5.0) {
+                                    return (
+                                      <div className="p-2 rounded bg-red-950/50 border border-red-500/50 flex flex-col gap-1.5 text-[10px] animate-fadeIn">
+                                        <div className="flex items-center justify-between text-red-300 font-bold">
+                                          <span className="flex items-center gap-1">
+                                            <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                                            Slice value (${sliceNotional.toFixed(2)}) is below Binance $5.00 Min Notional!
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-gray-300">
+                                          <span className="text-[9px]">Binance requires each slice ≥ $5.00 (~{minRequiredSlice} {baseCurrency})</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setIcebergMode('qty');
+                                              setIcebergCustomQty(minRequiredSlice.toString());
+                                            }}
+                                            className="px-2 py-0.5 rounded bg-red-600/30 hover:bg-red-600/60 text-red-200 border border-red-500/50 font-bold uppercase tracking-wider text-[9px] transition-colors cursor-pointer"
+                                          >
+                                            Auto-Set Min ({minRequiredSlice} {baseCurrency})
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <div className="p-2 rounded bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-between text-[10px] font-mono">
+                                      <span className="text-gray-300">
+                                        Order Book Shows: <strong className="text-cyan-300">{effectiveIcebergQty.toFixed(4)} {baseCurrency}</strong> (~${sliceNotional.toFixed(2)})
+                                      </span>
+                                      <span className="text-cyan-400 font-bold">
+                                        ≈ {Math.max(1, Math.ceil(currentBaseAmount / effectiveIcebergQty))} Slices Total ✓
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
+                              </MotionDiv>
+                            )}
+                          </AnimatePresence>
                         </div>
-                        <input
-                          type="range"
-                          min="0.1"
-                          max="0.9"
-                          step="0.01"
-                          value={mlFilterConfig.bullishThreshold}
-                          onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bullishThreshold: parseFloat(e.target.value) }))}
-                          className="w-full accent-emerald-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
-                        />
-                        <p className="text-[9px] text-gray-400 mt-1 leading-tight">
-                          For <span className="text-emerald-400 font-semibold">BUY</span> orders: AI must predict ≥{(mlFilterConfig.bullishThreshold * 100).toFixed(0)}% Bullish probability to permit entry, otherwise it denies the trade.
-                        </p>
-                      </div>
+                      )}
 
-                      {/* Bearish Threshold (Active for SELL orders — Spot Hold Currency Sell High & Futures Short) */}
-                      <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Sell' ? 'bg-rose-950/25 border-rose-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
-                        <div className="flex justify-between items-center mb-1">
-                          <label className="text-[10px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
-                            <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Sell' ? 'bg-rose-400 animate-pulse' : 'bg-gray-500'}`}></span>
-                            <span>SELL Filter: Bearish Threshold</span>
-                          </label>
-                          <span className="text-xs font-mono font-bold text-rose-400">
-                            {(mlFilterConfig.bearishThreshold * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0.1"
-                          max="0.9"
-                          step="0.01"
-                          value={mlFilterConfig.bearishThreshold}
-                          onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bearishThreshold: parseFloat(e.target.value) }))}
-                          className="w-full accent-rose-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
-                        />
-                        <p className="text-[9px] text-gray-400 mt-1 leading-tight">
-                          For <span className="text-rose-400 font-semibold">SELL</span> orders (Spot Hold Sell High → Low TP Buy Back, or Short): AI must predict ≥{(mlFilterConfig.bearishThreshold * 100).toFixed(0)}% Bearish probability to permit selling.
-                        </p>
-                      </div>
-                    </MotionDiv>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Native Binance TP/SL Toggle */}
-              {(tpConfig.enabled || slConfig.enabled) && !isFutures && (
-                <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${!isNativeTpSlSupported ? 'opacity-40 pointer-events-none' : ''}`}>
-                  <div className="flex flex-col">
-                      <span className="text-xs font-bold text-brand-primary">Use Native Binance OTO/OTOCO</span>
-                      <span className="text-[9px] text-brand-primary/80">
-                        {orderType === 'SmartPeg'
-                          ? '⚡ Dynamic Peg Mode: Entry is dynamic maker; Native OCO auto-spawns upon fill'
-                          : orderType === 'Market'
-                            ? '⚡ Market Entry: Post-fill Native OCO/Bracket spawns automatically upon fill'
-                            : (tpConfig.enabled && tpConfig.orderType === 'Market')
-                              ? '⚠️ Auto-disabled: Market TP requires software bracket execution'
-                              : !isNativeTpSlSupported
-                                ? '⚠️ Auto-disabled: Trailing / Smart Chase / ATR / Auto-BE SL is active'
-                                : 'Exchange atomic bracket (100% crash proof)'
-                        }
-                      </span>
-                  </div>
-                  <div className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${useNativeTpSl && isNativeTpSlSupported ? 'bg-brand-primary' : 'bg-gray-600'}`} onClick={() => {
-                      if (isNativeTpSlSupported) {
-                          setUseNativeTpSl(!useNativeTpSl);
-                      }
-                  }}>
-                      <MotionDiv 
-                          className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                          animate={{ x: (useNativeTpSl && isNativeTpSlSupported) ? 16 : 0 }}
-                          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                      />
-                  </div>
-                </div>
-              )}
-
-              {/* Bracket Order (Attached TP) Panel */}
-              <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-brand-primary/10 transition-all">
-                  <div className="flex justify-between items-center cursor-pointer" onClick={() => setTpConfig({...tpConfig, enabled: !tpConfig.enabled})}>
-                      <div className="flex flex-col">
-                          <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors">Attached Take-Profit (Bracket)</span>
-                          <span className="text-[10px] text-gray-500">Auto-trigger scalp exit once entry fills</span>
-                      </div>
-                      <div className={`relative w-8 h-4 rounded-full transition-colors ${tpConfig.enabled ? 'bg-brand-primary' : 'bg-gray-600'}`}>
-                          <MotionDiv 
-                             className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                             animate={{ x: tpConfig.enabled ? 16 : 0 }}
-                             transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                          />
-                      </div>
-                  </div>
-                  
-                  <AnimatePresence>
-                     {tpConfig.enabled && (
-                        <MotionDiv
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="space-y-3 overflow-hidden pt-2 border-t border-white/5"
+                      {/* L2 / Training Studio Machine Learning Filter Panel (Prominent Top Placement) */}
+                      <div className={`space-y-2.5 p-3 rounded-lg border transition-all ${mlFilterConfig.enabled ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.12)]' : 'bg-black/30 border-blue-500/20'}`}>
+                        <div
+                          className="flex justify-between items-center cursor-pointer group"
+                          onClick={() => {
+                            hasManualMlOverrideRef.current = true;
+                            setMlFilterConfig(prev => ({
+                              ...prev,
+                              enabled: !prev.enabled,
+                              modelId: !prev.enabled && !prev.modelId && mlModels.length > 0 ? mlModels[0].id : prev.modelId
+                            }));
+                          }}
                         >
-                            {/* Layout Grid */}
-                            <div className="grid grid-cols-2 gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500/25 text-blue-300 border border-blue-400/50' : 'bg-white/5 text-blue-400/70'}`}>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                              </svg>
+                            </div>
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-gray-200 group-hover:text-white transition-colors">
+                                  L2 Machine Learning Filter
+                                </span>
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${mlFilterConfig.enabled ? 'bg-blue-500/30 text-blue-200 border border-blue-400/40' : 'bg-white/5 text-gray-400'}`}>
+                                  {mlFilterConfig.enabled ? 'ACTIVE' : 'OFF'}
+                                </span>
+                                {pinnedModelId && mlFilterConfig.modelId === pinnedModelId && (
+                                  <span className="text-[8.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/35">
+                                    PINNED
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-gray-400">
+                                🤖 Filter {tradeSide.toUpperCase()} entry using Training Studio / ML Registry model
+                              </span>
+                            </div>
+                          </div>
+                          <div className={`relative w-8 h-4 rounded-full transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500' : 'bg-gray-600'}`}>
+                            <MotionDiv
+                              className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                              animate={{ x: mlFilterConfig.enabled ? 16 : 0 }}
+                              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Always-Visible ML Registry Model Selector Dropdown */}
+                        <div className="bg-black/45 p-2 rounded-lg border border-blue-500/25 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                              Select Trained Model (ML Registry)
+                            </label>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                fetchMlModels();
+                              }}
+                              className="p-1 rounded bg-white/5 hover:bg-blue-500/20 text-gray-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1 text-[9px]"
+                              title="Refresh Models from ML Registry"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${isLoadingMlModels ? 'animate-spin text-blue-400' : ''}`} />
+                              <span>Refresh</span>
+                            </button>
+                          </div>
+
+                          {mlModels.length === 0 ? (
+                            <p className="text-[10px] text-amber-400/90 italic py-1">
+                              No models found in ML Registry. Train & save a model in Training Studio first.
+                            </p>
+                          ) : (
+                            <select
+                              className="w-full bg-black border border-blue-500/30 rounded-lg py-1.5 px-2.5 text-white outline-none focus:border-blue-400 text-xs font-bold cursor-pointer"
+                              value={mlFilterConfig.modelId}
+                              onChange={(e) => {
+                                hasManualMlOverrideRef.current = true;
+                                const val = e.target.value;
+                                const opt = getModelOptimalThresholds(val);
+                                setMlFilterConfig(prev => ({
+                                  ...prev,
+                                  modelId: val,
+                                  enabled: Boolean(val) ? true : prev.enabled,
+                                  bullishThreshold: prev.autoThreshold ? opt.bullish : prev.bullishThreshold,
+                                  bearishThreshold: prev.autoThreshold ? opt.bearish : prev.bearishThreshold
+                                }));
+                              }}
+                            >
+                              <option value="">-- Select a Model from ML Registry --</option>
+                              {mlModels.map(m => (
+                                <option key={m.id} value={m.id}>
+                                  {m.name} ({m.modelType}) - v{m.versions?.find(v => v.id === m.activeVersionId)?.version || '1.0'}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+
+                        <AnimatePresence>
+                          {mlFilterConfig.enabled && (
+                            <MotionDiv
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="space-y-2.5 overflow-hidden pt-1 border-t border-white/5"
+                            >
+                              {/* Execution Mode Selector (Signal Only vs Dynamic Setup, matching WallHunterModal) */}
+                              <div className="bg-black/40 p-2 rounded-lg border border-white/5 space-y-1.5">
+                                <label className="text-[10px] font-bold text-blue-400 uppercase tracking-wider block">
+                                  Execution Mode
+                                </label>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'basic' }))}
+                                    className={`py-1.5 px-2 rounded-lg font-bold text-[10px] transition-all border cursor-pointer ${mlFilterConfig.executionMode === 'basic'
+                                      ? 'bg-blue-600/25 border-blue-500 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
+                                      : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
+                                      }`}
+                                  >
+                                    Signal Only (Filter Entry)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'advanced' }))}
+                                    className={`py-1.5 px-2 rounded-lg font-bold text-[10px] transition-all border cursor-pointer ${mlFilterConfig.executionMode === 'advanced'
+                                      ? 'bg-purple-600/25 border-purple-500 text-purple-300 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+                                      : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
+                                      }`}
+                                  >
+                                    Dynamic Setup (AI TP/SL)
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Smart Auto-Align to Model Toggle */}
+                              {(() => {
+                                const opt = getModelOptimalThresholds(mlFilterConfig.modelId);
+                                return (
+                                  <div className="flex items-center justify-between p-2 rounded-lg bg-black/45 border border-blue-500/25">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <Zap className={`w-3.5 h-3.5 shrink-0 ${mlFilterConfig.autoThreshold ? 'text-amber-400 fill-amber-400' : 'text-gray-500'}`} />
+                                      <div className="flex flex-col min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-[10px] font-bold text-gray-200">
+                                            Smart Auto-Align to Model
+                                          </span>
+                                          <span className={`text-[8.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase border ${mlFilterConfig.autoThreshold ? 'bg-amber-500/20 text-amber-300 border-amber-500/35 shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-gray-400 border-white/5'}`}>
+                                            {mlFilterConfig.autoThreshold ? 'AUTO ON' : 'MANUAL'}
+                                          </span>
+                                        </div>
+                                        <span className="text-[9px] text-gray-400 font-mono truncate">
+                                          {opt.note}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div
+                                      className={`relative w-7 h-3.5 rounded-full transition-colors cursor-pointer shrink-0 ${mlFilterConfig.autoThreshold ? 'bg-amber-500' : 'bg-gray-700'}`}
+                                      onClick={() => {
+                                        const newAuto = !mlFilterConfig.autoThreshold;
+                                        setMlFilterConfig(prev => ({
+                                          ...prev,
+                                          autoThreshold: newAuto,
+                                          bullishThreshold: newAuto ? opt.bullish : prev.bullishThreshold,
+                                          bearishThreshold: newAuto ? opt.bearish : prev.bearishThreshold
+                                        }));
+                                      }}
+                                      title={mlFilterConfig.autoThreshold ? "Click to set custom manual thresholds" : "Click to auto-tune thresholds to model"}
+                                    >
+                                      <MotionDiv
+                                        className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
+                                        animate={{ x: mlFilterConfig.autoThreshold ? 14 : 0 }}
+                                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Bullish Threshold (Active for BUY orders) */}
+                              <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Buy' ? 'bg-emerald-950/25 border-emerald-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
+                                <div className="flex justify-between items-center mb-1">
+                                  <label className="text-[10px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Buy' ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`}></span>
+                                    <span>BUY Filter: Bullish Threshold</span>
+                                  </label>
+                                  <span className="text-xs font-mono font-bold text-emerald-400">
+                                    {(mlFilterConfig.bullishThreshold * 100).toFixed(0)}%
+                                  </span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0.1"
+                                  max="0.9"
+                                  step="0.01"
+                                  value={mlFilterConfig.bullishThreshold}
+                                  onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bullishThreshold: parseFloat(e.target.value) }))}
+                                  className="w-full accent-emerald-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
+                                />
+                                <p className="text-[9px] text-gray-400 mt-1 leading-tight">
+                                  For <span className="text-emerald-400 font-semibold">BUY</span> orders: AI must predict ≥{(mlFilterConfig.bullishThreshold * 100).toFixed(0)}% Bullish probability to permit entry, otherwise it denies the trade.
+                                </p>
+                              </div>
+
+                              {/* Bearish Threshold (Active for SELL orders — Spot Hold Currency Sell High & Futures Short) */}
+                              <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Sell' ? 'bg-rose-950/25 border-rose-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
+                                <div className="flex justify-between items-center mb-1">
+                                  <label className="text-[10px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Sell' ? 'bg-rose-400 animate-pulse' : 'bg-gray-500'}`}></span>
+                                    <span>SELL Filter: Bearish Threshold</span>
+                                  </label>
+                                  <span className="text-xs font-mono font-bold text-rose-400">
+                                    {(mlFilterConfig.bearishThreshold * 100).toFixed(0)}%
+                                  </span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0.1"
+                                  max="0.9"
+                                  step="0.01"
+                                  value={mlFilterConfig.bearishThreshold}
+                                  onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bearishThreshold: parseFloat(e.target.value) }))}
+                                  className="w-full accent-rose-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
+                                />
+                                <p className="text-[9px] text-gray-400 mt-1 leading-tight">
+                                  For <span className="text-rose-400 font-semibold">SELL</span> orders (Spot Hold Sell High → Low TP Buy Back, or Short): AI must predict ≥{(mlFilterConfig.bearishThreshold * 100).toFixed(0)}% Bearish probability to permit selling.
+                                </p>
+                              </div>
+                            </MotionDiv>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* Native Binance TP/SL Toggle */}
+                      {(tpConfig.enabled || slConfig.enabled) && !isFutures && (
+                        <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${!isNativeTpSlSupported ? 'opacity-40 pointer-events-none' : ''}`}>
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold text-brand-primary">Use Native Binance OTO/OTOCO</span>
+                            <span className="text-[9px] text-brand-primary/80">
+                              {orderType === 'SmartPeg'
+                                ? '⚡ Dynamic Peg Mode: Entry is dynamic maker; Native OCO auto-spawns upon fill'
+                                : orderType === 'Market'
+                                  ? '⚡ Market Entry: Post-fill Native OCO/Bracket spawns automatically upon fill'
+                                  : (tpConfig.enabled && tpConfig.orderType === 'Market')
+                                    ? '⚠️ Auto-disabled: Market TP requires software bracket execution'
+                                    : !isNativeTpSlSupported
+                                      ? '⚠️ Auto-disabled: Trailing / Smart Chase / ATR / Auto-BE SL is active'
+                                      : 'Exchange atomic bracket (100% crash proof)'
+                              }
+                            </span>
+                          </div>
+                          <div className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${useNativeTpSl && isNativeTpSlSupported ? 'bg-brand-primary' : 'bg-gray-600'}`} onClick={() => {
+                            if (isNativeTpSlSupported) {
+                              setUseNativeTpSl(!useNativeTpSl);
+                            }
+                          }}>
+                            <MotionDiv
+                              className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                              animate={{ x: (useNativeTpSl && isNativeTpSlSupported) ? 16 : 0 }}
+                              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Bracket Order (Attached TP) Panel */}
+                      <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-brand-primary/10 transition-all">
+                        <div className="flex justify-between items-center cursor-pointer" onClick={() => setTpConfig({ ...tpConfig, enabled: !tpConfig.enabled })}>
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors">Attached Take-Profit (Bracket)</span>
+                            <span className="text-[10px] text-gray-500">Auto-trigger scalp exit once entry fills</span>
+                          </div>
+                          <div className={`relative w-8 h-4 rounded-full transition-colors ${tpConfig.enabled ? 'bg-brand-primary' : 'bg-gray-600'}`}>
+                            <MotionDiv
+                              className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                              animate={{ x: tpConfig.enabled ? 16 : 0 }}
+                              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                            />
+                          </div>
+                        </div>
+
+                        <AnimatePresence>
+                          {tpConfig.enabled && (
+                            <MotionDiv
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="space-y-3 overflow-hidden pt-2 border-t border-white/5"
+                            >
+                              {/* Layout Grid */}
+                              <div className="grid grid-cols-2 gap-2">
                                 {/* TP Order Type */}
                                 <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">TP Order Type</label>
-                                    <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
-                                        {(['Limit', 'Market'] as const).map(type => (
-                                            <button
-                                                key={type}
-                                                onClick={() => setTpConfig({...tpConfig, orderType: type})}
-                                                className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.orderType === type ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                            >
-                                                {type}
-                                            </button>
-                                        ))}
-                                    </div>
+                                  <label className="text-[10px] text-gray-400 font-medium">TP Order Type</label>
+                                  <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                    {(['Limit', 'Market'] as const).map(type => (
+                                      <button
+                                        key={type}
+                                        onClick={() => setTpConfig({ ...tpConfig, orderType: type })}
+                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.orderType === type ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                      >
+                                        {type}
+                                      </button>
+                                    ))}
+                                  </div>
                                 </div>
 
                                 {/* Gap Mode */}
                                 <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">Mode</label>
-                                    <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
-                                        <button
-                                            onClick={() => setTpConfig({
-                                                ...tpConfig,
-                                                mode: 'percentage',
-                                                value: tpConfig.mode === 'percentage' ? tpConfig.value : getSmartGapValue('percentage', true)
-                                            })}
-                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'percentage' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                        >
-                                            %
-                                        </button>
-                                        <button
-                                            onClick={() => setTpConfig({
-                                                ...tpConfig,
-                                                mode: 'price',
-                                                value: tpConfig.mode === 'price' ? tpConfig.value : getSmartGapValue('price', true)
-                                            })}
-                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'price' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                        >
-                                            $
-                                        </button>
-                                        <button
-                                            onClick={() => setTpConfig({
-                                                ...tpConfig,
-                                                mode: 'absolute',
-                                                value: tpConfig.mode === 'absolute' ? tpConfig.value : getSmartGapValue('absolute', true)
-                                            })}
-                                            className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'absolute' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                        >
-                                            🎯
-                                        </button>
-                                    </div>
+                                  <label className="text-[10px] text-gray-400 font-medium">Mode</label>
+                                  <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                    <button
+                                      onClick={() => setTpConfig({
+                                        ...tpConfig,
+                                        mode: 'percentage',
+                                        value: tpConfig.mode === 'percentage' ? tpConfig.value : getSmartGapValue('percentage', true)
+                                      })}
+                                      className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'percentage' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                    >
+                                      %
+                                    </button>
+                                    <button
+                                      onClick={() => setTpConfig({
+                                        ...tpConfig,
+                                        mode: 'price',
+                                        value: tpConfig.mode === 'price' ? tpConfig.value : getSmartGapValue('price', true)
+                                      })}
+                                      className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'price' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                    >
+                                      $
+                                    </button>
+                                    <button
+                                      onClick={() => setTpConfig({
+                                        ...tpConfig,
+                                        mode: 'absolute',
+                                        value: tpConfig.mode === 'absolute' ? tpConfig.value : getSmartGapValue('absolute', true)
+                                      })}
+                                      className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'absolute' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                    >
+                                      🎯
+                                    </button>
+                                  </div>
                                 </div>
-                            </div>
-                            
-                            {/* Target Gap & Timeout */}
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">{tpConfig.mode === 'absolute' ? 'Exact Price' : 'Target Gap'}</label>
-                                    <div className="relative">
-                                        <input 
-                                            type="number"
-                                            value={tpConfig.value}
-                                            onChange={(e) => setTpConfig({...tpConfig, value: e.target.value})}
-                                            placeholder={tpConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 1.050" : "e.g. 0.950") : (tpConfig.mode === 'percentage' ? "e.g. 1.5" : "e.g. 0.005")}
-                                            className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-xs focus:outline-none focus:border-brand-primary/50"
-                                        />
-                                        <span className="absolute right-2 top-1.5 text-[10px] text-brand-primary font-bold">{tpConfig.mode === 'percentage' ? '%' : (tpConfig.mode === 'absolute' ? '🎯' : '$')}</span>
-                                    </div>
-                                </div>
-                                <div className="space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
-                                            <span>Monitor Limit</span>
-                                            {tpConfig.timeoutMins === 0 && (
-                                                <span className="text-[8px] text-emerald-400/90 font-medium">● Infinite</span>
-                                            )}
-                                        </label>
-                                        <button
-                                            type="button"
-                                            onClick={() => setTpConfig({ ...tpConfig, timeoutMins: tpConfig.timeoutMins === 0 ? 60 : 0 })}
-                                            className={`text-[9px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${
-                                                tpConfig.timeoutMins === 0
-                                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
-                                                    : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
-                                            }`}
-                                            title={tpConfig.timeoutMins === 0 ? "Infinite monitor active (watches until filled). Click to set minute limit." : "Click to disable timeout limit (Monitor Infinitely)"}
-                                        >
-                                            {tpConfig.timeoutMins === 0 ? (
-                                                <>
-                                                    <span className="text-xs font-bold leading-none">∞</span>
-                                                    <span>No Limit</span>
-                                                </>
-                                            ) : (
-                                                <span>Limit On</span>
-                                            )}
-                                        </button>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <input 
-                                            type="range"
-                                            min="0" max="60" step="1"
-                                            value={tpConfig.timeoutMins}
-                                            onChange={(e) => setTpConfig({...tpConfig, timeoutMins: Number(e.target.value)})}
-                                            className="w-full accent-brand-primary h-1 bg-black/50 rounded appearance-none cursor-pointer"
-                                            title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
-                                        />
-                                        <span 
-                                            className={`text-[10px] font-mono min-w-[28px] text-right font-bold transition-colors ${
-                                                tpConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
-                                            }`}
-                                            title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
-                                        >
-                                            {tpConfig.timeoutMins === 0 ? '∞' : `${tpConfig.timeoutMins}m`}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </MotionDiv>
-                     )}
-                  </AnimatePresence>
-              </div>
+                              </div>
 
-              {/* Attached Stop Loss (SL) Panel */}
-              <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-red-500/10 transition-all">
-                  <div className="flex justify-between items-center cursor-pointer group" onClick={() => setSlConfig({...slConfig, enabled: !slConfig.enabled})}>
-                      <div className="flex flex-col">
-                          <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors">Attached Stop-Loss (SL)</span>
-                          <span className="text-[10px] text-gray-400">{(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native Order (Visible on Exchange)' : '⚡ Bot Maker Loop (Zero Maker Fee)'}</span>
-                      </div>
-                      <div className={`relative w-8 h-4 rounded-full transition-colors ${slConfig.enabled ? 'bg-red-500' : 'bg-gray-600'}`}>
-                          <MotionDiv 
-                             className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                             animate={{ x: slConfig.enabled ? 16 : 0 }}
-                             transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                          />
-                      </div>
-                  </div>
-                  
-                  <AnimatePresence>
-                     {slConfig.enabled && (
-                        <MotionDiv
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="space-y-3 overflow-hidden pt-2 border-t border-white/5"
-                        >
-                            {/* Execution Engine Selector (Exchange Native vs Smart Chase Bot) */}
-                            <div className="space-y-2 bg-black/30 p-2.5 rounded-lg border border-white/5">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-[10px] text-gray-300 font-semibold flex items-center gap-1">
-                                        <span>SL Execution Engine</span>
+                              {/* Target Gap & Timeout */}
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] text-gray-400 font-medium">{tpConfig.mode === 'absolute' ? 'Exact Price' : 'Target Gap'}</label>
+                                  <div className="relative">
+                                    <input
+                                      type="number"
+                                      value={tpConfig.value}
+                                      onChange={(e) => setTpConfig({ ...tpConfig, value: e.target.value })}
+                                      placeholder={tpConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 1.050" : "e.g. 0.950") : (tpConfig.mode === 'percentage' ? "e.g. 1.5" : "e.g. 0.005")}
+                                      className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-xs focus:outline-none focus:border-brand-primary/50"
+                                    />
+                                    <span className="absolute right-2 top-1.5 text-[10px] text-brand-primary font-bold">{tpConfig.mode === 'percentage' ? '%' : (tpConfig.mode === 'absolute' ? '🎯' : '$')}</span>
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
+                                      <span>Monitor Limit</span>
+                                      {tpConfig.timeoutMins === 0 && (
+                                        <span className="text-[8px] text-emerald-400/90 font-medium">● Infinite</span>
+                                      )}
                                     </label>
-                                    <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-mono font-bold ${
-                                        (slConfig.type === 'fixed' || slConfig.type === 'trailing')
-                                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                    }`}>
-                                        {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native (Safe)' : '⚡ Bot Software Loop'}
+                                    <button
+                                      type="button"
+                                      onClick={() => setTpConfig({ ...tpConfig, timeoutMins: tpConfig.timeoutMins === 0 ? 60 : 0 })}
+                                      className={`text-[9px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${tpConfig.timeoutMins === 0
+                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
+                                        : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
+                                        }`}
+                                      title={tpConfig.timeoutMins === 0 ? "Infinite monitor active (watches until filled). Click to set minute limit." : "Click to disable timeout limit (Monitor Infinitely)"}
+                                    >
+                                      {tpConfig.timeoutMins === 0 ? (
+                                        <>
+                                          <span className="text-xs font-bold leading-none">∞</span>
+                                          <span>No Limit</span>
+                                        </>
+                                      ) : (
+                                        <span>Limit On</span>
+                                      )}
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <input
+                                      type="range"
+                                      min="0" max="60" step="1"
+                                      value={tpConfig.timeoutMins}
+                                      onChange={(e) => setTpConfig({ ...tpConfig, timeoutMins: Number(e.target.value) })}
+                                      className="w-full accent-brand-primary h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                      title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
+                                    />
+                                    <span
+                                      className={`text-[10px] font-mono min-w-[28px] text-right font-bold transition-colors ${tpConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
+                                        }`}
+                                      title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
+                                    >
+                                      {tpConfig.timeoutMins === 0 ? '∞' : `${tpConfig.timeoutMins}m`}
                                     </span>
+                                  </div>
                                 </div>
-                                
-                                <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/50 rounded-lg border border-white/10">
-                                    <button
-                                        type="button"
-                                        onClick={() => setSlConfig({
-                                            ...slConfig,
-                                            type: 'fixed',
-                                            mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
-                                            value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
-                                        })}
-                                        className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all text-center ${
-                                            (slConfig.type === 'fixed' || slConfig.type === 'trailing')
-                                                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-md shadow-emerald-950/40 ring-1 ring-emerald-400/30'
-                                                : 'text-gray-400 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <span className="text-[10.5px] font-bold flex items-center gap-1">
-                                            <span>🛡️</span> Exchange Native
-                                        </span>
-                                        <span className="text-[7.5px] opacity-80 leading-tight mt-0.5">
-                                            Real order on Binance • 24/7 Safe
-                                        </span>
-                                    </button>
+                              </div>
+                            </MotionDiv>
+                          )}
+                        </AnimatePresence>
+                      </div>
 
-                                    <button
-                                        type="button"
-                                        onClick={() => setSlConfig({
-                                            ...slConfig,
-                                            type: 'smart_chase',
-                                            mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
-                                            value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
-                                        })}
-                                        className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all text-center ${
-                                            (slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
-                                                ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-bold shadow-md shadow-amber-950/40 ring-1 ring-amber-400/30'
-                                                : 'text-gray-400 hover:text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <span className="text-[10.5px] font-bold flex items-center gap-1">
-                                            <span>⚡</span> Smart Chase
-                                        </span>
-                                        <span className="text-[7.5px] opacity-80 leading-tight mt-0.5">
-                                            Bot Maker Loop • 0% Fee
-                                        </span>
-                                    </button>
+                      {/* Attached Stop Loss (SL) Panel */}
+                      <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-red-500/10 transition-all">
+                        <div className="flex justify-between items-center cursor-pointer group" onClick={() => setSlConfig({ ...slConfig, enabled: !slConfig.enabled })}>
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors">Attached Stop-Loss (SL)</span>
+                            <span className="text-[10px] text-gray-400">{(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native Order (Visible on Exchange)' : '⚡ Bot Maker Loop (Zero Maker Fee)'}</span>
+                          </div>
+                          <div className={`relative w-8 h-4 rounded-full transition-colors ${slConfig.enabled ? 'bg-red-500' : 'bg-gray-600'}`}>
+                            <MotionDiv
+                              className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                              animate={{ x: slConfig.enabled ? 16 : 0 }}
+                              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                            />
+                          </div>
+                        </div>
+
+                        <AnimatePresence>
+                          {slConfig.enabled && (
+                            <MotionDiv
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="space-y-3 overflow-hidden pt-2 border-t border-white/5"
+                            >
+                              {/* Execution Engine Selector (Exchange Native vs Smart Chase Bot) */}
+                              <div className="space-y-2 bg-black/30 p-2.5 rounded-lg border border-white/5">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10px] text-gray-300 font-semibold flex items-center gap-1">
+                                    <span>SL Execution Engine</span>
+                                  </label>
+                                  <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-mono font-bold ${(slConfig.type === 'fixed' || slConfig.type === 'trailing')
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    }`}>
+                                    {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native (Safe)' : '⚡ Bot Software Loop'}
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/50 rounded-lg border border-white/10">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSlConfig({
+                                      ...slConfig,
+                                      type: 'fixed',
+                                      mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
+                                      value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
+                                    })}
+                                    className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all text-center ${(slConfig.type === 'fixed' || slConfig.type === 'trailing')
+                                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-md shadow-emerald-950/40 ring-1 ring-emerald-400/30'
+                                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                      }`}
+                                  >
+                                    <span className="text-[10.5px] font-bold flex items-center gap-1">
+                                      <span>🛡️</span> Exchange Native
+                                    </span>
+                                    <span className="text-[7.5px] opacity-80 leading-tight mt-0.5">
+                                      Real order on Binance • 24/7 Safe
+                                    </span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setSlConfig({
+                                      ...slConfig,
+                                      type: 'smart_chase',
+                                      mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
+                                      value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
+                                    })}
+                                    className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all text-center ${(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
+                                      ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-bold shadow-md shadow-amber-950/40 ring-1 ring-amber-400/30'
+                                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                      }`}
+                                  >
+                                    <span className="text-[10.5px] font-bold flex items-center gap-1">
+                                      <span>⚡</span> Smart Chase
+                                    </span>
+                                    <span className="text-[7.5px] opacity-80 leading-tight mt-0.5">
+                                      Bot Maker Loop • 0% Fee
+                                    </span>
+                                  </button>
                                 </div>
 
                                 {/* Dynamic Sub-Variant & Gap Mode */}
                                 <div className="grid grid-cols-2 gap-2 pt-0.5">
-                                    {/* Sub-variant based on selected target */}
-                                    <div className="space-y-1">
-                                        <label className="text-[9.5px] text-gray-400 font-medium">
-                                            {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? 'Order Variant' : 'Chase Strategy'}
-                                        </label>
-                                        <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
-                                            {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? (
-                                                <>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setSlConfig({ ...slConfig, type: 'fixed' })}
-                                                        className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-emerald-600 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                                    >
-                                                        Fixed Stop
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setSlConfig({ ...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode })}
-                                                        className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-emerald-600 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                                    >
-                                                        Trailing
-                                                    </button>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setSlConfig({ ...slConfig, type: 'smart_chase' })}
-                                                        className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-amber-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                                    >
-                                                        BBO Chase
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setSlConfig({ ...slConfig, type: 'trailing_chase' })}
-                                                        className={`flex-1 text-[8px] py-1 rounded transition-colors ${slConfig.type === 'trailing_chase' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                                    >
-                                                        ⚡ Trail Chase
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
+                                  {/* Sub-variant based on selected target */}
+                                  <div className="space-y-1">
+                                    <label className="text-[9.5px] text-gray-400 font-medium">
+                                      {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? 'Order Variant' : 'Chase Strategy'}
+                                    </label>
+                                    <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                      {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, type: 'fixed' })}
+                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-emerald-600 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                          >
+                                            Fixed Stop
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode })}
+                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-emerald-600 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                          >
+                                            Trailing
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, type: 'smart_chase' })}
+                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-amber-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                          >
+                                            BBO Chase
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, type: 'trailing_chase' })}
+                                            className={`flex-1 text-[8px] py-1 rounded transition-colors ${slConfig.type === 'trailing_chase' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                          >
+                                            ⚡ Trail Chase
+                                          </button>
+                                        </>
+                                      )}
                                     </div>
+                                  </div>
 
-                                    {/* Gap Mode */}
-                                    <div className="space-y-1">
-                                        <label className="text-[9.5px] text-gray-400 font-medium">Gap Unit</label>
-                                        <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
-                                            <button
-                                                type="button"
-                                                onClick={() => setSlConfig({
-                                                    ...slConfig,
-                                                    mode: 'percentage',
-                                                    value: slConfig.mode === 'percentage' ? slConfig.value : getSmartGapValue('percentage', false)
-                                                })}
-                                                className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                            >
-                                                %
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setSlConfig({
-                                                    ...slConfig,
-                                                    mode: 'price',
-                                                    value: slConfig.mode === 'price' ? slConfig.value : getSmartGapValue('price', false)
-                                                })}
-                                                className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                            >
-                                                $
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setSlConfig({
-                                                    ...slConfig,
-                                                    mode: 'absolute',
-                                                    type: (slConfig.type === 'trailing' || slConfig.type === 'trailing_chase') ? 'fixed' : slConfig.type,
-                                                    value: slConfig.mode === 'absolute' ? slConfig.value : getSmartGapValue('absolute', false)
-                                                })}
-                                                className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                            >
-                                                🎯
-                                            </button>
-                                            {slConfig.type !== 'smart_chase' && slConfig.type !== 'trailing_chase' && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSlConfig({...slConfig, mode: 'atr', type: 'trailing'})}
-                                                    className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'atr' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                                >
-                                                    ATR
-                                                </button>
-                                            )}
-                                        </div>
+                                  {/* Gap Mode */}
+                                  <div className="space-y-1">
+                                    <label className="text-[9.5px] text-gray-400 font-medium">Gap Unit</label>
+                                    <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSlConfig({
+                                          ...slConfig,
+                                          mode: 'percentage',
+                                          value: slConfig.mode === 'percentage' ? slConfig.value : getSmartGapValue('percentage', false)
+                                        })}
+                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                      >
+                                        %
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSlConfig({
+                                          ...slConfig,
+                                          mode: 'price',
+                                          value: slConfig.mode === 'price' ? slConfig.value : getSmartGapValue('price', false)
+                                        })}
+                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                      >
+                                        $
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSlConfig({
+                                          ...slConfig,
+                                          mode: 'absolute',
+                                          type: (slConfig.type === 'trailing' || slConfig.type === 'trailing_chase') ? 'fixed' : slConfig.type,
+                                          value: slConfig.mode === 'absolute' ? slConfig.value : getSmartGapValue('absolute', false)
+                                        })}
+                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                      >
+                                        🎯
+                                      </button>
+                                      {slConfig.type !== 'smart_chase' && slConfig.type !== 'trailing_chase' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setSlConfig({ ...slConfig, mode: 'atr', type: 'trailing' })}
+                                          className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'atr' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                          ATR
+                                        </button>
+                                      )}
                                     </div>
+                                  </div>
                                 </div>
 
                                 {/* Assurance Banner */}
                                 {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? (
-                                    <div className="text-[9px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
-                                        <span>🛡️</span>
-                                        <span><strong>Binance Native Stop:</strong> অর্ডার সরাসরি Binance-এ বসবে এবং অ্যাপে দৃশ্যমান থাকবে।</span>
-                                    </div>
+                                  <div className="text-[9px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                                    <span>🛡️</span>
+                                    <span><strong>Binance Native Stop:</strong> অর্ডার সরাসরি Binance-এ বসবে এবং অ্যাপে দৃশ্যমান থাকবে।</span>
+                                  </div>
                                 ) : (
-                                    <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
-                                        <span>⚠️</span>
-                                        <span><strong>Bot Software Loop:</strong> ব্যাকএন্ড মেমোরিতে ট্র্যাক হবে (Binance অর্ডারবুকে সরাসরি বসবে না)।</span>
-                                    </div>
+                                  <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
+                                    <span>⚠️</span>
+                                    <span><strong>Bot Software Loop:</strong> ব্যাকএন্ড মেমোরিতে ট্র্যাক হবে (Binance অর্ডারবুকে সরাসরি বসবে না)।</span>
+                                  </div>
                                 )}
-                            </div>
-                            
-                            {/* Target Gap & Timeout */}
-                            <div className="grid grid-cols-2 gap-2">
+                              </div>
+
+                              {/* Target Gap & Timeout */}
+                              <div className="grid grid-cols-2 gap-2">
                                 {slConfig.mode === 'atr' ? (
-                                    <div className="grid grid-cols-3 gap-1">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] text-gray-400 font-medium">TF</label>
-                                            <select 
-                                                value={slConfig.atrTimeframe}
-                                                onChange={(e) => setSlConfig({...slConfig, atrTimeframe: e.target.value})}
-                                                className="w-full bg-black/30 border border-white/10 rounded py-1 px-1 text-white text-[10px] focus:outline-none"
-                                            >
-                                                <option value="1m">1m</option>
-                                                <option value="5m">5m</option>
-                                                <option value="15m">15m</option>
-                                                <option value="1h">1h</option>
-                                                <option value="4h">4h</option>
-                                                <option value="1d">1d</option>
-                                            </select>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] text-gray-400 font-medium">Period</label>
-                                            <input 
-                                                type="number"
-                                                value={slConfig.atrPeriod}
-                                                onChange={(e) => setSlConfig({...slConfig, atrPeriod: Number(e.target.value)})}
-                                                className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[10px] focus:outline-none"
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] text-gray-400 font-medium">Mult.</label>
-                                            <input 
-                                                type="number"
-                                                step="0.1"
-                                                value={slConfig.atrMultiplier}
-                                                onChange={(e) => setSlConfig({...slConfig, atrMultiplier: Number(e.target.value)})}
-                                                className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[10px] focus:outline-none"
-                                            />
-                                        </div>
-                                    </div>
-                                ) : (
+                                  <div className="grid grid-cols-3 gap-1">
                                     <div className="space-y-1">
-                                        <label className="text-[10px] text-gray-400 font-medium">
-                                            {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'smart_chase' ? 'Chase Trigger Gap' : (slConfig.type === 'trailing_chase' ? 'Trailing Callback Gap' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap')))}
-                                        </label>
-                                        <div className="relative">
-                                            <input 
-                                                type="number"
-                                                value={slConfig.value}
-                                                onChange={(e) => setSlConfig({...slConfig, value: e.target.value})}
-                                                placeholder={slConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 0.950" : "e.g. 1.050") : (slConfig.mode === 'percentage' ? "e.g. 1.0" : "e.g. 0.003")}
-                                                className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-xs focus:outline-none focus:border-red-500/50"
-                                            />
-                                            <span className="absolute right-2 top-1.5 text-[10px] text-red-500 font-bold">{slConfig.mode === 'percentage' ? '%' : (slConfig.mode === 'absolute' ? '🎯' : '$')}</span>
-                                        </div>
+                                      <label className="text-[10px] text-gray-400 font-medium">TF</label>
+                                      <select
+                                        value={slConfig.atrTimeframe}
+                                        onChange={(e) => setSlConfig({ ...slConfig, atrTimeframe: e.target.value })}
+                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-1 text-white text-[10px] focus:outline-none"
+                                      >
+                                        <option value="1m">1m</option>
+                                        <option value="5m">5m</option>
+                                        <option value="15m">15m</option>
+                                        <option value="1h">1h</option>
+                                        <option value="4h">4h</option>
+                                        <option value="1d">1d</option>
+                                      </select>
                                     </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] text-gray-400 font-medium">Period</label>
+                                      <input
+                                        type="number"
+                                        value={slConfig.atrPeriod}
+                                        onChange={(e) => setSlConfig({ ...slConfig, atrPeriod: Number(e.target.value) })}
+                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[10px] focus:outline-none"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] text-gray-400 font-medium">Mult.</label>
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        value={slConfig.atrMultiplier}
+                                        onChange={(e) => setSlConfig({ ...slConfig, atrMultiplier: Number(e.target.value) })}
+                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[10px] focus:outline-none"
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-gray-400 font-medium">
+                                      {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'smart_chase' ? 'Chase Trigger Gap' : (slConfig.type === 'trailing_chase' ? 'Trailing Callback Gap' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap')))}
+                                    </label>
+                                    <div className="relative">
+                                      <input
+                                        type="number"
+                                        value={slConfig.value}
+                                        onChange={(e) => setSlConfig({ ...slConfig, value: e.target.value })}
+                                        placeholder={slConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 0.950" : "e.g. 1.050") : (slConfig.mode === 'percentage' ? "e.g. 1.0" : "e.g. 0.003")}
+                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-xs focus:outline-none focus:border-red-500/50"
+                                      />
+                                      <span className="absolute right-2 top-1.5 text-[10px] text-red-500 font-bold">{slConfig.mode === 'percentage' ? '%' : (slConfig.mode === 'absolute' ? '🎯' : '$')}</span>
+                                    </div>
+                                  </div>
                                 )}
                                 <div className="space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
-                                            <span>Monitor Limit</span>
-                                            {slConfig.timeoutMins === 0 && (
-                                                <span className="text-[8px] text-emerald-400/90 font-medium">● Infinite</span>
-                                            )}
-                                        </label>
-                                        <button
-                                            type="button"
-                                            onClick={() => setSlConfig({ ...slConfig, timeoutMins: slConfig.timeoutMins === 0 ? 60 : 0 })}
-                                            className={`text-[9px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${
-                                                slConfig.timeoutMins === 0
-                                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
-                                                    : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
-                                            }`}
-                                            title={slConfig.timeoutMins === 0 ? "Infinite monitor active (watches until filled). Click to set minute limit." : "Click to disable timeout limit (Monitor Infinitely)"}
-                                        >
-                                            {slConfig.timeoutMins === 0 ? (
-                                                <>
-                                                    <span className="text-xs font-bold leading-none">∞</span>
-                                                    <span>No Limit</span>
-                                                </>
-                                            ) : (
-                                                <span>Limit On</span>
-                                            )}
-                                        </button>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <input 
-                                            type="range"
-                                            min="0" max="60" step="1"
-                                            value={slConfig.timeoutMins}
-                                            onChange={(e) => setSlConfig({...slConfig, timeoutMins: Number(e.target.value)})}
-                                            className="w-full accent-red-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
-                                            title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
-                                        />
-                                        <span 
-                                            className={`text-[10px] font-mono min-w-[28px] text-right font-bold transition-colors ${
-                                                slConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
-                                            }`}
-                                            title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
-                                        >
-                                            {slConfig.timeoutMins === 0 ? '∞' : `${slConfig.timeoutMins}m`}
-                                        </span>
-                                    </div>
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
+                                      <span>Monitor Limit</span>
+                                      {slConfig.timeoutMins === 0 && (
+                                        <span className="text-[8px] text-emerald-400/90 font-medium">● Infinite</span>
+                                      )}
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSlConfig({ ...slConfig, timeoutMins: slConfig.timeoutMins === 0 ? 60 : 0 })}
+                                      className={`text-[9px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${slConfig.timeoutMins === 0
+                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
+                                        : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
+                                        }`}
+                                      title={slConfig.timeoutMins === 0 ? "Infinite monitor active (watches until filled). Click to set minute limit." : "Click to disable timeout limit (Monitor Infinitely)"}
+                                    >
+                                      {slConfig.timeoutMins === 0 ? (
+                                        <>
+                                          <span className="text-xs font-bold leading-none">∞</span>
+                                          <span>No Limit</span>
+                                        </>
+                                      ) : (
+                                        <span>Limit On</span>
+                                      )}
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <input
+                                      type="range"
+                                      min="0" max="60" step="1"
+                                      value={slConfig.timeoutMins}
+                                      onChange={(e) => setSlConfig({ ...slConfig, timeoutMins: Number(e.target.value) })}
+                                      className="w-full accent-red-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                      title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
+                                    />
+                                    <span
+                                      className={`text-[10px] font-mono min-w-[28px] text-right font-bold transition-colors ${slConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
+                                        }`}
+                                      title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
+                                    >
+                                      {slConfig.timeoutMins === 0 ? '∞' : `${slConfig.timeoutMins}m`}
+                                    </span>
+                                  </div>
                                 </div>
-                            </div>
+                              </div>
 
-                            {/* Smart Chase Detailed Controls (for Smart Chase & Trailing Chase) */}
-                            {(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase') && (
+                              {/* Smart Chase Detailed Controls (for Smart Chase & Trailing Chase) */}
+                              {(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase') && (
                                 <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 space-y-2 mt-1 animate-fadeIn">
-                                    <div className="flex items-center justify-between text-[10px]">
-                                        <span className="font-bold text-red-400 flex items-center gap-1.5">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                                            {slConfig.type === 'trailing_chase' ? 'Trailing Chase Engine (Maker Post-Only)' : 'Smart Chase Settings (Maker Post-Only)'}
-                                        </span>
-                                        <span className="text-[9px] text-amber-400 font-mono font-bold">Circuit: {slConfig.smartChaseDeviationPct}%</span>
-                                    </div>
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="font-bold text-red-400 flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                      {slConfig.type === 'trailing_chase' ? 'Trailing Chase Engine (Maker Post-Only)' : 'Smart Chase Settings (Maker Post-Only)'}
+                                    </span>
+                                    <span className="text-[9px] text-amber-400 font-mono font-bold">Circuit: {slConfig.smartChaseDeviationPct}%</span>
+                                  </div>
 
-                                    {/* Pegging Strategy Selector: Standard BBO vs Inside-Spread vs Wall-Aware */}
-                                    <div className="space-y-1">
-                                        <div className="flex justify-between items-center text-[9px] text-gray-400">
-                                            <span className="font-semibold text-gray-300">Pegging Strategy</span>
-                                            <span className="text-[8.5px] font-mono text-amber-300 font-bold">
-                                                {slConfig.smartChasePegStrategy === 'wall_aware' ? '🧱 Wall-Aware' : (slConfig.smartChasePegStrategy === 'inside_spread' ? '🎯 Inside-Spread' : '⚡ Top BBO')}
-                                            </span>
-                                        </div>
-                                        <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[9px] font-semibold">
-                                            <button
-                                                type="button"
-                                                onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'bbo' })}
-                                                className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                                                    slConfig.smartChasePegStrategy === 'bbo'
-                                                        ? 'bg-amber-600 text-white font-bold shadow-md'
-                                                        : 'text-gray-400 hover:text-white'
-                                                }`}
-                                                title="Standard Top-of-Book BBO: Tracks Best Bid/Ask directly"
-                                            >
-                                                ⚡ Top BBO
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'inside_spread' })}
-                                                className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                                                    slConfig.smartChasePegStrategy === 'inside_spread'
-                                                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold shadow-md'
-                                                        : 'text-gray-400 hover:text-white'
-                                                }`}
-                                                title="Inside-Spread Pegging: Places 1 tick inside spread when spread > 1 tick. Ensures #1 queue priority maker fill without taker fees."
-                                            >
-                                                🎯 Inside-Spread
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'wall_aware' })}
-                                                className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                                                    slConfig.smartChasePegStrategy === 'wall_aware'
-                                                        ? 'bg-gradient-to-r from-orange-600 to-amber-600 text-white font-bold shadow-md'
-                                                        : 'text-gray-400 hover:text-white'
-                                                }`}
-                                                title="Liquidity-Wall Aware: Scans L2 depth, detects support/resistance walls, and front-runs 1 tick ahead."
-                                            >
-                                                🧱 Wall-Aware
-                                            </button>
-                                        </div>
-                                        {slConfig.smartChasePegStrategy === 'wall_aware' && (
-                                            <div className="p-2 rounded bg-amber-950/20 border border-amber-500/20 space-y-1">
-                                                <div className="flex justify-between items-center text-[8.5px]">
-                                                    <span className="text-gray-300">Wall Threshold Multiplier</span>
-                                                    <span className="text-amber-400 font-mono font-bold">{slConfig.smartChaseWallMultiplier}x Depth</span>
-                                                </div>
-                                                <input 
-                                                    type="range"
-                                                    min="1.5" max="5.0" step="0.5"
-                                                    value={slConfig.smartChaseWallMultiplier}
-                                                    onChange={(e) => setSlConfig({ ...slConfig, smartChaseWallMultiplier: parseFloat(e.target.value) || 2.5 })}
-                                                    className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
-                                                />
-                                                <p className="text-[8px] text-gray-400 leading-tight">
-                                                    Front-runs orderbook clusters with volume ≥ {slConfig.smartChaseWallMultiplier}x average depth.
-                                                </p>
-                                            </div>
-                                        )}
-                                        {slConfig.smartChasePegStrategy === 'inside_spread' && (
-                                            <p className="text-[8px] text-cyan-400/90 leading-tight">
-                                                💡 Jumps 1 tick inside the spread to capture top execution priority before takers match other makers.
-                                            </p>
-                                        )}
+                                  {/* Pegging Strategy Selector: Standard BBO vs Inside-Spread vs Wall-Aware */}
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between items-center text-[9px] text-gray-400">
+                                      <span className="font-semibold text-gray-300">Pegging Strategy</span>
+                                      <span className="text-[8.5px] font-mono text-amber-300 font-bold">
+                                        {slConfig.smartChasePegStrategy === 'wall_aware' ? '🧱 Wall-Aware' : (slConfig.smartChasePegStrategy === 'inside_spread' ? '🎯 Inside-Spread' : '⚡ Top BBO')}
+                                      </span>
                                     </div>
-
-                                    {/* Chase Trigger Basis Toggle: Last Market Price vs Bid / Ask Price */}
-                                    <div className="space-y-1">
-                                        <div className="flex justify-between items-center text-[9px] text-gray-400">
-                                            <span className="font-semibold text-gray-300">Trigger Condition Basis</span>
-                                            <span className="text-[8.5px] font-mono text-cyan-300 font-bold">
-                                                {slConfig.smartChaseTriggerSource === 'bid_ask' ? '⚡ Bid / Ask (BBO)' : '📊 Last Market Price'}
-                                            </span>
-                                        </div>
-                                        <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[9px] font-semibold">
-                                            <button
-                                                type="button"
-                                                onClick={() => setSlConfig({ ...slConfig, smartChaseTriggerSource: 'last' })}
-                                                className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                                                    slConfig.smartChaseTriggerSource === 'last'
-                                                        ? 'bg-blue-600 text-white font-bold shadow-md'
-                                                        : 'text-gray-400 hover:text-white'
-                                                }`}
-                                                title="Last Traded Price: Standard market trigger. Immune to temporary spread widening or empty book spikes."
-                                            >
-                                                📊 Last Price
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setSlConfig({ ...slConfig, smartChaseTriggerSource: 'bid_ask' })}
-                                                className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                                                    slConfig.smartChaseTriggerSource === 'bid_ask'
-                                                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold shadow-md'
-                                                        : 'text-gray-400 hover:text-white'
-                                                }`}
-                                                title="Order Book Bid/Ask: Triggers instantly based on executable Top-of-Book (Bid for Long exit, Ask for Short exit). Eliminates lag on slow pairs."
-                                            >
-                                                ⚡ Bid / Ask
-                                            </button>
-                                        </div>
-                                        <p className="text-[8px] text-gray-400 leading-tight">
-                                            {slConfig.smartChaseTriggerSource === 'bid_ask'
-                                                ? 'Triggers immediately when Top Bid (Long exit) or Ask (Short exit) reaches SL.'
-                                                : 'Triggers when a matched trade on the exchange reaches or breaches SL.'}
-                                        </p>
-                                    </div>
-
-                                    {/* Chase Mode Selector: Dynamic BBO Peg vs Interval Timer */}
                                     <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[9px] font-semibold">
-                                        <button
-                                            type="button"
-                                            onClick={() => setSlConfig({ ...slConfig, smartChaseMode: 'dynamic_bbo' })}
-                                            className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                                                slConfig.smartChaseMode === 'dynamic_bbo'
-                                                    ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white font-bold shadow-md'
-                                                    : 'text-gray-400 hover:text-white'
-                                            }`}
-                                            title="Real-time Order Book Shadowing: Automatically tracks Best Bid/Ask in real time without waiting"
-                                        >
-                                            <Zap className="w-2.5 h-2.5 text-amber-300 fill-amber-300" />
-                                            ⚡ Dynamic BBO Peg
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setSlConfig({ ...slConfig, smartChaseMode: 'interval' })}
-                                            className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                                                slConfig.smartChaseMode === 'interval'
-                                                    ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white font-bold shadow-md'
-                                                    : 'text-gray-400 hover:text-white'
-                                            }`}
-                                            title="Interval Timer: Waits for a fixed delay time before checking and retrying"
-                                        >
-                                            ⏱️ Interval Chase
-                                        </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'bbo' })}
+                                        className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChasePegStrategy === 'bbo'
+                                          ? 'bg-amber-600 text-white font-bold shadow-md'
+                                          : 'text-gray-400 hover:text-white'
+                                          }`}
+                                        title="Standard Top-of-Book BBO: Tracks Best Bid/Ask directly"
+                                      >
+                                        ⚡ Top BBO
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'inside_spread' })}
+                                        className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChasePegStrategy === 'inside_spread'
+                                          ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold shadow-md'
+                                          : 'text-gray-400 hover:text-white'
+                                          }`}
+                                        title="Inside-Spread Pegging: Places 1 tick inside spread when spread > 1 tick. Ensures #1 queue priority maker fill without taker fees."
+                                      >
+                                        🎯 Inside-Spread
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'wall_aware' })}
+                                        className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChasePegStrategy === 'wall_aware'
+                                          ? 'bg-gradient-to-r from-orange-600 to-amber-600 text-white font-bold shadow-md'
+                                          : 'text-gray-400 hover:text-white'
+                                          }`}
+                                        title="Liquidity-Wall Aware: Scans L2 depth, detects support/resistance walls, and front-runs 1 tick ahead."
+                                      >
+                                        🧱 Wall-Aware
+                                      </button>
                                     </div>
-
-                                    {slConfig.smartChaseMode === 'dynamic_bbo' ? (
-                                        <div className="p-2 rounded bg-amber-950/30 border border-amber-500/30 text-[9px] text-amber-300/90 space-y-0.5">
-                                            <div className="font-bold flex items-center gap-1 text-amber-300">
-                                                <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
-                                                <span>Real-Time Order Book Shadowing Active</span>
-                                            </div>
-                                            <p className="text-[8.5px] text-gray-400 leading-tight">
-                                                Stays resting at Top-of-Book to preserve queue priority. Instantly cancels and re-pegs when another participant outbids you!
-                                            </p>
+                                    {slConfig.smartChasePegStrategy === 'wall_aware' && (
+                                      <div className="p-2 rounded bg-amber-950/20 border border-amber-500/20 space-y-1">
+                                        <div className="flex justify-between items-center text-[8.5px]">
+                                          <span className="text-gray-300">Wall Threshold Multiplier</span>
+                                          <span className="text-amber-400 font-mono font-bold">{slConfig.smartChaseWallMultiplier}x Depth</span>
                                         </div>
-                                    ) : (
-                                        <div className="p-1.5 rounded bg-black/40 border border-white/5 text-[9px] text-gray-400">
-                                            <span>Waits for configured delay interval between chase attempts.</span>
-                                        </div>
+                                        <input
+                                          type="range"
+                                          min="1.5" max="5.0" step="0.5"
+                                          value={slConfig.smartChaseWallMultiplier}
+                                          onChange={(e) => setSlConfig({ ...slConfig, smartChaseWallMultiplier: parseFloat(e.target.value) || 2.5 })}
+                                          className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                        />
+                                        <p className="text-[8px] text-gray-400 leading-tight">
+                                          Front-runs orderbook clusters with volume ≥ {slConfig.smartChaseWallMultiplier}x average depth.
+                                        </p>
+                                      </div>
                                     )}
+                                    {slConfig.smartChasePegStrategy === 'inside_spread' && (
+                                      <p className="text-[8px] text-cyan-400/90 leading-tight">
+                                        💡 Jumps 1 tick inside the spread to capture top execution priority before takers match other makers.
+                                      </p>
+                                    )}
+                                  </div>
 
-                                    {/* Max Chase Deviation Slider */}
+                                  {/* Chase Trigger Basis Toggle: Last Market Price vs Bid / Ask Price */}
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between items-center text-[9px] text-gray-400">
+                                      <span className="font-semibold text-gray-300">Trigger Condition Basis</span>
+                                      <span className="text-[8.5px] font-mono text-cyan-300 font-bold">
+                                        {slConfig.smartChaseTriggerSource === 'bid_ask' ? '⚡ Bid / Ask (BBO)' : '📊 Last Market Price'}
+                                      </span>
+                                    </div>
+                                    <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[9px] font-semibold">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSlConfig({ ...slConfig, smartChaseTriggerSource: 'last' })}
+                                        className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseTriggerSource === 'last'
+                                          ? 'bg-blue-600 text-white font-bold shadow-md'
+                                          : 'text-gray-400 hover:text-white'
+                                          }`}
+                                        title="Last Traded Price: Standard market trigger. Immune to temporary spread widening or empty book spikes."
+                                      >
+                                        📊 Last Price
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSlConfig({ ...slConfig, smartChaseTriggerSource: 'bid_ask' })}
+                                        className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseTriggerSource === 'bid_ask'
+                                          ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold shadow-md'
+                                          : 'text-gray-400 hover:text-white'
+                                          }`}
+                                        title="Order Book Bid/Ask: Triggers instantly based on executable Top-of-Book (Bid for Long exit, Ask for Short exit). Eliminates lag on slow pairs."
+                                      >
+                                        ⚡ Bid / Ask
+                                      </button>
+                                    </div>
+                                    <p className="text-[8px] text-gray-400 leading-tight">
+                                      {slConfig.smartChaseTriggerSource === 'bid_ask'
+                                        ? 'Triggers immediately when Top Bid (Long exit) or Ask (Short exit) reaches SL.'
+                                        : 'Triggers when a matched trade on the exchange reaches or breaches SL.'}
+                                    </p>
+                                  </div>
+
+                                  {/* Chase Mode Selector: Dynamic BBO Peg vs Interval Timer */}
+                                  <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[9px] font-semibold">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSlConfig({ ...slConfig, smartChaseMode: 'dynamic_bbo' })}
+                                      className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseMode === 'dynamic_bbo'
+                                        ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white font-bold shadow-md'
+                                        : 'text-gray-400 hover:text-white'
+                                        }`}
+                                      title="Real-time Order Book Shadowing: Automatically tracks Best Bid/Ask in real time without waiting"
+                                    >
+                                      <Zap className="w-2.5 h-2.5 text-amber-300 fill-amber-300" />
+                                      ⚡ Dynamic BBO Peg
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSlConfig({ ...slConfig, smartChaseMode: 'interval' })}
+                                      className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseMode === 'interval'
+                                        ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white font-bold shadow-md'
+                                        : 'text-gray-400 hover:text-white'
+                                        }`}
+                                      title="Interval Timer: Waits for a fixed delay time before checking and retrying"
+                                    >
+                                      ⏱️ Interval Chase
+                                    </button>
+                                  </div>
+
+                                  {slConfig.smartChaseMode === 'dynamic_bbo' ? (
+                                    <div className="p-2 rounded bg-amber-950/30 border border-amber-500/30 text-[9px] text-amber-300/90 space-y-0.5">
+                                      <div className="font-bold flex items-center gap-1 text-amber-300">
+                                        <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
+                                        <span>Real-Time Order Book Shadowing Active</span>
+                                      </div>
+                                      <p className="text-[8.5px] text-gray-400 leading-tight">
+                                        Stays resting at Top-of-Book to preserve queue priority. Instantly cancels and re-pegs when another participant outbids you!
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    <div className="p-1.5 rounded bg-black/40 border border-white/5 text-[9px] text-gray-400">
+                                      <span>Waits for configured delay interval between chase attempts.</span>
+                                    </div>
+                                  )}
+
+                                  {/* Max Chase Deviation Slider */}
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between items-center text-[9px] text-gray-400">
+                                      <span>Max Deviation (Circuit Breaker)</span>
+                                      <span className="text-amber-400 font-bold font-mono">{slConfig.smartChaseDeviationPct}%</span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min="0.1" max="5.0" step="0.1"
+                                      value={slConfig.smartChaseDeviationPct}
+                                      onChange={(e) => setSlConfig({ ...slConfig, smartChaseDeviationPct: parseFloat(e.target.value) })}
+                                      className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                    />
+                                    <p className="text-[8px] text-gray-500">Breach triggers emergency Market Sweep.</p>
+                                  </div>
+
+                                  {/* Retries and Delay Grid */}
+                                  <div className={`grid ${slConfig.smartChaseMode === 'dynamic_bbo' ? 'grid-cols-1' : 'grid-cols-2'} gap-2 pt-1 border-t border-white/5`}>
                                     <div className="space-y-1">
-                                        <div className="flex justify-between items-center text-[9px] text-gray-400">
-                                            <span>Max Deviation (Circuit Breaker)</span>
-                                            <span className="text-amber-400 font-bold font-mono">{slConfig.smartChaseDeviationPct}%</span>
-                                        </div>
-                                        <input 
-                                            type="range"
-                                            min="0.1" max="5.0" step="0.1"
-                                            value={slConfig.smartChaseDeviationPct}
-                                            onChange={(e) => setSlConfig({...slConfig, smartChaseDeviationPct: parseFloat(e.target.value)})}
-                                            className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                      <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                        <span>Max Re-pegs / Retries</span>
+                                        <span className="text-[8px] text-amber-400 font-bold">0 = ∞ (Continuous)</span>
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="0" max="100000" step="1"
+                                        value={slConfig.smartChaseMaxAttempts}
+                                        onChange={(e) => setSlConfig({ ...slConfig, smartChaseMaxAttempts: parseInt(e.target.value) || 0 })}
+                                        placeholder="0 (Unlimited)"
+                                        className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-red-500/50"
+                                      />
+                                    </div>
+                                    {slConfig.smartChaseMode === 'interval' && (
+                                      <div className="space-y-1">
+                                        <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                          <span>Delay (ms)</span>
+                                          <span className="text-[8px] text-gray-500">Throttle</span>
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="200" max="5000" step="100"
+                                          value={slConfig.smartChaseDelayMs}
+                                          onChange={(e) => setSlConfig({ ...slConfig, smartChaseDelayMs: parseInt(e.target.value) || 1500 })}
+                                          placeholder="1500"
+                                          className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-red-500/50"
                                         />
-                                        <p className="text-[8px] text-gray-500">Breach triggers emergency Market Sweep.</p>
-                                    </div>
-
-                                    {/* Retries and Delay Grid */}
-                                    <div className={`grid ${slConfig.smartChaseMode === 'dynamic_bbo' ? 'grid-cols-1' : 'grid-cols-2'} gap-2 pt-1 border-t border-white/5`}>
-                                        <div className="space-y-1">
-                                            <label className="text-[9px] text-gray-400 font-medium flex justify-between">
-                                                <span>Max Re-pegs / Retries</span>
-                                                <span className="text-[8px] text-amber-400 font-bold">0 = ∞ (Continuous)</span>
-                                            </label>
-                                            <input 
-                                                type="number"
-                                                min="0" max="100000" step="1"
-                                                value={slConfig.smartChaseMaxAttempts}
-                                                onChange={(e) => setSlConfig({...slConfig, smartChaseMaxAttempts: parseInt(e.target.value) || 0})}
-                                                placeholder="0 (Unlimited)"
-                                                className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-red-500/50"
-                                            />
-                                        </div>
-                                        {slConfig.smartChaseMode === 'interval' && (
-                                            <div className="space-y-1">
-                                                <label className="text-[9px] text-gray-400 font-medium flex justify-between">
-                                                    <span>Delay (ms)</span>
-                                                    <span className="text-[8px] text-gray-500">Throttle</span>
-                                                </label>
-                                                <input 
-                                                    type="number"
-                                                    min="200" max="5000" step="100"
-                                                    value={slConfig.smartChaseDelayMs}
-                                                    onChange={(e) => setSlConfig({...slConfig, smartChaseDelayMs: parseInt(e.target.value) || 1500})}
-                                                    placeholder="1500"
-                                                    className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-red-500/50"
-                                                />
-                                            </div>
-                                        )}
-                                    </div>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                            )}
+                              )}
 
-                            {/* Auto-Breakeven (Capital Protection) Panel */}
-                            <div className="bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-2.5 space-y-2 mt-2">
+                              {/* Auto-Breakeven (Capital Protection) Panel */}
+                              <div className="bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-2.5 space-y-2 mt-2">
                                 <div className="flex justify-between items-center cursor-pointer group" onClick={() => setSlConfig({ ...slConfig, autoBreakevenEnabled: !slConfig.autoBreakevenEnabled })}>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                        <span className="text-[10px] font-bold text-emerald-300 group-hover:text-white transition-colors">
-                                            🛡️ Auto-Breakeven (Risk-Free Trade)
-                                        </span>
-                                    </div>
-                                    <div className={`relative w-7 h-3.5 rounded-full transition-colors ${slConfig.autoBreakevenEnabled ? 'bg-emerald-500' : 'bg-gray-700'}`}>
-                                        <MotionDiv 
-                                            className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
-                                            animate={{ x: slConfig.autoBreakevenEnabled ? 14 : 0 }}
-                                            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                        />
-                                    </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    <span className="text-[10px] font-bold text-emerald-300 group-hover:text-white transition-colors">
+                                      🛡️ Auto-Breakeven (Risk-Free Trade)
+                                    </span>
+                                  </div>
+                                  <div className={`relative w-7 h-3.5 rounded-full transition-colors ${slConfig.autoBreakevenEnabled ? 'bg-emerald-500' : 'bg-gray-700'}`}>
+                                    <MotionDiv
+                                      className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
+                                      animate={{ x: slConfig.autoBreakevenEnabled ? 14 : 0 }}
+                                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                    />
+                                  </div>
                                 </div>
 
                                 <AnimatePresence>
-                                    {slConfig.autoBreakevenEnabled && (
-                                        <MotionDiv
-                                            initial={{ height: 0, opacity: 0 }}
-                                            animate={{ height: 'auto', opacity: 1 }}
-                                            exit={{ height: 0, opacity: 0 }}
-                                            className="space-y-2 pt-1 border-t border-emerald-500/10 overflow-hidden"
-                                        >
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div className="space-y-1">
-                                                    <label className="text-[9px] text-gray-400 font-medium flex justify-between">
-                                                        <span>Trigger at Profit</span>
-                                                        <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenTriggerPct}%</span>
-                                                    </label>
-                                                    <input 
-                                                        type="number"
-                                                        step="0.1"
-                                                        min="0.1"
-                                                        max="50"
-                                                        value={slConfig.autoBreakevenTriggerPct}
-                                                        onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenTriggerPct: parseFloat(e.target.value) || 0.5 })}
-                                                        className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
-                                                    />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-[9px] text-gray-400 font-medium flex justify-between">
-                                                        <span>Fee Buffer</span>
-                                                        <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenBufferPct}%</span>
-                                                    </label>
-                                                    <input 
-                                                        type="number"
-                                                        step="0.01"
-                                                        min="0"
-                                                        max="1.0"
-                                                        value={slConfig.autoBreakevenBufferPct}
-                                                        onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenBufferPct: parseFloat(e.target.value) || 0.05 })}
-                                                        className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
-                                                        title="Extra cushion above entry price to guarantee 0 loss after exchange commissions"
-                                                    />
-                                                </div>
-                                            </div>
-                                            <p className="text-[8px] text-emerald-400/80 leading-tight">
-                                                ⚡ When profit reaches +{slConfig.autoBreakevenTriggerPct}%, SL automatically ratchets to Entry + {slConfig.autoBreakevenBufferPct}% buffer (100% Risk-Free)!
-                                            </p>
-                                        </MotionDiv>
-                                    )}
+                                  {slConfig.autoBreakevenEnabled && (
+                                    <MotionDiv
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: 'auto', opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      className="space-y-2 pt-1 border-t border-emerald-500/10 overflow-hidden"
+                                    >
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <div className="space-y-1">
+                                          <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                            <span>Trigger at Profit</span>
+                                            <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenTriggerPct}%</span>
+                                          </label>
+                                          <input
+                                            type="number"
+                                            step="0.1"
+                                            min="0.1"
+                                            max="50"
+                                            value={slConfig.autoBreakevenTriggerPct}
+                                            onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenTriggerPct: parseFloat(e.target.value) || 0.5 })}
+                                            className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
+                                          />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                            <span>Fee Buffer</span>
+                                            <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenBufferPct}%</span>
+                                          </label>
+                                          <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            max="1.0"
+                                            value={slConfig.autoBreakevenBufferPct}
+                                            onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenBufferPct: parseFloat(e.target.value) || 0.05 })}
+                                            className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
+                                            title="Extra cushion above entry price to guarantee 0 loss after exchange commissions"
+                                          />
+                                        </div>
+                                      </div>
+                                      <p className="text-[8px] text-emerald-400/80 leading-tight">
+                                        ⚡ When profit reaches +{slConfig.autoBreakevenTriggerPct}%, SL automatically ratchets to Entry + {slConfig.autoBreakevenBufferPct}% buffer (100% Risk-Free)!
+                                      </p>
+                                    </MotionDiv>
+                                  )}
                                 </AnimatePresence>
+                              </div>
+                            </MotionDiv>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* Futures Options Panel */}
+                      {isFutures && (
+                        <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-white/5">
+                          {/* Margin Mode & Leverage Header */}
+                          <div className="flex justify-between items-center text-xs text-gray-400 font-medium">
+                            <div className="flex bg-black/40 rounded p-0.5 border border-white/5">
+                              <button
+                                onClick={() => setMarginMode('cross')}
+                                className={`px-2 py-0.5 rounded transition-colors ${marginMode === 'cross' ? 'bg-brand-primary text-white font-bold' : 'hover:text-white'}`}
+                              >
+                                Cross
+                              </button>
+                              <button
+                                onClick={() => setMarginMode('isolated')}
+                                className={`px-2 py-0.5 rounded transition-colors ${marginMode === 'isolated' ? 'bg-brand-primary text-white font-bold' : 'hover:text-white'}`}
+                              >
+                                Isolated
+                              </button>
                             </div>
+                            <span className="text-xs bg-brand-primary/20 text-brand-primary px-2 py-0.5 rounded font-mono font-bold tracking-wider">{leverage}x</span>
+                          </div>
+
+                          {/* Leverage Slider */}
+                          <input
+                            type="range"
+                            min="1"
+                            max="125"
+                            value={leverage}
+                            onChange={(e) => setLeverage(Number(e.target.value))}
+                            className="w-full accent-brand-primary h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer"
+                          />
+
+                          {/* Reduce Only Checkbox */}
+                          <label className="flex items-center space-x-2 cursor-pointer group w-max">
+                            <input
+                              type="checkbox"
+                              checked={reduceOnly}
+                              onChange={(e) => setReduceOnly(e.target.checked)}
+                              className="form-checkbox bg-black/40 border-white/20 text-brand-primary rounded focus:ring-0 focus:ring-offset-0 cursor-pointer w-4 h-4"
+                            />
+                            <span className="text-xs text-gray-400 group-hover:text-white transition-colors">Reduce Only (Close Position)</span>
+                          </label>
+                        </div>
+                      )}
+
+                    </div> {/* End Scrollable Content */}
+
+                    {/* Inline AI Trade Shield Rejection Card (Sticky above Execute button) */}
+                    <AnimatePresence>
+                      {aiRejectNotice && (
+                        <MotionDiv
+                          initial={{ height: 0, opacity: 0, y: 6 }}
+                          animate={{ height: 'auto', opacity: 1, y: 0 }}
+                          exit={{ height: 0, opacity: 0, y: 6 }}
+                          className="overflow-hidden mt-2"
+                        >
+                          <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-950/60 via-[#0d1424] to-black border border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)] space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-amber-300">
+                                  AI Shield Protected ({aiRejectNotice.side} Blocked)
+                                </span>
+                                <span className="text-[9px] text-gray-500 font-mono">
+                                  {aiRejectNotice.timestamp}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setAiRejectNotice(null)}
+                                className="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                                title="Dismiss AI Shield Notice"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* Score vs Threshold Progress Bar */}
+                            <div className="space-y-1 bg-black/50 p-2 rounded-lg border border-white/5">
+                              <div className="flex items-center justify-between text-[9.5px] font-mono">
+                                <span className="text-gray-300">
+                                  {aiRejectNotice.directionLabel}:{' '}
+                                  <strong className="text-amber-300">{aiRejectNotice.calibratedProb.toFixed(1)}%</strong>
+                                  {aiRejectNotice.rawProb !== null && aiRejectNotice.rawProb !== undefined && Math.abs(aiRejectNotice.rawProb - aiRejectNotice.calibratedProb) > 3 && (
+                                    <span className="text-[8.5px] text-gray-500 ml-1">(Raw {aiRejectNotice.rawProb.toFixed(1)}%)</span>
+                                  )}
+                                </span>
+                                <span className="text-cyan-300 font-bold">
+                                  Req ≥{aiRejectNotice.threshold.toFixed(0)}% • {aiRejectNotice.oppositeLabel} {aiRejectNotice.oppositeProb.toFixed(1)}%
+                                </span>
+                              </div>
+                              <div className="relative h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${aiRejectNotice.side === 'BUY'
+                                    ? 'bg-gradient-to-r from-emerald-500 to-amber-400'
+                                    : 'bg-gradient-to-r from-rose-500 to-amber-400'
+                                    }`}
+                                  style={{ width: `${Math.min(100, Math.max(4, aiRejectNotice.calibratedProb))}%` }}
+                                />
+                                <div
+                                  className="absolute top-0 bottom-0 w-0.5 bg-cyan-300"
+                                  style={{ left: `${Math.min(98, Math.max(2, aiRejectNotice.threshold))}%` }}
+                                />
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[8.5px] font-mono text-gray-300">
+                                <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                                  Model: <strong className="text-blue-300">{aiRejectNotice.modelName}</strong>
+                                </span>
+                                {aiRejectNotice.flowPct !== null && aiRejectNotice.flowPct !== undefined && (
+                                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                                    {aiRejectNotice.flowLabel || 'Flow'}: <strong className="text-white">{aiRejectNotice.flowPct.toFixed(0)}%</strong>
+                                  </span>
+                                )}
+                                {aiRejectNotice.l2Pct !== null && aiRejectNotice.l2Pct !== undefined && (
+                                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                                    {aiRejectNotice.l2Label || 'L2'}: <strong className="text-white">{aiRejectNotice.l2Pct.toFixed(0)}%</strong>
+                                  </span>
+                                )}
+                                {aiRejectNotice.tpHitEst !== null && aiRejectNotice.tpHitEst !== undefined && (
+                                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                                    TP Hit Est: <strong className="text-amber-300">{aiRejectNotice.tpHitEst.toFixed(0)}%</strong>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="text-[9.5px] text-amber-200/95 leading-tight flex items-start gap-1.5 px-1">
+                              <span className="text-amber-400 shrink-0">⚡</span>
+                              <span>{aiRejectNotice.reason}</span>
+                            </div>
+                          </div>
                         </MotionDiv>
-                     )}
-                  </AnimatePresence>
-              </div>
+                      )}
+                    </AnimatePresence>
 
-              {/* Futures Options Panel */}
-              {isFutures && (
-                <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-white/5">
-                  {/* Margin Mode & Leverage Header */}
-                  <div className="flex justify-between items-center text-xs text-gray-400 font-medium">
-                    <div className="flex bg-black/40 rounded p-0.5 border border-white/5">
-                        <button 
-                          onClick={() => setMarginMode('cross')}
-                          className={`px-2 py-0.5 rounded transition-colors ${marginMode === 'cross' ? 'bg-brand-primary text-white font-bold' : 'hover:text-white'}`}
-                        >
-                          Cross
-                        </button>
-                        <button 
-                          onClick={() => setMarginMode('isolated')}
-                          className={`px-2 py-0.5 rounded transition-colors ${marginMode === 'isolated' ? 'bg-brand-primary text-white font-bold' : 'hover:text-white'}`}
-                        >
-                          Isolated
-                        </button>
+                    {/* Action Buttons */}
+                    <div className="flex space-x-3 pt-3 mt-2 border-t border-white/10">
+                      <button
+                        type="button"
+                        onPointerDown={(e) => {
+                          handleOrderPointerDown(e, tradeSide);
+                        }}
+                        onClick={(e) => {
+                          if (didOrderDragRef.current) {
+                            didOrderDragRef.current = false;
+                            return;
+                          }
+                          handleTrade(tradeSide);
+                        }}
+                        style={{ touchAction: 'none' }}
+                        disabled={isSubmitting}
+                        className={`flex-1 py-3 px-4 rounded-xl font-bold flex flex-col items-center justify-center transition-all disabled:opacity-50 group border cursor-grab active:cursor-grabbing select-none ${orderType === 'SmartPeg'
+                          ? tradeSide === 'Buy'
+                            ? 'bg-gradient-to-r from-amber-600/30 to-green-600/30 hover:from-amber-600 hover:to-green-600 text-amber-300 hover:text-white border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
+                            : 'bg-gradient-to-r from-amber-600/30 to-red-600/30 hover:from-amber-600 hover:to-red-600 text-amber-300 hover:text-white border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
+                          : tradeSide === 'Buy'
+                            ? 'bg-green-500/20 hover:bg-green-500 text-green-400 hover:text-white border-green-500/50 hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]'
+                            : 'bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white border-red-500/50 hover:shadow-[0_0_15px_rgba(239,68,68,0.4)]'
+                          }`}
+                        title={`Click to execute ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
+                      >
+                        <div className="flex items-center space-x-2">
+                          {orderType === 'SmartPeg' ? (
+                            <Zap className="w-5 h-5 text-amber-300 fill-amber-300 group-hover:scale-110 transition-transform animate-bounce-subtle" />
+                          ) : tradeSide === 'Buy' ? (
+                            <TrendingUp className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
+                          ) : (
+                            <TrendingDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
+                          )}
+                          <span className="text-sm uppercase tracking-wider">
+                            {orderType === 'SmartPeg' ? 'Smart Peg' : 'Execute'} {isFutures ? (tradeSide === 'Buy' ? 'Long' : 'Short') : tradeSide}
+                          </span>
+                          <MoveVertical className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
+                        </div>
+                        <span className="text-[9.5px] font-normal text-gray-400 group-hover:text-white/80 transition-colors">
+                          Click to execute • Drag onto chart to set price level
+                        </span>
+                      </button>
                     </div>
-                    <span className="text-xs bg-brand-primary/20 text-brand-primary px-2 py-0.5 rounded font-mono font-bold tracking-wider">{leverage}x</span>
                   </div>
-                  
-                  {/* Leverage Slider */}
-                  <input 
-                    type="range" 
-                    min="1" 
-                    max="125" 
-                    value={leverage}
-                    onChange={(e) => setLeverage(Number(e.target.value))}
-                    className="w-full accent-brand-primary h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer"
-                  />
 
-                  {/* Reduce Only Checkbox */}
-                  <label className="flex items-center space-x-2 cursor-pointer group w-max">
-                    <input 
-                       type="checkbox" 
-                       checked={reduceOnly}
-                       onChange={(e) => setReduceOnly(e.target.checked)}
-                       className="form-checkbox bg-black/40 border-white/20 text-brand-primary rounded focus:ring-0 focus:ring-offset-0 cursor-pointer w-4 h-4"
-                    />
-                    <span className="text-xs text-gray-400 group-hover:text-white transition-colors">Reduce Only (Close Position)</span>
-                  </label>
-                </div>
-              )}
-
-              </div> {/* End Scrollable Content */}
-
-              {/* Inline AI Trade Shield Rejection Card (Sticky above Execute button) */}
-              <AnimatePresence>
-                {aiRejectNotice && (
-                  <MotionDiv
-                    initial={{ height: 0, opacity: 0, y: 6 }}
-                    animate={{ height: 'auto', opacity: 1, y: 0 }}
-                    exit={{ height: 0, opacity: 0, y: 6 }}
-                    className="overflow-hidden mt-2"
-                  >
-                    <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-950/60 via-[#0d1424] to-black border border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)] space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                          <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-amber-300">
-                            AI Shield Protected ({aiRejectNotice.side} Blocked)
-                          </span>
-                          <span className="text-[9px] text-gray-500 font-mono">
-                            {aiRejectNotice.timestamp}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setAiRejectNotice(null)}
-                          className="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10 transition-colors cursor-pointer"
-                          title="Dismiss AI Shield Notice"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      {/* Score vs Threshold Progress Bar */}
-                      <div className="space-y-1 bg-black/50 p-2 rounded-lg border border-white/5">
-                        <div className="flex items-center justify-between text-[9.5px] font-mono">
-                          <span className="text-gray-300">
-                            {aiRejectNotice.directionLabel}:{' '}
-                            <strong className="text-amber-300">{aiRejectNotice.calibratedProb.toFixed(1)}%</strong>
-                            {aiRejectNotice.rawProb !== null && aiRejectNotice.rawProb !== undefined && Math.abs(aiRejectNotice.rawProb - aiRejectNotice.calibratedProb) > 3 && (
-                              <span className="text-[8.5px] text-gray-500 ml-1">(Raw {aiRejectNotice.rawProb.toFixed(1)}%)</span>
-                            )}
-                          </span>
-                          <span className="text-cyan-300 font-bold">
-                            Req ≥{aiRejectNotice.threshold.toFixed(0)}% • {aiRejectNotice.oppositeLabel} {aiRejectNotice.oppositeProb.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="relative h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              aiRejectNotice.side === 'BUY'
-                                ? 'bg-gradient-to-r from-emerald-500 to-amber-400'
-                                : 'bg-gradient-to-r from-rose-500 to-amber-400'
-                            }`}
-                            style={{ width: `${Math.min(100, Math.max(4, aiRejectNotice.calibratedProb))}%` }}
-                          />
-                          <div
-                            className="absolute top-0 bottom-0 w-0.5 bg-cyan-300"
-                            style={{ left: `${Math.min(98, Math.max(2, aiRejectNotice.threshold))}%` }}
-                          />
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[8.5px] font-mono text-gray-300">
-                          <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
-                            Model: <strong className="text-blue-300">{aiRejectNotice.modelName}</strong>
-                          </span>
-                          {aiRejectNotice.flowPct !== null && aiRejectNotice.flowPct !== undefined && (
-                            <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
-                              {aiRejectNotice.flowLabel || 'Flow'}: <strong className="text-white">{aiRejectNotice.flowPct.toFixed(0)}%</strong>
-                            </span>
-                          )}
-                          {aiRejectNotice.l2Pct !== null && aiRejectNotice.l2Pct !== undefined && (
-                            <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
-                              {aiRejectNotice.l2Label || 'L2'}: <strong className="text-white">{aiRejectNotice.l2Pct.toFixed(0)}%</strong>
-                            </span>
-                          )}
-                          {aiRejectNotice.tpHitEst !== null && aiRejectNotice.tpHitEst !== undefined && (
-                            <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
-                              TP Hit Est: <strong className="text-amber-300">{aiRejectNotice.tpHitEst.toFixed(0)}%</strong>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="text-[9.5px] text-amber-200/95 leading-tight flex items-start gap-1.5 px-1">
-                        <span className="text-amber-400 shrink-0">⚡</span>
-                        <span>{aiRejectNotice.reason}</span>
-                      </div>
-                    </div>
-                  </MotionDiv>
-                )}
-              </AnimatePresence>
-
-              {/* Action Buttons */}
-              <div className="flex space-x-3 pt-3 mt-2 border-t border-white/10">
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    handleOrderPointerDown(e, tradeSide);
-                  }}
-                  onClick={(e) => {
-                    if (didOrderDragRef.current) {
-                      didOrderDragRef.current = false;
-                      return;
-                    }
-                    handleTrade(tradeSide);
-                  }}
-                  style={{ touchAction: 'none' }}
-                  disabled={isSubmitting}
-                  className={`flex-1 py-3 px-4 rounded-xl font-bold flex flex-col items-center justify-center transition-all disabled:opacity-50 group border cursor-grab active:cursor-grabbing select-none ${
-                     orderType === 'SmartPeg'
-                       ? tradeSide === 'Buy'
-                         ? 'bg-gradient-to-r from-amber-600/30 to-green-600/30 hover:from-amber-600 hover:to-green-600 text-amber-300 hover:text-white border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
-                         : 'bg-gradient-to-r from-amber-600/30 to-red-600/30 hover:from-amber-600 hover:to-red-600 text-amber-300 hover:text-white border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
-                       : tradeSide === 'Buy' 
-                         ? 'bg-green-500/20 hover:bg-green-500 text-green-400 hover:text-white border-green-500/50 hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]'
-                         : 'bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white border-red-500/50 hover:shadow-[0_0_15px_rgba(239,68,68,0.4)]'
-                  }`}
-                  title={`Click to execute ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
-                >
-                  <div className="flex items-center space-x-2">
-                    {orderType === 'SmartPeg' ? (
-                      <Zap className="w-5 h-5 text-amber-300 fill-amber-300 group-hover:scale-110 transition-transform animate-bounce-subtle" />
-                    ) : tradeSide === 'Buy' ? (
-                      <TrendingUp className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
-                    ) : (
-                      <TrendingDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
-                    )}
-                    <span className="text-sm uppercase tracking-wider">
-                      {orderType === 'SmartPeg' ? 'Smart Peg' : 'Execute'} {isFutures ? (tradeSide === 'Buy' ? 'Long' : 'Short') : tradeSide}
+                  {/* Footer Status */}
+                  <div className="px-4 py-2 bg-black/40 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-[10px] text-gray-500 flex items-center">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-2 animate-pulse shadow-[0_0_5px_rgba(34,197,94,0.8)]"></span>
+                      Secure Execution via API
                     </span>
-                    <MoveVertical className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
+                    {isTelegramConnected === true ? (
+                      <span className="text-[10px] text-cyan-400/90 flex items-center gap-1.5 font-medium" title="Telegram alerts are active and verified">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_rgba(6,182,212,0.8)]"></span>
+                        Telegram Alerts Active
+                      </span>
+                    ) : isTelegramConnected === false ? (
+                      <a
+                        href="/settings"
+                        className="text-[10px] text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 font-medium underline cursor-pointer"
+                        title="Manual trade alerts are disabled in Settings or Telegram bot is not connected. Click to configure in Settings."
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                        Manual Trade Alerts Disabled
+                      </a>
+                    ) : null}
                   </div>
-                  <span className="text-[9.5px] font-normal text-gray-400 group-hover:text-white/80 transition-colors">
-                    Click to execute • Drag onto chart to set price level
-                  </span>
-                </button>
-              </div>
-            </div>
-            
-            {/* Footer Status */}
-            <div className="px-4 py-2 bg-black/40 border-t border-white/5 flex items-center justify-between">
-              <span className="text-[10px] text-gray-500 flex items-center">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-2 animate-pulse shadow-[0_0_5px_rgba(34,197,94,0.8)]"></span>
-                Secure Execution via API
-              </span>
-              {isTelegramConnected === true ? (
-                <span className="text-[10px] text-cyan-400/90 flex items-center gap-1.5 font-medium" title="Telegram alerts are active and verified">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_rgba(6,182,212,0.8)]"></span>
-                  Telegram Alerts Active
-                </span>
-              ) : isTelegramConnected === false ? (
-                <a
-                  href="/settings"
-                  className="text-[10px] text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 font-medium underline cursor-pointer"
-                  title="Manual trade alerts are disabled in Settings or Telegram bot is not connected. Click to configure in Settings."
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                  Manual Trade Alerts Disabled
-                </a>
-              ) : null}
-            </div>
                 </>
               )}
             </div>
-        )}
-      </AnimatePresence>,
-      document.body
-    )}
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* Floating Drag-to-Chart Price Badge (follows finger/mouse over chart) */}
       {activeDragLine && typeof document !== 'undefined' && createPortal(
@@ -5894,15 +5833,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
             pointerEvents: 'none',
             zIndex: 999999,
           }}
-          className={`px-2.5 py-1 rounded-lg border font-mono text-[11px] font-black shadow-2xl ${isThermalGuardActive ? '' : 'backdrop-blur-md'} flex items-center gap-2 select-none animate-fadeIn ${
-            activeDragLine.type === 'peg_buy'
-              ? 'bg-cyan-950/95 border-cyan-400 text-cyan-200 shadow-[0_0_18px_rgba(6,182,212,0.55)]'
-              : activeDragLine.type === 'peg_sell'
-                ? 'bg-amber-950/95 border-amber-400 text-amber-200 shadow-[0_0_18px_rgba(245,158,11,0.55)]'
-                : activeDragLine.type === 'buy' || activeDragLine.type === 'tp'
-                  ? 'bg-emerald-950/95 border-emerald-400 text-emerald-300 shadow-[0_0_18px_rgba(16,185,129,0.55)]'
-                  : 'bg-rose-950/95 border-rose-400 text-rose-300 shadow-[0_0_18px_rgba(244,63,94,0.55)]'
-          }`}
+          className={`px-2.5 py-1 rounded-lg border font-mono text-[11px] font-black shadow-2xl ${isThermalGuardActive ? '' : 'backdrop-blur-md'} flex items-center gap-2 select-none animate-fadeIn ${activeDragLine.type === 'peg_buy'
+            ? 'bg-cyan-950/95 border-cyan-400 text-cyan-200 shadow-[0_0_18px_rgba(6,182,212,0.55)]'
+            : activeDragLine.type === 'peg_sell'
+              ? 'bg-amber-950/95 border-amber-400 text-amber-200 shadow-[0_0_18px_rgba(245,158,11,0.55)]'
+              : activeDragLine.type === 'buy' || activeDragLine.type === 'tp'
+                ? 'bg-emerald-950/95 border-emerald-400 text-emerald-300 shadow-[0_0_18px_rgba(16,185,129,0.55)]'
+                : 'bg-rose-950/95 border-rose-400 text-rose-300 shadow-[0_0_18px_rgba(244,63,94,0.55)]'
+            }`}
         >
           {activeDragLine.type === 'peg_buy' || activeDragLine.type === 'peg_sell' ? (
             <Zap className={`w-3.5 h-3.5 ${activeDragLine.type === 'peg_buy' ? 'text-cyan-400 fill-cyan-400' : 'text-amber-400 fill-amber-400'} shrink-0`} />
@@ -5931,9 +5869,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           </span>
           {effectiveCurrentPrice > 0 && activeDragLine.currentPrice > 0 && (
             <span
-              className={`text-[9px] font-extrabold ${
-                activeDragLine.currentPrice >= effectiveCurrentPrice ? 'text-emerald-400' : 'text-rose-400'
-              }`}
+              className={`text-[9px] font-extrabold ${activeDragLine.currentPrice >= effectiveCurrentPrice ? 'text-emerald-400' : 'text-rose-400'
+                }`}
             >
               ({(((activeDragLine.currentPrice - effectiveCurrentPrice) / effectiveCurrentPrice) * 100) >= 0 ? '+' : ''}
               {(((activeDragLine.currentPrice - effectiveCurrentPrice) / effectiveCurrentPrice) * 100).toFixed(2)}%)

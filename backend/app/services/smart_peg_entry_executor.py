@@ -262,7 +262,7 @@ async def execute_smart_peg_entry(
         logger.warning(f"⚠️ [Smart Peg Entry] Amount {remaining_amount} (~${initial_notional:.2f}) below min notional ${min_notional:.2f}. Aborted.")
         return None
 
-    cid = peg_id or f"peg_{getattr(api_key_record, 'id', user_id)}_{symbol}_{int(datetime.utcnow().timestamp())}"
+    cid = peg_id or f"peg_{getattr(api_key_record, 'id', user_id)}_{str(symbol).replace('/', '_').replace(':', '_')}_{int(datetime.utcnow().timestamp())}"
     cancel_event = asyncio.Event()
 
     ACTIVE_SMART_PEGS[cid] = {

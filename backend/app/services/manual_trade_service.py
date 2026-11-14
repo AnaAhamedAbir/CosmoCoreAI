@@ -1595,7 +1595,8 @@ class ManualTradeService:
             # --- SMART PEG ENTRY (DYNAMIC BBO ORDER BOOK SHADOWING) ---
             if order_req.type.lower() in ('smart_peg', 'smartpeg'):
                 from app.services.smart_peg_entry_executor import execute_smart_peg_entry
-                peg_cid = f"peg_{getattr(api_key_record, 'id', user_id)}_{order_req.symbol}_{int(time.time())}"
+                clean_sym = str(order_req.symbol).replace('/', '_').replace(':', '_')
+                peg_cid = f"peg_{getattr(api_key_record, 'id', user_id)}_{clean_sym}_{int(time.time())}"
 
                 max_dev = 2.0
                 if isinstance(order_req.params, dict) and order_req.params.get('maxChaseDeviationPct') is not None:

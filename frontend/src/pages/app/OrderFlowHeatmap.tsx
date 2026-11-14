@@ -4518,8 +4518,18 @@ const OrderFlowChartPanel = React.memo<{
                     )}
                     
                     <div className="flex bg-gray-100 dark:bg-black/20 p-1 rounded-lg border border-gray-200 dark:border-white/5">
-                        <button onClick={() => setIsTradingViewMode(false)} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors ${!isTradingViewMode ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Order Flow</button>
-                        <button onClick={() => setIsTradingViewMode(true)} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors flex items-center gap-1 ${isTradingViewMode ? 'bg-brand-primary text-white shadow-[0_0_10px_rgba(139,92,246,0.3)]' : 'text-gray-500 hover:text-gray-300'}`}>TradingView</button>
+                        <button 
+                            onClick={() => setIsTradingViewMode(false)} 
+                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors ${!isTradingViewMode ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}
+                        >
+                            Order Flow
+                        </button>
+                        <button 
+                            onClick={() => setIsTradingViewMode(true)} 
+                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors flex items-center gap-1 ${isTradingViewMode ? 'bg-brand-primary text-white shadow-[0_0_10px_rgba(139,92,246,0.3)]' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}
+                        >
+                            TradingView
+                        </button>
                     </div>
                     
                     {chartBotId ? (
@@ -4588,7 +4598,7 @@ const OrderFlowChartPanel = React.memo<{
             </div>
             <div className="flex-1 relative min-h-0">
                 {isTradingViewMode ? (
-                    <TradingViewWidget symbol={config.symbol} interval={config.interval} />
+                    <TradingViewWidget symbol={config.symbol} interval={config.interval} exchange={config.exchange} />
                 ) : (
                     <OrderFlowChart 
                         exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showBidAsk={showBidAsk}

@@ -102,7 +102,7 @@ const NavItem: React.FC<{
         </span>
 
         {/* Label */}
-        <span className={`relative z-10 ml-3 text-sm font-medium tracking-wide truncate transition-all duration-300 ease-in-out will-change-[opacity,width] ${isCollapsed ? 'opacity-0 w-0 ml-0 overflow-hidden' : 'opacity-100 w-auto'}`}>
+        <span className={`relative z-10 ml-3 text-sm font-medium tracking-wide truncate whitespace-nowrap transition-[opacity,transform] duration-300 ease-out ${isCollapsed ? 'opacity-0 -translate-x-2 pointer-events-none' : 'opacity-100 translate-x-0 delay-100'}`}>
             {label}
         </span>
 
@@ -259,7 +259,7 @@ const Sidebar: React.FC<{
     }, [activeMarket]);
 
     return (
-        <aside className={`${isCollapsed ? 'w-20' : 'w-72'} bg-[#F8FAFC] dark:bg-[#000000] border-r border-gray-200 dark:border-white/5 flex flex-col h-full max-h-full flex-shrink-0 transition-all duration-400 ease-in-out will-change-[width] shadow-[5px_0_20px_rgba(0,0,0,0.05)] z-30 relative group`}>
+        <aside className={`${isCollapsed ? 'w-20' : 'w-72'} bg-[#F8FAFC] dark:bg-[#000000] border-r border-gray-200 dark:border-white/5 flex flex-col h-full max-h-full flex-shrink-0 transition-all duration-[350ms] ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width] shadow-[5px_0_20px_rgba(0,0,0,0.05)] z-30 relative group`}>
 
             {/* Collapse Toggle Button */}
             <button
@@ -275,29 +275,29 @@ const Sidebar: React.FC<{
             </div>
 
             <div className="p-6 pb-4 laptop:p-3 laptop:pb-2 relative z-10 flex-shrink-0 overflow-hidden">
-                <div className={`flex items-center justify-center mb-2 transition-all duration-400 ease-in-out will-change-transform ${
+                <div className={`flex items-center justify-center mb-2 transition-all duration-[350ms] ease-in-out will-change-transform ${
                     isCollapsed 
                         ? 'opacity-80 scale-50 -translate-y-4' 
                         : 'opacity-100 scale-100 translate-y-0'
-                } [&_img]:transition-transform [&_img]:duration-400 [&_span]:transition-all [&_span]:duration-400 ${
+                } [&_img]:transition-transform [&_img]:duration-[350ms] [&_span]:transition-all [&_span]:duration-[350ms] ${
                     isCollapsed ? '[&_span]:opacity-0 [&_span]:translate-y-2 [&_span]:scale-90 [&_span]:pointer-events-none' : '[&_span]:opacity-100 [&_span]:translate-y-0 [&_span]:scale-100'
                 }`}>
                     <Logo />
                 </div>
                 {/* Stylish Divider */}
-                <div className={`h-px w-full bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent my-6 laptop:my-2 transition-all duration-400 ease-in-out ${isCollapsed ? 'opacity-0 scale-x-0' : 'opacity-100 scale-x-100'}`}></div>
+                <div className={`h-px w-full bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent my-6 laptop:my-2 transition-all duration-[350ms] ease-in-out ${isCollapsed ? 'opacity-0 scale-x-0' : 'opacity-100 scale-x-100'}`}></div>
             </div>
 
             <nav className="flex-1 min-h-0 space-y-2 overflow-y-auto px-4 laptop:px-2.5 custom-scrollbar pb-4 laptop:pb-2 relative z-10">
                 {navCategories.map(category => (
                     <div key={category.title} className="mb-8 last:mb-0">
                         {/* Gradient Text Header */}
-                        {!isCollapsed && (
-                            <h3 className="px-4 mb-3 text-[10px] font-extrabold uppercase tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-slate-500 to-slate-400 dark:from-gray-400 dark:to-gray-600 select-none animate-in fade-in duration-300">
+                        <div className="relative h-4 mb-3">
+                            <h3 className={`absolute inset-0 px-4 whitespace-nowrap text-[10px] font-extrabold uppercase tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-slate-500 to-slate-400 dark:from-gray-400 dark:to-gray-600 select-none transition-opacity duration-300 ${isCollapsed ? 'opacity-0' : 'opacity-100 delay-100'}`}>
                                 {category.title}
                             </h3>
-                        )}
-                        {isCollapsed && <div className="h-px bg-gray-200 dark:bg-gray-800 mx-4 mb-3 opacity-30 transition-opacity duration-300" />}
+                            <div className={`absolute left-4 right-4 top-1/2 h-px bg-gray-200 dark:bg-gray-800 transition-opacity duration-300 ${isCollapsed ? 'opacity-30' : 'opacity-0'}`} />
+                        </div>
                         <div className="space-y-1">
                             {category.items.map(item => (
                                 <NavItem
@@ -329,7 +329,7 @@ const Sidebar: React.FC<{
 
                 {/* Slide-over Profile Drawer */}
                 <div 
-                    className={`fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-80 max-w-[85vw] bg-white dark:bg-[#0A0A0A] shadow-[10px_0_30px_rgba(0,0,0,0.1)] dark:shadow-[10px_0_30px_rgba(0,0,0,0.5)] border-r border-gray-200 dark:border-gray-800 z-[110] transform transition-transform duration-400 ease-in-out ${isProfileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+                    className={`fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-80 max-w-[85vw] bg-white dark:bg-[#0A0A0A] shadow-[10px_0_30px_rgba(0,0,0,0.1)] dark:shadow-[10px_0_30px_rgba(0,0,0,0.5)] border-r border-gray-200 dark:border-gray-800 z-[110] transform transition-transform duration-[350ms] ease-in-out ${isProfileOpen ? 'translate-x-0' : '-translate-x-full'}`}
                     onClick={(e) => e.stopPropagation()}
                 >
                     <div className="flex flex-col h-full">
@@ -400,7 +400,7 @@ const Sidebar: React.FC<{
                         <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-brand-primary to-purple-500 text-white flex items-center justify-center font-bold text-sm shadow-md ring-2 ring-white dark:ring-[#000000]">AA</div>
                         <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-[#000000] rounded-full"></div>
                     </div>
-                    <div className="ml-3 flex-1 min-w-0 text-left transition-all duration-400 ease-in-out will-change-[opacity,width]" style={{ width: isCollapsed ? '0px' : 'auto', opacity: isCollapsed ? 0 : 1, overflow: 'hidden' }}>
+                    <div className="ml-3 flex-1 min-w-0 text-left transition-all duration-[350ms] ease-in-out will-change-[opacity,width]" style={{ width: isCollapsed ? '0px' : 'auto', opacity: isCollapsed ? 0 : 1, overflow: 'hidden' }}>
                         <p className="font-bold text-sm text-slate-900 dark:text-white truncate group-hover:text-brand-primary transition-colors">{userProfile.fullName}</p>
                         <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate font-medium flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-brand-warning"></span>

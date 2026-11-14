@@ -50,18 +50,16 @@ export const CosmicStarBackground: React.FC = () => {
         let isDisposed = false;
         const maxZ = 3000;
         // Desktop: full 24,000 warp stars @ native refresh rate.
-        // Mobile/Tablet thermal guard: 420 warp stars @ 24 FPS and 0.65x canvas scale (~99.6% GPU/CPU reduction while keeping smooth warp effect).
+        // Mobile/Tablet thermal guard: reduced star count (420) @ full native refresh rate (60/120Hz) for crisp, fast, zero-stutter motion.
         const starCount = thermalGuard
             ? 420
             : Math.min(24000, window.innerWidth * 18);
-        const renderScale = thermalGuard ? 0.65 : 1;
-        const frameIntervalMs = thermalGuard ? 42 : 0; // ~24 FPS cap on mobile/tablet 120Hz displays
         const palette = ['#ffffff', '#e2e8f0', '#a5f3fc', '#67e8f9', '#8b5cf6', '#d946ef'];
         let stars: Star[] = [];
 
         const resize = () => {
-            canvas.width = Math.max(1, Math.round(window.innerWidth * renderScale));
-            canvas.height = Math.max(1, Math.round(window.innerHeight * renderScale));
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
         };
 
         class Star {
@@ -96,7 +94,7 @@ export const CosmicStarBackground: React.FC = () => {
                     this.pz = 10;
                 }
             }
-            draw(width: number, height: number, fov: number, cx: number, cy: number, sizeScale: number, skipFillStyle: boolean) {
+            draw(width: number, height: number, fov: number, cx: number, cy: number, skipFillStyle: boolean) {
                 const sx = (this.x / this.z) * fov + cx;
                 const sy = (this.y / this.z) * fov + cy;
 
@@ -109,7 +107,7 @@ export const CosmicStarBackground: React.FC = () => {
                 // Opacity fades as it gets closer to maxZ (further away in the back window)
                 const opacity = Math.min(1, Math.max(0, depthFactor * (this.sizeMultiplier + 0.5)));
                 // Size shrinks as it goes further away
-                const size = Math.max(thermalGuard ? 0.8 : 0.1, depthFactor * 2 * this.sizeMultiplier * sizeScale);
+                const size = Math.max(0.1, depthFactor * 2 * this.sizeMultiplier);
 
                 if (!skipFillStyle) {
                     ctx!.fillStyle = this.color;
@@ -130,25 +128,13 @@ export const CosmicStarBackground: React.FC = () => {
             }
         };
 
-        let lastFrameTime = 0;
-
-        const animate = (timestamp: number = 0) => {
+        const animate = () => {
             if (isDisposed) return;
 
             if (typeof document !== 'undefined' && document.hidden) {
                 animId = 0;
                 return;
             }
-
-            if (frameIntervalMs > 0) {
-                if (lastFrameTime && (timestamp - lastFrameTime) < frameIntervalMs) {
-                    animId = requestAnimationFrame(animate);
-                    return;
-                }
-            }
-
-            const dt = lastFrameTime ? Math.min(100, timestamp - lastFrameTime) : 16.67;
-            lastFrameTime = timestamp;
 
             const width = canvas.width;
             const height = canvas.height;
@@ -161,21 +147,20 @@ export const CosmicStarBackground: React.FC = () => {
             // Fully clear the canvas transparently so the galaxy image shows through
             ctx!.clearRect(0, 0, width, height);
 
-            // Warp speed (delta-time normalized so 24 FPS mobile matches 60/120Hz travel speed)
-            const speed = thermalGuard ? Math.max(2, (dt / 16.67) * 4) : 4;
+            // Warp speed (full native frame rate: 60/120Hz smooth & fast)
+            const speed = 4;
             let activeColorIdx = -1;
             for (let i = 0; i < stars.length; i++) {
                 const s = stars[i];
                 s.update(speed);
                 if (thermalGuard) {
-                    const needFillSwitch = s.colorIndex !== activeColorIdx;
-                    if (needFillSwitch) {
+                    if (s.colorIndex !== activeColorIdx) {
                         activeColorIdx = s.colorIndex;
                         ctx!.fillStyle = s.color;
                     }
-                    s.draw(width, height, fov, cx, cy, renderScale, true);
+                    s.draw(width, height, fov, cx, cy, true);
                 } else {
-                    s.draw(width, height, fov, cx, cy, 1, false);
+                    s.draw(width, height, fov, cx, cy, false);
                 }
             }
 
@@ -194,7 +179,6 @@ export const CosmicStarBackground: React.FC = () => {
                     animId = 0;
                 }
             } else if (!animId) {
-                lastFrameTime = 0;
                 animId = requestAnimationFrame(animate);
             }
         };

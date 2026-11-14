@@ -143,25 +143,17 @@ async def execute_smart_peg_entry(
         f"Max Dev Cap: {max_chase_deviation_pct}% | MinNotional: ${min_notional:.2f}"
     )
 
-    # Detect Binance Hedge Mode on Futures
+    # Detect Binance Hedge Mode on Futures (cached to avoid 150ms roundtrip)
     is_hedge_mode = False
     is_inverse = bool(is_inverse) if is_inverse is not None else _is_inverse_market(exchange, symbol)
     if is_futures and exchange_name.lower().startswith('binance'):
-        methods = (
-            ['dapiPrivateGetPositionSideDual', 'fapiPrivateGetPositionSideDual']
-            if is_inverse else
-            ['fapiPrivateGetPositionSideDual', 'dapiPrivateGetPositionSideDual']
-        )
-        for method_name in methods:
-            method = getattr(exchange, method_name, None)
-            if method and callable(method):
-                try:
-                    res = await method()
-                    is_hedge_mode = bool(res.get('dualSidePosition', False))
-                    logger.info(f"⚡ [Smart Peg Entry] Binance Futures mode: {'Hedge' if is_hedge_mode else 'One-Way'}")
-                    break
-                except Exception:
-                    pass
+        try:
+            from app.services.manual_trade_service import ManualTradeService
+            api_id = getattr(api_key_record, 'id', user_id)
+            is_hedge_mode = await ManualTradeService._check_binance_hedge_mode(exchange, api_id, symbol, is_inverse)
+            logger.info(f"⚡ [Smart Peg Entry] Binance Futures mode (cached): {'Hedge' if is_hedge_mode else 'One-Way'}")
+        except Exception:
+            is_hedge_mode = False
 
     # Send Notification helper
     async def _send_notify(msg: str):
@@ -192,7 +184,7 @@ async def execute_smart_peg_entry(
             return remaining_amount
 
         # Ultra-fast path: on subsequent re-peg attempts without balance errors, avoid 300ms REST roundtrip
-        if not force_refresh and attempts > 1 and cached_bal is None and remaining_amount > 0:
+        if not force_refresh and attempts >= 1 and cached_bal is None and remaining_amount > 0:
             return remaining_amount
 
         try:
@@ -200,7 +192,7 @@ async def execute_smart_peg_entry(
             if len(parts) >= 2:
                 base_asset = parts[0]
                 quote_asset = parts[1].split(':')[0]
-                bal = await exchange.fetch_balance()
+                bal = cached_bal or await exchange.fetch_balance()
 
                 if side.lower() == "buy":
                     # Buying base using quote (e.g. FDUSD or USDT)
@@ -238,12 +230,18 @@ async def execute_smart_peg_entry(
 
         return remaining_amount
 
-    # Fetch initial orderbook for benchmark price
+    # Fetch initial orderbook & balance in PARALLEL to reduce latency by ~300ms
     initial_ob = None
+    cached_bal = None
     try:
-        initial_ob = await exchange.fetch_order_book(symbol, limit=5)
+        if not is_futures:
+            ob_coro = exchange.fetch_order_book(symbol, limit=5)
+            bal_coro = exchange.fetch_balance()
+            initial_ob, cached_bal = await asyncio.gather(ob_coro, bal_coro)
+        else:
+            initial_ob = await exchange.fetch_order_book(symbol, limit=5)
     except Exception as ob_err:
-        logger.error(f"❌ [Smart Peg Entry] Failed to fetch initial orderbook: {ob_err}")
+        logger.error(f"❌ [Smart Peg Entry] Failed to fetch initial data: {ob_err}")
         return None
 
     if not initial_ob or not initial_ob.get('bids') or not initial_ob.get('asks') or len(initial_ob['bids']) == 0 or len(initial_ob['asks']) == 0:
@@ -255,8 +253,8 @@ async def execute_smart_peg_entry(
     market_benchmark_price = b_bid if side.lower() == 'buy' else b_ask
     initial_benchmark_price = float(anchor_price) if (anchor_price and float(anchor_price) > 0) else market_benchmark_price
 
-    # Initial clamp
-    remaining_amount = await _sync_and_clamp_amount(initial_benchmark_price)
+    # Initial clamp (uses pre-fetched cached_bal for 0ms overhead)
+    remaining_amount = await _sync_and_clamp_amount(initial_benchmark_price, cached_bal=cached_bal)
     initial_notional = _calc_order_notional_usd(exchange, symbol, remaining_amount, initial_benchmark_price)
     if remaining_amount <= 0 or initial_notional < min_notional:
         logger.warning(f"⚠️ [Smart Peg Entry] Amount {remaining_amount} (~${initial_notional:.2f}) below min notional ${min_notional:.2f}. Aborted.")

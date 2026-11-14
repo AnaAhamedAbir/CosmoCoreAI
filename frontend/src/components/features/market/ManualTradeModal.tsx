@@ -1475,34 +1475,62 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     return Math.max(Math.pow(10, -decimals), Number(absTarget.toFixed(decimals))).toString();
   }, [effectiveOrderPrice, effectiveCurrentPrice, tradeSide]);
 
-  // Unified eligibility check for Native Binance Spot OTO/OTOCO
-  const isNativeTpSlSupported = React.useMemo(() => {
+  // Unified eligibility check for Native Binance Spot OTO/OTOCO (supports both Full 3-Leg OTOCO and Hybrid 2-Leg OTO + Smart Chase SL)
+  const canConfigureNativeTpSl = React.useMemo(() => {
     if (isFutures) return false;
     if (orderType !== 'Limit') return false;
     if (!tpConfig.enabled && !slConfig.enabled) return false;
-    if (tpConfig.enabled && tpConfig.orderType === 'Market') return false;
-    if (slConfig.enabled && (
-      slConfig.type === 'trailing' ||
-      slConfig.type === 'smart_chase' ||
-      slConfig.type === 'trailing_chase' ||
-      slConfig.mode === 'atr' ||
-      slConfig.autoBreakevenEnabled
-    )) {
-      return false;
+    const hasNativeTpLeg = tpConfig.enabled && tpConfig.orderType !== 'Market';
+    const isSmartChaseSl = slConfig.enabled && (slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase');
+    const isExchangeNativeSl = slConfig.enabled && (slConfig.type === 'fixed' || slConfig.type === 'trailing');
+    // Note: Exchange Native Trailing / ATR / Auto-BE automatically snap to Fixed Stop once Native OTO/OTOCO is active
+    if (hasNativeTpLeg && (!slConfig.enabled || isSmartChaseSl || isExchangeNativeSl)) {
+      return true;
     }
-    return true;
-  }, [isFutures, orderType, tpConfig.enabled, tpConfig.orderType, slConfig.enabled, slConfig.type, slConfig.mode, slConfig.autoBreakevenEnabled]);
+    if (!tpConfig.enabled && isExchangeNativeSl) {
+      return true;
+    }
+    return false;
+  }, [isFutures, orderType, tpConfig.enabled, tpConfig.orderType, slConfig.enabled, slConfig.type]);
 
-  // Derived total base amount currently configured
-  const currentBaseAmount = React.useMemo(() => {
-    const raw = parseFloat(size);
-    if (isNaN(raw) || raw <= 0) return 0;
-    if (sizeMode === 'quote') {
-      const p = effectiveOrderPrice || effectiveCurrentPrice || Number(limitPrice) || 0;
-      return p > 0 ? raw / p : 0;
+  const isNativeTpSlSupported = React.useMemo(() => {
+    return canConfigureNativeTpSl && !isAutoLimit;
+  }, [canConfigureNativeTpSl, isAutoLimit]);
+
+  const isNativeExchangeSlLockedToFixed = Boolean(!isFutures && orderType === 'Limit' && useNativeTpSl && !isAutoLimit);
+
+  // When Native Binance OTO/OTOCO is active and Exchange Native SL is selected, keep only Fixed Stop active (auto-snap from Trailing/ATR/Auto-BE)
+  React.useEffect(() => {
+    if (!isNativeExchangeSlLockedToFixed || !slConfig.enabled) return;
+    if (slConfig.type === 'trailing' || (slConfig.type === 'fixed' && (slConfig.mode === 'atr' || slConfig.autoBreakevenEnabled))) {
+      setSlConfig(prev => ({
+        ...prev,
+        type: 'fixed',
+        mode: prev.mode === 'atr' ? 'percentage' : prev.mode,
+        value: prev.mode === 'atr' ? getSmartGapValue('percentage', false) : prev.value,
+        autoBreakevenEnabled: false
+      }));
     }
-    return raw;
-  }, [size, sizeMode, effectiveOrderPrice, effectiveCurrentPrice, limitPrice]);
+  }, [isNativeExchangeSlLockedToFixed, slConfig.enabled, slConfig.type, slConfig.mode, slConfig.autoBreakevenEnabled, getSmartGapValue]);
+
+  // Derived total base amount currently configured (falls back to 100% available balance if size input is empty)
+  const currentBaseAmount = React.useMemo(() => {
+    const p = effectiveOrderPrice || effectiveCurrentPrice || Number(limitPrice) || 0;
+    const raw = parseFloat(size);
+    if (!isNaN(raw) && raw > 0) {
+      return sizeMode === 'quote' ? (p > 0 ? raw / p : 0) : raw;
+    }
+    if (balanceData && p > 0) {
+      const pctNum = parseFloat((selectedPercent || '100%').replace('%', '')) / 100;
+      const pctFactor = !isNaN(pctNum) && pctNum > 0 ? pctNum : 1;
+      if (!isFutures) {
+        return tradeSide === 'Buy'
+          ? ((balanceData.quote_free || 0) * pctFactor) / p
+          : (balanceData.base_free || 0) * pctFactor;
+      }
+    }
+    return 0;
+  }, [size, sizeMode, effectiveOrderPrice, effectiveCurrentPrice, limitPrice, balanceData, selectedPercent, isFutures, tradeSide]);
 
   // Derived effective iceberg visible quantity in base asset
   const effectiveIcebergQty = React.useMemo(() => {
@@ -2190,6 +2218,28 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     }
 
     const isSmartPeg = orderType === 'SmartPeg';
+    let dragIcebergQty: number | undefined = undefined;
+    if (!isSmartPeg && !isFutures && isIceberg) {
+      const rawSlice = icebergMode === 'percent'
+        ? (baseAmount * (parseFloat(icebergPercent) || 0)) / 100
+        : (parseFloat(icebergCustomQty) || 0);
+      if (rawSlice <= 0) {
+        toast.error('Please enter a valid visible Iceberg slice quantity.');
+        return;
+      }
+      if (rawSlice >= baseAmount) {
+        toast.error(`Iceberg slice (${rawSlice.toFixed(2)}) must be smaller than total order quantity (${baseAmount.toFixed(2)} ${baseCurrency}).`);
+        return;
+      }
+      const sliceNotional = rawSlice * dropPrice;
+      if (sliceNotional < 5.0) {
+        const minQty = dropPrice > 0 ? Math.ceil(5.05 / dropPrice) : 65;
+        toast.error(`❌ Iceberg slice value (~$${sliceNotional.toFixed(2)}) is below Binance minimum $5 notional! Minimum slice is ~${minQty} ${baseCurrency}.`, { duration: 6000 });
+        return;
+      }
+      dragIcebergQty = rawSlice;
+    }
+
     const toastId = toast.loading(
       isSmartPeg
         ? `⚡ Placing Smart Peg ${side} anchored at $${formatDisplayPrice(dropPrice)}...`
@@ -2223,7 +2273,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         api_key_id: selectedApi ? Number(selectedApi) : undefined,
         params: Object.keys(paramsPayload).length > 0 ? paramsPayload : undefined,
         client_timestamp: Date.now(),
-        use_native_tp_sl: isNativeTpSlSupported ? Boolean(useNativeTpSl) : false,
+        use_native_tp_sl: (!isSmartPeg && canConfigureNativeTpSl) ? Boolean(useNativeTpSl) : false,
+        iceberg_qty: dragIcebergQty,
         attached_tp: attachedTpPayload,
         attached_sl: attachedSlPayload,
       };
@@ -2576,23 +2627,28 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         return; // finally block handles setIsSubmitting(false)
       }
 
-      // Validate Iceberg (Spot Limit only)
+      // Validate Iceberg (Spot Limit only) — compute directly from baseAmount so even empty size input (100% fallback) works
+      let resolvedIcebergQty: number | undefined = undefined;
       if (orderType === 'Limit' && !isFutures && isIceberg) {
-        if (effectiveIcebergQty <= 0) {
+        const rawSlice = icebergMode === 'percent'
+          ? (baseAmount * (parseFloat(icebergPercent) || 0)) / 100
+          : (parseFloat(icebergCustomQty) || 0);
+        if (rawSlice <= 0) {
           toast.error('Please enter a valid visible Iceberg slice quantity.');
           return;
         }
-        if (effectiveIcebergQty >= baseAmount) {
-          toast.error(`Iceberg slice (${effectiveIcebergQty.toFixed(2)}) must be smaller than total order quantity (${baseAmount.toFixed(2)} ${baseCurrency}).`);
+        if (rawSlice >= baseAmount) {
+          toast.error(`Iceberg slice (${rawSlice.toFixed(2)}) must be smaller than total order quantity (${baseAmount.toFixed(2)} ${baseCurrency}).`);
           return;
         }
         const refPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
-        const sliceNotional = effectiveIcebergQty * refPrice;
+        const sliceNotional = rawSlice * refPrice;
         if (sliceNotional < 5.0) {
           const minQty = refPrice > 0 ? Math.ceil(5.05 / refPrice) : 65;
           toast.error(`❌ Iceberg slice value (~$${sliceNotional.toFixed(2)}) is below Binance minimum $5 notional! Minimum slice is ~${minQty} ${baseCurrency}.`, { duration: 6000 });
           return;
         }
+        resolvedIcebergQty = rawSlice;
       }
 
       const paramsPayload: any = isFutures ? { leverage, marginMode, reduceOnly } : {};
@@ -2620,7 +2676,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         params: Object.keys(paramsPayload).length > 0 ? paramsPayload : undefined,
         client_timestamp: Date.now(),
         use_native_tp_sl: isNativeTpSlSupported ? Boolean(useNativeTpSl) : false,
-        iceberg_qty: (orderType === 'Limit' && !isFutures && isIceberg && effectiveIcebergQty > 0) ? effectiveIcebergQty : undefined
+        iceberg_qty: resolvedIcebergQty
       };
 
       if (tpConfig.enabled && tpConfig.value && Number(tpConfig.value) > 0) {
@@ -4228,10 +4284,26 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             className="space-y-3 overflow-hidden"
                           >
                             {/* Switch: Auto Best Limit */}
-                            <div className="flex items-center justify-between bg-black/20 p-2 rounded-lg border border-brand-primary/20 cursor-pointer" onClick={() => setIsAutoLimit(!isAutoLimit)}>
+                            <div
+                              className="flex items-center justify-between bg-black/20 p-2 rounded-lg border border-brand-primary/20 cursor-pointer"
+                              onClick={() => {
+                                const nextAuto = !isAutoLimit;
+                                setIsAutoLimit(nextAuto);
+                                if (nextAuto && !isFutures) {
+                                  // Like Binance BBO mode, Auto Best Limit Post-Only disables Native OTO/OTOCO bundle
+                                  setUseNativeTpSl(false);
+                                } else if (!nextAuto && (!limitPrice || Number(limitPrice) <= 0) && effectiveCurrentPrice > 0) {
+                                  setLimitPrice(effectiveCurrentPrice.toString());
+                                }
+                              }}
+                            >
                               <div className="flex flex-col">
                                 <span className="text-xs font-bold text-brand-primary">Auto Best Limit (Post-Only)</span>
-                                <span className="text-[10px] text-gray-500">Snipes entry at Best Bid/Ask without Taker Fees</span>
+                                <span className="text-[10px] text-gray-500">
+                                  {isAutoLimit && !isFutures
+                                    ? 'Snipes BBO Maker 0% Fee (Turn OFF to use Native Binance OTO/OTOCO)'
+                                    : 'Snipes entry at Best Bid/Ask without Taker Fees'}
+                                </span>
                               </div>
                               <div className={`relative w-8 h-4 rounded-full transition-colors ${isAutoLimit ? 'bg-brand-primary' : 'bg-gray-600'}`}>
                                 <MotionDiv
@@ -4854,34 +4926,82 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         </AnimatePresence>
                       </div>
 
-                      {/* Native Binance TP/SL Toggle */}
+                      {/* Native Binance TP/SL Toggle (Spot) & Futures Bracket Architecture Summary */}
                       {(tpConfig.enabled || slConfig.enabled) && !isFutures && (
-                        <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${!isNativeTpSlSupported ? 'opacity-40 pointer-events-none' : ''}`}>
-                          <div className="flex flex-col">
-                            <span className="text-xs font-bold text-brand-primary">Use Native Binance OTO/OTOCO</span>
-                            <span className="text-[9px] text-brand-primary/80">
+                        <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${!canConfigureNativeTpSl ? 'opacity-40 pointer-events-none' : ''}`}>
+                          <div className="flex flex-col pr-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-bold text-brand-primary">Use Native Binance OTO/OTOCO</span>
+                              {useNativeTpSl && isNativeTpSlSupported && (
+                                <span className="text-[8px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-brand-primary/25 text-cyan-200 border border-brand-primary/40">
+                                  {tpConfig.enabled && slConfig.enabled && (slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
+                                    ? `HYBRID 2-LEG OTO${isIceberg ? ' + ICEBERG' : ''} + SMART CHASE SL`
+                                    : tpConfig.enabled && slConfig.enabled
+                                      ? `FULL 3-LEG OTOCO${isIceberg ? ' + ICEBERG' : ''}`
+                                      : `2-LEG NATIVE OTO${isIceberg ? ' + ICEBERG' : ''}`}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[9px] text-brand-primary/80 leading-snug mt-0.5">
                               {orderType === 'SmartPeg'
                                 ? '⚡ Dynamic Peg Mode: Entry is dynamic maker; Native OCO auto-spawns upon fill'
                                 : orderType === 'Market'
                                   ? '⚡ Market Entry: Post-fill Native OCO/Bracket spawns automatically upon fill'
                                   : (tpConfig.enabled && tpConfig.orderType === 'Market')
                                     ? '⚠️ Auto-disabled: Market TP requires software bracket execution'
-                                    : !isNativeTpSlSupported
-                                      ? '⚠️ Auto-disabled: Trailing / Smart Chase / ATR / Auto-BE SL is active'
-                                      : 'Exchange atomic bracket (100% crash proof)'
+                                    : !canConfigureNativeTpSl
+                                      ? '⚠️ Enable Limit TP (or Fixed Stop SL) to use Native Binance OTO/OTOCO'
+                                      : isAutoLimit
+                                        ? 'ℹ️ Auto Best Limit (BBO Post-Only) is ON — click toggle to switch to Standard Limit + Native OTO/OTOCO'
+                                        : tpConfig.enabled && slConfig.enabled && (slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
+                                          ? `⚡ Entry + TP${isIceberg ? ' + Iceberg' : ''} sent as Native Binance OTO • SL runs via Smart Chase (250–350ms)`
+                                          : tpConfig.enabled && slConfig.enabled
+                                            ? `🛡️ Entry + TP + Fixed SL${isIceberg ? ' + Iceberg' : ''} sent as 3-Leg Native Binance OTOCO`
+                                            : `🎯 Entry + ${tpConfig.enabled ? 'TP' : 'Fixed SL'}${isIceberg ? ' + Iceberg' : ''} sent as 2-Leg Native Binance OTO`
                               }
                             </span>
                           </div>
-                          <div className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${useNativeTpSl && isNativeTpSlSupported ? 'bg-brand-primary' : 'bg-gray-600'}`} onClick={() => {
-                            if (isNativeTpSlSupported) {
-                              setUseNativeTpSl(!useNativeTpSl);
-                            }
-                          }}>
+                          <div
+                            className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer shrink-0 ${useNativeTpSl && isNativeTpSlSupported ? 'bg-brand-primary' : 'bg-gray-600'}`}
+                            onClick={() => {
+                              if (!canConfigureNativeTpSl) return;
+                              if (isAutoLimit) {
+                                // Turning on Native OTO/OTOCO automatically turns off Auto Best Limit (BBO Post-Only)
+                                setIsAutoLimit(false);
+                                if ((!limitPrice || Number(limitPrice) <= 0) && effectiveCurrentPrice > 0) {
+                                  setLimitPrice(effectiveCurrentPrice.toString());
+                                }
+                                setUseNativeTpSl(true);
+                              } else {
+                                setUseNativeTpSl(!useNativeTpSl);
+                              }
+                            }}
+                          >
                             <MotionDiv
                               className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
                               animate={{ x: (useNativeTpSl && isNativeTpSlSupported) ? 16 : 0 }}
                               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                             />
+                          </div>
+                        </div>
+                      )}
+
+                      {(tpConfig.enabled || slConfig.enabled) && isFutures && (
+                        <div className="flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-brand-primary">Futures Hybrid Bracket Engine</span>
+                              <span className="text-[8px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/35">
+                                {leverage}x {marginMode.toUpperCase()}
+                              </span>
+                            </div>
+                            <span className="text-[9px] text-brand-primary/80 leading-snug mt-0.5">
+                              {tpConfig.enabled && slConfig.enabled
+                                ? `🎯 Native Futures ${tpConfig.orderType} TP + ${slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase' ? '⚡ Smart Chase Maker SL (250ms) + Native Disaster Stop' : `🛡️ Native ${slConfig.type === 'trailing' ? 'Trailing' : 'Stop-Market'} SL`}`
+                                : tpConfig.enabled
+                                  ? `🎯 Native Futures ${tpConfig.orderType} Take-Profit (reduceOnly)`
+                                  : `🛡️ ${slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase' ? '⚡ Smart Chase Maker SL (250ms) + Native Disaster Stop' : 'Native Futures Stop-Loss (reduceOnly)'}`}
+                            </span>
                           </div>
                         </div>
                       )}
@@ -5133,10 +5253,20 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                           </button>
                                           <button
                                             type="button"
-                                            onClick={() => setSlConfig({ ...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode })}
-                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'trailing' ? 'bg-emerald-600 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            disabled={isNativeExchangeSlLockedToFixed}
+                                            onClick={() => {
+                                              if (isNativeExchangeSlLockedToFixed) return;
+                                              setSlConfig({ ...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode });
+                                            }}
+                                            title={isNativeExchangeSlLockedToFixed ? 'Disabled when Native Binance OTO/OTOCO is ON (Binance Spot OTOCO only supports Fixed Stop_Loss_Limit. Use ⚡ Smart Chase -> Trail Chase for trailing)' : 'Trailing Stop'}
+                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${isNativeExchangeSlLockedToFixed
+                                              ? 'text-gray-600 opacity-40 cursor-not-allowed'
+                                              : slConfig.type === 'trailing'
+                                                ? 'bg-emerald-600 text-white font-bold'
+                                                : 'text-gray-500 hover:text-white'
+                                              }`}
                                           >
-                                            Trailing
+                                            Trailing {isNativeExchangeSlLockedToFixed ? '🔒' : ''}
                                           </button>
                                         </>
                                       ) : (
@@ -5201,10 +5331,20 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       {slConfig.type !== 'smart_chase' && slConfig.type !== 'trailing_chase' && (
                                         <button
                                           type="button"
-                                          onClick={() => setSlConfig({ ...slConfig, mode: 'atr', type: 'trailing' })}
-                                          className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'atr' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                          disabled={isNativeExchangeSlLockedToFixed}
+                                          onClick={() => {
+                                            if (isNativeExchangeSlLockedToFixed) return;
+                                            setSlConfig({ ...slConfig, mode: 'atr', type: 'trailing' });
+                                          }}
+                                          title={isNativeExchangeSlLockedToFixed ? 'Disabled when Native Binance OTO/OTOCO is ON' : 'ATR Trailing Stop'}
+                                          className={`flex-1 text-[10px] py-1 rounded transition-colors ${isNativeExchangeSlLockedToFixed
+                                            ? 'text-gray-600 opacity-40 cursor-not-allowed'
+                                            : slConfig.mode === 'atr'
+                                              ? 'bg-red-500 text-white font-bold'
+                                              : 'text-gray-500 hover:text-white'
+                                            }`}
                                         >
-                                          ATR
+                                          ATR {isNativeExchangeSlLockedToFixed ? '🔒' : ''}
                                         </button>
                                       )}
                                     </div>
@@ -5212,15 +5352,45 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 </div>
 
                                 {/* Assurance Banner */}
-                                {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? (
+                                {(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase') ? (
+                                  <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
+                                    <span>⚡</span>
+                                    <span>
+                                      <strong>Bot Smart Chase Loop:</strong> ব্যাকএন্ডে ultra-fast (~250ms) ট্র্যাক হবে
+                                      {!isFutures && useNativeTpSl && !isAutoLimit && tpConfig.enabled
+                                        ? ' (Hybrid: TP সরাসরি Binance OTO-তে বসবে)।'
+                                        : ' (Binance অর্ডারবুকে সরাসরি বসবে না)।'}
+                                    </span>
+                                  </div>
+                                ) : isFutures ? (
+                                  <div className="text-[9px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                                    <span>🛡️</span>
+                                    <span>
+                                      <strong>Binance Futures Native:</strong>{' '}
+                                      {slConfig.type === 'trailing'
+                                        ? 'TRAILING_STOP_MARKET (callback 0.1%–10%) সরাসরি Binance Futures-এ বসবে।'
+                                        : 'STOP_MARKET অর্ডার সরাসরি Binance Futures-এ বসবে এবং দৃশ্যমান থাকবে।'}
+                                    </span>
+                                  </div>
+                                ) : (useNativeTpSl && !isAutoLimit && slConfig.type === 'fixed') ? (
+                                  <div className="text-[9px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                                    <span>🛡️</span>
+                                    <span><strong>Binance Native {tpConfig.enabled ? 'OTOCO' : 'OTO'}:</strong> Fixed STOP_LOSS_LIMIT সরাসরি Binance-এ বসবে।</span>
+                                  </div>
+                                ) : (tpConfig.enabled || slConfig.type === 'trailing' || slConfig.mode === 'atr') ? (
+                                  <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
+                                    <span>⚠️</span>
+                                    <span>
+                                      <strong>Spot Software Fallback:</strong>{' '}
+                                      {tpConfig.enabled
+                                        ? 'Spot-এ TP ব্যালেন্স লক করে বলে SL ব্যাকএন্ড Watchdog-এ চলবে (Binance-এ SL রাখতে Native OTO/OTOCO ON করুন)।'
+                                        : 'Spot-এ Trailing/ATR স্টপ ব্যাকএন্ড Software Watchdog-এ ট্র্যাক হবে।'}
+                                    </span>
+                                  </div>
+                                ) : (
                                   <div className="text-[9px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
                                     <span>🛡️</span>
                                     <span><strong>Binance Native Stop:</strong> অর্ডার সরাসরি Binance-এ বসবে এবং অ্যাপে দৃশ্যমান থাকবে।</span>
-                                  </div>
-                                ) : (
-                                  <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
-                                    <span>⚠️</span>
-                                    <span><strong>Bot Software Loop:</strong> ব্যাকএন্ড মেমোরিতে ট্র্যাক হবে (Binance অর্ডারবুকে সরাসরি বসবে না)।</span>
                                   </div>
                                 )}
                               </div>
@@ -5542,12 +5712,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               )}
 
                               {/* Auto-Breakeven (Capital Protection) Panel */}
-                              <div className="bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-2.5 space-y-2 mt-2">
-                                <div className="flex justify-between items-center cursor-pointer group" onClick={() => setSlConfig({ ...slConfig, autoBreakevenEnabled: !slConfig.autoBreakevenEnabled })}>
+                              <div className={`bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-2.5 space-y-2 mt-2 ${(isNativeExchangeSlLockedToFixed && (slConfig.type === 'fixed' || slConfig.type === 'trailing')) ? 'opacity-45 pointer-events-none' : ''}`}>
+                                <div
+                                  className="flex justify-between items-center cursor-pointer group"
+                                  onClick={() => {
+                                    if (isNativeExchangeSlLockedToFixed && (slConfig.type === 'fixed' || slConfig.type === 'trailing')) return;
+                                    setSlConfig({ ...slConfig, autoBreakevenEnabled: !slConfig.autoBreakevenEnabled });
+                                  }}
+                                >
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                     <span className="text-[10px] font-bold text-emerald-300 group-hover:text-white transition-colors">
-                                      🛡️ Auto-Breakeven (Risk-Free Trade)
+                                      🛡️ Auto-Breakeven {(isNativeExchangeSlLockedToFixed && (slConfig.type === 'fixed' || slConfig.type === 'trailing')) ? '(Switch to ⚡ Smart Chase to enable with Native OTO)' : '(Risk-Free Trade)'}
                                     </span>
                                   </div>
                                   <div className={`relative w-7 h-3.5 rounded-full transition-colors ${slConfig.autoBreakevenEnabled ? 'bg-emerald-500' : 'bg-gray-700'}`}>

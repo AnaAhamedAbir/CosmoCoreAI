@@ -384,7 +384,8 @@ async def execute_manual_smart_chase(
     chase_mode: str = 'dynamic_bbo',  # 'dynamic_bbo' for real-time orderbook shadowing, 'interval' for timer
     trigger_source: str = 'bid_ask',
     peg_strategy: str = 'bbo',        # 'bbo', 'inside_spread', or 'wall_aware'
-    wall_multiplier: float = 2.5
+    wall_multiplier: float = 2.5,
+    entry_order_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     # ── STEP 0: Upgrade to dedicated unthrottled order exchange pool instance (purpose='order') ──
     if api_key_record:
@@ -463,6 +464,12 @@ async def execute_manual_smart_chase(
         if disaster_sl_order_id:
             cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, disaster_sl_order_id, symbol))
             labels.append(('Disaster SL', str(disaster_sl_order_id)))
+        if entry_order_id and str(entry_order_id) in BracketOrderService.ACTIVE_ENTRY_MONITORS:
+            entry_mon = BracketOrderService.ACTIVE_ENTRY_MONITORS.get(str(entry_order_id))
+            if entry_mon and not entry_mon.get('cancelled'):
+                entry_mon['cancelled'] = True
+                cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, str(entry_order_id), symbol))
+                labels.append(('Partial Entry', str(entry_order_id)))
 
         # Only scan open orders on exchange if requested (e.g. balance/reduceOnly blocked) or if no linked TP/SL ID was passed,
         # and ALWAYS protect TP / Disaster SL / active chase orders belonging to other independent brackets!

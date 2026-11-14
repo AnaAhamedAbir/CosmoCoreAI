@@ -44,7 +44,9 @@ async def _send_trade_fired_notification(
     contract_size: float = 1.0,
     is_inverse: bool = False,
     ai_filter_info: str = None,
-    anchor_price: float = None
+    anchor_price: float = None,
+    iceberg_qty: float = None,
+    execution_mode_label: str = None
 ):
     """Sends formatted Trade Fired alert to Telegram using its own dedicated DB session."""
     db = SessionLocal()
@@ -111,6 +113,8 @@ async def _send_trade_fired_notification(
                 unit = "%" if mode == "percentage" else "$"
                 sl_text = f"🛡️ Attached SL: `{val}{unit}` ({str(sl_type).replace('_', ' ').capitalize()})\n"
 
+        iceberg_text = f"🧊 Iceberg Visible Slice: `{iceberg_qty}`\n" if (iceberg_qty and float(iceberg_qty) > 0) else ""
+        exec_mode_text = f"⚙️ Execution Engine: `{execution_mode_label}`\n" if execution_mode_label else ""
         ai_text = f"🤖 AI Filter: `{ai_filter_info}` ✅\n" if ai_filter_info else ""
         speed_text = f"⏱ Execution Speed: `{latency_ms} ms` ⚡\n" if latency_ms > 0 else ""
 
@@ -122,6 +126,8 @@ async def _send_trade_fired_notification(
             f"• Action: *{action_text}*\n"
             f"• Amount: `{amount}`{notional_str}\n"
             f"{price_line}"
+            f"{exec_mode_text}"
+            f"{iceberg_text}"
             f"{lev_text}"
             f"{tp_text}"
             f"{sl_text}"
@@ -720,7 +726,7 @@ class ManualTradeService:
             seen_order_ids = set()
             for o in raw_orders:
                 status = str(o.get('status') or '').lower()
-                if status not in ('open', 'new', 'untiggered', 'untriggered'):
+                if status not in ('open', 'new', 'pending_new', 'untiggered', 'untriggered'):
                     continue
 
                 order_id_str = str(o.get('id'))
@@ -1678,33 +1684,55 @@ class ManualTradeService:
             original_tp = order_req.attached_tp
             original_sl = order_req.attached_sl
             is_native_otoco_used = False
+            native_oto_tp_order_id = None
+            native_oto_tp_price = None
+            execution_mode_label = None
 
-            # --- NATIVE BINANCE OTOCO SUPPORT ---
+            # --- NATIVE BINANCE OTO/OTOCO + HYBRID SMART CHASE SUPPORT ---
             use_native_otoco = getattr(order_req, 'use_native_tp_sl', False)
             if params.get('autoBestLimit') or ex_params.get('postOnly'):
                 # Disable Native OTO/OTOCO for Post-Only / Auto-Best-Limit so that:
                 # 1) Strict Post-Only BBO Maker retry loop can guarantee 0% Taker execution
                 # 2) Partial fills immediately place Attached TP/SL via BracketOrderService
                 use_native_otoco = False
-            if use_native_otoco and order_req.attached_sl and order_req.attached_sl.enabled:
-                if (
-                    order_req.attached_sl.type in ('trailing', 'smart_chase', 'trailing_chase')
-                    or order_req.attached_sl.mode == 'atr'
-                    or getattr(order_req.attached_sl, 'auto_breakeven_enabled', False)
-                ):
-                    use_native_otoco = False  # Disable native for trailing/ATR/smart_chase/trailing_chase/auto-breakeven SL
-            if use_native_otoco and order_req.attached_tp and order_req.attached_tp.enabled:
-                if getattr(order_req.attached_tp, 'order_type', 'Limit').lower() == 'market':
-                    use_native_otoco = False  # Native Spot OTO/OTOCO only supports LIMIT_MAKER TP
+
+            has_tp_req = bool(order_req.attached_tp and order_req.attached_tp.enabled)
+            has_sl_req = bool(order_req.attached_sl and order_req.attached_sl.enabled)
+            tp_is_limit = has_tp_req and getattr(order_req.attached_tp, 'order_type', 'Limit').lower() != 'market'
+            sl_is_software = has_sl_req and (
+                order_req.attached_sl.type in ('trailing', 'smart_chase', 'trailing_chase')
+                or order_req.attached_sl.mode == 'atr'
+                or getattr(order_req.attached_sl, 'auto_breakeven_enabled', False)
+            )
+            native_tp_eligible = tp_is_limit
+            native_sl_eligible = has_sl_req and not sl_is_software
+
             if use_native_otoco and not is_futures and exchange.id == 'binance' and order_req.type.lower() == 'limit' and (
-                (order_req.attached_tp and order_req.attached_tp.enabled)
-                or (order_req.attached_sl and order_req.attached_sl.enabled)
+                native_tp_eligible or native_sl_eligible
             ):
-                logger.info(f"⚡ Using Binance Native Attached Orders (OTO/OTOCO) for {order_req.symbol}...")
+                has_tp = native_tp_eligible
+                has_sl = native_sl_eligible
+                is_hybrid_oto_smart_chase = bool(has_tp and sl_is_software)
+                mode_label = (
+                    "Hybrid Native OTO (Entry + TP + Iceberg) + Software Smart Chase SL"
+                    if is_hybrid_oto_smart_chase
+                    else ("Full Native 3-Leg OTOCO" if (has_tp and has_sl) else "Native 2-Leg OTO")
+                )
+                logger.info(f"⚡ Using Binance {mode_label} for {order_req.symbol}...")
                 
                 native_symbol = bracket_order_service._resolve_native_futures_symbol(exchange, order_req.symbol, False)
-                has_tp = bool(order_req.attached_tp and order_req.attached_tp.enabled)
-                has_sl = bool(order_req.attached_sl and order_req.attached_sl.enabled)
+
+                def _fmt_px(val: float) -> str:
+                    try:
+                        return str(exchange.price_to_precision(order_req.symbol, val))
+                    except Exception:
+                        return str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, val))
+
+                def _fmt_qty(val: float) -> str:
+                    try:
+                        return str(exchange.amount_to_precision(order_req.symbol, val))
+                    except Exception:
+                        return str(bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, val))
                 
                 # Calculate absolute prices based on mode and value
                 entry_price = order_req.price
@@ -1727,7 +1755,7 @@ class ManualTradeService:
                         raise HTTPException(status_code=400, detail=f"For BUY order, TP price ({tp_price:.6f}) must be above entry price ({entry_price:.6f}).")
                     if order_req.side.lower() == 'sell' and tp_price >= entry_price:
                         raise HTTPException(status_code=400, detail=f"For SELL order, TP price ({tp_price:.6f}) must be below entry price ({entry_price:.6f}).")
-                    if bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, tp_price) == bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, entry_price):
+                    if _fmt_px(tp_price) == _fmt_px(entry_price):
                         raise HTTPException(status_code=400, detail=f"TP gap ({val}) is smaller than 1 price tick for {order_req.symbol} at {entry_price}.")
                         
                 if has_sl:
@@ -1746,7 +1774,7 @@ class ManualTradeService:
                         raise HTTPException(status_code=400, detail=f"For BUY order, SL price ({sl_price:.6f}) must be below entry price ({entry_price:.6f}).")
                     if order_req.side.lower() == 'sell' and sl_price <= entry_price:
                         raise HTTPException(status_code=400, detail=f"For SELL order, SL price ({sl_price:.6f}) must be above entry price ({entry_price:.6f}).")
-                    if bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price) == bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, entry_price):
+                    if _fmt_px(sl_price) == _fmt_px(entry_price):
                         raise HTTPException(status_code=400, detail=f"SL gap ({val}) is smaller than 1 price tick for {order_req.symbol} at {entry_price}.")
                 
                 is_post_only = ex_params.get('postOnly', False)
@@ -1754,65 +1782,81 @@ class ManualTradeService:
                     "symbol": native_symbol,
                     "workingType": "LIMIT_MAKER" if is_post_only else "LIMIT",
                     "workingSide": order_req.side.upper(),
-                    "workingPrice": str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, order_req.price)),
-                    "workingQuantity": str(bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, order_req.amount)),
+                    "workingPrice": _fmt_px(order_req.price),
+                    "workingQuantity": _fmt_qty(order_req.amount),
                     "pendingSide": "SELL" if order_req.side.lower() == "buy" else "BUY",
-                    "pendingQuantity": str(bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, order_req.amount)),
+                    "pendingQuantity": _fmt_qty(order_req.amount),
                 }
                 
                 if not is_post_only:
                     payload["workingTimeInForce"] = "GTC"
                 
                 if valid_iceberg is not None:
-                    payload["workingIcebergQty"] = str(bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, valid_iceberg))
-                    logger.info(f"🧊 Attaching workingIcebergQty={payload['workingIcebergQty']} to Native Binance OTO/OTOCO")
+                    payload["workingIcebergQty"] = _fmt_qty(valid_iceberg)
+                    logger.info(
+                        f"🧊 Attaching workingIcebergQty={payload['workingIcebergQty']} "
+                        f"(workingQuantity={payload['workingQuantity']}) to {mode_label}"
+                    )
                 
                 t_order_start = time.perf_counter()
                 try:
                     if has_tp and has_sl:
                         if order_req.side.lower() == 'buy':
                             payload['pendingAboveType'] = 'LIMIT_MAKER'
-                            payload['pendingAbovePrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, tp_price))
+                            payload['pendingAbovePrice'] = _fmt_px(tp_price)
                             payload['pendingBelowType'] = 'STOP_LOSS_LIMIT'
                             payload['pendingBelowTimeInForce'] = 'GTC'
-                            payload['pendingBelowStopPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price))
-                            payload['pendingBelowPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price * 0.999))
+                            payload['pendingBelowStopPrice'] = _fmt_px(sl_price)
+                            payload['pendingBelowPrice'] = _fmt_px(sl_price * 0.999)
                         else:
                             payload['pendingAboveType'] = 'STOP_LOSS_LIMIT'
                             payload['pendingAboveTimeInForce'] = 'GTC'
-                            payload['pendingAboveStopPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price))
-                            payload['pendingAbovePrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price * 1.001))
+                            payload['pendingAboveStopPrice'] = _fmt_px(sl_price)
+                            payload['pendingAbovePrice'] = _fmt_px(sl_price * 1.001)
                             payload['pendingBelowType'] = 'LIMIT_MAKER'
-                            payload['pendingBelowPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, tp_price))
+                            payload['pendingBelowPrice'] = _fmt_px(tp_price)
                         raw_res = await exchange.private_post_orderlist_otoco(payload)
-                    else: # OTO
+                    else: # OTO (2-Leg: Entry + TP, or Entry + Fixed SL)
                         if order_req.side.lower() == 'buy':
                             if has_tp:
                                 payload['pendingType'] = 'LIMIT_MAKER'
-                                payload['pendingPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, tp_price))
+                                payload['pendingPrice'] = _fmt_px(tp_price)
                             elif has_sl:
                                 payload['pendingType'] = 'STOP_LOSS_LIMIT'
                                 payload['pendingTimeInForce'] = 'GTC'
-                                payload['pendingStopPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price))
-                                payload['pendingPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price * 0.999))
+                                payload['pendingStopPrice'] = _fmt_px(sl_price)
+                                payload['pendingPrice'] = _fmt_px(sl_price * 0.999)
                         else:
                             if has_tp:
                                 payload['pendingType'] = 'LIMIT_MAKER'
-                                payload['pendingPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, tp_price))
+                                payload['pendingPrice'] = _fmt_px(tp_price)
                             elif has_sl:
                                 payload['pendingType'] = 'STOP_LOSS_LIMIT'
                                 payload['pendingTimeInForce'] = 'GTC'
-                                payload['pendingStopPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price))
-                                payload['pendingPrice'] = str(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, sl_price * 1.001))
+                                payload['pendingStopPrice'] = _fmt_px(sl_price)
+                                payload['pendingPrice'] = _fmt_px(sl_price * 1.001)
                         raw_res = await exchange.private_post_orderlist_oto(payload)
 
                     order_list = raw_res.get('orderReports', [])
-                    working_order = next((o for o in order_list if o.get('type') in ('LIMIT', 'LIMIT_MAKER')), None)
+                    working_order = next(
+                        (
+                            o for o in order_list
+                            if str(o.get('side', '')).upper() == order_req.side.upper()
+                            and str(o.get('status', '')).upper() != 'PENDING_NEW'
+                        ),
+                        None
+                    )
+                    if not working_order:
+                        working_order = next((o for o in order_list if o.get('type') in ('LIMIT', 'LIMIT_MAKER')), None)
                     if not working_order and len(order_list) > 0:
                         working_order = order_list[0]
+
                     for rep in order_list:
                         if rep is not working_order and str(rep.get('type', '')).upper() in ('LIMIT', 'LIMIT_MAKER') and rep.get('orderId'):
-                            bracket_order_service.KNOWN_TP_ORDER_IDS.add(str(rep.get('orderId')))
+                            tp_oid_str = str(rep.get('orderId'))
+                            bracket_order_service.KNOWN_TP_ORDER_IDS.add(tp_oid_str)
+                            native_oto_tp_order_id = tp_oid_str
+                            native_oto_tp_price = float(bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, tp_price)) if tp_price > 0 else None
                     
                     response = {
                         'id': str(working_order.get('orderId')) if working_order else str(raw_res.get('orderListId', 'otoco')),
@@ -1825,28 +1869,40 @@ class ManualTradeService:
                         'info': raw_res
                     }
                     is_ws_success = True
+                    execution_mode_label = mode_label
                     
-                    # Prevent standard Bracket Monitor from duplicate handling
-                    order_req.attached_tp = None
-                    order_req.attached_sl = None
-                    is_native_otoco_used = True
-                    logger.info("✅ Native Binance OTO/OTOCO placed successfully.")
-
-                    # Spawn dedicated monitor for Binance Native OTOCO to dispatch Telegram completion alerts
-                    if user_id:
-                        asyncio.create_task(
-                            bracket_order_service.monitor_native_otoco(
-                                exchange=exchange,
-                                symbol=order_req.symbol,
-                                side=order_req.side,
-                                amount=order_req.amount,
-                                entry_price=order_req.price,
-                                raw_res=raw_res,
-                                user_id=user_id
-                            )
+                    if is_hybrid_oto_smart_chase:
+                        # Hybrid Mode: Entry + TP are placed natively on Binance via OTO (+ Iceberg),
+                        # while Smart Chase SL is monitored in software by BracketOrderService linked to native_oto_tp_order_id!
+                        order_req.attached_tp = None
+                        is_native_otoco_used = False
+                        logger.info(
+                            f"✅ Hybrid Native Binance OTO placed (Working Entry #{response['id']}, "
+                            f"Pending Native TP #{native_oto_tp_order_id} @ {native_oto_tp_price}). "
+                            f"Arming Software Smart Chase SL..."
                         )
+                    else:
+                        # Full Native OTO/OTOCO: All enabled legs are on Binance's matching engine
+                        order_req.attached_tp = None
+                        order_req.attached_sl = None
+                        is_native_otoco_used = True
+                        logger.info(f"✅ {mode_label} placed successfully (Working Entry #{response['id']}).")
+
+                        # Spawn dedicated monitor for Binance Native OTO/OTOCO to dispatch Telegram completion alerts
+                        if user_id:
+                            asyncio.create_task(
+                                bracket_order_service.monitor_native_otoco(
+                                    exchange=exchange,
+                                    symbol=order_req.symbol,
+                                    side=order_req.side,
+                                    amount=order_req.amount,
+                                    entry_price=order_req.price,
+                                    raw_res=raw_res,
+                                    user_id=user_id
+                                )
+                            )
                 except Exception as e:
-                    logger.error(f"Native OTOCO failed: {e}")
+                    logger.error(f"Native OTO/OTOCO failed: {e}")
                     raise HTTPException(status_code=400, detail=f"Native TP/SL Failed: {str(e)}")
             # ----------------------------------------
 
@@ -2043,7 +2099,9 @@ class ManualTradeService:
                         is_futures=is_futures,
                         contract_size=contract_size,
                         is_inverse=is_inverse,
-                        ai_filter_info=ai_filter_info
+                        ai_filter_info=ai_filter_info,
+                        iceberg_qty=valid_iceberg,
+                        execution_mode_label=execution_mode_label
                     )
                 )
             except Exception as notify_err:
@@ -2051,8 +2109,8 @@ class ManualTradeService:
 
             # [Bracket Order Link] — spawned as a background asyncio task, non-blocking
             # Also monitors plain limit orders to ensure entry fill alert is delivered to Telegram
-            has_tp = getattr(original_tp, 'enabled', False) if original_tp else False
-            has_sl = getattr(original_sl, 'enabled', False) if original_sl else False
+            has_tp = (getattr(order_req.attached_tp, 'enabled', False) if order_req.attached_tp else False)
+            has_sl = (getattr(order_req.attached_sl, 'enabled', False) if order_req.attached_sl else False)
             is_limit_order = order_req.type.lower() == 'limit'
 
             if not is_native_otoco_used and (has_tp or has_sl or is_limit_order):
@@ -2071,10 +2129,12 @@ class ManualTradeService:
                         side=order_req.side,
                         amount=order_req.amount,
                         is_futures=is_futures,
-                        tp_config=original_tp.dict() if has_tp else None,
-                        sl_config=original_sl.dict() if has_sl else None,
+                        tp_config=order_req.attached_tp.dict() if has_tp else None,
+                        sl_config=order_req.attached_sl.dict() if has_sl else None,
                         initial_entry_price=float(initial_price) if initial_price else 0.0,
-                        user_id=user_id
+                        user_id=user_id,
+                        linked_tp_order_id=native_oto_tp_order_id,
+                        linked_tp_price=native_oto_tp_price
                     )
                 )
 
@@ -2168,10 +2228,14 @@ class ManualTradeService:
                     order_type = str(cached_order.get('mode') or 'STOP_MARKET')
                 if cached_order.get('isIceberg') and cached_order.get('icebergQty'):
                     iceberg_q = float(cached_order['icebergQty'])
-                    ex_params['icebergAmount'] = iceberg_q
-                    ex_params['icebergQty'] = iceberg_q
+                    try:
+                        fmt_iceberg_q = str(exchange.amount_to_precision(symbol, iceberg_q))
+                    except Exception:
+                        fmt_iceberg_q = str(bracket_order_service._safe_amount_to_precision(exchange, symbol, iceberg_q))
+                    ex_params['icebergAmount'] = float(fmt_iceberg_q)
+                    ex_params['icebergQty'] = fmt_iceberg_q
                     ex_params['timeInForce'] = 'GTC'
-                    logger.info(f"🧊 Preserved Iceberg slice {iceberg_q} from cache during order edit")
+                    logger.info(f"🧊 Preserved Iceberg slice {fmt_iceberg_q} from cache during order edit")
             elif is_futures:
                 # If order not in cache and on futures, check if it was a conditional stop
                 try:

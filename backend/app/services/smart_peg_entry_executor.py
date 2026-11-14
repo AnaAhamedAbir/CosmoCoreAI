@@ -102,6 +102,7 @@ async def execute_smart_peg_entry(
     contract_size: float = 1.0,
     is_inverse: Optional[bool] = None,
     send_initial_notify: bool = True,
+    anchor_price: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Executes a continuous Dynamic BBO Maker Peg Entry.
@@ -251,7 +252,8 @@ async def execute_smart_peg_entry(
 
     b_bid = float(initial_ob['bids'][0][0])
     b_ask = float(initial_ob['asks'][0][0])
-    initial_benchmark_price = b_bid if side.lower() == 'buy' else b_ask
+    market_benchmark_price = b_bid if side.lower() == 'buy' else b_ask
+    initial_benchmark_price = float(anchor_price) if (anchor_price and float(anchor_price) > 0) else market_benchmark_price
 
     # Initial clamp
     remaining_amount = await _sync_and_clamp_amount(initial_benchmark_price)
@@ -273,6 +275,7 @@ async def execute_smart_peg_entry(
         'amount': remaining_amount,
         'filled_amount': 0.0,
         'initial_price': initial_benchmark_price,
+        'anchor_price': float(anchor_price) if (anchor_price and float(anchor_price) > 0) else None,
         'status': 'pegging',
         'current_attempt': 0,
         'max_attempts': max_attempts,
@@ -330,10 +333,14 @@ async def execute_smart_peg_entry(
             target_maker_price = best_bid
             if target_maker_price >= best_ask:
                 target_maker_price = best_ask - tick
+            if anchor_price and float(anchor_price) > 0:
+                target_maker_price = min(target_maker_price, float(anchor_price))
         else:
             target_maker_price = best_ask
             if target_maker_price <= best_bid:
                 target_maker_price = best_bid + tick
+            if anchor_price and float(anchor_price) > 0:
+                target_maker_price = max(target_maker_price, float(anchor_price))
 
         if hasattr(exchange, 'price_to_precision'):
             try:
@@ -486,7 +493,8 @@ async def execute_smart_peg_entry(
                         max_dev=max_chase_deviation_pct,
                         contract_size=contract_size,
                         is_inverse=is_inverse,
-                        ai_filter_info=ai_filter_info
+                        ai_filter_info=ai_filter_info,
+                        anchor_price=anchor_price
                     )
                 )
             except Exception as notify_first_err:
@@ -575,10 +583,14 @@ async def execute_smart_peg_entry(
                             new_maker = l_best_bid
                             if new_maker >= l_best_ask:
                                 new_maker = l_best_ask - l_tick
+                            if anchor_price and float(anchor_price) > 0:
+                                new_maker = min(new_maker, float(anchor_price))
                         else:
                             new_maker = l_best_ask
                             if new_maker <= l_best_bid:
                                 new_maker = l_best_bid + l_tick
+                            if anchor_price and float(anchor_price) > 0:
+                                new_maker = max(new_maker, float(anchor_price))
 
                         if hasattr(exchange, 'price_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
                             try:

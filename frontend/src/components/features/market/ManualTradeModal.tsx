@@ -115,15 +115,15 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   });
   const modalContainerRef = React.useRef<HTMLDivElement>(null);
 
-  // Interactive Drag-to-Chart TP / SL State (for Touch & Mouse)
+  // Interactive Drag-to-Chart TP / SL / Order State (for Touch & Mouse)
   const [activeDragLine, setActiveDragLine] = useState<{
-    type: 'tp' | 'sl';
+    type: 'tp' | 'sl' | 'buy' | 'sell' | 'peg_buy' | 'peg_sell';
     currentPrice: number;
     pointerPos: { x: number; y: number };
   } | null>(null);
 
   const activeDragLineRef = React.useRef<{
-    type: 'tp' | 'sl';
+    type: 'tp' | 'sl' | 'buy' | 'sell' | 'peg_buy' | 'peg_sell';
     pointerId: number;
     isDragging: boolean;
   } | null>(null);
@@ -523,7 +523,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   React.useEffect(() => {
     if (isOpen) {
       fetchMlModels();
-      setTradeSide('Sell');
       setIcebergMode('qty');
       setIcebergCustomQty((prev) => (!prev || prev === '0' ? '250' : prev));
     } else {
@@ -1713,6 +1712,59 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     calculateSize
   ]);
 
+  // Synchronized Side Switch Handler (Keeps Full Modal and Minimized HUD 100% aligned)
+  const handleSideChange = React.useCallback((newSide: 'Buy' | 'Sell') => {
+    if (newSide === tradeSide) return;
+    setTradeSide(newSide);
+
+    if (selectedPercent && balanceData && effectiveOrderPrice > 0) {
+      const recalculated = calculateSize(
+        selectedPercent,
+        balanceData,
+        effectiveOrderPrice,
+        sizeMode,
+        newSide,
+        isFutures,
+        leverage,
+        reduceOnly,
+        positionData
+      );
+      if (recalculated && Number(recalculated) > 0) {
+        setSize(recalculated);
+      }
+    }
+
+    if (tpConfig.enabled && tpConfig.mode === 'absolute') {
+      setTpConfig(prev => ({
+        ...prev,
+        value: getSmartGapValue('absolute', true, newSide)
+      }));
+    }
+
+    if (slConfig.enabled && slConfig.mode === 'absolute') {
+      setSlConfig(prev => ({
+        ...prev,
+        value: getSmartGapValue('absolute', false, newSide)
+      }));
+    }
+  }, [
+    tradeSide,
+    selectedPercent,
+    balanceData,
+    effectiveOrderPrice,
+    sizeMode,
+    isFutures,
+    leverage,
+    reduceOnly,
+    positionData,
+    calculateSize,
+    tpConfig.enabled,
+    tpConfig.mode,
+    slConfig.enabled,
+    slConfig.mode,
+    getSmartGapValue
+  ]);
+
   const lastTriggerRef = React.useRef<number>(0);
 
   // Update limit price when clickedPrice from chart changes via an explicit trigger
@@ -1724,7 +1776,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         setOrderType('Limit');
         setIsAutoLimit(false); // Disable auto best limit since user manually picked a price
         setLimitPrice(clickedPrice.toString());
-        setTradeSide('Sell');
+        const inferredSide: 'Buy' | 'Sell' = (effectiveCurrentPrice && clickedPrice < effectiveCurrentPrice) ? 'Buy' : 'Sell';
+        handleSideChange(inferredSide);
         setIsOpen(true); // Auto-open modal if closed
         setIsMinimized(false);
       }
@@ -2006,10 +2059,364 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   React.useEffect(() => {
     if (!isOpen) {
       activeDragCleanupRef.current?.();
+      activeOrderDragCleanupRef.current?.();
     }
   }, [isOpen]);
 
-  React.useEffect(() => () => activeDragCleanupRef.current?.(), []);
+  React.useEffect(() => () => {
+    activeDragCleanupRef.current?.();
+    activeOrderDragCleanupRef.current?.();
+  }, []);
+
+  // Dedicated Drag-to-Chart Order Placement (Limit & SmartPeg Anchor)
+  const didOrderDragRef = React.useRef<boolean>(false);
+  const activeOrderDragCleanupRef = React.useRef<(() => void) | null>(null);
+
+  const handleDragOrderExecute = React.useCallback(async (side: 'Buy' | 'Sell', dropPrice: number) => {
+    if (!selectedApi) {
+      toast.error('Please select an API Key first.');
+      setIsMinimized(false);
+      return;
+    }
+
+    // 1. Resolve size
+    let resolvedSizeStr = size;
+    if (!resolvedSizeStr || Number(resolvedSizeStr) <= 0) {
+      if (selectedPercent && balanceData && dropPrice > 0) {
+        const recalculated = calculateSize(
+          selectedPercent,
+          balanceData,
+          dropPrice,
+          sizeMode,
+          side,
+          isFutures,
+          leverage,
+          reduceOnly,
+          positionData
+        );
+        if (recalculated && Number(recalculated) > 0) {
+          resolvedSizeStr = recalculated;
+          setSize(recalculated);
+        }
+      }
+    }
+
+    if (!resolvedSizeStr || isNaN(Number(resolvedSizeStr)) || Number(resolvedSizeStr) <= 0) {
+      toast.error('Please set an order size in HUD before placing drag order.');
+      return;
+    }
+
+    // 2. ML Filter check
+    if (mlFilterConfig.enabled && !(isFutures && reduceOnly)) {
+      if (!mlFilterConfig.modelId) {
+        toast.error('🤖 Please select a trained ML Model for the AI Filter, or turn it off.');
+        setIsMinimized(false);
+        return;
+      }
+    }
+
+    // 3. Convert quote/base amount
+    let baseAmount = Number(resolvedSizeStr);
+    let contractsCount: number | undefined = undefined;
+
+    if (isInverseFutures) {
+      const usdVal = sizeMode === 'quote' ? Number(resolvedSizeStr) : Number(resolvedSizeStr) * dropPrice;
+      contractsCount = Math.max(1, Math.round(usdVal / contractSize));
+      if (usdVal < (contractSize * 0.9)) {
+        toast.error(`❌ Minimum order size is 1 contract ($${contractSize} USD).`);
+        return;
+      }
+      baseAmount = (contractsCount * contractSize) / dropPrice;
+    } else if (sizeMode === 'quote') {
+      baseAmount = Number(resolvedSizeStr) / dropPrice;
+    }
+
+    // 4. Calculate Attached TP / SL Brackets based on dropPrice
+    let attachedTpPayload: any = undefined;
+    if (tpConfig.enabled && tpConfig.value && Number(tpConfig.value) > 0) {
+      let tpVal = Number(tpConfig.value);
+      if (tpConfig.mode === 'absolute') {
+        if (side === 'Buy' && tpVal <= dropPrice) {
+          tpVal = Number((dropPrice * 1.015).toFixed(4));
+        } else if (side === 'Sell' && tpVal >= dropPrice) {
+          tpVal = Number((dropPrice * 0.985).toFixed(4));
+        }
+      }
+      attachedTpPayload = {
+        enabled: true,
+        mode: tpConfig.mode,
+        value: tpVal,
+        order_type: tpConfig.orderType,
+        timeout_mins: tpConfig.timeoutMins
+      };
+    }
+
+    let attachedSlPayload: any = undefined;
+    if (slConfig.enabled) {
+      let slVal = Number(slConfig.value || 0);
+      if (slConfig.mode === 'absolute') {
+        if (side === 'Buy' && slVal >= dropPrice) {
+          slVal = Number((dropPrice * 0.99).toFixed(4));
+        } else if (side === 'Sell' && slVal <= dropPrice) {
+          slVal = Number((dropPrice * 1.01).toFixed(4));
+        }
+      }
+      attachedSlPayload = {
+        enabled: true,
+        type: slConfig.type,
+        mode: slConfig.mode,
+        value: slVal,
+        atr_period: slConfig.atrPeriod,
+        atr_multiplier: slConfig.atrMultiplier,
+        atr_timeframe: slConfig.atrTimeframe,
+        timeout_mins: slConfig.timeoutMins,
+        smart_chase_deviation_pct: slConfig.smartChaseDeviationPct ?? 5.0,
+        smartChaseDeviationPct: slConfig.smartChaseDeviationPct ?? 5.0,
+        smart_chase_delay_ms: slConfig.smartChaseDelayMs ?? 1500,
+        smartChaseDelayMs: slConfig.smartChaseDelayMs ?? 1500,
+        smart_chase_max_attempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
+        smartChaseMaxAttempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
+        smart_chase_mode: slConfig.smartChaseMode || 'dynamic_bbo',
+        smartChaseMode: slConfig.smartChaseMode || 'dynamic_bbo',
+        smart_chase_trigger_source: slConfig.smartChaseTriggerSource || 'bid_ask',
+        smartChaseTriggerSource: slConfig.smartChaseTriggerSource || 'bid_ask',
+        smart_chase_peg_strategy: slConfig.smartChasePegStrategy || 'bbo',
+        smartChasePegStrategy: slConfig.smartChasePegStrategy || 'bbo',
+        smart_chase_wall_multiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
+        smartChaseWallMultiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
+        auto_breakeven_enabled: slConfig.autoBreakevenEnabled,
+        autoBreakevenEnabled: slConfig.autoBreakevenEnabled,
+        auto_breakeven_trigger_pct: slConfig.autoBreakevenTriggerPct ?? 1.0,
+        autoBreakevenTriggerPct: slConfig.autoBreakevenTriggerPct ?? 1.0,
+        auto_breakeven_buffer_pct: slConfig.autoBreakevenBufferPct ?? 0.05,
+        autoBreakevenBufferPct: slConfig.autoBreakevenBufferPct ?? 0.05
+      };
+    }
+
+    const isSmartPeg = orderType === 'SmartPeg';
+    const toastId = toast.loading(
+      isSmartPeg
+        ? `⚡ Placing Smart Peg ${side} anchored at $${formatDisplayPrice(dropPrice)}...`
+        : `🟢 Placing ${side} Limit Order at $${formatDisplayPrice(dropPrice)}...`
+    );
+
+    setIsSubmitting(true);
+    setSubmittingSide(side);
+
+    try {
+      const paramsPayload: any = isFutures ? { leverage, marginMode, reduceOnly } : {};
+      if (isInverseFutures && contractsCount) {
+        paramsPayload.contracts = contractsCount;
+      }
+      if (isSmartPeg) {
+        paramsPayload.maxChaseDeviationPct = smartPegMaxDev;
+        paramsPayload.pegAnchorPrice = dropPrice;
+      } else {
+        paramsPayload.autoBestLimit = false;
+      }
+
+      const resolvedExchange = apiKeys.find(k => k.id.toString() === selectedApi)?.exchange || 'binance';
+
+      const payload: any = {
+        symbol: activeSymbol,
+        side,
+        type: isSmartPeg ? 'SmartPeg' : 'Limit',
+        amount: (isInverseFutures && contractsCount) ? contractsCount : baseAmount,
+        price: dropPrice,
+        exchange_id: resolvedExchange,
+        api_key_id: selectedApi ? Number(selectedApi) : undefined,
+        params: Object.keys(paramsPayload).length > 0 ? paramsPayload : undefined,
+        client_timestamp: Date.now(),
+        use_native_tp_sl: isNativeTpSlSupported ? Boolean(useNativeTpSl) : false,
+        attached_tp: attachedTpPayload,
+        attached_sl: attachedSlPayload,
+      };
+
+      if (mlFilterConfig.enabled && mlFilterConfig.modelId && !(isFutures && reduceOnly)) {
+        payload.enable_ml_filter = true;
+        payload.ml_model_id = mlFilterConfig.modelId;
+        payload.ml_execution_mode = mlFilterConfig.executionMode;
+        payload.ml_bullish_threshold = mlFilterConfig.bullishThreshold;
+        payload.ml_bearish_threshold = mlFilterConfig.bearishThreshold;
+      }
+
+      const orderRes = await manualTradeService.placeOrder(payload);
+
+      if (orderRes?.rejected_by_ai || orderRes?.status === 'rejected_by_ai') {
+        triggerAiShieldRejection(orderRes, side);
+        toast.dismiss(toastId);
+        return;
+      }
+      setAiRejectNotice(null);
+
+      const createdOrderId = orderRes?.id;
+      const aiNote = orderRes?.ai_filter_info ? ` [🤖 ${orderRes.ai_filter_info}]` : '';
+
+      toast.custom(
+        (t) => (
+          <div
+            className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border font-mono shadow-2xl backdrop-blur-xl ${
+              side === 'Buy'
+                ? 'bg-emerald-950/95 border-emerald-500/60 text-emerald-200'
+                : 'bg-rose-950/95 border-rose-500/60 text-rose-200'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="text-base shrink-0">{isSmartPeg ? '⚡' : '✅'}</span>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-bold truncate">
+                  {side} {isSmartPeg ? 'Smart Peg' : 'Limit'} Placed {aiNote}
+                </span>
+                <span className="text-[10px] text-gray-400 font-mono truncate">
+                  {activeSymbol} @ ${formatDisplayPrice(dropPrice)} {createdOrderId ? `• #${createdOrderId}` : ''}
+                </span>
+              </div>
+            </div>
+          </div>
+        ),
+        { duration: 4500 }
+      );
+
+      fetchBalance(true);
+      fetchActiveBrackets(true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+      }
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.detail || err?.message || 'Failed to place order';
+      toast.error(`❌ Order Failed: ${errMsg}`, { id: toastId, duration: 5000 });
+    } finally {
+      setIsSubmitting(false);
+      setSubmittingSide(null);
+    }
+  }, [
+    selectedApi,
+    size,
+    selectedPercent,
+    balanceData,
+    sizeMode,
+    isFutures,
+    leverage,
+    reduceOnly,
+    positionData,
+    calculateSize,
+    mlFilterConfig,
+    isInverseFutures,
+    contractSize,
+    tpConfig,
+    slConfig,
+    orderType,
+    smartPegMaxDev,
+    isNativeTpSlSupported,
+    useNativeTpSl,
+    apiKeys,
+    activeSymbol,
+    triggerAiShieldRejection,
+    fetchBalance,
+    fetchActiveBrackets
+  ]);
+
+  const handleOrderPointerDown = React.useCallback((e: React.PointerEvent, side: 'Buy' | 'Sell') => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const pointerId = e.pointerId;
+    const targetEl = e.currentTarget as HTMLElement;
+
+    didOrderDragRef.current = false;
+    activeOrderDragCleanupRef.current?.();
+
+    const isSmartPeg = orderType === 'SmartPeg';
+    const dragType = isSmartPeg ? (side === 'Buy' ? 'peg_buy' : 'peg_sell') : (side === 'Buy' ? 'buy' : 'sell');
+
+    let hasStartedChartDrag = false;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
+      if (!hasStartedChartDrag && dist > 7) {
+        hasStartedChartDrag = true;
+        didOrderDragRef.current = true;
+
+        try {
+          targetEl.setPointerCapture(pointerId);
+        } catch {}
+
+        const startFn = onChartDragBracketStart || (typeof window !== 'undefined' ? (window as any)._handleChartDragBracketStart : null);
+        startFn?.(dragType);
+
+        setActiveDragLine({
+          type: dragType as any,
+          currentPrice: effectiveCurrentPrice || 0,
+          pointerPos: { x: ev.clientX, y: ev.clientY }
+        });
+      }
+
+      if (hasStartedChartDrag) {
+        const moveFn = onChartDragBracketMove || (typeof window !== 'undefined' ? (window as any)._handleChartDragBracketMove : null);
+        const livePrice = moveFn ? moveFn(dragType, ev.clientX, ev.clientY) : null;
+
+        setActiveDragLine({
+          type: dragType as any,
+          currentPrice: livePrice !== null && livePrice > 0 ? livePrice : (effectiveCurrentPrice || 0),
+          pointerPos: { x: ev.clientX, y: ev.clientY }
+        });
+      }
+    };
+
+    const cleanup = (abortGhost: boolean) => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerAbort);
+      window.removeEventListener('blur', onPointerAbort);
+      activeOrderDragCleanupRef.current = null;
+
+      try {
+        targetEl.releasePointerCapture(pointerId);
+      } catch {}
+
+      if (abortGhost && hasStartedChartDrag) {
+        setActiveDragLine(null);
+        const endFn = onChartDragBracketEnd || (typeof window !== 'undefined' ? (window as any)._handleChartDragBracketEnd : null);
+        endFn?.(dragType, -1, -1);
+      }
+    };
+
+    const onPointerAbort = () => {
+      cleanup(true);
+    };
+
+    const onPointerUp = async (ev: PointerEvent) => {
+      cleanup(false);
+
+      if (hasStartedChartDrag) {
+        setActiveDragLine(null);
+        const endFn = onChartDragBracketEnd || (typeof window !== 'undefined' ? (window as any)._handleChartDragBracketEnd : null);
+        const result = endFn ? endFn(dragType, ev.clientX, ev.clientY) : { inChart: false, price: null };
+
+        if (!result.inChart || !result.price || result.price <= 0) {
+          toast('Order drag cancelled (released outside chart)', { icon: '↩️' });
+          return;
+        }
+
+        await handleDragOrderExecute(side, result.price);
+      }
+    };
+
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerup', onPointerUp, { once: true });
+    window.addEventListener('pointercancel', onPointerAbort, { once: true });
+    window.addEventListener('blur', onPointerAbort, { once: true });
+
+    activeOrderDragCleanupRef.current = () => cleanup(true);
+  }, [
+    orderType,
+    effectiveCurrentPrice,
+    onChartDragBracketStart,
+    onChartDragBracketMove,
+    onChartDragBracketEnd,
+    handleDragOrderExecute
+  ]);
 
   const handleTrade = async (side: 'Buy' | 'Sell') => {
     if (!selectedApi) {
@@ -2381,7 +2788,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
             onClick={() => {
               setIsOpen(true);
               setIsMinimized(false);
-              setTradeSide('Sell');
             }}
             className={`absolute inset-0 w-full h-full rounded-full flex items-center justify-center border text-white ${isThermalGuardActive ? '' : 'backdrop-blur-md'} z-[999] transition-all focus:outline-none group ${
               activeBrackets.some(b => b.status === 'chasing' || b.status === 'pegging')
@@ -2474,7 +2880,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                 onClick={() => {
                   setIsOpen(true);
                   setIsMinimized(false);
-                  setTradeSide('Sell');
                 }}
                 className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white text-[10px] font-bold uppercase transition-all cursor-pointer"
               >
@@ -2546,9 +2951,30 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             ${formatDisplayPrice(effectiveCurrentPrice)}
                           </span>
                         )}
-                        <span className="text-[8px] px-1 py-0.2 rounded bg-white/[0.06] border border-white/10 text-gray-300 font-mono font-bold uppercase leading-tight shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const nextType: 'Limit' | 'Market' | 'SmartPeg' =
+                              orderType === 'Limit' ? 'Market' : orderType === 'Market' ? 'SmartPeg' : 'Limit';
+                            setOrderType(nextType);
+                            toast(`Order Mode: ${nextType === 'SmartPeg' ? '⚡ Smart Peg' : nextType}`, {
+                              icon: nextType === 'SmartPeg' ? '⚡' : nextType === 'Market' ? '🚀' : '📝',
+                              duration: 1800
+                            });
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className={`text-[8px] px-1.5 py-0.5 rounded font-mono font-black uppercase leading-tight shrink-0 pointer-events-auto cursor-pointer transition-all active:scale-95 border ${
+                            orderType === 'SmartPeg'
+                              ? 'bg-amber-500/25 border-amber-400/60 text-amber-300 hover:bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.35)]'
+                              : orderType === 'Market'
+                                ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-300 hover:bg-cyan-500/35 shadow-[0_0_8px_rgba(6,182,212,0.3)]'
+                                : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/10 hover:border-cyan-400/40 text-gray-300 hover:text-white'
+                          }`}
+                          title="Click to switch Order Type: Limit ➔ Market ➔ Smart Peg"
+                        >
                           {orderType === 'SmartPeg' ? '⚡PEG' : orderType === 'Market' ? 'MKT' : 'LMT'}
-                        </span>
+                        </button>
                         {tpConfig.enabled && (
                           <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold leading-tight shrink-0">
                             TP
@@ -2846,7 +3272,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           className="text-[8px] font-mono font-bold px-1 py-0.5 rounded bg-black/50 border border-blue-500/30 text-blue-300 shrink-0"
                           title="Bullish BUY Threshold / Bearish SELL Threshold"
                         >
-                          B:{(mlFilterConfig.bullishThreshold * 100).toFixed(0)}% S:{(mlFilterConfig.bearishThreshold * 100).toFixed(0)}%
+                          <span className={tradeSide === 'Buy' ? 'text-emerald-300 font-black underline' : 'text-gray-400'}>
+                            B:{(mlFilterConfig.bullishThreshold * 100).toFixed(0)}%
+                          </span>{' '}
+                          <span className={tradeSide === 'Sell' ? 'text-rose-300 font-black underline' : 'text-gray-400'}>
+                            S:{(mlFilterConfig.bearishThreshold * 100).toFixed(0)}%
+                          </span>
                         </span>
                       )}
 
@@ -2864,56 +3295,133 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       </button>
                     </div>
 
-                    {/* Row 3: Sleek Single-Line Quick Buy & Sell Execution Buttons */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        disabled={isSubmitting}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleTrade('Buy');
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="relative overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 bg-emerald-500/15 dark:bg-gradient-to-b dark:from-emerald-500/30 dark:via-emerald-600/25 dark:to-green-900/40 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:via-emerald-600 dark:hover:to-green-700 text-emerald-700 dark:text-emerald-300 hover:text-white border border-emerald-500/40 dark:border-emerald-400/50 hover:border-emerald-400 dark:hover:border-emerald-300 shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
-                      >
-                        {isSubmitting && submittingSide === 'Buy' ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-300 shrink-0" />
-                        ) : (
-                          <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 group-hover:text-white transition-transform shrink-0" />
-                        )}
-                        <span className="text-[11px] uppercase tracking-wider font-black leading-none">
-                          {isSubmitting && submittingSide === 'Buy' ? 'Buying...' : isFutures ? 'BUY / LONG' : 'BUY'}
-                        </span>
-                        {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
-                          <span className="text-[9px] font-mono text-emerald-700/90 dark:text-emerald-200/90 group-hover:text-white font-semibold truncate">
-                            • ${sizeMode === 'quote' ? Number(size).toFixed(0) : (Number(size) * effectiveOrderPrice).toFixed(0)}
-                          </span>
-                        )}
-                      </button>
+                    {/* Row 3: Synchronized Execution Row (Side Selector Toggle + Dedicated Action Button) */}
+                    <div
+                      data-no-drag="true"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className="flex items-center gap-1.5"
+                    >
+                      {/* Side Selector Mini Toggle (Keeps HUD aligned with full terminal state) */}
+                      <div className="flex items-center bg-[#050811] rounded-lg p-0.5 border border-white/10 shrink-0 shadow-inner">
+                        <button
+                          type="button"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            handleOrderPointerDown(e, 'Buy');
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (didOrderDragRef.current) {
+                              didOrderDragRef.current = false;
+                              return;
+                            }
+                            handleSideChange('Buy');
+                          }}
+                          style={{ touchAction: 'none' }}
+                          className={`px-2 py-1.5 rounded-md font-mono text-[9px] font-black uppercase tracking-wider transition-all cursor-grab active:cursor-grabbing leading-none select-none ${
+                            tradeSide === 'Buy'
+                              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.5)] border border-emerald-400/50'
+                              : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                          }`}
+                          title="Click to select BUY, or Touch/Drag onto chart to place BUY at price level"
+                        >
+                          {isFutures ? 'LONG' : 'BUY'}
+                        </button>
+                        <button
+                          type="button"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            handleOrderPointerDown(e, 'Sell');
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (didOrderDragRef.current) {
+                              didOrderDragRef.current = false;
+                              return;
+                            }
+                            handleSideChange('Sell');
+                          }}
+                          style={{ touchAction: 'none' }}
+                          className={`px-2 py-1.5 rounded-md font-mono text-[9px] font-black uppercase tracking-wider transition-all cursor-grab active:cursor-grabbing leading-none select-none ${
+                            tradeSide === 'Sell'
+                              ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)] border border-rose-400/50'
+                              : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                          }`}
+                          title="Click to select SELL, or Touch/Drag onto chart to place SELL at price level"
+                        >
+                          {isFutures ? 'SHORT' : 'SELL'}
+                        </button>
+                      </div>
 
+                      {/* Single Dynamic Primary Execution Button with Touch/Drag-to-Chart capability */}
                       <button
                         type="button"
                         disabled={isSubmitting}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          handleOrderPointerDown(e, tradeSide);
+                        }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleTrade('Sell');
+                          if (didOrderDragRef.current) {
+                            didOrderDragRef.current = false;
+                            return;
+                          }
+                          handleTrade(tradeSide);
                         }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="relative overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 bg-rose-500/15 dark:bg-gradient-to-b dark:from-rose-500/30 dark:via-rose-600/25 dark:to-red-900/40 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:via-rose-600 dark:hover:to-red-700 text-rose-700 dark:text-rose-300 hover:text-white border border-rose-500/40 dark:border-rose-400/50 hover:border-rose-400 dark:hover:border-rose-300 shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer group"
+                        style={{ touchAction: 'none' }}
+                        className={`relative flex-1 overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 select-none cursor-grab active:cursor-grabbing group shadow-sm ${
+                          tradeSide === 'Buy'
+                            ? orderType === 'SmartPeg'
+                              ? 'bg-gradient-to-r from-amber-600/35 via-emerald-600/35 to-green-700/40 hover:from-amber-600 hover:to-green-600 text-emerald-300 hover:text-white border border-emerald-400/60 shadow-[0_2px_12px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)]'
+                              : 'bg-emerald-500/15 dark:bg-gradient-to-b dark:from-emerald-500/30 dark:via-emerald-600/25 dark:to-green-900/40 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:via-emerald-600 dark:hover:to-green-700 text-emerald-700 dark:text-emerald-300 hover:text-white border border-emerald-500/40 dark:border-emerald-400/50 hover:border-emerald-400 dark:hover:border-emerald-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)]'
+                            : orderType === 'SmartPeg'
+                              ? 'bg-gradient-to-r from-amber-600/35 via-rose-600/35 to-red-700/40 hover:from-amber-600 hover:to-red-600 text-rose-300 hover:text-white border border-rose-400/60 shadow-[0_2px_12px_rgba(244,63,94,0.3)] hover:shadow-[0_0_20px_rgba(244,63,94,0.5)]'
+                              : 'bg-rose-500/15 dark:bg-gradient-to-b dark:from-rose-500/30 dark:via-rose-600/25 dark:to-red-900/40 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:via-rose-600 dark:hover:to-red-700 text-rose-700 dark:text-rose-300 hover:text-white border border-rose-500/40 dark:border-rose-400/50 hover:border-rose-400 dark:hover:border-rose-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)]'
+                        }`}
+                        title={`Click for instant ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
                       >
-                        {isSubmitting && submittingSide === 'Sell' ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600 dark:text-rose-300 shrink-0" />
+                        {isSubmitting ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                        ) : orderType === 'SmartPeg' ? (
+                          <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300 group-hover:scale-110 transition-transform shrink-0" />
+                        ) : tradeSide === 'Buy' ? (
+                          <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 group-hover:text-white transition-transform shrink-0" />
                         ) : (
                           <TrendingDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 group-hover:text-white transition-transform shrink-0" />
                         )}
-                        <span className="text-[11px] uppercase tracking-wider font-black leading-none">
-                          {isSubmitting && submittingSide === 'Sell' ? 'Selling...' : isFutures ? 'SELL / SHORT' : 'SELL'}
+
+                        <span className="text-[11px] uppercase tracking-wider font-black leading-none truncate">
+                          {isSubmitting
+                            ? `${tradeSide === 'Buy' ? 'Buying' : 'Selling'}...`
+                            : orderType === 'SmartPeg'
+                              ? `PEG ${tradeSide === 'Buy' ? (isFutures ? 'LONG' : 'BUY') : (isFutures ? 'SHORT' : 'SELL')}`
+                              : orderType === 'Market'
+                                ? `MKT ${tradeSide === 'Buy' ? (isFutures ? 'BUY / LONG' : 'BUY') : (isFutures ? 'SELL / SHORT' : 'SELL')}`
+                                : `LMT ${tradeSide === 'Buy' ? (isFutures ? 'BUY / LONG' : 'BUY') : (isFutures ? 'SELL / SHORT' : 'SELL')}`}
                         </span>
+
+                        {(tpConfig.enabled || slConfig.enabled) && (
+                          <span
+                            className={`text-[7.5px] font-mono px-1 py-0.2 rounded font-extrabold border shrink-0 leading-tight ${
+                              tradeSide === 'Buy'
+                                ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
+                                : 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+                            }`}
+                            title={`Attached Brackets: ${[tpConfig.enabled && 'TP', slConfig.enabled && 'SL'].filter(Boolean).join(' + ')}`}
+                          >
+                            {tpConfig.enabled && slConfig.enabled ? 'TP+SL' : tpConfig.enabled ? 'TP' : 'SL'}
+                          </span>
+                        )}
+
                         {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
-                          <span className="text-[9px] font-mono text-rose-700/90 dark:text-rose-200/90 group-hover:text-white font-semibold truncate">
+                          <span className="text-[9px] font-mono text-white/90 group-hover:text-white font-semibold truncate shrink-0">
                             • ${sizeMode === 'quote' ? Number(size).toFixed(0) : (Number(size) * effectiveOrderPrice).toFixed(0)}
                           </span>
                         )}
+
+                        <MoveVertical className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 shrink-0" />
                       </button>
                     </div>
 
@@ -3629,8 +4137,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
               {/* Buy / Sell Tabs */}
               <div className="flex p-1 rounded-lg bg-black/40 border border-white/5 mb-2">
                 <button
-                  onClick={() => setTradeSide('Buy')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all uppercase tracking-wider ${
+                  type="button"
+                  onClick={() => handleSideChange('Buy')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all uppercase tracking-wider cursor-pointer ${
                     tradeSide === 'Buy' 
                       ? 'bg-green-500/20 text-green-400 border border-green-500/50 shadow-[0_0_10px_rgba(34,197,94,0.15)]' 
                       : 'text-gray-500 hover:text-white hover:bg-white/5 border border-transparent'
@@ -3639,8 +4148,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                   {isFutures ? 'Long' : 'Buy'}
                 </button>
                 <button
-                  onClick={() => setTradeSide('Sell')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all uppercase tracking-wider ${
+                  type="button"
+                  onClick={() => handleSideChange('Sell')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all uppercase tracking-wider cursor-pointer ${
                     tradeSide === 'Sell' 
                       ? 'bg-red-500/20 text-red-400 border border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.15)]' 
                       : 'text-gray-500 hover:text-white hover:bg-white/5 border border-transparent'
@@ -5300,9 +5810,20 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
               {/* Action Buttons */}
               <div className="flex space-x-3 pt-3 mt-2 border-t border-white/10">
                 <button
-                  onClick={() => handleTrade(tradeSide)}
+                  type="button"
+                  onPointerDown={(e) => {
+                    handleOrderPointerDown(e, tradeSide);
+                  }}
+                  onClick={(e) => {
+                    if (didOrderDragRef.current) {
+                      didOrderDragRef.current = false;
+                      return;
+                    }
+                    handleTrade(tradeSide);
+                  }}
+                  style={{ touchAction: 'none' }}
                   disabled={isSubmitting}
-                  className={`flex-1 py-3 px-4 rounded-xl font-bold flex flex-col items-center justify-center transition-all disabled:opacity-50 group border ${
+                  className={`flex-1 py-3 px-4 rounded-xl font-bold flex flex-col items-center justify-center transition-all disabled:opacity-50 group border cursor-grab active:cursor-grabbing select-none ${
                      orderType === 'SmartPeg'
                        ? tradeSide === 'Buy'
                          ? 'bg-gradient-to-r from-amber-600/30 to-green-600/30 hover:from-amber-600 hover:to-green-600 text-amber-300 hover:text-white border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
@@ -5311,6 +5832,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                          ? 'bg-green-500/20 hover:bg-green-500 text-green-400 hover:text-white border-green-500/50 hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]'
                          : 'bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white border-red-500/50 hover:shadow-[0_0_15px_rgba(239,68,68,0.4)]'
                   }`}
+                  title={`Click to execute ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
                 >
                   <div className="flex items-center space-x-2">
                     {orderType === 'SmartPeg' ? (
@@ -5323,7 +5845,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     <span className="text-sm uppercase tracking-wider">
                       {orderType === 'SmartPeg' ? 'Smart Peg' : 'Execute'} {isFutures ? (tradeSide === 'Buy' ? 'Long' : 'Short') : tradeSide}
                     </span>
+                    <MoveVertical className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
                   </div>
+                  <span className="text-[9.5px] font-normal text-gray-400 group-hover:text-white/80 transition-colors">
+                    Click to execute • Drag onto chart to set price level
+                  </span>
                 </button>
               </div>
             </div>
@@ -5363,24 +5889,45 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         <div
           style={{
             position: 'fixed',
-            left: Math.min((typeof window !== 'undefined' ? window.innerWidth : 1000) - 190, Math.max(10, activeDragLine.pointerPos.x + 16)),
+            left: Math.min((typeof window !== 'undefined' ? window.innerWidth : 1000) - 210, Math.max(10, activeDragLine.pointerPos.x + 16)),
             top: Math.max(10, activeDragLine.pointerPos.y - 42),
             pointerEvents: 'none',
             zIndex: 999999,
           }}
           className={`px-2.5 py-1 rounded-lg border font-mono text-[11px] font-black shadow-2xl ${isThermalGuardActive ? '' : 'backdrop-blur-md'} flex items-center gap-2 select-none animate-fadeIn ${
-            activeDragLine.type === 'tp'
-              ? 'bg-emerald-950/95 border-emerald-400 text-emerald-300 shadow-[0_0_18px_rgba(16,185,129,0.55)]'
-              : 'bg-rose-950/95 border-rose-400 text-rose-300 shadow-[0_0_18px_rgba(244,63,94,0.55)]'
+            activeDragLine.type === 'peg_buy'
+              ? 'bg-cyan-950/95 border-cyan-400 text-cyan-200 shadow-[0_0_18px_rgba(6,182,212,0.55)]'
+              : activeDragLine.type === 'peg_sell'
+                ? 'bg-amber-950/95 border-amber-400 text-amber-200 shadow-[0_0_18px_rgba(245,158,11,0.55)]'
+                : activeDragLine.type === 'buy' || activeDragLine.type === 'tp'
+                  ? 'bg-emerald-950/95 border-emerald-400 text-emerald-300 shadow-[0_0_18px_rgba(16,185,129,0.55)]'
+                  : 'bg-rose-950/95 border-rose-400 text-rose-300 shadow-[0_0_18px_rgba(244,63,94,0.55)]'
           }`}
         >
-          {activeDragLine.type === 'tp' ? (
+          {activeDragLine.type === 'peg_buy' || activeDragLine.type === 'peg_sell' ? (
+            <Zap className={`w-3.5 h-3.5 ${activeDragLine.type === 'peg_buy' ? 'text-cyan-400 fill-cyan-400' : 'text-amber-400 fill-amber-400'} shrink-0`} />
+          ) : activeDragLine.type === 'buy' ? (
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          ) : activeDragLine.type === 'sell' ? (
+            <TrendingDown className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+          ) : activeDragLine.type === 'tp' ? (
             <Target className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
           ) : (
             <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
           )}
           <span>
-            {activeDragLine.type === 'tp' ? 'TP' : 'SL'} @ ${formatDisplayPrice(activeDragLine.currentPrice)}
+            {activeDragLine.type === 'peg_buy'
+              ? 'PEG BUY'
+              : activeDragLine.type === 'peg_sell'
+                ? 'PEG SELL'
+                : activeDragLine.type === 'buy'
+                  ? 'BUY LMT'
+                  : activeDragLine.type === 'sell'
+                    ? 'SELL LMT'
+                    : activeDragLine.type === 'tp'
+                      ? 'TP'
+                      : 'SL'}{' '}
+            @ ${formatDisplayPrice(activeDragLine.currentPrice)}
           </span>
           {effectiveCurrentPrice > 0 && activeDragLine.currentPrice > 0 && (
             <span

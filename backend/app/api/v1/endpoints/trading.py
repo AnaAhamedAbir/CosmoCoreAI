@@ -1388,6 +1388,7 @@ async def get_active_software_brackets(
                         'current_attempt': pdata.get('current_attempt', 0),
                         'max_attempts': pdata.get('max_attempts', 0),
                         'current_maker_price': pdata.get('current_maker_price', 0.0),
+                        'anchor_price': pdata.get('anchor_price'),
                         'started_at': pdata.get('started_at')
                     })
         except Exception as peg_e:

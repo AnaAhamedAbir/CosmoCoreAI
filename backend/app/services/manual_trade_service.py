@@ -43,7 +43,8 @@ async def _send_trade_fired_notification(
     max_dev: float = None,
     contract_size: float = 1.0,
     is_inverse: bool = False,
-    ai_filter_info: str = None
+    ai_filter_info: str = None,
+    anchor_price: float = None
 ):
     """Sends formatted Trade Fired alert to Telegram using its own dedicated DB session."""
     db = SessionLocal()
@@ -79,9 +80,10 @@ async def _send_trade_fired_notification(
             price_line = f"• Entry Price: `${fill_price:,.4f}`\n" if fill_price else "• Entry Price: `Market Price`\n"
         elif order_type_upper in ('SMART_PEG', 'SMARTPEG'):
             header = "⚡ *MANUAL SMART PEG ENTRY INITIATED*"
+            anchor_line = f"• Peg Anchor Limit: `${float(anchor_price):,.4f}`\n" if (anchor_price and float(anchor_price) > 0) else ""
             bench_line = f"• Benchmark Price: `${fill_price:,.4f}`\n" if fill_price else ""
             dev_line = f"• Max Drift: `±{max_dev}%`\n" if max_dev else ""
-            price_line = f"{bench_line}{dev_line}• Order Type: `Dynamic BBO Peg`\n"
+            price_line = f"{anchor_line}{bench_line}{dev_line}• Order Type: `Dynamic BBO Peg`\n"
         else:
             header = "📝 *MANUAL LIMIT ORDER PLACED*"
             price_line = f"• Limit Price: `${fill_price:,.4f}`\n• Status: `Pending in Orderbook ⏳`\n" if fill_price else "• Status: `Pending in Orderbook ⏳`\n"
@@ -1599,6 +1601,15 @@ class ManualTradeService:
                 if isinstance(order_req.params, dict) and order_req.params.get('maxChaseDeviationPct') is not None:
                     max_dev = float(order_req.params.get('maxChaseDeviationPct'))
 
+                peg_anchor_price = None
+                if isinstance(order_req.params, dict) and order_req.params.get('pegAnchorPrice') is not None:
+                    try:
+                        peg_anchor_price = float(order_req.params.get('pegAnchorPrice'))
+                    except (ValueError, TypeError):
+                        peg_anchor_price = None
+                elif order_req.price and float(order_req.price) > 0:
+                    peg_anchor_price = float(order_req.price)
+
                 is_reduce_only = bool(ex_params.get('reduceOnly', False))
                 if isinstance(order_req.params, dict) and order_req.params.get('reduceOnly'):
                     is_reduce_only = True
@@ -1623,11 +1634,13 @@ class ManualTradeService:
                         margin_mode=params.get('marginMode') if is_futures else None,
                         ai_filter_info=ai_filter_info,
                         contract_size=contract_size,
-                        is_inverse=is_inverse
+                        is_inverse=is_inverse,
+                        anchor_price=peg_anchor_price
                     )
                 )
 
                 ManualTradeService.invalidate_open_orders_cache(api_key_record.id, order_req.symbol)
+                anchor_suffix = f" (Anchor: ${peg_anchor_price:,.4f})" if peg_anchor_price else ""
                 return {
                     "id": peg_cid,
                     "symbol": order_req.symbol,
@@ -1635,8 +1648,9 @@ class ManualTradeService:
                     "side": order_req.side.lower(),
                     "amount": order_req.amount,
                     "type": "smart_peg",
+                    "anchor_price": peg_anchor_price,
                     "ai_filter_info": ai_filter_info,
-                    "message": f"⚡ Smart Peg Entry initiated for {order_req.symbol} ({order_req.side.upper()})"
+                    "message": f"⚡ Smart Peg Entry initiated for {order_req.symbol} ({order_req.side.upper()}){anchor_suffix}"
                 }
 
             # Execute Trade (Try WebSocket First, Fallback to REST)

@@ -736,7 +736,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         (window as any)._handleQuickTradeDragMove = handleQuickTradeDragMove;
         (window as any)._handleQuickTradeDragEnd = handleQuickTradeDragEnd;
 
-        const handleChartDragBracketStart = (type: 'tp' | 'sl') => {
+        const handleChartDragBracketStart = (type: any) => {
             if (chartBracketGhostLineRef.current && candlestickSeriesRef.current) {
                 try { candlestickSeriesRef.current.removePriceLine(chartBracketGhostLineRef.current); } catch {}
                 chartBracketGhostLineRef.current = null;
@@ -767,7 +767,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             return { inChart: true, price };
         };
 
-        const handleChartDragBracketMove = (type: 'tp' | 'sl', clientX: number, clientY: number): number | null => {
+        const handleChartDragBracketMove = (type: any, clientX: number, clientY: number): number | null => {
             const { inChart, price } = resolveChartBracketPrice(clientX, clientY);
             if (!inChart || price === null) {
                 if (chartBracketGhostLineRef.current && candlestickSeriesRef.current) {
@@ -777,15 +777,38 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                 return null;
             }
 
-            const isTP = type === 'tp';
-            const color = isTP ? '#22c55e' : '#ef4444';
             const formattedPrice = price < 1 ? price.toFixed(6) : price.toFixed(4);
             const liveRefPrice = smcDataRef.current?.currentPrice || currentPrice || 0;
-            const isBuyBackSL = !isTP && liveRefPrice > 0 && price > liveRefPrice;
-            const isDipBuyTP = isTP && liveRefPrice > 0 && price < liveRefPrice;
-            const title = isTP
-                ? (isDipBuyTP ? `🎯 DROP TO SET DIP BUY-BACK TP (${formattedPrice})` : `🎯 DROP TO SET TP (${formattedPrice})`)
-                : (isBuyBackSL ? `🛡️ DROP TO SET BUY-BACK SL (${formattedPrice})` : `🛡️ DROP TO SET SL (${formattedPrice})`);
+
+            let color = '#22c55e';
+            let title = '';
+
+            if (type === 'tp') {
+                color = '#22c55e';
+                const isDipBuyTP = liveRefPrice > 0 && price < liveRefPrice;
+                title = isDipBuyTP ? `🎯 DROP TO SET DIP BUY-BACK TP (${formattedPrice})` : `🎯 DROP TO SET TP (${formattedPrice})`;
+            } else if (type === 'sl') {
+                color = '#ef4444';
+                const isBuyBackSL = liveRefPrice > 0 && price > liveRefPrice;
+                title = isBuyBackSL ? `🛡️ DROP TO SET BUY-BACK SL (${formattedPrice})` : `🛡️ DROP TO SET SL (${formattedPrice})`;
+            } else if (type === 'peg_buy') {
+                color = '#06b6d4';
+                title = `⚡ DROP TO ANCHOR SMART PEG BUY (${formattedPrice})`;
+            } else if (type === 'peg_sell') {
+                color = '#f59e0b';
+                title = `⚡ DROP TO ANCHOR SMART PEG SELL (${formattedPrice})`;
+            } else if (type === 'buy') {
+                color = '#10b981';
+                const isStop = liveRefPrice > 0 && price > liveRefPrice;
+                title = isStop ? `🟢 DROP TO PLACE BUY STOP (${formattedPrice})` : `🟢 DROP TO PLACE BUY LIMIT (${formattedPrice})`;
+            } else if (type === 'sell') {
+                color = '#f43f5e';
+                const isStop = liveRefPrice > 0 && price < liveRefPrice;
+                title = isStop ? `🔴 DROP TO PLACE SELL STOP (${formattedPrice})` : `🔴 DROP TO PLACE SELL LIMIT (${formattedPrice})`;
+            } else {
+                color = '#38bdf8';
+                title = `DROP ORDER (${formattedPrice})`;
+            }
 
             if (!chartBracketGhostLineRef.current) {
                 chartBracketGhostLineRef.current = candlestickSeriesRef.current?.createPriceLine({
@@ -808,7 +831,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             return price;
         };
 
-        const handleChartDragBracketEnd = (type: 'tp' | 'sl', clientX: number, clientY: number): { inChart: boolean; price: number | null } => {
+        const handleChartDragBracketEnd = (type: any, clientX: number, clientY: number): { inChart: boolean; price: number | null } => {
             if (chartBracketGhostLineRef.current && candlestickSeriesRef.current) {
                 try { candlestickSeriesRef.current.removePriceLine(chartBracketGhostLineRef.current); } catch {}
                 chartBracketGhostLineRef.current = null;
@@ -4833,15 +4856,15 @@ const OrderFlowHeatmap: React.FC = () => {
         setManualTradeTrigger(0);
     }, []);
 
-    const handleModalDragBracketStart = useCallback((type: 'tp' | 'sl') => {
+    const handleModalDragBracketStart = useCallback((type: any) => {
         (window as any)._handleChartDragBracketStart?.(type);
     }, []);
 
-    const handleModalDragBracketMove = useCallback((type: 'tp' | 'sl', x: number, y: number) => {
+    const handleModalDragBracketMove = useCallback((type: any, x: number, y: number) => {
         return (window as any)._handleChartDragBracketMove?.(type, x, y) ?? null;
     }, []);
 
-    const handleModalDragBracketEnd = useCallback((type: 'tp' | 'sl', x: number, y: number) => {
+    const handleModalDragBracketEnd = useCallback((type: any, x: number, y: number) => {
         return (window as any)._handleChartDragBracketEnd?.(type, x, y) ?? { inChart: false, price: null };
     }, []);
 

@@ -44,7 +44,7 @@ import { ICTPO3Renderer, ICTPO3Data } from '../../components/features/market/ICT
 import { SessionsDashboard, SessionStatus } from '../../components/features/market/SessionsDashboard';
 import { HeatmapSubNav } from '../../components/features/market/HeatmapSubNav';
 import { useTheme } from '@/context/ThemeContext';
-import { BotLogsTab } from '../../components/features/market/BotLogsTab';
+import { BotLogsFloatingModal } from '../../components/features/market/BotLogsFloatingModal';
 import { WallHunterModal } from '../../components/features/market/WallHunterModal';
 import { ForexWallHunterModal } from '../../components/features/market/ForexWallHunterModal';
 import { OrderBookFloatingModal } from '../../components/features/market/OrderBookFloatingModal';
@@ -3727,12 +3727,12 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                                 } catch (e) {}
                                 toast('Drag & Drop confirmation popup re-enabled', { icon: '🛡️' });
                             }}
-                            className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold bg-black/70 hover:bg-black/90 text-cyan-400 border border-cyan-500/40 hover:border-cyan-400 transition-all cursor-pointer pointer-events-auto shadow-lg backdrop-blur-md flex items-center gap-1.5 group"
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold bg-white/90 dark:bg-black/70 hover:bg-white dark:hover:bg-black/90 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 hover:border-cyan-400 transition-all cursor-pointer pointer-events-auto shadow-md backdrop-blur-md flex items-center gap-1.5 group"
                             title="Click to require confirmation popup on drag & drop again"
                         >
-                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
                             <span>⚡ Instant Drag: ON</span>
-                            <span className="text-[9px] text-gray-400 group-hover:text-white underline">Re-enable popup</span>
+                            <span className="text-[9px] text-gray-500 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white underline">Re-enable popup</span>
                         </button>
                     )}
                     {botStatus && botStatus.is_absorbing && (
@@ -3761,35 +3761,35 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             {/* ── DRAG & DROP ORDER CONFIRMATION MODAL ── */}
             <AnimatePresence>
                 {pendingModification && (
-                    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+                    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 dark:bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
                         <motion.div
                             initial={{ scale: 0.95, opacity: 0, y: 10 }}
                             animate={{ scale: 1, opacity: 1, y: 0 }}
                             exit={{ scale: 0.95, opacity: 0, y: 10 }}
                             transition={{ duration: 0.15 }}
-                            className="relative w-full max-w-md bg-gradient-to-b from-[#131b2e] via-[#0f1524] to-[#0a0e18] border border-cyan-500/30 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.85)] p-6 overflow-hidden text-white"
+                            className="cosmo-theme-modal relative w-full max-w-md bg-white dark:bg-gradient-to-b dark:from-[#131b2e] dark:via-[#0f1524] dark:to-[#0a0e18] border border-gray-200 dark:border-cyan-500/30 rounded-2xl shadow-2xl dark:shadow-[0_0_50px_rgba(0,0,0,0.85)] p-6 overflow-hidden text-gray-900 dark:text-white transition-colors"
                         >
                             {/* Glowing top line */}
                             <div className={`absolute top-0 left-0 right-0 h-[2px] ${pendingModification.isSL ? 'bg-gradient-to-r from-red-500 via-amber-500 to-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.6)]' : 'bg-gradient-to-r from-cyan-500 via-blue-500 to-emerald-500 shadow-[0_0_12px_rgba(6,182,212,0.6)]'}`} />
 
                             {/* Modal Header */}
-                            <div className="flex items-center justify-between pb-4 border-b border-white/10">
+                            <div className="flex items-center justify-between pb-4 border-b border-gray-200 dark:border-white/10">
                                 <div className="flex items-center gap-2.5">
-                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg ${pendingModification.isSL ? 'bg-red-500/15 text-red-400 border border-red-500/30' : 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30'}`}>
+                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg ${pendingModification.isSL ? 'bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/25 dark:border-red-500/30' : 'bg-cyan-500/10 dark:bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25 dark:border-cyan-500/30'}`}>
                                         {pendingModification.isSL ? '🛡️' : '🔄'}
                                     </div>
                                     <div>
-                                        <h3 className="font-semibold text-base tracking-wide text-white">
+                                        <h3 className="font-semibold text-base tracking-wide text-gray-900 dark:text-white">
                                             {pendingModification.isSL ? 'Confirm Stop-Loss Adjustment' : 'Confirm Order Adjustment'}
                                         </h3>
-                                        <p className="text-xs text-gray-400">
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">
                                             Verify price change before updating
                                         </p>
                                     </div>
                                 </div>
                                 <button
                                     onClick={() => cancelOrderModification(pendingModification)}
-                                    className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer"
                                     title="Cancel"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -3799,16 +3799,16 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                             {/* Order Details Body */}
                             <div className="py-5 space-y-4">
                                 {/* Badge & Symbol */}
-                                <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-white/[0.03] border border-white/5">
+                                <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-gray-50 dark:bg-white/[0.03] border border-gray-200 dark:border-white/5">
                                     <div className="flex items-center gap-2">
-                                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${pendingModification.side === 'buy' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}`}>
+                                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${pendingModification.side === 'buy' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'}`}>
                                             {pendingModification.side}
                                         </span>
-                                        <span className="font-mono font-bold text-sm text-gray-200">
+                                        <span className="font-mono font-bold text-sm text-gray-800 dark:text-gray-200">
                                             {pendingModification.symbol}
                                         </span>
                                     </div>
-                                    <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                                    <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border border-cyan-500/20">
                                         {pendingModification.isSL ? `${pendingModification.modeName} SL` : 'LIMIT'}
                                     </span>
                                 </div>
@@ -3816,44 +3816,44 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                                 {/* Price Comparison Grid */}
                                 <div className="grid grid-cols-2 gap-3">
                                     {/* Original Price */}
-                                    <div className="p-3 rounded-xl bg-black/40 border border-white/5 flex flex-col justify-center">
-                                        <span className="text-[11px] text-gray-400 uppercase tracking-wider">Previous Price</span>
-                                        <span className="font-mono text-base font-bold text-gray-300 mt-0.5">
+                                    <div className="p-3 rounded-xl bg-gray-50 dark:bg-black/40 border border-gray-200 dark:border-white/5 flex flex-col justify-center">
+                                        <span className="text-[11px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">Previous Price</span>
+                                        <span className="font-mono text-base font-bold text-gray-800 dark:text-gray-300 mt-0.5">
                                             ${pendingModification.originalPrice < 1 ? pendingModification.originalPrice.toFixed(6) : pendingModification.originalPrice.toFixed(4)}
                                         </span>
                                     </div>
 
                                     {/* New Price */}
-                                    <div className={`p-3 rounded-xl bg-black/40 border flex flex-col justify-center ${pendingModification.isSL ? 'border-red-500/30 bg-red-950/10' : 'border-cyan-500/30 bg-cyan-950/10'}`}>
+                                    <div className={`p-3 rounded-xl border flex flex-col justify-center ${pendingModification.isSL ? 'border-red-500/30 bg-red-50/80 dark:bg-red-950/20' : 'border-cyan-500/30 bg-cyan-50/80 dark:bg-cyan-950/20'}`}>
                                         <div className="flex items-center justify-between">
-                                            <span className="text-[11px] text-gray-400 uppercase tracking-wider">New Target</span>
+                                            <span className="text-[11px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">New Target</span>
                                             {(() => {
                                                 const diff = pendingModification.newPrice - pendingModification.originalPrice;
                                                 const pct = (diff / pendingModification.originalPrice) * 100;
                                                 const isPositive = diff >= 0;
                                                 return (
-                                                    <span className={`text-[10px] font-mono font-semibold ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    <span className={`text-[10px] font-mono font-semibold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                                                         {isPositive ? '+' : ''}{pct.toFixed(2)}%
                                                     </span>
                                                 );
                                             })()}
                                         </div>
-                                        <span className={`font-mono text-base font-bold mt-0.5 ${pendingModification.isSL ? 'text-red-400' : 'text-cyan-400'}`}>
+                                        <span className={`font-mono text-base font-bold mt-0.5 ${pendingModification.isSL ? 'text-red-600 dark:text-red-400' : 'text-cyan-600 dark:text-cyan-400'}`}>
                                             ${pendingModification.newPrice < 1 ? pendingModification.newPrice.toFixed(6) : pendingModification.newPrice.toFixed(4)}
                                         </span>
                                     </div>
                                 </div>
 
                                 {/* Market Reference */}
-                                <div className="flex items-center justify-between text-xs px-3.5 py-2 rounded-xl bg-white/[0.02] border border-white/5 text-gray-400">
+                                <div className="flex items-center justify-between text-xs px-3.5 py-2 rounded-xl bg-gray-50 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 text-gray-500 dark:text-gray-400">
                                     <span>Live Market Price</span>
-                                    <span className="font-mono font-medium text-gray-200">
+                                    <span className="font-mono font-medium text-gray-800 dark:text-gray-200">
                                         ${pendingModification.livePrice < 1 ? pendingModification.livePrice.toFixed(6) : pendingModification.livePrice.toFixed(4)}
                                     </span>
                                 </div>
 
                                 {/* "Don't ask again" Checkbox */}
-                                <label className="flex items-center gap-2.5 text-xs text-gray-400 hover:text-gray-300 cursor-pointer select-none pt-1">
+                                <label className="flex items-center gap-2.5 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300 cursor-pointer select-none pt-1">
                                     <input
                                         type="checkbox"
                                         checked={dontAskDragConfirm}
@@ -3865,19 +3865,19 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                                                 localStorage.setItem('dontAskDragConfirm', String(val));
                                             } catch (e) {}
                                         }}
-                                        className="w-4 h-4 rounded bg-black/40 border border-white/20 text-cyan-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-500"
+                                        className="w-4 h-4 rounded bg-white dark:bg-black/40 border border-gray-300 dark:border-white/20 text-cyan-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-500"
                                     />
                                     <span>Don't ask confirmation for drag & drop again</span>
                                 </label>
                             </div>
 
                             {/* Modal Actions */}
-                            <div className="flex items-center gap-2 pt-3 border-t border-white/10">
+                            <div className="flex items-center gap-2 pt-3 border-t border-gray-200 dark:border-white/10">
                                 <button
                                     type="button"
                                     disabled={isModifyingOrder}
                                     onClick={() => cancelOrderModification(pendingModification)}
-                                    className="py-2.5 px-3 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-all disabled:opacity-50 cursor-pointer"
+                                    className="py-2.5 px-3 rounded-xl text-xs font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 border border-gray-300 dark:border-white/10 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-all disabled:opacity-50 cursor-pointer"
                                     title="Keep order unchanged"
                                 >
                                     Cancel
@@ -3905,7 +3905,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                                                 setIsModifyingOrder(false);
                                             }
                                         }}
-                                        className="py-2.5 px-3 rounded-xl text-xs font-semibold bg-rose-500/20 hover:bg-rose-500 border border-rose-500/40 text-rose-200 hover:text-white transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1"
+                                        className="py-2.5 px-3 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/20 dark:hover:bg-rose-500 border border-rose-200 dark:border-rose-500/40 text-rose-600 hover:text-rose-700 dark:text-rose-200 dark:hover:text-white transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1"
                                         title="Cancel this order completely from exchange"
                                     >
                                         <span>✕ Delete Order</span>
@@ -5188,8 +5188,8 @@ const OrderFlowHeatmap: React.FC = () => {
                     <button
                         onClick={() => setActiveTab(activeTab === 'bot_logs' ? 'heatmap' : 'bot_logs')}
                         className={`flex items-center space-x-2 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${activeTab === 'bot_logs'
-                            ? 'bg-purple-600/10 text-purple-400 border-purple-500/20 shadow-sm'
-                            : 'bg-gray-100 dark:bg-black/30 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-black/10'
+                            ? 'bg-purple-600/10 text-purple-600 dark:text-purple-400 border-purple-500/20 shadow-sm'
+                            : 'bg-gray-100 dark:bg-black/30 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-black/10'
                             }`}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-align-left"><line x1="21" y1="6" x2="3" y2="6" /><line x1="15" y1="12" x2="3" y2="12" /><line x1="17" y1="18" x2="3" y2="18" /></svg>
@@ -5473,25 +5473,6 @@ const OrderFlowHeatmap: React.FC = () => {
                     </div>
                 )}
 
-                {/* BOT LOGS MODAL */}
-                {activeTab === 'bot_logs' && (
-                    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                        <div className="relative w-[90%] md:w-[70%] lg:w-[60%] max-w-4xl max-h-[90vh] bg-white dark:bg-[#000000] rounded-xl shadow-2xl border border-gray-200 dark:border-white/10 overflow-hidden flex flex-col transform transition-all scale-100">
-                            <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-white/10 shrink-0">
-                                <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-primary to-purple-500">WallHunter Bot Terminal Logs</h2>
-                                <button
-                                    onClick={() => setActiveTab('heatmap')}
-                                    className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                </button>
-                            </div>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar relative">
-                                <BotLogsTab botId={selectedHudBotId} />
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
 
             {!hasFullscreenChart && floatingToolsNode}
@@ -5509,6 +5490,14 @@ const OrderFlowHeatmap: React.FC = () => {
                         >
                             <OrderBook bids={bids} asks={asks} maxTotal={maxTotal} volumeThreshold={volumeThreshold} />
                         </OrderBookFloatingModal>
+                    )}
+
+                    {activeTab === 'bot_logs' && (
+                        <BotLogsFloatingModal
+                            isOpen={activeTab === 'bot_logs'}
+                            onClose={() => setActiveTab('heatmap')}
+                            botId={selectedHudBotId}
+                        />
                     )}
 
                     {isWallHunterOpen && (

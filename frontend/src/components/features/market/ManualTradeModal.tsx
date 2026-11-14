@@ -55,6 +55,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   const { isThermalGuardActive, timings } = useDeviceProfile();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [activeTerminalTab, setActiveTerminalTab] = useState<'order' | 'brackets' | 'ai' | 'orders'>('order');
   const [submittingSide, setSubmittingSide] = useState<'Buy' | 'Sell' | null>(null);
   const [activeSymbol, setActiveSymbol] = useState<string>(symbol);
 
@@ -89,7 +90,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       } catch { }
     }
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
-    return { x: 20, y: Math.max(16, winH - 104 - 620) };
+    return { x: 20, y: Math.max(16, winH - 104 - 540) };
   });
 
   const hasUserDraggedHudRef = React.useRef<boolean>(
@@ -1135,7 +1136,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       if (!hasUserDraggedModalRef.current) {
         setModalPos(prev => ({
           x: targetLeft,
-          y: Math.max(16, winH - 104 - 620)
+          y: Math.max(16, winH - 104 - 540)
         }));
       }
       if (!hasUserDraggedHudRef.current) {
@@ -1160,8 +1161,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
     const modalEl = elOverride || modalContainerRef.current;
-    const modalW = modalEl?.offsetWidth || (isMin ? 395 : 320);
-    const modalH = modalEl?.offsetHeight || (isMin ? 180 : 620);
+    const modalW = modalEl?.offsetWidth || (isMin ? 395 : 430);
+    const modalH = modalEl?.offsetHeight || (isMin ? 180 : 540);
 
     const leftMargin = 6;
     const rightMargin = 6;
@@ -1277,8 +1278,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     const modalEl = modalContainerRef.current;
     const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
-    const modalW = modalEl?.offsetWidth || (isMinimized ? 395 : 320);
-    const modalH = modalEl?.offsetHeight || (isMinimized ? 180 : 620);
+    const modalW = modalEl?.offsetWidth || (isMinimized ? 395 : 430);
+    const modalH = modalEl?.offsetHeight || (isMinimized ? 180 : 540);
     const topMargin = isMinimized ? 4 : 12;
     const bottomMargin = isMinimized ? 8 : 16;
 
@@ -2951,6 +2952,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                 left: 0,
                 top: 0,
                 transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : (isMinimized ? hudPos.x : modalPos.x)}px, ${dragRef.current.isDragging ? dragRef.current.currentY : (isMinimized ? hudPos.y : modalPos.y)}px, 0)`,
+                maxHeight: isMinimized
+                  ? undefined
+                  : typeof window !== 'undefined'
+                    ? (() => {
+                        const vh = window.visualViewport?.height || window.innerHeight;
+                        const vw = window.visualViewport?.width || window.innerWidth;
+                        const isSmall = vh < 920 || vw < 1200;
+                        const cap = isSmall ? 500 : 540;
+                        const y = dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y;
+                        return `${Math.max(280, Math.min(cap, Math.round(vh - y - (isSmall ? 8 : 14))))}px`;
+                      })()
+                    : '540px',
                 willChange: 'transform'
               }}
               className={`cosmo-theme-modal fixed rounded-xl ${isMinimized
@@ -2958,8 +2971,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                   ? 'w-[395px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
                   : 'w-[395px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
                 : isThermalGuardActive
-                  ? 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#0B0E14]/95 border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.85)]'
-                  : 'w-80 max-w-[calc(100vw-12px)] rounded-2xl bg-[#000000]/80 border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl'
+                  ? 'w-[430px] max-w-[calc(100vw-12px)] flex flex-col bg-[#080c16] border-cyan-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
+                  : 'w-[430px] max-w-[calc(100vw-12px)] flex flex-col bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
                 } border z-[99999] overflow-hidden transition-colors duration-200 select-none`}
             >
               {isMinimized ? (
@@ -3046,6 +3059,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             title={`${openLimitOrders.length} open limit orders active. Click to view and cancel.`}
                             onClick={(e) => {
                               e.stopPropagation();
+                              setActiveTerminalTab('orders');
                               setIsMinimized(false);
                             }}
                           >
@@ -3777,28 +3791,89 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     </div>
                   </div>
                 </div>
-              ) : (
+              ) : (() => {
+                const activePeg = activeBrackets.find(b => b.status === 'pegging');
+                const activeChase = activeBrackets.find(b => b.status === 'chasing');
+                const activeSoftwareSls = activeBrackets.filter(b => b.status === 'monitoring' && (b.type === 'smart_chase' || b.type === 'trailing_chase' || b.type === 'trailing' || b.auto_breakeven_enabled));
+                const hasActiveFuturesPos = Boolean(isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none');
+                const ordersBadgeCount = openLimitOrders.length + activeSoftwareSls.length + (activePeg ? 1 : 0) + (activeChase ? 1 : 0) + (hasActiveFuturesPos ? 1 : 0);
+
+                return (
                 <>
-                  {/* Header (Drag area) */}
+                  {/* Top Neon Horizon Accent Line (matching Minimized Cyber-HUD) */}
+                  <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-cyan-400 to-emerald-400 opacity-85 shrink-0" />
+
+                  {/* Compact Cyber-HUD Header (Draggable Handle) */}
                   <div
                     onMouseDown={handleStartDrag}
                     onTouchStart={handleStartDrag}
                     style={{ touchAction: 'none' }}
-                    className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/5 cursor-grab active:cursor-grabbing select-none"
+                    className="flex items-center justify-between px-3 py-2 border-b border-cyan-500/20 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0 gap-2"
                     title="Drag to move"
                   >
-                    <div className="flex flex-col pointer-events-none text-left">
-                      <span className="font-bold text-white text-lg tracking-wide leading-tight">{activeSymbol}</span>
-                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand-primary">
-                        <span>Quick Trade • {isFutures ? 'Futures' : 'Spot'}</span>
-                        {effectiveCurrentPrice > 0 && (
-                          <span className="text-gray-400 font-mono normal-case">
-                            (${formatDisplayPrice(effectiveCurrentPrice)})
+                    <div className="flex items-center gap-1.5 pointer-events-none min-w-0 flex-1 overflow-hidden">
+                      <GripVertical className="w-3.5 h-3.5 text-cyan-400/80 shrink-0" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse shrink-0" />
+                      <div className="flex flex-col text-left min-w-0 flex-1 overflow-hidden">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                          <span className="font-black text-white text-xs sm:text-[13px] tracking-tight truncate max-w-[115px]">
+                            {activeSymbol}
                           </span>
-                        )}
+                          <span
+                            className={`text-[7.5px] uppercase px-1.5 py-0.2 rounded font-mono font-black border leading-tight shrink-0 ${isFutures
+                              ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
+                              : 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
+                              }`}
+                          >
+                            {isFutures ? `${leverage}x FUT` : 'SPOT'}
+                          </span>
+                          {effectiveCurrentPrice > 0 && (
+                            <span className="text-emerald-400 font-mono text-[10px] font-bold tracking-tight shrink-0">
+                              ${formatDisplayPrice(effectiveCurrentPrice)}
+                            </span>
+                          )}
+                          {tpConfig.enabled && (
+                            <span className="text-[7.5px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 font-mono font-bold leading-tight shrink-0">
+                              TP
+                            </span>
+                          )}
+                          {slConfig.enabled && (
+                            <span className="text-[7.5px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/35 text-rose-300 font-mono font-bold leading-tight shrink-0">
+                              SL
+                            </span>
+                          )}
+                          {!isFutures && orderType === 'Limit' && isIceberg && (
+                            <span className="text-[7.5px] px-1 py-0.2 rounded bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 font-mono font-bold leading-tight shrink-0">
+                              ICE
+                            </span>
+                          )}
+                          {mlFilterConfig.enabled && (
+                            <span className="text-[7.5px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight shrink-0">
+                              AI
+                            </span>
+                          )}
+                          {openLimitOrders.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveTerminalTab('orders');
+                              }}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              className="text-[7.5px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse shrink-0 pointer-events-auto"
+                              title="Jump to Open Orders"
+                            >
+                              {openLimitOrders.length} OPEN
+                            </button>
+                          )}
+                        </div>
+                        <span className="text-[8.5px] text-gray-400 font-mono tracking-wide truncate">
+                          QUANT TERMINAL • {isFutures ? `${marginMode.toUpperCase()} MARGIN` : 'SPOT EXECUTION'}
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
+
+                    <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -3806,10 +3881,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           fetchBalance(false);
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className={`p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-cyan-400 transition-colors cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''}`}
+                        className={`p-1 rounded-md bg-white/[0.04] hover:bg-white/10 border border-white/[0.08] text-gray-400 hover:text-cyan-300 transition-all cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''}`}
                         title="Refresh Balance & Position"
                       >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
                       </button>
                       <button
                         type="button"
@@ -3818,12 +3893,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           setIsMinimized(true);
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
-                        title="Minimize to Quick Buy/Sell"
+                        className="p-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-white transition-all cursor-pointer"
+                        title="Minimize to Quick Buy/Sell Cyber-HUD"
                       >
-                        <Minus className="w-4 h-4" />
+                        <Minus className="w-3 h-3" />
                       </button>
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setIsOpen(false);
@@ -3831,23 +3907,22 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           onClose?.();
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                        className="p-1 rounded-md bg-white/[0.04] hover:bg-rose-500/20 border border-white/[0.08] hover:border-rose-500/40 text-gray-400 hover:text-rose-300 transition-all cursor-pointer"
+                        title="Close"
                       >
-                        <X className="w-5 h-5" />
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
 
                   {/* Multi-Chart Pair Selector Dropdown */}
                   {availablePairs && availablePairs.length > 1 && (
-                    <div className="px-4 py-2.5 bg-black/60 border-b border-white/10 space-y-1">
-                      <div className="flex justify-between items-center">
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-pulse" />
-                          Select Chart Pair ({availablePairs.length} Open)
-                        </label>
-                      </div>
-                      <div className="relative">
+                    <div className="px-3 py-1.5 bg-[#04070e]/90 border-b border-cyan-500/15 flex items-center gap-2 shrink-0">
+                      <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1 shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                        PAIR ({availablePairs.length})
+                      </label>
+                      <div className="relative flex-1 min-w-0">
                         <select
                           value={activeSymbol}
                           onChange={(e) => {
@@ -3857,314 +3932,34 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               handleSelectPair(selected);
                             }
                           }}
-                          className="w-full bg-[#0a0d16] border border-brand-primary/40 hover:border-brand-primary rounded-xl py-2 pl-3 pr-8 text-white font-bold text-xs focus:outline-none focus:ring-1 focus:ring-brand-primary/50 transition-all appearance-none cursor-pointer shadow-[0_0_12px_rgba(59,130,246,0.15)]"
+                          className="w-full bg-[#0a101d] border border-cyan-500/30 hover:border-cyan-400/60 rounded-lg py-1 pl-2.5 pr-7 text-white font-mono font-bold text-[11px] focus:outline-none focus:border-cyan-400 transition-all appearance-none cursor-pointer"
                         >
                           {availablePairs.map((p) => {
                             const pPrice = formatDisplayPrice(p.price);
                             const label = `${p.symbol}${pPrice ? ` • $${pPrice}` : ''}${p.isMain ? ' (Main)' : ''}`;
                             return (
-                              <option key={p.id} value={p.symbol} className="bg-[#0b0e17] text-white py-1">
+                              <option key={p.id} value={p.symbol} className="bg-[#070b14] text-white py-1">
                                 {label}
                               </option>
                             );
                           })}
                         </select>
-                        <ChevronDown className="absolute right-3 top-[10px] w-4 h-4 text-brand-primary pointer-events-none" />
+                        <ChevronDown className="absolute right-2 top-[7px] w-3.5 h-3.5 text-cyan-400 pointer-events-none" />
                       </div>
                     </div>
                   )}
 
-                  {/* Body */}
-                  <div
-                    className="p-4 flex flex-col cursor-default"
-                  >
-                    {/* Scrollable Content */}
-                    <div
-                      style={{ touchAction: 'pan-y' }}
-                      className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 pb-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/20"
-                    >
-
-                      {/* ACTIVE SMART CHASE / SOFTWARE SL / SMART PEG LIVE STATUS & CANCEL BUTTON */}
-                      {(() => {
-                        const activePeg = activeBrackets.find(b => b.status === 'pegging');
-                        const activeChase = activeBrackets.find(b => b.status === 'chasing');
-                        const activeSoftwareSls = activeBrackets.filter(b => b.status === 'monitoring' && (b.type === 'smart_chase' || b.type === 'trailing_chase' || b.type === 'trailing' || b.auto_breakeven_enabled));
-
-                        if (activePeg) {
-                          return (
-                            <div className="p-3 rounded-xl bg-gradient-to-br from-amber-950/90 via-black to-amber-950/40 border border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.25)] flex flex-col gap-2.5 animate-fadeIn">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <span className="relative flex h-2.5 w-2.5">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
-                                  </span>
-                                  <span className="text-xs font-black tracking-wide text-amber-200 uppercase flex items-center gap-1">
-                                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                                    Smart Peg Entry Active
-                                  </span>
-                                </div>
-                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
-                                  Attempt {activePeg.current_attempt || 1}/{activePeg.max_attempts ? activePeg.max_attempts : '∞'}
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
-                                <div className="text-left">
-                                  <span className="text-gray-400 block text-[9px] uppercase">Side</span>
-                                  <span className={`font-bold ${activePeg.side?.toLowerCase() === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
-                                    {activePeg.side?.toUpperCase()} (Maker)
-                                  </span>
-                                </div>
-                                <div className="text-right">
-                                  <span className="text-gray-400 block text-[9px] uppercase">Best Maker Price</span>
-                                  <span className="text-amber-300 font-bold">{activePeg.current_maker_price || 'Active'}</span>
-                                </div>
-                                <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
-                                  <span className="text-gray-400">Target Size / Filled:</span>
-                                  <span className="text-gray-200 font-semibold">{activePeg.filled_amount || 0} / {activePeg.amount}</span>
-                                </div>
-                              </div>
-
-                              <button
-                                type="button"
-                                disabled={isStoppingPeg}
-                                onClick={() => handleStopSmartPeg(activePeg)}
-                                className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                              >
-                                <Square className="w-3.5 h-3.5 fill-white" />
-                                {isStoppingPeg ? 'Stopping Peg...' : 'Stop Smart Peg Entry'}
-                              </button>
-                            </div>
-                          );
-                        }
-
-                        if (activeChase) {
-                          return (
-                            <div className="p-3 rounded-xl bg-gradient-to-br from-red-950/90 via-amber-950/70 to-black border border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.25)] flex flex-col gap-2.5">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <span className="relative flex h-2.5 w-2.5">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                                  </span>
-                                  <span className="text-xs font-black tracking-wide text-red-200 uppercase flex items-center gap-1">
-                                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                                    {activeChase.chase_mode === 'dynamic_bbo' ? 'Dynamic BBO Peg Chasing' : 'Smart Chase SL Chasing'}
-                                  </span>
-                                </div>
-                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
-                                  Attempt {activeChase.current_attempt || 1}/{activeChase.max_attempts ? activeChase.max_attempts : '∞'}
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
-                                <div className="text-left">
-                                  <span className="text-gray-400 block text-[9px] uppercase">SL Trigger</span>
-                                  <span className="text-white font-bold">
-                                    {activeChase.trigger_price || '—'}
-                                    {activeChase.trigger_source && (
-                                      <span className="text-[8.5px] text-cyan-300 font-normal ml-1">
-                                        ({activeChase.trigger_source === 'bid_ask' ? '⚡ Bid/Ask' : '📊 Last'})
-                                      </span>
-                                    )}
-                                  </span>
-                                </div>
-                                <div className="text-right">
-                                  <span className="text-gray-400 block text-[9px] uppercase">Maker Price</span>
-                                  <span className="text-amber-300 font-bold">{activeChase.current_maker_price || 'Active'}</span>
-                                </div>
-                                <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
-                                  <span className="text-gray-400">Position Remaining:</span>
-                                  <span className="text-gray-200 font-semibold">{activeChase.amount} ({activeChase.side?.toUpperCase()})</span>
-                                </div>
-                              </div>
-
-                              <button
-                                type="button"
-                                disabled={isStoppingChase}
-                                onClick={() => handleStopSmartChase(activeChase)}
-                                className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                              >
-                                <Square className="w-3.5 h-3.5 fill-white" />
-                                {isStoppingChase ? 'Stopping Chase...' : 'Stop Smart Chase SL'}
-                              </button>
-                            </div>
-                          );
-                        }
-
-                        if (activeSoftwareSls.length > 0) {
-                          return (
-                            <div className="flex flex-col gap-1.5 animate-fadeIn">
-                              {activeSoftwareSls.map((activeSoftwareSl, idx) => {
-                                const isChase = activeSoftwareSl.type === 'smart_chase';
-                                const isTrailChase = activeSoftwareSl.type === 'trailing_chase';
-                                const baseLabel = isTrailChase
-                                  ? '⚡ Trailing Chase Armed'
-                                  : (isChase ? '⚡ Smart Chase Armed' : (activeSoftwareSl.type === 'trailing' ? '⚡ Trailing SL Armed' : '🛡️ Stop-Loss Armed'));
-                                const titleLabel = activeSoftwareSls.length > 1 ? `${baseLabel} #${idx + 1}` : baseLabel;
-
-                                return (
-                                  <div key={activeSoftwareSl.id || idx} className="p-2.5 rounded-xl bg-blue-950/60 border border-blue-500/40 shadow-sm flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2">
-                                      <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0" />
-                                      <div className="flex flex-col text-left">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="text-[11px] font-bold text-cyan-300 uppercase leading-tight">{titleLabel}</span>
-                                          {activeSoftwareSl.peg_strategy === 'wall_aware' && (
-                                            <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
-                                              🧱 Wall-Aware
-                                            </span>
-                                          )}
-                                          {activeSoftwareSl.peg_strategy === 'inside_spread' && (
-                                            <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
-                                              🎯 Inside-Spread
-                                            </span>
-                                          )}
-                                          {activeSoftwareSl.auto_breakeven_enabled && (
-                                            <span className={`text-[8px] font-mono px-1 py-0.2 rounded font-bold border ${activeSoftwareSl.breakeven_activated ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'}`}>
-                                              {activeSoftwareSl.breakeven_activated ? '🛡️ BE Active' : '🛡️ Auto-BE'}
-                                            </span>
-                                          )}
-                                        </div>
-                                        <span className="text-[10px] text-gray-300 font-mono">
-                                          SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
-                                          {activeSoftwareSl.trigger_source === 'bid_ask' ? ' • ⚡ Bid/Ask' : ' • 📊 Last'}
-                                        </span>
-                                      </div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      disabled={isStoppingChase}
-                                      onClick={() => handleStopSmartChase(activeSoftwareSl)}
-                                      className="py-1 px-2.5 rounded-md bg-white/5 hover:bg-red-950/80 hover:text-red-300 hover:border-red-500/50 border border-white/10 text-gray-300 text-[10px] font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50"
-                                    >
-                                      {isStoppingChase ? 'Cancelling...' : 'Cancel SL'}
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        }
-
-                        return null;
-                      })()}
-
-                      {/* ACTIVE POSITION LIVE STATUS & QUICK MARKET CLOSE */}
-                      {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
-                        <div className="p-2.5 rounded-xl bg-gradient-to-r from-[#170a14] via-[#0e101d] to-[#0a1518] border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)] flex items-center justify-between gap-2 animate-fadeIn mb-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]'} animate-pulse`} />
-                            <div className="flex flex-col text-left min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[10px] font-extrabold text-white uppercase tracking-tight">Active Position:</span>
-                                <span className={`text-[9px] font-mono font-black px-1.5 py-0.2 rounded border ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'}`}>
-                                  {positionData.side.toUpperCase()}
-                                </span>
-                                <span className="text-[10px] font-mono font-bold text-gray-200">
-                                  {isInverseFutures && positionData.contracts ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(2)} ${baseCurrency})` : `${positionData.amount} ${baseCurrency}`}
-                                </span>
-                              </div>
-                              <span className="text-[8.5px] text-gray-400 font-mono">
-                                Instant Market Exit / Flatten
-                              </span>
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            disabled={isClosingPosition}
-                            onClick={handleClosePosition}
-                            className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-mono text-[10px] font-black uppercase tracking-wider shadow-[0_0_12px_rgba(244,63,94,0.35)] transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
-                            title="Close active position immediately at Market price"
-                          >
-                            {isClosingPosition ? (
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Zap className="w-3 h-3 fill-current" />
-                            )}
-                            <span>{isClosingPosition ? 'Closing...' : 'Close Pos'}</span>
-                          </button>
-                        </div>
-                      )}
-
-                      {/* OPEN LIMIT ORDERS LIST & CANCEL ACTIONS */}
-                      {openLimitOrders && openLimitOrders.length > 0 && (
-                        <div className="p-2.5 rounded-xl bg-[#070b14]/90 border border-white/10 shadow-sm flex flex-col gap-2 animate-fadeIn mb-2">
-                          <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                            <div className="flex items-center gap-1.5">
-                              <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                              <span className="text-[11px] font-bold text-gray-200 uppercase tracking-wide">
-                                Open Orders ({openLimitOrders.length})
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              disabled={isCancellingAll}
-                              onClick={handleCancelAllOrders}
-                              className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[9.5px] font-mono font-bold tracking-wider transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                              title="Cancel all open orders on this symbol"
-                            >
-                              {isCancellingAll ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Trash2 className="w-2.5 h-2.5" />}
-                              <span>{isCancellingAll ? 'Cancelling...' : 'Cancel All'}</span>
-                            </button>
-                          </div>
-
-                          <div className="max-h-36 overflow-y-auto space-y-1.5 pr-0.5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
-                            {openLimitOrders.map((ord: any) => {
-                              const isBuy = String(ord.side).toLowerCase() === 'buy';
-                              const mode = ord.mode || 'LIMIT';
-                              const isCancelling = cancellingOrderId === String(ord.id);
-                              return (
-                                <div
-                                  key={ord.id}
-                                  className="p-1.5 rounded-lg bg-black/40 border border-white/5 flex items-center justify-between text-[10px] font-mono"
-                                >
-                                  <div className="flex items-center gap-1.5 min-w-0">
-                                    <span
-                                      className={`px-1 py-0.2 rounded text-[8px] font-bold uppercase ${isBuy
-                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                        }`}
-                                    >
-                                      {isBuy ? 'BUY' : 'SELL'}
-                                    </span>
-                                    <span className="text-[8px] text-gray-400 uppercase font-bold">[{mode}]</span>
-                                    <span className="text-gray-200 truncate">
-                                      {Number(ord.amount || ord.remaining || 0).toFixed(2)} @{' '}
-                                      <strong className="text-white">${formatDisplayPrice(ord.price)}</strong>
-                                    </span>
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    disabled={isCancelling}
-                                    onClick={() => handleCancelOrder(String(ord.id))}
-                                    className="p-1 rounded hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-transparent hover:border-rose-500/30 transition-all cursor-pointer disabled:opacity-50 shrink-0 ml-1"
-                                    title={`Cancel Order #${ord.id}`}
-                                  >
-                                    {isCancelling ? (
-                                      <RefreshCw className="w-3 h-3 animate-spin text-rose-400" />
-                                    ) : (
-                                      <X className="w-3 h-3" />
-                                    )}
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Buy / Sell Tabs */}
-                      <div className="flex p-1 rounded-lg bg-black/40 border border-white/5 mb-2">
+                  {/* Top Tactical Control Strip: Side + Order Mode (Always Accessible) */}
+                  <div className="px-3 py-1.5 bg-[#04070e]/75 border-b border-white/10 shrink-0 space-y-1.5">
+                    <div className="grid grid-cols-12 gap-1.5 items-center">
+                      {/* Buy / Sell Segmented Switch (5 cols) */}
+                      <div className="col-span-5 flex p-0.5 rounded-lg bg-[#0a101d] border border-white/10">
                         <button
                           type="button"
                           onClick={() => handleSideChange('Buy')}
-                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Buy'
-                            ? 'bg-green-500/20 text-green-400 border border-green-500/50 shadow-[0_0_10px_rgba(34,197,94,0.15)]'
-                            : 'text-gray-500 hover:text-white hover:bg-white/5 border border-transparent'
+                          className={`flex-1 py-1 text-[10px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Buy'
+                            ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/60 shadow-[0_0_10px_rgba(16,185,129,0.25)]'
+                            : 'text-gray-500 hover:text-white border border-transparent'
                             }`}
                         >
                           {isFutures ? 'Long' : 'Buy'}
@@ -4172,61 +3967,479 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleSideChange('Sell')}
-                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Sell'
-                            ? 'bg-red-500/20 text-red-400 border border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.15)]'
-                            : 'text-gray-500 hover:text-white hover:bg-white/5 border border-transparent'
+                          className={`flex-1 py-1 text-[10px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Sell'
+                            ? 'bg-rose-500/25 text-rose-300 border border-rose-400/60 shadow-[0_0_10px_rgba(244,63,94,0.25)]'
+                            : 'text-gray-500 hover:text-white border border-transparent'
                             }`}
                         >
                           {isFutures ? 'Short' : 'Sell'}
                         </button>
                       </div>
 
-                      {/* API Account Selector */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between items-end">
-                          <label className="text-xs text-gray-400 font-medium">Execute With</label>
-                        </div>
-                        <div className="relative">
-                          <select
-                            value={selectedApi}
-                            onChange={(e) => { setSelectedApi(e.target.value); onApiKeyChange?.(e.target.value); }}
-                            className="w-full bg-black/40 border border-white/10 rounded-lg py-2 pl-3 pr-8 text-white text-sm focus:outline-none focus:border-brand-primary/50 transition-colors appearance-none cursor-pointer hover:bg-black/60"
-                          >
-                            {apiKeys.map(k => (
-                              <option key={k.id} value={k.id} className="bg-[#000000]">
-                                {/* BUG-08 fix: Robust label fallback with exchange uppercase */}
-                                {k.name || k.label || k.key_name || `${k.exchange?.toUpperCase()} — Key #${k.id}`}
-                              </option>
-                            ))}
-                            {apiKeys.length === 0 && <option value="" disabled>No API Keys found</option>}
-                          </select>
-                          <ChevronDown className="absolute right-3 top-[10px] w-4 h-4 text-gray-500 pointer-events-none" />
-                        </div>
-                      </div>
-
-                      {/* Order Type Toggle: Market | Limit | ⚡ Smart Peg */}
-                      <div className="flex p-1 rounded-lg bg-black/40 border border-white/5 gap-1">
+                      {/* Order Type Toggle: Market | Limit | Smart Peg (7 cols) */}
+                      <div className="col-span-7 flex p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-0.5">
                         {(['Market', 'Limit', 'SmartPeg'] as const).map((type) => (
                           <button
                             key={type}
+                            type="button"
                             onClick={() => setOrderType(type)}
-                            className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1 ${orderType === type
+                            className={`flex-1 py-1 text-[9.5px] font-black rounded-md transition-all flex items-center justify-center gap-0.5 cursor-pointer ${orderType === type
                               ? type === 'SmartPeg'
-                                ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white shadow-md'
-                                : 'bg-brand-primary text-white shadow-sm'
-                              : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.35)]'
+                                : 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                              : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                               }`}
                           >
                             {type === 'SmartPeg' ? (
                               <>
-                                <Zap className="w-3 h-3 text-amber-300 fill-amber-300" />
-                                <span>Smart Peg</span>
+                                <Zap className="w-2.5 h-2.5 fill-current" />
+                                <span>PEG</span>
                               </>
                             ) : (
                               <span className="uppercase tracking-wider">{type}</span>
                             )}
                           </button>
                         ))}
+                      </div>
+                    </div>
+
+                    {/* Ultra-Compact Live Telemetry Quick Strip when Peg/Chase/Position active */}
+                    {(activePeg || activeChase || hasActiveFuturesPos) && (
+                      <div className="flex items-center justify-between gap-2 px-2 py-1 rounded-md bg-cyan-950/30 border border-cyan-500/25 text-[9px] font-mono">
+                        {activePeg ? (
+                          <>
+                            <span className="text-amber-300 font-bold flex items-center gap-1 truncate">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                              ⚡ Peg #{activePeg.current_attempt || 1} @ {activePeg.current_maker_price || 'Book'}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={isStoppingPeg}
+                              onClick={() => handleStopSmartPeg(activePeg)}
+                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[8px] cursor-pointer shrink-0 disabled:opacity-50"
+                            >
+                              {isStoppingPeg ? 'Stopping...' : 'Stop Peg'}
+                            </button>
+                          </>
+                        ) : activeChase ? (
+                          <>
+                            <span className="text-rose-300 font-bold flex items-center gap-1 truncate">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+                              ⚡ Chase SL #{activeChase.current_attempt || 1} ({activeChase.amount})
+                            </span>
+                            <button
+                              type="button"
+                              disabled={isStoppingChase}
+                              onClick={() => handleStopSmartChase(activeChase)}
+                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[8px] cursor-pointer shrink-0 disabled:opacity-50"
+                            >
+                              {isStoppingChase ? 'Stopping...' : 'Stop Chase'}
+                            </button>
+                          </>
+                        ) : hasActiveFuturesPos && positionData ? (
+                          <>
+                            <span className="text-cyan-200 font-bold flex items-center gap-1 truncate">
+                              <span className={`w-1.5 h-1.5 rounded-full ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-400' : 'bg-rose-400'} animate-pulse`} />
+                              POS {positionData.side.toUpperCase()}: {positionData.amount} {baseCurrency}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={isClosingPosition}
+                              onClick={handleClosePosition}
+                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[8px] cursor-pointer shrink-0 disabled:opacity-50"
+                            >
+                              {isClosingPosition ? 'Closing...' : 'Close Pos'}
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Sci-Fi Tabs Navigation (Matching WallHunterModal Architecture) */}
+                  <div className="flex gap-1 px-3 py-1.5 border-b border-white/10 bg-[#050811]/80 shrink-0 overflow-x-auto hide-scrollbar">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTerminalTab('order')}
+                      className={`flex-1 px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'order'
+                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                        }`}
+                    >
+                      <span>⚡ Order & Size</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTerminalTab('brackets')}
+                      className={`flex-1 px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'brackets'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                        }`}
+                    >
+                      <span>🎯 TP / SL</span>
+                      {(tpConfig.enabled || slConfig.enabled) && (
+                        <span className="flex items-center gap-0.5">
+                          {tpConfig.enabled && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+                          {slConfig.enabled && <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTerminalTab('ai')}
+                      className={`flex-1 px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'ai'
+                        ? 'bg-blue-500/20 text-blue-300 border border-blue-400/50 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                        }`}
+                    >
+                      <span>🤖 AI Filter</span>
+                      {mlFilterConfig.enabled && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTerminalTab('orders')}
+                      className={`flex-1 px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'orders'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-400/50 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                        }`}
+                    >
+                      <span>📋 Orders</span>
+                      {ordersBadgeCount > 0 && (
+                        <span className="px-1 py-0.2 rounded bg-amber-500/30 text-amber-200 font-mono text-[8px] leading-none">
+                          {ordersBadgeCount}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Scrollable Tab Workspace */}
+                  <div
+                    style={{ touchAction: 'pan-y' }}
+                    className="flex-1 min-h-0 overflow-y-auto px-3 py-2.5 space-y-2.5 cursor-default [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-cyan-500/20 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-cyan-400/40"
+                  >
+                    {/* TAB 4: ORDERS, ACTIVE BRACKETS & POSITION */}
+                    {activeTerminalTab === 'orders' && (
+                      <div className="space-y-2.5 animate-fadeIn">
+                        {activePeg && (
+                          <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-950/90 via-black to-amber-950/40 border border-amber-500/50 shadow-[0_0_16px_rgba(245,158,11,0.2)] flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="relative flex h-2 w-2">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                </span>
+                                <span className="text-[11px] font-black tracking-wide text-amber-200 uppercase flex items-center gap-1">
+                                  <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                                  Smart Peg Entry Active
+                                </span>
+                              </div>
+                              <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                                Attempt {activePeg.current_attempt || 1}/{activePeg.max_attempts ? activePeg.max_attempts : '∞'}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
+                              <div className="text-left">
+                                <span className="text-gray-400 block text-[8.5px] uppercase">Side</span>
+                                <span className={`font-bold ${activePeg.side?.toLowerCase() === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
+                                  {activePeg.side?.toUpperCase()} (Maker)
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-gray-400 block text-[8.5px] uppercase">Best Maker Price</span>
+                                <span className="text-amber-300 font-bold">{activePeg.current_maker_price || 'Active'}</span>
+                              </div>
+                              <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
+                                <span className="text-gray-400">Target Size / Filled:</span>
+                                <span className="text-gray-200 font-semibold">{activePeg.filled_amount || 0} / {activePeg.amount}</span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={isStoppingPeg}
+                              onClick={() => handleStopSmartPeg(activePeg)}
+                              className="w-full py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-[11px] uppercase tracking-wider shadow-[0_0_12px_rgba(239,68,68,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                            >
+                              <Square className="w-3 h-3 fill-white" />
+                              {isStoppingPeg ? 'Stopping Peg...' : 'Stop Smart Peg Entry'}
+                            </button>
+                          </div>
+                        )}
+
+                        {activeChase && (
+                          <div className="p-2.5 rounded-xl bg-gradient-to-br from-red-950/90 via-amber-950/70 to-black border border-red-500/50 shadow-[0_0_16px_rgba(239,68,68,0.2)] flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="relative flex h-2 w-2">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                                </span>
+                                <span className="text-[11px] font-black tracking-wide text-red-200 uppercase flex items-center gap-1">
+                                  <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                                  {activeChase.chase_mode === 'dynamic_bbo' ? 'Dynamic BBO Peg Chasing' : 'Smart Chase SL Chasing'}
+                                </span>
+                              </div>
+                              <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                                Attempt {activeChase.current_attempt || 1}/{activeChase.max_attempts ? activeChase.max_attempts : '∞'}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
+                              <div className="text-left">
+                                <span className="text-gray-400 block text-[8.5px] uppercase">SL Trigger</span>
+                                <span className="text-white font-bold">
+                                  {activeChase.trigger_price || '—'}
+                                  {activeChase.trigger_source && (
+                                    <span className="text-[8.5px] text-cyan-300 font-normal ml-1">
+                                      ({activeChase.trigger_source === 'bid_ask' ? '⚡ Bid/Ask' : '📊 Last'})
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-gray-400 block text-[8.5px] uppercase">Maker Price</span>
+                                <span className="text-amber-300 font-bold">{activeChase.current_maker_price || 'Active'}</span>
+                              </div>
+                              <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
+                                <span className="text-gray-400">Position Remaining:</span>
+                                <span className="text-gray-200 font-semibold">{activeChase.amount} ({activeChase.side?.toUpperCase()})</span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={isStoppingChase}
+                              onClick={() => handleStopSmartChase(activeChase)}
+                              className="w-full py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-[11px] uppercase tracking-wider shadow-[0_0_12px_rgba(239,68,68,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                            >
+                              <Square className="w-3 h-3 fill-white" />
+                              {isStoppingChase ? 'Stopping Chase...' : 'Stop Smart Chase SL'}
+                            </button>
+                          </div>
+                        )}
+
+                        {activeSoftwareSls.length > 0 && (
+                          <div className="flex flex-col gap-1.5">
+                            {activeSoftwareSls.map((activeSoftwareSl, idx) => {
+                              const isChase = activeSoftwareSl.type === 'smart_chase';
+                              const isTrailChase = activeSoftwareSl.type === 'trailing_chase';
+                              const baseLabel = isTrailChase
+                                ? '⚡ Trailing Chase Armed'
+                                : (isChase ? '⚡ Smart Chase Armed' : (activeSoftwareSl.type === 'trailing' ? '⚡ Trailing SL Armed' : '🛡️ Stop-Loss Armed'));
+                              const titleLabel = activeSoftwareSls.length > 1 ? `${baseLabel} #${idx + 1}` : baseLabel;
+
+                              return (
+                                <div key={activeSoftwareSl.id || idx} className="p-2.5 rounded-xl bg-blue-950/60 border border-cyan-500/40 shadow-sm flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0" />
+                                    <div className="flex flex-col text-left">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-[10.5px] font-bold text-cyan-300 uppercase leading-tight">{titleLabel}</span>
+                                        {activeSoftwareSl.peg_strategy === 'wall_aware' && (
+                                          <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                                            🧱 Wall-Aware
+                                          </span>
+                                        )}
+                                        {activeSoftwareSl.peg_strategy === 'inside_spread' && (
+                                          <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
+                                            🎯 Inside-Spread
+                                          </span>
+                                        )}
+                                        {activeSoftwareSl.auto_breakeven_enabled && (
+                                          <span className={`text-[8px] font-mono px-1 py-0.2 rounded font-bold border ${activeSoftwareSl.breakeven_activated ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'}`}>
+                                            {activeSoftwareSl.breakeven_activated ? '🛡️ BE Active' : '🛡️ Auto-BE'}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="text-[10px] text-gray-300 font-mono">
+                                        SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
+                                        {activeSoftwareSl.trigger_source === 'bid_ask' ? ' • ⚡ Bid/Ask' : ' • 📊 Last'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    disabled={isStoppingChase}
+                                    onClick={() => handleStopSmartChase(activeSoftwareSl)}
+                                    className="py-1 px-2 rounded-md bg-white/5 hover:bg-red-950/80 hover:text-red-300 hover:border-red-500/50 border border-white/10 text-gray-300 text-[9.5px] font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                                  >
+                                    {isStoppingChase ? 'Cancelling...' : 'Cancel SL'}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {hasActiveFuturesPos && positionData && (
+                          <div className="p-2.5 rounded-xl bg-gradient-to-r from-[#170a14] via-[#0e101d] to-[#0a1518] border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)] flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]'} animate-pulse`} />
+                              <div className="flex flex-col text-left min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] font-extrabold text-white uppercase tracking-tight">Active Position:</span>
+                                  <span className={`text-[9px] font-mono font-black px-1.5 py-0.2 rounded border ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'}`}>
+                                    {positionData.side.toUpperCase()}
+                                  </span>
+                                  <span className="text-[10px] font-mono font-bold text-gray-200">
+                                    {isInverseFutures && positionData.contracts ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(2)} ${baseCurrency})` : `${positionData.amount} ${baseCurrency}`}
+                                  </span>
+                                </div>
+                                <span className="text-[8.5px] text-gray-400 font-mono">
+                                  Instant Market Exit / Flatten
+                                </span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={isClosingPosition}
+                              onClick={handleClosePosition}
+                              className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-mono text-[10px] font-black uppercase tracking-wider shadow-[0_0_12px_rgba(244,63,94,0.35)] transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
+                              title="Close active position immediately at Market price"
+                            >
+                              {isClosingPosition ? (
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Zap className="w-3 h-3 fill-current" />
+                              )}
+                              <span>{isClosingPosition ? 'Closing...' : 'Close Pos'}</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {openLimitOrders && openLimitOrders.length > 0 && (
+                          <div className="p-2.5 rounded-xl bg-[#04070e]/90 border border-cyan-500/25 shadow-sm flex flex-col gap-2">
+                            <div className="flex items-center justify-between pb-1 border-b border-white/10">
+                              <div className="flex items-center gap-1.5">
+                                <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                                <span className="text-[10.5px] font-bold text-cyan-200 uppercase tracking-wide font-mono">
+                                  Open Orders ({openLimitOrders.length})
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={isCancellingAll}
+                                onClick={handleCancelAllOrders}
+                                className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[9.5px] font-mono font-bold tracking-wider transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                title="Cancel all open orders on this symbol"
+                              >
+                                {isCancellingAll ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Trash2 className="w-2.5 h-2.5" />}
+                                <span>{isCancellingAll ? 'Cancelling...' : 'Cancel All'}</span>
+                              </button>
+                            </div>
+
+                            <div className="max-h-52 overflow-y-auto space-y-1.5 pr-0.5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
+                              {openLimitOrders.map((ord: any) => {
+                                const isBuy = String(ord.side).toLowerCase() === 'buy';
+                                const mode = ord.mode || 'LIMIT';
+                                const isCancelling = cancellingOrderId === String(ord.id);
+                                return (
+                                  <div
+                                    key={ord.id}
+                                    className="p-1.5 rounded-lg bg-black/50 border border-white/10 flex items-center justify-between text-[10px] font-mono"
+                                  >
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <span
+                                        className={`px-1 py-0.2 rounded text-[8px] font-bold uppercase ${isBuy
+                                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                          }`}
+                                      >
+                                        {isBuy ? 'BUY' : 'SELL'}
+                                      </span>
+                                      <span className="text-[8px] text-cyan-300/80 uppercase font-bold">[{mode}]</span>
+                                      {ord.isIceberg && ord.icebergQty && (
+                                        <span className="text-[7.5px] px-1 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                                          🧊{ord.icebergQty}
+                                        </span>
+                                      )}
+                                      <span className="text-gray-200 truncate">
+                                        {Number(ord.amount || ord.remaining || 0).toFixed(2)} @{' '}
+                                        <strong className="text-white">${formatDisplayPrice(ord.price)}</strong>
+                                      </span>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      disabled={isCancelling}
+                                      onClick={() => handleCancelOrder(String(ord.id))}
+                                      className="p-1 rounded hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-transparent hover:border-rose-500/30 transition-all cursor-pointer disabled:opacity-50 shrink-0 ml-1"
+                                      title={`Cancel Order #${ord.id}`}
+                                    >
+                                      {isCancelling ? (
+                                        <RefreshCw className="w-3 h-3 animate-spin text-rose-400" />
+                                      ) : (
+                                        <X className="w-3 h-3" />
+                                      )}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {ordersBadgeCount === 0 && (
+                          <div className="p-6 rounded-xl bg-[#04070e]/75 border border-cyan-500/15 text-center space-y-2">
+                            <Layers className="w-6 h-6 text-cyan-400/50 mx-auto" />
+                            <p className="text-xs font-mono font-bold text-gray-300">No Active Orders or Brackets</p>
+                            <p className="text-[10px] text-gray-500">Open Limit orders, Smart Peg monitors, Smart Chase SL, and active Futures positions for {activeSymbol} will appear here.</p>
+                            <button
+                              type="button"
+                              onClick={() => fetchBalance(false)}
+                              className="px-3 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-cyan-300 text-[10px] font-mono font-bold uppercase cursor-pointer"
+                            >
+                              Sync Exchange State
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* TAB 1: ORDER & SIZE */}
+                    {activeTerminalTab === 'order' && (
+                      <div className="space-y-2.5 animate-fadeIn">
+
+                      {/* API Account & Limit Price (2-Column Sci-Fi Row when Standard Limit active) */}
+                      <div className={`grid gap-2 ${orderType === 'Limit' && !isAutoLimit ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">Execute With</label>
+                          <div className="relative">
+                            <select
+                              value={selectedApi}
+                              onChange={(e) => { setSelectedApi(e.target.value); onApiKeyChange?.(e.target.value); }}
+                              className="w-full bg-[#04070e]/90 border border-white/10 hover:border-cyan-500/40 rounded-lg py-1.5 pl-2.5 pr-7 text-white text-xs font-semibold focus:outline-none focus:border-cyan-400/60 transition-colors appearance-none cursor-pointer"
+                            >
+                              {apiKeys.map(k => (
+                                <option key={k.id} value={k.id} className="bg-[#070b14]">
+                                  {k.name || k.label || k.key_name || `${k.exchange?.toUpperCase()} — Key #${k.id}`}
+                                </option>
+                              ))}
+                              {apiKeys.length === 0 && <option value="" disabled>No API Keys found</option>}
+                            </select>
+                            <ChevronDown className="absolute right-2 top-[8px] w-3.5 h-3.5 text-cyan-400/70 pointer-events-none" />
+                          </div>
+                        </div>
+
+                        {orderType === 'Limit' && !isAutoLimit && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">Limit Price</label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                value={limitPrice}
+                                disabled={isAutoLimit}
+                                onChange={(e) => setLimitPrice(e.target.value)}
+                                className="w-full bg-[#04070e]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-2.5 pl-6 text-white font-mono font-bold text-xs focus:outline-none transition-colors disabled:opacity-50"
+                              />
+                              <span className="absolute left-2.5 top-1.5 text-cyan-400/80 font-mono text-xs">$</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Smart Peg Entry Explanatory & Settings Panel */}
@@ -4236,7 +4449,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
-                            className="p-2.5 rounded-xl bg-gradient-to-r from-amber-950/40 via-red-950/20 to-black border border-amber-500/30 text-[10px] space-y-2 overflow-hidden shadow-[0_0_15px_rgba(245,158,11,0.15)]"
+                            className="p-2.5 rounded-xl bg-gradient-to-r from-amber-950/40 via-red-950/20 to-[#04070e] border border-amber-500/35 text-[10px] space-y-2 overflow-hidden shadow-[0_0_15px_rgba(245,158,11,0.15)]"
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5 font-bold text-amber-300">
@@ -4274,18 +4487,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         )}
                       </AnimatePresence>
 
-                      {/* Price (if limit) */}
+                      {/* Auto Best Limit (if Limit mode) */}
                       <AnimatePresence>
                         {orderType === 'Limit' && (
                           <MotionDiv
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
-                            className="space-y-3 overflow-hidden"
+                            className="overflow-hidden"
                           >
                             {/* Switch: Auto Best Limit */}
                             <div
-                              className="flex items-center justify-between bg-black/20 p-2 rounded-lg border border-brand-primary/20 cursor-pointer"
+                              className="flex items-center justify-between bg-[#04070e]/85 p-2 rounded-lg border border-cyan-500/20 hover:border-cyan-400/40 cursor-pointer transition-colors"
                               onClick={() => {
                                 const nextAuto = !isAutoLimit;
                                 setIsAutoLimit(nextAuto);
@@ -4297,15 +4510,15 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 }
                               }}
                             >
-                              <div className="flex flex-col">
-                                <span className="text-xs font-bold text-brand-primary">Auto Best Limit (Post-Only)</span>
-                                <span className="text-[10px] text-gray-500">
+                              <div className="flex flex-col pr-2">
+                                <span className="text-[11px] font-bold text-cyan-300">Auto Best Limit (Post-Only)</span>
+                                <span className="text-[9.5px] text-gray-400">
                                   {isAutoLimit && !isFutures
                                     ? 'Snipes BBO Maker 0% Fee (Turn OFF to use Native Binance OTO/OTOCO)'
                                     : 'Snipes entry at Best Bid/Ask without Taker Fees'}
                                 </span>
                               </div>
-                              <div className={`relative w-8 h-4 rounded-full transition-colors ${isAutoLimit ? 'bg-brand-primary' : 'bg-gray-600'}`}>
+                              <div className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${isAutoLimit ? 'bg-cyan-500' : 'bg-gray-600'}`}>
                                 <MotionDiv
                                   className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
                                   animate={{ x: isAutoLimit ? 16 : 0 }}
@@ -4313,56 +4526,42 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 />
                               </div>
                             </div>
-
-                            {!isAutoLimit && (
-                              <div className="space-y-1">
-                                <label className="text-xs text-gray-400 font-medium">Limit Price</label>
-                                <div className="relative">
-                                  <input
-                                    type="number"
-                                    value={limitPrice}
-                                    disabled={isAutoLimit}
-                                    onChange={(e) => setLimitPrice(e.target.value)}
-                                    className="w-full bg-black/30 border border-white/10 rounded-lg py-2 px-3 pl-8 text-white text-sm focus:outline-none focus:border-brand-primary/50 transition-colors disabled:opacity-50"
-                                  />
-                                  <span className="absolute left-3 top-2 text-gray-500 text-sm">$</span>
-                                </div>
-                              </div>
-                            )}
                           </MotionDiv>
                         )}
                       </AnimatePresence>
 
-                      {/* Size */}
-                      <div className="space-y-1">
+                      {/* Size (Cyber-HUD Order Size Card) */}
+                      <div className="space-y-2 rounded-xl bg-[#04070e]/90 border border-cyan-500/20 p-2.5 shadow-[inset_0_1px_6px_rgba(0,0,0,0.65)]">
                         {/* Label row: currency name + toggle switch + balance */}
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                            <label className="text-xs text-gray-400 font-medium">
+                        <div className="flex justify-between items-center gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <label className="text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
                               Order Size
                             </label>
                             {/* Base / Quote toggle */}
-                            <div className="flex items-center gap-1 bg-black/40 rounded-full p-0.5 border border-white/10">
+                            <div className="flex items-center gap-0.5 bg-[#0a101d] rounded p-0.5 border border-white/10">
                               <button
+                                type="button"
                                 onClick={() => {
                                   setSizeMode('base');
                                   if (!selectedPercent) setSize('');
                                 }}
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${sizeMode === 'base'
-                                  ? 'bg-brand-primary text-white shadow'
-                                  : 'text-gray-500 hover:text-gray-300'
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold transition-all cursor-pointer ${sizeMode === 'base'
+                                  ? 'bg-cyan-500 text-slate-950 shadow'
+                                  : 'text-gray-400 hover:text-white'
                                   }`}
                               >
                                 {baseCurrency}
                               </button>
                               <button
+                                type="button"
                                 onClick={() => {
                                   setSizeMode('quote');
                                   if (!selectedPercent) setSize('');
                                 }}
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${sizeMode === 'quote'
-                                  ? 'bg-yellow-500 text-black shadow'
-                                  : 'text-gray-500 hover:text-gray-300'
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold transition-all cursor-pointer ${sizeMode === 'quote'
+                                  ? 'bg-amber-400 text-slate-950 shadow'
+                                  : 'text-gray-400 hover:text-white'
                                   }`}
                               >
                                 {quoteCurrency}
@@ -4371,9 +4570,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           </div>
                           <div className="text-[10px] text-gray-500 text-right flex flex-col items-end">
                             <div className="flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title={`Live Auto-Sync Active (${(timings.balancePollMs / 1000).toFixed(1)}s)`} />
-                              <span>Balance:</span>
-                              <span className="text-gray-200 font-semibold font-mono">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title={`Live Auto-Sync Active (${(timings.balancePollMs / 1000).toFixed(1)}s)`} />
+                              <span>Bal:</span>
+                              <span className="text-cyan-200 font-semibold font-mono">
                                 {isLoadingBalance ? "..." : balanceData ? (
                                   isInverseFutures
                                     ? sizeMode === 'quote'
@@ -4421,7 +4620,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             )}
 
                             {isFutures && reduceOnly && (
-                              <div className="text-[10px] text-brand-primary font-mono">
+                              <div className="text-[10px] text-cyan-300 font-mono">
                                 Pos: {isLoadingPosition ? "..." : (positionData && positionData.amount > 0 ? (
                                   isInverseFutures && positionData.contracts
                                     ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(1)} ${baseCurrency})`
@@ -4442,29 +4641,29 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               setSelectedPercent(null);
                             }}
                             placeholder={isInverseFutures ? `Min 1 Cont ($${contractSize})` : "0.00"}
-                            className="w-full bg-black/30 border border-white/10 rounded-lg py-2 px-3 pl-8 text-white text-sm focus:outline-none focus:border-brand-primary/50 transition-colors"
+                            className="w-full bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-3 pl-9 text-white font-mono font-bold text-xs focus:outline-none transition-colors"
                           />
                           {/* Currency symbol badge */}
-                          <span className="absolute left-2.5 top-2 text-[11px] font-bold text-gray-500">
+                          <span className="absolute left-2.5 top-1.5 text-[10.5px] font-mono font-bold text-cyan-400/80">
                             {sizeMode === 'quote' ? '$' : baseCurrency.slice(0, 3)}
                           </span>
                         </div>
 
                         {/* Live conversion estimate */}
                         {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
-                          <div className="flex items-center gap-1.5 px-1 pt-0.5 flex-wrap">
-                            <span className="text-[10px] text-gray-600">≈</span>
+                          <div className="flex items-center gap-1.5 px-1 flex-wrap font-mono">
+                            <span className="text-[10px] text-gray-500">≈</span>
                             {sizeMode === 'quote' ? (
-                              <span className="text-[10px] text-yellow-400 font-semibold">
+                              <span className="text-[10px] text-amber-300 font-semibold">
                                 {(Number(size) / effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} {baseCurrency}
                               </span>
                             ) : (
-                              <span className="text-[10px] text-yellow-400 font-semibold">
+                              <span className="text-[10px] text-amber-300 font-semibold">
                                 ${(Number(size) * effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
                               </span>
                             )}
                             {isInverseFutures && (
-                              <span className="text-[10px] bg-brand-primary/20 text-brand-primary px-1.5 py-0.2 rounded font-mono font-semibold">
+                              <span className="text-[9.5px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.2 rounded font-mono font-semibold">
                                 • {Math.max(1, Math.round(((sizeMode === 'quote' ? Number(size) : Number(size) * effectiveOrderPrice)) / contractSize))} Cont (${contractSize}/Cont)
                               </span>
                             )}
@@ -4472,15 +4671,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         )}
 
                         {/* % quick-fill buttons */}
-                        <div className="flex justify-between mt-2 gap-2">
+                        <div className="flex justify-between gap-1.5">
                           {['25%', '50%', '75%', '100%'].map(pct => {
                             const isSelected = selectedPercent === pct;
                             return (
                               <button
                                 key={pct}
-                                className={`flex-1 py-1 text-[10px] font-bold rounded border transition-colors ${isSelected
-                                  ? 'bg-brand-primary text-white border-brand-primary shadow-[0_0_8px_rgba(59,130,246,0.4)]'
-                                  : 'border-white/10 text-gray-400 hover:bg-white/10 hover:text-white'
+                                type="button"
+                                className={`flex-1 py-1 text-[10px] font-mono font-extrabold rounded border transition-all cursor-pointer active:scale-95 ${isSelected
+                                  ? 'bg-gradient-to-r from-cyan-500/35 to-emerald-500/30 border-cyan-400 text-cyan-200 shadow-[0_0_8px_rgba(6,182,212,0.35)]'
+                                  : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-cyan-500/40 text-gray-400 hover:text-white'
                                   }`}
                                 onClick={() => {
                                   setSelectedPercent(pct);
@@ -4693,8 +4893,59 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         </div>
                       )}
 
-                      {/* L2 / Training Studio Machine Learning Filter Panel (Prominent Top Placement) */}
-                      <div className={`space-y-2.5 p-3 rounded-lg border transition-all ${mlFilterConfig.enabled ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.12)]' : 'bg-black/30 border-blue-500/20'}`}>
+                      {/* Futures Options Panel (Inside Order & Size Tab) */}
+                      {isFutures && (
+                        <div className="space-y-2.5 bg-[#04070e]/90 p-2.5 rounded-lg border border-cyan-500/20">
+                          <div className="flex justify-between items-center text-xs text-gray-400 font-medium">
+                            <div className="flex bg-black/50 rounded p-0.5 border border-white/10">
+                              <button
+                                type="button"
+                                onClick={() => setMarginMode('cross')}
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer ${marginMode === 'cross' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
+                              >
+                                Cross
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setMarginMode('isolated')}
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer ${marginMode === 'isolated' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
+                              >
+                                Isolated
+                              </button>
+                            </div>
+                            <span className="text-[11px] bg-amber-500/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded font-mono font-black tracking-wider">
+                              {leverage}x LEVERAGE
+                            </span>
+                          </div>
+
+                          <input
+                            type="range"
+                            min="1"
+                            max="125"
+                            value={leverage}
+                            onChange={(e) => setLeverage(Number(e.target.value))}
+                            className="w-full accent-cyan-400 h-1.5 bg-black/60 rounded-lg appearance-none cursor-pointer"
+                          />
+
+                          <label className="flex items-center space-x-2 cursor-pointer group w-max">
+                            <input
+                              type="checkbox"
+                              checked={reduceOnly}
+                              onChange={(e) => setReduceOnly(e.target.checked)}
+                              className="form-checkbox bg-black/40 border-white/20 text-cyan-400 rounded focus:ring-0 focus:ring-offset-0 cursor-pointer w-3.5 h-3.5"
+                            />
+                            <span className="text-[11px] text-gray-400 group-hover:text-white transition-colors font-medium">Reduce Only (Close Position)</span>
+                          </label>
+                        </div>
+                      )}
+                      </div>
+                    )}
+
+                    {/* TAB 3: AI SHIELD (L2 MACHINE LEARNING FILTER) */}
+                    {activeTerminalTab === 'ai' && (
+                      <div className="space-y-2.5 animate-fadeIn">
+                      {/* L2 / Training Studio Machine Learning Filter Panel */}
+                      <div className={`space-y-2.5 p-3 rounded-lg border transition-all ${mlFilterConfig.enabled ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.12)]' : 'bg-[#04070e]/85 border-blue-500/25'}`}>
                         <div
                           className="flex justify-between items-center cursor-pointer group"
                           onClick={() => {
@@ -4925,6 +5176,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           )}
                         </AnimatePresence>
                       </div>
+                      </div>
+                    )}
+
+                    {/* TAB 2: BRACKETS (TP / SL / NATIVE OTO-OTOCO) */}
+                    {activeTerminalTab === 'brackets' && (
+                      <div className="space-y-2.5 animate-fadeIn">
 
                       {/* Native Binance TP/SL Toggle (Spot) & Futures Bracket Architecture Summary */}
                       {(tpConfig.enabled || slConfig.enabled) && !isFutures && (
@@ -5788,70 +6045,35 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         </AnimatePresence>
                       </div>
 
-                      {/* Futures Options Panel */}
-                      {isFutures && (
-                        <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-white/5">
-                          {/* Margin Mode & Leverage Header */}
-                          <div className="flex justify-between items-center text-xs text-gray-400 font-medium">
-                            <div className="flex bg-black/40 rounded p-0.5 border border-white/5">
-                              <button
-                                onClick={() => setMarginMode('cross')}
-                                className={`px-2 py-0.5 rounded transition-colors ${marginMode === 'cross' ? 'bg-brand-primary text-white font-bold' : 'hover:text-white'}`}
-                              >
-                                Cross
-                              </button>
-                              <button
-                                onClick={() => setMarginMode('isolated')}
-                                className={`px-2 py-0.5 rounded transition-colors ${marginMode === 'isolated' ? 'bg-brand-primary text-white font-bold' : 'hover:text-white'}`}
-                              >
-                                Isolated
-                              </button>
-                            </div>
-                            <span className="text-xs bg-brand-primary/20 text-brand-primary px-2 py-0.5 rounded font-mono font-bold tracking-wider">{leverage}x</span>
-                          </div>
-
-                          {/* Leverage Slider */}
-                          <input
-                            type="range"
-                            min="1"
-                            max="125"
-                            value={leverage}
-                            onChange={(e) => setLeverage(Number(e.target.value))}
-                            className="w-full accent-brand-primary h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer"
-                          />
-
-                          {/* Reduce Only Checkbox */}
-                          <label className="flex items-center space-x-2 cursor-pointer group w-max">
-                            <input
-                              type="checkbox"
-                              checked={reduceOnly}
-                              onChange={(e) => setReduceOnly(e.target.checked)}
-                              className="form-checkbox bg-black/40 border-white/20 text-brand-primary rounded focus:ring-0 focus:ring-offset-0 cursor-pointer w-4 h-4"
-                            />
-                            <span className="text-xs text-gray-400 group-hover:text-white transition-colors">Reduce Only (Close Position)</span>
-                          </label>
+                      {(!tpConfig.enabled && !slConfig.enabled) && (
+                        <div className="px-2.5 py-1.5 rounded-lg bg-cyan-950/20 border border-cyan-500/20 text-[9.5px] font-mono text-gray-400">
+                          💡 Tip: Enable Take-Profit or Stop-Loss below to arm Native Binance OTO/OTOCO, Hybrid Smart Chase SL, or Futures Brackets.
                         </div>
                       )}
+                      </div>
+                    )}
 
-                    </div> {/* End Scrollable Content */}
+                  </div> {/* End Scrollable Tab Workspace */}
 
-                    {/* Inline AI Trade Shield Rejection Card (Sticky above Execute button) */}
+                  {/* Sticky Sci-Fi Footer */}
+                  <div className="px-3 py-2 bg-[#04070e]/95 border-t border-cyan-500/20 shrink-0 space-y-1.5">
+                    {/* Inline AI Trade Shield Rejection Card */}
                     <AnimatePresence>
                       {aiRejectNotice && (
                         <MotionDiv
                           initial={{ height: 0, opacity: 0, y: 6 }}
                           animate={{ height: 'auto', opacity: 1, y: 0 }}
                           exit={{ height: 0, opacity: 0, y: 6 }}
-                          className="overflow-hidden mt-2"
+                          className="overflow-hidden"
                         >
-                          <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-950/60 via-[#0d1424] to-black border border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)] space-y-2">
+                          <div className="p-2 rounded-xl bg-gradient-to-br from-amber-950/60 via-[#0d1424] to-black border border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)] space-y-1.5">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-amber-300">
+                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300">
                                   AI Shield Protected ({aiRejectNotice.side} Blocked)
                                 </span>
-                                <span className="text-[9px] text-gray-500 font-mono">
+                                <span className="text-[8.5px] text-gray-500 font-mono">
                                   {aiRejectNotice.timestamp}
                                 </span>
                               </div>
@@ -5866,13 +6088,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             </div>
 
                             {/* Score vs Threshold Progress Bar */}
-                            <div className="space-y-1 bg-black/50 p-2 rounded-lg border border-white/5">
-                              <div className="flex items-center justify-between text-[9.5px] font-mono">
+                            <div className="space-y-1 bg-black/50 p-1.5 rounded-lg border border-white/5">
+                              <div className="flex items-center justify-between text-[9px] font-mono">
                                 <span className="text-gray-300">
                                   {aiRejectNotice.directionLabel}:{' '}
                                   <strong className="text-amber-300">{aiRejectNotice.calibratedProb.toFixed(1)}%</strong>
                                   {aiRejectNotice.rawProb !== null && aiRejectNotice.rawProb !== undefined && Math.abs(aiRejectNotice.rawProb - aiRejectNotice.calibratedProb) > 3 && (
-                                    <span className="text-[8.5px] text-gray-500 ml-1">(Raw {aiRejectNotice.rawProb.toFixed(1)}%)</span>
+                                    <span className="text-[8px] text-gray-500 ml-1">(Raw {aiRejectNotice.rawProb.toFixed(1)}%)</span>
                                   )}
                                 </span>
                                 <span className="text-cyan-300 font-bold">
@@ -5892,7 +6114,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   style={{ left: `${Math.min(98, Math.max(2, aiRejectNotice.threshold))}%` }}
                                 />
                               </div>
-                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[8.5px] font-mono text-gray-300">
+                              <div className="flex flex-wrap items-center gap-1 pt-0.5 text-[8px] font-mono text-gray-300">
                                 <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
                                   Model: <strong className="text-blue-300">{aiRejectNotice.modelName}</strong>
                                 </span>
@@ -5914,7 +6136,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               </div>
                             </div>
 
-                            <div className="text-[9.5px] text-amber-200/95 leading-tight flex items-start gap-1.5 px-1">
+                            <div className="text-[9px] text-amber-200/95 leading-tight flex items-start gap-1 px-0.5">
                               <span className="text-amber-400 shrink-0">⚡</span>
                               <span>{aiRejectNotice.reason}</span>
                             </div>
@@ -5923,76 +6145,79 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       )}
                     </AnimatePresence>
 
-                    {/* Action Buttons */}
-                    <div className="flex space-x-3 pt-3 mt-2 border-t border-white/10">
-                      <button
-                        type="button"
-                        onPointerDown={(e) => {
-                          handleOrderPointerDown(e, tradeSide);
-                        }}
-                        onClick={(e) => {
-                          if (didOrderDragRef.current) {
-                            didOrderDragRef.current = false;
-                            return;
-                          }
-                          handleTrade(tradeSide);
-                        }}
-                        style={{ touchAction: 'none' }}
-                        disabled={isSubmitting}
-                        className={`flex-1 py-3 px-4 rounded-xl font-bold flex flex-col items-center justify-center transition-all disabled:opacity-50 group border cursor-grab active:cursor-grabbing select-none ${orderType === 'SmartPeg'
-                          ? tradeSide === 'Buy'
-                            ? 'bg-gradient-to-r from-amber-600/30 to-green-600/30 hover:from-amber-600 hover:to-green-600 text-amber-300 hover:text-white border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
-                            : 'bg-gradient-to-r from-amber-600/30 to-red-600/30 hover:from-amber-600 hover:to-red-600 text-amber-300 hover:text-white border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
-                          : tradeSide === 'Buy'
-                            ? 'bg-green-500/20 hover:bg-green-500 text-green-400 hover:text-white border-green-500/50 hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]'
-                            : 'bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white border-red-500/50 hover:shadow-[0_0_15px_rgba(239,68,68,0.4)]'
-                          }`}
-                        title={`Click to execute ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
-                      >
-                        <div className="flex items-center space-x-2">
-                          {orderType === 'SmartPeg' ? (
-                            <Zap className="w-5 h-5 text-amber-300 fill-amber-300 group-hover:scale-110 transition-transform animate-bounce-subtle" />
-                          ) : tradeSide === 'Buy' ? (
-                            <TrendingUp className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
-                          ) : (
-                            <TrendingDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
-                          )}
-                          <span className="text-sm uppercase tracking-wider">
-                            {orderType === 'SmartPeg' ? 'Smart Peg' : 'Execute'} {isFutures ? (tradeSide === 'Buy' ? 'Long' : 'Short') : tradeSide}
-                          </span>
-                          <MoveVertical className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
-                        </div>
-                        <span className="text-[9.5px] font-normal text-gray-400 group-hover:text-white/80 transition-colors">
-                          Click to execute • Drag onto chart to set price level
+                    {/* Action Button (Click to Execute or Drag onto Chart) */}
+                    <button
+                      type="button"
+                      onPointerDown={(e) => {
+                        handleOrderPointerDown(e, tradeSide);
+                      }}
+                      onClick={(e) => {
+                        if (didOrderDragRef.current) {
+                          didOrderDragRef.current = false;
+                          return;
+                        }
+                        handleTrade(tradeSide);
+                      }}
+                      style={{ touchAction: 'none' }}
+                      disabled={isSubmitting}
+                      className={`w-full py-2 px-3 rounded-lg font-bold flex items-center justify-between transition-all disabled:opacity-50 group border cursor-grab active:cursor-grabbing select-none ${orderType === 'SmartPeg'
+                        ? tradeSide === 'Buy'
+                          ? 'bg-gradient-to-r from-amber-600/30 to-emerald-600/30 hover:from-amber-600 hover:to-emerald-600 text-amber-200 hover:text-white border-amber-400/60 shadow-[0_0_16px_rgba(245,158,11,0.25)]'
+                          : 'bg-gradient-to-r from-amber-600/30 to-rose-600/30 hover:from-amber-600 hover:to-rose-600 text-amber-200 hover:text-white border-amber-400/60 shadow-[0_0_16px_rgba(245,158,11,0.25)]'
+                        : tradeSide === 'Buy'
+                          ? 'bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white border-emerald-400/60 shadow-[0_0_14px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)]'
+                          : 'bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border-rose-400/60 shadow-[0_0_14px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)]'
+                        }`}
+                      title={`Click to execute ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {orderType === 'SmartPeg' ? (
+                          <Zap className="w-4 h-4 text-amber-300 fill-amber-300 group-hover:scale-110 transition-transform" />
+                        ) : tradeSide === 'Buy' ? (
+                          <TrendingUp className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+                        ) : (
+                          <TrendingDown className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
+                        )}
+                        <span className="text-xs font-black uppercase tracking-wider font-mono">
+                          {isSubmitting
+                            ? 'EXECUTING...'
+                            : `${orderType === 'SmartPeg' ? 'SMART PEG' : 'EXECUTE'} ${isFutures ? (tradeSide === 'Buy' ? 'LONG' : 'SHORT') : tradeSide.toUpperCase()}`}
                         </span>
-                      </button>
+                      </div>
+                      <span className="text-[9px] font-mono text-gray-300/80 group-hover:text-white flex items-center gap-1">
+                        <span>Click or Drag Chart</span>
+                        <MoveVertical className="w-3 h-3 opacity-80" />
+                      </span>
+                    </button>
+
+                    {/* Footer Telemetry Status Strip */}
+                    <div className="flex items-center justify-between text-[8.5px] font-mono text-gray-500">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(52,211,153,0.8)]" />
+                        Secure API Execution
+                      </span>
+                      {isTelegramConnected === true ? (
+                        <span className="text-cyan-400/90 flex items-center gap-1 font-medium" title="Telegram alerts are active and verified">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_rgba(6,182,212,0.8)]"></span>
+                          Telegram Alerts Active
+                        </span>
+                      ) : isTelegramConnected === false ? (
+                        <a
+                          href="/settings"
+                          className="text-amber-400/90 hover:text-amber-300 flex items-center gap-1 font-medium underline cursor-pointer"
+                          title="Manual trade alerts are disabled in Settings or Telegram bot is not connected. Click to configure in Settings."
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                          Manual Alerts Disabled
+                        </a>
+                      ) : (
+                        <span className="text-gray-500">Drag header to move</span>
+                      )}
                     </div>
                   </div>
-
-                  {/* Footer Status */}
-                  <div className="px-4 py-2 bg-black/40 border-t border-white/5 flex items-center justify-between">
-                    <span className="text-[10px] text-gray-500 flex items-center">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-2 animate-pulse shadow-[0_0_5px_rgba(34,197,94,0.8)]"></span>
-                      Secure Execution via API
-                    </span>
-                    {isTelegramConnected === true ? (
-                      <span className="text-[10px] text-cyan-400/90 flex items-center gap-1.5 font-medium" title="Telegram alerts are active and verified">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_rgba(6,182,212,0.8)]"></span>
-                        Telegram Alerts Active
-                      </span>
-                    ) : isTelegramConnected === false ? (
-                      <a
-                        href="/settings"
-                        className="text-[10px] text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 font-medium underline cursor-pointer"
-                        title="Manual trade alerts are disabled in Settings or Telegram bot is not connected. Click to configure in Settings."
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                        Manual Trade Alerts Disabled
-                      </a>
-                    ) : null}
-                  </div>
                 </>
-              )}
+                );
+              })()}
             </div>
           )}
         </AnimatePresence>,

@@ -2090,12 +2090,15 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                         const period = Math.max(1, Math.floor(Number(currentSettings.emaPeriod) || 7));
                         const mode = currentSettings.emaRenderMode || 'smooth';
                         const newLatestValues: Record<string, number> = {};
+                        const emaInput = isThermalGuard && curData.length > Math.max(200, period * 6)
+                            ? curData.slice(-Math.max(200, period * 6))
+                            : curData;
 
                         activeTfs.forEach((tf) => {
                             const series = emaSeriesMapRef.current.get(tf);
                             if (!series) return;
                             if (tf === interval) {
-                                const pts = calculateEMA(curData, period);
+                                const pts = calculateEMA(emaInput, period);
                                 if (pts.length > 0) {
                                     const lastPt = pts[pts.length - 1];
                                     series.update(lastPt as any);
@@ -2111,7 +2114,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                                     if (lastCandle.close > lastCached.high) lastCached.high = lastCandle.close;
                                     if (lastCandle.close < lastCached.low) lastCached.low = lastCandle.close;
                                 }
-                                const pts = calculateMTFEMA(curData, interval, tf, period, mode, cached);
+                                const pts = calculateMTFEMA(emaInput, interval, tf, period, mode, cached);
                                 if (pts.length > 0) {
                                     const lastPt = pts[pts.length - 1];
                                     series.update(lastPt as any);
@@ -2154,7 +2157,10 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                         bbLowerSeriesRef.current.update({ time: lastTime, value: lower } as any);
                     }
                     if (currentSettings.showRSI && rsiSeriesRef.current) {
-                        const rsiData = calculateRSI(curData, rsiP);
+                        const rsiInput = isThermalGuard && curData.length > Math.max(200, rsiP * 8)
+                            ? curData.slice(-Math.max(200, rsiP * 8))
+                            : curData;
+                        const rsiData = calculateRSI(rsiInput, rsiP);
                         if (rsiData.length > 0) rsiSeriesRef.current.update(rsiData[rsiData.length - 1] as any);
                     }
                     if (currentSettings.showUTBot && utBotSeriesRef.current) {
@@ -2223,7 +2229,18 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         }, indicatorIntervalMs);
 
         return () => clearInterval(updateInterval);
-    }, [indicatorIntervalMs, interval, exchange, symbol]);
+    }, [
+        indicatorIntervalMs,
+        isThermalGuard,
+        interval,
+        exchange,
+        symbol,
+        indicatorSettings.showEMA,
+        indicatorSettings.showBB,
+        indicatorSettings.showRSI,
+        indicatorSettings.showUTBot,
+        indicatorSettings.showSessions
+    ]);
 
     // Auto Fibonacci Indicator
     useEffect(() => {
@@ -2338,118 +2355,145 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
     ]);
 
     // Update horizontal price lines for walls intelligently without blindly clearing
+    const lastWallLinesSyncRef = useRef<number>(0);
     useEffect(() => {
         if (!candlestickSeriesRef.current || !chartRef.current) return;
 
-        const currentLineKeys = new Set<string>();
+        const syncWallAndBotLines = () => {
+            if (!candlestickSeriesRef.current || !chartRef.current) return;
+            const currentLineKeys = new Set<string>();
 
-        // 1. Process Order Book Walls
-        walls.forEach(wall => {
-            const key = `wall-${wall.type}-${wall.price}`;
-            currentLineKeys.add(key);
+            // On mobile/tablet thermal guard, cap to top 16 largest walls to prevent canvas PriceLine overdraw;
+            // on desktop PCs, render all walls with zero cap.
+            const wallsToRender = (isThermalGuard && walls.length > 16)
+                ? [...walls].sort((a, b) => (b.size ?? 0) - (a.size ?? 0)).slice(0, 16)
+                : walls;
 
-            const isBuy = wall.type === 'buy';
-            const wallVolume = wall.size ?? 0;
-            const showLabel = wallVolume >= 5_000_000;
+            // 1. Process Order Book Walls
+            wallsToRender.forEach(wall => {
+                const key = `wall-${wall.type}-${wall.price}`;
+                currentLineKeys.add(key);
 
-            if (!wallLinesRef.current.has(key)) {
-                // Create new line
-                const priceLine = candlestickSeriesRef.current?.createPriceLine({
-                    price: wall.price,
-                    color: isBuy ? 'rgba(34, 197, 94, 0.45)' : 'rgba(239, 68, 68, 0.45)',
-                    lineWidth: 1,
-                    lineStyle: 1, // Dotted
-                    axisLabelVisible: showLabel,
-                    title: showLabel ? `${(wallVolume / 1_000_000).toFixed(1)}M` : '',
-                });
-                if (priceLine) wallLinesRef.current.set(key, priceLine);
-            } else {
-                // Update label visibility on existing line (e.g. after volume threshold change)
-                const existingLine = wallLinesRef.current.get(key);
-                existingLine?.applyOptions({
-                    axisLabelVisible: showLabel,
-                    title: showLabel ? `${(wallVolume / 1_000_000).toFixed(1)}M` : '',
-                });
-            }
-        });
+                const isBuy = wall.type === 'buy';
+                const wallVolume = wall.size ?? 0;
+                const showLabel = wallVolume >= 5_000_000;
 
-        // 2. Process Bot Status Lines
-        if (botStatus && botStatus.position) {
-            if (botStatus.entry_price && botStatus.entry_price > 0) {
-                const epKey = 'bot-entry';
-                currentLineKeys.add(epKey);
-                if (!wallLinesRef.current.has(epKey)) {
-                    const epLine = candlestickSeriesRef.current?.createPriceLine({
-                        price: botStatus.entry_price,
-                        color: '#f59e0b', // Golden
+                if (!wallLinesRef.current.has(key)) {
+                    // Create new line
+                    const priceLine = candlestickSeriesRef.current?.createPriceLine({
+                        price: wall.price,
+                        color: isBuy ? 'rgba(34, 197, 94, 0.45)' : 'rgba(239, 68, 68, 0.45)',
                         lineWidth: 1,
-                        lineStyle: LineStyle.Solid,
-                        axisLabelVisible: true,
-                        title: 'BOT ENTRY',
+                        lineStyle: 1, // Dotted
+                        axisLabelVisible: showLabel,
+                        title: showLabel ? `${(wallVolume / 1_000_000).toFixed(1)}M` : '',
                     });
-                    if (epLine) wallLinesRef.current.set(epKey, epLine);
+                    if (priceLine) wallLinesRef.current.set(key, priceLine);
                 } else {
-                    // Update price if trailing/changed
-                    const line = wallLinesRef.current.get(epKey);
-                    line.applyOptions({ price: botStatus.entry_price, lineWidth: 1, lineStyle: LineStyle.Solid });
+                    // Update label visibility on existing line (e.g. after volume threshold change)
+                    const existingLine = wallLinesRef.current.get(key);
+                    existingLine?.applyOptions({
+                        axisLabelVisible: showLabel,
+                        title: showLabel ? `${(wallVolume / 1_000_000).toFixed(1)}M` : '',
+                    });
+                }
+            });
+
+            // 2. Process Bot Status Lines
+            if (botStatus && botStatus.position) {
+                if (botStatus.entry_price && botStatus.entry_price > 0) {
+                    const epKey = 'bot-entry';
+                    currentLineKeys.add(epKey);
+                    if (!wallLinesRef.current.has(epKey)) {
+                        const epLine = candlestickSeriesRef.current?.createPriceLine({
+                            price: botStatus.entry_price,
+                            color: '#f59e0b', // Golden
+                            lineWidth: 1,
+                            lineStyle: LineStyle.Solid,
+                            axisLabelVisible: true,
+                            title: 'BOT ENTRY',
+                        });
+                        if (epLine) wallLinesRef.current.set(epKey, epLine);
+                    } else {
+                        // Update price if trailing/changed
+                        const line = wallLinesRef.current.get(epKey);
+                        line.applyOptions({ price: botStatus.entry_price, lineWidth: 1, lineStyle: LineStyle.Solid });
+                    }
+                }
+
+                if (botStatus.tp_price && botStatus.tp_price > 0) {
+                    const tpKey = 'bot-tp';
+                    currentLineKeys.add(tpKey);
+                    if (!wallLinesRef.current.has(tpKey)) {
+                        const tpLine = candlestickSeriesRef.current?.createPriceLine({
+                            price: botStatus.tp_price,
+                            color: '#22c55e', // Green
+                            lineWidth: 1,
+                            lineStyle: LineStyle.Solid, // Plain Solid Line
+                            axisLabelVisible: true,
+                            title: 'BOT TP',
+                        });
+                        if (tpLine) wallLinesRef.current.set(tpKey, tpLine);
+                    } else {
+                        const line = wallLinesRef.current.get(tpKey);
+                        line.applyOptions({ price: botStatus.tp_price, lineWidth: 1, lineStyle: LineStyle.Solid });
+                    }
+                }
+
+                if (botStatus.sl_price && botStatus.sl_price > 0) {
+                    const slKey = 'bot-sl';
+                    currentLineKeys.add(slKey);
+                    if (!wallLinesRef.current.has(slKey)) {
+                        const slLine = candlestickSeriesRef.current?.createPriceLine({
+                            price: botStatus.sl_price,
+                            color: '#ef4444', // Red
+                            lineWidth: 1,
+                            lineStyle: LineStyle.Solid, // Plain Solid Line
+                            axisLabelVisible: true,
+                            title: 'BOT TSL',
+                        });
+                        if (slLine) wallLinesRef.current.set(slKey, slLine);
+                    } else {
+                        const line = wallLinesRef.current.get(slKey);
+                        line.applyOptions({ price: botStatus.sl_price, lineWidth: 1, lineStyle: LineStyle.Solid });
+                    }
                 }
             }
 
-            if (botStatus.tp_price && botStatus.tp_price > 0) {
-                const tpKey = 'bot-tp';
-                currentLineKeys.add(tpKey);
-                if (!wallLinesRef.current.has(tpKey)) {
-                    const tpLine = candlestickSeriesRef.current?.createPriceLine({
-                        price: botStatus.tp_price,
-                        color: '#22c55e', // Green
-                        lineWidth: 1,
-                        lineStyle: LineStyle.Solid, // Plain Solid Line
-                        axisLabelVisible: true,
-                        title: 'BOT TP',
-                    });
-                    if (tpLine) wallLinesRef.current.set(tpKey, tpLine);
-                } else {
-                    const line = wallLinesRef.current.get(tpKey);
-                    line.applyOptions({ price: botStatus.tp_price, lineWidth: 1, lineStyle: LineStyle.Solid });
-                }
-            }
+            // 3. Cleanup Stale Lines (Lines that exist in Map but aren't in currentLineKeys)
+            for (const [key, line] of wallLinesRef.current.entries()) {
+                // Ignore order lines, they are managed by the next useEffect
+                if (key.startsWith('order-')) continue;
 
-            if (botStatus.sl_price && botStatus.sl_price > 0) {
-                const slKey = 'bot-sl';
-                currentLineKeys.add(slKey);
-                if (!wallLinesRef.current.has(slKey)) {
-                    const slLine = candlestickSeriesRef.current?.createPriceLine({
-                        price: botStatus.sl_price,
-                        color: '#ef4444', // Red
-                        lineWidth: 1,
-                        lineStyle: LineStyle.Solid, // Plain Solid Line
-                        axisLabelVisible: true,
-                        title: 'BOT TSL',
-                    });
-                    if (slLine) wallLinesRef.current.set(slKey, slLine);
-                } else {
-                    const line = wallLinesRef.current.get(slKey);
-                    line.applyOptions({ price: botStatus.sl_price, lineWidth: 1, lineStyle: LineStyle.Solid });
+                if (!currentLineKeys.has(key)) {
+                    try {
+                        candlestickSeriesRef.current?.removePriceLine(line);
+                    } catch (e) {
+                        // Ignore errors if line was already removed internally
+                    }
+                    wallLinesRef.current.delete(key);
                 }
             }
+        };
+
+        if (!isThermalGuard) {
+            syncWallAndBotLines();
+            return;
         }
 
-        // 3. Cleanup Stale Lines (Lines that exist in Map but aren't in currentLineKeys)
-        for (const [key, line] of wallLinesRef.current.entries()) {
-            // Ignore order lines, they are managed by the next useEffect
-            if (key.startsWith('order-')) continue;
-
-            if (!currentLineKeys.has(key)) {
-                try {
-                    candlestickSeriesRef.current?.removePriceLine(line);
-                } catch (e) {
-                    // Ignore errors if line was already removed internally
-                }
-                wallLinesRef.current.delete(key);
-            }
+        const now = Date.now();
+        const elapsed = now - lastWallLinesSyncRef.current;
+        if (elapsed >= 1000) {
+            lastWallLinesSyncRef.current = now;
+            syncWallAndBotLines();
+            return;
         }
-
-    }, [walls, botStatus]);
+        const timer = setTimeout(() => {
+            lastWallLinesSyncRef.current = Date.now();
+            syncWallAndBotLines();
+        }, 1000 - elapsed);
+        return () => clearTimeout(timer);
+    }, [walls, botStatus, isThermalGuard]);
 
     // ML Setup Ghost Lines
     useEffect(() => {
@@ -4385,8 +4429,14 @@ const OrderFlowChartPanel = React.memo<{
     const isShared = isMain && !!parentL2Data;
     const fallbackL2 = useLevel2MarketData(isShared ? '' : config.symbol, isShared ? '' : config.exchange);
     const { bids, asks, walls, currentPrice, tradeEvent } = isShared ? parentL2Data : fallbackL2;
-    const bestBid = useMemo(() => (bids && bids.length ? Math.max(...bids.map((b: any) => b.price)) : 0), [bids]);
-    const bestAsk = useMemo(() => (asks && asks.length ? Math.min(...asks.map((a: any) => a.price)) : 0), [asks]);
+    const bestBid = useMemo(() => {
+        if (panelDeviceProfile.isThermalGuardActive && !showBidAsk) return 0;
+        return bids && bids.length ? Math.max(...bids.map((b: any) => b.price)) : 0;
+    }, [bids, panelDeviceProfile.isThermalGuardActive, showBidAsk]);
+    const bestAsk = useMemo(() => {
+        if (panelDeviceProfile.isThermalGuardActive && !showBidAsk) return 0;
+        return asks && asks.length ? Math.min(...asks.map((a: any) => a.price)) : 0;
+    }, [asks, panelDeviceProfile.isThermalGuardActive, showBidAsk]);
     const advancedMetricsData = useAdvancedMetrics(config.symbol, config.exchange, config.interval, advancedMetrics);
     const usingParentOpenOrders = Boolean(parentOpenOrders && parentSymbol && config.symbol === parentSymbol);
     const ownOpenOrders = useOpenOrders(selectedApiKeyId, config.symbol, panelDeviceProfile.timings.openOrdersPollMs, !usingParentOpenOrders);
@@ -4416,6 +4466,17 @@ const OrderFlowChartPanel = React.memo<{
         });
         return newWalls;
     }, [walls, bids, asks, volumeThreshold, volumeMode]);
+
+    const handleAIPredictClick = useCallback((price: number) => {
+        setExternalAIPrice(price);
+        setExternalAIOpenTrigger(Date.now());
+    }, [setExternalAIPrice, setExternalAIOpenTrigger]);
+
+    const handleChartBackgroundClick = useCallback((price: number) => {
+        onSelectActive?.();
+        setManualTradePrice(price);
+        setManualTradeTrigger(Date.now());
+    }, [onSelectActive, setManualTradePrice, setManualTradeTrigger]);
 
     const panelContent = (
         <div 
@@ -4531,15 +4592,8 @@ const OrderFlowChartPanel = React.memo<{
                 ) : (
                     <OrderFlowChart 
                         exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showBidAsk={showBidAsk}
-                        onAIPredictClick={(price) => {
-                            setExternalAIPrice(price);
-                            setExternalAIOpenTrigger(Date.now());
-                        }}
-                        onChartBackgroundClick={(price) => {
-                            onSelectActive?.();
-                            setManualTradePrice(price);
-                            setManualTradeTrigger(Date.now());
-                        }}
+                        onAIPredictClick={handleAIPredictClick}
+                        onChartBackgroundClick={handleChartBackgroundClick}
                     />
                 )}
             </div>
@@ -4575,7 +4629,6 @@ const OrderFlowHeatmap: React.FC = () => {
     const { activeWallHunterId, setActiveWallHunterId, indicatorSettings, setIndicatorSettings, activeBotsByChartId, setBotForChart, removeBotForChart } = useBotStore();
     const { orderFlowActiveTab: activeTab, setOrderFlowActiveTab: setActiveTab, orderFlowShowFootprint: showFootprint, setOrderFlowShowFootprint: setShowFootprint } = useUIStore();
     const { settings: advancedMetrics, updateSettings: onAdvancedMetricsChange } = useAdvancedMetricsSettings();
-    const advancedMetricsData = useAdvancedMetrics(symbol, exchange, interval, advancedMetrics);
 
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
     const [isForexWallHunterOpen, setIsForexWallHunterOpen] = useState(false);
@@ -4875,30 +4928,12 @@ const OrderFlowHeatmap: React.FC = () => {
     const noopCallback = useCallback(() => {}, []);
 
 
-    const filteredWalls = useMemo(() => {
-        if (volumeThreshold <= 0) return walls;
-
-        const newWalls: { price: number; type: 'buy' | 'sell'; size: number }[] = [];
-        asks.forEach(ask => {
-            const comparisonValue = volumeMode === 'quote' ? ask.size * ask.price : ask.size;
-            if (comparisonValue >= volumeThreshold) {
-                newWalls.push({ price: ask.price, type: 'sell', size: ask.size });
-            }
-        });
-        bids.forEach(bid => {
-            const comparisonValue = volumeMode === 'quote' ? bid.size * bid.price : bid.size;
-            if (comparisonValue >= volumeThreshold) {
-                newWalls.push({ price: bid.price, type: 'buy', size: bid.size });
-            }
-        });
-        return newWalls;
-    }, [walls, bids, asks, volumeThreshold, volumeMode]);
-
     const maxTotal = useMemo(() => {
+        if (deviceProfile.isThermalGuardActive && !isOrderBookModalOpen) return 1;
         const maxBid = bids.length > 0 ? bids[bids.length - 1].total : 0;
         const maxAsk = asks.length > 0 ? asks[asks.length - 1].total : 0;
         return Math.max(maxBid, maxAsk, 1); // Avoid division by zero
-    }, [bids, asks]);
+    }, [bids, asks, deviceProfile.isThermalGuardActive, isOrderBookModalOpen]);
 
     // Emergency Sell Handler
     const handleEmergencySell = async (type: 'market' | 'limit') => {
@@ -5028,7 +5063,9 @@ const OrderFlowHeatmap: React.FC = () => {
     
                                 {/* FLOATING ORDER FLOW CHART BUTTON */}
                                 <div className="w-[42px] h-[42px] relative shrink-0">
-                                    <FloatingTVChartButton size="sm" symbol={activeChart?.symbol || symbol} exchange={activeChart?.exchange || exchange} />
+                                    {(isFloatingToolbarOpen || !deviceProfile.isThermalGuardActive) && (
+                                        <FloatingTVChartButton size="sm" symbol={activeChart?.symbol || symbol} exchange={activeChart?.exchange || exchange} />
+                                    )}
                                 </div>
     
                                 {/* ALGO PREDICTOR MODAL */}
@@ -5297,7 +5334,7 @@ const OrderFlowHeatmap: React.FC = () => {
                             parentOpenOrders={openOrders}
                             showCrosshairAIPredict={showCrosshairAIPredict}
                             showBidAsk={showBidAsk}
-                            renderFloatingTools={floatingToolsNode}
+                            renderFloatingTools={hasFullscreenChart ? floatingToolsNode : undefined}
                             onFullscreenChange={setHasFullscreenChart}
                         />
                     ))}

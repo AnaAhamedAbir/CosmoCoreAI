@@ -15,6 +15,7 @@ import {
   WorkerQueueJobItem,
   WorkerQueueStatusOut,
 } from '@/services/trainingStudioToolsService';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 export interface WorkerQueueEtaBannerProps {
   isTraining?: boolean;
@@ -73,13 +74,16 @@ export const WorkerQueueEtaBanner: React.FC<WorkerQueueEtaBannerProps> = ({
     let timerId: ReturnType<typeof setTimeout> | null = null;
 
     const loop = async () => {
-      await fetchStatus(signal);
+      if (typeof document === 'undefined' || !document.hidden) {
+        await fetchStatus(signal);
+      }
       if (signal.cancelled) return;
 
       const latest = statusRef.current;
       const hasActivity =
         isTraining || Boolean(latest && (latest.active_jobs > 0 || latest.queued_jobs > 0));
-      const delayMs = hasActivity ? 5000 : 10000;
+      const isThermalGuard = isThermalGuardActive();
+      const delayMs = hasActivity ? (isThermalGuard ? 7000 : 5000) : (isThermalGuard ? 20000 : 10000);
 
       timerId = setTimeout(() => {
         void loop();

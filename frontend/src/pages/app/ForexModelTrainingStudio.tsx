@@ -4,6 +4,7 @@ import EnsembleBuilder from '@/components/ml/EnsembleBuilder';
 import { BrainCircuit, Play, Settings, Activity, Layers, Target, Cpu, CheckCircle2, XCircle, Loader2, Globe, Terminal, Database } from 'lucide-react';
 import { forexMlTrainingService, ForexTrainingJob } from '@/services/forexMlTrainingService';
 import { mlModelsService } from '@/services/mlModelsService';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 import { ForexAdvancedPipeline } from '@/components/features/market/ForexAdvancedPipeline';
 import AdvancedHyperparameters from '@/components/ml/AdvancedHyperparameters';
 import { ForexCoreParametersPanel } from '@/components/ml/forex/ForexCoreParametersPanel';
@@ -314,10 +315,10 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
 
     // Auto-scroll logs
     useEffect(() => {
-        if (logsEndRef.current) {
-            logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        if (showTerminal && logsEndRef.current) {
+            logsEndRef.current.scrollIntoView({ behavior: isThermalGuardActive() ? 'auto' : 'smooth' });
         }
-    }, [activeJob?.logs, forexScrapeJob?.logs]);
+    }, [activeJob?.logs, forexScrapeJob?.logs, showTerminal]);
 
     // Load Forex Snapshots
     useEffect(() => {
@@ -369,6 +370,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
     useEffect(() => {
         let interval: NodeJS.Timeout;
         if ((isTraining || isMerging) && activeJob && ['PENDING', 'RUNNING'].includes(activeJob.status)) {
+            const pollMs = isThermalGuardActive() ? 2000 : 1000;
             interval = setInterval(async () => {
                 try {
                     const latestJob = await forexMlTrainingService.getJobStatus(activeJob.id);
@@ -388,7 +390,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                 } catch (error) {
                     console.error("Error fetching job status:", error);
                 }
-            }, 1000);
+            }, pollMs);
         }
         return () => clearInterval(interval);
     }, [isTraining, isMerging, activeJob?.id, activeJob?.status]);
@@ -1199,6 +1201,19 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                                 else if (log.includes("Epoch") || log.includes("Loss") || log.includes("Accuracy")) textColor = "text-cyan-400 drop-shadow-[0_0_5px_#22d3ee]";
                                                 else if (log.includes("Fetching") || log.includes("Calculating")) textColor = "text-yellow-400";
                                                 else if (log.includes("WARNING")) textColor = "text-amber-400 drop-shadow-[0_0_5px_#f59e0b]";
+
+                                                if (isThermalGuardActive()) {
+                                                    return (
+                                                        <div key={i} className={`flex gap-3 font-mono text-sm leading-relaxed mb-1 ${textColor}`}>
+                                                            <span className="opacity-50 select-none shrink-0 w-24">
+                                                                root@core:~#
+                                                            </span>
+                                                            <span className="break-words flex-1">
+                                                                {log}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                }
 
                                                 return (
                                                     <motion.div 

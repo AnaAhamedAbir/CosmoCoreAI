@@ -279,7 +279,8 @@ export const useOrderFlowData = (
 
         const scheduleOrderFlowFlush = () => {
             if (!orderFlowThrottleTimer) {
-                orderFlowThrottleTimer = setTimeout(flushOrderFlow, 250);
+                const flushDelayMs = isThermalGuardActive() ? 1000 : 250;
+                orderFlowThrottleTimer = setTimeout(flushOrderFlow, flushDelayMs);
             }
         };
 

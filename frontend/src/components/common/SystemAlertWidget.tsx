@@ -599,7 +599,7 @@ const SystemAlertWidget: React.FC = () => {
       </button>
 
       {/* ─── Floating Window ─── */}
-      {createPortal(
+      {(open || !isThermalGuardActive()) && createPortal(
         <div
           className={`fixed z-[9999] ${
             isDragging ? '' : 'transition-[opacity,transform] duration-200'

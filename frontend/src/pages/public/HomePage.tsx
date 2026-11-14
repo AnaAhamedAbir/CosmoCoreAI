@@ -12,6 +12,7 @@ import {
 import { useTheme } from '@/context/ThemeContext';
 import MarketTicker from '@/components/features/market/MarketTicker';
 import { useToast } from '@/context/ToastContext';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 // Scroll Animation Hook
 const useScrollAnimation = (threshold = 0.1) => {
@@ -37,6 +38,7 @@ const useScrollAnimation = (threshold = 0.1) => {
 // ============================
 export const CosmicStarBackground: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const thermalGuard = isThermalGuardActive();
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -44,10 +46,13 @@ export const CosmicStarBackground: React.FC = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        let animId: number;
+        let animId: number = 0;
         const maxZ = 3000;
-        // Extreme amount of stars for a "trillions of stars" effect (Increased to 24000)
-        const starCount = Math.min(24000, window.innerWidth * 18);
+        // Desktop: full 24,000 warp stars @ native refresh rate.
+        // Mobile/Tablet thermal guard: 350 static stars rendered once (0% continuous CPU/GPU drain).
+        const starCount = thermalGuard
+            ? 350
+            : Math.min(24000, window.innerWidth * 18);
         let stars: Star[] = [];
 
         const resize = () => {
@@ -117,6 +122,12 @@ export const CosmicStarBackground: React.FC = () => {
             }
         };
 
+        const drawStaticFrame = () => {
+            ctx!.globalAlpha = 1.0;
+            ctx!.clearRect(0, 0, canvas.width, canvas.height);
+            stars.forEach(s => s.draw());
+        };
+
         const animate = () => {
             // Reset globalAlpha to ensure the canvas is fully cleared
             ctx!.globalAlpha = 1.0;
@@ -130,13 +141,26 @@ export const CosmicStarBackground: React.FC = () => {
             animId = requestAnimationFrame(animate);
         };
 
-        resize(); init(); animate();
-        window.addEventListener('resize', resize);
-        return () => {
-            window.removeEventListener('resize', resize);
-            cancelAnimationFrame(animId);
+        const handleResize = () => {
+            resize();
+            if (thermalGuard) {
+                drawStaticFrame();
+            }
         };
-    }, []);
+
+        resize();
+        init();
+        if (thermalGuard) {
+            drawStaticFrame();
+        } else {
+            animate();
+        }
+        window.addEventListener('resize', handleResize);
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            if (animId) cancelAnimationFrame(animId);
+        };
+    }, [thermalGuard]);
 
     return (
         <div className="fixed inset-0 z-0 w-full h-full pointer-events-none overflow-hidden bg-black">
@@ -144,7 +168,7 @@ export const CosmicStarBackground: React.FC = () => {
             <div 
                 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] md:w-[800px] md:h-[800px] bg-[url('/distant_galaxy_bg.png')] bg-cover bg-center bg-no-repeat opacity-45"
                 style={{ 
-                    mixBlendMode: 'screen',
+                    mixBlendMode: thermalGuard ? 'normal' : 'screen',
                     WebkitMaskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%)',
                     maskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%)'
                 }}
@@ -158,14 +182,17 @@ export const CosmicStarBackground: React.FC = () => {
 // ============================
 // Floating Orbs
 // ============================
-const FloatingOrbs: React.FC = () => (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] animate-float-slow" />
-        <div className="absolute top-1/3 right-1/4 w-80 h-80 bg-violet-500/10 rounded-full blur-[100px] animate-float-medium" />
-        <div className="absolute bottom-1/4 left-1/3 w-72 h-72 bg-blue-500/8 rounded-full blur-[90px] animate-float-fast" />
-        <div className="absolute top-2/3 right-1/3 w-64 h-64 bg-pink-500/8 rounded-full blur-[80px] animate-float-slow" style={{ animationDelay: '2s' }} />
-    </div>
-);
+const FloatingOrbs: React.FC = () => {
+    if (isThermalGuardActive()) return null;
+    return (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] animate-float-slow" />
+            <div className="absolute top-1/3 right-1/4 w-80 h-80 bg-violet-500/10 rounded-full blur-[100px] animate-float-medium" />
+            <div className="absolute bottom-1/4 left-1/3 w-72 h-72 bg-blue-500/8 rounded-full blur-[90px] animate-float-fast" />
+            <div className="absolute top-2/3 right-1/3 w-64 h-64 bg-pink-500/8 rounded-full blur-[80px] animate-float-slow" style={{ animationDelay: '2s' }} />
+        </div>
+    );
+};
 
 // ============================
 // Cyber Card / Glow Card
@@ -299,7 +326,12 @@ const MarketIntelligenceSection: React.FC = () => {
     ];
 
     useEffect(() => {
-        const timer = setInterval(() => setActiveSignal(prev => (prev + 1) % signals.length), 2000);
+        const isThermalGuard = isThermalGuardActive();
+        const intervalMs = isThermalGuard ? 5000 : 2000;
+        const timer = setInterval(() => {
+            if (isThermalGuard && typeof document !== 'undefined' && document.hidden) return;
+            setActiveSignal(prev => (prev + 1) % signals.length);
+        }, intervalMs);
         return () => clearInterval(timer);
     }, []);
 
@@ -513,8 +545,8 @@ const BentoGrid: React.FC = () => {
                                     </div>
                                 ))}
                                 {/* Rotating ring */}
-                                <div className="absolute inset-0 rounded-full border border-green-500/20 animate-spin" style={{ animationDuration: '8s' }} />
-                                <div className="absolute inset-4 rounded-full border border-cyan-500/10 animate-spin" style={{ animationDuration: '5s', animationDirection: 'reverse' }} />
+                                <div className={`absolute inset-0 rounded-full border border-green-500/20 ${isThermalGuardActive() ? '' : 'animate-spin'}`} style={isThermalGuardActive() ? undefined : { animationDuration: '8s' }} />
+                                <div className={`absolute inset-4 rounded-full border border-cyan-500/10 ${isThermalGuardActive() ? '' : 'animate-spin'}`} style={isThermalGuardActive() ? undefined : { animationDuration: '5s', animationDirection: 'reverse' }} />
                             </div>
                         </div>
                     </CyberCard>
@@ -822,6 +854,7 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
     const [activeSymbol, setActiveSymbol] = useState('BTCUSDT');
 
     useEffect(() => {
+        const thermalGuard = isThermalGuardActive();
         const createWidget = () => {
             const container = document.getElementById('homepage_chart');
             if (!container || !window.TradingView) return;
@@ -839,15 +872,39 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
                 allow_symbol_change: true,
                 hide_top_toolbar: false,
                 hide_legend: false,
-                hide_side_toolbar: false,
+                hide_side_toolbar: thermalGuard,
                 withdateranges: true,
-                hotlist: true,
-                calendar: true,
+                hotlist: !thermalGuard,
+                calendar: !thermalGuard,
                 save_image: false,
                 studies: ["MASimple@tv-basicstudies", "RSI@tv-basicstudies"]
             });
         };
-        setTimeout(createWidget, 500);
+
+        if (!thermalGuard) {
+            const timer = setTimeout(createWidget, 500);
+            return () => clearTimeout(timer);
+        }
+
+        const container = document.getElementById('homepage_chart');
+        if (!container || typeof IntersectionObserver === 'undefined') {
+            const timer = setTimeout(createWidget, 500);
+            return () => clearTimeout(timer);
+        }
+
+        let created = false;
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting && !created) {
+                    created = true;
+                    createWidget();
+                    observer.disconnect();
+                }
+            },
+            { rootMargin: '250px' }
+        );
+        observer.observe(container);
+        return () => observer.disconnect();
     }, [theme, activeSymbol]);
 
     const handleTickerClick = (symbol: string) => {

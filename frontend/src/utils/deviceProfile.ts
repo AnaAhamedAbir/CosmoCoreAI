@@ -45,18 +45,18 @@ const DESKTOP_TIMINGS: ThermalTimings = {
 };
 
 const MOBILE_THERMAL_TIMINGS: ThermalTimings = {
-  l2FlushMs: 250,
-  tradeTickChartMs: 40,
-  indicatorIntervalMs: 500,
-  bracketOpenPollMs: 3500,
-  bracketActivePollMs: 1600,
-  bracketClosedPollMs: 8000,
-  balancePollMs: 9500,
-  mlWarmupMs: 25000,
-  openOrdersPollMs: 6000,
-  liquidationFps: 15,
-  modalPriceThrottleMs: 500,
-  marketTradeFlushMs: 250,
+  l2FlushMs: 600,
+  tradeTickChartMs: 120,
+  indicatorIntervalMs: 2000,
+  bracketOpenPollMs: 4000,
+  bracketActivePollMs: 2000,
+  bracketClosedPollMs: 12000,
+  balancePollMs: 10000,
+  mlWarmupMs: 30000,
+  openOrdersPollMs: 7500,
+  liquidationFps: 10,
+  modalPriceThrottleMs: 1000,
+  marketTradeFlushMs: 500,
 };
 
 export function getStoredThermalMode(): ThermalMode {

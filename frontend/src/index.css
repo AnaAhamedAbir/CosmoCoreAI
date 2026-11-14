@@ -1803,24 +1803,45 @@ html.mobile-thermal-guard [class*="backdrop-blur"] {
 }
 
 /* Stop huge static ambient blur blobs from pinning large GPU offscreen textures */
+html.mobile-thermal-guard [class*="blur-[60px]"],
 html.mobile-thermal-guard [class*="blur-[80px]"],
+html.mobile-thermal-guard [class*="blur-[90px]"],
 html.mobile-thermal-guard [class*="blur-[100px]"],
-html.mobile-thermal-guard [class*="blur-[120px]"] {
+html.mobile-thermal-guard [class*="blur-[120px]"],
+html.mobile-thermal-guard [class*="blur-[140px]"],
+html.mobile-thermal-guard [class*="blur-[150px]"] {
   display: none !important;
 }
 
-/* Stop infinite 60/120Hz layer invalidation on status dots & skeletons (keep animate-spin intact) */
+html.mobile-thermal-guard .blur-xl,
+html.mobile-thermal-guard .blur-2xl,
+html.mobile-thermal-guard .blur-3xl,
+html.mobile-thermal-guard [class*="blur-[30px]"],
+html.mobile-thermal-guard [class*="blur-[40px]"],
+html.mobile-thermal-guard [class*="blur-[50px]"] {
+  -webkit-filter: none !important;
+  filter: none !important;
+}
+
+/* Stop infinite 60/120Hz layer invalidation on status dots, floating orbs & gradients */
 html.mobile-thermal-guard .animate-ping {
   animation: none !important;
   opacity: 0.45 !important;
 }
 
-html.mobile-thermal-guard .animate-pulse {
+html.mobile-thermal-guard .animate-pulse,
+html.mobile-thermal-guard .animate-bounce,
+html.mobile-thermal-guard .animate-float-slow,
+html.mobile-thermal-guard .animate-float-medium,
+html.mobile-thermal-guard .animate-float-fast,
+html.mobile-thermal-guard .animate-gradient-x,
+html.mobile-thermal-guard .animate-pulse-slow,
+html.mobile-thermal-guard .animate-glow {
   animation: none !important;
 }
 
-html.mobile-thermal-guard .animate-bounce {
-  animation: none !important;
+html.mobile-thermal-guard [class*="will-change"] {
+  will-change: auto !important;
 }
 
 /* ============================================================================

@@ -33,6 +33,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 import { useSystemNotifications } from '@/hooks/useSystemNotifications';
 import type {
   NotificationCategory,
@@ -1246,7 +1247,7 @@ const SystemNotificationWidget: React.FC = () => {
       </button>
 
       {/* ─── Draggable Floating Cyberpunk Window ─── */}
-      {createPortal(
+      {(open || !isThermalGuardActive()) && createPortal(
         <div
           className={`fixed z-[9999] ${
             isDragging ? '' : 'transition-[opacity,transform] duration-200'
@@ -1279,9 +1280,11 @@ const SystemNotificationWidget: React.FC = () => {
               className="rounded-2xl overflow-hidden flex flex-col relative"
               style={{
                 height: 'min(580px, calc(100vh - 30px))',
-                background: isDark ? 'rgba(8, 10, 20, 0.90)' : 'rgba(248, 250, 252, 0.95)',
-                backdropFilter: 'blur(30px)',
-                WebkitBackdropFilter: 'blur(30px)',
+                background: isDark
+                  ? (isThermalGuardActive() ? 'rgba(8, 10, 20, 0.97)' : 'rgba(8, 10, 20, 0.90)')
+                  : (isThermalGuardActive() ? 'rgba(248, 250, 252, 0.99)' : 'rgba(248, 250, 252, 0.95)'),
+                backdropFilter: open && !isThermalGuardActive() ? 'blur(30px)' : 'none',
+                WebkitBackdropFilter: open && !isThermalGuardActive() ? 'blur(30px)' : 'none',
               }}
             >
               {/* Scanline overlay */}

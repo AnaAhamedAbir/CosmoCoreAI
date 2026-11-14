@@ -9,6 +9,7 @@ import SystemHealthWidget from '@/components/features/system/SystemHealthWidget'
 import MarketStatusWidget from '@/components/features/market/MarketStatusWidget';
 import EconomicCalendarWidget from '@/components/features/market/EconomicCalendarWidget';
 import { useMarketStore } from '@/store/marketStore';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 // Icons for the dashboard
 const TrendingUpIcon = ({ className }: { className?: string }) => (
@@ -36,9 +37,13 @@ const ActivityIcon = ({ className }: { className?: string }) => (
 );
 
 const AnimatedNumber: React.FC<{ value: number; isCurrency?: boolean }> = ({ value, isCurrency = false }) => {
-    const [displayValue, setDisplayValue] = useState(0);
+    const [displayValue, setDisplayValue] = useState(() => (isThermalGuardActive() ? value : 0));
 
     useEffect(() => {
+        if (isThermalGuardActive()) {
+            setDisplayValue(value);
+            return;
+        }
         let start = 0;
         const end = value;
         if (start === end) return;

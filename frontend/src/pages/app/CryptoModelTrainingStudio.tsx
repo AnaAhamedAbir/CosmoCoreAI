@@ -39,6 +39,7 @@ import { TrainingPresetsModal } from '@/components/ml/TrainingPresetsModal';
 import { OneClickDeployModal } from '@/components/ml/OneClickDeployModal';
 
 import { mlModelsService } from '@/services/mlModelsService';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 import { ALL_L2_FEATURES, BASIC_L2_INTERNAL_NAMES, BASIC_L2_FEATURES, ADV_L2_FEATURES, ALL_TRADE_FEATURES, ALL_HYBRID_DEEP_TRADE_FEATURES } from '@/constants/mlFeatures';
 const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = ({ retrainModelId }) => {
@@ -653,15 +654,16 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
 
     // Auto-scroll logs
     useEffect(() => {
-        if (logsEndRef.current) {
-            logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        if (showTerminal && logsEndRef.current) {
+            logsEndRef.current.scrollIntoView({ behavior: isThermalGuardActive() ? 'auto' : 'smooth' });
         }
-    }, [currentJob?.logs]);
+    }, [currentJob?.logs, showTerminal]);
 
     // Polling logic
     useEffect(() => {
         let interval: NodeJS.Timeout;
         if (isTraining && currentJob && ['PENDING', 'RUNNING'].includes(currentJob.status)) {
+            const pollMs = isThermalGuardActive() ? 2000 : 1000;
             interval = setInterval(async () => {
                 try {
                     const latestJob = await mlTrainingService.getJobStatus(currentJob.id);
@@ -673,7 +675,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                 } catch (error) {
                     console.error("Error fetching job status:", error);
                 }
-            }, 1000); // Poll every 1 second
+            }, pollMs);
         }
         return () => clearInterval(interval);
     }, [isTraining, currentJob?.id, currentJob?.status]);
@@ -682,6 +684,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
     useEffect(() => {
         let interval: NodeJS.Timeout;
         if (l2ScrapeJob && ['PENDING', 'RUNNING'].includes(l2ScrapeJob.status)) {
+            const pollMs = isThermalGuardActive() ? 2000 : 1000;
             interval = setInterval(async () => {
                 try {
                     const latestJob = await mlTrainingService.getJobStatus(l2ScrapeJob.id);
@@ -697,7 +700,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                 } catch (error) {
                     console.error("Error fetching L2 job status:", error);
                 }
-            }, 1000);
+            }, pollMs);
         }
         return () => clearInterval(interval);
     }, [l2ScrapeJob?.id, l2ScrapeJob?.status, dataSource]);
@@ -706,6 +709,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
     useEffect(() => {
         let interval: NodeJS.Timeout;
         if (hybridScrapeJob && ['PENDING', 'RUNNING'].includes(hybridScrapeJob.status)) {
+            const pollMs = isThermalGuardActive() ? 2000 : 1000;
             interval = setInterval(async () => {
                 try {
                     const latestJob = await mlTrainingService.getJobStatus(hybridScrapeJob.id);
@@ -721,7 +725,7 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                 } catch (error) {
                     console.error("Error fetching Hybrid job status:", error);
                 }
-            }, 1000);
+            }, pollMs);
         }
         return () => clearInterval(interval);
     }, [hybridScrapeJob?.id, hybridScrapeJob?.status, dataSource]);
@@ -3303,6 +3307,15 @@ const CryptoModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = 
                                         else if (log.includes("Fetching") || log.includes("Calculating")) textColor = "text-yellow-400";
                                         else if (log.includes("[Trade Scraper]") || log.includes("[Scraper]")) textColor = "text-amber-400 drop-shadow-[0_0_5px_#f59e0b]";
                                         else if (log.includes("🛑") || log.includes("cancelled") || log.includes("stopped")) textColor = "text-orange-400";
+
+                                        if (isThermalGuardActive()) {
+                                            return (
+                                                <div key={idx} className={`break-words ${textColor}`}>
+                                                    <span className="text-cyan-800 mr-3 opacity-50 select-none">root@core:~#</span>
+                                                    {log}
+                                                </div>
+                                            );
+                                        }
 
                                         return (
                                             <motion.div 

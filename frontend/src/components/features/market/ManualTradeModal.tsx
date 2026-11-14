@@ -90,7 +90,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       } catch { }
     }
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
-    return { x: 20, y: Math.max(16, winH - 104 - 540) };
+    return { x: 20, y: Math.max(16, winH - 104 - 648) };
   });
 
   const hasUserDraggedHudRef = React.useRef<boolean>(
@@ -1136,7 +1136,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       if (!hasUserDraggedModalRef.current) {
         setModalPos(prev => ({
           x: targetLeft,
-          y: Math.max(16, winH - 104 - 540)
+          y: Math.max(16, winH - 104 - 648)
         }));
       }
       if (!hasUserDraggedHudRef.current) {
@@ -1161,8 +1161,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
     const modalEl = elOverride || modalContainerRef.current;
-    const modalW = modalEl?.offsetWidth || (isMin ? 395 : 430);
-    const modalH = modalEl?.offsetHeight || (isMin ? 180 : 540);
+    const modalW = modalEl?.offsetWidth || (isMin ? 395 : 516);
+    const modalH = modalEl?.offsetHeight || (isMin ? 180 : 648);
 
     const leftMargin = 6;
     const rightMargin = 6;
@@ -1278,8 +1278,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     const modalEl = modalContainerRef.current;
     const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
-    const modalW = modalEl?.offsetWidth || (isMinimized ? 395 : 430);
-    const modalH = modalEl?.offsetHeight || (isMinimized ? 180 : 540);
+    const modalW = modalEl?.offsetWidth || (isMinimized ? 395 : 516);
+    const modalH = modalEl?.offsetHeight || (isMinimized ? 180 : 648);
     const topMargin = isMinimized ? 4 : 12;
     const bottomMargin = isMinimized ? 8 : 16;
 
@@ -2959,11 +2959,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         const vh = window.visualViewport?.height || window.innerHeight;
                         const vw = window.visualViewport?.width || window.innerWidth;
                         const isSmall = vh < 920 || vw < 1200;
-                        const cap = isSmall ? 500 : 540;
+                        const cap = isSmall ? 600 : 648;
                         const y = dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y;
-                        return `${Math.max(280, Math.min(cap, Math.round(vh - y - (isSmall ? 8 : 14))))}px`;
+                        return `${Math.max(300, Math.min(cap, Math.round(vh - y - (isSmall ? 8 : 14))))}px`;
                       })()
-                    : '540px',
+                    : '648px',
                 willChange: 'transform'
               }}
               className={`cosmo-theme-modal fixed rounded-xl ${isMinimized
@@ -2971,8 +2971,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                   ? 'w-[395px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
                   : 'w-[395px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
                 : isThermalGuardActive
-                  ? 'w-[430px] max-w-[calc(100vw-12px)] flex flex-col bg-[#080c16] border-cyan-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
-                  : 'w-[430px] max-w-[calc(100vw-12px)] flex flex-col bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
+                  ? 'w-[516px] max-w-[calc(100vw-12px)] flex flex-col bg-[#080c16] border-cyan-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
+                  : 'w-[516px] max-w-[calc(100vw-12px)] flex flex-col bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
                 } border z-[99999] overflow-hidden transition-colors duration-200 select-none`}
             >
               {isMinimized ? (
@@ -4641,11 +4641,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               setSelectedPercent(null);
                             }}
                             placeholder={isInverseFutures ? `Min 1 Cont ($${contractSize})` : "0.00"}
-                            className="w-full bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-3 pl-9 text-white font-mono font-bold text-xs focus:outline-none transition-colors"
+                            className={`w-full bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-3 ${sizeMode === 'quote' ? 'pl-7' : 'pl-12'} text-white font-mono font-bold text-xs focus:outline-none transition-colors`}
                           />
                           {/* Currency symbol badge */}
-                          <span className="absolute left-2.5 top-1.5 text-[10.5px] font-mono font-bold text-cyan-400/80">
-                            {sizeMode === 'quote' ? '$' : baseCurrency.slice(0, 3)}
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10.5px] font-mono font-bold text-cyan-400/80 pointer-events-none">
+                            {sizeMode === 'quote' ? '$' : baseCurrency.slice(0, 4)}
                           </span>
                         </div>
 

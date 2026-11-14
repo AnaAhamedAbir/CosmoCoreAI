@@ -47,22 +47,26 @@ export const CosmicStarBackground: React.FC = () => {
         if (!ctx) return;
 
         let animId: number = 0;
+        let isDisposed = false;
         const maxZ = 3000;
         // Desktop: full 24,000 warp stars @ native refresh rate.
-        // Mobile/Tablet thermal guard: 350 static stars rendered once (0% continuous CPU/GPU drain).
+        // Mobile/Tablet thermal guard: 420 warp stars @ 24 FPS and 0.65x canvas scale (~99.6% GPU/CPU reduction while keeping smooth warp effect).
         const starCount = thermalGuard
-            ? 350
+            ? 420
             : Math.min(24000, window.innerWidth * 18);
+        const renderScale = thermalGuard ? 0.65 : 1;
+        const frameIntervalMs = thermalGuard ? 42 : 0; // ~24 FPS cap on mobile/tablet 120Hz displays
+        const palette = ['#ffffff', '#e2e8f0', '#a5f3fc', '#67e8f9', '#8b5cf6', '#d946ef'];
         let stars: Star[] = [];
 
         const resize = () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight; // Fixed to viewport height for massive performance gain
+            canvas.width = Math.max(1, Math.round(window.innerWidth * renderScale));
+            canvas.height = Math.max(1, Math.round(window.innerHeight * renderScale));
         };
 
         class Star {
-            x: number; y: number; z: number; pz: number; color: string; sizeMultiplier: number;
-            constructor(spawnAnywhere: boolean = false) {
+            x: number; y: number; z: number; pz: number; colorIndex: number; color: string; sizeMultiplier: number;
+            constructor(spawnAnywhere: boolean = false, forcedColorIndex?: number) {
                 const angle = Math.random() * Math.PI * 2;
                 // Distribute distances to fill the view, concentrated more in center and edges randomly
                 const distance = Math.pow(Math.random(), 0.8) * (maxZ / 1.2) + 5;
@@ -75,8 +79,10 @@ export const CosmicStarBackground: React.FC = () => {
                 this.sizeMultiplier = Math.random() < 0.9 ? (Math.random() * 0.4 + 0.1) : (Math.random() * 1.2 + 0.6);
 
                 // Colors: mostly cyan, violet, and white for cosmic theme
-                const colors = ['#ffffff', '#e2e8f0', '#a5f3fc', '#67e8f9', '#8b5cf6', '#d946ef'];
-                this.color = colors[Math.floor(Math.random() * colors.length)];
+                this.colorIndex = forcedColorIndex !== undefined
+                    ? forcedColorIndex
+                    : Math.floor(Math.random() * palette.length);
+                this.color = palette[this.colorIndex];
             }
             update(speed: number) {
                 this.pz = this.z;
@@ -90,26 +96,24 @@ export const CosmicStarBackground: React.FC = () => {
                     this.pz = 10;
                 }
             }
-            draw() {
-                const fov = canvas.width * 0.8; // Field of view adjustment
-                const cx = canvas.width / 2;
-                const cy = canvas.height / 2;
-
+            draw(width: number, height: number, fov: number, cx: number, cy: number, sizeScale: number, skipFillStyle: boolean) {
                 const sx = (this.x / this.z) * fov + cx;
                 const sy = (this.y / this.z) * fov + cy;
 
                 // If the star is entirely off screen, skip drawing to save performance
-                if (sx < 0 || sx > canvas.width || sy < 0 || sy > canvas.height) {
+                if (sx < 0 || sx > width || sy < 0 || sy > height) {
                     return;
                 }
 
+                const depthFactor = 1 - (this.z / maxZ);
                 // Opacity fades as it gets closer to maxZ (further away in the back window)
-                const opacity = Math.min(1, Math.max(0, (1 - (this.z / maxZ)) * (this.sizeMultiplier + 0.5)));
+                const opacity = Math.min(1, Math.max(0, depthFactor * (this.sizeMultiplier + 0.5)));
                 // Size shrinks as it goes further away
-                const size = Math.max(0.1, (1 - this.z / maxZ) * 2 * this.sizeMultiplier);
+                const size = Math.max(thermalGuard ? 0.8 : 0.1, depthFactor * 2 * this.sizeMultiplier * sizeScale);
 
-                // fillRect is vastly faster than drawing arcs/paths for tiny dots
-                ctx!.fillStyle = this.color;
+                if (!skipFillStyle) {
+                    ctx!.fillStyle = this.color;
+                }
                 ctx!.globalAlpha = opacity;
                 ctx!.fillRect(sx, sy, size, size);
             }
@@ -118,46 +122,92 @@ export const CosmicStarBackground: React.FC = () => {
         const init = () => {
             stars = [];
             for (let i = 0; i < starCount; i++) {
-                stars.push(new Star(true));
+                // Pre-group by color so fillStyle switches only 6 times per frame on thermalGuard
+                stars.push(new Star(true, thermalGuard ? (i % palette.length) : undefined));
+            }
+            if (thermalGuard) {
+                stars.sort((a, b) => a.colorIndex - b.colorIndex);
             }
         };
 
-        const drawStaticFrame = () => {
-            ctx!.globalAlpha = 1.0;
-            ctx!.clearRect(0, 0, canvas.width, canvas.height);
-            stars.forEach(s => s.draw());
-        };
+        let lastFrameTime = 0;
 
-        const animate = () => {
+        const animate = (timestamp: number = 0) => {
+            if (isDisposed) return;
+
+            if (typeof document !== 'undefined' && document.hidden) {
+                animId = 0;
+                return;
+            }
+
+            if (frameIntervalMs > 0) {
+                if (lastFrameTime && (timestamp - lastFrameTime) < frameIntervalMs) {
+                    animId = requestAnimationFrame(animate);
+                    return;
+                }
+            }
+
+            const dt = lastFrameTime ? Math.min(100, timestamp - lastFrameTime) : 16.67;
+            lastFrameTime = timestamp;
+
+            const width = canvas.width;
+            const height = canvas.height;
+            const fov = width * 0.8;
+            const cx = width / 2;
+            const cy = height / 2;
+
             // Reset globalAlpha to ensure the canvas is fully cleared
             ctx!.globalAlpha = 1.0;
             // Fully clear the canvas transparently so the galaxy image shows through
-            ctx!.clearRect(0, 0, canvas.width, canvas.height);
+            ctx!.clearRect(0, 0, width, height);
 
-            // Warp speed (traveling fast)
-            const speed = 4;
-            stars.forEach(s => { s.update(speed); s.draw(); });
+            // Warp speed (delta-time normalized so 24 FPS mobile matches 60/120Hz travel speed)
+            const speed = thermalGuard ? Math.max(2, (dt / 16.67) * 4) : 4;
+            let activeColorIdx = -1;
+            for (let i = 0; i < stars.length; i++) {
+                const s = stars[i];
+                s.update(speed);
+                if (thermalGuard) {
+                    const needFillSwitch = s.colorIndex !== activeColorIdx;
+                    if (needFillSwitch) {
+                        activeColorIdx = s.colorIndex;
+                        ctx!.fillStyle = s.color;
+                    }
+                    s.draw(width, height, fov, cx, cy, renderScale, true);
+                } else {
+                    s.draw(width, height, fov, cx, cy, 1, false);
+                }
+            }
 
             animId = requestAnimationFrame(animate);
         };
 
         const handleResize = () => {
             resize();
-            if (thermalGuard) {
-                drawStaticFrame();
+        };
+
+        const handleVisibilityChange = () => {
+            if (isDisposed) return;
+            if (document.hidden) {
+                if (animId) {
+                    cancelAnimationFrame(animId);
+                    animId = 0;
+                }
+            } else if (!animId) {
+                lastFrameTime = 0;
+                animId = requestAnimationFrame(animate);
             }
         };
 
         resize();
         init();
-        if (thermalGuard) {
-            drawStaticFrame();
-        } else {
-            animate();
-        }
+        animId = requestAnimationFrame(animate);
         window.addEventListener('resize', handleResize);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => {
+            isDisposed = true;
             window.removeEventListener('resize', handleResize);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             if (animId) cancelAnimationFrame(animId);
         };
     }, [thermalGuard]);

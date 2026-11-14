@@ -1791,11 +1791,12 @@ class ManualTradeService:
                 if not is_post_only:
                     payload["workingTimeInForce"] = "GTC"
                 
-                if valid_iceberg is not None:
-                    payload["workingIcebergQty"] = _fmt_qty(valid_iceberg)
+                iceberg_str = _fmt_qty(valid_iceberg) if valid_iceberg is not None else None
+                if iceberg_str is not None:
+                    payload["workingIcebergQty"] = iceberg_str
                     logger.info(
-                        f"🧊 Attaching workingIcebergQty={payload['workingIcebergQty']} "
-                        f"(workingQuantity={payload['workingQuantity']}) to {mode_label}"
+                        f"🧊 Attaching Iceberg visible slice={iceberg_str} "
+                        f"(qty={payload['workingQuantity']}) to working & pending legs of {mode_label}"
                     )
                 
                 t_order_start = time.perf_counter()
@@ -1815,6 +1816,10 @@ class ManualTradeService:
                             payload['pendingAbovePrice'] = _fmt_px(sl_price * 1.001)
                             payload['pendingBelowType'] = 'LIMIT_MAKER'
                             payload['pendingBelowPrice'] = _fmt_px(tp_price)
+                        if iceberg_str is not None:
+                            # Apply Iceberg slice to both pending OCO legs (LIMIT_MAKER TP & GTC STOP_LOSS_LIMIT SL)
+                            payload['pendingAboveIcebergQty'] = iceberg_str
+                            payload['pendingBelowIcebergQty'] = iceberg_str
                         raw_res = await exchange.private_post_orderlist_otoco(payload)
                     else: # OTO (2-Leg: Entry + TP, or Entry + Fixed SL)
                         if order_req.side.lower() == 'buy':
@@ -1835,6 +1840,9 @@ class ManualTradeService:
                                 payload['pendingTimeInForce'] = 'GTC'
                                 payload['pendingStopPrice'] = _fmt_px(sl_price)
                                 payload['pendingPrice'] = _fmt_px(sl_price * 1.001)
+                        if iceberg_str is not None:
+                            # Apply Iceberg slice to pending leg (LIMIT_MAKER TP or GTC STOP_LOSS_LIMIT SL)
+                            payload['pendingIcebergQty'] = iceberg_str
                         raw_res = await exchange.private_post_orderlist_oto(payload)
 
                     order_list = raw_res.get('orderReports', [])

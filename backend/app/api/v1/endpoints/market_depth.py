@@ -100,9 +100,57 @@ async def get_raw_order_book(
 
 from app.core.redis import redis_manager
 from app.services.market_data_streamer import market_data_streamer
+from app.services.liquidity_absorption_service import liquidity_absorption_service
 import asyncio
 
 from app.services.oanda_streamer import oanda_streamer
+
+
+@router.get("/liquidity-sweep-absorption", response_model=Any)
+async def get_liquidity_sweep_absorption(
+    symbol: str = Query(..., description="Trading pair, e.g., 'BTC/USDT'"),
+    exchange: str = Query("binance", description="Exchange ID"),
+    interval: str = Query("1m", description="Chart timeframe"),
+    limit: int = Query(350, ge=50, le=1000, description="Number of historical candles"),
+    lookback: int = Query(20, ge=5, le=100, description="Swing sweep lookback bars"),
+    min_absorbed_usd: float = Query(50000.0, ge=1000.0, description="Minimum notional absorbed USD"),
+    window_sec: float = Query(20.0, ge=5.0, le=120.0, description="Live absorption rolling window in seconds"),
+    include_historical: bool = Query(True, description="Include historical OHLCV sweep/absorption zones"),
+) -> Any:
+    """
+    Returns both historical estimated Sweep + Absorption + Liquidity Swap zones
+    and live L2 Iceberg/Absorption zones, ensuring live streaming is active.
+    """
+    try:
+        liquidity_absorption_service.configure_stream(
+            exchange_id=exchange,
+            symbol=symbol,
+            min_absorbed_usd=min_absorbed_usd,
+            window_sec=window_sec,
+        )
+
+        if exchange.lower() != "oanda":
+            await market_data_streamer.start_streaming(exchange, symbol)
+
+        historical_zones = []
+        if include_historical:
+            candles = await market_depth_service.fetch_ohlcv(symbol, exchange, interval, limit)
+            historical_zones = liquidity_absorption_service.analyze_historical_candles(
+                candles=candles,
+                lookback=lookback,
+                min_absorbed_usd=min_absorbed_usd,
+            )
+
+        live_zones = await liquidity_absorption_service.get_live_zones(exchange, symbol)
+        return {
+            "symbol": symbol,
+            "exchange": exchange,
+            "interval": interval,
+            "historical_zones": historical_zones,
+            "live_zones": live_zones,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.websocket("/ws/{exchange_id}/{symbol:path}")
 async def websocket_market_depth(websocket: WebSocket, exchange_id: str, symbol: str):
@@ -188,7 +236,7 @@ async def websocket_heatmap_events(websocket: WebSocket, symbol: str = None):
                 if message["type"] == "message":
                     data = message["data"]
                     payload = json.loads(data)
-                    if symbol and payload.get("symbol") != symbol:
+                    if symbol and str(payload.get("symbol", "")).upper() != symbol.upper():
                         continue
                     await websocket.send_text(data)
         except Exception:

@@ -7,6 +7,7 @@ from typing import Dict, Set, Tuple
 
 from app.core.redis import redis_manager
 from app.helpers.orderbook_math import calculate_dynamic_wall_threshold
+from app.services.liquidity_absorption_service import liquidity_absorption_service
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,17 @@ class MarketDataStreamer:
                 if redis:
                     await redis.setex(f"latest_orderbook:{exchange_id}:{symbol}", 60, json.dumps(payload))
                     await redis.publish(channel, json.dumps(payload))
+
+                try:
+                    await liquidity_absorption_service.process_orderbook(
+                        exchange_id=exchange_id,
+                        symbol=symbol,
+                        bids=bids,
+                        asks=asks,
+                        current_price=current_price,
+                    )
+                except Exception as abs_err:
+                    logger.debug(f"LiquidityAbsorption orderbook hook err: {abs_err}")
                 
             except Exception as e:
                 err_msg = str(e)
@@ -269,6 +281,15 @@ class MarketDataStreamer:
                             await redis.expire(trade_key, 3600)
                             
                         await redis.publish(channel, json.dumps(payload))
+
+                    try:
+                        await liquidity_absorption_service.process_trades(
+                            exchange_id=exchange_id,
+                            symbol=symbol,
+                            trades=trades,
+                        )
+                    except Exception as abs_err:
+                        logger.debug(f"LiquidityAbsorption trades hook err: {abs_err}")
             except Exception as e:
                 err_msg = str(e)
                 if "1006" in err_msg or "closed by remote server" in err_msg or "Connection closed" in err_msg:

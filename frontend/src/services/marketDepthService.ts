@@ -21,5 +21,18 @@ export const marketDepthService = {
             }
         });
         return response.data;
+    },
+    getLiquiditySweepAbsorption: async (params: {
+        symbol: string;
+        exchange: string;
+        interval: string;
+        limit?: number;
+        lookback?: number;
+        min_absorbed_usd?: number;
+        window_sec?: number;
+        include_historical?: boolean;
+    }) => {
+        const response = await apiClient.get('/market-depth/liquidity-sweep-absorption', { params });
+        return response.data;
     }
 };

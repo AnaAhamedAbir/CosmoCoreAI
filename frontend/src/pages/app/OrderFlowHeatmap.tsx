@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { createChart, ISeriesApi, CandlestickData, CandlestickSeries, LineSeries, HistogramSeries, HistogramData, createSeriesMarkers, LineStyle } from 'lightweight-charts';
 import { WickSRRenderer } from '../../components/features/market/WickSRRenderer';
+import { LiquiditySweepAbsorptionRenderer } from '../../components/features/market/LiquiditySweepAbsorptionRenderer';
+import { useLiquiditySweepAbsorption } from '../../hooks/useLiquiditySweepAbsorption';
 import { useLevel2MarketData, subscribeLiveTradeTicks } from '@/hooks/useLevel2MarketData';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { useOrderFlowData } from '../../hooks/useOrderFlowData';
@@ -258,6 +260,14 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
     const [tooltipPos, setTooltipPos] = useState<{ x: number, y: number } | null>(null);
 
     const { data: aetherFlowData } = useAetherFlowData(symbol, exchange, interval, indicatorSettings.showAetherFlow);
+    const { zones: liquidityAbsorptionZones } = useLiquiditySweepAbsorption(
+        symbol,
+        exchange,
+        interval,
+        indicatorSettings,
+        Boolean(indicatorSettings.showLiquiditySweepAbsorption),
+        currentPrice
+    );
 
     // Default to the right side (rough estimate, can be adjusted by screen size)
     const [quantumAiHudPos, setQuantumAiHudPos] = useState(() => {
@@ -3590,6 +3600,21 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                             chart={chartRef.current}
                             visible={indicatorSettings.showVWAPSD}
                             data={vwapSDData}
+                        />
+                    )}
+
+                    {/* Liquidity Sweep, Swap & Iceberg Absorption */}
+                    {indicatorSettings.showLiquiditySweepAbsorption && (
+                        <LiquiditySweepAbsorptionRenderer
+                            chart={chartRef.current}
+                            series={candlestickSeriesRef.current}
+                            zones={liquidityAbsorptionZones}
+                            candlesRef={allCandlesRef}
+                            visible={Boolean(indicatorSettings.showLiquiditySweepAbsorption)}
+                            showIcebergMarkers={indicatorSettings.lsaShowIcebergMarkers !== false}
+                            showLiquiditySwap={indicatorSettings.lsaShowLiquiditySwap !== false}
+                            showHudSummary={indicatorSettings.lsaShowHudSummary !== false}
+                            currentPrice={currentPrice}
                         />
                     )}
                 </div>

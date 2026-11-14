@@ -42,6 +42,19 @@ export const sanitizeIndicatorSettings = (settings: IndicatorSettings): Indicato
         vwapSDMultiplier1: Number.isFinite(Number(settings.vwapSDMultiplier1)) ? Number(settings.vwapSDMultiplier1) : 1.0,
         vwapSDMultiplier2: Number.isFinite(Number(settings.vwapSDMultiplier2)) ? Number(settings.vwapSDMultiplier2) : 2.0,
         vwapSDMultiplier3: Number.isFinite(Number(settings.vwapSDMultiplier3)) ? Number(settings.vwapSDMultiplier3) : 2.5,
+        showLiquiditySweepAbsorption: Boolean(settings.showLiquiditySweepAbsorption),
+        lsaSweepLookback: Math.max(5, Math.min(100, Math.floor(Number(settings.lsaSweepLookback) || 20))),
+        lsaMinAbsorbedUsd: Math.max(1000, Number(settings.lsaMinAbsorbedUsd) || 50000),
+        lsaAbsorptionWindowSec: Math.max(5, Math.min(120, Math.floor(Number(settings.lsaAbsorptionWindowSec) || 20))),
+        lsaMinReloads: Math.max(0, Math.min(20, Number.isFinite(Number(settings.lsaMinReloads)) ? Math.floor(Number(settings.lsaMinReloads)) : 1)),
+        lsaMaxZones: Math.max(5, Math.min(50, Math.floor(Number(settings.lsaMaxZones) || 20))),
+        lsaSignalFilter: (['All', 'Reversal', 'Breakdown', 'Iceberg'].includes(String(settings.lsaSignalFilter)) ? settings.lsaSignalFilter : 'All') as 'All' | 'Reversal' | 'Breakdown' | 'Iceberg',
+        lsaShowIcebergMarkers: settings.lsaShowIcebergMarkers !== false,
+        lsaShowLiquiditySwap: settings.lsaShowLiquiditySwap !== false,
+        lsaShowBreakdownZones: settings.lsaShowBreakdownZones !== false,
+        lsaShowHistoricalZones: settings.lsaShowHistoricalZones !== false,
+        lsaShowHudSummary: settings.lsaShowHudSummary !== false,
+        lsaEnableAlerts: Boolean(settings.lsaEnableAlerts),
     };
 };
 
@@ -264,6 +277,20 @@ export const useBotStore = create<BotState>()(
         aetherSupertrend: true,
         aetherSmc: true,
         aetherFvg: true,
+        // ── Liquidity Sweep, Swap & Iceberg Absorption ──
+        showLiquiditySweepAbsorption: false,
+        lsaSweepLookback: 20,
+        lsaMinAbsorbedUsd: 50000,
+        lsaAbsorptionWindowSec: 20,
+        lsaMinReloads: 1,
+        lsaMaxZones: 20,
+        lsaSignalFilter: 'All',
+        lsaShowIcebergMarkers: true,
+        lsaShowLiquiditySwap: true,
+        lsaShowBreakdownZones: true,
+        lsaShowHistoricalZones: true,
+        lsaShowHudSummary: true,
+        lsaEnableAlerts: false,
     },
     setIndicatorSettings: (settings) => set((state) => ({
         indicatorSettings: sanitizeIndicatorSettings({ ...state.indicatorSettings, ...settings })

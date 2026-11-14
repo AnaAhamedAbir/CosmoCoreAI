@@ -227,6 +227,20 @@ export interface IndicatorSettings {
     aetherOrderBlocks: boolean;
     aether3BarReversal: boolean;
     aetherAutoFibo: boolean;
+    // ── Liquidity Sweep, Swap & Iceberg Absorption ──
+    showLiquiditySweepAbsorption: boolean;
+    lsaSweepLookback: number;
+    lsaMinAbsorbedUsd: number;
+    lsaAbsorptionWindowSec: number;
+    lsaMinReloads: number;
+    lsaMaxZones: number;
+    lsaSignalFilter: 'All' | 'Reversal' | 'Breakdown' | 'Iceberg';
+    lsaShowIcebergMarkers: boolean;
+    lsaShowLiquiditySwap: boolean;
+    lsaShowBreakdownZones: boolean;
+    lsaShowHistoricalZones: boolean;
+    lsaShowHudSummary: boolean;
+    lsaEnableAlerts: boolean;
 }
 
 interface IndicatorSelectorProps {
@@ -2170,6 +2184,176 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                 }`}>
                                     Footprint
                                 </span>
+                            </div>
+
+                            {/* Sweep, Swap & Iceberg Absorption */}
+                            <div className="flex flex-col gap-2 pt-2 mt-1 border-t border-gray-200/70 dark:border-white/5">
+                                <div className="flex items-center justify-between py-0.5 group/item">
+                                    <label className="flex items-center cursor-pointer flex-1 select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!settings.showLiquiditySweepAbsorption}
+                                            onChange={() => toggleIndicator('showLiquiditySweepAbsorption')}
+                                            className="w-4 h-4 text-cyan-600 bg-gray-100 border-gray-300 rounded focus:ring-cyan-500 dark:focus:ring-cyan-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 accent-cyan-500 cursor-pointer"
+                                        />
+                                        <span className="ml-3 text-sm font-semibold text-gray-900 dark:text-gray-100 group-hover/item:text-cyan-500 dark:group-hover/item:text-cyan-400 transition-colors">
+                                            Sweep & Iceberg Absorption
+                                        </span>
+                                    </label>
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold transition-all ${
+                                        settings.showLiquiditySweepAbsorption
+                                            ? 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.25)]'
+                                            : 'bg-gray-100 dark:bg-white/5 text-gray-500 border border-gray-200 dark:border-transparent'
+                                    }`}>
+                                        Swap/Iceberg
+                                    </span>
+                                </div>
+
+                                {settings.showLiquiditySweepAbsorption && (
+                                    <div className="flex flex-col gap-2 pl-7 animate-in slide-in-from-top-1 duration-200">
+                                        <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                                            <div className="flex flex-col gap-0.5 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded border border-gray-200 dark:border-transparent">
+                                                <span className="text-gray-500 dark:text-gray-400 font-bold">Min Absorbed ($)</span>
+                                                <input
+                                                    type="number"
+                                                    value={settings.lsaMinAbsorbedUsd ?? 50000}
+                                                    onChange={(e) => updateSetting('lsaMinAbsorbedUsd', Math.max(1000, Number(e.target.value) || 1000))}
+                                                    className="w-full bg-transparent text-gray-800 dark:text-gray-200 font-mono font-bold focus:outline-none focus:text-cyan-400"
+                                                    min={1000}
+                                                    step={5000}
+                                                    title="Minimum USD volume absorbed at zone"
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-0.5 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded border border-gray-200 dark:border-transparent">
+                                                <span className="text-gray-500 dark:text-gray-400 font-bold">Sweep Lookback</span>
+                                                <input
+                                                    type="number"
+                                                    value={settings.lsaSweepLookback ?? 20}
+                                                    onChange={(e) => updateSetting('lsaSweepLookback', Math.max(5, Math.min(100, Number(e.target.value) || 20)))}
+                                                    className="w-full bg-transparent text-gray-800 dark:text-gray-200 font-mono font-bold focus:outline-none focus:text-cyan-400"
+                                                    min={5}
+                                                    max={100}
+                                                    step={1}
+                                                    title="Bars lookback for swing high/low sweep pools"
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-0.5 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded border border-gray-200 dark:border-transparent">
+                                                <span className="text-gray-500 dark:text-gray-400 font-bold">Window (sec)</span>
+                                                <input
+                                                    type="number"
+                                                    value={settings.lsaAbsorptionWindowSec ?? 20}
+                                                    onChange={(e) => updateSetting('lsaAbsorptionWindowSec', Math.max(5, Math.min(120, Math.floor(Number(e.target.value) || 20))))}
+                                                    className="w-full bg-transparent text-gray-800 dark:text-gray-200 font-mono font-bold focus:outline-none focus:text-cyan-400"
+                                                    min={5}
+                                                    max={120}
+                                                    step={5}
+                                                    title="Rolling time window (seconds) for live absorption & iceberg detection"
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-0.5 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded border border-gray-200 dark:border-transparent">
+                                                <span className="text-gray-500 dark:text-gray-400 font-bold">Signal Filter</span>
+                                                <select
+                                                    value={settings.lsaSignalFilter || 'All'}
+                                                    onChange={(e) => onSettingsChange({ ...settings, lsaSignalFilter: e.target.value as any })}
+                                                    className="w-full bg-transparent text-gray-800 dark:text-gray-200 font-mono font-bold focus:outline-none focus:text-cyan-400"
+                                                >
+                                                    <option className="bg-white dark:bg-[#0c0e14]" value="All">All Signals</option>
+                                                    <option className="bg-white dark:bg-[#0c0e14]" value="Reversal">Reversal Only</option>
+                                                    <option className="bg-white dark:bg-[#0c0e14]" value="Breakdown">Breakdown Only</option>
+                                                    <option className="bg-white dark:bg-[#0c0e14]" value="Iceberg">Iceberg Only</option>
+                                                </select>
+                                            </div>
+                                            <div className="flex flex-col gap-0.5 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded border border-gray-200 dark:border-transparent">
+                                                <span className="text-gray-500 dark:text-gray-400 font-bold">Min Iceberg Reloads</span>
+                                                <input
+                                                    type="number"
+                                                    value={settings.lsaMinReloads ?? 1}
+                                                    onChange={(e) => updateSetting('lsaMinReloads', Math.max(0, Math.min(20, Math.floor(Number(e.target.value) || 0))))}
+                                                    className="w-full bg-transparent text-gray-800 dark:text-gray-200 font-mono font-bold focus:outline-none focus:text-cyan-400"
+                                                    min={0}
+                                                    max={20}
+                                                    step={1}
+                                                    title="Minimum live L2 reload count for Iceberg markers"
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-0.5 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded border border-gray-200 dark:border-transparent">
+                                                <span className="text-gray-500 dark:text-gray-400 font-bold">Max Zones</span>
+                                                <input
+                                                    type="number"
+                                                    value={settings.lsaMaxZones ?? 20}
+                                                    onChange={(e) => updateSetting('lsaMaxZones', Math.max(5, Math.min(50, Math.floor(Number(e.target.value) || 20))))}
+                                                    className="w-full bg-transparent text-gray-800 dark:text-gray-200 font-mono font-bold focus:outline-none focus:text-cyan-400"
+                                                    min={5}
+                                                    max={50}
+                                                    step={1}
+                                                    title="Maximum zones rendered on chart"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                                            <label className="flex items-center gap-1.5 cursor-pointer p-1.5 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={settings.lsaShowIcebergMarkers !== false}
+                                                    onChange={() => onSettingsChange({ ...settings, lsaShowIcebergMarkers: !(settings.lsaShowIcebergMarkers !== false) })}
+                                                    className="w-3 h-3 rounded text-cyan-500 accent-cyan-500"
+                                                />
+                                                <span className="text-gray-700 dark:text-gray-300 font-medium">Iceberg 💎</span>
+                                            </label>
+                                            <label className="flex items-center gap-1.5 cursor-pointer p-1.5 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={settings.lsaShowLiquiditySwap !== false}
+                                                    onChange={() => onSettingsChange({ ...settings, lsaShowLiquiditySwap: !(settings.lsaShowLiquiditySwap !== false) })}
+                                                    className="w-3 h-3 rounded text-cyan-500 accent-cyan-500"
+                                                />
+                                                <span className="text-gray-700 dark:text-gray-300 font-medium">Liq Swap ⇄</span>
+                                            </label>
+                                            <label className="flex items-center gap-1.5 cursor-pointer p-1.5 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={settings.lsaShowBreakdownZones !== false}
+                                                    onChange={() => onSettingsChange({ ...settings, lsaShowBreakdownZones: !(settings.lsaShowBreakdownZones !== false) })}
+                                                    className="w-3 h-3 rounded text-cyan-500 accent-cyan-500"
+                                                />
+                                                <span className="text-gray-700 dark:text-gray-300 font-medium">Breakdown Zones</span>
+                                            </label>
+                                            <label className="flex items-center gap-1.5 cursor-pointer p-1.5 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={settings.lsaShowHistoricalZones !== false}
+                                                    onChange={() => onSettingsChange({ ...settings, lsaShowHistoricalZones: !(settings.lsaShowHistoricalZones !== false) })}
+                                                    className="w-3 h-3 rounded text-cyan-500 accent-cyan-500"
+                                                />
+                                                <span className="text-gray-700 dark:text-gray-300 font-medium">Historical Zones</span>
+                                            </label>
+                                            <label className="flex items-center gap-1.5 cursor-pointer p-1.5 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={settings.lsaShowHudSummary !== false}
+                                                    onChange={() => onSettingsChange({ ...settings, lsaShowHudSummary: !(settings.lsaShowHudSummary !== false) })}
+                                                    className="w-3 h-3 rounded text-cyan-500 accent-cyan-500"
+                                                />
+                                                <span className="text-gray-700 dark:text-gray-300 font-medium">Live Bias HUD</span>
+                                            </label>
+                                            <label className="flex items-center gap-1.5 cursor-pointer p-1.5 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!settings.lsaEnableAlerts}
+                                                    onChange={() => onSettingsChange({ ...settings, lsaEnableAlerts: !settings.lsaEnableAlerts })}
+                                                    className="w-3 h-3 rounded text-cyan-500 accent-cyan-500"
+                                                />
+                                                <span className="text-gray-700 dark:text-gray-300 font-medium">Live Toast Alerts</span>
+                                            </label>
+                                        </div>
+
+                                        <div className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded p-1.5 text-[9px] text-gray-600 dark:text-gray-400 leading-relaxed">
+                                            <span className="text-emerald-500 font-bold">REV / ABSORBING</span> = Iceberg + Delta Swap holding zone<br/>
+                                            <span className="text-amber-500 font-bold">EXHAUSTING</span> = Wall thinning | <span className="text-rose-500 font-bold">BREAKDOWN</span> = Wall broken
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                          </div>
 

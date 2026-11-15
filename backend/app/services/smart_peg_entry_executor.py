@@ -11,6 +11,7 @@ Once filled, automatically links and spawns configured Attached TP & Attached SL
 """
 
 import asyncio
+import json
 import logging
 import time
 from typing import Optional, Dict, Any
@@ -28,6 +29,80 @@ logger = logging.getLogger(__name__)
 
 # Global registry of active Smart Peg Entry executions: { peg_id: { ... } }
 ACTIVE_SMART_PEGS: Dict[str, Dict[str, Any]] = {}
+
+
+def _is_postonly_cross_error(err: Exception) -> bool:
+    err_str = str(err).lower()
+    return (
+        'immediately match' in err_str
+        or '-5022' in err_str
+        or 'post only' in err_str
+        or 'postonly' in err_str
+        or 'post-only' in err_str
+        or 'gtx' in err_str
+        or 'expired' in err_str
+    )
+
+
+def _is_order_already_closed_error(err: Exception) -> bool:
+    err_str = str(err).lower()
+    return any(kw in err_str for kw in ('filled', 'unknown order', '-2011', '-2013'))
+
+
+async def _fetch_bbo_fast(exchange, symbol: str, max_age_seconds: float = 0.45) -> Optional[Dict[str, Any]]:
+    """Read live orderbook from Redis WS stream (~1ms) when fresh, else fall back to REST."""
+    try:
+        from app.services.user_order_stream import _get_redis_pub
+        r_cli = await _get_redis_pub()
+        if r_cli is not None:
+            ex_id = str(getattr(exchange, 'id', 'binance') or 'binance').lower()
+            raw_ob = await asyncio.wait_for(
+                r_cli.get(f"latest_orderbook:{ex_id}:{symbol}"),
+                timeout=0.025,
+            )
+            if raw_ob:
+                ob_json = json.loads(raw_ob)
+                ts = ob_json.get('ts')
+                if ts is not None and 0.0 <= (time.time() - float(ts)) <= max_age_seconds:
+                    bids_raw = ob_json.get('bids') or []
+                    asks_raw = ob_json.get('asks') or []
+                    if bids_raw and asks_raw:
+                        bids = [
+                            [float(b['price']), float(b['size'])] if isinstance(b, dict) else [float(b[0]), float(b[1])]
+                            for b in bids_raw[:5]
+                        ]
+                        asks = [
+                            [float(a['price']), float(a['size'])] if isinstance(a, dict) else [float(a[0]), float(a[1])]
+                            for a in asks_raw[:5]
+                        ]
+                        return {'bids': bids, 'asks': asks}
+    except Exception:
+        pass
+
+    return await exchange.fetch_order_book(symbol, limit=5)
+
+
+async def _place_maker_order(exchange, symbol: str, side: str, amount: float, price: float, ex_params: dict, is_futures: bool):
+    """Place a Post-Only Maker limit order via WS API (~80-150ms) with seamless REST fallback."""
+    if getattr(exchange, 'has', {}).get('createOrderWs'):
+        try:
+            from app.services.manual_trade_service import ManualTradeService
+            ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
+                exchange, 'limit', ex_params, is_futures, is_edit=False
+            )
+            order = await exchange.create_order_ws(symbol, ws_type, side.lower(), amount, price, ws_params)
+            if order and str(order.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled'):
+                raise Exception(f"Post-Only GTX order returned status={order.get('status')}")
+            return order
+        except Exception as ws_err:
+            if _is_postonly_cross_error(ws_err):
+                raise
+            logger.debug(f"[Smart Peg Entry] createOrderWs fallback to REST: {ws_err}")
+
+    order = await exchange.create_limit_order(symbol, side.lower(), amount, price, ex_params)
+    if order and str(order.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled'):
+        raise Exception(f"Post-Only GTX order returned status={order.get('status')}")
+    return order
 
 
 async def stop_smart_peg(
@@ -149,8 +224,7 @@ async def execute_smart_peg_entry(
     if is_futures and exchange_name.lower().startswith('binance'):
         try:
             from app.services.manual_trade_service import ManualTradeService
-            api_id = getattr(api_key_record, 'id', user_id)
-            is_hedge_mode = await ManualTradeService._check_binance_hedge_mode(exchange, api_id, symbol, is_inverse)
+            is_hedge_mode = await ManualTradeService._is_binance_hedge_mode(exchange, symbol, is_inverse=is_inverse)
             logger.info(f"⚡ [Smart Peg Entry] Binance Futures mode (cached): {'Hedge' if is_hedge_mode else 'One-Way'}")
         except Exception:
             is_hedge_mode = False
@@ -235,11 +309,11 @@ async def execute_smart_peg_entry(
     cached_bal = None
     try:
         if not is_futures:
-            ob_coro = exchange.fetch_order_book(symbol, limit=5)
+            ob_coro = _fetch_bbo_fast(exchange, symbol)
             bal_coro = exchange.fetch_balance()
             initial_ob, cached_bal = await asyncio.gather(ob_coro, bal_coro)
         else:
-            initial_ob = await exchange.fetch_order_book(symbol, limit=5)
+            initial_ob = await _fetch_bbo_fast(exchange, symbol)
     except Exception as ob_err:
         logger.error(f"❌ [Smart Peg Entry] Failed to fetch initial data: {ob_err}")
         return None
@@ -312,7 +386,7 @@ async def execute_smart_peg_entry(
             cached_ob = None
         else:
             try:
-                ob = await exchange.fetch_order_book(symbol, limit=5)
+                ob = await _fetch_bbo_fast(exchange, symbol)
             except Exception as ob_e:
                 logger.warning(f"⚠️ [Smart Peg Entry] Could not fetch orderbook: {ob_e}")
 
@@ -421,32 +495,25 @@ async def execute_smart_peg_entry(
 
         peg_order = None
         try:
-            peg_order = await exchange.create_limit_order(
-                symbol, side.lower(), remaining_amount, target_maker_price, ex_params
+            peg_order = await _place_maker_order(
+                exchange, symbol, side, remaining_amount, target_maker_price, ex_params, is_futures
             )
-            # On Binance Futures, a GTX Post-Only order that crosses the spread returns HTTP 200 with status='expired'
-            if peg_order and str(peg_order.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled'):
-                raise Exception(f"Post-Only GTX order returned status={peg_order.get('status')}")
         except Exception as place_err:
-            err_str = str(place_err).lower()
-            is_postonly = (
-                'immediately match' in err_str or '-5022' in err_str or
-                'post only' in err_str or 'postonly' in err_str or
-                'post-only' in err_str or 'expired' in err_str
-            )
-            if is_postonly:
+            if _is_postonly_cross_error(place_err):
                 logger.warning(f"⚠️ [Smart Peg Entry] Post-Only touched spread ({place_err}). Retrying 1 tick safer...")
                 peg_order = None
                 try:
-                    f_ob = await exchange.fetch_order_book(symbol, limit=5)
+                    f_ob = await _fetch_bbo_fast(exchange, symbol)
                     if f_ob and f_ob.get('bids') and f_ob.get('asks'):
                         f_bid = float(f_ob['bids'][0][0])
                         f_ask = float(f_ob['asks'][0][0])
                         adj_price = (f_bid - tick) if side.lower() == 'buy' else (f_ask + tick)
                         if hasattr(exchange, 'price_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
                             adj_price = float(exchange.price_to_precision(symbol, adj_price))
-                        peg_order = await exchange.create_limit_order(symbol, side.lower(), remaining_amount, adj_price, ex_params)
-                        if peg_order and str(peg_order.get('status', '')).lower() not in ('expired', 'rejected', 'canceled', 'cancelled') and peg_order.get('id'):
+                        peg_order = await _place_maker_order(
+                            exchange, symbol, side, remaining_amount, adj_price, ex_params, is_futures
+                        )
+                        if peg_order and peg_order.get('id'):
                             target_maker_price = adj_price
                         else:
                             peg_order = None
@@ -457,7 +524,7 @@ async def execute_smart_peg_entry(
                 logger.warning(f"⚠️ [Smart Peg Entry] Placement error: {place_err}")
 
             if not peg_order or not peg_order.get('id'):
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.2)
                 continue
 
         order_id = peg_order['id']
@@ -498,8 +565,8 @@ async def execute_smart_peg_entry(
             except Exception as notify_first_err:
                 logger.warning(f"Failed to send Smart Peg trade fired notification: {notify_first_err}")
 
-        # 5. Dynamic BBO Peg Watch Loop (180ms in urgent_mode, 250ms standard)
-        peg_poll_interval = 0.18 if urgent_mode else 0.25
+        # 5. Dynamic BBO Peg Watch Loop (100ms in urgent_mode, 150ms standard; WS BBO + parallel fill check)
+        peg_poll_interval = 0.10 if urgent_mode else 0.15
         poll_count = 0
         latest_order_chk = None
         user_cancelled = False
@@ -518,60 +585,77 @@ async def execute_smart_peg_entry(
                 await asyncio.sleep(peg_poll_interval)
                 poll_count += 1
 
-                # In-loop fast fill detection every 2 polls (~0.5s)
+                # Fetch order status (every 2 polls) and live BBO in PARALLEL to avoid serial REST delay
+                chk_in_loop = None
+                latest_ob = None
                 if poll_count % 2 == 0:
+                    order_res, ob_res = await asyncio.gather(
+                        exchange.fetch_order(order_id, symbol),
+                        _fetch_bbo_fast(exchange, symbol),
+                        return_exceptions=True,
+                    )
+                    if isinstance(order_res, Exception):
+                        logger.debug(f"Entry order poll check notice: {order_res}")
+                    else:
+                        chk_in_loop = order_res
+                    if isinstance(ob_res, Exception):
+                        logger.debug(f"Entry BBO poll non-fatal error: {ob_res}")
+                    else:
+                        latest_ob = ob_res
+                else:
                     try:
-                        chk_in_loop = await exchange.fetch_order(order_id, symbol)
-                        chk_st = str(chk_in_loop.get('status', '')).lower()
-                        if chk_st in ['closed', 'filled']:
-                            logger.info(f"✅ [Smart Peg Entry] Order #{order_id} filled detected during BBO shadow watch!")
-                            latest_order_chk = chk_in_loop
-                            break
-                        elif chk_st in ['expired', 'canceled', 'cancelled', 'rejected']:
-                            latest_order_chk = chk_in_loop
-                            repeg_triggered = True
-                            break
-                        else:
-                            curr_loop_filled = float(chk_in_loop.get('filled') or 0.0)
-                            if curr_loop_filled > order_processed_filled:
-                                chunk_filled = curr_loop_filled - order_processed_filled
-                                exec_p = float(chk_in_loop.get('average') or chk_in_loop.get('price') or target_maker_price)
-                                chunk_notional = _calc_order_notional_usd(exchange, symbol, chunk_filled, exec_p)
-                                if is_futures or chunk_notional >= min_notional or total_filled > 0:
-                                    order_processed_filled = curr_loop_filled
-                                    total_filled += chunk_filled
-                                    accumulated_cost += (chunk_filled * exec_p)
-                                    remaining_amount = max(0.0, remaining_amount - chunk_filled)
-                                    if cid in ACTIVE_SMART_PEGS:
-                                        ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
-                                        ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
-                                    logger.info(
-                                        f"⚡ [Smart Peg Entry] Resting Partial Fill detected on #{order_id}: "
-                                        f"+{chunk_filled} @ {exec_p} (Total Filled: {total_filled}/{amount})"
-                                    )
-                                    if (tp_config or sl_config) and not reduce_only:
-                                        from app.services.bracket_order_service import BracketOrderService
-                                        asyncio.create_task(
-                                            BracketOrderService._spawn_bracket_for_amount(
-                                                exchange=exchange,
-                                                symbol=symbol,
-                                                side=side.lower(),
-                                                filled_amount=chunk_filled,
-                                                average_price=exec_p,
-                                                is_futures=is_futures,
-                                                tp_config=tp_config,
-                                                sl_config=sl_config,
-                                                user_id=user_id,
-                                                api_key_record=api_key_record,
-                                                entry_order_id=cid
-                                            )
-                                        )
-                    except Exception as poll_e:
-                        logger.debug(f"Entry order poll check notice: {poll_e}")
+                        latest_ob = await _fetch_bbo_fast(exchange, symbol)
+                    except Exception as ob_p_err:
+                        logger.debug(f"Entry BBO poll non-fatal error: {ob_p_err}")
 
-                # Fetch live orderbook to verify if we are still top of book
+                if chk_in_loop:
+                    chk_st = str(chk_in_loop.get('status', '')).lower()
+                    if chk_st in ['closed', 'filled']:
+                        logger.info(f"✅ [Smart Peg Entry] Order #{order_id} filled detected during BBO shadow watch!")
+                        latest_order_chk = chk_in_loop
+                        break
+                    elif chk_st in ['expired', 'canceled', 'cancelled', 'rejected']:
+                        latest_order_chk = chk_in_loop
+                        repeg_triggered = True
+                        break
+                    else:
+                        curr_loop_filled = float(chk_in_loop.get('filled') or 0.0)
+                        if curr_loop_filled > order_processed_filled:
+                            chunk_filled = curr_loop_filled - order_processed_filled
+                            exec_p = float(chk_in_loop.get('average') or chk_in_loop.get('price') or target_maker_price)
+                            chunk_notional = _calc_order_notional_usd(exchange, symbol, chunk_filled, exec_p)
+                            if is_futures or chunk_notional >= min_notional or total_filled > 0:
+                                order_processed_filled = curr_loop_filled
+                                total_filled += chunk_filled
+                                accumulated_cost += (chunk_filled * exec_p)
+                                remaining_amount = max(0.0, remaining_amount - chunk_filled)
+                                if cid in ACTIVE_SMART_PEGS:
+                                    ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
+                                    ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
+                                logger.info(
+                                    f"⚡ [Smart Peg Entry] Resting Partial Fill detected on #{order_id}: "
+                                    f"+{chunk_filled} @ {exec_p} (Total Filled: {total_filled}/{amount})"
+                                )
+                                if (tp_config or sl_config) and not reduce_only:
+                                    from app.services.bracket_order_service import BracketOrderService
+                                    asyncio.create_task(
+                                        BracketOrderService._spawn_bracket_for_amount(
+                                            exchange=exchange,
+                                            symbol=symbol,
+                                            side=side.lower(),
+                                            filled_amount=chunk_filled,
+                                            average_price=exec_p,
+                                            is_futures=is_futures,
+                                            tp_config=tp_config,
+                                            sl_config=sl_config,
+                                            user_id=user_id,
+                                            api_key_record=api_key_record,
+                                            entry_order_id=cid
+                                        )
+                                    )
+
+                # Verify if we are still top of book
                 try:
-                    latest_ob = await exchange.fetch_order_book(symbol, limit=5)
                     if latest_ob and latest_ob.get('bids') and latest_ob.get('asks') and len(latest_ob['bids']) > 0 and len(latest_ob['asks']) > 0:
                         l_best_bid = float(latest_ob['bids'][0][0])
                         l_best_ask = float(latest_ob['asks'][0][0])
@@ -597,13 +681,11 @@ async def execute_smart_peg_entry(
                                 pass
 
                         # Outbid / Spread shift condition with FIFO Queue Priority protection:
-                        # - If someone outbids our maker order (new_maker > target for Buy, new_maker < target for Sell),
-                        #   wait at least 3 polls (0.75s) to avoid micro-flicker churn, then step ahead.
-                        # - If top-of-book retreats away from our resting order, wait at least 6 polls (1.5s)
-                        #   because our resting order is already at the very front of the book about to get filled!
+                        # - Outbid: 2 polls (~300ms standard, 100ms urgent) to step ahead quickly while avoiding 1-tick noise.
+                        # - Retreat: 4 polls (~600ms standard, 200ms urgent) because resting order is at front of queue.
                         if new_maker != target_maker_price:
                             is_outbid = (new_maker > target_maker_price) if side.lower() == "buy" else (new_maker < target_maker_price)
-                            min_polls_required = (1 if is_outbid else 2) if urgent_mode else (3 if is_outbid else 6)
+                            min_polls_required = (1 if is_outbid else 2) if urgent_mode else (2 if is_outbid else 4)
                             if poll_count >= min_polls_required:
                                 logger.info(
                                     f"⚡ [Smart Peg Entry] BBO shifted ({'outbid' if is_outbid else 'retreat'}): {target_maker_price} ➜ {new_maker} "
@@ -628,97 +710,121 @@ async def execute_smart_peg_entry(
                                             )
                                             break
 
-                                # ── PRIORITY 1: HIGH-SPEED NATIVE ATOMIC EDIT_ORDER (cancelReplace on Spot, PUT on Futures) ──
-                                t_repeg_start = time.perf_counter()
-                                native_repeg_ok = False
+                                # ── PRIORITY 0 (WS ~80-150ms) & PRIORITY 1 (REST ~250ms): NATIVE ATOMIC RE-PEG ──
+                                try:
+                                    from app.services.user_order_stream import mark_order_replaced
+                                    mark_order_replaced(str(order_id))
+                                except Exception:
+                                    pass
 
-                                if getattr(exchange, 'has', {}).get('editOrder'):
+                                from app.services.manual_trade_service import ManualTradeService
+                                ws_edit_type, ws_edit_params = ManualTradeService._sanitize_ws_order_args(
+                                    exchange, 'limit', ex_params, is_futures, is_edit=True
+                                )
+                                edit_candidates = []
+                                if getattr(exchange, 'has', {}).get('editOrderWs') and hasattr(exchange, 'edit_order_ws'):
+                                    edit_candidates.append(('WS', exchange.edit_order_ws, ws_edit_type, ws_edit_params))
+                                if getattr(exchange, 'has', {}).get('editOrder') and hasattr(exchange, 'edit_order'):
+                                    rest_type, rest_params = (
+                                        (ws_edit_type, ws_edit_params) if is_futures else ('limit', ex_params)
+                                    )
+                                    edit_candidates.append(('REST', exchange.edit_order, rest_type, rest_params))
+
+                                edit_res = None
+                                edit_channel = None
+                                repeg_ms = 0
+                                order_filled_during_edit = False
+
+                                for ch_name, edit_fn, e_type, e_params in edit_candidates:
+                                    t_repeg_start = time.perf_counter()
                                     try:
-                                        edit_res = await exchange.edit_order(
-                                            order_id, symbol, 'limit', side.lower(), remaining_amount, new_maker, ex_params
+                                        candidate_res = await edit_fn(
+                                            order_id, symbol, e_type, side.lower(), remaining_amount, new_maker, e_params
                                         )
                                         repeg_ms = int((time.perf_counter() - t_repeg_start) * 1000)
-                                        if edit_res and edit_res.get('id'):
-                                            old_oid = order_id
-                                            order_id = str(edit_res.get('id'))
-                                            target_maker_price = new_maker
-                                            attempts += 1
-
-                                            # Check if there was a partial fill on the cancelled order during atomic cancelReplace (Spot)
-                                            cancel_info = edit_res.get('info', {}).get('cancelResponse', {}) if isinstance(edit_res, dict) else {}
-                                            if cancel_info:
-                                                c_raw_filled = float(cancel_info.get('executedQty') or 0.0)
-                                                chunk = max(0.0, c_raw_filled - order_processed_filled)
-                                                if chunk > 0:
-                                                    total_filled += chunk
-                                                    exec_p = float(cancel_info.get('price') or target_maker_price)
-                                                    accumulated_cost += (chunk * exec_p)
-                                                    remaining_amount = max(0.0, remaining_amount - chunk)
-                                                    logger.info(f"🔄 [Smart Peg Entry] Captured partial fill during atomic cancelReplace: {chunk} at {exec_p}")
-                                                    if (tp_config or sl_config) and not reduce_only:
-                                                        from app.services.bracket_order_service import BracketOrderService
-                                                        asyncio.create_task(
-                                                            BracketOrderService._spawn_bracket_for_amount(
-                                                                exchange=exchange,
-                                                                symbol=symbol,
-                                                                side=side.lower(),
-                                                                filled_amount=chunk,
-                                                                average_price=exec_p,
-                                                                is_futures=is_futures,
-                                                                tp_config=tp_config,
-                                                                sl_config=sl_config,
-                                                                user_id=user_id,
-                                                                api_key_record=api_key_record,
-                                                                entry_order_id=cid
-                                                            )
-                                                        )
-
-                                            # If a new order ID was generated (e.g. Spot cancelReplace), reset order_processed_filled for the new order lifecycle
-                                            if old_oid != order_id:
-                                                order_processed_filled = 0.0
-
-                                            if cid in ACTIVE_SMART_PEGS:
-                                                ACTIVE_SMART_PEGS[cid]['current_order_id'] = order_id
-                                                ACTIVE_SMART_PEGS[cid]['current_maker_price'] = target_maker_price
-                                                ACTIVE_SMART_PEGS[cid]['current_attempt'] = attempts
-                                                ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
-                                                ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
-
-                                            logger.info(
-                                                f"⚡ [Smart Peg Entry] Native atomic re-peg SUCCESS in {repeg_ms}ms! ⚡ "
-                                                f"Order #{old_oid} ➜ #{order_id} at {target_maker_price} (Attempt {attempts}/{attempt_max_str})"
-                                            )
-
-                                            # Check if the new order was immediately filled upon replacement
-                                            if str(edit_res.get('status', '')).lower() in ('closed', 'filled'):
-                                                logger.info(f"🎯 [Smart Peg Entry] New order #{order_id} filled immediately upon replacement!")
-                                                latest_order_chk = edit_res
-                                                break
-
-                                            poll_count = 0
-                                            native_repeg_ok = True
-
-                                            if max_attempts > 0 and attempts >= max_attempts:
-                                                logger.info(f"⚠️ [Smart Peg Entry] Max attempts ({max_attempts}) reached after re-peg.")
-                                                break
-
-                                            continue  # Stay right in BBO shadow watch loop! Zero delay!
+                                        if candidate_res and candidate_res.get('id'):
+                                            edit_res = candidate_res
+                                            edit_channel = ch_name
+                                            break
                                     except Exception as edit_err:
-                                        err_str = str(edit_err).lower()
                                         repeg_ms = int((time.perf_counter() - t_repeg_start) * 1000)
-
-                                        # Fast check: If exchange reports order already closed/filled
-                                        if any(kw in err_str for kw in ['filled', 'unknown order', '-2011', '-2013']):
+                                        if _is_order_already_closed_error(edit_err):
                                             logger.info(f"✅ [Smart Peg Entry] Order #{order_id} filled or closed during edit ({edit_err}). Verifying fill status...")
                                             try:
                                                 chk_fill = await exchange.fetch_order(order_id, symbol)
                                                 if chk_fill.get('status', '').lower() in ['closed', 'filled']:
                                                     latest_order_chk = chk_fill
+                                                    order_filled_during_edit = True
                                                     break
                                             except Exception:
                                                 pass
+                                        logger.info(f"{ch_name} editOrder fallback notice ({edit_err}) [{repeg_ms}ms]")
 
-                                        logger.info(f"Native editOrder fallback notice ({edit_err}) [{repeg_ms}ms], proceeding with zero-delay cancel+create")
+                                if order_filled_during_edit:
+                                    break
+
+                                if edit_res and edit_res.get('id'):
+                                    old_oid = order_id
+                                    order_id = str(edit_res.get('id'))
+                                    target_maker_price = new_maker
+                                    attempts += 1
+
+                                    # Check if there was a partial fill on the cancelled order during atomic cancelReplace (Spot)
+                                    cancel_info = edit_res.get('info', {}).get('cancelResponse', {}) if isinstance(edit_res, dict) else {}
+                                    if cancel_info:
+                                        c_raw_filled = float(cancel_info.get('executedQty') or 0.0)
+                                        chunk = max(0.0, c_raw_filled - order_processed_filled)
+                                        if chunk > 0:
+                                            total_filled += chunk
+                                            exec_p = float(cancel_info.get('price') or target_maker_price)
+                                            accumulated_cost += (chunk * exec_p)
+                                            remaining_amount = max(0.0, remaining_amount - chunk)
+                                            logger.info(f"🔄 [Smart Peg Entry] Captured partial fill during atomic cancelReplace: {chunk} at {exec_p}")
+                                            if (tp_config or sl_config) and not reduce_only:
+                                                from app.services.bracket_order_service import BracketOrderService
+                                                asyncio.create_task(
+                                                    BracketOrderService._spawn_bracket_for_amount(
+                                                        exchange=exchange,
+                                                        symbol=symbol,
+                                                        side=side.lower(),
+                                                        filled_amount=chunk,
+                                                        average_price=exec_p,
+                                                        is_futures=is_futures,
+                                                        tp_config=tp_config,
+                                                        sl_config=sl_config,
+                                                        user_id=user_id,
+                                                        api_key_record=api_key_record,
+                                                        entry_order_id=cid
+                                                    )
+                                                )
+
+                                    if old_oid != order_id:
+                                        order_processed_filled = 0.0
+
+                                    if cid in ACTIVE_SMART_PEGS:
+                                        ACTIVE_SMART_PEGS[cid]['current_order_id'] = order_id
+                                        ACTIVE_SMART_PEGS[cid]['current_maker_price'] = target_maker_price
+                                        ACTIVE_SMART_PEGS[cid]['current_attempt'] = attempts
+                                        ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
+                                        ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
+
+                                    logger.info(
+                                        f"⚡ [Smart Peg Entry] {edit_channel} atomic re-peg SUCCESS in {repeg_ms}ms! ⚡ "
+                                        f"Order #{old_oid} ➜ #{order_id} at {target_maker_price} (Attempt {attempts}/{attempt_max_str})"
+                                    )
+
+                                    if str(edit_res.get('status', '')).lower() in ('closed', 'filled'):
+                                        logger.info(f"🎯 [Smart Peg Entry] New order #{order_id} filled immediately upon replacement!")
+                                        latest_order_chk = edit_res
+                                        break
+
+                                    poll_count = 0
+
+                                    if max_attempts > 0 and attempts >= max_attempts:
+                                        logger.info(f"⚠️ [Smart Peg Entry] Max attempts ({max_attempts}) reached after re-peg.")
+                                        break
+
+                                    continue  # Stay right in BBO shadow watch loop! Zero delay!
 
                                 # Fallback: Break to clean zero-delay cancel + create
                                 repeg_triggered = True

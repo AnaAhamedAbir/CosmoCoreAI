@@ -196,7 +196,8 @@ class MarketDataStreamer:
                     "asks": asks,
                     "walls": walls,
                     "currentPrice": current_price,
-                    "midPrice": mid_price
+                    "midPrice": mid_price,
+                    "ts": time.time(),
                 }
                 
                 # Publish to Redis

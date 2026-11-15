@@ -104,14 +104,21 @@ def _install_stubs():
         async def ensure_user_order_stream(*args, **kwargs):
             return None
 
+        async def _get_redis_pub():
+            return None
+
         uos_mod.ensure_user_order_stream = ensure_user_order_stream
+        uos_mod._get_redis_pub = _get_redis_pub
         sys.modules["app.services.user_order_stream"] = uos_mod
 
 
 _install_stubs()
 
+import json  # noqa: E402
+import time  # noqa: E402
 import ccxt  # noqa: E402
 from app.services import user_order_stream  # noqa: E402
+from app.services import smart_peg_entry_executor as peg_exec  # noqa: E402
 from app.services.bracket_order_service import BracketOrderService  # noqa: E402
 from app.services.manual_trade_service import ManualTradeService  # noqa: E402
 
@@ -327,6 +334,199 @@ class TestIcebergBracketAndEditFixes(unittest.TestCase):
         )
         self.assertEqual(edit_fut_type, "limit")
         self.assertEqual(edit_fut_params, {})
+
+    def test_smart_peg_fetch_bbo_fast_uses_fresh_redis_and_rejects_stale(self):
+        async def _run():
+            rest_calls = []
+
+            class MockEx:
+                id = "binance"
+
+                async def fetch_order_book(self, symbol, limit=5):
+                    rest_calls.append(symbol)
+                    return {"bids": [[0.0580, 100.0]], "asks": [[0.0581, 100.0]]}
+
+            ex = MockEx()
+            fresh_payload = json.dumps({
+                "bids": [{"price": 0.0588, "size": 500.0}],
+                "asks": [{"price": 0.0589, "size": 500.0}],
+                "ts": time.time(),
+            })
+            stale_payload = json.dumps({
+                "bids": [{"price": 0.0500, "size": 500.0}],
+                "asks": [{"price": 0.0501, "size": 500.0}],
+                "ts": time.time() - 2.0,
+            })
+
+            class DummyRedis:
+                def __init__(self, val):
+                    self.val = val
+
+                async def get(self, key):
+                    return self.val
+
+            # 1. Fresh Redis -> zero REST calls
+            with patch.object(user_order_stream, "_get_redis_pub", AsyncMock(return_value=DummyRedis(fresh_payload))):
+                ob = await peg_exec._fetch_bbo_fast(ex, "DOGE/FDUSD")
+                self.assertEqual(ob["bids"][0][0], 0.0588)
+                self.assertEqual(ob["asks"][0][0], 0.0589)
+                self.assertEqual(len(rest_calls), 0)
+
+            # 2. Stale Redis -> falls back to REST fetch_order_book
+            with patch.object(user_order_stream, "_get_redis_pub", AsyncMock(return_value=DummyRedis(stale_payload))):
+                ob2 = await peg_exec._fetch_bbo_fast(ex, "DOGE/FDUSD")
+                self.assertEqual(ob2["bids"][0][0], 0.0580)
+                self.assertEqual(len(rest_calls), 1)
+
+        asyncio.run(_run())
+
+    def test_smart_peg_spot_uses_ws_place_and_ws_repeg_then_completes(self):
+        async def _run():
+            peg_exec.ACTIVE_SMART_PEGS.clear()
+            ws_create_calls = []
+            ws_edit_calls = []
+
+            class MockSpotWSExchange:
+                id = "binance"
+                has = {"createOrderWs": True, "editOrderWs": True, "editOrder": True}
+                markets = {
+                    "DOGE/FDUSD": {
+                        "symbol": "DOGE/FDUSD",
+                        "base": "DOGE",
+                        "quote": "FDUSD",
+                        "spot": True,
+                        "contract": False,
+                        "inverse": False,
+                        "precision": {"price": 0.00001, "amount": 1.0},
+                        "limits": {"cost": {"min": 5.0}},
+                    }
+                }
+
+                def price_to_precision(self, symbol, price):
+                    return f"{float(price):.5f}"
+
+                def amount_to_precision(self, symbol, amount):
+                    return str(int(round(float(amount))))
+
+                async def fetch_balance(self):
+                    return {"FDUSD": {"free": 1000.0}, "DOGE": {"free": 0.0}}
+
+                async def fetch_order_book(self, symbol, limit=5):
+                    # Initial book: 0.05880; after 2 polls outbids to 0.05885
+                    if len(ws_create_calls) == 0:
+                        return {"bids": [[0.05880, 500.0]], "asks": [[0.05890, 500.0]]}
+                    return {"bids": [[0.05885, 500.0]], "asks": [[0.05890, 500.0]]}
+
+                async def create_order_ws(self, symbol, order_type, side, amount, price, params):
+                    ws_create_calls.append((order_type, price, dict(params)))
+                    return {"id": "1001", "status": "open", "price": price, "amount": amount}
+
+                async def edit_order_ws(self, oid, symbol, order_type, side, amount, price, params):
+                    ws_edit_calls.append((oid, order_type, price, dict(params)))
+                    return {
+                        "id": "1002",
+                        "status": "closed",
+                        "filled": amount,
+                        "average": price,
+                        "price": price,
+                        "info": {"cancelResponse": {"executedQty": "0"}},
+                    }
+
+                async def fetch_order(self, oid, symbol):
+                    return {"id": oid, "status": "open", "filled": 0.0, "price": 0.05880}
+
+            ex = MockSpotWSExchange()
+            with patch("app.services.smart_peg_entry_executor.asyncio.sleep", AsyncMock(return_value=None)):
+                res = await peg_exec.execute_smart_peg_entry(
+                    exchange=ex,
+                    symbol="DOGE/FDUSD",
+                    side="buy",
+                    amount=480.0,
+                    is_futures=False,
+                    user_id=0,
+                    send_initial_notify=False,
+                )
+
+            self.assertEqual(len(ws_create_calls), 1)
+            self.assertEqual(ws_create_calls[0][0], "LIMIT_MAKER")
+            self.assertNotIn("postOnly", ws_create_calls[0][2])
+            self.assertEqual(len(ws_edit_calls), 1)
+            self.assertEqual(ws_edit_calls[0][0], "1001")
+            self.assertEqual(ws_edit_calls[0][1], "LIMIT_MAKER")
+            self.assertEqual(ws_edit_calls[0][2], 0.05885)
+            self.assertNotIn("postOnly", ws_edit_calls[0][3])
+            self.assertEqual(res.get("id"), "1002")
+            self.assertEqual(res.get("status"), "closed")
+
+        asyncio.run(_run())
+
+    def test_smart_peg_futures_rest_edit_omits_postonly_and_tif(self):
+        async def _run():
+            peg_exec.ACTIVE_SMART_PEGS.clear()
+            rest_edit_calls = []
+
+            class MockFuturesExchange:
+                id = "binance"
+                has = {"createOrderWs": True, "editOrderWs": False, "editOrder": True}
+                markets = {
+                    "DOGE/USDT:USDT": {
+                        "symbol": "DOGE/USDT:USDT",
+                        "base": "DOGE",
+                        "quote": "USDT",
+                        "spot": False,
+                        "contract": True,
+                        "linear": True,
+                        "inverse": False,
+                        "precision": {"price": 0.00001, "amount": 1.0},
+                        "limits": {"cost": {"min": 5.0}},
+                    }
+                }
+
+                def price_to_precision(self, symbol, price):
+                    return f"{float(price):.5f}"
+
+                def amount_to_precision(self, symbol, amount):
+                    return str(int(round(float(amount))))
+
+                async def fetch_order_book(self, symbol, limit=5):
+                    if not getattr(self, "_placed", False):
+                        return {"bids": [[0.10000, 500.0]], "asks": [[0.10010, 500.0]]}
+                    return {"bids": [[0.10005, 500.0]], "asks": [[0.10010, 500.0]]}
+
+                async def create_order_ws(self, symbol, order_type, side, amount, price, params):
+                    self._placed = True
+                    self._create_params = dict(params)
+                    return {"id": "2001", "status": "open", "price": price, "amount": amount}
+
+                async def edit_order(self, oid, symbol, order_type, side, amount, price, params):
+                    rest_edit_calls.append((oid, order_type, price, dict(params)))
+                    return {"id": "2001", "status": "closed", "filled": amount, "average": price, "price": price}
+
+                async def fetch_order(self, oid, symbol):
+                    return {"id": oid, "status": "open", "filled": 0.0, "price": 0.10000}
+
+            ex = MockFuturesExchange()
+            with (
+                patch.object(ManualTradeService, "_is_binance_hedge_mode", AsyncMock(return_value=False)),
+                patch("app.services.smart_peg_entry_executor.asyncio.sleep", AsyncMock(return_value=None)),
+            ):
+                res = await peg_exec.execute_smart_peg_entry(
+                    exchange=ex,
+                    symbol="DOGE/USDT:USDT",
+                    side="buy",
+                    amount=100.0,
+                    is_futures=True,
+                    user_id=0,
+                    send_initial_notify=False,
+                )
+
+            self.assertEqual(ex._create_params, {"timeInForce": "GTX"})
+            self.assertEqual(len(rest_edit_calls), 1)
+            self.assertNotIn("postOnly", rest_edit_calls[0][3])
+            self.assertNotIn("timeInForce", rest_edit_calls[0][3])
+            self.assertEqual(res.get("status"), "closed")
+
+        asyncio.run(_run())
 
 
 if __name__ == "__main__":

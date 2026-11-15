@@ -3989,18 +3989,36 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                                         disabled={isModifyingOrder}
                                         onClick={async () => {
                                             if (!selectedApiKeyId || !pendingModification) return;
+                                            const modSnap = pendingModification;
+                                            const key = `order-${modSnap.orderId}`;
+                                            const existingLine = wallLinesRef.current.get(key);
+                                            // Instant 0ms optimistic line removal before backend/exchange round-trip
+                                            if (existingLine) {
+                                                try { candlestickSeriesRef.current?.removePriceLine(existingLine); } catch {}
+                                                wallLinesRef.current.delete(key);
+                                            }
+                                            window.dispatchEvent(
+                                                new CustomEvent('optimisticRemoveOpenOrder', {
+                                                    detail: { orderIds: [modSnap.orderId], apiKeyId: selectedApiKeyId },
+                                                })
+                                            );
+                                            cancelOrderModification(modSnap);
                                             setIsModifyingOrder(true);
                                             try {
-                                                await manualTradeService.cancelOrder(parseInt(selectedApiKeyId), pendingModification.orderId, pendingModification.symbol);
-                                                const key = `order-${pendingModification.orderId}`;
-                                                const line = wallLinesRef.current.get(key);
-                                                if (line) {
-                                                    try { candlestickSeriesRef.current?.removePriceLine(line); } catch {}
-                                                    wallLinesRef.current.delete(key);
+                                                const res = await manualTradeService.cancelOrder(parseInt(selectedApiKeyId), modSnap.orderId, modSnap.symbol);
+                                                if (Array.isArray(res?.cancelled_ids) && res.cancelled_ids.length > 0) {
+                                                    window.dispatchEvent(
+                                                        new CustomEvent('optimisticRemoveOpenOrder', {
+                                                            detail: { orderIds: res.cancelled_ids, apiKeyId: selectedApiKeyId },
+                                                        })
+                                                    );
                                                 }
-                                                cancelOrderModification(pendingModification);
-                                                toast.success(`🛑 Order #${pendingModification.orderId} cancelled.`);
+                                                window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+                                                toast.success(`🛑 Order #${modSnap.orderId} cancelled.`);
                                             } catch (err: any) {
+                                                window.dispatchEvent(
+                                                    new CustomEvent('rollbackRemoveOpenOrder', { detail: { orderIds: [modSnap.orderId] } })
+                                                );
                                                 toast.error('Failed to cancel order: ' + (err.response?.data?.detail || err.message));
                                             } finally {
                                                 setIsModifyingOrder(false);

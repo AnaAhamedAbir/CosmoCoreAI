@@ -686,16 +686,25 @@ class ManualTradeService:
         is_futures = ':' in symbol
 
         try:
+            from app.services.user_order_stream import ensure_user_order_stream
+            ensure_user_order_stream(user_id, api_key_record, is_futures, symbol)
+
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
-            raw_orders = await exchange.fetch_open_orders(symbol)
             if is_futures:
-                try:
-                    # On Binance Futures, conditional/algo stop orders (like STOP_MARKET) must be fetched explicitly
-                    stop_orders = await exchange.fetch_open_orders(symbol, params={'stop': True})
-                    if stop_orders:
-                        raw_orders.extend(stop_orders)
-                except Exception as s_err:
-                    logger.debug(f'Failed to fetch conditional stop orders for {symbol}: {s_err}')
+                std_res, stop_res = await asyncio.gather(
+                    exchange.fetch_open_orders(symbol),
+                    exchange.fetch_open_orders(symbol, params={'stop': True}),
+                    return_exceptions=True,
+                )
+                if isinstance(std_res, Exception):
+                    raise std_res
+                raw_orders = list(std_res or [])
+                if not isinstance(stop_res, Exception) and stop_res:
+                    raw_orders.extend(stop_res)
+                elif isinstance(stop_res, Exception):
+                    logger.debug(f'Failed to fetch conditional stop orders for {symbol}: {stop_res}')
+            else:
+                raw_orders = await exchange.fetch_open_orders(symbol)
 
             # Exclude internal disaster SL orders that belong to active software Smart Chases
             # so the chart only displays the primary Smart Chase trigger line
@@ -2146,6 +2155,9 @@ class ManualTradeService:
                     )
                 )
 
+            from app.services.user_order_stream import ensure_user_order_stream
+            ensure_user_order_stream(user_id, api_key_record, is_futures, order_req.symbol)
+
             ManualTradeService.invalidate_open_orders_cache(api_key_record.id, order_req.symbol)
             return {
                 "id": response.get('id'),
@@ -3050,52 +3062,83 @@ class ManualTradeService:
         specific_oid = str(order_id).strip()
 
         try:
+            from app.services.user_order_stream import ensure_user_order_stream, publish_order_sync_event
+            ensure_user_order_stream(user_id, api_key_record, is_futures, symbol)
+
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
 
             # 1. In-memory Smart Peg Check
             if specific_oid in ACTIVE_SMART_PEGS:
-                await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id, peg_id=specific_oid)
                 ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
-                await _emit_manual_trade_in_app(
+                await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id, peg_id=specific_oid)
+                asyncio.create_task(publish_order_sync_event(
+                    user_id=user_id,
+                    event="order_removed",
+                    api_key_id=api_key_id,
+                    symbol=symbol,
+                    order_id=specific_oid,
+                    order_ids=[specific_oid],
+                    status="canceled",
+                ))
+                asyncio.create_task(_emit_manual_trade_in_app(
                     user_id=user_id,
                     title="Smart Peg Entry Cancelled",
                     message=f"Exchange: {api_key_record.exchange.capitalize()}\nPair: {symbol}\nOrder ID: {specific_oid}\nSmart Peg Entry stopped.",
                     event_type="order_cancelled",
                     severity="warning",
                     meta={"symbol": symbol, "order_id": specific_oid, "exchange": api_key_record.exchange, "order_type": "smart_peg"},
-                )
+                ))
                 return {
                     "success": True,
                     "order_id": specific_oid,
+                    "cancelled_ids": [specific_oid],
                     "type": "smart_peg",
                     "message": f"Smart Peg Entry {specific_oid} stopped."
                 }
 
             # 2. In-memory Smart Chase Check
             if specific_oid in ACTIVE_SMART_CHASES:
+                ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
                 cdata = ACTIVE_SMART_CHASES.get(specific_oid) or {}
                 tp_oid = cdata.get('tp_order_id')
+                dis_oid = cdata.get('disaster_sl_order_id')
+                tasks = [stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id, chase_id=specific_oid)]
+                cancelled_ids = [specific_oid]
                 if tp_oid:
-                    try:
-                        await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
-                    except Exception:
-                        pass
-                await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id, chase_id=specific_oid)
-                ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
-                await _emit_manual_trade_in_app(
+                    cancelled_ids.append(str(tp_oid))
+                    tasks.append(bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol))
+                if dis_oid:
+                    cancelled_ids.append(str(dis_oid))
+                    tasks.append(bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol))
+                await asyncio.gather(*tasks, return_exceptions=True)
+                asyncio.create_task(publish_order_sync_event(
+                    user_id=user_id,
+                    event="order_removed",
+                    api_key_id=api_key_id,
+                    symbol=symbol,
+                    order_id=specific_oid,
+                    order_ids=cancelled_ids,
+                    status="canceled",
+                ))
+                asyncio.create_task(_emit_manual_trade_in_app(
                     user_id=user_id,
                     title="Smart Chase SL Cancelled",
                     message=f"Exchange: {api_key_record.exchange.capitalize()}\nPair: {symbol}\nOrder ID: {specific_oid}\nSmart Chase SL stopped.",
                     event_type="order_cancelled",
                     severity="warning",
                     meta={"symbol": symbol, "order_id": specific_oid, "exchange": api_key_record.exchange, "order_type": "smart_chase"},
-                )
+                ))
                 return {
                     "success": True,
                     "order_id": specific_oid,
+                    "cancelled_ids": cancelled_ids,
                     "type": "smart_chase",
                     "message": f"Smart Chase SL {specific_oid} stopped."
                 }
+
+            # Collect all linked exchange order IDs & mark in-memory brackets cancelled immediately
+            exchange_cancel_ids = {specific_oid}
+            cancelled_ids = {specific_oid}
 
             # 3. Check Software SL Brackets
             for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
@@ -3109,18 +3152,14 @@ class ManualTradeService:
                     or str(sdata.get('entry_order_id') or '') == specific_oid
                 ):
                     sdata['cancelled'] = True
-                    tp_oid = sdata.get('tp_order_id')
-                    dis_oid = sdata.get('disaster_sl_order_id')
-                    if tp_oid:
-                        try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
-                        except Exception:
-                            pass
-                    if dis_oid:
-                        try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol)
-                        except Exception:
-                            pass
+                    cancelled_ids.add(str(sl_id))
+                    for linked_key in ('tp_order_id', 'disaster_sl_order_id', 'entry_order_id'):
+                        val = sdata.get(linked_key)
+                        if val:
+                            val_s = str(val)
+                            cancelled_ids.add(val_s)
+                            if linked_key in ('tp_order_id', 'disaster_sl_order_id'):
+                                exchange_cancel_ids.add(val_s)
 
             # 4. Check Entry Brackets
             for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
@@ -3129,36 +3168,50 @@ class ManualTradeService:
                     continue
                 if str(eb_id) == specific_oid or str(eb_data.get('tp_order_id') or '') == specific_oid:
                     eb_data['cancelled'] = True
+                    cancelled_ids.add(str(eb_id))
                     tp_oid = eb_data.get('tp_order_id')
                     if tp_oid:
-                        try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
-                        except Exception:
-                            pass
+                        cancelled_ids.add(str(tp_oid))
+                        exchange_cancel_ids.add(str(tp_oid))
 
             # 5. Check Entry Monitors
             if specific_oid in bracket_order_service.ACTIVE_ENTRY_MONITORS:
                 bracket_order_service.ACTIVE_ENTRY_MONITORS[specific_oid]['cancelled'] = True
 
-            # 6. Cancel order on exchange
-            try:
-                await bracket_order_service._cancel_futures_order_universal(exchange, specific_oid, symbol)
-            except Exception as ex_err:
-                logger.warning(f"Failed to cancel order {specific_oid} on {symbol}: {ex_err}")
-                pass
+            # Invalidate cache before/during exchange calls so concurrent polls never serve stale data
+            ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
+
+            # 6. Cancel order(s) on exchange concurrently (1 RTT instead of sequential loop)
+            cancel_tasks = [
+                bracket_order_service._cancel_futures_order_universal(exchange, oid_to_cancel, symbol)
+                for oid_to_cancel in exchange_cancel_ids
+            ]
+            if cancel_tasks:
+                await asyncio.gather(*cancel_tasks, return_exceptions=True)
 
             ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
-            await _emit_manual_trade_in_app(
+            cancelled_list = list(cancelled_ids)
+            asyncio.create_task(publish_order_sync_event(
+                user_id=user_id,
+                event="order_removed",
+                api_key_id=api_key_id,
+                symbol=symbol,
+                order_id=specific_oid,
+                order_ids=cancelled_list,
+                status="canceled",
+            ))
+            asyncio.create_task(_emit_manual_trade_in_app(
                 user_id=user_id,
                 title="Manual Order Cancelled",
                 message=f"Exchange: {api_key_record.exchange.capitalize()}\nPair: {symbol}\nOrder ID: {specific_oid}\nOrder cancelled successfully.",
                 event_type="order_cancelled",
                 severity="warning",
                 meta={"symbol": symbol, "order_id": specific_oid, "exchange": api_key_record.exchange},
-            )
+            ))
             return {
                 "success": True,
                 "order_id": specific_oid,
+                "cancelled_ids": cancelled_list,
                 "symbol": symbol,
                 "message": f"Order {specific_oid} cancelled successfully."
             }
@@ -3202,36 +3255,28 @@ class ManualTradeService:
             return s1.split(':')[0].upper() == s2.split(':')[0].upper()
 
         try:
+            from app.services.user_order_stream import ensure_user_order_stream, publish_order_sync_event
+            ensure_user_order_stream(user_id, api_key_record, is_futures, symbol)
+
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
 
-            # 1. Stop Smart Pegs & Smart Chases
-            stopped_pegs = await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
-            stopped_chases = await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
-
-            # 2. Cancel in-memory monitors & brackets
+            # Immediately mark in-memory monitors & brackets cancelled and collect linked exchange IDs
             for em_id, em_data in list(bracket_order_service.ACTIVE_ENTRY_MONITORS.items()):
                 key_match = (em_data.get('api_key_id') is None or int(em_data.get('api_key_id')) == int(api_key_id))
                 if key_match and _sym_matches(em_data.get('symbol', ''), symbol):
                     em_data['cancelled'] = True
 
             cancelled_brackets = 0
+            exchange_cancel_ids = set()
             for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
                 key_match = (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == int(api_key_id))
                 if key_match and _sym_matches(sdata.get('symbol', ''), symbol) and not sdata.get('cancelled'):
                     sdata['cancelled'] = True
                     cancelled_brackets += 1
-                    tp_oid = sdata.get('tp_order_id')
-                    dis_oid = sdata.get('disaster_sl_order_id')
-                    if tp_oid:
-                        try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
-                        except Exception:
-                            pass
-                    if dis_oid:
-                        try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol)
-                        except Exception:
-                            pass
+                    for linked_key in ('tp_order_id', 'disaster_sl_order_id'):
+                        val = sdata.get(linked_key)
+                        if val:
+                            exchange_cancel_ids.add(str(val))
 
             for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
                 key_match = (eb_data.get('api_key_id') is None or int(eb_data.get('api_key_id')) == int(api_key_id))
@@ -3239,44 +3284,46 @@ class ManualTradeService:
                     eb_data['cancelled'] = True
                     tp_oid = eb_data.get('tp_order_id')
                     if tp_oid:
-                        try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
-                        except Exception:
-                            pass
+                        exchange_cancel_ids.add(str(tp_oid))
 
-            # 3. Exchange open orders cancel
-            cancelled_open_orders = 0
-            try:
-                if hasattr(exchange, 'cancel_all_orders'):
-                    await exchange.cancel_all_orders(symbol)
-                    cancelled_open_orders += 1
-            except Exception as e:
-                logger.debug(f"cancel_all_orders on exchange notice: {e}")
+            ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
 
-            try:
-                open_orders_res = await ManualTradeService.get_open_limit_orders(db, user_id, api_key_id, symbol, force_refresh=True)
-                open_orders_list = open_orders_res.get('orders', []) if isinstance(open_orders_res, dict) else (open_orders_res or [])
-                for o in open_orders_list:
-                    oid = o.get('id') if isinstance(o, dict) else None
-                    if oid:
-                        try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, str(oid), symbol)
-                            cancelled_open_orders += 1
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+            # 1-3. Run Smart Pegs, Smart Chases, bracket legs & exchange cancel_all concurrently
+            async_tasks = [
+                stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id),
+                stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id),
+            ]
+            if hasattr(exchange, 'cancel_all_orders'):
+                async_tasks.append(exchange.cancel_all_orders(symbol))
+                if is_futures:
+                    async_tasks.append(exchange.cancel_all_orders(symbol, params={'stop': True}))
+            for oid_to_cancel in exchange_cancel_ids:
+                async_tasks.append(
+                    bracket_order_service._cancel_futures_order_universal(exchange, oid_to_cancel, symbol)
+                )
+
+            results = await asyncio.gather(*async_tasks, return_exceptions=True)
+            stopped_pegs = results[0] if isinstance(results[0], int) else 0
+            stopped_chases = results[1] if isinstance(results[1], int) else 0
+            cancelled_open_orders = 1 if (len(results) > 2 and not isinstance(results[2], Exception)) else 0
 
             ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
             total = cancelled_open_orders + stopped_pegs + stopped_chases + cancelled_brackets
-            await _emit_manual_trade_in_app(
+            asyncio.create_task(publish_order_sync_event(
+                user_id=user_id,
+                event="orders_cleared",
+                api_key_id=api_key_id,
+                symbol=symbol,
+                status="canceled",
+            ))
+            asyncio.create_task(_emit_manual_trade_in_app(
                 user_id=user_id,
                 title="All Manual Orders Cancelled",
                 message=f"Exchange: {api_key_record.exchange.capitalize()}\nPair: {symbol}\nCleared Count: {total}\nAll open orders & brackets cancelled.",
                 event_type="orders_cancelled_all",
                 severity="warning",
                 meta={"symbol": symbol, "exchange": api_key_record.exchange, "cleared_count": total},
-            )
+            ))
             return {
                 "success": True,
                 "symbol": symbol,

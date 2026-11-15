@@ -35,9 +35,16 @@ export const useOpenOrders = (
   enabled: boolean = true
 ): OpenLimitOrder[] => {
   const [orders, setOrders] = useState<OpenLimitOrder[]>([]);
+  const ordersRef = useRef<OpenLimitOrder[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isVisibleRef = useRef(typeof document !== 'undefined' ? document.visibilityState === 'visible' : true);
   const isMountedRef = useRef(true); // BUG-05: mount guard
+  // Short-lived optimistic tombstone IDs so in-flight HTTP polls cannot resurrect cancelled lines
+  const tombstoneMapRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    ordersRef.current = orders;
+  }, [orders]);
 
   const thermalProfile = getThermalProfile();
   const effectiveIntervalMs =
@@ -65,6 +72,12 @@ export const useOpenOrders = (
 
       // Guard again after await — component may have unmounted or been disabled during the request
       if (isMountedRef.current && enabled) {
+        const now = Date.now();
+        const tombstones = tombstoneMapRef.current;
+        for (const [tid, exp] of tombstones.entries()) {
+          if (exp <= now) tombstones.delete(tid);
+        }
+
         const limitOrders = (res.data?.orders ?? []).map((o: any) => ({
           ...o,
           isIceberg: Boolean(o.isIceberg),
@@ -89,12 +102,17 @@ export const useOpenOrders = (
         for (const o of limitOrders) {
           if (o?.id !== undefined && o?.id !== null && String(o.id) !== '') {
             const id = String(o.id);
+            const exp = tombstones.get(id);
+            if (exp && exp > now) continue;
             deduped.set(id, { ...o, id });
           }
         }
         for (const sl of softwareSLs) {
           if (sl.id) {
-            deduped.set(String(sl.id), sl);
+            const id = String(sl.id);
+            const exp = tombstones.get(id);
+            if (exp && exp > now) continue;
+            deduped.set(id, sl);
           }
         }
         setOrders(Array.from(deduped.values()));
@@ -117,32 +135,70 @@ export const useOpenOrders = (
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [fetchOrders, enabled]);
 
-  // Immediate refresh & optimistic cancellation sync on custom events
+  // Immediate refresh & 0ms optimistic cancellation sync on custom events
   useEffect(() => {
     const handleRefresh = () => {
       if (enabled) fetchOrders();
     };
     const handleOptimisticRemove = (e: Event) => {
       if (!enabled) return;
-      const detail = (e as CustomEvent<{ orderId?: string }>).detail;
-      const targetId = detail?.orderId ? String(detail.orderId) : '';
-      if (!targetId) return;
-      setOrders((prev) => prev.filter((o) => String(o.id) !== targetId));
+      const detail = (e as CustomEvent<{
+        orderId?: string;
+        orderIds?: string[];
+        apiKeyId?: string | number;
+      }>).detail;
+      if (detail?.apiKeyId !== undefined && detail?.apiKeyId !== null && String(detail.apiKeyId) !== String(apiKeyId)) {
+        return;
+      }
+      const targets = new Set<string>();
+      if (detail?.orderId) targets.add(String(detail.orderId));
+      if (Array.isArray(detail?.orderIds)) {
+        for (const id of detail.orderIds) {
+          if (id) targets.add(String(id));
+        }
+      }
+      if (targets.size === 0) return;
+
+      const expiry = Date.now() + 5000;
+      targets.forEach((id) => tombstoneMapRef.current.set(id, expiry));
+      setOrders((prev) => prev.filter((o) => !targets.has(String(o.id))));
     };
-    const handleOptimisticClear = () => {
+    const handleOptimisticClear = (e: Event) => {
       if (!enabled) return;
+      const detail = (e as CustomEvent<{ apiKeyId?: string | number }> | undefined)?.detail;
+      if (detail?.apiKeyId !== undefined && detail?.apiKeyId !== null && String(detail.apiKeyId) !== String(apiKeyId)) {
+        return;
+      }
+      const expiry = Date.now() + 5000;
+      for (const o of ordersRef.current) {
+        if (o?.id) tombstoneMapRef.current.set(String(o.id), expiry);
+      }
       setOrders([]);
+    };
+    const handleRollbackRemove = (e: Event) => {
+      if (!enabled) return;
+      const detail = (e as CustomEvent<{ orderIds?: string[] }> | undefined)?.detail;
+      if (Array.isArray(detail?.orderIds) && detail.orderIds.length > 0) {
+        for (const id of detail.orderIds) {
+          if (id) tombstoneMapRef.current.delete(String(id));
+        }
+      } else {
+        tombstoneMapRef.current.clear();
+      }
+      fetchOrders();
     };
 
     window.addEventListener('refreshOpenOrders', handleRefresh);
     window.addEventListener('optimisticRemoveOpenOrder', handleOptimisticRemove);
     window.addEventListener('optimisticClearOpenOrders', handleOptimisticClear);
+    window.addEventListener('rollbackRemoveOpenOrder', handleRollbackRemove);
     return () => {
       window.removeEventListener('refreshOpenOrders', handleRefresh);
       window.removeEventListener('optimisticRemoveOpenOrder', handleOptimisticRemove);
       window.removeEventListener('optimisticClearOpenOrders', handleOptimisticClear);
+      window.removeEventListener('rollbackRemoveOpenOrder', handleRollbackRemove);
     };
-  }, [fetchOrders, enabled]);
+  }, [fetchOrders, enabled, apiKeyId]);
 
   // Polling loop with proper mount guard
   useEffect(() => {

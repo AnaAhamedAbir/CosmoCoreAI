@@ -243,6 +243,9 @@ async def subscribe_to_app_notifications():
                     try:
                         data = json.loads(message["data"])
                         target_user_id = data.get("target_user_id")
+                        if data.get("type") == "order_sync" and target_user_id is not None:
+                            await manager.broadcast(data, f"user_notif_{int(target_user_id)}")
+                            continue
                         notif = data.get("notification")
                         if not notif:
                             continue

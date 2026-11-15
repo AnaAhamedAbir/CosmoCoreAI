@@ -507,6 +507,35 @@ export function useSystemNotifications() {
         if (!alive) return;
         try {
           const data = JSON.parse(event.data);
+          if (data?.type === 'order_sync') {
+            if (typeof window !== 'undefined') {
+              const evtName = data.event;
+              if (evtName === 'order_removed') {
+                window.dispatchEvent(
+                  new CustomEvent('optimisticRemoveOpenOrder', {
+                    detail: {
+                      orderId: data.order_id,
+                      orderIds: data.order_ids,
+                      apiKeyId: data.api_key_id,
+                      symbol: data.symbol,
+                    },
+                  })
+                );
+              } else if (evtName === 'orders_cleared') {
+                window.dispatchEvent(
+                  new CustomEvent('optimisticClearOpenOrders', {
+                    detail: {
+                      apiKeyId: data.api_key_id,
+                      symbol: data.symbol,
+                    },
+                  })
+                );
+              }
+              window.dispatchEvent(new CustomEvent('orderSyncEvent', { detail: data }));
+              window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+            }
+            return;
+          }
           if (data?.type !== 'sys_notification') return;
 
           const incoming = (data.notification ?? data.data ?? data) as SystemNotificationItem;

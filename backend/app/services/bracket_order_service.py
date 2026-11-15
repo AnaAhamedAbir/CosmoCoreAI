@@ -742,26 +742,32 @@ class BracketOrderService:
     @staticmethod
     async def _cancel_futures_order_universal(exchange, order_id: str, symbol: str):
         """
-        Safely cancels an order on Futures, attempting standard order cancellation
-        and conditional/algo cancellation (params={'stop': True}) so no order is left behind.
+        Safely cancels an order on Futures/Spot in parallel when possible,
+        attempting standard and conditional/algo cancellation concurrently on Futures
+        so SL/TP cancellation completes in 1 RTT instead of 2 serial round-trips.
         """
         if not order_id or not exchange:
             return
-        cancelled = False
-        try:
-            await exchange.cancel_order(order_id, symbol)
-            cancelled = True
-            logger.info(f"✅ Cancelled regular order {order_id} on {symbol}")
-        except Exception as e:
-            logger.debug(f"Standard cancel notice for {order_id}: {e}")
-
-        if not cancelled:
+        is_futures = ':' in str(symbol or '')
+        if not is_futures:
             try:
-                await exchange.cancel_order(order_id, symbol, params={'stop': True})
-                cancelled = True
-                logger.info(f"✅ Cancelled conditional/algo order {order_id} on {symbol}")
+                await exchange.cancel_order(order_id, symbol)
+                logger.info(f"✅ Cancelled order {order_id} on {symbol}")
             except Exception as e:
-                logger.debug(f"Conditional cancel notice for {order_id}: {e}")
+                logger.debug(f"Standard cancel notice for {order_id}: {e}")
+            return
+
+        res_std, res_stop = await asyncio.gather(
+            exchange.cancel_order(order_id, symbol),
+            exchange.cancel_order(order_id, symbol, params={'stop': True}),
+            return_exceptions=True,
+        )
+        if not isinstance(res_std, Exception):
+            logger.info(f"✅ Cancelled regular order {order_id} on {symbol}")
+        elif not isinstance(res_stop, Exception):
+            logger.info(f"✅ Cancelled conditional/algo order {order_id} on {symbol}")
+        else:
+            logger.debug(f"Cancel notice for {order_id} on {symbol}: std={res_std} | stop={res_stop}")
 
     @staticmethod
     async def _send_sl_modified_notification(

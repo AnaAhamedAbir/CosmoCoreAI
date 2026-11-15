@@ -772,8 +772,67 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     [forceOrderTargets, selectedForceOrderId]
   );
 
+  // Sync modal-local openLimitOrders / activeBrackets immediately on live Binance WS order_sync events
+  React.useEffect(() => {
+    const handleOrderSync = (e: Event) => {
+      const detail = (e as CustomEvent<any>).detail;
+      if (!detail || !selectedApi) return;
+      if (detail.api_key_id !== undefined && String(detail.api_key_id) !== String(selectedApi)) return;
+      if (detail.event === 'order_removed') {
+        const ids = new Set<string>();
+        if (detail.order_id) ids.add(String(detail.order_id));
+        if (Array.isArray(detail.order_ids)) {
+          for (const x of detail.order_ids) if (x) ids.add(String(x));
+        }
+        if (ids.size > 0) {
+          setOpenLimitOrders((prev) => prev.filter((o) => !ids.has(String(o.id))));
+          setActiveBrackets((prev) =>
+            prev.filter((b) => {
+              const bIds = [b?.id, b?.tp_order_id, b?.entry_order_id, b?.disaster_sl_order_id, b?.sl_order_id].filter(Boolean).map(String);
+              return !bIds.some((id) => ids.has(id));
+            })
+          );
+        }
+        fetchActiveBrackets(true);
+      } else if (detail.event === 'orders_cleared') {
+        setOpenLimitOrders([]);
+        setActiveBrackets([]);
+        fetchActiveBrackets(true);
+      } else if (detail.event === 'order_added') {
+        fetchActiveBrackets(true);
+      }
+    };
+    window.addEventListener('orderSyncEvent', handleOrderSync);
+    return () => window.removeEventListener('orderSyncEvent', handleOrderSync);
+  }, [selectedApi, fetchActiveBrackets]);
+
+  const collectLinkedOrderIds = (orderId: string, bracketHint?: any): string[] => {
+    const oid = String(orderId || '').trim();
+    const ids = new Set<string>(oid ? [oid] : []);
+    const inspectBracket = (b: any) => {
+      if (!b) return;
+      const fields = [b.id, b.tp_order_id, b.entry_order_id, b.disaster_sl_order_id, b.sl_order_id].filter(Boolean).map(String);
+      if (!oid || fields.includes(oid) || b === bracketHint) {
+        fields.forEach((f) => ids.add(f));
+      }
+    };
+    if (bracketHint) inspectBracket(bracketHint);
+    for (const b of activeBrackets) inspectBracket(b);
+    return Array.from(ids);
+  };
+
   const handleStopSmartChase = async (targetChase?: any) => {
     if (!selectedApi) return;
+    const removedIds = targetChase?.id ? collectLinkedOrderIds(String(targetChase.id), targetChase) : [];
+    const removedSet = new Set(removedIds);
+    // 0ms optimistic removal before awaiting backend/exchange round-trip
+    if (removedSet.size > 0) {
+      setActiveBrackets((prev) => prev.filter((b) => !removedSet.has(String(b.id))));
+      setOpenLimitOrders((prev) => prev.filter((o) => !removedSet.has(String(o.id))));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderIds: removedIds, apiKeyId: selectedApi } }));
+      }
+    }
     setIsStoppingChase(true);
     try {
       const res = await manualTradeService.stopSmartChase({
@@ -782,20 +841,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         slId: targetChase?.id
       });
       toast.success(res.message || '🛑 Smart Chase SL stopped.');
-      if (targetChase?.id) {
-        const sid = String(targetChase.id);
-        setActiveBrackets((prev) => prev.filter((b) => String(b.id) !== sid));
-        setOpenLimitOrders((prev) => prev.filter((o) => String(o.id) !== sid));
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: sid } }));
-        }
-      }
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
       }
       fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rollbackRemoveOpenOrder', { detail: { orderIds: removedIds } }));
+      }
+      fetchActiveBrackets(true);
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to stop Smart Chase');
     } finally {
       setIsStoppingChase(false);
@@ -804,6 +859,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
   const handleStopSmartPeg = async (targetPeg?: any) => {
     if (!selectedApi) return;
+    const removedIds = targetPeg?.id ? collectLinkedOrderIds(String(targetPeg.id), targetPeg) : [];
+    const removedSet = new Set(removedIds);
+    // 0ms optimistic removal before awaiting backend/exchange round-trip
+    if (removedSet.size > 0) {
+      setActiveBrackets((prev) => prev.filter((b) => !removedSet.has(String(b.id))));
+      setOpenLimitOrders((prev) => prev.filter((o) => !removedSet.has(String(o.id))));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderIds: removedIds, apiKeyId: selectedApi } }));
+      }
+    }
     setIsStoppingPeg(true);
     try {
       const res = await manualTradeService.stopSmartPeg({
@@ -812,19 +877,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         pegId: targetPeg?.id
       });
       toast.success(res.message || '🛑 Smart Peg Entry cancelled.');
-      if (targetPeg?.id) {
-        const pid = String(targetPeg.id);
-        setActiveBrackets((prev) => prev.filter((b) => String(b.id) !== pid));
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: pid } }));
-        }
-      }
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
       }
       fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rollbackRemoveOpenOrder', { detail: { orderIds: removedIds } }));
+      }
+      fetchActiveBrackets(true);
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to stop Smart Peg Entry');
     } finally {
       setIsStoppingPeg(false);
@@ -833,37 +895,41 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
   const handleCancelOrder = async (orderId: string) => {
     if (!selectedApi) return;
+    const oid = String(orderId);
+    const removedIds = collectLinkedOrderIds(oid);
+    const removedSet = new Set(removedIds);
+
+    // 0ms optimistic removal on chart & modal BEFORE backend/Binance REST round-trip
+    setActiveBrackets((prev) =>
+      prev.filter((b) => {
+        const fields = [b?.id, b?.tp_order_id, b?.entry_order_id, b?.disaster_sl_order_id, b?.sl_order_id].filter(Boolean).map(String);
+        return !fields.some((f) => removedSet.has(f));
+      })
+    );
+    setOpenLimitOrders((prev) => prev.filter((o) => !removedSet.has(String(o.id))));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderIds: removedIds, apiKeyId: selectedApi } }));
+    }
+
     setCancellingOrderId(orderId);
     try {
       const res = await manualTradeService.cancelOrder(Number(selectedApi), orderId, activeSymbol);
       toast.success(res?.message || `🛑 Order #${orderId} cancelled.`);
-      const oid = String(orderId);
-      const removedIds = new Set<string>([oid]);
-      setActiveBrackets((prev) => {
-        const next: any[] = [];
-        for (const b of prev) {
-          const bid = String(b?.id || '');
-          const tpId = String(b?.tp_order_id || '');
-          const entryId = String(b?.entry_order_id || '');
-          if (bid === oid || tpId === oid || entryId === oid) {
-            if (bid) removedIds.add(bid);
-            if (tpId) removedIds.add(tpId);
-          } else {
-            next.push(b);
-          }
-        }
-        return next;
-      });
-      setOpenLimitOrders((prev) => prev.filter((o) => !removedIds.has(String(o.id))));
+      if (Array.isArray(res?.cancelled_ids) && res.cancelled_ids.length > 0 && typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderIds: res.cancelled_ids, apiKeyId: selectedApi } })
+        );
+      }
       if (typeof window !== 'undefined') {
-        removedIds.forEach((idToRemove) => {
-          window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: idToRemove } }));
-        });
         window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
       }
       fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rollbackRemoveOpenOrder', { detail: { orderIds: removedIds } }));
+      }
+      fetchActiveBrackets(true);
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to cancel order');
     } finally {
       setCancellingOrderId(null);
@@ -872,19 +938,26 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
   const handleCancelAllOrders = async () => {
     if (!selectedApi) return;
+    // 0ms optimistic clear BEFORE backend/Binance REST round-trip
+    setOpenLimitOrders([]);
+    setActiveBrackets([]);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('optimisticClearOpenOrders', { detail: { apiKeyId: selectedApi } }));
+    }
     setIsCancellingAll(true);
     try {
       const res = await manualTradeService.cancelAllOrders(Number(selectedApi), activeSymbol);
       toast.success(res?.message || `🛑 All open orders on ${activeSymbol} cancelled.`);
-      setOpenLimitOrders([]);
-      setActiveBrackets([]);
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('optimisticClearOpenOrders'));
         window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
       }
       fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rollbackRemoveOpenOrder'));
+      }
+      fetchActiveBrackets(true);
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to cancel all orders');
     } finally {
       setIsCancellingAll(false);
@@ -893,6 +966,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
   const handleClosePosition = async () => {
     if (!selectedApi) return;
+    // 0ms optimistic clear of attached SL/TP lines before Market Flatten returns
+    setOpenLimitOrders([]);
+    setActiveBrackets([]);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('optimisticClearOpenOrders', { detail: { apiKeyId: selectedApi } }));
+    }
     setIsClosingPosition(true);
     try {
       const res = await manualTradeService.closePosition(Number(selectedApi), activeSymbol);
@@ -903,6 +982,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rollbackRemoveOpenOrder'));
+      }
+      fetchActiveBrackets(true);
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to close position');
     } finally {
       setIsClosingPosition(false);

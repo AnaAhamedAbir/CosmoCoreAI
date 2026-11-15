@@ -117,13 +117,31 @@ export const useOpenOrders = (
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [fetchOrders, enabled]);
 
-  // Immediate refresh on custom event (e.g. after drag bracket order placement)
+  // Immediate refresh & optimistic cancellation sync on custom events
   useEffect(() => {
     const handleRefresh = () => {
       if (enabled) fetchOrders();
     };
+    const handleOptimisticRemove = (e: Event) => {
+      if (!enabled) return;
+      const detail = (e as CustomEvent<{ orderId?: string }>).detail;
+      const targetId = detail?.orderId ? String(detail.orderId) : '';
+      if (!targetId) return;
+      setOrders((prev) => prev.filter((o) => String(o.id) !== targetId));
+    };
+    const handleOptimisticClear = () => {
+      if (!enabled) return;
+      setOrders([]);
+    };
+
     window.addEventListener('refreshOpenOrders', handleRefresh);
-    return () => window.removeEventListener('refreshOpenOrders', handleRefresh);
+    window.addEventListener('optimisticRemoveOpenOrder', handleOptimisticRemove);
+    window.addEventListener('optimisticClearOpenOrders', handleOptimisticClear);
+    return () => {
+      window.removeEventListener('refreshOpenOrders', handleRefresh);
+      window.removeEventListener('optimisticRemoveOpenOrder', handleOptimisticRemove);
+      window.removeEventListener('optimisticClearOpenOrders', handleOptimisticClear);
+    };
   }, [fetchOrders, enabled]);
 
   // Polling loop with proper mount guard

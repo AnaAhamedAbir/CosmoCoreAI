@@ -589,7 +589,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       const isVisible = typeof document === 'undefined' || (!document.hidden && document.visibilityState === 'visible');
       const timeSinceLast = now - lastOpenOrdersFetchRef.current;
       const { isThermalGuardActive: guardActive, openOrdersPollMs, isActivelyChasingOrPegging: isActive } = bracketThermalRef.current;
-      const openOrdersMinGapMs = guardActive && !isActive ? Math.max(6000, openOrdersPollMs) : 4500;
+      const openOrdersMinGapMs = guardActive && !isActive ? Math.max(2500, openOrdersPollMs) : 2500;
       // Only query exchange open orders if forced, or if enough time has elapsed and modal is open & tab visible
       const shouldFetchOpenOrders =
         forceOpenOrders || (isOpenRef.current && isVisible && timeSinceLast >= openOrdersMinGapMs);
@@ -782,6 +782,17 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         slId: targetChase?.id
       });
       toast.success(res.message || '🛑 Smart Chase SL stopped.');
+      if (targetChase?.id) {
+        const sid = String(targetChase.id);
+        setActiveBrackets((prev) => prev.filter((b) => String(b.id) !== sid));
+        setOpenLimitOrders((prev) => prev.filter((o) => String(o.id) !== sid));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: sid } }));
+        }
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+      }
       fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
@@ -801,6 +812,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         pegId: targetPeg?.id
       });
       toast.success(res.message || '🛑 Smart Peg Entry cancelled.');
+      if (targetPeg?.id) {
+        const pid = String(targetPeg.id);
+        setActiveBrackets((prev) => prev.filter((b) => String(b.id) !== pid));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: pid } }));
+        }
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+      }
       fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
@@ -816,6 +837,30 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     try {
       const res = await manualTradeService.cancelOrder(Number(selectedApi), orderId, activeSymbol);
       toast.success(res?.message || `🛑 Order #${orderId} cancelled.`);
+      const oid = String(orderId);
+      const removedIds = new Set<string>([oid]);
+      setActiveBrackets((prev) => {
+        const next: any[] = [];
+        for (const b of prev) {
+          const bid = String(b?.id || '');
+          const tpId = String(b?.tp_order_id || '');
+          const entryId = String(b?.entry_order_id || '');
+          if (bid === oid || tpId === oid || entryId === oid) {
+            if (bid) removedIds.add(bid);
+            if (tpId) removedIds.add(tpId);
+          } else {
+            next.push(b);
+          }
+        }
+        return next;
+      });
+      setOpenLimitOrders((prev) => prev.filter((o) => !removedIds.has(String(o.id))));
+      if (typeof window !== 'undefined') {
+        removedIds.forEach((idToRemove) => {
+          window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: idToRemove } }));
+        });
+        window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+      }
       fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
@@ -831,6 +876,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     try {
       const res = await manualTradeService.cancelAllOrders(Number(selectedApi), activeSymbol);
       toast.success(res?.message || `🛑 All open orders on ${activeSymbol} cancelled.`);
+      setOpenLimitOrders([]);
+      setActiveBrackets([]);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('optimisticClearOpenOrders'));
+        window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+      }
       fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
@@ -846,6 +897,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     try {
       const res = await manualTradeService.closePosition(Number(selectedApi), activeSymbol);
       toast.success(res?.message || `🚨 Position closed successfully at Market price.`);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+      }
       fetchActiveBrackets(true);
       fetchBalance(true);
     } catch (err: any) {
@@ -980,14 +1034,23 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       );
       fetchActiveBrackets(true);
       fetchBalance(true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+      }
       setTimeout(() => {
         fetchActiveBrackets(true);
         fetchBalance(true);
-      }, 1000);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+        }
+      }, 450);
       setTimeout(() => {
         fetchActiveBrackets(true);
         fetchBalance(true);
-      }, 2200);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+        }
+      }, 1500);
     } catch (err: any) {
       const errMsg = err?.response?.data?.detail || err?.message || 'Emergency Force Order failed';
       if (typeof errMsg === 'string' && errMsg.includes('AI Filter Denied')) {
@@ -2817,14 +2880,23 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       // Auto-refresh balance & open orders immediately after order placement, followed by staggered syncs
       fetchActiveBrackets(true);
       fetchBalance(true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+      }
       setTimeout(() => {
         fetchActiveBrackets(true);
         fetchBalance(true);
-      }, 1200);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+        }
+      }, 450);
       setTimeout(() => {
         fetchActiveBrackets(true);
         fetchBalance(true);
-      }, 2500);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
+        }
+      }, 1500);
     } catch (error: any) {
       // BUG-02 fix: Read FastAPI detail message if available
       const errMsg = error?.response?.data?.detail || error?.message || 'Unknown error occurred';

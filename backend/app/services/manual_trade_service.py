@@ -249,7 +249,7 @@ class ManualTradeService:
             ManualTradeService._WALLET_BALANCE_CACHE[(int(api_key_id), bool(is_futures))] = (balance, time.time())
 
     @staticmethod
-    def _get_cached_wallet_balance(api_key_id: int, is_futures: bool, max_age_seconds: float = 15.0) -> Optional[dict]:
+    def _get_cached_wallet_balance(api_key_id: int, is_futures: bool, max_age_seconds: float = 45.0) -> Optional[dict]:
         """Returns cached wallet balance if fresh (< max_age_seconds old), saving ~300-700ms on order placement."""
         key = (int(api_key_id), bool(is_futures))
         cached = ManualTradeService._WALLET_BALANCE_CACHE.get(key)
@@ -1526,7 +1526,7 @@ class ManualTradeService:
                 order_req.amount = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, order_req.amount)
 
             # --- Pre-flight Margin Check (Zero-Latency Cached with Fresh Network Fallback) ---
-            bal = ManualTradeService._get_cached_wallet_balance(api_key_record.id, is_futures, max_age_seconds=15.0)
+            bal = ManualTradeService._get_cached_wallet_balance(api_key_record.id, is_futures, max_age_seconds=45.0)
             if not bal:
                 try:
                     bal = await ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)

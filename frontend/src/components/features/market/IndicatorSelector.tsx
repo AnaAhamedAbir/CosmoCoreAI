@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { DEFAULT_EMA_TIMEFRAMES } from '../../../utils/indicators';
 
 export interface SessionSettings {
@@ -252,6 +253,10 @@ interface IndicatorSelectorProps {
     onToggleCVD?: () => void;
     showFootprint?: boolean;
     onToggleFootprint?: () => void;
+    compact?: boolean;
+    chartLabel?: string;
+    usePortal?: boolean;
+    onResetAll?: () => void;
 }
 
 export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
@@ -263,14 +268,103 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
     onToggleCVD,
     showFootprint,
     onToggleFootprint,
+    compact = false,
+    chartLabel,
+    usePortal = false,
+    onResetAll,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [multiplierLocal, setMultiplierLocal] = useState(settings.trendFinderVolumeMultiplier?.toString() || '1.5');
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const triggerButtonRef = useRef<HTMLButtonElement>(null);
+    const portalMenuRef = useRef<HTMLDivElement>(null);
+    const [portalPos, setPortalPos] = useState<{ top: number; left: number; width: number; maxHeight: number }>({
+        top: 64,
+        left: 16,
+        width: 320,
+        maxHeight: 500,
+    });
 
     const isHeatmapActive = showHeatmap !== undefined ? showHeatmap : !!settings.showHeatmap;
     const isCVDActive = showCVD !== undefined ? showCVD : !!settings.showCVD;
     const isFootprintActive = showFootprint !== undefined ? showFootprint : !!settings.showFootprint;
+
+    const activeCount = useMemo(() => {
+        const flags = [
+            settings.showEMA,
+            settings.showBB,
+            settings.showRSI,
+            settings.showMACD,
+            settings.showVolume,
+            settings.showAutoFibo,
+            settings.showIchimoku,
+            settings.showTrendFinder,
+            settings.showUTBot,
+            settings.showSessions,
+            settings.showQuantumAI,
+            settings.showLiquidationHeatmap,
+            settings.showSMC,
+            isHeatmapActive,
+            isCVDActive,
+            isFootprintActive,
+            settings.showDualEngine,
+            settings.showWatchlistScanner,
+            settings.showICTKillzones,
+            settings.showICTPO3,
+            settings.luxShowIndicator,
+            settings.showSupertrend,
+            settings.showMsbOb,
+            settings.showCandlestickPatterns,
+            settings.showWickSR,
+            settings.showVWAPSD,
+            settings.showAetherFlow,
+            settings.showLiquiditySweepAbsorption,
+        ];
+        return flags.filter(Boolean).length;
+    }, [settings, isHeatmapActive, isCVDActive, isFootprintActive]);
+
+    const updatePortalPosition = useCallback(() => {
+        if (!usePortal || !triggerButtonRef.current || typeof window === 'undefined') return;
+        const rect = triggerButtonRef.current.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const menuWidth = Math.min(340, Math.max(260, vw - 24));
+        const margin = 12;
+
+        let left = rect.left;
+        if (left + menuWidth > vw - margin) {
+            left = Math.max(margin, rect.right - menuWidth);
+        }
+        if (left < margin) left = margin;
+
+        const spaceBelow = vh - rect.bottom - margin;
+        const spaceAbove = rect.top - margin;
+        const preferredHeight = Math.min(540, Math.floor(vh * 0.72));
+
+        let top = rect.bottom + 6;
+        let maxHeight = Math.max(220, spaceBelow - 48);
+
+        if (spaceBelow < 280 && spaceAbove > spaceBelow) {
+            const actualH = Math.min(preferredHeight, spaceAbove);
+            top = Math.max(margin, rect.top - actualH - 6);
+            maxHeight = Math.max(200, actualH - 48);
+        } else {
+            maxHeight = Math.max(220, Math.min(preferredHeight, spaceBelow) - 48);
+        }
+
+        setPortalPos({ top, left, width: menuWidth, maxHeight });
+    }, [usePortal]);
+
+    useEffect(() => {
+        if (!isOpen || !usePortal) return;
+        updatePortalPosition();
+        window.addEventListener('resize', updatePortalPosition);
+        window.addEventListener('scroll', updatePortalPosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePortalPosition);
+            window.removeEventListener('scroll', updatePortalPosition, true);
+        };
+    }, [isOpen, usePortal, updatePortalPosition]);
 
     const handleToggleHeatmap = () => {
         if (onToggleHeatmap) {
@@ -311,7 +405,10 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            const target = event.target as Node;
+            const inTrigger = dropdownRef.current?.contains(target);
+            const inPortal = portalMenuRef.current?.contains(target);
+            if (!inTrigger && !inPortal) {
                 setIsOpen(false);
             }
         };
@@ -343,31 +440,49 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
         }
     };
 
-    return (
-        <div className="relative" ref={dropdownRef}>
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all ${isOpen
-                    ? 'bg-brand-primary/10 border-brand-primary text-brand-primary dark:text-brand-primary shadow-sm'
-                    : 'bg-white dark:bg-black/20 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5'
-                    }`}
+    const dropdownMenu = isOpen ? (
+        <div
+            ref={usePortal ? portalMenuRef : undefined}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            style={usePortal ? {
+                position: 'fixed',
+                top: portalPos.top,
+                left: portalPos.left,
+                width: portalPos.width,
+                zIndex: 100001,
+            } : undefined}
+            className={`${usePortal ? '' : 'absolute left-0 sm:left-auto sm:right-0 mt-2 w-[calc(100vw-32px)] max-w-sm sm:w-80 z-50'} bg-white dark:bg-[#0c0e14] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden text-gray-900 dark:text-gray-100`}
+        >
+            <div className="p-3 border-b border-gray-200 dark:border-white/10 flex items-center justify-between gap-2 bg-gray-50/90 dark:bg-white/[0.02]">
+                <div className="flex items-center gap-1.5 min-w-0">
+                    <h3 className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider truncate">
+                        Indicators{chartLabel ? ` · ${chartLabel}` : ''}
+                    </h3>
+                    {activeCount > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-primary/15 text-brand-primary font-bold">
+                            {activeCount}
+                        </span>
+                    )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                    {onResetAll && activeCount > 0 && (
+                        <button
+                            type="button"
+                            onClick={onResetAll}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/20 font-bold transition-colors"
+                            title="Turn off all indicators on this chart"
+                        >
+                            Clear All
+                        </button>
+                    )}
+                    <span className="text-[10px] text-brand-primary font-bold">Pro Multi-Engine</span>
+                </div>
+            </div>
+            <div
+                style={usePortal ? { maxHeight: portalPos.maxHeight } : undefined}
+                className={`p-2 flex flex-col gap-1 ${usePortal ? '' : 'max-h-[75vh]'} overflow-y-auto custom-scrollbar touch-pan-y overscroll-contain`}
             >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-                </svg>
-                Indicators
-                <svg className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-            </button>
-
-            {isOpen && (
-                <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-[calc(100vw-32px)] max-w-sm sm:w-80 bg-white dark:bg-[#0c0e14] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden text-gray-900 dark:text-gray-100">
-                    <div className="p-3 border-b border-gray-200 dark:border-white/10 flex items-center justify-between bg-gray-50/90 dark:bg-white/[0.02]">
-                        <h3 className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Technical Indicators</h3>
-                        <span className="text-[10px] text-brand-primary font-bold">Pro Multi-Engine</span>
-                    </div>
-                    <div className="p-2 flex flex-col gap-1 max-h-[75vh] overflow-y-auto custom-scrollbar touch-pan-y overscroll-contain">
                         {/* ── Multi-Timeframe EMA Section ── */}
                         <div className="flex flex-col bg-gray-50/80 dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 rounded-xl p-2.5 transition-all">
                             <div className="flex items-center justify-between">
@@ -2359,7 +2474,53 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
 
                     </div>
                 </div>
-            )}
+    ) : null;
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <button
+                ref={triggerButtonRef}
+                type="button"
+                onClick={(e) => {
+                    if (compact) e.stopPropagation();
+                    setIsOpen(prev => !prev);
+                }}
+                title={chartLabel ? `Indicators for ${chartLabel}` : 'Indicators'}
+                className={compact
+                    ? `flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-bold transition-all cursor-pointer ${isOpen
+                        ? 'bg-brand-primary/15 border-brand-primary text-brand-primary shadow-sm'
+                        : activeCount > 0
+                            ? 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary hover:bg-brand-primary/15'
+                            : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-white/10 hover:bg-gray-200/70 dark:hover:bg-white/10'
+                    }`
+                    : `flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all cursor-pointer ${isOpen
+                        ? 'bg-brand-primary/10 border-brand-primary text-brand-primary dark:text-brand-primary shadow-sm'
+                        : 'bg-white dark:bg-black/20 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5'
+                    }`
+                }
+            >
+                <svg className={compact ? 'w-3 h-3 shrink-0' : 'w-4 h-4 shrink-0'} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                </svg>
+                <span>{compact ? 'Ind' : 'Indicators'}</span>
+                {!compact && chartLabel && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-primary/15 text-brand-primary font-bold">
+                        {chartLabel}
+                    </span>
+                )}
+                {activeCount > 0 && (
+                    <span className={`rounded-full font-bold leading-none ${compact ? 'text-[9px] px-1 py-0.5 bg-brand-primary text-white' : 'text-[10px] px-1.5 py-0.5 bg-brand-primary/15 text-brand-primary'}`}>
+                        {activeCount}
+                    </span>
+                )}
+                <svg className={`${compact ? 'w-3 h-3' : 'w-4 h-4'} transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+
+            {usePortal && typeof document !== 'undefined'
+                ? (dropdownMenu ? createPortal(dropdownMenu, document.body) : null)
+                : dropdownMenu}
         </div>
     );
 };

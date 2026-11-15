@@ -21,9 +21,12 @@ export interface AvailablePair {
   price?: number;
 }
 
+type ChartDragBracketType = 'tp' | 'sl' | 'buy' | 'sell' | 'peg_buy' | 'peg_sell';
+
 interface ManualTradeModalProps {
   symbol: string;
   currentPrice: number;
+  activePairId?: string;
   availablePairs?: AvailablePair[];
   onSelectPair?: (pair: AvailablePair) => void;
   onApiKeyChange?: (apiKeyId: string) => void;
@@ -32,14 +35,15 @@ interface ManualTradeModalProps {
   buttonSize?: 'sm' | 'md';
   onClose?: () => void;
   onOpenChange?: (isOpen: boolean) => void;
-  onChartDragBracketStart?: (type: 'tp' | 'sl') => void;
-  onChartDragBracketMove?: (type: 'tp' | 'sl', clientX: number, clientY: number) => number | null;
-  onChartDragBracketEnd?: (type: 'tp' | 'sl', clientX: number, clientY: number) => { inChart: boolean; price: number | null };
+  onChartDragBracketStart?: (type: ChartDragBracketType) => void;
+  onChartDragBracketMove?: (type: ChartDragBracketType, clientX: number, clientY: number) => number | null;
+  onChartDragBracketEnd?: (type: ChartDragBracketType, clientX: number, clientY: number) => { inChart: boolean; price: number | null };
 }
 
 const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   symbol,
   currentPrice,
+  activePairId,
   availablePairs,
   onSelectPair,
   onApiKeyChange,
@@ -58,6 +62,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   const [activeTerminalTab, setActiveTerminalTab] = useState<'order' | 'brackets' | 'ai' | 'orders'>('order');
   const [submittingSide, setSubmittingSide] = useState<'Buy' | 'Sell' | null>(null);
   const [activeSymbol, setActiveSymbol] = useState<string>(symbol);
+  const [selectedPairId, setSelectedPairId] = useState<string>(activePairId || '');
 
   React.useEffect(() => {
     onOpenChange?.(isOpen);
@@ -130,19 +135,28 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   } | null>(null);
   const activeDragCleanupRef = React.useRef<(() => void) | null>(null);
 
-  // Sync internal activeSymbol whenever parent symbol prop updates
+  // Sync internal activeSymbol and selectedPairId whenever parent props update
   React.useEffect(() => {
     if (symbol) {
       setActiveSymbol(symbol);
     }
   }, [symbol]);
 
-  const activePair = availablePairs?.find(p => p.symbol === activeSymbol);
+  React.useEffect(() => {
+    if (activePairId) {
+      setSelectedPairId(activePairId);
+    }
+  }, [activePairId]);
+
+  const activePair =
+    (selectedPairId ? availablePairs?.find(p => p.id === selectedPairId) : undefined) ||
+    availablePairs?.find(p => p.symbol === activeSymbol);
   const effectiveCurrentPrice = (activePair?.price && activePair.price > 0)
     ? activePair.price
     : (activeSymbol === symbol ? currentPrice : (activePair?.price || currentPrice || 0));
 
   const handleSelectPair = (pair: AvailablePair) => {
+    setSelectedPairId(pair.id);
     setActiveSymbol(pair.symbol);
     if (pair.price && pair.price > 0) {
       setLimitPrice(pair.price.toString());
@@ -2998,7 +3012,31 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       <div className="flex items-center gap-1 min-w-0 pointer-events-none flex-wrap">
                         <GripVertical className="w-3 h-3 text-cyan-400/80 shrink-0" />
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse shrink-0" />
-                        <span className="font-black text-white text-[11px] tracking-tight truncate max-w-[85px]">{activeSymbol}</span>
+                        {availablePairs && availablePairs.length > 1 ? (
+                          <select
+                            value={activePair?.id || availablePairs[0]?.id || ''}
+                            onChange={(e) => {
+                              const selected = availablePairs.find(p => p.id === e.target.value);
+                              if (selected) {
+                                handleSelectPair(selected);
+                              }
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onTouchStart={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
+                            className="pointer-events-auto bg-[#0a101d] border border-cyan-500/40 hover:border-cyan-400 rounded px-1 py-0.5 text-white font-mono font-black text-[10px] tracking-tight max-w-[105px] truncate focus:outline-none cursor-pointer shrink-0"
+                            title="Switch target chart pair"
+                          >
+                            {availablePairs.map((p, idx) => (
+                              <option key={p.id} value={p.id} className="bg-[#070b14] text-white">
+                                {p.symbol}{p.isMain ? ' (Main)' : ` (#${idx + 1})`}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="font-black text-white text-[11px] tracking-tight truncate max-w-[85px]">{activeSymbol}</span>
+                        )}
                         <span
                           className={`text-[8px] uppercase px-1 py-0.2 rounded font-mono font-extrabold border leading-tight shrink-0 ${isFutures
                             ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
@@ -3924,21 +3962,26 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       </label>
                       <div className="relative flex-1 min-w-0">
                         <select
-                          value={activeSymbol}
+                          value={activePair?.id || availablePairs[0]?.id || ''}
                           onChange={(e) => {
-                            const targetSymbol = e.target.value;
-                            const selected = availablePairs.find(p => p.symbol === targetSymbol);
+                            const selected = availablePairs.find(p => p.id === e.target.value);
                             if (selected) {
                               handleSelectPair(selected);
                             }
                           }}
                           className="w-full bg-[#0a101d] border border-cyan-500/30 hover:border-cyan-400/60 rounded-lg py-1 pl-2.5 pr-7 text-white font-mono font-bold text-[11px] focus:outline-none focus:border-cyan-400 transition-all appearance-none cursor-pointer"
                         >
-                          {availablePairs.map((p) => {
+                          {availablePairs.map((p, idx) => {
                             const pPrice = formatDisplayPrice(p.price);
-                            const label = `${p.symbol}${pPrice ? ` • $${pPrice}` : ''}${p.isMain ? ' (Main)' : ''}`;
+                            const duplicateCount = availablePairs.filter(item => item.symbol === p.symbol).length;
+                            const chartSuffix = p.isMain
+                              ? ' (Main)'
+                              : duplicateCount > 1
+                                ? ` (Chart ${idx + 1})`
+                                : '';
+                            const label = `${p.symbol}${pPrice ? ` • $${pPrice}` : ''}${chartSuffix}`;
                             return (
-                              <option key={p.id} value={p.symbol} className="bg-[#070b14] text-white py-1">
+                              <option key={p.id} value={p.id} className="bg-[#070b14] text-white py-1">
                                 {label}
                               </option>
                             );

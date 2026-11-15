@@ -75,7 +75,7 @@ import { manualTradeService } from '../../services/manualTradeService';
 import { useWallHunterStatus } from '@/hooks/useWallHunterStatus';
 import { toast } from 'react-hot-toast';
 import { useMarketStore } from '@/store/marketStore';
-import { useBotStore } from '@/store/botStore';
+import { useBotStore, CLEAN_INDICATOR_SETTINGS } from '@/store/botStore';
 import { useUIStore } from '@/store/uiStore';
 import { useOpenOrders, OpenLimitOrder } from '../../hooks/useOpenOrders';
 import { useAdvancedMetricsSettings, AdvancedMetricsSettings } from '../../hooks/useAdvancedMetricsSettings';
@@ -176,8 +176,32 @@ const CandleCountdown = React.memo<{
     );
 });
 
+const startStaggeredInterval = (fn: () => void, intervalMs: number, staggerMs: number): (() => void) => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const startTimer = setTimeout(() => {
+        fn();
+        intervalId = setInterval(fn, intervalMs);
+    }, Math.max(0, staggerMs));
+    return () => {
+        clearTimeout(startTimer);
+        if (intervalId) clearInterval(intervalId);
+    };
+};
+
+interface ChartDragBracketEntry {
+    chartId: string;
+    symbol: string;
+    start: (type: any) => void;
+    move: (type: any, clientX: number, clientY: number) => number | null;
+    end: (type: any, clientX: number, clientY: number) => { inChart: boolean; price: number | null };
+    clearGhost: () => void;
+    containsPoint: (clientX: number, clientY: number) => boolean;
+}
+
+const chartDragBracketRegistry = new Map<string, ChartDragBracketEntry>();
+
 // Chart Component
-const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean }>(({ exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false }) => {
+const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean; isActiveChart?: boolean; totalChartsCount?: number; chartSlotIndex?: number }>(({ chartId = 'main', exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false, isActiveChart = true, totalChartsCount = 1, chartSlotIndex = 0 }) => {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
     const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -218,6 +242,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
     const lastCandleRef = useRef<CandlestickData | null>(null);
     const allCandlesRef = useRef<any[]>([]);
     const candlesVersionRef = useRef<number>(0);
+    const [candlesReadyTick, setCandlesReadyTick] = useState(0);
     const lastTooltipUpdateAtRef = useRef<number>(0);
     const lastTooltipTimeRef = useRef<number | string | null>(null);
     const lastTradeEventRef = useRef<any>(null);
@@ -226,7 +251,15 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
     const markersPluginRef = useRef<any>(null);
     const deviceProfile = useDeviceProfile();
     const isThermalGuard = deviceProfile.isThermalGuardActive;
-    const indicatorIntervalMs = deviceProfile.timings.indicatorIntervalMs;
+    // Scale & stagger indicator recalculation intervals under mobile/tablet thermal guard
+    // when multiple charts (2-4) are open so Samsung A34 / Redmi Pad 2 Pro avoid CPU spikes.
+    const thermalIntervalScale = useMemo(() => {
+        if (!isThermalGuard || totalChartsCount <= 1) return 1;
+        if (isActiveChart) return totalChartsCount >= 3 ? 1.25 : 1;
+        return totalChartsCount >= 3 ? 2.0 : 1.5;
+    }, [isThermalGuard, totalChartsCount, isActiveChart]);
+    const staggerDelayMs = (isThermalGuard && totalChartsCount > 1) ? chartSlotIndex * 350 : 0;
+    const indicatorIntervalMs = Math.round(deviceProfile.timings.indicatorIntervalMs * thermalIntervalScale);
     const [fiboData, setFiboData] = useState<FibonacciData | null>(null);
     const [ichimokuData, setIchimokuData] = useState<IchimokuDataPoint[]>([]);
     const [trendFinderData, setTrendFinderData] = useState<TrendFinderResult | null>(null);
@@ -583,24 +616,25 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
 
                     // Initialize Indicators immediately after fetching history
                     if (candles.length > 0) {
-                        const emaP = Math.max(1, Math.floor(Number(indicatorSettings.emaPeriod) || 20));
-                        const bbP = Math.max(1, Math.floor(Number(indicatorSettings.bbPeriod) || 20));
-                        const bbDev = Number.isFinite(Number(indicatorSettings.bbStdDev)) && Number(indicatorSettings.bbStdDev) > 0 ? Number(indicatorSettings.bbStdDev) : 2;
-                        const rsiP = Math.max(1, Math.floor(Number(indicatorSettings.rsiPeriod) || 14));
+                        setCandlesReadyTick(t => t + 1);
+                        const curInd = indicatorSettingsRef.current;
+                        const bbP = Math.max(1, Math.floor(Number(curInd.bbPeriod) || 20));
+                        const bbDev = Number.isFinite(Number(curInd.bbStdDev)) && Number(curInd.bbStdDev) > 0 ? Number(curInd.bbStdDev) : 2;
+                        const rsiP = Math.max(1, Math.floor(Number(curInd.rsiPeriod) || 14));
 
                         syncMtfEma(candles);
-                        if (indicatorSettings.showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current) {
+                        if (curInd.showBB && bbUpperSeriesRef.current && bbMiddleSeriesRef.current && bbLowerSeriesRef.current) {
                             const bbResult = calculateBollingerBands(candles, bbP, bbDev);
                             bbUpperSeriesRef.current.setData(bbResult.map((d: any) => ({ time: d.time, value: d.upper })) as any);
                             bbMiddleSeriesRef.current.setData(bbResult.map((d: any) => ({ time: d.time, value: d.middle })) as any);
                             bbLowerSeriesRef.current.setData(bbResult.map((d: any) => ({ time: d.time, value: d.lower })) as any);
                             setBbData(bbResult);
                         }
-                        if (indicatorSettings.showRSI && rsiSeriesRef.current) {
+                        if (curInd.showRSI && rsiSeriesRef.current) {
                             rsiSeriesRef.current.setData(calculateRSI(candles, rsiP) as any);
                         }
-                        if (indicatorSettings.showUTBot && utBotSeriesRef.current) {
-                            const utData = calculateUTBotAlerts(candles, indicatorSettings.utBotSensitivity, indicatorSettings.utBotAtrPeriod, indicatorSettings.utBotUseHeikinAshi);
+                        if (curInd.showUTBot && utBotSeriesRef.current) {
+                            const utData = calculateUTBotAlerts(candles, curInd.utBotSensitivity, curInd.utBotAtrPeriod, curInd.utBotUseHeikinAshi);
                             utBotSeriesRef.current.setData(utData.map(d => ({ time: d.time, value: d.trailingStop })) as any);
 
                             // Apply default colors
@@ -746,11 +780,28 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         (window as any)._handleQuickTradeDragMove = handleQuickTradeDragMove;
         (window as any)._handleQuickTradeDragEnd = handleQuickTradeDragEnd;
 
-        const handleChartDragBracketStart = (type: any) => {
+        const clearChartBracketGhostLine = () => {
             if (chartBracketGhostLineRef.current && candlestickSeriesRef.current) {
                 try { candlestickSeriesRef.current.removePriceLine(chartBracketGhostLineRef.current); } catch {}
                 chartBracketGhostLineRef.current = null;
             }
+        };
+
+        const containsChartBracketPoint = (clientX: number, clientY: number): boolean => {
+            if (!candlestickSeriesRef.current || !chartContainerRef.current) return false;
+            const rect = chartContainerRef.current.getBoundingClientRect();
+            return (
+                rect.width > 0 &&
+                rect.height > 0 &&
+                clientX >= rect.left &&
+                clientX <= rect.right &&
+                clientY >= rect.top &&
+                clientY <= rect.bottom
+            );
+        };
+
+        const handleChartDragBracketStart = (type: any) => {
+            clearChartBracketGhostLine();
         };
 
         const resolveChartBracketPrice = (clientX: number, clientY: number): { inChart: boolean; price: number | null } => {
@@ -780,10 +831,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         const handleChartDragBracketMove = (type: any, clientX: number, clientY: number): number | null => {
             const { inChart, price } = resolveChartBracketPrice(clientX, clientY);
             if (!inChart || price === null) {
-                if (chartBracketGhostLineRef.current && candlestickSeriesRef.current) {
-                    try { candlestickSeriesRef.current.removePriceLine(chartBracketGhostLineRef.current); } catch {}
-                    chartBracketGhostLineRef.current = null;
-                }
+                clearChartBracketGhostLine();
                 return null;
             }
 
@@ -842,17 +890,22 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         };
 
         const handleChartDragBracketEnd = (type: any, clientX: number, clientY: number): { inChart: boolean; price: number | null } => {
-            if (chartBracketGhostLineRef.current && candlestickSeriesRef.current) {
-                try { candlestickSeriesRef.current.removePriceLine(chartBracketGhostLineRef.current); } catch {}
-                chartBracketGhostLineRef.current = null;
-            }
+            clearChartBracketGhostLine();
 
             return resolveChartBracketPrice(clientX, clientY);
         };
 
-        (window as any)._handleChartDragBracketStart = handleChartDragBracketStart;
-        (window as any)._handleChartDragBracketMove = handleChartDragBracketMove;
-        (window as any)._handleChartDragBracketEnd = handleChartDragBracketEnd;
+        const registryKey = chartId || 'main';
+        const registryEntry: ChartDragBracketEntry = {
+            chartId: registryKey,
+            symbol,
+            start: handleChartDragBracketStart,
+            move: handleChartDragBracketMove,
+            end: handleChartDragBracketEnd,
+            clearGhost: clearChartBracketGhostLine,
+            containsPoint: containsChartBracketPoint,
+        };
+        chartDragBracketRegistry.set(registryKey, registryEntry);
 
         fetchKlines();
 
@@ -868,13 +921,12 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
 
         return () => {
             isMounted = false;
+            clearChartBracketGhostLine();
+            if (chartDragBracketRegistry.get(registryKey) === registryEntry) {
+                chartDragBracketRegistry.delete(registryKey);
+            }
             resizeObserver.disconnect();
             chart.remove();
-
-            delete (window as any)._handleChartDragBracketStart;
-            delete (window as any)._handleChartDragBracketMove;
-            delete (window as any)._handleChartDragBracketEnd;
-            chartBracketGhostLineRef.current = null;
 
             // Cleanup refs so they respawn on the newly created chart instance
             candlestickSeriesRef.current = null;
@@ -902,7 +954,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             rsiSeriesRef.current = null;
             volumeSeriesRef.current = null;
         };
-    }, [symbol, interval, exchange]);
+    }, [symbol, interval, exchange, chartId]);
 
     // Dynamically apply theme changes to chart layout & indicator colors
     useEffect(() => {
@@ -1258,15 +1310,16 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             }
         };
 
-        // Run instantly immediately via setTimeout 0 to render visuals without blocking UI toggle switch
-        setTimeout(runCalc, 0);
-
-        // Throttle updates to 4s desktop / 6s mobile thermal guard, avoiding rapid CPU-heavy recalculation loops
-        const intervalId = setInterval(runCalc, isThermalGuard ? 6000 : 4000);
+        // Throttle updates to 4s desktop / 6s mobile thermal guard (scaled & staggered per chart when multi-chart active)
+        const cleanup = startStaggeredInterval(
+            runCalc,
+            Math.round((isThermalGuard ? 6000 : 4000) * thermalIntervalScale),
+            staggerDelayMs
+        );
 
         return () => {
             isCancelled = true;
-            clearInterval(intervalId);
+            cleanup();
         };
     }, [
         indicatorSettings.showSMC,
@@ -1299,7 +1352,9 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         indicatorSettings.smcMicroFVG,
         indicatorSettings.smcSweepDetection,
         indicatorSettings.smcShowSwingPatterns,
-        isThermalGuard
+        isThermalGuard,
+        thermalIntervalScale,
+        staggerDelayMs
     ]);
 
     // ICT Killzones Calculation Effect (Throttled)
@@ -1357,10 +1412,11 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             }
         };
 
-        setTimeout(runIctCalc, 0);
-        const intervalId = setInterval(runIctCalc, isThermalGuard ? 6000 : 4000);
-
-        return () => clearInterval(intervalId);
+        return startStaggeredInterval(
+            runIctCalc,
+            Math.round((isThermalGuard ? 6000 : 4000) * thermalIntervalScale),
+            staggerDelayMs
+        );
     }, [
         indicatorSettings.showICTKillzones,
         indicatorSettings.ictAsiaSession,
@@ -1380,7 +1436,9 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         indicatorSettings.ictShowGaps,
         indicatorSettings.ictShowVolatility,
         indicatorSettings.ictShowEquilibrium,
-        isThermalGuard
+        isThermalGuard,
+        thermalIntervalScale,
+        staggerDelayMs
     ]);
 
     // LuxAlgo ICT Concepts Engine
@@ -1516,16 +1574,19 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             }
         };
 
-        runSupertrendCalc();
-        const intervalId = setInterval(runSupertrendCalc, isThermalGuard ? 7500 : 5000);
-
-        return () => clearInterval(intervalId);
+        return startStaggeredInterval(
+            runSupertrendCalc,
+            Math.round((isThermalGuard ? 7500 : 5000) * thermalIntervalScale),
+            staggerDelayMs
+        );
     }, [
         indicatorSettings.showSupertrend,
         indicatorSettings.supertrendAtrPeriod,
         indicatorSettings.supertrendMultiplier,
         indicatorSettings.supertrendChangeATR,
-        isThermalGuard
+        isThermalGuard,
+        thermalIntervalScale,
+        staggerDelayMs
     ]);
 
     // MSB-OB Calculation Effect (Throttled)
@@ -1558,20 +1619,24 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             }
         };
 
-        // Run immediately when settings change or indicator is enabled
-        setTimeout(runMsbObCalc, 0);
-        const intervalId = setInterval(runMsbObCalc, isThermalGuard ? 6000 : 4000);
+        const cleanup = startStaggeredInterval(
+            runMsbObCalc,
+            Math.round((isThermalGuard ? 6000 : 4000) * thermalIntervalScale),
+            staggerDelayMs
+        );
 
         return () => {
             isCancelled = true;
-            clearInterval(intervalId);
+            cleanup();
         };
     }, [
         indicatorSettings.showMsbOb,
         indicatorSettings.msbObZigzagLen,
         indicatorSettings.msbObFibFactor,
         indicatorSettings.msbObDeleteBroken,
-        isThermalGuard
+        isThermalGuard,
+        thermalIntervalScale,
+        staggerDelayMs
     ]);
 
     // ── Wick Rejection S/R Calculation Effect ──
@@ -1610,15 +1675,16 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             }
         };
 
-        // Run immediately, then throttle updates
-        setTimeout(runWickSRCalc, 0);
-        // Throttle updates purely based on timeframe (e.g., polling every 10s desktop / 15s mobile is sufficient, as HTF wicks don't change natively per ms)
-        const intervalId = setInterval(runWickSRCalc, isThermalGuard ? 15000 : 10000);
+        const cleanup = startStaggeredInterval(
+            runWickSRCalc,
+            Math.round((isThermalGuard ? 15000 : 10000) * thermalIntervalScale),
+            staggerDelayMs
+        );
         return () => {
             isMounted = false;
-            clearInterval(intervalId);
+            cleanup();
         };
-    }, [indicatorSettings.showWickSR, indicatorSettings.wickSRTimeframe, indicatorSettings.wickSRLookback, indicatorSettings.wickSRMinTouches, indicatorSettings.wickSRAtrPeriod, indicatorSettings.wickSRAtrMultiplier, symbol, exchange, isThermalGuard]);
+    }, [indicatorSettings.showWickSR, indicatorSettings.wickSRTimeframe, indicatorSettings.wickSRLookback, indicatorSettings.wickSRMinTouches, indicatorSettings.wickSRAtrPeriod, indicatorSettings.wickSRAtrMultiplier, symbol, exchange, isThermalGuard, thermalIntervalScale, staggerDelayMs]);
 
     // ── Quantum AI v8 Calculation Effect ──
     useEffect(() => {
@@ -1648,10 +1714,11 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             }
         };
 
-        setTimeout(runQuantumCalc, 0);
-        const intervalId = setInterval(runQuantumCalc, isThermalGuard ? 7500 : 5000);
-
-        return () => clearInterval(intervalId);
+        return startStaggeredInterval(
+            runQuantumCalc,
+            Math.round((isThermalGuard ? 7500 : 5000) * thermalIntervalScale),
+            staggerDelayMs
+        );
     }, [
         indicatorSettings.showQuantumAI,
         indicatorSettings.quantumMinConf,
@@ -1659,7 +1726,9 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         indicatorSettings.quantumVolThreshold,
         symbol,
         interval,
-        isThermalGuard
+        isThermalGuard,
+        thermalIntervalScale,
+        staggerDelayMs
     ]);
 
     // ── VWAP Standard Deviation Bands Effect ──
@@ -1691,11 +1760,11 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             }
         };
 
-        setTimeout(runVwapSDCalc, 0);
-        // Refresh every 5s desktop / 7.5s mobile for VWAP tracking without CPU thrashing
-        const intervalId = setInterval(runVwapSDCalc, isThermalGuard ? 7500 : 5000);
-
-        return () => clearInterval(intervalId);
+        return startStaggeredInterval(
+            runVwapSDCalc,
+            Math.round((isThermalGuard ? 7500 : 5000) * thermalIntervalScale),
+            staggerDelayMs
+        );
     }, [
         indicatorSettings.showVWAPSD,
         indicatorSettings.vwapAnchor,
@@ -1705,7 +1774,9 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         indicatorSettings.vwapSDMultiplier3,
         symbol,
         interval,
-        isThermalGuard
+        isThermalGuard,
+        thermalIntervalScale,
+        staggerDelayMs
     ]);
 
     // ── Safe Marker Setter Utility ──
@@ -1868,10 +1939,12 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             setPatternData(markers);
         };
 
-        setTimeout(runPatternExtraction, 0);
-        const pid = setInterval(runPatternExtraction, isThermalGuard ? 7500 : 5000);
-        return () => clearInterval(pid);
-    }, [indicatorSettings.showCandlestickPatterns, isThermalGuard]);
+        return startStaggeredInterval(
+            runPatternExtraction,
+            Math.round((isThermalGuard ? 7500 : 5000) * thermalIntervalScale),
+            staggerDelayMs
+        );
+    }, [indicatorSettings.showCandlestickPatterns, isThermalGuard, thermalIntervalScale, staggerDelayMs]);
 
     useEffect(() => {
         if (!markersPluginRef.current) return;
@@ -2074,7 +2147,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         );
         if (!anyFastIndicatorActive) return;
 
-        const updateInterval = setInterval(() => {
+        const runFastIndicators = () => {
             if (document.hidden) return;
             if (!candlestickSeriesRef.current || !lastCandleRef.current || allCandlesRef.current.length === 0) return;
 
@@ -2236,11 +2309,12 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             } catch (e) {
                 console.error("Failed to update indicators", e);
             }
-        }, indicatorIntervalMs);
+        };
 
-        return () => clearInterval(updateInterval);
+        return startStaggeredInterval(runFastIndicators, indicatorIntervalMs, staggerDelayMs);
     }, [
         indicatorIntervalMs,
+        staggerDelayMs,
         isThermalGuard,
         interval,
         exchange,
@@ -2313,7 +2387,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
             levels
         });
 
-    }, [indicatorSettings.showAutoFibo, indicatorSettings.autoFiboLookback]);
+    }, [indicatorSettings.showAutoFibo, indicatorSettings.autoFiboLookback, candlesReadyTick]);
 
     // Ichimoku Cloud Calculation
     useEffect(() => {
@@ -2336,7 +2410,8 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         indicatorSettings.tenkanPeriod,
         indicatorSettings.kijunPeriod,
         indicatorSettings.senkouBPeriod,
-        indicatorSettings.displacement
+        indicatorSettings.displacement,
+        candlesReadyTick
     ]);
 
     // Adaptive Trend Finder Calculation
@@ -2361,7 +2436,8 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
         indicatorSettings.trendFinderDev,
         indicatorSettings.trendFinderThreshold,
         indicatorSettings.enableTrendFinderVolumeFilter,
-        indicatorSettings.trendFinderVolumeMultiplier
+        indicatorSettings.trendFinderVolumeMultiplier,
+        candlesReadyTick
     ]);
 
     // Update horizontal price lines for walls intelligently without blindly clearing
@@ -3345,7 +3421,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                                 }
                             }
                         }}
-                        className="absolute hidden z-50 px-3 h-7 rounded-full bg-gradient-to-br from-purple-600/95 to-indigo-600/95 hover:from-purple-500 hover:to-indigo-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.8)] flex items-center justify-center gap-1.5 backdrop-blur-md border border-white/20 cursor-pointer pointer-events-auto"
+                        className={`absolute hidden z-50 px-3 h-7 rounded-full bg-gradient-to-br from-purple-600/95 to-indigo-600/95 hover:from-purple-500 hover:to-indigo-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.8)] flex items-center justify-center gap-1.5 ${isThermalGuard ? '' : 'backdrop-blur-md'} border border-white/20 cursor-pointer pointer-events-auto`}
                         title="Predict with AI at this price"
                         style={{ transform: 'translateY(-50%)', transition: 'none' }} // NO CSS transition so it tracks instantly
                     >
@@ -3521,17 +3597,17 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                         const last = bbData[bbData.length - 1];
                         return (
                             <div className="absolute top-2 left-2 z-[10] flex flex-col gap-1 pointer-events-none select-none">
-                                <div className="flex items-center gap-2 px-2 py-1 bg-white/90 dark:bg-black/60 backdrop-blur-md rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none">
+                                <div className={`flex items-center gap-2 px-2 py-1 ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/60 backdrop-blur-md'} rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none`}>
                                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-[#22c55e]" />
                                     <span className="text-[10px] font-bold text-slate-600 dark:text-gray-400">BB UPPER:</span>
                                     <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-[#22c55e]">{last.upper.toFixed(5)}</span>
                                 </div>
-                                <div className="flex items-center gap-2 px-2 py-1 bg-white/90 dark:bg-black/60 backdrop-blur-md rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none">
+                                <div className={`flex items-center gap-2 px-2 py-1 ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/60 backdrop-blur-md'} rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none`}>
                                     <div className="w-1.5 h-1.5 rounded-full bg-blue-500 dark:bg-[#3b82f6]" />
                                     <span className="text-[10px] font-bold text-slate-600 dark:text-gray-400">BB MIDDLE:</span>
                                     <span className="text-[10px] font-mono font-bold text-blue-600 dark:text-[#3b82f6]">{last.middle.toFixed(5)}</span>
                                 </div>
-                                <div className="flex items-center gap-2 px-2 py-1 bg-white/90 dark:bg-black/60 backdrop-blur-md rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none">
+                                <div className={`flex items-center gap-2 px-2 py-1 ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/60 backdrop-blur-md'} rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none`}>
                                     <div className="w-1.5 h-1.5 rounded-full bg-rose-500 dark:bg-[#ef4444]" />
                                     <span className="text-[10px] font-bold text-slate-600 dark:text-gray-400">BB LOWER:</span>
                                     <span className="text-[10px] font-mono font-bold text-rose-600 dark:text-[#ef4444]">{last.lower.toFixed(5)}</span>
@@ -3541,9 +3617,9 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                     })()}
                     {/* ── Multi-Timeframe EMA HUD Overlay ── */}
                     {indicatorSettings.showEMA && Object.keys(mtfEmaValues).length > 0 && (
-                        <div className="absolute top-2 right-14 z-[10] flex items-center gap-2 px-2.5 py-1 bg-white/90 dark:bg-black/75 backdrop-blur-md rounded-lg border border-slate-200 dark:border-white/10 select-none shadow-md dark:shadow-lg">
+                        <div className={`absolute top-2 right-14 z-[10] flex items-center gap-2 px-2.5 py-1 ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/75 backdrop-blur-md'} rounded-lg border border-slate-200 dark:border-white/10 select-none shadow-md dark:shadow-lg`}>
                             <span className="text-[10px] font-bold text-slate-700 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 animate-pulse" />
+                                <span className={`w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 ${isThermalGuard ? '' : 'animate-pulse'}`} />
                                 EMA {indicatorSettings.emaPeriod}:
                             </span>
                             <div className="flex items-center gap-2 font-mono text-[10px] font-bold">
@@ -3667,7 +3743,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                             left: `${quantumAiHudPos.x}px`,
                             top: `${quantumAiHudPos.y}px`
                         }}>
-                            <div className="bg-white/95 dark:bg-[#0b1220]/95 border border-gray-200 dark:border-indigo-500/30 rounded-xl overflow-hidden shadow-2xl backdrop-blur-xl">
+                            <div className={`bg-white/95 dark:bg-[#0b1220]/95 border border-gray-200 dark:border-indigo-500/30 rounded-xl overflow-hidden shadow-2xl ${isThermalGuard ? '' : 'backdrop-blur-xl'}`}>
                                 {/* Header */}
                                 <div
                                     onMouseDown={handleHudMouseDown}
@@ -3678,7 +3754,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                                 >
                                     <span className="text-base">🚀</span>
                                     <span className="text-[11px] font-black tracking-widest uppercase text-indigo-600 dark:text-transparent dark:bg-clip-text dark:bg-gradient-to-r dark:from-purple-400 dark:to-pink-400">
-                                        QUANTUM AI v8
+                                        QUANTUM AI v8 · {symbol}
                                     </span>
                                     <span className="ml-auto text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-white/10 text-indigo-600 dark:text-indigo-300">
                                         DRAG ME
@@ -3752,7 +3828,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                                 } catch (e) {}
                                 toast('Drag & Drop confirmation popup re-enabled', { icon: '🛡️' });
                             }}
-                            className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold bg-white/90 dark:bg-black/70 hover:bg-white dark:hover:bg-black/90 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 hover:border-cyan-400 transition-all cursor-pointer pointer-events-auto shadow-md backdrop-blur-md flex items-center gap-1.5 group"
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold bg-white/95 dark:bg-black/85 hover:bg-white dark:hover:bg-black/90 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 hover:border-cyan-400 transition-all cursor-pointer pointer-events-auto shadow-md ${isThermalGuard ? '' : 'backdrop-blur-md'} flex items-center gap-1.5 group`}
                             title="Click to require confirmation popup on drag & drop again"
                         >
                             <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
@@ -3766,7 +3842,7 @@ const OrderFlowChart = React.memo<{ exchange: string; symbol: string; interval: 
                         </div>
                     )}
                     {botStatus && botStatus.absorption_delta !== undefined && (
-                        <div className="bg-black/60 border border-white/10 text-[14px] font-mono px-3 py-1.5 rounded backdrop-blur-md">
+                        <div className={`${isThermalGuard ? 'bg-black/85' : 'bg-black/60 backdrop-blur-md'} border border-white/10 text-[14px] font-mono px-3 py-1.5 rounded`}>
                             <span className="text-gray-400 mr-2 text-[11px] uppercase tracking-tighter">Backend CVD</span>
                             <span className={botStatus.absorption_delta >= 0 ? 'text-green-400' : 'text-red-400'}>
                                 {botStatus.absorption_delta > 0 ? '+' : ''}{typeof botStatus.absorption_delta === 'number'
@@ -4349,11 +4425,15 @@ interface ChartConfig {
     interval: string;
 }
 
+const EXTRA_CHART_SLOTS = ['chart-2', 'chart-3', 'chart-4'] as const;
+
 const OrderFlowChartPanel = React.memo<{
     config: ChartConfig;
     isMain: boolean;
     isActive?: boolean;
-    onSelectActive?: () => void;
+    chartLabel?: string;
+    chartSlotIndex?: number;
+    onSelectActive?: (id: string) => void;
     onPriceChange?: (id: string, price: number) => void;
     allChartsCount?: number;
     onUpdate: (id: string, updates: Partial<ChartConfig>) => void;
@@ -4361,14 +4441,16 @@ const OrderFlowChartPanel = React.memo<{
     showFootprint: boolean;
     showCVD: boolean;
     showVPVR: boolean;
-    indicatorSettings: any;
+    indicatorSettings: IndicatorSettings;
+    onIndicatorSettingsChange: (id: string, settings: IndicatorSettings) => void;
+    onResetIndicators?: (id: string) => void;
     advancedMetrics: any;
     selectedApiKeyId: string | null;
     predictionResult: any;
     activeMLModelId: string | null;
     setExternalAIPrice: (price: number) => void;
     setExternalAIOpenTrigger: (trigger: number) => void;
-    setManualTradePrice: (price: number) => void;
+    onManualTradeClick: (id: string, symbol: string, price: number) => void;
     setManualTradeTrigger: (trigger: number) => void;
     volumeThreshold: number;
     volumeMode: string;
@@ -4384,7 +4466,9 @@ const OrderFlowChartPanel = React.memo<{
 }>(({ 
     config, 
     isMain, 
-    isActive = false, 
+    isActive = false,
+    chartLabel,
+    chartSlotIndex = 0,
     onSelectActive, 
     onPriceChange, 
     allChartsCount = 1, 
@@ -4393,14 +4477,16 @@ const OrderFlowChartPanel = React.memo<{
     showFootprint, 
     showCVD, 
     showVPVR, 
-    indicatorSettings, 
+    indicatorSettings,
+    onIndicatorSettingsChange,
+    onResetIndicators,
     advancedMetrics, 
     selectedApiKeyId, 
     predictionResult, 
     activeMLModelId, 
     setExternalAIPrice, 
     setExternalAIOpenTrigger, 
-    setManualTradePrice, 
+    onManualTradeClick, 
     setManualTradeTrigger, 
     volumeThreshold, 
     volumeMode, 
@@ -4492,20 +4578,32 @@ const OrderFlowChartPanel = React.memo<{
         return newWalls;
     }, [walls, bids, asks, volumeThreshold, volumeMode]);
 
+    const handleSelectPanel = useCallback(() => {
+        onSelectActive?.(config.id);
+    }, [onSelectActive, config.id]);
+
+    const handlePanelIndicatorChange = useCallback((nextSettings: IndicatorSettings) => {
+        onIndicatorSettingsChange(config.id, nextSettings);
+    }, [onIndicatorSettingsChange, config.id]);
+
+    const handlePanelResetIndicators = useCallback(() => {
+        onResetIndicators?.(config.id);
+    }, [onResetIndicators, config.id]);
+
     const handleAIPredictClick = useCallback((price: number) => {
         setExternalAIPrice(price);
         setExternalAIOpenTrigger(Date.now());
     }, [setExternalAIPrice, setExternalAIOpenTrigger]);
 
     const handleChartBackgroundClick = useCallback((price: number) => {
-        onSelectActive?.();
-        setManualTradePrice(price);
+        onSelectActive?.(config.id);
+        onManualTradeClick(config.id, config.symbol, price);
         setManualTradeTrigger(Date.now());
-    }, [onSelectActive, setManualTradePrice, setManualTradeTrigger]);
+    }, [onSelectActive, onManualTradeClick, config.id, config.symbol, setManualTradeTrigger]);
 
     const panelContent = (
         <div 
-            onClick={onSelectActive}
+            onClick={handleSelectPanel}
             className={isFullscreen 
                 ? 'fixed inset-0 z-[99999] flex flex-col bg-[#050505] p-2 md:p-4 overflow-hidden w-screen h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)]' 
                 : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border transition-all duration-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col min-h-[240px] cursor-pointer ${
@@ -4515,14 +4613,14 @@ const OrderFlowChartPanel = React.memo<{
                 }`
             }
         >
-            <div className="p-2 border-b border-gray-200 dark:border-white/5 flex justify-between items-center">
-                <div className="flex items-center gap-2">
+            <div className="p-2 border-b border-gray-200 dark:border-white/5 flex justify-between items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                     {allChartsCount > 1 && (
                         <button
                             type="button"
                             onClick={(e) => {
                                 e.stopPropagation();
-                                onSelectActive?.();
+                                onSelectActive?.(config.id);
                             }}
                             className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
                                 isActive 
@@ -4541,6 +4639,15 @@ const OrderFlowChartPanel = React.memo<{
                             <TimeframeSelector interval={config.interval} onIntervalChange={(i) => onUpdate(config.id, { interval: i })} />
                         </>
                     )}
+
+                    <IndicatorSelector
+                        compact
+                        usePortal
+                        chartLabel={chartLabel || (isMain ? 'Main' : 'Chart')}
+                        settings={indicatorSettings}
+                        onSettingsChange={handlePanelIndicatorChange}
+                        onResetAll={onResetIndicators ? handlePanelResetIndicators : undefined}
+                    />
                     
                     <div className="flex bg-gray-100 dark:bg-black/20 p-1 rounded-lg border border-gray-200 dark:border-white/5">
                         <button 
@@ -4626,7 +4733,11 @@ const OrderFlowChartPanel = React.memo<{
                     <TradingViewWidget symbol={config.symbol} interval={config.interval} exchange={config.exchange} />
                 ) : (
                     <OrderFlowChart 
+                        chartId={config.id}
                         exchange={config.exchange} symbol={config.symbol} interval={config.interval} walls={filteredWalls} currentPrice={currentPrice} showFootprint={showFootprint} showCVD={showCVD} showVPVR={showVPVR} indicatorSettings={indicatorSettings} tradeEvent={tradeEvent} botStatus={botStatus} openOrders={openOrders} advancedMetrics={advancedMetrics} advancedMetricsData={advancedMetricsData} selectedApiKeyId={selectedApiKeyId} predictionResult={predictionResult} activeMLModelId={activeMLModelId} showCrosshairAIPredict={showCrosshairAIPredict} bestBid={bestBid} bestAsk={bestAsk} showBidAsk={showBidAsk}
+                        isActiveChart={isActive || allChartsCount === 1}
+                        totalChartsCount={allChartsCount}
+                        chartSlotIndex={chartSlotIndex}
                         onAIPredictClick={handleAIPredictClick}
                         onChartBackgroundClick={handleChartBackgroundClick}
                     />
@@ -4661,8 +4772,18 @@ const OrderFlowChartPanel = React.memo<{
 // Main Page Component
 const OrderFlowHeatmap: React.FC = () => {
     const { globalExchange: exchange, setGlobalExchange: setExchange, globalSymbol: symbol, setGlobalSymbol: setSymbol, globalInterval: interval, setGlobalInterval: setInterval } = useMarketStore();
-    const { activeWallHunterId, setActiveWallHunterId, indicatorSettings, setIndicatorSettings, activeBotsByChartId, setBotForChart, removeBotForChart } = useBotStore();
-    const { orderFlowActiveTab: activeTab, setOrderFlowActiveTab: setActiveTab, orderFlowShowFootprint: showFootprint, setOrderFlowShowFootprint: setShowFootprint } = useUIStore();
+    const {
+        activeWallHunterId,
+        setActiveWallHunterId,
+        indicatorSettings,
+        indicatorSettingsByChartId,
+        setChartIndicatorSettings,
+        resetChartIndicatorSettings,
+        activeBotsByChartId,
+        setBotForChart,
+        removeBotForChart,
+    } = useBotStore();
+    const { orderFlowActiveTab: activeTab, setOrderFlowActiveTab: setActiveTab, setOrderFlowShowFootprint: setShowFootprint } = useUIStore();
     const { settings: advancedMetrics, updateSettings: onAdvancedMetricsChange } = useAdvancedMetricsSettings();
 
     const [isWallHunterOpen, setIsWallHunterOpen] = useState(false);
@@ -4726,35 +4847,59 @@ const OrderFlowHeatmap: React.FC = () => {
         }
     }, [activeBotIds, selectedHudBotId]);
 
-    const addChart = () => {
-        if (additionalCharts.length < 3) {
-            const newId = Date.now().toString();
-            setAdditionalCharts([...additionalCharts, {
-                id: newId,
-                symbol: symbol,
-                exchange: exchange,
-                interval: interval
-            }]);
-            setActiveChartId(newId);
-        }
-    };
+    const addChart = useCallback(() => {
+        setAdditionalCharts(prev => {
+            if (prev.length >= 3) return prev;
+            const usedIds = new Set(prev.map(c => c.id));
+            const nextSlot = EXTRA_CHART_SLOTS.find(slot => !usedIds.has(slot)) || `chart-${Date.now()}`;
+            setActiveChartId(nextSlot);
+            return [...prev, {
+                id: nextSlot,
+                symbol,
+                exchange,
+                interval,
+            }];
+        });
+    }, [symbol, exchange, interval]);
 
-    const removeChart = (id: string) => {
-        setAdditionalCharts(additionalCharts.filter(c => c.id !== id));
-        if (activeChartId === id) {
-            setActiveChartId('main');
-        }
-    };
+    const removeChart = useCallback((id: string) => {
+        setAdditionalCharts(prev => prev.filter(c => c.id !== id));
+        setActiveChartId(prev => (prev === id ? 'main' : prev));
+    }, []);
 
-    const updateChart = (id: string, updates: Partial<ChartConfig>) => {
+    const updateChart = useCallback((id: string, updates: Partial<ChartConfig>) => {
         if (id === 'main') {
             if (updates.symbol) setSymbol(updates.symbol);
             if (updates.exchange) setExchange(updates.exchange);
             if (updates.interval) setInterval(updates.interval);
         } else {
-            setAdditionalCharts(additionalCharts.map(c => c.id === id ? { ...c, ...updates } : c));
+            setAdditionalCharts(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
         }
-    };
+    }, [setSymbol, setExchange, setInterval]);
+
+    const handleSelectActiveChart = useCallback((id: string) => {
+        setActiveChartId(id);
+    }, []);
+
+    const handleManualTradeClick = useCallback((id: string, chartSymbol: string, price: number) => {
+        setActiveChartId(id);
+        setManualTradeSymbol(chartSymbol);
+        setManualTradePrice(price);
+    }, []);
+
+    const handleChartIndicatorSettingsChange = useCallback((chartId: string, nextSettings: IndicatorSettings) => {
+        setChartIndicatorSettings(chartId, nextSettings);
+        if (chartId === 'main' && nextSettings.showFootprint !== undefined) {
+            setShowFootprint(Boolean(nextSettings.showFootprint));
+        }
+    }, [setChartIndicatorSettings, setShowFootprint]);
+
+    const handleResetChartIndicators = useCallback((chartId: string) => {
+        resetChartIndicatorSettings(chartId);
+        if (chartId === 'main') {
+            setShowFootprint(false);
+        }
+    }, [resetChartIndicatorSettings, setShowFootprint]);
 
     const allCharts = useMemo(() => {
         return [
@@ -4811,30 +4956,25 @@ const OrderFlowHeatmap: React.FC = () => {
     // imperatively so dropdowns (Indicators, SymbolSelector, AdvancedMetrics) are
     // never clipped by the collapsing animation container.
     const toolbarRef = useRef<HTMLDivElement>(null);
-    const [showCVD, setShowCVD] = useState(() => indicatorSettings.showCVD ?? false);
-    const [showVPVR, setShowVPVR] = useState(() => indicatorSettings.showHeatmap ?? false);
 
-    const handleToggleHeatmap = useCallback(() => {
-        setShowVPVR(prev => {
-            const next = !prev;
-            setIndicatorSettings({ ...indicatorSettings, showHeatmap: next });
-            return next;
-        });
-    }, [indicatorSettings, setIndicatorSettings]);
+    const activeChartSettings = useMemo(() => {
+        if (activeChartId === 'main') return indicatorSettings;
+        return indicatorSettingsByChartId[activeChartId] || CLEAN_INDICATOR_SETTINGS;
+    }, [activeChartId, indicatorSettings, indicatorSettingsByChartId]);
 
-    const handleToggleCVD = useCallback(() => {
-        setShowCVD(prev => {
-            const next = !prev;
-            setIndicatorSettings({ ...indicatorSettings, showCVD: next });
-            return next;
-        });
-    }, [indicatorSettings, setIndicatorSettings]);
+    const activeChartLabel = useMemo(() => {
+        if (activeChartId === 'main') return 'Main';
+        const idx = allCharts.findIndex(c => c.id === activeChartId);
+        return idx >= 0 ? `Chart ${idx + 1}` : 'Chart';
+    }, [activeChartId, allCharts]);
 
-    const handleToggleFootprint = useCallback(() => {
-        const next = !showFootprint;
-        setShowFootprint(next);
-        setIndicatorSettings({ ...indicatorSettings, showFootprint: next });
-    }, [showFootprint, setShowFootprint, indicatorSettings, setIndicatorSettings]);
+    const handleActiveChartSettingsChange = useCallback((nextSettings: IndicatorSettings) => {
+        handleChartIndicatorSettingsChange(activeChartId, nextSettings);
+    }, [activeChartId, handleChartIndicatorSettingsChange]);
+
+    const handleActiveChartReset = useCallback(() => {
+        handleResetChartIndicators(activeChartId);
+    }, [activeChartId, handleResetChartIndicators]);
 
     const [isOrderBookModalOpen, setIsOrderBookModalOpen] = useState(false);
     const [isIndicatorModalOpen, setIsIndicatorModalOpen] = useState(false);
@@ -4934,7 +5074,37 @@ const OrderFlowHeatmap: React.FC = () => {
     const modalCurrentPrice = (deviceProfile.isThermalGuardActive && modalThrottleMs > 0) ? throttledModalPrice : rawModalPrice;
     const modalAvailablePairs = (deviceProfile.isThermalGuardActive && modalThrottleMs > 0) ? throttledModalAvailablePairs : availablePairs;
 
+    const activeChartIdRef = useRef<string>(activeChartId);
+    activeChartIdRef.current = activeChartId;
+    const manualTradeSymbolRef = useRef<string>(manualTradeSymbol || activeChart?.symbol || symbol);
+    manualTradeSymbolRef.current = manualTradeSymbol || activeChart?.symbol || symbol;
+
+    const resolveTargetDragEntry = useCallback((x: number, y: number): ChartDragBracketEntry | null => {
+        const targetSymbol = (manualTradeSymbolRef.current || '').toUpperCase();
+        const preferredId = activeChartIdRef.current;
+
+        if (preferredId) {
+            const preferred = chartDragBracketRegistry.get(preferredId);
+            if (preferred && preferred.containsPoint(x, y)) {
+                if (!targetSymbol || preferred.symbol.toUpperCase() === targetSymbol) {
+                    return preferred;
+                }
+            }
+        }
+
+        for (const entry of chartDragBracketRegistry.values()) {
+            if (!entry.containsPoint(x, y)) continue;
+            if (!targetSymbol || entry.symbol.toUpperCase() === targetSymbol) {
+                return entry;
+            }
+        }
+
+        return null;
+    }, []);
+
     const handleModalSelectPair = useCallback((pair: AvailablePair) => {
+        activeChartIdRef.current = pair.id;
+        manualTradeSymbolRef.current = pair.symbol;
         setActiveChartId(pair.id);
         setManualTradeSymbol(pair.symbol);
     }, []);
@@ -4945,16 +5115,54 @@ const OrderFlowHeatmap: React.FC = () => {
     }, []);
 
     const handleModalDragBracketStart = useCallback((type: any) => {
-        (window as any)._handleChartDragBracketStart?.(type);
+        chartDragBracketRegistry.forEach(entry => {
+            entry.start(type);
+        });
     }, []);
 
     const handleModalDragBracketMove = useCallback((type: any, x: number, y: number) => {
-        return (window as any)._handleChartDragBracketMove?.(type, x, y) ?? null;
-    }, []);
+        const target = resolveTargetDragEntry(x, y);
+        chartDragBracketRegistry.forEach(entry => {
+            if (entry !== target) {
+                entry.clearGhost();
+            }
+        });
+        if (!target) return null;
+        return target.move(type, x, y);
+    }, [resolveTargetDragEntry]);
 
     const handleModalDragBracketEnd = useCallback((type: any, x: number, y: number) => {
-        return (window as any)._handleChartDragBracketEnd?.(type, x, y) ?? { inChart: false, price: null };
-    }, []);
+        const target = resolveTargetDragEntry(x, y);
+        chartDragBracketRegistry.forEach(entry => {
+            if (entry !== target) {
+                entry.clearGhost();
+            }
+        });
+        if (!target) return { inChart: false, price: null };
+        const result = target.end(type, x, y);
+        if (result.inChart && target.chartId !== activeChartIdRef.current) {
+            activeChartIdRef.current = target.chartId;
+            setActiveChartId(target.chartId);
+        }
+        return result;
+    }, [resolveTargetDragEntry]);
+
+    useEffect(() => {
+        (window as any)._handleChartDragBracketStart = handleModalDragBracketStart;
+        (window as any)._handleChartDragBracketMove = handleModalDragBracketMove;
+        (window as any)._handleChartDragBracketEnd = handleModalDragBracketEnd;
+        return () => {
+            if ((window as any)._handleChartDragBracketStart === handleModalDragBracketStart) {
+                delete (window as any)._handleChartDragBracketStart;
+            }
+            if ((window as any)._handleChartDragBracketMove === handleModalDragBracketMove) {
+                delete (window as any)._handleChartDragBracketMove;
+            }
+            if ((window as any)._handleChartDragBracketEnd === handleModalDragBracketEnd) {
+                delete (window as any)._handleChartDragBracketEnd;
+            }
+        };
+    }, [handleModalDragBracketStart, handleModalDragBracketMove, handleModalDragBracketEnd]);
 
     const mainParentL2Data = useMemo(
         () => ({ bids, asks, walls, currentPrice, tradeEvent }),
@@ -5082,6 +5290,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                     <ManualTradeModal
                                         buttonSize="sm"
                                         symbol={manualTradeSymbol || activeChart?.symbol || symbol}
+                                        activePairId={activeChart?.id || activeChartId}
                                         currentPrice={modalCurrentPrice}
                                         availablePairs={modalAvailablePairs}
                                         onSelectPair={handleModalSelectPair}
@@ -5199,25 +5408,22 @@ const OrderFlowHeatmap: React.FC = () => {
                     position: 'relative',
                     zIndex: 30,          // sit above the chart so dropdowns render on top
                     overflow: 'hidden',  // will be flipped to 'visible' via onTransitionEnd when open
-                    maxHeight: showSubNav ? '220px' : '0px',
+                    maxHeight: showSubNav ? '480px' : '0px',
                     opacity: showSubNav ? 1 : 0,
                     transition: 'max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease',
                     willChange: 'max-height, opacity',
                 }}
             >
                 <header className="relative z-20 flex-shrink-0 p-4 laptop:p-2 flex-wrap gap-2 border-b border-gray-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-[#000000]">
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                     <HeatmapSymbolSelector symbol={symbol} exchange={exchange} onSymbolChange={setSymbol} onExchangeChange={setExchange} />
                     <TimeframeSelector interval={interval} onIntervalChange={setInterval} />
                     <IndicatorSelector
-                        settings={indicatorSettings}
-                        onSettingsChange={setIndicatorSettings}
-                        showHeatmap={showVPVR}
-                        onToggleHeatmap={handleToggleHeatmap}
-                        showCVD={showCVD}
-                        onToggleCVD={handleToggleCVD}
-                        showFootprint={showFootprint}
-                        onToggleFootprint={handleToggleFootprint}
+                        usePortal
+                        chartLabel={allCharts.length > 1 ? activeChartLabel : undefined}
+                        settings={activeChartSettings}
+                        onSettingsChange={handleActiveChartSettingsChange}
+                        onResetAll={handleActiveChartReset}
                     />
 
                     <button
@@ -5333,46 +5539,51 @@ const OrderFlowHeatmap: React.FC = () => {
             <div className="flex-1 min-h-0 flex flex-col p-4 laptop:p-2 overflow-y-auto hide-scrollbar relative bg-gray-50 dark:bg-[#000000]">
                 {/* RENDER GRID OF CHARTS */}
                 <div className={`flex-1 w-full grid gap-4 ${allCharts.length === 1 ? 'grid-cols-1' : allCharts.length === 2 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 lg:grid-cols-2 grid-rows-2'}`}>
-                    {allCharts.map(c => (
-                        <OrderFlowChartPanel 
-                            key={c.id} 
-                            config={c} 
-                            isMain={c.isMain} 
-                            isActive={activeChartId === c.id}
-                            onSelectActive={() => setActiveChartId(c.id)}
-                            onPriceChange={handleChartPriceChange}
-                            allChartsCount={allCharts.length}
-                            onUpdate={updateChart} 
-                            onRemove={removeChart} 
-                            showFootprint={showFootprint} 
-                            showCVD={showCVD} 
-                            showVPVR={showVPVR} 
-                            indicatorSettings={indicatorSettings} 
-                            advancedMetrics={advancedMetrics} 
-                            selectedApiKeyId={selectedApiKeyId} 
-                            predictionResult={c.isMain ? predictionResult : null} 
-                            activeMLModelId={c.isMain ? activeMLModelId : null} 
-                            setExternalAIPrice={c.isMain ? setExternalAIPrice : noopCallback} 
-                            setExternalAIOpenTrigger={c.isMain ? setExternalAIOpenTrigger : noopCallback} 
-                            setManualTradePrice={(price) => {
-                                setActiveChartId(c.id);
-                                setManualTradeSymbol(c.symbol);
-                                setManualTradePrice(price);
-                            }}
-                            setManualTradeTrigger={setManualTradeTrigger}
-                            volumeThreshold={volumeThreshold} 
-                            volumeMode={volumeMode} 
-                            parentL2Data={c.isMain ? mainParentL2Data : undefined}
-                            parentBotId={selectedHudBotId}
-                            parentBotStatus={botStatus}
-                            parentSymbol={symbol}
-                            parentOpenOrders={openOrders}
-                            showCrosshairAIPredict={showCrosshairAIPredict}
-                            showBidAsk={showBidAsk}
-                            renderFloatingTools={hasFullscreenChart ? floatingToolsNode : undefined}
-                            onFullscreenChange={setHasFullscreenChart}
-                        />
-                    ))}
+                    {allCharts.map((c, idx) => {
+                        const chartSettings = c.id === 'main'
+                            ? indicatorSettings
+                            : (indicatorSettingsByChartId[c.id] || CLEAN_INDICATOR_SETTINGS);
+                        return (
+                            <OrderFlowChartPanel 
+                                key={c.id} 
+                                config={c} 
+                                isMain={c.isMain} 
+                                isActive={activeChartId === c.id}
+                                chartLabel={c.isMain ? 'Main' : `Chart ${idx + 1}`}
+                                chartSlotIndex={idx}
+                                onSelectActive={handleSelectActiveChart}
+                                onPriceChange={handleChartPriceChange}
+                                allChartsCount={allCharts.length}
+                                onUpdate={updateChart} 
+                                onRemove={removeChart} 
+                                showFootprint={Boolean(chartSettings.showFootprint)} 
+                                showCVD={Boolean(chartSettings.showCVD)} 
+                                showVPVR={Boolean(chartSettings.showHeatmap)} 
+                                indicatorSettings={chartSettings}
+                                onIndicatorSettingsChange={handleChartIndicatorSettingsChange}
+                                onResetIndicators={handleResetChartIndicators}
+                                advancedMetrics={advancedMetrics} 
+                                selectedApiKeyId={selectedApiKeyId} 
+                                predictionResult={c.isMain ? predictionResult : null} 
+                                activeMLModelId={c.isMain ? activeMLModelId : null} 
+                                setExternalAIPrice={c.isMain ? setExternalAIPrice : noopCallback} 
+                                setExternalAIOpenTrigger={c.isMain ? setExternalAIOpenTrigger : noopCallback} 
+                                onManualTradeClick={handleManualTradeClick}
+                                setManualTradeTrigger={setManualTradeTrigger}
+                                volumeThreshold={volumeThreshold} 
+                                volumeMode={volumeMode} 
+                                parentL2Data={c.isMain ? mainParentL2Data : undefined}
+                                parentBotId={selectedHudBotId}
+                                parentBotStatus={botStatus}
+                                parentSymbol={symbol}
+                                parentOpenOrders={openOrders}
+                                showCrosshairAIPredict={showCrosshairAIPredict}
+                                showBidAsk={showBidAsk}
+                                renderFloatingTools={hasFullscreenChart ? floatingToolsNode : undefined}
+                                onFullscreenChange={setHasFullscreenChart}
+                            />
+                        );
+                    })}
                 </div>
 
 

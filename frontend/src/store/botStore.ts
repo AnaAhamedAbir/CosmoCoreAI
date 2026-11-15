@@ -9,7 +9,10 @@ interface BotState {
     setBotForChart: (chartId: string, id: number) => void;
     removeBotForChart: (chartId: string) => void;
     indicatorSettings: IndicatorSettings;
-    setIndicatorSettings: (settings: IndicatorSettings) => void;
+    setIndicatorSettings: (settings: Partial<IndicatorSettings>) => void;
+    indicatorSettingsByChartId: Record<string, IndicatorSettings>;
+    setChartIndicatorSettings: (chartId: string, settings: Partial<IndicatorSettings>) => void;
+    resetChartIndicatorSettings: (chartId: string) => void;
 }
 
 export const sanitizeIndicatorSettings = (settings: IndicatorSettings): IndicatorSettings => {
@@ -58,19 +61,7 @@ export const sanitizeIndicatorSettings = (settings: IndicatorSettings): Indicato
     };
 };
 
-export const useBotStore = create<BotState>()(
-    persist(
-        (set) => ({
-            activeWallHunterId: null,
-            setActiveWallHunterId: (id) => set({ activeWallHunterId: id }),
-            activeBotsByChartId: {},
-            setBotForChart: (chartId, id) => set((state) => ({ activeBotsByChartId: { ...state.activeBotsByChartId, [chartId]: id } })),
-            removeBotForChart: (chartId) => set((state) => {
-                const newBots = { ...state.activeBotsByChartId };
-                delete newBots[chartId];
-                return { activeBotsByChartId: newBots };
-            }),
-    indicatorSettings: {
+export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
         showEMA: false,
         showBB: true,
         showRSI: false,
@@ -291,17 +282,131 @@ export const useBotStore = create<BotState>()(
         lsaShowHistoricalZones: true,
         lsaShowHudSummary: true,
         lsaEnableAlerts: false,
-    },
-    setIndicatorSettings: (settings) => set((state) => ({
-        indicatorSettings: sanitizeIndicatorSettings({ ...state.indicatorSettings, ...settings })
-    })),
+    };
+
+/**
+ * Clean indicator preset with all visual overlays & heavy indicators turned OFF.
+ * Used as the initial state for newly added extra charts (+ Add Chart) so opening
+ * up to 4 charts does not multiply CPU/GPU thermal load unnecessarily.
+ */
+export const CLEAN_INDICATOR_SETTINGS: IndicatorSettings = sanitizeIndicatorSettings({
+    ...DEFAULT_INDICATOR_SETTINGS,
+    showEMA: false,
+    showBB: false,
+    showRSI: false,
+    showMACD: false,
+    showVolume: false,
+    showAutoFibo: false,
+    showIchimoku: false,
+    showTrendFinder: false,
+    showUTBot: false,
+    showSessions: false,
+    showQuantumAI: false,
+    showLiquidationHeatmap: false,
+    showSMC: false,
+    showHeatmap: false,
+    showCVD: false,
+    showFootprint: false,
+    showDualEngine: false,
+    showWatchlistScanner: false,
+    showICTKillzones: false,
+    showICTPO3: false,
+    luxShowIndicator: false,
+    showSupertrend: false,
+    showMsbOb: false,
+    showCandlestickPatterns: false,
+    showWickSR: false,
+    showVWAPSD: false,
+    showAetherFlow: false,
+    showLiquiditySweepAbsorption: false,
+});
+
+export const useBotStore = create<BotState>()(
+    persist(
+        (set) => ({
+            activeWallHunterId: null,
+            setActiveWallHunterId: (id) => set({ activeWallHunterId: id }),
+            activeBotsByChartId: {},
+            setBotForChart: (chartId, id) => set((state) => ({ activeBotsByChartId: { ...state.activeBotsByChartId, [chartId]: id } })),
+            removeBotForChart: (chartId) => set((state) => {
+                const newBots = { ...state.activeBotsByChartId };
+                delete newBots[chartId];
+                return { activeBotsByChartId: newBots };
+            }),
+            indicatorSettings: DEFAULT_INDICATOR_SETTINGS,
+            indicatorSettingsByChartId: {
+                main: DEFAULT_INDICATOR_SETTINGS,
+            },
+            setIndicatorSettings: (settings) => set((state) => {
+                const nextMain = sanitizeIndicatorSettings({ ...state.indicatorSettings, ...settings });
+                return {
+                    indicatorSettings: nextMain,
+                    indicatorSettingsByChartId: {
+                        ...state.indicatorSettingsByChartId,
+                        main: nextMain,
+                    },
+                };
+            }),
+            setChartIndicatorSettings: (chartId, settings) => set((state) => {
+                const base = chartId === 'main'
+                    ? (state.indicatorSettingsByChartId?.main || state.indicatorSettings || DEFAULT_INDICATOR_SETTINGS)
+                    : (state.indicatorSettingsByChartId?.[chartId] || CLEAN_INDICATOR_SETTINGS);
+                const next = sanitizeIndicatorSettings({ ...base, ...settings });
+                if (chartId === 'main') {
+                    return {
+                        indicatorSettings: next,
+                        indicatorSettingsByChartId: {
+                            ...state.indicatorSettingsByChartId,
+                            main: next,
+                        },
+                    };
+                }
+                return {
+                    indicatorSettingsByChartId: {
+                        ...state.indicatorSettingsByChartId,
+                        [chartId]: next,
+                    },
+                };
+            }),
+            resetChartIndicatorSettings: (chartId) => set((state) => {
+                const clean = { ...CLEAN_INDICATOR_SETTINGS };
+                if (chartId === 'main') {
+                    return {
+                        indicatorSettings: clean,
+                        indicatorSettingsByChartId: {
+                            ...state.indicatorSettingsByChartId,
+                            main: clean,
+                        },
+                    };
+                }
+                return {
+                    indicatorSettingsByChartId: {
+                        ...state.indicatorSettingsByChartId,
+                        [chartId]: clean,
+                    },
+                };
+            }),
         }),
         {
             name: 'bot-store-storage',
             onRehydrateStorage: () => (state) => {
-                if (state && state.indicatorSettings) {
+                if (!state) return;
+                if (state.indicatorSettings) {
                     state.indicatorSettings = sanitizeIndicatorSettings(state.indicatorSettings);
                 }
+                const sanitizedMap: Record<string, IndicatorSettings> = {};
+                const existingMap = state.indicatorSettingsByChartId || {};
+                for (const [chartId, cfg] of Object.entries(existingMap)) {
+                    if (cfg) {
+                        sanitizedMap[chartId] = sanitizeIndicatorSettings({
+                            ...CLEAN_INDICATOR_SETTINGS,
+                            ...cfg,
+                        });
+                    }
+                }
+                // Keep 'main' synced with indicatorSettings for backward compatibility
+                sanitizedMap.main = state.indicatorSettings || sanitizedMap.main || DEFAULT_INDICATOR_SETTINGS;
+                state.indicatorSettingsByChartId = sanitizedMap;
             },
         }
     )

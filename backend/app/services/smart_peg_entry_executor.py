@@ -178,6 +178,9 @@ async def execute_smart_peg_entry(
     is_inverse: Optional[bool] = None,
     send_initial_notify: bool = True,
     anchor_price: Optional[float] = None,
+    preloaded_ob: Optional[Dict[str, Any]] = None,
+    preloaded_balance: Optional[Dict[str, Any]] = None,
+    skip_exchange_upgrade: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
     Executes a continuous Dynamic BBO Maker Peg Entry.
@@ -187,7 +190,7 @@ async def execute_smart_peg_entry(
     t_peg_start = time.perf_counter()
 
     # ── STEP 0: Upgrade to dedicated unthrottled order exchange pool instance (purpose='order') ──
-    if api_key_record:
+    if api_key_record and not skip_exchange_upgrade:
         try:
             from app.services.exchange_pool import get_or_create_exchange
             from app.core.security import decrypt_key
@@ -251,6 +254,14 @@ async def execute_smart_peg_entry(
         except Exception:
             pass
 
+    async def _fetch_balance_fast() -> dict:
+        if getattr(exchange, 'has', {}).get('fetchBalanceWs') and hasattr(exchange, 'fetch_balance_ws'):
+            try:
+                return await exchange.fetch_balance_ws()
+            except Exception as ws_bal_err:
+                logger.debug(f"[Smart Peg Entry] fetch_balance_ws fallback to REST: {ws_bal_err}")
+        return await exchange.fetch_balance()
+
     # Balance sync helper to avoid "insufficient balance" rejections
     async def _sync_and_clamp_amount(price: float, cached_bal: Optional[dict] = None, force_refresh: bool = False) -> float:
         nonlocal remaining_amount
@@ -266,7 +277,7 @@ async def execute_smart_peg_entry(
             if len(parts) >= 2:
                 base_asset = parts[0]
                 quote_asset = parts[1].split(':')[0]
-                bal = cached_bal or await exchange.fetch_balance()
+                bal = cached_bal or await _fetch_balance_fast()
 
                 if side.lower() == "buy":
                     # Buying base using quote (e.g. FDUSD or USDT)
@@ -304,16 +315,21 @@ async def execute_smart_peg_entry(
 
         return remaining_amount
 
-    # Fetch initial orderbook & balance in PARALLEL to reduce latency by ~300ms
-    initial_ob = None
-    cached_bal = None
+    # Fetch initial orderbook & balance in PARALLEL (or reuse preloaded snapshots for ~0ms overhead)
+    has_preloaded_ob = bool(
+        isinstance(preloaded_ob, dict) and preloaded_ob.get('bids') and preloaded_ob.get('asks')
+    )
+    initial_ob = preloaded_ob if has_preloaded_ob else None
+    cached_bal = preloaded_balance if isinstance(preloaded_balance, dict) else None
     try:
-        if not is_futures:
-            ob_coro = _fetch_bbo_fast(exchange, symbol)
-            bal_coro = exchange.fetch_balance()
-            initial_ob, cached_bal = await asyncio.gather(ob_coro, bal_coro)
-        else:
+        need_ob = initial_ob is None
+        need_bal = (not is_futures) and (cached_bal is None)
+        if need_ob and need_bal:
+            initial_ob, cached_bal = await asyncio.gather(_fetch_bbo_fast(exchange, symbol), _fetch_balance_fast())
+        elif need_ob:
             initial_ob = await _fetch_bbo_fast(exchange, symbol)
+        elif need_bal:
+            cached_bal = await _fetch_balance_fast()
     except Exception as ob_err:
         logger.error(f"❌ [Smart Peg Entry] Failed to fetch initial data: {ob_err}")
         return None

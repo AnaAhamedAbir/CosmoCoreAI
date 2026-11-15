@@ -689,6 +689,123 @@ class TestIcebergBracketAndEditFixes(unittest.TestCase):
 
         asyncio.run(_run())
 
+    def test_emergency_force_sell_fast_path_uses_ws_and_reuses_preloaded_snapshots(self):
+        async def _run():
+            api_key_record = SimpleNamespace(
+                id=1, user_id=1, exchange="binance", is_enabled=True, api_key="k", secret_key="s", passphrase=None
+            )
+            db = _DummyDB(api_key_record)
+
+            rest_calls = []
+            ws_calls = []
+            fresh_payload = json.dumps({
+                "bids": [[0.05879, 500.0]],
+                "asks": [[0.05880, 500.0]],
+                "ts": time.time(),
+            })
+
+            class FakeRedis:
+                async def get(self, key):
+                    return fresh_payload
+
+            class MockSpotWsExchange:
+                id = "binance"
+                has = {
+                    "cancelOrderWs": True,
+                    "fetchBalanceWs": True,
+                    "createOrderWs": True,
+                    "editOrderWs": True,
+                    "fetchOrderWs": False,
+                }
+                markets = {
+                    "DOGE/FDUSD": {
+                        "symbol": "DOGE/FDUSD",
+                        "base": "DOGE",
+                        "quote": "FDUSD",
+                        "spot": True,
+                        "inverse": False,
+                        "contractSize": 1.0,
+                        "precision": {"amount": 1.0, "price": 0.00001},
+                    }
+                }
+
+                def amount_to_precision(self, symbol, amount):
+                    return str(int(float(amount)))
+
+                def price_to_precision(self, symbol, price):
+                    return f"{float(price):.5f}"
+
+                async def cancel_order_ws(self, oid, symbol):
+                    ws_calls.append(("cancel_order_ws", oid))
+                    return {"id": oid, "status": "canceled"}
+
+                async def cancel_order(self, oid, symbol):
+                    rest_calls.append(("cancel_order", oid))
+                    return {"id": oid, "status": "canceled"}
+
+                async def fetch_balance_ws(self, params=None):
+                    ws_calls.append(("fetch_balance_ws",))
+                    return {
+                        "DOGE": {"free": 507.0, "used": 0.0, "total": 507.0},
+                        "FDUSD": {"free": 10.0, "used": 0.0, "total": 10.0},
+                    }
+
+                async def fetch_balance(self, params=None):
+                    rest_calls.append(("fetch_balance",))
+                    return await self.fetch_balance_ws(params)
+
+                async def fetch_order_book(self, symbol, limit=5):
+                    rest_calls.append(("fetch_order_book",))
+                    return {"bids": [[0.05879, 500.0]], "asks": [[0.05880, 500.0]]}
+
+                async def create_order_ws(self, symbol, order_type, side, amount, price, params):
+                    ws_calls.append(("create_order_ws", order_type, side, amount, price))
+                    return {"id": "4044999999", "status": "closed", "filled": amount, "average": price, "price": price}
+
+            mock_ex = MockSpotWsExchange()
+            scheduled_tasks = []
+            orig_create_task = asyncio.create_task
+
+            def _track_task(coro):
+                t = orig_create_task(coro)
+                scheduled_tasks.append(t)
+                return t
+
+            with (
+                patch.object(ManualTradeService, "_get_exchange", AsyncMock(return_value=mock_ex)),
+                patch("app.services.user_order_stream._get_redis_pub", AsyncMock(return_value=FakeRedis())),
+                patch("app.services.manual_smart_chase_executor.stop_smart_chase", AsyncMock(return_value=0)),
+                patch("app.services.smart_peg_entry_executor.stop_smart_peg", AsyncMock(return_value=0)),
+                patch("app.services.manual_trade_service.asyncio.create_task", side_effect=_track_task),
+            ):
+                res = await ManualTradeService.execute_emergency_force_order(
+                    db=db,
+                    user_id=1,
+                    api_key_id=1,
+                    symbol="DOGE/FDUSD",
+                    side="sell",
+                    execution_mode="limit_maker",
+                    size_pct=100.0,
+                    target_order_id="4044333102",
+                    target_order_amount=507.0,
+                )
+                if scheduled_tasks:
+                    await asyncio.gather(*scheduled_tasks)
+
+            self.assertEqual(res["status"], "pegging")
+            self.assertEqual(res["amount"], 507.0)
+            self.assertEqual(rest_calls, [])
+            self.assertEqual(
+                ws_calls,
+                [
+                    ("cancel_order_ws", "4044333102"),
+                    ("fetch_balance_ws",),
+                    ("create_order_ws", "LIMIT_MAKER", "sell", 507.0, 0.0588),
+                ],
+            )
+
+        asyncio.run(_run())
+
 
 if __name__ == "__main__":
     unittest.main()

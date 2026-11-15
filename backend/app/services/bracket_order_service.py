@@ -743,23 +743,35 @@ class BracketOrderService:
     @staticmethod
     async def _cancel_futures_order_universal(exchange, order_id: str, symbol: str):
         """
-        Safely cancels an order on Futures/Spot in parallel when possible,
-        attempting standard and conditional/algo cancellation concurrently on Futures
-        so SL/TP cancellation completes in 1 RTT instead of 2 serial round-trips.
+        Safely cancels an order on Futures/Spot using WebSocket API when available (~80-120ms)
+        with instant REST fallback, attempting standard and conditional/algo cancellation
+        concurrently on Futures.
         """
         if not order_id or not exchange:
             return
+
+        async def _cancel_std():
+            if getattr(exchange, 'has', {}).get('cancelOrderWs') and hasattr(exchange, 'cancel_order_ws'):
+                try:
+                    return await exchange.cancel_order_ws(order_id, symbol)
+                except Exception as ws_err:
+                    err_low = str(ws_err).lower()
+                    if any(k in err_low for k in ('unknown order', '-2011', '-2013', 'does not exist')):
+                        raise
+                    logger.debug(f"cancel_order_ws fallback to REST for {order_id}: {ws_err}")
+            return await exchange.cancel_order(order_id, symbol)
+
         is_futures = ':' in str(symbol or '')
         if not is_futures:
             try:
-                await exchange.cancel_order(order_id, symbol)
+                await _cancel_std()
                 logger.info(f"✅ Cancelled order {order_id} on {symbol}")
             except Exception as e:
                 logger.debug(f"Standard cancel notice for {order_id}: {e}")
             return
 
         res_std, res_stop = await asyncio.gather(
-            exchange.cancel_order(order_id, symbol),
+            _cancel_std(),
             exchange.cancel_order(order_id, symbol, params={'stop': True}),
             return_exceptions=True,
         )

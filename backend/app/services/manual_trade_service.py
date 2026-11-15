@@ -389,6 +389,14 @@ class ManualTradeService:
                 params['subType'] = 'linear'
 
         try:
+            if getattr(exchange, 'has', {}).get('fetchBalanceWs') and hasattr(exchange, 'fetch_balance_ws'):
+                try:
+                    bal = await exchange.fetch_balance_ws(params)
+                    if api_key_id is not None:
+                        ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
+                    return bal
+                except Exception as ws_bal_err:
+                    logger.debug(f"fetch_balance_ws fallback to REST: {ws_bal_err}")
             bal = await exchange.fetch_balance(params)
             if api_key_id is not None:
                 ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
@@ -2596,7 +2604,12 @@ class ManualTradeService:
         import math
         from types import SimpleNamespace
         from app.services.manual_smart_chase_executor import stop_smart_chase, ACTIVE_SMART_CHASES
-        from app.services.smart_peg_entry_executor import stop_smart_peg, execute_smart_peg_entry, ACTIVE_SMART_PEGS
+        from app.services.smart_peg_entry_executor import (
+            stop_smart_peg,
+            execute_smart_peg_entry,
+            ACTIVE_SMART_PEGS,
+            _fetch_bbo_fast,
+        )
 
         api_key_record = db.query(models.ApiKey).filter(
             models.ApiKey.id == api_key_id,
@@ -2613,7 +2626,7 @@ class ManualTradeService:
         specific_oid = str(target_order_id).strip() if (target_order_id and str(target_order_id).strip().lower() != 'all') else None
 
         try:
-            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
+            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
             meta = ManualTradeService._get_contract_meta(exchange, symbol)
             is_inverse = meta["is_inverse"]
             contract_size = meta["contract_size"]
@@ -2793,10 +2806,15 @@ class ManualTradeService:
 
                 pre_open_orders = []
                 try:
-                    pre_res = await ManualTradeService.get_open_limit_orders(
-                        db, user_id, api_key_id, symbol, force_refresh=True
-                    )
-                    pre_open_orders = pre_res.get('orders', []) if isinstance(pre_res, dict) else (pre_res or [])
+                    cache_key = (int(api_key_id), str(symbol).strip().upper())
+                    cached_oo = ManualTradeService._OPEN_ORDERS_CACHE.get(cache_key)
+                    if cached_oo and (time.time() - cached_oo[0]) < 10.0 and isinstance(cached_oo[1], dict):
+                        pre_open_orders = list(cached_oo[1].get('orders') or [])
+                    else:
+                        pre_res = await ManualTradeService.get_open_limit_orders(
+                            db, user_id, api_key_id, symbol, force_refresh=True
+                        )
+                        pre_open_orders = pre_res.get('orders', []) if isinstance(pre_res, dict) else (pre_res or [])
                     for o in pre_open_orders:
                         if not isinstance(o, dict):
                             continue
@@ -2847,13 +2865,21 @@ class ManualTradeService:
                                 pass
 
                 cancel_all_ok = False
-                try:
-                    if hasattr(exchange, 'cancel_all_orders'):
-                        await exchange.cancel_all_orders(symbol)
+                if getattr(exchange, 'has', {}).get('cancelAllOrdersWs') and hasattr(exchange, 'cancel_all_orders_ws'):
+                    try:
+                        await exchange.cancel_all_orders_ws(symbol)
                         cancelled_open_orders += max(1, len(pre_open_orders)) if pre_open_orders else 1
                         cancel_all_ok = True
-                except Exception:
-                    pass
+                    except Exception as ws_ca_err:
+                        logger.debug(f"cancel_all_orders_ws fallback to REST for {symbol}: {ws_ca_err}")
+                if not cancel_all_ok:
+                    try:
+                        if hasattr(exchange, 'cancel_all_orders'):
+                            await exchange.cancel_all_orders(symbol)
+                            cancelled_open_orders += max(1, len(pre_open_orders)) if pre_open_orders else 1
+                            cancel_all_ok = True
+                    except Exception:
+                        pass
 
                 if not cancel_all_ok:
                     for o in pre_open_orders:
@@ -2867,21 +2893,39 @@ class ManualTradeService:
 
                 ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
 
-            # Brief pause so exchange begins processing order cancellations
-            await asyncio.sleep(0.08)
+            # 3. Fetch live BBO (1ms Redis WS first) & wallet balance concurrently with 0ms blind sleep
+            has_cancelled_orders = bool(
+                cancelled_open_orders > 0 or cancelled_brackets > 0 or stopped_pegs > 0 or stopped_chases > 0
+            )
+            cached_bal = None if has_cancelled_orders else ManualTradeService._get_cached_wallet_balance(
+                api_key_id, is_futures, max_age_seconds=10.0
+            )
 
-            # 3. Fetch fresh live orderbook BBO & unlocked balance
+            if cached_bal is not None:
+                ob = None
+                try:
+                    ob = await _fetch_bbo_fast(exchange, symbol)
+                except Exception:
+                    ob = None
+                bal = cached_bal
+            else:
+                ob_res, bal_res = await asyncio.gather(
+                    _fetch_bbo_fast(exchange, symbol),
+                    ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id),
+                    return_exceptions=True,
+                )
+                ob = None if isinstance(ob_res, Exception) else ob_res
+                if isinstance(bal_res, Exception):
+                    raise bal_res
+                bal = bal_res
+
             ref_price = 0.0
             best_bid = 0.0
             best_ask = 0.0
-            try:
-                ob = await exchange.fetch_order_book(symbol, limit=5)
-                if ob and ob.get('bids') and ob.get('asks'):
-                    best_bid = float(ob['bids'][0][0])
-                    best_ask = float(ob['asks'][0][0])
-                    ref_price = best_bid if side_lower == 'sell' else best_ask
-            except Exception:
-                pass
+            if ob and ob.get('bids') and ob.get('asks'):
+                best_bid = float(ob['bids'][0][0])
+                best_ask = float(ob['asks'][0][0])
+                ref_price = best_bid if side_lower == 'sell' else best_ask
 
             if ref_price <= 0:
                 ticker = await exchange.fetch_ticker(symbol)
@@ -2899,16 +2943,6 @@ class ManualTradeService:
                         has_custom_amount = True
                 except (ValueError, TypeError):
                     has_custom_amount = False
-
-            has_cancelled_orders = bool(
-                cancelled_open_orders > 0 or cancelled_brackets > 0 or stopped_pegs > 0 or stopped_chases > 0
-            )
-
-            # Fetch fresh wallet balance.
-            # When orders are cancelled, exchange matching engines (e.g. Binance) take 100-350ms to release
-            # the locked funds/margin from 'used' into 'free'. We poll up to 5 times (every 100ms) until
-            # the expected funds from the cancelled order(s) are unlocked into free balance!
-            bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta)
 
             def _extract_bal(bal_dict: dict, asset: str, kind: str) -> float:
                 val = float((bal_dict.get(asset) or {}).get(kind) or 0.0)
@@ -2934,7 +2968,7 @@ class ManualTradeService:
                 elif side_lower == 'sell' and unlock_base_amt > 0:
                     needed_val = unlock_base_amt * pct_ratio
 
-                for attempt in range(5):
+                for attempt in range(6):
                     if side_lower == 'buy':
                         fq = _extract_bal(bal, quote_part, 'free')
                         uq = _extract_bal(bal, quote_part, 'used')
@@ -2946,8 +2980,8 @@ class ManualTradeService:
                         ub = _extract_bal(bal, base_part, 'used')
                         if (needed_val > 0 and fb >= needed_val * 0.98) or (needed_val <= 0 and not specific_oid and ub <= 0):
                             break
-                    await asyncio.sleep(0.12)
-                    bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta)
+                    await asyncio.sleep(0.05)
+                    bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)
 
             target_amount = 0.0
             is_closing_position = bool(reduce_only) or (is_futures and is_exit_order)
@@ -3101,6 +3135,10 @@ class ManualTradeService:
             # 4A. Execute as Dynamic Smart Peg Maker (0% Maker Fee)
             if mode_lower in ('limit_maker', 'maker', 'smart_peg'):
                 peg_cid = f"peg_{api_key_record.id}_{symbol}_{int(time.time())}"
+                bal_unlocked = is_futures or (
+                    (side_lower == 'sell' and _extract_bal(bal, base_part, 'free') >= target_amount * 0.999)
+                    or (side_lower == 'buy' and _extract_bal(bal, quote_part, 'free') >= target_amount * ref_price * 0.998)
+                )
                 asyncio.create_task(
                     execute_smart_peg_entry(
                         exchange=exchange,
@@ -3122,7 +3160,10 @@ class ManualTradeService:
                         ai_filter_info=ai_filter_info,
                         contract_size=contract_size,
                         is_inverse=is_inverse,
-                        send_initial_notify=True
+                        send_initial_notify=True,
+                        preloaded_ob=ob,
+                        preloaded_balance=bal if bal_unlocked else None,
+                        skip_exchange_upgrade=True,
                     )
                 )
 
@@ -3145,20 +3186,21 @@ class ManualTradeService:
                 if is_closing_position:
                     ex_params = await bracket_order_service._apply_futures_exit_params(exchange, symbol, side_lower)
                 else:
-                    is_hedge = False
-                    for method_name in (['dapiPrivateGetPositionSideDual', 'fapiPrivateGetPositionSideDual'] if is_inverse else ['fapiPrivateGetPositionSideDual', 'dapiPrivateGetPositionSideDual']):
-                        method = getattr(exchange, method_name, None)
-                        if method and callable(method):
-                            try:
-                                pos_mode_res = await method()
-                                is_hedge = bool(pos_mode_res.get('dualSidePosition'))
-                                break
-                            except Exception:
-                                pass
-                    if is_hedge:
+                    if await ManualTradeService._is_binance_hedge_mode(exchange, symbol, is_inverse=is_inverse):
                         ex_params['positionSide'] = 'LONG' if side_lower == 'buy' else 'SHORT'
 
-            response = await exchange.create_market_order(symbol, side_lower, target_amount, params=ex_params)
+            response = None
+            if getattr(exchange, 'has', {}).get('createOrderWs') and hasattr(exchange, 'create_order_ws'):
+                try:
+                    ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
+                        exchange, 'market', ex_params, is_futures, is_edit=False
+                    )
+                    response = await exchange.create_order_ws(symbol, ws_type, side_lower, target_amount, None, ws_params)
+                except Exception as ws_mkt_err:
+                    logger.debug(f"Emergency market create_order_ws fallback to REST: {ws_mkt_err}")
+                    response = None
+            if response is None:
+                response = await exchange.create_market_order(symbol, side_lower, target_amount, params=ex_params)
             exec_price = float((response or {}).get('average') or (response or {}).get('price') or ref_price)
             latency_ms = int((time.perf_counter() - start_time) * 1000) if start_time else 0
 

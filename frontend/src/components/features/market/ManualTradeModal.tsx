@@ -178,9 +178,72 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   const [selectedPercent, setSelectedPercent] = useState<string | null>('100%');
   const [leverage, setLeverage] = useState<number>(10);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedApi, setSelectedApi] = useState<string>('');
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [balanceData, setBalanceData] = useState<FastBalanceResponse | null>(null);
+  const [selectedApi, setSelectedApi] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      const savedId = localStorage.getItem('cosmo_manual_selected_api_v1');
+      if (savedId) return savedId;
+      const cachedKeys = localStorage.getItem('cosmo_manual_api_keys_cache_v1');
+      if (cachedKeys) {
+        const parsed = JSON.parse(cachedKeys);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.id !== undefined) {
+          return String(parsed[0].id);
+        }
+      }
+    } catch { }
+    return '';
+  });
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const cachedKeys = localStorage.getItem('cosmo_manual_api_keys_cache_v1');
+      if (cachedKeys) {
+        const parsed = JSON.parse(cachedKeys);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch { }
+    return [];
+  });
+  const readCachedBalance = React.useCallback((apiId: string, sym: string): FastBalanceResponse | null => {
+    if (!apiId || !sym || typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem('cosmo_manual_balance_cache_v1');
+      if (!raw) return null;
+      const map = JSON.parse(raw);
+      return (map && map[`${apiId}:${sym}`]) || null;
+    } catch {
+      return null;
+    }
+  }, []);
+  const writeCachedBalance = React.useCallback((apiId: string, sym: string, data: FastBalanceResponse) => {
+    if (!apiId || !sym || typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('cosmo_manual_balance_cache_v1');
+      const map = raw ? JSON.parse(raw) : {};
+      const keys = Object.keys(map);
+      if (keys.length >= 25) {
+        delete map[keys[0]];
+      }
+      map[`${apiId}:${sym}`] = data;
+      localStorage.setItem('cosmo_manual_balance_cache_v1', JSON.stringify(map));
+    } catch { }
+  }, []);
+  const [balanceData, setBalanceData] = useState<FastBalanceResponse | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const savedId = localStorage.getItem('cosmo_manual_selected_api_v1') || (() => {
+        const ck = localStorage.getItem('cosmo_manual_api_keys_cache_v1');
+        const p = ck ? JSON.parse(ck) : null;
+        return Array.isArray(p) && p[0]?.id !== undefined ? String(p[0].id) : '';
+      })();
+      if (!savedId) return null;
+      const raw = localStorage.getItem('cosmo_manual_balance_cache_v1');
+      const map = raw ? JSON.parse(raw) : null;
+      return (map && map[`${savedId}:${symbol}`]) || null;
+    } catch {
+      return null;
+    }
+  });
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [tradeSide, setTradeSide] = useState<'Buy' | 'Sell'>('Sell');
@@ -1148,16 +1211,28 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     }
   };
 
-  // Fetch API Keys on component mount
+  // Fetch API Keys on component mount (hydrated immediately from localStorage cache)
   React.useEffect(() => {
+    if (selectedApi) {
+      onApiKeyChange?.(selectedApi);
+    }
     const fetchKeys = async () => {
       try {
         const keys = await manualTradeService.getApiKeys();
         setApiKeys(keys);
+        try {
+          localStorage.setItem('cosmo_manual_api_keys_cache_v1', JSON.stringify(keys));
+        } catch { }
         if (keys.length > 0) {
-          const firstId = keys[0].id.toString();
-          setSelectedApi(firstId);
-          onApiKeyChange?.(firstId);
+          const validSaved = selectedApi && keys.some(k => String(k.id) === String(selectedApi));
+          const resolvedId = validSaved ? String(selectedApi) : keys[0].id.toString();
+          if (resolvedId !== selectedApi) {
+            setSelectedApi(resolvedId);
+            onApiKeyChange?.(resolvedId);
+          }
+          try {
+            localStorage.setItem('cosmo_manual_selected_api_v1', resolvedId);
+          } catch { }
         }
       } catch (e) {
         console.error("Failed to load APIs", e);
@@ -1166,18 +1241,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     fetchKeys();
   }, [onApiKeyChange]);
 
-  // BUG-12 fix: Reset size and mode when symbol changes to avoid stale amounts on wrong pair
+  // BUG-12 fix: Reset size and mode when symbol changes; restore cached balance immediately (0ms) while live sync refreshes
   React.useEffect(() => {
     setSize('');
     setSizeMode('base');
-    setBalanceData(null);
+    setBalanceData(readCachedBalance(selectedApi, activeSymbol));
     setIcebergCustomQty('250');
-  }, [activeSymbol]);
+  }, [activeSymbol, selectedApi, readCachedBalance]);
 
   const isFetchingBalanceRef = React.useRef(false);
 
   // Fetch balance and position (supports silent background polling and explicit refresh)
-  const fetchBalance = React.useCallback(async (isSilent = false) => {
+  const fetchBalance = React.useCallback(async (isSilent = false, forceRefresh = false) => {
     if (!selectedApi || !isOpen) return;
     if (isFetchingBalanceRef.current) return; // Prevent concurrent/overlapping requests
     isFetchingBalanceRef.current = true;
@@ -1188,18 +1263,19 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     }
     setIsRefreshing(true);
     try {
-      const balancePromise = manualTradeService.getFastBalance(Number(selectedApi), activeSymbol);
+      const balancePromise = manualTradeService.getFastBalance(Number(selectedApi), activeSymbol, forceRefresh);
       const positionPromise = activeSymbol.includes(':')
         ? manualTradeService.getActivePosition(Number(selectedApi), activeSymbol).catch(() => null)
         : Promise.resolve(null);
 
       const [data, pos] = await Promise.all([balancePromise, positionPromise]);
       setBalanceData(data);
+      writeCachedBalance(selectedApi, activeSymbol, data);
       if (activeSymbol.includes(':')) {
         setPositionData(pos);
       }
     } catch (e) {
-      if (!isSilent) {
+      if (!isSilent && !readCachedBalance(selectedApi, activeSymbol)) {
         setBalanceData(null);
         setPositionData(null);
       }
@@ -1209,7 +1285,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       setIsLoadingPosition(false);
       setIsRefreshing(false);
     }
-  }, [selectedApi, activeSymbol, isOpen]);
+  }, [selectedApi, activeSymbol, isOpen, writeCachedBalance, readCachedBalance]);
 
   // Live background auto-refresh (5.5s desktop / 9.5s mobile thermal guard) while modal is open
   React.useEffect(() => {
@@ -3287,7 +3363,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            fetchBalance(false);
+                            fetchBalance(false, true);
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
                           className={`p-1 rounded bg-white/[0.04] hover:bg-white/10 border border-white/[0.07] text-gray-400 hover:text-cyan-300 transition-all cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''
@@ -4079,7 +4155,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          fetchBalance(false);
+                          fetchBalance(false, true);
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
                         className={`p-1 rounded-md bg-white/[0.04] hover:bg-white/10 border border-white/[0.08] text-gray-400 hover:text-cyan-300 transition-all cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''}`}
@@ -4596,7 +4672,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             <p className="text-[11px] text-gray-500">Open Limit orders, Smart Peg monitors, Smart Chase SL, and active Futures positions for {activeSymbol} will appear here.</p>
                             <button
                               type="button"
-                              onClick={() => fetchBalance(false)}
+                              onClick={() => fetchBalance(false, true)}
                               className="px-3 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-cyan-300 text-[11px] font-mono font-bold uppercase cursor-pointer"
                             >
                               Sync Exchange State
@@ -4617,7 +4693,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           <div className="relative">
                             <select
                               value={selectedApi}
-                              onChange={(e) => { setSelectedApi(e.target.value); onApiKeyChange?.(e.target.value); }}
+                              onChange={(e) => {
+                                const nextId = e.target.value;
+                                setSelectedApi(nextId);
+                                onApiKeyChange?.(nextId);
+                                try {
+                                  localStorage.setItem('cosmo_manual_selected_api_v1', nextId);
+                                } catch { }
+                              }}
                               className="w-full bg-[#04070e]/90 border border-white/10 hover:border-cyan-500/40 rounded-lg py-1.5 pl-2.5 pr-7 text-white text-[13px] font-semibold focus:outline-none focus:border-cyan-400/60 transition-colors appearance-none cursor-pointer"
                             >
                               {apiKeys.map(k => (
@@ -4779,7 +4862,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title={`Live Auto-Sync Active (${(timings.balancePollMs / 1000).toFixed(1)}s)`} />
                               <span>Bal:</span>
                               <span className="text-cyan-200 font-semibold font-mono">
-                                {isLoadingBalance ? "..." : balanceData ? (
+                                {isLoadingBalance && !balanceData ? "..." : balanceData ? (
                                   isInverseFutures
                                     ? sizeMode === 'quote'
                                       ? `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency} (~$${(((balanceData.base_free || 0) * (effectiveOrderPrice || effectiveCurrentPrice || 0))).toFixed(2)})`

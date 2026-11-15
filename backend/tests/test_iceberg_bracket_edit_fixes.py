@@ -4,7 +4,7 @@ import sys
 import types
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BACKEND_DIR not in sys.path:
@@ -863,6 +863,62 @@ class TestIcebergBracketAndEditFixes(unittest.TestCase):
             bal_rest = await ManualTradeService._fetch_wallet_balance(MockEmptyWSWithRestFallback(), "DOGE/FDUSD")
             self.assertAlmostEqual(float(bal_rest["DOGE"]["free"]), 120.0, places=4)
             self.assertAlmostEqual(float(bal_rest["FDUSD"]["free"]), 88.0, places=4)
+
+        asyncio.run(_run())
+
+    def test_get_fast_balance_uses_short_hot_cache_and_ws_failure_cooldown(self):
+        async def _run():
+            ManualTradeService._WALLET_BALANCE_CACHE.clear()
+            ManualTradeService._WS_BALANCE_DISABLED_UNTIL.clear()
+
+            ws_calls = []
+            rest_calls = []
+
+            class MockFlakyWSExchange:
+                id = "binance"
+                has = {"fetchBalanceWs": True}
+                markets = {}
+
+                async def fetch_balance_ws(self, params=None):
+                    ws_calls.append(1)
+                    raise RuntimeError("ws-api slow/unavailable")
+
+                async def fetch_balance(self):
+                    rest_calls.append(1)
+                    val = 50.0 + len(rest_calls)
+                    return {
+                        "DOGE": {"free": val, "used": 0.0, "total": val},
+                        "FDUSD": {"free": 100.0, "used": 0.0, "total": 100.0},
+                        "free": {"DOGE": val, "FDUSD": 100.0},
+                        "used": {"DOGE": 0.0, "FDUSD": 0.0},
+                        "total": {"DOGE": val, "FDUSD": 100.0},
+                    }
+
+            db = MagicMock()
+            db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+                id=7, user_id=1, exchange="binance", is_enabled=True
+            )
+            mock_ex = MockFlakyWSExchange()
+
+            with patch.object(ManualTradeService, "_get_exchange", AsyncMock(return_value=mock_ex)) as mock_get_ex:
+                # 1st call: WS fails once -> cooldown 60s -> REST runs once -> cached
+                r1 = await ManualTradeService.get_fast_balance(db, user_id=1, api_key_id=7, symbol="DOGE/FDUSD")
+                mock_get_ex.assert_awaited_with(db.query.return_value.filter.return_value.first.return_value, False, purpose="order")
+                self.assertEqual(len(ws_calls), 1)
+                self.assertEqual(len(rest_calls), 1)
+                self.assertAlmostEqual(r1["base_free"], 51.0)
+
+                # 2nd call within 2.5s (force_refresh=False): hits hot cache (0 exchange calls)
+                r2 = await ManualTradeService.get_fast_balance(db, user_id=1, api_key_id=7, symbol="DOGE/FDUSD", force_refresh=False)
+                self.assertEqual(len(ws_calls), 1)
+                self.assertEqual(len(rest_calls), 1)
+                self.assertAlmostEqual(r2["base_free"], 51.0)
+
+                # 3rd call (force_refresh=True): bypasses cache AND skips WS due to 60s cooldown -> REST only
+                r3 = await ManualTradeService.get_fast_balance(db, user_id=1, api_key_id=7, symbol="DOGE/FDUSD", force_refresh=True)
+                self.assertEqual(len(ws_calls), 1)
+                self.assertEqual(len(rest_calls), 2)
+                self.assertAlmostEqual(r3["base_free"], 52.0)
 
         asyncio.run(_run())
 

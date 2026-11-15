@@ -241,6 +241,17 @@ class ManualTradeService:
     _ML_PREDICTOR_CACHE = {}  # { f"{model_id}_{symbol}": MLL2Predictor }
     _OPEN_ORDERS_CACHE = {}  # { (api_key_id, symbol): (timestamp, result_dict) }
     _WALLET_BALANCE_CACHE = {}  # { (api_key_id, is_futures): (balance_dict, timestamp) }
+    _WS_BALANCE_DISABLED_UNTIL = {}  # { id(exchange): expire_timestamp }
+
+    @staticmethod
+    def invalidate_wallet_balance_cache(api_key_id: int = None):
+        """Invalidate short-lived wallet balance cache when orders/fills arrive."""
+        if api_key_id is None:
+            ManualTradeService._WALLET_BALANCE_CACHE.clear()
+        else:
+            for k in list(ManualTradeService._WALLET_BALANCE_CACHE.keys()):
+                if k[0] == int(api_key_id):
+                    ManualTradeService._WALLET_BALANCE_CACHE.pop(k, None)
 
     @staticmethod
     def _update_wallet_balance_cache(api_key_id: int, is_futures: bool, balance: dict):
@@ -425,20 +436,25 @@ class ManualTradeService:
                 params['subType'] = 'linear'
 
         try:
+            ex_ptr = id(exchange)
+            ws_allowed = time.time() >= ManualTradeService._WS_BALANCE_DISABLED_UNTIL.get(ex_ptr, 0.0)
             if (
-                not meta.get('is_inverse')
+                ws_allowed
+                and not meta.get('is_inverse')
                 and getattr(exchange, 'has', {}).get('fetchBalanceWs')
                 and hasattr(exchange, 'fetch_balance_ws')
             ):
                 try:
-                    ws_bal = await asyncio.wait_for(exchange.fetch_balance_ws({}), timeout=1.5)
+                    ws_bal = await asyncio.wait_for(exchange.fetch_balance_ws({}), timeout=0.55)
                     bal = ManualTradeService._normalize_ws_balance(exchange, ws_bal, meta)
                     if bal is not None:
                         if api_key_id is not None:
                             ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
                         return bal
+                    ManualTradeService._WS_BALANCE_DISABLED_UNTIL[ex_ptr] = time.time() + 60.0
                 except Exception as ws_bal_err:
-                    logger.debug(f"fetch_balance_ws fallback to REST: {ws_bal_err}")
+                    ManualTradeService._WS_BALANCE_DISABLED_UNTIL[ex_ptr] = time.time() + 60.0
+                    logger.debug(f"fetch_balance_ws fallback to REST (cooldown 60s): {ws_bal_err}")
             bal = await (exchange.fetch_balance(params) if params else exchange.fetch_balance())
             if api_key_id is not None:
                 ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
@@ -504,10 +520,10 @@ class ManualTradeService:
         return False
 
     @staticmethod
-    async def get_fast_balance(db: Session, user_id: int, api_key_id: int, symbol: str) -> dict:
+    async def get_fast_balance(db: Session, user_id: int, api_key_id: int, symbol: str, force_refresh: bool = False) -> dict:
         """
         Fetches the free balance for both the base and quote assets of the given symbol.
-        Exchange Connection Pool ব্যবহার করে বলে প্রথমবারের পরে অনেক দ্রুত।
+        Uses unthrottled order exchange pool + short 2.5s hot cache for sub-5ms repeat polls.
         """
         api_key_record = db.query(models.ApiKey).filter(
             models.ApiKey.id == api_key_id,
@@ -520,9 +536,13 @@ class ManualTradeService:
 
         is_futures = ':' in symbol
         try:
-            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
+            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
             meta = ManualTradeService._get_contract_meta(exchange, symbol)
-            balance = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)
+            balance = None
+            if not force_refresh:
+                balance = ManualTradeService._get_cached_wallet_balance(api_key_id, meta.get('is_futures', is_futures), max_age_seconds=2.5)
+            if balance is None:
+                balance = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)
 
             base_part = meta["base"]
             quote_part = meta["quote"]

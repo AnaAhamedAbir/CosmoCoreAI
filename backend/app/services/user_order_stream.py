@@ -240,6 +240,7 @@ async def _stream_worker(
                                 seen_statuses.pop(old_k, None)
 
                         ManualTradeService.invalidate_open_orders_cache(api_key_id)
+                        ManualTradeService.invalidate_wallet_balance_cache(api_key_id)
 
                         if status in TERMINAL_STATUSES:
                             rep_exp = _replaced_order_ttl.pop(oid, 0.0)

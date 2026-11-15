@@ -93,8 +93,8 @@ export const manualTradeService = {
     return response.data as ApiKey[];
   },
 
-  getFastBalance: async (apiKeyId: number, symbol: string) => {
-    const response = await api.get(`/trading/api-key-balance/${apiKeyId}?symbol=${symbol}`);
+  getFastBalance: async (apiKeyId: number, symbol: string, forceRefresh: boolean = false) => {
+    const response = await api.get(`/trading/api-key-balance/${apiKeyId}?symbol=${encodeURIComponent(symbol)}${forceRefresh ? '&force_refresh=true' : ''}`);
     return response.data as FastBalanceResponse;
   },
 

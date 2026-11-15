@@ -95,7 +95,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       } catch { }
     }
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
-    return { x: 20, y: Math.max(16, winH - 104 - 648) };
+    return { x: 20, y: Math.max(16, winH - 104 - 778) };
   });
 
   const hasUserDraggedHudRef = React.useRef<boolean>(
@@ -1297,7 +1297,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       if (!hasUserDraggedModalRef.current) {
         setModalPos(prev => ({
           x: targetLeft,
-          y: Math.max(16, winH - 104 - 648)
+          y: Math.max(16, winH - 104 - 778)
         }));
       }
       if (!hasUserDraggedHudRef.current) {
@@ -1322,8 +1322,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
     const modalEl = elOverride || modalContainerRef.current;
-    const modalW = modalEl?.offsetWidth || (isMin ? 395 : 516);
-    const modalH = modalEl?.offsetHeight || (isMin ? 180 : 648);
+    const modalW = modalEl?.offsetWidth || (isMin ? 474 : 620);
+    const modalH = modalEl?.offsetHeight || (isMin ? 216 : 778);
 
     const leftMargin = 6;
     const rightMargin = 6;
@@ -1439,8 +1439,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     const modalEl = modalContainerRef.current;
     const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
     const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
-    const modalW = modalEl?.offsetWidth || (isMinimized ? 395 : 516);
-    const modalH = modalEl?.offsetHeight || (isMinimized ? 180 : 648);
+    const modalW = modalEl?.offsetWidth || (isMinimized ? 474 : 620);
+    const modalH = modalEl?.offsetHeight || (isMinimized ? 216 : 778);
     const topMargin = isMinimized ? 4 : 12;
     const bottomMargin = isMinimized ? 8 : 16;
 
@@ -3129,20 +3129,20 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         const vh = window.visualViewport?.height || window.innerHeight;
                         const vw = window.visualViewport?.width || window.innerWidth;
                         const isSmall = vh < 920 || vw < 1200;
-                        const cap = isSmall ? 600 : 648;
+                        const cap = isSmall ? 720 : 778;
                         const y = dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y;
                         return `${Math.max(300, Math.min(cap, Math.round(vh - y - (isSmall ? 8 : 14))))}px`;
                       })()
-                    : '648px',
+                    : '778px',
                 willChange: 'transform'
               }}
               className={`cosmo-theme-modal fixed rounded-xl ${isMinimized
                 ? isThermalGuardActive
-                  ? 'w-[395px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
-                  : 'w-[395px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
+                  ? 'w-[474px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
+                  : 'w-[474px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
                 : isThermalGuardActive
-                  ? 'w-[516px] max-w-[calc(100vw-12px)] flex flex-col bg-[#080c16] border-cyan-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
-                  : 'w-[516px] max-w-[calc(100vw-12px)] flex flex-col bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
+                  ? 'w-[620px] max-w-[calc(100vw-12px)] flex flex-col bg-[#080c16] border-cyan-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
+                  : 'w-[620px] max-w-[calc(100vw-12px)] flex flex-col bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
                 } border z-[99999] overflow-hidden transition-colors duration-200 select-none`}
             >
               {isMinimized ? (
@@ -3181,7 +3181,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             onTouchStart={(e) => e.stopPropagation()}
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => e.stopPropagation()}
-                            className="pointer-events-auto bg-[#0a101d] border border-cyan-500/40 hover:border-cyan-400 rounded px-1 py-0.5 text-white font-mono font-black text-[10px] tracking-tight max-w-[105px] truncate focus:outline-none cursor-pointer shrink-0"
+                            className="pointer-events-auto bg-[#0a101d] border border-cyan-500/40 hover:border-cyan-400 rounded px-1 py-0.5 text-white font-mono font-black text-[11px] tracking-tight max-w-[105px] truncate focus:outline-none cursor-pointer shrink-0"
                             title="Switch target chart pair"
                           >
                             {availablePairs.map((p, idx) => (
@@ -3191,10 +3191,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             ))}
                           </select>
                         ) : (
-                          <span className="font-black text-white text-[11px] tracking-tight truncate max-w-[85px]">{activeSymbol}</span>
+                          <span className="font-black text-white text-[12px] tracking-tight truncate max-w-[85px]">{activeSymbol}</span>
                         )}
                         <span
-                          className={`text-[8px] uppercase px-1 py-0.2 rounded font-mono font-extrabold border leading-tight shrink-0 ${isFutures
+                          className={`text-[9px] uppercase px-1 py-0.2 rounded font-mono font-extrabold border leading-tight shrink-0 ${isFutures
                             ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
                             : 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
                             }`}
@@ -3202,7 +3202,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           {isFutures ? `${leverage}x` : 'SPOT'}
                         </span>
                         {effectiveCurrentPrice > 0 && (
-                          <span className="text-emerald-400 font-mono text-[10px] font-bold tracking-tight shrink-0">
+                          <span className="text-emerald-400 font-mono text-[11px] font-bold tracking-tight shrink-0">
                             ${formatDisplayPrice(effectiveCurrentPrice)}
                           </span>
                         )}
@@ -3219,7 +3219,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             });
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
-                          className={`text-[8px] px-1.5 py-0.5 rounded font-mono font-black uppercase leading-tight shrink-0 pointer-events-auto cursor-pointer transition-all active:scale-95 border ${orderType === 'SmartPeg'
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-black uppercase leading-tight shrink-0 pointer-events-auto cursor-pointer transition-all active:scale-95 border ${orderType === 'SmartPeg'
                             ? 'bg-amber-500/25 border-amber-400/60 text-amber-300 hover:bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.35)]'
                             : orderType === 'Market'
                               ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-300 hover:bg-cyan-500/35 shadow-[0_0_8px_rgba(6,182,212,0.3)]'
@@ -3230,18 +3230,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           {orderType === 'SmartPeg' ? '⚡PEG' : orderType === 'Market' ? 'MKT' : 'LMT'}
                         </button>
                         {tpConfig.enabled && (
-                          <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold leading-tight shrink-0">
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold leading-tight shrink-0">
                             TP
                           </span>
                         )}
                         {slConfig.enabled && (
-                          <span className="text-[8px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono font-bold leading-tight shrink-0">
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono font-bold leading-tight shrink-0">
                             SL
                           </span>
                         )}
                         {mlFilterConfig.enabled && (
                           <span
-                            className="text-[8px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight shrink-0"
+                            className="text-[9px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight shrink-0"
                             title="L2 Machine Learning Entry Filter Active"
                           >
                             AI
@@ -3249,7 +3249,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         )}
                         {openLimitOrders.length > 0 && (
                           <span
-                            className="text-[8px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse shrink-0 pointer-events-auto"
+                            className="text-[9px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse shrink-0 pointer-events-auto"
                             title={`${openLimitOrders.length} open limit orders active. Click to view and cancel.`}
                             onClick={(e) => {
                               e.stopPropagation();
@@ -3262,7 +3262,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         )}
                         {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
                           <span
-                            className={`text-[8px] px-1 py-0.2 rounded font-mono font-black leading-tight border shrink-0 ${positionData.side.toLowerCase() === 'long'
+                            className={`text-[9px] px-1 py-0.2 rounded font-mono font-black leading-tight border shrink-0 ${positionData.side.toLowerCase() === 'long'
                               ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/50'
                               : 'bg-rose-500/25 text-rose-300 border-rose-400/50'
                               }`}
@@ -3274,7 +3274,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-[8px] font-mono text-gray-400 hidden xl:inline max-w-[65px] truncate">
+                        <span className="text-[9px] font-mono text-gray-400 hidden xl:inline max-w-[65px] truncate">
                           {balanceData
                             ? isInverseFutures
                               ? `${(balanceData.base_free || 0).toFixed(1)} ${baseCurrency}`
@@ -3342,7 +3342,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               setSizeMode('base');
                               if (!selectedPercent) setSize('');
                             }}
-                            className={`px-1 py-0.2 rounded text-[8px] font-extrabold transition-all cursor-pointer leading-tight ${sizeMode === 'base'
+                            className={`px-1 py-0.2 rounded text-[9px] font-extrabold transition-all cursor-pointer leading-tight ${sizeMode === 'base'
                               ? 'bg-cyan-500 text-slate-950'
                               : 'text-gray-400 hover:text-white'
                               }`}
@@ -3355,7 +3355,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               setSizeMode('quote');
                               if (!selectedPercent) setSize('');
                             }}
-                            className={`px-1 py-0.2 rounded text-[8px] font-extrabold transition-all cursor-pointer leading-tight ${sizeMode === 'quote'
+                            className={`px-1 py-0.2 rounded text-[9px] font-extrabold transition-all cursor-pointer leading-tight ${sizeMode === 'quote'
                               ? 'bg-amber-400 text-slate-950'
                               : 'text-gray-400 hover:text-white'
                               }`}
@@ -3373,7 +3373,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             setSelectedPercent(null);
                           }}
                           placeholder="0.00"
-                          className="w-[74px] bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded py-0.5 px-1.5 text-white font-mono text-[10px] font-bold focus:outline-none transition-colors"
+                          className="w-[74px] bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded py-0.5 px-1.5 text-white font-mono text-[11px] font-bold focus:outline-none transition-colors"
                         />
 
                         {/* 4 Shortcut Point Buttons: 25%, 50%, 75%, 100% */}
@@ -3389,7 +3389,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   handlePercentSliderChange(pt);
                                 }}
                                 onPointerDown={(e) => e.stopPropagation()}
-                                className={`px-1.5 py-0.5 rounded font-mono text-[9px] font-extrabold border transition-all cursor-pointer active:scale-95 leading-tight ${isSelected
+                                className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-extrabold border transition-all cursor-pointer active:scale-95 leading-tight ${isSelected
                                   ? 'bg-gradient-to-r from-cyan-500/35 to-emerald-500/30 border-cyan-400 text-cyan-200 shadow-[0_0_8px_rgba(6,182,212,0.35)]'
                                   : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-cyan-500/40 text-gray-400 hover:text-white'
                                   }`}
@@ -3401,7 +3401,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         </div>
 
                         {/* Live Percentage Readout Pill */}
-                        <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 font-mono text-[9px] font-black shrink-0 min-w-[34px] text-center leading-tight">
+                        <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 font-mono text-[10px] font-black shrink-0 min-w-[34px] text-center leading-tight">
                           {sliderPercentValue}%
                         </span>
                       </div>
@@ -3472,7 +3472,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           }));
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className={`px-1.5 py-0.5 rounded text-[8.5px] font-mono font-extrabold uppercase tracking-wider border transition-all cursor-pointer shrink-0 flex items-center gap-1 ${mlFilterConfig.enabled
+                        className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-extrabold uppercase tracking-wider border transition-all cursor-pointer shrink-0 flex items-center gap-1 ${mlFilterConfig.enabled
                           ? 'bg-blue-600/30 border-blue-400 text-blue-200 shadow-[0_0_8px_rgba(59,130,246,0.4)]'
                           : 'bg-black/40 border-white/15 text-gray-400 hover:text-white'
                           }`}
@@ -3499,7 +3499,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           }}
                           onMouseDown={(e) => e.stopPropagation()}
                           onPointerDown={(e) => e.stopPropagation()}
-                          className="w-full appearance-none bg-[#050811]/95 hover:bg-[#080d1a] text-blue-200 font-mono text-[9px] font-bold rounded border border-blue-500/30 focus:border-blue-400 pl-1.5 pr-4 py-0.5 truncate cursor-pointer focus:outline-none transition-colors"
+                          className="w-full appearance-none bg-[#050811]/95 hover:bg-[#080d1a] text-blue-200 font-mono text-[10px] font-bold rounded border border-blue-500/30 focus:border-blue-400 pl-1.5 pr-4 py-0.5 truncate cursor-pointer focus:outline-none transition-colors"
                           title="Select Trained ML Model from ML Registry"
                         >
                           <option value="" className="bg-[#070b14] text-gray-400">
@@ -3516,7 +3516,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                       {mlFilterConfig.enabled && (
                         <span
-                          className="text-[8px] font-mono font-bold px-1 py-0.5 rounded bg-black/50 border border-blue-500/30 text-blue-300 shrink-0"
+                          className="text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-black/50 border border-blue-500/30 text-blue-300 shrink-0"
                           title="Bullish BUY Threshold / Bearish SELL Threshold"
                         >
                           <span className={tradeSide === 'Buy' ? 'text-emerald-300 font-black underline' : 'text-gray-400'}>
@@ -3566,7 +3566,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             handleSideChange('Buy');
                           }}
                           style={{ touchAction: 'none' }}
-                          className={`px-2 py-1.5 rounded-md font-mono text-[9px] font-black uppercase tracking-wider transition-all cursor-grab active:cursor-grabbing leading-none select-none ${tradeSide === 'Buy'
+                          className={`px-2 py-1.5 rounded-md font-mono text-[10px] font-black uppercase tracking-wider transition-all cursor-grab active:cursor-grabbing leading-none select-none ${tradeSide === 'Buy'
                             ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.5)] border border-emerald-400/50'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                             }`}
@@ -3589,7 +3589,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             handleSideChange('Sell');
                           }}
                           style={{ touchAction: 'none' }}
-                          className={`px-2 py-1.5 rounded-md font-mono text-[9px] font-black uppercase tracking-wider transition-all cursor-grab active:cursor-grabbing leading-none select-none ${tradeSide === 'Sell'
+                          className={`px-2 py-1.5 rounded-md font-mono text-[10px] font-black uppercase tracking-wider transition-all cursor-grab active:cursor-grabbing leading-none select-none ${tradeSide === 'Sell'
                             ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)] border border-rose-400/50'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                             }`}
@@ -3636,7 +3636,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           <TrendingDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 group-hover:text-white transition-transform shrink-0" />
                         )}
 
-                        <span className="text-[11px] uppercase tracking-wider font-black leading-none truncate">
+                        <span className="text-[12px] uppercase tracking-wider font-black leading-none truncate">
                           {isSubmitting
                             ? `${tradeSide === 'Buy' ? 'Buying' : 'Selling'}...`
                             : orderType === 'SmartPeg'
@@ -3648,7 +3648,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                         {(tpConfig.enabled || slConfig.enabled) && (
                           <span
-                            className={`text-[7.5px] font-mono px-1 py-0.2 rounded font-extrabold border shrink-0 leading-tight ${tradeSide === 'Buy'
+                            className={`text-[8.5px] font-mono px-1 py-0.2 rounded font-extrabold border shrink-0 leading-tight ${tradeSide === 'Buy'
                               ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
                               : 'bg-rose-950/80 border-rose-500/50 text-rose-300'
                               }`}
@@ -3659,7 +3659,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         )}
 
                         {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
-                          <span className="text-[9px] font-mono text-white/90 group-hover:text-white font-semibold truncate shrink-0">
+                          <span className="text-[10px] font-mono text-white/90 group-hover:text-white font-semibold truncate shrink-0">
                             • ${sizeMode === 'quote' ? Number(size).toFixed(0) : (Number(size) * effectiveOrderPrice).toFixed(0)}
                           </span>
                         )}
@@ -3679,7 +3679,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       <div
                         onPointerDown={(e) => startLineDrag(e, 'tp')}
                         style={{ touchAction: 'none' }}
-                        className="py-1 px-2 rounded-lg border border-emerald-400/40 hover:border-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-300 flex items-center justify-between font-mono text-[9px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(16,185,129,0.12)] active:scale-95 group"
+                        className="py-1 px-2 rounded-lg border border-emerald-400/40 hover:border-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-300 flex items-center justify-between font-mono text-[10px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(16,185,129,0.12)] active:scale-95 group"
                         title="Touch or drag onto chart to place Take Profit at your target price level"
                       >
                         <div className="flex items-center gap-1.5 truncate">
@@ -3687,7 +3687,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           <span className="uppercase tracking-wider">Drag TP</span>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
-                          <span className="text-[7.5px] px-1 py-0.2 rounded font-bold uppercase border bg-emerald-500/20 text-emerald-300 border-emerald-400/30">
+                          <span className="text-[8.5px] px-1 py-0.2 rounded font-bold uppercase border bg-emerald-500/20 text-emerald-300 border-emerald-400/30">
                             {tpConfig.orderType}
                           </span>
                           <MoveVertical className="w-3 h-3 text-emerald-400/70" />
@@ -3698,7 +3698,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       <div
                         onPointerDown={(e) => startLineDrag(e, 'sl')}
                         style={{ touchAction: 'none' }}
-                        className="py-1 px-2 rounded-lg border border-rose-400/40 hover:border-rose-300 bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 text-rose-300 flex items-center justify-between font-mono text-[9px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(244,63,94,0.12)] active:scale-95 group"
+                        className="py-1 px-2 rounded-lg border border-rose-400/40 hover:border-rose-300 bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 text-rose-300 flex items-center justify-between font-mono text-[10px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(244,63,94,0.12)] active:scale-95 group"
                         title="Touch or drag onto chart to place Stop Loss (Smart Chase) at your target price level"
                       >
                         <div className="flex items-center gap-1.5 truncate">
@@ -3706,7 +3706,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           <span className="uppercase tracking-wider">Drag SL</span>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
-                          <span className="text-[7.5px] px-1 py-0.2 rounded font-bold uppercase border bg-rose-500/20 text-rose-300 border-rose-400/30">
+                          <span className="text-[8.5px] px-1 py-0.2 rounded font-bold uppercase border bg-rose-500/20 text-rose-300 border-rose-400/30">
                             {slConfig.type === 'smart_chase' ? '⚡Chase' : slConfig.type === 'trailing' ? 'Trail' : 'Fixed'}
                           </span>
                           <MoveVertical className="w-3 h-3 text-rose-400/70" />
@@ -3724,12 +3724,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       {/* Sub-Row 4A: Target Order Selector (Select which specific Open Order / Bracket to Force Buy/Sell, or ALL) */}
                       <div className="flex items-center justify-between gap-1">
                         <span
-                          className="flex items-center gap-1 text-[8px] font-mono font-extrabold uppercase tracking-tight text-amber-300/90 shrink-0"
+                          className="flex items-center gap-1 text-[9px] font-mono font-extrabold uppercase tracking-tight text-amber-300/90 shrink-0"
                           title="Choose which open order or active bracket to cancel & force execute at current price"
                         >
                           <span>🎯 ORDER</span>
                           <span
-                            className={`px-1 py-0.2 rounded text-[7px] font-black leading-none border ${forceOrderTargets.length > 0
+                            className={`px-1 py-0.2 rounded text-[8px] font-black leading-none border ${forceOrderTargets.length > 0
                               ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
                               : 'bg-white/5 border-white/10 text-gray-400'
                               }`}
@@ -3749,7 +3749,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             }}
                             onMouseDown={(e) => e.stopPropagation()}
                             onPointerDown={(e) => e.stopPropagation()}
-                            className="w-full appearance-none bg-[#050811]/95 hover:bg-[#080d1a] text-cyan-200 font-mono text-[9px] font-bold rounded border border-cyan-500/35 focus:border-amber-400/80 pl-1.5 pr-4 py-0.5 truncate cursor-pointer focus:outline-none transition-colors"
+                            className="w-full appearance-none bg-[#050811]/95 hover:bg-[#080d1a] text-cyan-200 font-mono text-[10px] font-bold rounded border border-cyan-500/35 focus:border-amber-400/80 pl-1.5 pr-4 py-0.5 truncate cursor-pointer focus:outline-none transition-colors"
                             title="Select specific open order/bracket to Force Buy or Force Sell, or select ALL / Wallet Balance"
                           >
                             {forceOrderTargets.map((t, idx) => (
@@ -3792,7 +3792,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               }
                             }}
                             onPointerDown={(e) => e.stopPropagation()}
-                            className="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500 border border-rose-500/40 text-rose-200 hover:text-white text-[8px] font-mono font-black uppercase tracking-tight transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50"
+                            className="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500 border border-rose-500/40 text-rose-200 hover:text-white text-[9px] font-mono font-black uppercase tracking-tight transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50"
                             title={selectedForceOrderId !== 'all' ? `Cancel Selected Order #${selectedForceOrderId}` : 'Cancel ALL Open Orders'}
                           >
                             {cancellingOrderId || isCancellingAll ? (
@@ -3804,12 +3804,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         )}
                       </div>
 
-                      {/* Sub-Row 4B: Execution Mode (1. Limit Maker 0% Fee | 2. Market) + Force Buy & Force Sell Triggers */}
+                      {/* Sub-Row 4B: Compact Force Execution Mode Bar (Maker 0% / Market + Close / Stop) */}
                       <div className="flex items-center justify-between gap-1.5">
-                        {/* Left: Emergency Label + 2 Execution Mode Options (1. Limit Maker 0% Fee | 2. Market) */}
                         <div className="flex items-center gap-1 shrink-0">
                           <span
-                            className="flex items-center gap-0.5 text-[8px] font-black uppercase tracking-wider text-amber-300"
+                            className="flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wider text-amber-300"
                             title="Emergency Force Trigger: Cancels selected order & executes at current price"
                           >
                             <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400 animate-pulse" />
@@ -3824,7 +3823,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 setEmergencyMode('limit_maker');
                               }}
                               onPointerDown={(e) => e.stopPropagation()}
-                              className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${emergencyMode === 'limit_maker'
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-extrabold transition-all cursor-pointer leading-none ${emergencyMode === 'limit_maker'
                                 ? 'bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
                                 : 'text-gray-400 hover:text-white'
                                 }`}
@@ -3839,7 +3838,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 setEmergencyMode('market');
                               }}
                               onPointerDown={(e) => e.stopPropagation()}
-                              className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-extrabold transition-all cursor-pointer leading-none ${emergencyMode === 'market'
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-extrabold transition-all cursor-pointer leading-none ${emergencyMode === 'market'
                                 ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
                                 : 'text-gray-400 hover:text-white'
                                 }`}
@@ -3850,8 +3849,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           </div>
                         </div>
 
-                        {/* Right: Instant Emergency Force Buy & Force Sell Triggers (+ Stop button if Peg/Chase active) */}
-                        <div className="flex items-center gap-1 flex-1 justify-end">
+                        <div className="flex items-center gap-1 shrink-0">
                           {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
                             <button
                               type="button"
@@ -3861,7 +3859,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 handleClosePosition();
                               }}
                               onPointerDown={(e) => e.stopPropagation()}
-                              className="px-1.5 py-1 rounded bg-rose-600 hover:bg-rose-500 border border-rose-400 text-white font-mono text-[8px] font-black uppercase tracking-tight transition-all cursor-pointer active:scale-95 shrink-0 shadow-[0_0_8px_rgba(244,63,94,0.4)] disabled:opacity-50"
+                              className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 border border-rose-400 text-white font-mono text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer active:scale-95 shrink-0 shadow-[0_0_8px_rgba(244,63,94,0.4)] disabled:opacity-50"
                               title={`Instant Market Close Active ${positionData.side.toUpperCase()} Position (${positionData.amount} ${baseCurrency})`}
                             >
                               {isClosingPosition ? <RefreshCw className="w-2 h-2 animate-spin" /> : <span>⚡ CLOSE</span>}
@@ -3882,105 +3880,114 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 }
                               }}
                               onPointerDown={(e) => e.stopPropagation()}
-                              className="px-1.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500 border border-amber-400/60 text-amber-200 hover:text-slate-950 font-mono text-[8px] font-black uppercase tracking-tight transition-all cursor-pointer active:scale-95 shrink-0"
+                              className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500 border border-amber-400/60 text-amber-200 hover:text-slate-950 font-mono text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer active:scale-95 shrink-0"
                               title="Stop Active Smart Peg / Chase Immediately"
                             >
                               ⏹ STOP
                             </button>
                           )}
-
-                          <button
-                            type="button"
-                            disabled={isEmergencySubmitting || selectedForceTarget?.side === 'sell'}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (selectedForceTarget?.side === 'sell') return;
-                              handleEmergencyForceTrade('Buy');
-                            }}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            className={`flex-1 py-1 px-1.5 rounded font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${selectedForceTarget?.side === 'sell'
-                              ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed select-none'
-                              : `bg-emerald-500/15 dark:bg-gradient-to-r dark:from-emerald-600/35 dark:to-cyan-600/35 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:to-cyan-500 border hover:border-emerald-400 dark:hover:border-white text-emerald-700 dark:text-emerald-200 hover:text-white dark:hover:text-slate-950 shadow-sm dark:shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:shadow-[0_0_14px_rgba(16,185,129,0.5)] cursor-pointer active:scale-95 disabled:opacity-50 ${selectedForceTarget?.side === 'buy'
-                                ? 'border-emerald-500 dark:border-emerald-300 ring-1 ring-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.35)]'
-                                : 'border-emerald-500/50 dark:border-emerald-400/60'
-                              }`
-                              }`}
-                            title={
-                              selectedForceTarget?.side === 'sell'
-                                ? 'Cannot Force Buy: Selected order is a SELL / Exit order'
-                                : selectedForceTarget
-                                  ? `Force BUY Selected Order (${selectedForceTarget.label}) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                  }`
-                                  : `Emergency Force BUY (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                  }`
-                            }
-                          >
-                            {isEmergencySubmitting && emergencySubmittingSide === 'Buy' ? (
-                              <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
-                            ) : (
-                              <Zap className={`w-2.5 h-2.5 shrink-0 ${selectedForceTarget?.side === 'sell' ? 'opacity-30' : 'fill-current'}`} />
-                            )}
-                            <span>FORCE BUY</span>
-                            {selectedForceTarget?.side === 'buy' && (
-                              <span className="text-[7.5px] font-black text-emerald-300 bg-emerald-950/80 px-1 py-0.2 rounded border border-emerald-500/50 leading-none">
-                                FILL
-                              </span>
-                            )}
-                            <span className="text-[8px] opacity-90">
-                              {selectedForceTarget
-                                ? `${Number(selectedForceTarget.amount.toFixed(1))}`
-                                : sliderPercentValue > 0
-                                  ? `${sliderPercentValue}%`
-                                  : '100%'}
-                            </span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={isEmergencySubmitting || selectedForceTarget?.side === 'buy'}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (selectedForceTarget?.side === 'buy') return;
-                              handleEmergencyForceTrade('Sell');
-                            }}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            className={`flex-1 py-1 px-1.5 rounded font-mono text-[9px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${selectedForceTarget?.side === 'buy'
-                              ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed select-none'
-                              : `bg-rose-500/15 dark:bg-gradient-to-r dark:from-rose-600/40 dark:to-amber-600/35 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:to-amber-500 border hover:border-rose-400 dark:hover:border-white text-rose-700 dark:text-rose-200 hover:text-white shadow-sm dark:shadow-[0_0_10px_rgba(244,63,94,0.25)] hover:shadow-[0_0_14px_rgba(244,63,94,0.55)] cursor-pointer active:scale-95 disabled:opacity-50 ${selectedForceTarget?.side === 'sell'
-                                ? 'border-rose-500 dark:border-rose-300 ring-1 ring-rose-400/60 shadow-[0_0_12px_rgba(244,63,94,0.35)]'
-                                : 'border-rose-500/50 dark:border-rose-400/60'
-                              }`
-                              }`}
-                            title={
-                              selectedForceTarget?.side === 'buy'
-                                ? 'Cannot Force Sell: Selected pending order is a BUY (Entry not filled yet)'
-                                : selectedForceTarget
-                                  ? `Force SELL Selected Order (${selectedForceTarget.label}) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                  }`
-                                  : `Emergency Force SELL (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                  }`
-                            }
-                          >
-                            {isEmergencySubmitting && emergencySubmittingSide === 'Sell' ? (
-                              <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
-                            ) : (
-                              <Zap className={`w-2.5 h-2.5 shrink-0 ${selectedForceTarget?.side === 'buy' ? 'opacity-30' : 'fill-current'}`} />
-                            )}
-                            <span>FORCE SELL</span>
-                            {selectedForceTarget?.side === 'sell' && (
-                              <span className="text-[7.5px] font-black text-rose-300 bg-rose-950/80 px-1 py-0.2 rounded border border-rose-500/50 leading-none">
-                                EXIT
-                              </span>
-                            )}
-                            <span className="text-[8px] opacity-90">
-                              {selectedForceTarget
-                                ? `${Number(selectedForceTarget.amount.toFixed(1))}`
-                                : sliderPercentValue > 0
-                                  ? `${sliderPercentValue}%`
-                                  : '100%'}
-                            </span>
-                          </button>
                         </div>
+                      </div>
+
+                      {/* Sub-Row 4C: Full-Width Horizontally Long Force Buy & Force Sell Buttons (matching Row 3 Limit Buy/Sell style) */}
+                      <div className="flex flex-col gap-1">
+                        <button
+                          type="button"
+                          disabled={isEmergencySubmitting || selectedForceTarget?.side === 'sell'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (selectedForceTarget?.side === 'sell') return;
+                            handleEmergencyForceTrade('Buy');
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className={`relative w-full overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all select-none group shadow-sm ${selectedForceTarget?.side === 'sell'
+                            ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed'
+                            : `bg-emerald-500/15 dark:bg-gradient-to-b dark:from-emerald-500/30 dark:via-emerald-600/25 dark:to-green-900/40 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:via-emerald-600 dark:hover:to-green-700 text-emerald-700 dark:text-emerald-300 hover:text-white border hover:border-emerald-400 dark:hover:border-emerald-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)] cursor-pointer active:scale-95 disabled:opacity-50 ${selectedForceTarget?.side === 'buy'
+                              ? 'border-emerald-500 dark:border-emerald-300 ring-1 ring-emerald-400/50'
+                              : 'border-emerald-500/40 dark:border-emerald-400/50'
+                            }`
+                            }`}
+                          title={
+                            selectedForceTarget?.side === 'sell'
+                              ? 'Cannot Force Buy: Selected order is a SELL / Exit order'
+                              : selectedForceTarget
+                                ? `Force BUY Selected Order (${selectedForceTarget.label}) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                }`
+                                : `Emergency Force BUY (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                }`
+                          }
+                        >
+                          {isEmergencySubmitting && emergencySubmittingSide === 'Buy' ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          ) : (
+                            <Zap className={`w-3.5 h-3.5 shrink-0 transition-transform ${selectedForceTarget?.side === 'sell' ? 'opacity-30' : 'text-emerald-600 dark:text-emerald-400 fill-current group-hover:text-white group-hover:scale-110'}`} />
+                          )}
+                          <span className="text-[12px] uppercase tracking-wider font-black leading-none truncate">
+                            FORCE BUY
+                          </span>
+                          {selectedForceTarget?.side === 'buy' && (
+                            <span className="text-[8.5px] font-mono px-1 py-0.2 rounded font-extrabold border shrink-0 leading-tight bg-emerald-950/80 border-emerald-500/50 text-emerald-300">
+                              FILL
+                            </span>
+                          )}
+                          <span className="text-[10px] font-mono text-white/90 group-hover:text-white font-semibold truncate shrink-0">
+                            •{' '}
+                            {selectedForceTarget
+                              ? `${Number(selectedForceTarget.amount.toFixed(1))} ${baseCurrency}${effectiveCurrentPrice > 0 ? ` ($${(selectedForceTarget.amount * effectiveCurrentPrice).toFixed(0)})` : ''}`
+                              : sliderPercentValue > 0
+                                ? `${sliderPercentValue}%`
+                                : '100%'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isEmergencySubmitting || selectedForceTarget?.side === 'buy'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (selectedForceTarget?.side === 'buy') return;
+                            handleEmergencyForceTrade('Sell');
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className={`relative w-full overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all select-none group shadow-sm ${selectedForceTarget?.side === 'buy'
+                            ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed'
+                            : `bg-rose-500/15 dark:bg-gradient-to-b dark:from-rose-500/30 dark:via-rose-600/25 dark:to-red-900/40 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:via-rose-600 dark:hover:to-red-700 text-rose-700 dark:text-rose-300 hover:text-white border hover:border-rose-400 dark:hover:border-rose-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)] cursor-pointer active:scale-95 disabled:opacity-50 ${selectedForceTarget?.side === 'sell'
+                              ? 'border-rose-500 dark:border-rose-300 ring-1 ring-rose-400/50'
+                              : 'border-rose-500/40 dark:border-rose-400/50'
+                            }`
+                            }`}
+                          title={
+                            selectedForceTarget?.side === 'buy'
+                              ? 'Cannot Force Sell: Selected pending order is a BUY (Entry not filled yet)'
+                              : selectedForceTarget
+                                ? `Force SELL Selected Order (${selectedForceTarget.label}) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                }`
+                                : `Emergency Force SELL (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
+                                }`
+                          }
+                        >
+                          {isEmergencySubmitting && emergencySubmittingSide === 'Sell' ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          ) : (
+                            <Zap className={`w-3.5 h-3.5 shrink-0 transition-transform ${selectedForceTarget?.side === 'buy' ? 'opacity-30' : 'text-rose-600 dark:text-rose-400 fill-current group-hover:text-white group-hover:scale-110'}`} />
+                          )}
+                          <span className="text-[12px] uppercase tracking-wider font-black leading-none truncate">
+                            FORCE SELL
+                          </span>
+                          {selectedForceTarget?.side === 'sell' && (
+                            <span className="text-[8.5px] font-mono px-1 py-0.2 rounded font-extrabold border shrink-0 leading-tight bg-rose-950/80 border-rose-500/50 text-rose-300">
+                              EXIT
+                            </span>
+                          )}
+                          <span className="text-[10px] font-mono text-white/90 group-hover:text-white font-semibold truncate shrink-0">
+                            •{' '}
+                            {selectedForceTarget
+                              ? `${Number(selectedForceTarget.amount.toFixed(1))} ${baseCurrency}${effectiveCurrentPrice > 0 ? ` ($${(selectedForceTarget.amount * effectiveCurrentPrice).toFixed(0)})` : ''}`
+                              : sliderPercentValue > 0
+                                ? `${sliderPercentValue}%`
+                                : '100%'}
+                          </span>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -4010,11 +4017,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse shrink-0" />
                       <div className="flex flex-col text-left min-w-0 flex-1 overflow-hidden">
                         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                          <span className="font-black text-white text-xs sm:text-[13px] tracking-tight truncate max-w-[115px]">
+                          <span className="font-black text-white text-[13px] sm:text-[14.5px] tracking-tight truncate max-w-[115px]">
                             {activeSymbol}
                           </span>
                           <span
-                            className={`text-[7.5px] uppercase px-1.5 py-0.2 rounded font-mono font-black border leading-tight shrink-0 ${isFutures
+                            className={`text-[8.5px] uppercase px-1.5 py-0.2 rounded font-mono font-black border leading-tight shrink-0 ${isFutures
                               ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
                               : 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
                               }`}
@@ -4022,27 +4029,27 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             {isFutures ? `${leverage}x FUT` : 'SPOT'}
                           </span>
                           {effectiveCurrentPrice > 0 && (
-                            <span className="text-emerald-400 font-mono text-[10px] font-bold tracking-tight shrink-0">
+                            <span className="text-emerald-400 font-mono text-[11px] font-bold tracking-tight shrink-0">
                               ${formatDisplayPrice(effectiveCurrentPrice)}
                             </span>
                           )}
                           {tpConfig.enabled && (
-                            <span className="text-[7.5px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 font-mono font-bold leading-tight shrink-0">
+                            <span className="text-[8.5px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 font-mono font-bold leading-tight shrink-0">
                               TP
                             </span>
                           )}
                           {slConfig.enabled && (
-                            <span className="text-[7.5px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/35 text-rose-300 font-mono font-bold leading-tight shrink-0">
+                            <span className="text-[8.5px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/35 text-rose-300 font-mono font-bold leading-tight shrink-0">
                               SL
                             </span>
                           )}
                           {!isFutures && orderType === 'Limit' && isIceberg && (
-                            <span className="text-[7.5px] px-1 py-0.2 rounded bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 font-mono font-bold leading-tight shrink-0">
+                            <span className="text-[8.5px] px-1 py-0.2 rounded bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 font-mono font-bold leading-tight shrink-0">
                               ICE
                             </span>
                           )}
                           {mlFilterConfig.enabled && (
-                            <span className="text-[7.5px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight shrink-0">
+                            <span className="text-[8.5px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight shrink-0">
                               AI
                             </span>
                           )}
@@ -4054,14 +4061,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 setActiveTerminalTab('orders');
                               }}
                               onPointerDown={(e) => e.stopPropagation()}
-                              className="text-[7.5px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse shrink-0 pointer-events-auto"
+                              className="text-[8.5px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse shrink-0 pointer-events-auto"
                               title="Jump to Open Orders"
                             >
                               {openLimitOrders.length} OPEN
                             </button>
                           )}
                         </div>
-                        <span className="text-[8.5px] text-gray-400 font-mono tracking-wide truncate">
+                        <span className="text-[9.5px] text-gray-400 font-mono tracking-wide truncate">
                           QUANT TERMINAL • {isFutures ? `${marginMode.toUpperCase()} MARGIN` : 'SPOT EXECUTION'}
                         </span>
                       </div>
@@ -4112,7 +4119,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                   {/* Multi-Chart Pair Selector Dropdown */}
                   {availablePairs && availablePairs.length > 1 && (
                     <div className="px-3 py-1.5 bg-[#04070e]/90 border-b border-cyan-500/15 flex items-center gap-2 shrink-0">
-                      <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1 shrink-0">
+                      <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1 shrink-0">
                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                         PAIR ({availablePairs.length})
                       </label>
@@ -4125,7 +4132,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               handleSelectPair(selected);
                             }
                           }}
-                          className="w-full bg-[#0a101d] border border-cyan-500/30 hover:border-cyan-400/60 rounded-lg py-1 pl-2.5 pr-7 text-white font-mono font-bold text-[11px] focus:outline-none focus:border-cyan-400 transition-all appearance-none cursor-pointer"
+                          className="w-full bg-[#0a101d] border border-cyan-500/30 hover:border-cyan-400/60 rounded-lg py-1 pl-2.5 pr-7 text-white font-mono font-bold text-[12px] focus:outline-none focus:border-cyan-400 transition-all appearance-none cursor-pointer"
                         >
                           {availablePairs.map((p, idx) => {
                             const pPrice = formatDisplayPrice(p.price);
@@ -4148,16 +4155,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     </div>
                   )}
 
-                  {/* Top Tactical Control Strip: Side + Order Mode (Always Accessible) */}
-                  <div className="px-3 py-1.5 bg-[#04070e]/75 border-b border-white/10 shrink-0 space-y-1.5">
-                    <div className="grid grid-cols-12 gap-1.5 items-center">
-                      {/* Buy / Sell Segmented Switch (5 cols) */}
-                      <div className="col-span-5 flex p-0.5 rounded-lg bg-[#0a101d] border border-white/10">
+                  {/* Top Tactical Control Strip: Line 1 = Buy/Sell (Larger), Line 2 = Market/Limit/Peg */}
+                  <div className="px-3 py-2 bg-[#04070e]/75 border-b border-white/10 shrink-0 space-y-2">
+                    <div className="flex flex-col gap-1.5">
+                      {/* Line 1: Larger Full-Width Buy / Sell Segmented Switch */}
+                      <div className="flex w-full p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-1">
                         <button
                           type="button"
                           onClick={() => handleSideChange('Buy')}
-                          className={`flex-1 py-1 text-[10px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Buy'
-                            ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/60 shadow-[0_0_10px_rgba(16,185,129,0.25)]'
+                          className={`flex-1 py-2 text-[13px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Buy'
+                            ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.28)]'
                             : 'text-gray-500 hover:text-white border border-transparent'
                             }`}
                         >
@@ -4166,8 +4173,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleSideChange('Sell')}
-                          className={`flex-1 py-1 text-[10px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Sell'
-                            ? 'bg-rose-500/25 text-rose-300 border border-rose-400/60 shadow-[0_0_10px_rgba(244,63,94,0.25)]'
+                          className={`flex-1 py-2 text-[13px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Sell'
+                            ? 'bg-rose-500/25 text-rose-300 border border-rose-400/60 shadow-[0_0_12px_rgba(244,63,94,0.28)]'
                             : 'text-gray-500 hover:text-white border border-transparent'
                             }`}
                         >
@@ -4175,14 +4182,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         </button>
                       </div>
 
-                      {/* Order Type Toggle: Market | Limit | Smart Peg (7 cols) */}
-                      <div className="col-span-7 flex p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-0.5">
+                      {/* Line 2: Full-Width Order Type Toggle: Market | Limit | Smart Peg */}
+                      <div className="flex w-full p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-1">
                         {(['Market', 'Limit', 'SmartPeg'] as const).map((type) => (
                           <button
                             key={type}
                             type="button"
                             onClick={() => setOrderType(type)}
-                            className={`flex-1 py-1 text-[9.5px] font-black rounded-md transition-all flex items-center justify-center gap-0.5 cursor-pointer ${orderType === type
+                            className={`flex-1 py-1.5 text-[11.5px] font-black rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer ${orderType === type
                               ? type === 'SmartPeg'
                                 ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.35)]'
                                 : 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
@@ -4191,7 +4198,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           >
                             {type === 'SmartPeg' ? (
                               <>
-                                <Zap className="w-2.5 h-2.5 fill-current" />
+                                <Zap className="w-3 h-3 fill-current" />
                                 <span>PEG</span>
                               </>
                             ) : (
@@ -4204,7 +4211,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                     {/* Ultra-Compact Live Telemetry Quick Strip when Peg/Chase/Position active */}
                     {(activePeg || activeChase || hasActiveFuturesPos) && (
-                      <div className="flex items-center justify-between gap-2 px-2 py-1 rounded-md bg-cyan-950/30 border border-cyan-500/25 text-[9px] font-mono">
+                      <div className="flex items-center justify-between gap-2 px-2 py-1 rounded-md bg-cyan-950/30 border border-cyan-500/25 text-[10px] font-mono">
                         {activePeg ? (
                           <>
                             <span className="text-amber-300 font-bold flex items-center gap-1 truncate">
@@ -4215,7 +4222,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               type="button"
                               disabled={isStoppingPeg}
                               onClick={() => handleStopSmartPeg(activePeg)}
-                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[8px] cursor-pointer shrink-0 disabled:opacity-50"
+                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[9px] cursor-pointer shrink-0 disabled:opacity-50"
                             >
                               {isStoppingPeg ? 'Stopping...' : 'Stop Peg'}
                             </button>
@@ -4230,7 +4237,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               type="button"
                               disabled={isStoppingChase}
                               onClick={() => handleStopSmartChase(activeChase)}
-                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[8px] cursor-pointer shrink-0 disabled:opacity-50"
+                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[9px] cursor-pointer shrink-0 disabled:opacity-50"
                             >
                               {isStoppingChase ? 'Stopping...' : 'Stop Chase'}
                             </button>
@@ -4245,7 +4252,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               type="button"
                               disabled={isClosingPosition}
                               onClick={handleClosePosition}
-                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[8px] cursor-pointer shrink-0 disabled:opacity-50"
+                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[9px] cursor-pointer shrink-0 disabled:opacity-50"
                             >
                               {isClosingPosition ? 'Closing...' : 'Close Pos'}
                             </button>
@@ -4260,7 +4267,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setActiveTerminalTab('order')}
-                      className={`flex-1 px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'order'
+                      className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'order'
                         ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                         : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                         }`}
@@ -4270,7 +4277,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setActiveTerminalTab('brackets')}
-                      className={`flex-1 px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'brackets'
+                      className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'brackets'
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
                         : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                         }`}
@@ -4286,7 +4293,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setActiveTerminalTab('ai')}
-                      className={`flex-1 px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'ai'
+                      className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'ai'
                         ? 'bg-blue-500/20 text-blue-300 border border-blue-400/50 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
                         : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                         }`}
@@ -4299,14 +4306,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setActiveTerminalTab('orders')}
-                      className={`flex-1 px-2 py-1 text-[9px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'orders'
+                      className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'orders'
                         ? 'bg-amber-500/20 text-amber-300 border border-amber-400/50 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
                         : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                         }`}
                     >
                       <span>📋 Orders</span>
                       {ordersBadgeCount > 0 && (
-                        <span className="px-1 py-0.2 rounded bg-amber-500/30 text-amber-200 font-mono text-[8px] leading-none">
+                        <span className="px-1 py-0.2 rounded bg-amber-500/30 text-amber-200 font-mono text-[9px] leading-none">
                           {ordersBadgeCount}
                         </span>
                       )}
@@ -4329,28 +4336,28 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                                   <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                                 </span>
-                                <span className="text-[11px] font-black tracking-wide text-amber-200 uppercase flex items-center gap-1">
+                                <span className="text-[12px] font-black tracking-wide text-amber-200 uppercase flex items-center gap-1">
                                   <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                                   Smart Peg Entry Active
                                 </span>
                               </div>
-                              <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                              <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
                                 Attempt {activePeg.current_attempt || 1}/{activePeg.max_attempts ? activePeg.max_attempts : '∞'}
                               </span>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
+                            <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
                               <div className="text-left">
-                                <span className="text-gray-400 block text-[8.5px] uppercase">Side</span>
+                                <span className="text-gray-400 block text-[9.5px] uppercase">Side</span>
                                 <span className={`font-bold ${activePeg.side?.toLowerCase() === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
                                   {activePeg.side?.toUpperCase()} (Maker)
                                 </span>
                               </div>
                               <div className="text-right">
-                                <span className="text-gray-400 block text-[8.5px] uppercase">Best Maker Price</span>
+                                <span className="text-gray-400 block text-[9.5px] uppercase">Best Maker Price</span>
                                 <span className="text-amber-300 font-bold">{activePeg.current_maker_price || 'Active'}</span>
                               </div>
-                              <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
+                              <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[10px]">
                                 <span className="text-gray-400">Target Size / Filled:</span>
                                 <span className="text-gray-200 font-semibold">{activePeg.filled_amount || 0} / {activePeg.amount}</span>
                               </div>
@@ -4360,7 +4367,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               type="button"
                               disabled={isStoppingPeg}
                               onClick={() => handleStopSmartPeg(activePeg)}
-                              className="w-full py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-[11px] uppercase tracking-wider shadow-[0_0_12px_rgba(239,68,68,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                              className="w-full py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-[12px] uppercase tracking-wider shadow-[0_0_12px_rgba(239,68,68,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                             >
                               <Square className="w-3 h-3 fill-white" />
                               {isStoppingPeg ? 'Stopping Peg...' : 'Stop Smart Peg Entry'}
@@ -4376,33 +4383,33 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                                   <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
                                 </span>
-                                <span className="text-[11px] font-black tracking-wide text-red-200 uppercase flex items-center gap-1">
+                                <span className="text-[12px] font-black tracking-wide text-red-200 uppercase flex items-center gap-1">
                                   <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                                   {activeChase.chase_mode === 'dynamic_bbo' ? 'Dynamic BBO Peg Chasing' : 'Smart Chase SL Chasing'}
                                 </span>
                               </div>
-                              <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                              <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
                                 Attempt {activeChase.current_attempt || 1}/{activeChase.max_attempts ? activeChase.max_attempts : '∞'}
                               </span>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
+                            <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
                               <div className="text-left">
-                                <span className="text-gray-400 block text-[8.5px] uppercase">SL Trigger</span>
+                                <span className="text-gray-400 block text-[9.5px] uppercase">SL Trigger</span>
                                 <span className="text-white font-bold">
                                   {activeChase.trigger_price || '—'}
                                   {activeChase.trigger_source && (
-                                    <span className="text-[8.5px] text-cyan-300 font-normal ml-1">
+                                    <span className="text-[9.5px] text-cyan-300 font-normal ml-1">
                                       ({activeChase.trigger_source === 'bid_ask' ? '⚡ Bid/Ask' : '📊 Last'})
                                     </span>
                                   )}
                                 </span>
                               </div>
                               <div className="text-right">
-                                <span className="text-gray-400 block text-[8.5px] uppercase">Maker Price</span>
+                                <span className="text-gray-400 block text-[9.5px] uppercase">Maker Price</span>
                                 <span className="text-amber-300 font-bold">{activeChase.current_maker_price || 'Active'}</span>
                               </div>
-                              <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[9px]">
+                              <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[10px]">
                                 <span className="text-gray-400">Position Remaining:</span>
                                 <span className="text-gray-200 font-semibold">{activeChase.amount} ({activeChase.side?.toUpperCase()})</span>
                               </div>
@@ -4412,7 +4419,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               type="button"
                               disabled={isStoppingChase}
                               onClick={() => handleStopSmartChase(activeChase)}
-                              className="w-full py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-[11px] uppercase tracking-wider shadow-[0_0_12px_rgba(239,68,68,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                              className="w-full py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-[12px] uppercase tracking-wider shadow-[0_0_12px_rgba(239,68,68,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                             >
                               <Square className="w-3 h-3 fill-white" />
                               {isStoppingChase ? 'Stopping Chase...' : 'Stop Smart Chase SL'}
@@ -4436,24 +4443,24 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0" />
                                     <div className="flex flex-col text-left">
                                       <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="text-[10.5px] font-bold text-cyan-300 uppercase leading-tight">{titleLabel}</span>
+                                        <span className="text-[11.5px] font-bold text-cyan-300 uppercase leading-tight">{titleLabel}</span>
                                         {activeSoftwareSl.peg_strategy === 'wall_aware' && (
-                                          <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                                          <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
                                             🧱 Wall-Aware
                                           </span>
                                         )}
                                         {activeSoftwareSl.peg_strategy === 'inside_spread' && (
-                                          <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
+                                          <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
                                             🎯 Inside-Spread
                                           </span>
                                         )}
                                         {activeSoftwareSl.auto_breakeven_enabled && (
-                                          <span className={`text-[8px] font-mono px-1 py-0.2 rounded font-bold border ${activeSoftwareSl.breakeven_activated ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'}`}>
+                                          <span className={`text-[9px] font-mono px-1 py-0.2 rounded font-bold border ${activeSoftwareSl.breakeven_activated ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'}`}>
                                             {activeSoftwareSl.breakeven_activated ? '🛡️ BE Active' : '🛡️ Auto-BE'}
                                           </span>
                                         )}
                                       </div>
-                                      <span className="text-[10px] text-gray-300 font-mono">
+                                      <span className="text-[11px] text-gray-300 font-mono">
                                         SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
                                         {activeSoftwareSl.trigger_source === 'bid_ask' ? ' • ⚡ Bid/Ask' : ' • 📊 Last'}
                                       </span>
@@ -4463,7 +4470,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     type="button"
                                     disabled={isStoppingChase}
                                     onClick={() => handleStopSmartChase(activeSoftwareSl)}
-                                    className="py-1 px-2 rounded-md bg-white/5 hover:bg-red-950/80 hover:text-red-300 hover:border-red-500/50 border border-white/10 text-gray-300 text-[9.5px] font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                                    className="py-1 px-2 rounded-md bg-white/5 hover:bg-red-950/80 hover:text-red-300 hover:border-red-500/50 border border-white/10 text-gray-300 text-[10.5px] font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50 shrink-0"
                                   >
                                     {isStoppingChase ? 'Cancelling...' : 'Cancel SL'}
                                   </button>
@@ -4479,15 +4486,15 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]'} animate-pulse`} />
                               <div className="flex flex-col text-left min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-[10px] font-extrabold text-white uppercase tracking-tight">Active Position:</span>
-                                  <span className={`text-[9px] font-mono font-black px-1.5 py-0.2 rounded border ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'}`}>
+                                  <span className="text-[11px] font-extrabold text-white uppercase tracking-tight">Active Position:</span>
+                                  <span className={`text-[10px] font-mono font-black px-1.5 py-0.2 rounded border ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'}`}>
                                     {positionData.side.toUpperCase()}
                                   </span>
-                                  <span className="text-[10px] font-mono font-bold text-gray-200">
+                                  <span className="text-[11px] font-mono font-bold text-gray-200">
                                     {isInverseFutures && positionData.contracts ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(2)} ${baseCurrency})` : `${positionData.amount} ${baseCurrency}`}
                                   </span>
                                 </div>
-                                <span className="text-[8.5px] text-gray-400 font-mono">
+                                <span className="text-[9.5px] text-gray-400 font-mono">
                                   Instant Market Exit / Flatten
                                 </span>
                               </div>
@@ -4497,7 +4504,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               type="button"
                               disabled={isClosingPosition}
                               onClick={handleClosePosition}
-                              className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-mono text-[10px] font-black uppercase tracking-wider shadow-[0_0_12px_rgba(244,63,94,0.35)] transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
+                              className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-mono text-[11px] font-black uppercase tracking-wider shadow-[0_0_12px_rgba(244,63,94,0.35)] transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
                               title="Close active position immediately at Market price"
                             >
                               {isClosingPosition ? (
@@ -4515,7 +4522,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             <div className="flex items-center justify-between pb-1 border-b border-white/10">
                               <div className="flex items-center gap-1.5">
                                 <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                                <span className="text-[10.5px] font-bold text-cyan-200 uppercase tracking-wide font-mono">
+                                <span className="text-[11.5px] font-bold text-cyan-200 uppercase tracking-wide font-mono">
                                   Open Orders ({openLimitOrders.length})
                                 </span>
                               </div>
@@ -4523,7 +4530,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 type="button"
                                 disabled={isCancellingAll}
                                 onClick={handleCancelAllOrders}
-                                className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[9.5px] font-mono font-bold tracking-wider transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10.5px] font-mono font-bold tracking-wider transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
                                 title="Cancel all open orders on this symbol"
                               >
                                 {isCancellingAll ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Trash2 className="w-2.5 h-2.5" />}
@@ -4539,20 +4546,20 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 return (
                                   <div
                                     key={ord.id}
-                                    className="p-1.5 rounded-lg bg-black/50 border border-white/10 flex items-center justify-between text-[10px] font-mono"
+                                    className="p-1.5 rounded-lg bg-black/50 border border-white/10 flex items-center justify-between text-[11px] font-mono"
                                   >
                                     <div className="flex items-center gap-1.5 min-w-0">
                                       <span
-                                        className={`px-1 py-0.2 rounded text-[8px] font-bold uppercase ${isBuy
+                                        className={`px-1 py-0.2 rounded text-[9px] font-bold uppercase ${isBuy
                                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                                           : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                                           }`}
                                       >
                                         {isBuy ? 'BUY' : 'SELL'}
                                       </span>
-                                      <span className="text-[8px] text-cyan-300/80 uppercase font-bold">[{mode}]</span>
+                                      <span className="text-[9px] text-cyan-300/80 uppercase font-bold">[{mode}]</span>
                                       {ord.isIceberg && ord.icebergQty && (
-                                        <span className="text-[7.5px] px-1 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                                        <span className="text-[8.5px] px-1 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
                                           🧊{ord.icebergQty}
                                         </span>
                                       )}
@@ -4585,12 +4592,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         {ordersBadgeCount === 0 && (
                           <div className="p-6 rounded-xl bg-[#04070e]/75 border border-cyan-500/15 text-center space-y-2">
                             <Layers className="w-6 h-6 text-cyan-400/50 mx-auto" />
-                            <p className="text-xs font-mono font-bold text-gray-300">No Active Orders or Brackets</p>
-                            <p className="text-[10px] text-gray-500">Open Limit orders, Smart Peg monitors, Smart Chase SL, and active Futures positions for {activeSymbol} will appear here.</p>
+                            <p className="text-[13px] font-mono font-bold text-gray-300">No Active Orders or Brackets</p>
+                            <p className="text-[11px] text-gray-500">Open Limit orders, Smart Peg monitors, Smart Chase SL, and active Futures positions for {activeSymbol} will appear here.</p>
                             <button
                               type="button"
                               onClick={() => fetchBalance(false)}
-                              className="px-3 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-cyan-300 text-[10px] font-mono font-bold uppercase cursor-pointer"
+                              className="px-3 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-cyan-300 text-[11px] font-mono font-bold uppercase cursor-pointer"
                             >
                               Sync Exchange State
                             </button>
@@ -4606,12 +4613,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       {/* API Account & Limit Price (2-Column Sci-Fi Row when Standard Limit active) */}
                       <div className={`grid gap-2 ${orderType === 'Limit' && !isAutoLimit ? 'grid-cols-2' : 'grid-cols-1'}`}>
                         <div className="space-y-1">
-                          <label className="text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">Execute With</label>
+                          <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">Execute With</label>
                           <div className="relative">
                             <select
                               value={selectedApi}
                               onChange={(e) => { setSelectedApi(e.target.value); onApiKeyChange?.(e.target.value); }}
-                              className="w-full bg-[#04070e]/90 border border-white/10 hover:border-cyan-500/40 rounded-lg py-1.5 pl-2.5 pr-7 text-white text-xs font-semibold focus:outline-none focus:border-cyan-400/60 transition-colors appearance-none cursor-pointer"
+                              className="w-full bg-[#04070e]/90 border border-white/10 hover:border-cyan-500/40 rounded-lg py-1.5 pl-2.5 pr-7 text-white text-[13px] font-semibold focus:outline-none focus:border-cyan-400/60 transition-colors appearance-none cursor-pointer"
                             >
                               {apiKeys.map(k => (
                                 <option key={k.id} value={k.id} className="bg-[#070b14]">
@@ -4626,16 +4633,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                         {orderType === 'Limit' && !isAutoLimit && (
                           <div className="space-y-1">
-                            <label className="text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">Limit Price</label>
+                            <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">Limit Price</label>
                             <div className="relative">
                               <input
                                 type="number"
                                 value={limitPrice}
                                 disabled={isAutoLimit}
                                 onChange={(e) => setLimitPrice(e.target.value)}
-                                className="w-full bg-[#04070e]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-2.5 pl-6 text-white font-mono font-bold text-xs focus:outline-none transition-colors disabled:opacity-50"
+                                className="w-full bg-[#04070e]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-2.5 pl-6 text-white font-mono font-bold text-[13px] focus:outline-none transition-colors disabled:opacity-50"
                               />
-                              <span className="absolute left-2.5 top-1.5 text-cyan-400/80 font-mono text-xs">$</span>
+                              <span className="absolute left-2.5 top-1.5 text-cyan-400/80 font-mono text-[13px]">$</span>
                             </div>
                           </div>
                         )}
@@ -4648,22 +4655,22 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
-                            className="p-2.5 rounded-xl bg-gradient-to-r from-amber-950/40 via-red-950/20 to-[#04070e] border border-amber-500/35 text-[10px] space-y-2 overflow-hidden shadow-[0_0_15px_rgba(245,158,11,0.15)]"
+                            className="p-2.5 rounded-xl bg-gradient-to-r from-amber-950/40 via-red-950/20 to-[#04070e] border border-amber-500/35 text-[11px] space-y-2 overflow-hidden shadow-[0_0_15px_rgba(245,158,11,0.15)]"
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5 font-bold text-amber-300">
                                 <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                                 <span>⚡ Dynamic Maker Peg Entry Active</span>
                               </div>
-                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold">
                                 Post-Only Maker
                               </span>
                             </div>
-                            <p className="text-[9px] text-gray-400 leading-relaxed">
+                            <p className="text-[10px] text-gray-400 leading-relaxed">
                               Automatically shadows the top of the orderbook (Best Bid for Buy, Best Ask for Sell) at #1 Queue Priority until 100% filled.
                             </p>
                             <div className="space-y-1 pt-1 border-t border-white/5">
-                              <div className="flex justify-between items-center text-[9px] text-gray-400">
+                              <div className="flex justify-between items-center text-[10px] text-gray-400">
                                 <span>Max Chase Drift Guard</span>
                                 <span className="text-amber-400 font-bold font-mono">
                                   {smartPegMaxDev === 0 ? 'Unlimited (∞)' : `${smartPegMaxDev}%`}
@@ -4678,7 +4685,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 onChange={(e) => setSmartPegMaxDev(parseFloat(e.target.value))}
                                 className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
                               />
-                              <p className="text-[8px] text-gray-500">
+                              <p className="text-[9px] text-gray-500">
                                 {smartPegMaxDev === 0 ? 'Chases continuously until filled.' : 'Stops chasing if price drifts too far away from initial entry.'}
                               </p>
                             </div>
@@ -4710,8 +4717,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               }}
                             >
                               <div className="flex flex-col pr-2">
-                                <span className="text-[11px] font-bold text-cyan-300">Auto Best Limit (Post-Only)</span>
-                                <span className="text-[9.5px] text-gray-400">
+                                <span className="text-[12px] font-bold text-cyan-300">Auto Best Limit (Post-Only)</span>
+                                <span className="text-[10.5px] text-gray-400">
                                   {isAutoLimit && !isFutures
                                     ? 'Snipes BBO Maker 0% Fee (Turn OFF to use Native Binance OTO/OTOCO)'
                                     : 'Snipes entry at Best Bid/Ask without Taker Fees'}
@@ -4734,7 +4741,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         {/* Label row: currency name + toggle switch + balance */}
                         <div className="flex justify-between items-center gap-2">
                           <div className="flex items-center gap-1.5">
-                            <label className="text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
+                            <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">
                               Order Size
                             </label>
                             {/* Base / Quote toggle */}
@@ -4745,7 +4752,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   setSizeMode('base');
                                   if (!selectedPercent) setSize('');
                                 }}
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold transition-all cursor-pointer ${sizeMode === 'base'
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizeMode === 'base'
                                   ? 'bg-cyan-500 text-slate-950 shadow'
                                   : 'text-gray-400 hover:text-white'
                                   }`}
@@ -4758,7 +4765,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   setSizeMode('quote');
                                   if (!selectedPercent) setSize('');
                                 }}
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold transition-all cursor-pointer ${sizeMode === 'quote'
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizeMode === 'quote'
                                   ? 'bg-amber-400 text-slate-950 shadow'
                                   : 'text-gray-400 hover:text-white'
                                   }`}
@@ -4767,7 +4774,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               </button>
                             </div>
                           </div>
-                          <div className="text-[10px] text-gray-500 text-right flex flex-col items-end">
+                          <div className="text-[11px] text-gray-500 text-right flex flex-col items-end">
                             <div className="flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title={`Live Auto-Sync Active (${(timings.balancePollMs / 1000).toFixed(1)}s)`} />
                               <span>Bal:</span>
@@ -4790,12 +4797,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                             {/* Show helpful diagnostic badge if funds are located in USDⓈ-M or Spot wallet instead of COIN-M */}
                             {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.usds_futures_free && balanceData.usds_futures_free > 0) && (
-                              <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in USDⓈ-M Futures wallet instead of COIN-M Futures">
+                              <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in USDⓈ-M Futures wallet instead of COIN-M Futures">
                                 <span>⚠️ {balanceData?.usds_futures_free?.toFixed(2)} in USDⓈ-M! Transfer to COIN-M</span>
                               </div>
                             )}
                             {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.spot_free && balanceData.spot_free > 0) && (
-                              <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in Spot wallet instead of COIN-M Futures">
+                              <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in Spot wallet instead of COIN-M Futures">
                                 <span>⚠️ {balanceData?.spot_free?.toFixed(2)} in Spot! Transfer to COIN-M</span>
                               </div>
                             )}
@@ -4808,7 +4815,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 const curr = isQuoteTarget ? quoteCurrency : baseCurrency;
                                 if (lockedAmount > 0) {
                                   return (
-                                    <div className="text-[9px] text-amber-400 font-mono flex items-center gap-1">
+                                    <div className="text-[10px] text-amber-400 font-mono flex items-center gap-1">
                                       <span>Locked:</span>
                                       <span>{isQuoteTarget ? lockedAmount.toFixed(2) : lockedAmount.toFixed(4)} {curr}</span>
                                     </div>
@@ -4819,7 +4826,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             )}
 
                             {isFutures && reduceOnly && (
-                              <div className="text-[10px] text-cyan-300 font-mono">
+                              <div className="text-[11px] text-cyan-300 font-mono">
                                 Pos: {isLoadingPosition ? "..." : (positionData && positionData.amount > 0 ? (
                                   isInverseFutures && positionData.contracts
                                     ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(1)} ${baseCurrency})`
@@ -4840,10 +4847,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               setSelectedPercent(null);
                             }}
                             placeholder={isInverseFutures ? `Min 1 Cont ($${contractSize})` : "0.00"}
-                            className={`w-full bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-3 ${sizeMode === 'quote' ? 'pl-7' : 'pl-12'} text-white font-mono font-bold text-xs focus:outline-none transition-colors`}
+                            className={`w-full bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-3 ${sizeMode === 'quote' ? 'pl-7' : 'pl-12'} text-white font-mono font-bold text-[13px] focus:outline-none transition-colors`}
                           />
                           {/* Currency symbol badge */}
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10.5px] font-mono font-bold text-cyan-400/80 pointer-events-none">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11.5px] font-mono font-bold text-cyan-400/80 pointer-events-none">
                             {sizeMode === 'quote' ? '$' : baseCurrency.slice(0, 4)}
                           </span>
                         </div>
@@ -4851,18 +4858,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         {/* Live conversion estimate */}
                         {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
                           <div className="flex items-center gap-1.5 px-1 flex-wrap font-mono">
-                            <span className="text-[10px] text-gray-500">≈</span>
+                            <span className="text-[11px] text-gray-500">≈</span>
                             {sizeMode === 'quote' ? (
-                              <span className="text-[10px] text-amber-300 font-semibold">
+                              <span className="text-[11px] text-amber-300 font-semibold">
                                 {(Number(size) / effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} {baseCurrency}
                               </span>
                             ) : (
-                              <span className="text-[10px] text-amber-300 font-semibold">
+                              <span className="text-[11px] text-amber-300 font-semibold">
                                 ${(Number(size) * effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
                               </span>
                             )}
                             {isInverseFutures && (
-                              <span className="text-[9.5px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.2 rounded font-mono font-semibold">
+                              <span className="text-[10.5px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.2 rounded font-mono font-semibold">
                                 • {Math.max(1, Math.round(((sizeMode === 'quote' ? Number(size) : Number(size) * effectiveOrderPrice)) / contractSize))} Cont (${contractSize}/Cont)
                               </span>
                             )}
@@ -4877,7 +4884,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               <button
                                 key={pct}
                                 type="button"
-                                className={`flex-1 py-1 text-[10px] font-mono font-extrabold rounded border transition-all cursor-pointer active:scale-95 ${isSelected
+                                className={`flex-1 py-1 text-[11px] font-mono font-extrabold rounded border transition-all cursor-pointer active:scale-95 ${isSelected
                                   ? 'bg-gradient-to-r from-cyan-500/35 to-emerald-500/30 border-cyan-400 text-cyan-200 shadow-[0_0_8px_rgba(6,182,212,0.35)]'
                                   : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-cyan-500/40 text-gray-400 hover:text-white'
                                   }`}
@@ -4921,10 +4928,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               </div>
                               <div className="flex flex-col text-left">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-xs font-bold text-cyan-300">Binance Native Iceberg</span>
-                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold uppercase">Spot GTC</span>
+                                  <span className="text-[13px] font-bold text-cyan-300">Binance Native Iceberg</span>
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold uppercase">Spot GTC</span>
                                 </div>
-                                <span className="text-[10px] text-gray-400">
+                                <span className="text-[11px] text-gray-400">
                                   Splits limit order into smaller visible book slices
                                 </span>
                               </div>
@@ -4948,12 +4955,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               >
                                 {/* Slice Mode Selector */}
                                 <div className="flex items-center justify-between gap-2">
-                                  <label className="text-[10px] text-gray-400 font-medium">Visible Slice Size</label>
+                                  <label className="text-[11px] text-gray-400 font-medium">Visible Slice Size</label>
                                   <div className="flex bg-black/40 rounded border border-white/10 p-0.5">
                                     <button
                                       type="button"
                                       onClick={() => setIcebergMode('percent')}
-                                      className={`px-2 py-0.5 text-[10px] rounded transition-colors ${icebergMode === 'percent' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
+                                      className={`px-2 py-0.5 text-[11px] rounded transition-colors ${icebergMode === 'percent' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
                                         }`}
                                     >
                                       % of Total
@@ -4966,7 +4973,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                           setIcebergCustomQty('250');
                                         }
                                       }}
-                                      className={`px-2 py-0.5 text-[10px] rounded transition-colors ${icebergMode === 'qty' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
+                                      className={`px-2 py-0.5 text-[11px] rounded transition-colors ${icebergMode === 'qty' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
                                         }`}
                                     >
                                       {baseCurrency}
@@ -4982,7 +4989,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                         key={pct}
                                         type="button"
                                         onClick={() => setIcebergPercent(pct)}
-                                        className={`py-1 text-[10px] font-mono rounded border transition-all ${icebergPercent === pct
+                                        className={`py-1 text-[11px] font-mono rounded border transition-all ${icebergPercent === pct
                                           ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
                                           : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
                                           }`}
@@ -5001,7 +5008,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                         key={q}
                                         type="button"
                                         onClick={() => setIcebergCustomQty(q)}
-                                        className={`py-1 text-[10px] font-mono rounded border transition-all ${icebergCustomQty === q
+                                        className={`py-1 text-[11px] font-mono rounded border transition-all ${icebergCustomQty === q
                                           ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
                                           : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
                                           }`}
@@ -5026,9 +5033,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       }
                                     }}
                                     placeholder={icebergMode === 'percent' ? 'e.g. 20' : '250'}
-                                    className="w-full bg-black/40 border border-cyan-500/30 rounded py-1.5 px-3 pr-14 text-white text-xs font-mono focus:outline-none focus:border-cyan-400 transition-colors"
+                                    className="w-full bg-black/40 border border-cyan-500/30 rounded py-1.5 px-3 pr-14 text-white text-[13px] font-mono focus:outline-none focus:border-cyan-400 transition-colors"
                                   />
-                                  <span className="absolute right-3 top-1.5 text-[10px] text-cyan-400 font-bold font-mono">
+                                  <span className="absolute right-3 top-1.5 text-[11px] text-cyan-400 font-bold font-mono">
                                     {icebergMode === 'percent' ? '% SLICE' : baseCurrency}
                                   </span>
                                 </div>
@@ -5042,7 +5049,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                                   if (effectiveIcebergQty >= currentBaseAmount) {
                                     return (
-                                      <div className="p-2 rounded bg-amber-950/40 border border-amber-500/40 text-[10px] text-amber-300 flex items-center gap-1.5 font-mono">
+                                      <div className="p-2 rounded bg-amber-950/40 border border-amber-500/40 text-[11px] text-amber-300 flex items-center gap-1.5 font-mono">
                                         <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                                         <span>Slice ({effectiveIcebergQty.toFixed(2)}) must be smaller than total order ({currentBaseAmount.toFixed(2)} {baseCurrency}).</span>
                                       </div>
@@ -5051,7 +5058,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                                   if (sliceNotional < 5.0) {
                                     return (
-                                      <div className="p-2 rounded bg-red-950/50 border border-red-500/50 flex flex-col gap-1.5 text-[10px] animate-fadeIn">
+                                      <div className="p-2 rounded bg-red-950/50 border border-red-500/50 flex flex-col gap-1.5 text-[11px] animate-fadeIn">
                                         <div className="flex items-center justify-between text-red-300 font-bold">
                                           <span className="flex items-center gap-1">
                                             <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
@@ -5059,14 +5066,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                           </span>
                                         </div>
                                         <div className="flex items-center justify-between text-gray-300">
-                                          <span className="text-[9px]">Binance requires each slice ≥ $5.00 (~{minRequiredSlice} {baseCurrency})</span>
+                                          <span className="text-[10px]">Binance requires each slice ≥ $5.00 (~{minRequiredSlice} {baseCurrency})</span>
                                           <button
                                             type="button"
                                             onClick={() => {
                                               setIcebergMode('qty');
                                               setIcebergCustomQty(minRequiredSlice.toString());
                                             }}
-                                            className="px-2 py-0.5 rounded bg-red-600/30 hover:bg-red-600/60 text-red-200 border border-red-500/50 font-bold uppercase tracking-wider text-[9px] transition-colors cursor-pointer"
+                                            className="px-2 py-0.5 rounded bg-red-600/30 hover:bg-red-600/60 text-red-200 border border-red-500/50 font-bold uppercase tracking-wider text-[10px] transition-colors cursor-pointer"
                                           >
                                             Auto-Set Min ({minRequiredSlice} {baseCurrency})
                                           </button>
@@ -5076,7 +5083,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   }
 
                                   return (
-                                    <div className="p-2 rounded bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-between text-[10px] font-mono">
+                                    <div className="p-2 rounded bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-between text-[11px] font-mono">
                                       <span className="text-gray-300">
                                         Order Book Shows: <strong className="text-cyan-300">{effectiveIcebergQty.toFixed(4)} {baseCurrency}</strong> (~${sliceNotional.toFixed(2)})
                                       </span>
@@ -5095,24 +5102,24 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       {/* Futures Options Panel (Inside Order & Size Tab) */}
                       {isFutures && (
                         <div className="space-y-2.5 bg-[#04070e]/90 p-2.5 rounded-lg border border-cyan-500/20">
-                          <div className="flex justify-between items-center text-xs text-gray-400 font-medium">
+                          <div className="flex justify-between items-center text-[13px] text-gray-400 font-medium">
                             <div className="flex bg-black/50 rounded p-0.5 border border-white/10">
                               <button
                                 type="button"
                                 onClick={() => setMarginMode('cross')}
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer ${marginMode === 'cross' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
+                                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-colors cursor-pointer ${marginMode === 'cross' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
                               >
                                 Cross
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setMarginMode('isolated')}
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer ${marginMode === 'isolated' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
+                                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-colors cursor-pointer ${marginMode === 'isolated' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
                               >
                                 Isolated
                               </button>
                             </div>
-                            <span className="text-[11px] bg-amber-500/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded font-mono font-black tracking-wider">
+                            <span className="text-[12px] bg-amber-500/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded font-mono font-black tracking-wider">
                               {leverage}x LEVERAGE
                             </span>
                           </div>
@@ -5133,7 +5140,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               onChange={(e) => setReduceOnly(e.target.checked)}
                               className="form-checkbox bg-black/40 border-white/20 text-cyan-400 rounded focus:ring-0 focus:ring-offset-0 cursor-pointer w-3.5 h-3.5"
                             />
-                            <span className="text-[11px] text-gray-400 group-hover:text-white transition-colors font-medium">Reduce Only (Close Position)</span>
+                            <span className="text-[12px] text-gray-400 group-hover:text-white transition-colors font-medium">Reduce Only (Close Position)</span>
                           </label>
                         </div>
                       )}
@@ -5164,19 +5171,19 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             </div>
                             <div className="flex flex-col">
                               <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-bold text-gray-200 group-hover:text-white transition-colors">
+                                <span className="text-[13px] font-bold text-gray-200 group-hover:text-white transition-colors">
                                   L2 Machine Learning Filter
                                 </span>
-                                <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${mlFilterConfig.enabled ? 'bg-blue-500/30 text-blue-200 border border-blue-400/40' : 'bg-white/5 text-gray-400'}`}>
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${mlFilterConfig.enabled ? 'bg-blue-500/30 text-blue-200 border border-blue-400/40' : 'bg-white/5 text-gray-400'}`}>
                                   {mlFilterConfig.enabled ? 'ACTIVE' : 'OFF'}
                                 </span>
                                 {pinnedModelId && mlFilterConfig.modelId === pinnedModelId && (
-                                  <span className="text-[8.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/35">
+                                  <span className="text-[9.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/35">
                                     PINNED
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[10px] text-gray-400">
+                              <span className="text-[11px] text-gray-400">
                                 🤖 Filter {tradeSide.toUpperCase()} entry using Training Studio / ML Registry model
                               </span>
                             </div>
@@ -5193,7 +5200,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         {/* Always-Visible ML Registry Model Selector Dropdown */}
                         <div className="bg-black/45 p-2 rounded-lg border border-blue-500/25 space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <label className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                            <label className="text-[11px] font-bold text-blue-400 uppercase tracking-wider">
                               Select Trained Model (ML Registry)
                             </label>
                             <button
@@ -5202,7 +5209,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 e.stopPropagation();
                                 fetchMlModels();
                               }}
-                              className="p-1 rounded bg-white/5 hover:bg-blue-500/20 text-gray-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1 text-[9px]"
+                              className="p-1 rounded bg-white/5 hover:bg-blue-500/20 text-gray-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1 text-[10px]"
                               title="Refresh Models from ML Registry"
                             >
                               <RefreshCw className={`w-3 h-3 ${isLoadingMlModels ? 'animate-spin text-blue-400' : ''}`} />
@@ -5211,12 +5218,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           </div>
 
                           {mlModels.length === 0 ? (
-                            <p className="text-[10px] text-amber-400/90 italic py-1">
+                            <p className="text-[11px] text-amber-400/90 italic py-1">
                               No models found in ML Registry. Train & save a model in Training Studio first.
                             </p>
                           ) : (
                             <select
-                              className="w-full bg-black border border-blue-500/30 rounded-lg py-1.5 px-2.5 text-white outline-none focus:border-blue-400 text-xs font-bold cursor-pointer"
+                              className="w-full bg-black border border-blue-500/30 rounded-lg py-1.5 px-2.5 text-white outline-none focus:border-blue-400 text-[13px] font-bold cursor-pointer"
                               value={mlFilterConfig.modelId}
                               onChange={(e) => {
                                 hasManualMlOverrideRef.current = true;
@@ -5251,14 +5258,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             >
                               {/* Execution Mode Selector (Signal Only vs Dynamic Setup, matching WallHunterModal) */}
                               <div className="bg-black/40 p-2 rounded-lg border border-white/5 space-y-1.5">
-                                <label className="text-[10px] font-bold text-blue-400 uppercase tracking-wider block">
+                                <label className="text-[11px] font-bold text-blue-400 uppercase tracking-wider block">
                                   Execution Mode
                                 </label>
                                 <div className="grid grid-cols-2 gap-1.5">
                                   <button
                                     type="button"
                                     onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'basic' }))}
-                                    className={`py-1.5 px-2 rounded-lg font-bold text-[10px] transition-all border cursor-pointer ${mlFilterConfig.executionMode === 'basic'
+                                    className={`py-1.5 px-2 rounded-lg font-bold text-[11px] transition-all border cursor-pointer ${mlFilterConfig.executionMode === 'basic'
                                       ? 'bg-blue-600/25 border-blue-500 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
                                       : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
                                       }`}
@@ -5268,7 +5275,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'advanced' }))}
-                                    className={`py-1.5 px-2 rounded-lg font-bold text-[10px] transition-all border cursor-pointer ${mlFilterConfig.executionMode === 'advanced'
+                                    className={`py-1.5 px-2 rounded-lg font-bold text-[11px] transition-all border cursor-pointer ${mlFilterConfig.executionMode === 'advanced'
                                       ? 'bg-purple-600/25 border-purple-500 text-purple-300 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
                                       : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
                                       }`}
@@ -5287,14 +5294,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       <Zap className={`w-3.5 h-3.5 shrink-0 ${mlFilterConfig.autoThreshold ? 'text-amber-400 fill-amber-400' : 'text-gray-500'}`} />
                                       <div className="flex flex-col min-w-0">
                                         <div className="flex items-center gap-1.5">
-                                          <span className="text-[10px] font-bold text-gray-200">
+                                          <span className="text-[11px] font-bold text-gray-200">
                                             Smart Auto-Align to Model
                                           </span>
-                                          <span className={`text-[8.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase border ${mlFilterConfig.autoThreshold ? 'bg-amber-500/20 text-amber-300 border-amber-500/35 shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-gray-400 border-white/5'}`}>
+                                          <span className={`text-[9.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase border ${mlFilterConfig.autoThreshold ? 'bg-amber-500/20 text-amber-300 border-amber-500/35 shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-gray-400 border-white/5'}`}>
                                             {mlFilterConfig.autoThreshold ? 'AUTO ON' : 'MANUAL'}
                                           </span>
                                         </div>
-                                        <span className="text-[9px] text-gray-400 font-mono truncate">
+                                        <span className="text-[10px] text-gray-400 font-mono truncate">
                                           {opt.note}
                                         </span>
                                       </div>
@@ -5325,11 +5332,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               {/* Bullish Threshold (Active for BUY orders) */}
                               <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Buy' ? 'bg-emerald-950/25 border-emerald-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
                                 <div className="flex justify-between items-center mb-1">
-                                  <label className="text-[10px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
+                                  <label className="text-[11px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
                                     <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Buy' ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`}></span>
                                     <span>BUY Filter: Bullish Threshold</span>
                                   </label>
-                                  <span className="text-xs font-mono font-bold text-emerald-400">
+                                  <span className="text-[13px] font-mono font-bold text-emerald-400">
                                     {(mlFilterConfig.bullishThreshold * 100).toFixed(0)}%
                                   </span>
                                 </div>
@@ -5342,7 +5349,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bullishThreshold: parseFloat(e.target.value) }))}
                                   className="w-full accent-emerald-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
                                 />
-                                <p className="text-[9px] text-gray-400 mt-1 leading-tight">
+                                <p className="text-[10px] text-gray-400 mt-1 leading-tight">
                                   For <span className="text-emerald-400 font-semibold">BUY</span> orders: AI must predict ≥{(mlFilterConfig.bullishThreshold * 100).toFixed(0)}% Bullish probability to permit entry, otherwise it denies the trade.
                                 </p>
                               </div>
@@ -5350,11 +5357,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               {/* Bearish Threshold (Active for SELL orders — Spot Hold Currency Sell High & Futures Short) */}
                               <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Sell' ? 'bg-rose-950/25 border-rose-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
                                 <div className="flex justify-between items-center mb-1">
-                                  <label className="text-[10px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
+                                  <label className="text-[11px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
                                     <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Sell' ? 'bg-rose-400 animate-pulse' : 'bg-gray-500'}`}></span>
                                     <span>SELL Filter: Bearish Threshold</span>
                                   </label>
-                                  <span className="text-xs font-mono font-bold text-rose-400">
+                                  <span className="text-[13px] font-mono font-bold text-rose-400">
                                     {(mlFilterConfig.bearishThreshold * 100).toFixed(0)}%
                                   </span>
                                 </div>
@@ -5367,7 +5374,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bearishThreshold: parseFloat(e.target.value) }))}
                                   className="w-full accent-rose-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
                                 />
-                                <p className="text-[9px] text-gray-400 mt-1 leading-tight">
+                                <p className="text-[10px] text-gray-400 mt-1 leading-tight">
                                   For <span className="text-rose-400 font-semibold">SELL</span> orders (Spot Hold Sell High → Low TP Buy Back, or Short): AI must predict ≥{(mlFilterConfig.bearishThreshold * 100).toFixed(0)}% Bearish probability to permit selling.
                                 </p>
                               </div>
@@ -5387,9 +5394,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${!canConfigureNativeTpSl ? 'opacity-40 pointer-events-none' : ''}`}>
                           <div className="flex flex-col pr-2">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-xs font-bold text-brand-primary">Use Native Binance OTO/OTOCO</span>
+                              <span className="text-[13px] font-bold text-brand-primary">Use Native Binance OTO/OTOCO</span>
                               {useNativeTpSl && isNativeTpSlSupported && (
-                                <span className="text-[8px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-brand-primary/25 text-cyan-200 border border-brand-primary/40">
+                                <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-brand-primary/25 text-cyan-200 border border-brand-primary/40">
                                   {tpConfig.enabled && slConfig.enabled && (slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
                                     ? `HYBRID 2-LEG OTO${isIceberg ? ' + ICEBERG' : ''} + SMART CHASE SL`
                                     : tpConfig.enabled && slConfig.enabled
@@ -5398,7 +5405,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 </span>
                               )}
                             </div>
-                            <span className="text-[9px] text-brand-primary/80 leading-snug mt-0.5">
+                            <span className="text-[10px] text-brand-primary/80 leading-snug mt-0.5">
                               {orderType === 'SmartPeg'
                                 ? '⚡ Dynamic Peg Mode: Entry is dynamic maker; Native OCO auto-spawns upon fill'
                                 : orderType === 'Market'
@@ -5446,12 +5453,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         <div className="flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30">
                           <div className="flex flex-col">
                             <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-bold text-brand-primary">Futures Hybrid Bracket Engine</span>
-                              <span className="text-[8px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/35">
+                              <span className="text-[13px] font-bold text-brand-primary">Futures Hybrid Bracket Engine</span>
+                              <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/35">
                                 {leverage}x {marginMode.toUpperCase()}
                               </span>
                             </div>
-                            <span className="text-[9px] text-brand-primary/80 leading-snug mt-0.5">
+                            <span className="text-[10px] text-brand-primary/80 leading-snug mt-0.5">
                               {tpConfig.enabled && slConfig.enabled
                                 ? `🎯 Native Futures ${tpConfig.orderType} TP + ${slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase' ? '⚡ Smart Chase Maker SL (250ms) + Native Disaster Stop' : `🛡️ Native ${slConfig.type === 'trailing' ? 'Trailing' : 'Stop-Market'} SL`}`
                                 : tpConfig.enabled
@@ -5466,8 +5473,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-brand-primary/10 transition-all">
                         <div className="flex justify-between items-center cursor-pointer" onClick={() => setTpConfig({ ...tpConfig, enabled: !tpConfig.enabled })}>
                           <div className="flex flex-col">
-                            <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors">Attached Take-Profit (Bracket)</span>
-                            <span className="text-[10px] text-gray-500">Auto-trigger scalp exit once entry fills</span>
+                            <span className="text-[13px] font-bold text-gray-300 group-hover:text-white transition-colors">Attached Take-Profit (Bracket)</span>
+                            <span className="text-[11px] text-gray-500">Auto-trigger scalp exit once entry fills</span>
                           </div>
                           <div className={`relative w-8 h-4 rounded-full transition-colors ${tpConfig.enabled ? 'bg-brand-primary' : 'bg-gray-600'}`}>
                             <MotionDiv
@@ -5490,13 +5497,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               <div className="grid grid-cols-2 gap-2">
                                 {/* TP Order Type */}
                                 <div className="space-y-1">
-                                  <label className="text-[10px] text-gray-400 font-medium">TP Order Type</label>
+                                  <label className="text-[11px] text-gray-400 font-medium">TP Order Type</label>
                                   <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
                                     {(['Limit', 'Market'] as const).map(type => (
                                       <button
                                         key={type}
                                         onClick={() => setTpConfig({ ...tpConfig, orderType: type })}
-                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.orderType === type ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.orderType === type ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                       >
                                         {type}
                                       </button>
@@ -5506,7 +5513,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                                 {/* Gap Mode */}
                                 <div className="space-y-1">
-                                  <label className="text-[10px] text-gray-400 font-medium">Mode</label>
+                                  <label className="text-[11px] text-gray-400 font-medium">Mode</label>
                                   <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
                                     <button
                                       onClick={() => setTpConfig({
@@ -5514,7 +5521,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                         mode: 'percentage',
                                         value: tpConfig.mode === 'percentage' ? tpConfig.value : getSmartGapValue('percentage', true)
                                       })}
-                                      className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'percentage' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                      className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.mode === 'percentage' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                     >
                                       %
                                     </button>
@@ -5524,7 +5531,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                         mode: 'price',
                                         value: tpConfig.mode === 'price' ? tpConfig.value : getSmartGapValue('price', true)
                                       })}
-                                      className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'price' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                      className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.mode === 'price' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                     >
                                       $
                                     </button>
@@ -5534,7 +5541,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                         mode: 'absolute',
                                         value: tpConfig.mode === 'absolute' ? tpConfig.value : getSmartGapValue('absolute', true)
                                       })}
-                                      className={`flex-1 text-[10px] py-1 rounded transition-colors ${tpConfig.mode === 'absolute' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                      className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.mode === 'absolute' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                     >
                                       🎯
                                     </button>
@@ -5545,30 +5552,30 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               {/* Target Gap & Timeout */}
                               <div className="grid grid-cols-2 gap-2">
                                 <div className="space-y-1">
-                                  <label className="text-[10px] text-gray-400 font-medium">{tpConfig.mode === 'absolute' ? 'Exact Price' : 'Target Gap'}</label>
+                                  <label className="text-[11px] text-gray-400 font-medium">{tpConfig.mode === 'absolute' ? 'Exact Price' : 'Target Gap'}</label>
                                   <div className="relative">
                                     <input
                                       type="number"
                                       value={tpConfig.value}
                                       onChange={(e) => setTpConfig({ ...tpConfig, value: e.target.value })}
                                       placeholder={tpConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 1.050" : "e.g. 0.950") : (tpConfig.mode === 'percentage' ? "e.g. 1.5" : "e.g. 0.005")}
-                                      className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-xs focus:outline-none focus:border-brand-primary/50"
+                                      className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-[13px] focus:outline-none focus:border-brand-primary/50"
                                     />
-                                    <span className="absolute right-2 top-1.5 text-[10px] text-brand-primary font-bold">{tpConfig.mode === 'percentage' ? '%' : (tpConfig.mode === 'absolute' ? '🎯' : '$')}</span>
+                                    <span className="absolute right-2 top-1.5 text-[11px] text-brand-primary font-bold">{tpConfig.mode === 'percentage' ? '%' : (tpConfig.mode === 'absolute' ? '🎯' : '$')}</span>
                                   </div>
                                 </div>
                                 <div className="space-y-1">
                                   <div className="flex items-center justify-between">
-                                    <label className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
+                                    <label className="text-[11px] text-gray-400 font-medium flex items-center gap-1">
                                       <span>Monitor Limit</span>
                                       {tpConfig.timeoutMins === 0 && (
-                                        <span className="text-[8px] text-emerald-400/90 font-medium">● Infinite</span>
+                                        <span className="text-[9px] text-emerald-400/90 font-medium">● Infinite</span>
                                       )}
                                     </label>
                                     <button
                                       type="button"
                                       onClick={() => setTpConfig({ ...tpConfig, timeoutMins: tpConfig.timeoutMins === 0 ? 60 : 0 })}
-                                      className={`text-[9px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${tpConfig.timeoutMins === 0
+                                      className={`text-[10px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${tpConfig.timeoutMins === 0
                                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
                                         : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
                                         }`}
@@ -5576,7 +5583,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     >
                                       {tpConfig.timeoutMins === 0 ? (
                                         <>
-                                          <span className="text-xs font-bold leading-none">∞</span>
+                                          <span className="text-[13px] font-bold leading-none">∞</span>
                                           <span>No Limit</span>
                                         </>
                                       ) : (
@@ -5594,7 +5601,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
                                     />
                                     <span
-                                      className={`text-[10px] font-mono min-w-[28px] text-right font-bold transition-colors ${tpConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
+                                      className={`text-[11px] font-mono min-w-[28px] text-right font-bold transition-colors ${tpConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
                                         }`}
                                       title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
                                     >
@@ -5612,8 +5619,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-red-500/10 transition-all">
                         <div className="flex justify-between items-center cursor-pointer group" onClick={() => setSlConfig({ ...slConfig, enabled: !slConfig.enabled })}>
                           <div className="flex flex-col">
-                            <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors">Attached Stop-Loss (SL)</span>
-                            <span className="text-[10px] text-gray-400">{(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native Order (Visible on Exchange)' : '⚡ Bot Maker Loop (Zero Maker Fee)'}</span>
+                            <span className="text-[13px] font-bold text-gray-300 group-hover:text-white transition-colors">Attached Stop-Loss (SL)</span>
+                            <span className="text-[11px] text-gray-400">{(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native Order (Visible on Exchange)' : '⚡ Bot Maker Loop (Zero Maker Fee)'}</span>
                           </div>
                           <div className={`relative w-8 h-4 rounded-full transition-colors ${slConfig.enabled ? 'bg-red-500' : 'bg-gray-600'}`}>
                             <MotionDiv
@@ -5635,10 +5642,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               {/* Execution Engine Selector (Exchange Native vs Smart Chase Bot) */}
                               <div className="space-y-2 bg-black/30 p-2.5 rounded-lg border border-white/5">
                                 <div className="flex items-center justify-between">
-                                  <label className="text-[10px] text-gray-300 font-semibold flex items-center gap-1">
+                                  <label className="text-[11px] text-gray-300 font-semibold flex items-center gap-1">
                                     <span>SL Execution Engine</span>
                                   </label>
-                                  <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-mono font-bold ${(slConfig.type === 'fixed' || slConfig.type === 'trailing')
+                                  <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono font-bold ${(slConfig.type === 'fixed' || slConfig.type === 'trailing')
                                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                                     : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                                     }`}>
@@ -5660,10 +5667,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       : 'text-gray-400 hover:text-white hover:bg-white/5'
                                       }`}
                                   >
-                                    <span className="text-[10.5px] font-bold flex items-center gap-1">
+                                    <span className="text-[11.5px] font-bold flex items-center gap-1">
                                       <span>🛡️</span> Exchange Native
                                     </span>
-                                    <span className="text-[7.5px] opacity-80 leading-tight mt-0.5">
+                                    <span className="text-[8.5px] opacity-80 leading-tight mt-0.5">
                                       Real order on Binance • 24/7 Safe
                                     </span>
                                   </button>
@@ -5681,10 +5688,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       : 'text-gray-400 hover:text-white hover:bg-white/5'
                                       }`}
                                   >
-                                    <span className="text-[10.5px] font-bold flex items-center gap-1">
+                                    <span className="text-[11.5px] font-bold flex items-center gap-1">
                                       <span>⚡</span> Smart Chase
                                     </span>
-                                    <span className="text-[7.5px] opacity-80 leading-tight mt-0.5">
+                                    <span className="text-[8.5px] opacity-80 leading-tight mt-0.5">
                                       Bot Maker Loop • 0% Fee
                                     </span>
                                   </button>
@@ -5694,7 +5701,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 <div className="grid grid-cols-2 gap-2 pt-0.5">
                                   {/* Sub-variant based on selected target */}
                                   <div className="space-y-1">
-                                    <label className="text-[9.5px] text-gray-400 font-medium">
+                                    <label className="text-[10.5px] text-gray-400 font-medium">
                                       {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? 'Order Variant' : 'Chase Strategy'}
                                     </label>
                                     <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
@@ -5703,7 +5710,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                           <button
                                             type="button"
                                             onClick={() => setSlConfig({ ...slConfig, type: 'fixed' })}
-                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-emerald-600 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            className={`flex-1 text-[9.5px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-emerald-600 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                           >
                                             Fixed Stop
                                           </button>
@@ -5715,7 +5722,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                               setSlConfig({ ...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode });
                                             }}
                                             title={isNativeExchangeSlLockedToFixed ? 'Disabled when Native Binance OTO/OTOCO is ON (Binance Spot OTOCO only supports Fixed Stop_Loss_Limit. Use ⚡ Smart Chase -> Trail Chase for trailing)' : 'Trailing Stop'}
-                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${isNativeExchangeSlLockedToFixed
+                                            className={`flex-1 text-[9.5px] py-1 rounded transition-colors ${isNativeExchangeSlLockedToFixed
                                               ? 'text-gray-600 opacity-40 cursor-not-allowed'
                                               : slConfig.type === 'trailing'
                                                 ? 'bg-emerald-600 text-white font-bold'
@@ -5730,14 +5737,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                           <button
                                             type="button"
                                             onClick={() => setSlConfig({ ...slConfig, type: 'smart_chase' })}
-                                            className={`flex-1 text-[8.5px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-amber-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            className={`flex-1 text-[9.5px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-amber-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                           >
                                             BBO Chase
                                           </button>
                                           <button
                                             type="button"
                                             onClick={() => setSlConfig({ ...slConfig, type: 'trailing_chase' })}
-                                            className={`flex-1 text-[8px] py-1 rounded transition-colors ${slConfig.type === 'trailing_chase' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                            className={`flex-1 text-[9px] py-1 rounded transition-colors ${slConfig.type === 'trailing_chase' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                           >
                                             ⚡ Trail Chase
                                           </button>
@@ -5748,7 +5755,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                                   {/* Gap Mode */}
                                   <div className="space-y-1">
-                                    <label className="text-[9.5px] text-gray-400 font-medium">Gap Unit</label>
+                                    <label className="text-[10.5px] text-gray-400 font-medium">Gap Unit</label>
                                     <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
                                       <button
                                         type="button"
@@ -5757,7 +5764,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                           mode: 'percentage',
                                           value: slConfig.mode === 'percentage' ? slConfig.value : getSmartGapValue('percentage', false)
                                         })}
-                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        className={`flex-1 text-[11px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                       >
                                         %
                                       </button>
@@ -5768,7 +5775,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                           mode: 'price',
                                           value: slConfig.mode === 'price' ? slConfig.value : getSmartGapValue('price', false)
                                         })}
-                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        className={`flex-1 text-[11px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                       >
                                         $
                                       </button>
@@ -5780,7 +5787,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                           type: (slConfig.type === 'trailing' || slConfig.type === 'trailing_chase') ? 'fixed' : slConfig.type,
                                           value: slConfig.mode === 'absolute' ? slConfig.value : getSmartGapValue('absolute', false)
                                         })}
-                                        className={`flex-1 text-[10px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        className={`flex-1 text-[11px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
                                       >
                                         🎯
                                       </button>
@@ -5793,7 +5800,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                             setSlConfig({ ...slConfig, mode: 'atr', type: 'trailing' });
                                           }}
                                           title={isNativeExchangeSlLockedToFixed ? 'Disabled when Native Binance OTO/OTOCO is ON' : 'ATR Trailing Stop'}
-                                          className={`flex-1 text-[10px] py-1 rounded transition-colors ${isNativeExchangeSlLockedToFixed
+                                          className={`flex-1 text-[11px] py-1 rounded transition-colors ${isNativeExchangeSlLockedToFixed
                                             ? 'text-gray-600 opacity-40 cursor-not-allowed'
                                             : slConfig.mode === 'atr'
                                               ? 'bg-red-500 text-white font-bold'
@@ -5809,7 +5816,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                                 {/* Assurance Banner */}
                                 {(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase') ? (
-                                  <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
+                                  <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
                                     <span>⚡</span>
                                     <span>
                                       <strong>Bot Smart Chase Loop:</strong> ব্যাকএন্ডে ultra-fast (~250ms) ট্র্যাক হবে
@@ -5819,7 +5826,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     </span>
                                   </div>
                                 ) : isFutures ? (
-                                  <div className="text-[9px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                                  <div className="text-[10px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
                                     <span>🛡️</span>
                                     <span>
                                       <strong>Binance Futures Native:</strong>{' '}
@@ -5829,12 +5836,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     </span>
                                   </div>
                                 ) : (useNativeTpSl && !isAutoLimit && slConfig.type === 'fixed') ? (
-                                  <div className="text-[9px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                                  <div className="text-[10px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
                                     <span>🛡️</span>
                                     <span><strong>Binance Native {tpConfig.enabled ? 'OTOCO' : 'OTO'}:</strong> Fixed STOP_LOSS_LIMIT সরাসরি Binance-এ বসবে।</span>
                                   </div>
                                 ) : (tpConfig.enabled || slConfig.type === 'trailing' || slConfig.mode === 'atr') ? (
-                                  <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
+                                  <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
                                     <span>⚠️</span>
                                     <span>
                                       <strong>Spot Software Fallback:</strong>{' '}
@@ -5844,7 +5851,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     </span>
                                   </div>
                                 ) : (
-                                  <div className="text-[9px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                                  <div className="text-[10px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
                                     <span>🛡️</span>
                                     <span><strong>Binance Native Stop:</strong> অর্ডার সরাসরি Binance-এ বসবে এবং অ্যাপে দৃশ্যমান থাকবে।</span>
                                   </div>
@@ -5856,11 +5863,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 {slConfig.mode === 'atr' ? (
                                   <div className="grid grid-cols-3 gap-1">
                                     <div className="space-y-1">
-                                      <label className="text-[10px] text-gray-400 font-medium">TF</label>
+                                      <label className="text-[11px] text-gray-400 font-medium">TF</label>
                                       <select
                                         value={slConfig.atrTimeframe}
                                         onChange={(e) => setSlConfig({ ...slConfig, atrTimeframe: e.target.value })}
-                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-1 text-white text-[10px] focus:outline-none"
+                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-1 text-white text-[11px] focus:outline-none"
                                       >
                                         <option value="1m">1m</option>
                                         <option value="5m">5m</option>
@@ -5871,28 +5878,28 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       </select>
                                     </div>
                                     <div className="space-y-1">
-                                      <label className="text-[10px] text-gray-400 font-medium">Period</label>
+                                      <label className="text-[11px] text-gray-400 font-medium">Period</label>
                                       <input
                                         type="number"
                                         value={slConfig.atrPeriod}
                                         onChange={(e) => setSlConfig({ ...slConfig, atrPeriod: Number(e.target.value) })}
-                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[10px] focus:outline-none"
+                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[11px] focus:outline-none"
                                       />
                                     </div>
                                     <div className="space-y-1">
-                                      <label className="text-[10px] text-gray-400 font-medium">Mult.</label>
+                                      <label className="text-[11px] text-gray-400 font-medium">Mult.</label>
                                       <input
                                         type="number"
                                         step="0.1"
                                         value={slConfig.atrMultiplier}
                                         onChange={(e) => setSlConfig({ ...slConfig, atrMultiplier: Number(e.target.value) })}
-                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[10px] focus:outline-none"
+                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[11px] focus:outline-none"
                                       />
                                     </div>
                                   </div>
                                 ) : (
                                   <div className="space-y-1">
-                                    <label className="text-[10px] text-gray-400 font-medium">
+                                    <label className="text-[11px] text-gray-400 font-medium">
                                       {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'smart_chase' ? 'Chase Trigger Gap' : (slConfig.type === 'trailing_chase' ? 'Trailing Callback Gap' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap')))}
                                     </label>
                                     <div className="relative">
@@ -5901,24 +5908,24 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                         value={slConfig.value}
                                         onChange={(e) => setSlConfig({ ...slConfig, value: e.target.value })}
                                         placeholder={slConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 0.950" : "e.g. 1.050") : (slConfig.mode === 'percentage' ? "e.g. 1.0" : "e.g. 0.003")}
-                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-xs focus:outline-none focus:border-red-500/50"
+                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-[13px] focus:outline-none focus:border-red-500/50"
                                       />
-                                      <span className="absolute right-2 top-1.5 text-[10px] text-red-500 font-bold">{slConfig.mode === 'percentage' ? '%' : (slConfig.mode === 'absolute' ? '🎯' : '$')}</span>
+                                      <span className="absolute right-2 top-1.5 text-[11px] text-red-500 font-bold">{slConfig.mode === 'percentage' ? '%' : (slConfig.mode === 'absolute' ? '🎯' : '$')}</span>
                                     </div>
                                   </div>
                                 )}
                                 <div className="space-y-1">
                                   <div className="flex items-center justify-between">
-                                    <label className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
+                                    <label className="text-[11px] text-gray-400 font-medium flex items-center gap-1">
                                       <span>Monitor Limit</span>
                                       {slConfig.timeoutMins === 0 && (
-                                        <span className="text-[8px] text-emerald-400/90 font-medium">● Infinite</span>
+                                        <span className="text-[9px] text-emerald-400/90 font-medium">● Infinite</span>
                                       )}
                                     </label>
                                     <button
                                       type="button"
                                       onClick={() => setSlConfig({ ...slConfig, timeoutMins: slConfig.timeoutMins === 0 ? 60 : 0 })}
-                                      className={`text-[9px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${slConfig.timeoutMins === 0
+                                      className={`text-[10px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${slConfig.timeoutMins === 0
                                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
                                         : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
                                         }`}
@@ -5926,7 +5933,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     >
                                       {slConfig.timeoutMins === 0 ? (
                                         <>
-                                          <span className="text-xs font-bold leading-none">∞</span>
+                                          <span className="text-[13px] font-bold leading-none">∞</span>
                                           <span>No Limit</span>
                                         </>
                                       ) : (
@@ -5944,7 +5951,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
                                     />
                                     <span
-                                      className={`text-[10px] font-mono min-w-[28px] text-right font-bold transition-colors ${slConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
+                                      className={`text-[11px] font-mono min-w-[28px] text-right font-bold transition-colors ${slConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
                                         }`}
                                       title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
                                     >
@@ -5957,23 +5964,23 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               {/* Smart Chase Detailed Controls (for Smart Chase & Trailing Chase) */}
                               {(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase') && (
                                 <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 space-y-2 mt-1 animate-fadeIn">
-                                  <div className="flex items-center justify-between text-[10px]">
+                                  <div className="flex items-center justify-between text-[11px]">
                                     <span className="font-bold text-red-400 flex items-center gap-1.5">
                                       <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
                                       {slConfig.type === 'trailing_chase' ? 'Trailing Chase Engine (Maker Post-Only)' : 'Smart Chase Settings (Maker Post-Only)'}
                                     </span>
-                                    <span className="text-[9px] text-amber-400 font-mono font-bold">Circuit: {slConfig.smartChaseDeviationPct}%</span>
+                                    <span className="text-[10px] text-amber-400 font-mono font-bold">Circuit: {slConfig.smartChaseDeviationPct}%</span>
                                   </div>
 
                                   {/* Pegging Strategy Selector: Standard BBO vs Inside-Spread vs Wall-Aware */}
                                   <div className="space-y-1">
-                                    <div className="flex justify-between items-center text-[9px] text-gray-400">
+                                    <div className="flex justify-between items-center text-[10px] text-gray-400">
                                       <span className="font-semibold text-gray-300">Pegging Strategy</span>
-                                      <span className="text-[8.5px] font-mono text-amber-300 font-bold">
+                                      <span className="text-[9.5px] font-mono text-amber-300 font-bold">
                                         {slConfig.smartChasePegStrategy === 'wall_aware' ? '🧱 Wall-Aware' : (slConfig.smartChasePegStrategy === 'inside_spread' ? '🎯 Inside-Spread' : '⚡ Top BBO')}
                                       </span>
                                     </div>
-                                    <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[9px] font-semibold">
+                                    <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[10px] font-semibold">
                                       <button
                                         type="button"
                                         onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'bbo' })}
@@ -6010,7 +6017,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     </div>
                                     {slConfig.smartChasePegStrategy === 'wall_aware' && (
                                       <div className="p-2 rounded bg-amber-950/20 border border-amber-500/20 space-y-1">
-                                        <div className="flex justify-between items-center text-[8.5px]">
+                                        <div className="flex justify-between items-center text-[9.5px]">
                                           <span className="text-gray-300">Wall Threshold Multiplier</span>
                                           <span className="text-amber-400 font-mono font-bold">{slConfig.smartChaseWallMultiplier}x Depth</span>
                                         </div>
@@ -6021,13 +6028,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                           onChange={(e) => setSlConfig({ ...slConfig, smartChaseWallMultiplier: parseFloat(e.target.value) || 2.5 })}
                                           className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
                                         />
-                                        <p className="text-[8px] text-gray-400 leading-tight">
+                                        <p className="text-[9px] text-gray-400 leading-tight">
                                           Front-runs orderbook clusters with volume ≥ {slConfig.smartChaseWallMultiplier}x average depth.
                                         </p>
                                       </div>
                                     )}
                                     {slConfig.smartChasePegStrategy === 'inside_spread' && (
-                                      <p className="text-[8px] text-cyan-400/90 leading-tight">
+                                      <p className="text-[9px] text-cyan-400/90 leading-tight">
                                         💡 Jumps 1 tick inside the spread to capture top execution priority before takers match other makers.
                                       </p>
                                     )}
@@ -6035,13 +6042,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                                   {/* Chase Trigger Basis Toggle: Last Market Price vs Bid / Ask Price */}
                                   <div className="space-y-1">
-                                    <div className="flex justify-between items-center text-[9px] text-gray-400">
+                                    <div className="flex justify-between items-center text-[10px] text-gray-400">
                                       <span className="font-semibold text-gray-300">Trigger Condition Basis</span>
-                                      <span className="text-[8.5px] font-mono text-cyan-300 font-bold">
+                                      <span className="text-[9.5px] font-mono text-cyan-300 font-bold">
                                         {slConfig.smartChaseTriggerSource === 'bid_ask' ? '⚡ Bid / Ask (BBO)' : '📊 Last Market Price'}
                                       </span>
                                     </div>
-                                    <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[9px] font-semibold">
+                                    <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[10px] font-semibold">
                                       <button
                                         type="button"
                                         onClick={() => setSlConfig({ ...slConfig, smartChaseTriggerSource: 'last' })}
@@ -6065,7 +6072,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                         ⚡ Bid / Ask
                                       </button>
                                     </div>
-                                    <p className="text-[8px] text-gray-400 leading-tight">
+                                    <p className="text-[9px] text-gray-400 leading-tight">
                                       {slConfig.smartChaseTriggerSource === 'bid_ask'
                                         ? 'Triggers immediately when Top Bid (Long exit) or Ask (Short exit) reaches SL.'
                                         : 'Triggers when a matched trade on the exchange reaches or breaches SL.'}
@@ -6073,7 +6080,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   </div>
 
                                   {/* Chase Mode Selector: Dynamic BBO Peg vs Interval Timer */}
-                                  <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[9px] font-semibold">
+                                  <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[10px] font-semibold">
                                     <button
                                       type="button"
                                       onClick={() => setSlConfig({ ...slConfig, smartChaseMode: 'dynamic_bbo' })}
@@ -6100,24 +6107,24 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   </div>
 
                                   {slConfig.smartChaseMode === 'dynamic_bbo' ? (
-                                    <div className="p-2 rounded bg-amber-950/30 border border-amber-500/30 text-[9px] text-amber-300/90 space-y-0.5">
+                                    <div className="p-2 rounded bg-amber-950/30 border border-amber-500/30 text-[10px] text-amber-300/90 space-y-0.5">
                                       <div className="font-bold flex items-center gap-1 text-amber-300">
                                         <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
                                         <span>Real-Time Order Book Shadowing Active</span>
                                       </div>
-                                      <p className="text-[8.5px] text-gray-400 leading-tight">
+                                      <p className="text-[9.5px] text-gray-400 leading-tight">
                                         Stays resting at Top-of-Book to preserve queue priority. Instantly cancels and re-pegs when another participant outbids you!
                                       </p>
                                     </div>
                                   ) : (
-                                    <div className="p-1.5 rounded bg-black/40 border border-white/5 text-[9px] text-gray-400">
+                                    <div className="p-1.5 rounded bg-black/40 border border-white/5 text-[10px] text-gray-400">
                                       <span>Waits for configured delay interval between chase attempts.</span>
                                     </div>
                                   )}
 
                                   {/* Max Chase Deviation Slider */}
                                   <div className="space-y-1">
-                                    <div className="flex justify-between items-center text-[9px] text-gray-400">
+                                    <div className="flex justify-between items-center text-[10px] text-gray-400">
                                       <span>Max Deviation (Circuit Breaker)</span>
                                       <span className="text-amber-400 font-bold font-mono">{slConfig.smartChaseDeviationPct}%</span>
                                     </div>
@@ -6128,15 +6135,15 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       onChange={(e) => setSlConfig({ ...slConfig, smartChaseDeviationPct: parseFloat(e.target.value) })}
                                       className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
                                     />
-                                    <p className="text-[8px] text-gray-500">Breach triggers emergency Market Sweep.</p>
+                                    <p className="text-[9px] text-gray-500">Breach triggers emergency Market Sweep.</p>
                                   </div>
 
                                   {/* Retries and Delay Grid */}
                                   <div className={`grid ${slConfig.smartChaseMode === 'dynamic_bbo' ? 'grid-cols-1' : 'grid-cols-2'} gap-2 pt-1 border-t border-white/5`}>
                                     <div className="space-y-1">
-                                      <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                      <label className="text-[10px] text-gray-400 font-medium flex justify-between">
                                         <span>Max Re-pegs / Retries</span>
-                                        <span className="text-[8px] text-amber-400 font-bold">0 = ∞ (Continuous)</span>
+                                        <span className="text-[9px] text-amber-400 font-bold">0 = ∞ (Continuous)</span>
                                       </label>
                                       <input
                                         type="number"
@@ -6144,14 +6151,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                         value={slConfig.smartChaseMaxAttempts}
                                         onChange={(e) => setSlConfig({ ...slConfig, smartChaseMaxAttempts: parseInt(e.target.value) || 0 })}
                                         placeholder="0 (Unlimited)"
-                                        className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-red-500/50"
+                                        className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-red-500/50"
                                       />
                                     </div>
                                     {slConfig.smartChaseMode === 'interval' && (
                                       <div className="space-y-1">
-                                        <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                        <label className="text-[10px] text-gray-400 font-medium flex justify-between">
                                           <span>Delay (ms)</span>
-                                          <span className="text-[8px] text-gray-500">Throttle</span>
+                                          <span className="text-[9px] text-gray-500">Throttle</span>
                                         </label>
                                         <input
                                           type="number"
@@ -6159,7 +6166,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                           value={slConfig.smartChaseDelayMs}
                                           onChange={(e) => setSlConfig({ ...slConfig, smartChaseDelayMs: parseInt(e.target.value) || 1500 })}
                                           placeholder="1500"
-                                          className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-red-500/50"
+                                          className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-red-500/50"
                                         />
                                       </div>
                                     )}
@@ -6178,7 +6185,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 >
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                    <span className="text-[10px] font-bold text-emerald-300 group-hover:text-white transition-colors">
+                                    <span className="text-[11px] font-bold text-emerald-300 group-hover:text-white transition-colors">
                                       🛡️ Auto-Breakeven {(isNativeExchangeSlLockedToFixed && (slConfig.type === 'fixed' || slConfig.type === 'trailing')) ? '(Switch to ⚡ Smart Chase to enable with Native OTO)' : '(Risk-Free Trade)'}
                                     </span>
                                   </div>
@@ -6201,7 +6208,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     >
                                       <div className="grid grid-cols-2 gap-2">
                                         <div className="space-y-1">
-                                          <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                          <label className="text-[10px] text-gray-400 font-medium flex justify-between">
                                             <span>Trigger at Profit</span>
                                             <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenTriggerPct}%</span>
                                           </label>
@@ -6212,11 +6219,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                             max="50"
                                             value={slConfig.autoBreakevenTriggerPct}
                                             onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenTriggerPct: parseFloat(e.target.value) || 0.5 })}
-                                            className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
+                                            className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
                                           />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="text-[9px] text-gray-400 font-medium flex justify-between">
+                                          <label className="text-[10px] text-gray-400 font-medium flex justify-between">
                                             <span>Fee Buffer</span>
                                             <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenBufferPct}%</span>
                                           </label>
@@ -6227,12 +6234,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                             max="1.0"
                                             value={slConfig.autoBreakevenBufferPct}
                                             onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenBufferPct: parseFloat(e.target.value) || 0.05 })}
-                                            className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[10px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
+                                            className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
                                             title="Extra cushion above entry price to guarantee 0 loss after exchange commissions"
                                           />
                                         </div>
                                       </div>
-                                      <p className="text-[8px] text-emerald-400/80 leading-tight">
+                                      <p className="text-[9px] text-emerald-400/80 leading-tight">
                                         ⚡ When profit reaches +{slConfig.autoBreakevenTriggerPct}%, SL automatically ratchets to Entry + {slConfig.autoBreakevenBufferPct}% buffer (100% Risk-Free)!
                                       </p>
                                     </MotionDiv>
@@ -6245,7 +6252,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       </div>
 
                       {(!tpConfig.enabled && !slConfig.enabled) && (
-                        <div className="px-2.5 py-1.5 rounded-lg bg-cyan-950/20 border border-cyan-500/20 text-[9.5px] font-mono text-gray-400">
+                        <div className="px-2.5 py-1.5 rounded-lg bg-cyan-950/20 border border-cyan-500/20 text-[10.5px] font-mono text-gray-400">
                           💡 Tip: Enable Take-Profit or Stop-Loss below to arm Native Binance OTO/OTOCO, Hybrid Smart Chase SL, or Futures Brackets.
                         </div>
                       )}
@@ -6269,10 +6276,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300">
+                                <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
                                   AI Shield Protected ({aiRejectNotice.side} Blocked)
                                 </span>
-                                <span className="text-[8.5px] text-gray-500 font-mono">
+                                <span className="text-[9.5px] text-gray-500 font-mono">
                                   {aiRejectNotice.timestamp}
                                 </span>
                               </div>
@@ -6288,12 +6295,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                             {/* Score vs Threshold Progress Bar */}
                             <div className="space-y-1 bg-black/50 p-1.5 rounded-lg border border-white/5">
-                              <div className="flex items-center justify-between text-[9px] font-mono">
+                              <div className="flex items-center justify-between text-[10px] font-mono">
                                 <span className="text-gray-300">
                                   {aiRejectNotice.directionLabel}:{' '}
                                   <strong className="text-amber-300">{aiRejectNotice.calibratedProb.toFixed(1)}%</strong>
                                   {aiRejectNotice.rawProb !== null && aiRejectNotice.rawProb !== undefined && Math.abs(aiRejectNotice.rawProb - aiRejectNotice.calibratedProb) > 3 && (
-                                    <span className="text-[8px] text-gray-500 ml-1">(Raw {aiRejectNotice.rawProb.toFixed(1)}%)</span>
+                                    <span className="text-[9px] text-gray-500 ml-1">(Raw {aiRejectNotice.rawProb.toFixed(1)}%)</span>
                                   )}
                                 </span>
                                 <span className="text-cyan-300 font-bold">
@@ -6313,7 +6320,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   style={{ left: `${Math.min(98, Math.max(2, aiRejectNotice.threshold))}%` }}
                                 />
                               </div>
-                              <div className="flex flex-wrap items-center gap-1 pt-0.5 text-[8px] font-mono text-gray-300">
+                              <div className="flex flex-wrap items-center gap-1 pt-0.5 text-[9px] font-mono text-gray-300">
                                 <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
                                   Model: <strong className="text-blue-300">{aiRejectNotice.modelName}</strong>
                                 </span>
@@ -6335,7 +6342,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               </div>
                             </div>
 
-                            <div className="text-[9px] text-amber-200/95 leading-tight flex items-start gap-1 px-0.5">
+                            <div className="text-[10px] text-amber-200/95 leading-tight flex items-start gap-1 px-0.5">
                               <span className="text-amber-400 shrink-0">⚡</span>
                               <span>{aiRejectNotice.reason}</span>
                             </div>
@@ -6377,20 +6384,20 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         ) : (
                           <TrendingDown className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
                         )}
-                        <span className="text-xs font-black uppercase tracking-wider font-mono">
+                        <span className="text-[13px] font-black uppercase tracking-wider font-mono">
                           {isSubmitting
                             ? 'EXECUTING...'
                             : `${orderType === 'SmartPeg' ? 'SMART PEG' : 'EXECUTE'} ${isFutures ? (tradeSide === 'Buy' ? 'LONG' : 'SHORT') : tradeSide.toUpperCase()}`}
                         </span>
                       </div>
-                      <span className="text-[9px] font-mono text-gray-300/80 group-hover:text-white flex items-center gap-1">
+                      <span className="text-[10px] font-mono text-gray-300/80 group-hover:text-white flex items-center gap-1">
                         <span>Click or Drag Chart</span>
                         <MoveVertical className="w-3 h-3 opacity-80" />
                       </span>
                     </button>
 
                     {/* Footer Telemetry Status Strip */}
-                    <div className="flex items-center justify-between text-[8.5px] font-mono text-gray-500">
+                    <div className="flex items-center justify-between text-[9.5px] font-mono text-gray-500">
                       <span className="flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(52,211,153,0.8)]" />
                         Secure API Execution
@@ -6433,7 +6440,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
             pointerEvents: 'none',
             zIndex: 999999,
           }}
-          className={`px-2.5 py-1 rounded-lg border font-mono text-[11px] font-black shadow-2xl ${isThermalGuardActive ? '' : 'backdrop-blur-md'} flex items-center gap-2 select-none animate-fadeIn ${activeDragLine.type === 'peg_buy'
+          className={`px-2.5 py-1 rounded-lg border font-mono text-[12px] font-black shadow-2xl ${isThermalGuardActive ? '' : 'backdrop-blur-md'} flex items-center gap-2 select-none animate-fadeIn ${activeDragLine.type === 'peg_buy'
             ? 'bg-cyan-950/95 border-cyan-400 text-cyan-200 shadow-[0_0_18px_rgba(6,182,212,0.55)]'
             : activeDragLine.type === 'peg_sell'
               ? 'bg-amber-950/95 border-amber-400 text-amber-200 shadow-[0_0_18px_rgba(245,158,11,0.55)]'
@@ -6469,7 +6476,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           </span>
           {effectiveCurrentPrice > 0 && activeDragLine.currentPrice > 0 && (
             <span
-              className={`text-[9px] font-extrabold ${activeDragLine.currentPrice >= effectiveCurrentPrice ? 'text-emerald-400' : 'text-rose-400'
+              className={`text-[10px] font-extrabold ${activeDragLine.currentPrice >= effectiveCurrentPrice ? 'text-emerald-400' : 'text-rose-400'
                 }`}
             >
               ({(((activeDragLine.currentPrice - effectiveCurrentPrice) / effectiveCurrentPrice) * 100) >= 0 ? '+' : ''}

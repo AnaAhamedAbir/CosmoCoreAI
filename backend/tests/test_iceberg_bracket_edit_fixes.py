@@ -528,6 +528,167 @@ class TestIcebergBracketAndEditFixes(unittest.TestCase):
 
         asyncio.run(_run())
 
+    def test_emergency_force_sell_all_mode_counts_cancelled_iceberg_amount_when_free_lags(self):
+        async def _run():
+            api_key_record = SimpleNamespace(
+                id=1, user_id=1, exchange="binance", is_enabled=True, api_key="k", secret_key="s", passphrase=None
+            )
+            db = _DummyDB(api_key_record)
+            ManualTradeService.invalidate_open_orders_cache(1, "DOGE/FDUSD")
+
+            captured_peg_amounts = []
+
+            class MockSpotExchange:
+                id = "binance"
+                markets = {
+                    "DOGE/FDUSD": {
+                        "symbol": "DOGE/FDUSD",
+                        "base": "DOGE",
+                        "quote": "FDUSD",
+                        "spot": True,
+                        "inverse": False,
+                        "contractSize": 1.0,
+                        "precision": {"amount": 1.0, "price": 0.00001},
+                    }
+                }
+
+                def amount_to_precision(self, symbol, amount):
+                    return str(int(float(amount)))
+
+                async def fetch_open_orders(self, symbol):
+                    return [
+                        {
+                            "id": "4044333102",
+                            "status": "open",
+                            "type": "limit",
+                            "side": "sell",
+                            "price": 0.0600,
+                            "amount": 507.0,
+                            "remaining": 507.0,
+                            "info": {"origQty": "507", "icebergQty": "250"},
+                        }
+                    ]
+
+                async def cancel_all_orders(self, symbol):
+                    return []
+
+                async def fetch_order_book(self, symbol, limit=5):
+                    return {"bids": [[0.05879, 1000.0]], "asks": [[0.05880, 1000.0]]}
+
+                async def fetch_balance(self, params=None):
+                    # Simulate Binance balance lag where cancelled 507 DOGE has not moved into free yet
+                    return {
+                        "DOGE": {"free": 25.0, "used": 507.0, "total": 532.0},
+                        "FDUSD": {"free": 10.0, "used": 0.0, "total": 10.0},
+                    }
+
+            mock_ex = MockSpotExchange()
+
+            async def _fake_smart_peg(**kwargs):
+                captured_peg_amounts.append(kwargs["amount"])
+                return {"status": "closed"}
+
+            scheduled_tasks = []
+            orig_create_task = asyncio.create_task
+
+            def _track_task(coro):
+                t = orig_create_task(coro)
+                scheduled_tasks.append(t)
+                return t
+
+            with (
+                patch.object(ManualTradeService, "_get_exchange", AsyncMock(return_value=mock_ex)),
+                patch("app.services.user_order_stream.ensure_user_order_stream", lambda *_, **__: None),
+                patch("app.services.manual_smart_chase_executor.stop_smart_chase", AsyncMock(return_value=0)),
+                patch("app.services.smart_peg_entry_executor.stop_smart_peg", AsyncMock(return_value=0)),
+                patch("app.services.smart_peg_entry_executor.execute_smart_peg_entry", side_effect=_fake_smart_peg),
+                patch("app.services.manual_trade_service.asyncio.sleep", AsyncMock(return_value=None)),
+                patch("app.services.manual_trade_service.asyncio.create_task", side_effect=_track_task),
+            ):
+                res = await ManualTradeService.execute_emergency_force_order(
+                    db=db,
+                    user_id=1,
+                    api_key_id=1,
+                    symbol="DOGE/FDUSD",
+                    side="sell",
+                    execution_mode="limit_maker",
+                    size_pct=100.0,
+                    target_order_id="all",
+                )
+                if scheduled_tasks:
+                    await asyncio.gather(*scheduled_tasks)
+
+            self.assertEqual(res["status"], "pegging")
+            self.assertGreater(res["amount"], 500.0)
+            self.assertEqual(captured_peg_amounts, [res["amount"]])
+
+        asyncio.run(_run())
+
+    def test_emergency_force_sell_specific_order_uses_free_plus_used_when_total_omitted(self):
+        async def _run():
+            api_key_record = SimpleNamespace(
+                id=1, user_id=1, exchange="binance", is_enabled=True, api_key="k", secret_key="s", passphrase=None
+            )
+            db = _DummyDB(api_key_record)
+
+            class MockSpotExchange:
+                id = "binance"
+                markets = {
+                    "DOGE/FDUSD": {
+                        "symbol": "DOGE/FDUSD",
+                        "base": "DOGE",
+                        "quote": "FDUSD",
+                        "spot": True,
+                        "inverse": False,
+                        "contractSize": 1.0,
+                        "precision": {"amount": 1.0, "price": 0.00001},
+                    }
+                }
+
+                def amount_to_precision(self, symbol, amount):
+                    return str(int(float(amount)))
+
+                async def cancel_order(self, oid, symbol):
+                    return {"id": oid, "status": "canceled"}
+
+                async def fetch_order_book(self, symbol, limit=5):
+                    return {"bids": [[0.05879, 1000.0]], "asks": [[0.05880, 1000.0]]}
+
+                async def fetch_balance(self, params=None):
+                    return {
+                        "DOGE": {"free": 25.0, "used": 507.0},
+                        "FDUSD": {"free": 10.0, "used": 0.0, "total": 10.0},
+                    }
+
+            mock_ex = MockSpotExchange()
+
+            async def _fake_smart_peg(**kwargs):
+                return {"status": "closed"}
+
+            with (
+                patch.object(ManualTradeService, "_get_exchange", AsyncMock(return_value=mock_ex)),
+                patch("app.services.manual_smart_chase_executor.stop_smart_chase", AsyncMock(return_value=0)),
+                patch("app.services.smart_peg_entry_executor.stop_smart_peg", AsyncMock(return_value=0)),
+                patch("app.services.smart_peg_entry_executor.execute_smart_peg_entry", side_effect=_fake_smart_peg),
+                patch("app.services.manual_trade_service.asyncio.sleep", AsyncMock(return_value=None)),
+            ):
+                res = await ManualTradeService.execute_emergency_force_order(
+                    db=db,
+                    user_id=1,
+                    api_key_id=1,
+                    symbol="DOGE/FDUSD",
+                    side="sell",
+                    execution_mode="limit_maker",
+                    size_pct=100.0,
+                    target_order_id="4044333102",
+                    target_order_amount=507.0,
+                )
+                await asyncio.sleep(0)
+
+            self.assertEqual(res["amount"], 507.0)
+
+        asyncio.run(_run())
+
 
 if __name__ == "__main__":
     unittest.main()

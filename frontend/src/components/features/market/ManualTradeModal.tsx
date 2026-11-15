@@ -667,7 +667,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
       const sideLower = String(ord.side || 'sell').toLowerCase() === 'buy' ? 'buy' : 'sell';
       const sideLabel = sideLower.toUpperCase();
-      const amt = Number(ord.amount || 0);
+      const rawRem = Number(ord.remaining);
+      const amt = rawRem > 0 ? rawRem : Number(ord.amount || 0);
       const price = Number(ord.price || 0);
       const mode = String(ord.mode || 'LIMIT').toUpperCase();
 
@@ -1018,10 +1019,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       }
 
       const hasCustomTypedSize = !targetObj && !selectedPercent && Boolean(size) && Number(size) > 0;
+      // When a specific open order / bracket is targeted, the button displays and force-executes
+      // 100% of that cancelled order rather than scaling it by the HUD entry-size percentage.
       const effectivePct = targetObj
-        ? selectedPercent
-          ? Math.max(1, Math.min(100, Number(selectedPercent.replace('%', '')) || 100))
-          : 100
+        ? 100
         : hasCustomTypedSize
           ? 0
           : selectedPercent

@@ -273,6 +273,38 @@ class ManualTradeService:
             ManualTradeService._OPEN_ORDERS_CACHE.pop(cache_key, None)
 
     @staticmethod
+    def _sanitize_ws_order_args(exchange, order_type: str, params: dict, is_futures: bool, is_edit: bool = False):
+        """
+        Translate CCXT unified params (postOnly, icebergAmount) into native Binance args before
+        calling create_order_ws / edit_order_ws, since CCXT's WS helpers extend payload with raw params.
+        """
+        ws_params = dict(params or {})
+        ws_type = order_type
+        if getattr(exchange, 'id', '').lower() != 'binance':
+            return ws_type, ws_params
+
+        ws_params.pop('icebergAmount', None)
+        if str(ws_params.get('timeInForce') or '').upper() == 'PO':
+            ws_params.pop('timeInForce', None)
+            ws_params['postOnly'] = True
+
+        if ws_params.pop('postOnly', None):
+            if str(order_type).lower() == 'limit':
+                if is_futures:
+                    if not is_edit:
+                        ws_params['timeInForce'] = 'GTX'
+                else:
+                    ws_type = 'LIMIT_MAKER'
+                    ws_params.pop('timeInForce', None)
+        elif str(ws_type).upper() == 'LIMIT_MAKER':
+            ws_params.pop('timeInForce', None)
+
+        if is_futures and is_edit:
+            ws_params.pop('timeInForce', None)
+
+        return ws_type, ws_params
+
+    @staticmethod
     async def _get_exchange(api_key_record: models.ApiKey, is_futures: bool, purpose: str = "general"):
         """
         Exchange Pool থেকে একটি ready Exchange instance নিয়ে আসে।
@@ -1971,8 +2003,11 @@ class ManualTradeService:
                         logger.info(f"⚡ Attempting WebSocket order execution for {order_req.symbol}...")
                         order_type = order_req.type.lower()
                         price = order_req.price if order_type == 'limit' else None
+                        ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
+                            exchange, order_type, ex_params, is_futures, is_edit=False
+                        )
                         response = await exchange.create_order_ws(
-                            order_req.symbol, order_type, order_req.side, order_req.amount, price, ex_params
+                            order_req.symbol, ws_type, order_req.side, order_req.amount, price, ws_params
                         )
                         if (
                             ex_params.get('postOnly')
@@ -2308,9 +2343,11 @@ class ManualTradeService:
                         fmt_iceberg_q = str(exchange.amount_to_precision(symbol, iceberg_q))
                     except Exception:
                         fmt_iceberg_q = str(bracket_order_service._safe_amount_to_precision(exchange, symbol, iceberg_q))
-                    ex_params['icebergAmount'] = float(fmt_iceberg_q)
+                    if getattr(exchange, 'id', '').lower() != 'binance':
+                        ex_params['icebergAmount'] = float(fmt_iceberg_q)
                     ex_params['icebergQty'] = fmt_iceberg_q
-                    ex_params['timeInForce'] = 'GTC'
+                    if 'timeInForce' not in ex_params and not ex_params.get('postOnly'):
+                        ex_params['timeInForce'] = 'GTC'
                     logger.info(f"🧊 Preserved Iceberg slice {fmt_iceberg_q} from cache during order edit")
             elif is_futures:
                 # If order not in cache and on futures, check if it was a conditional stop
@@ -2345,8 +2382,11 @@ class ManualTradeService:
             if exchange.has.get('editOrderWs') and not is_conditional_stop and not ex_params.get('icebergQty'):
                 try:
                     t_ws_api = time.perf_counter()
+                    ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
+                        exchange, order_type, ex_params, is_futures, is_edit=True
+                    )
                     response = await exchange.edit_order_ws(
-                        order_id, symbol, order_type, side, amount, price_arg, ex_params
+                        order_id, symbol, ws_type, side, amount, price_arg, ws_params
                     )
                     api_ms = int((time.perf_counter() - t_ws_api) * 1000)
                     is_native_success = True
@@ -2358,8 +2398,15 @@ class ManualTradeService:
             if not is_native_success and exchange.has.get('editOrder') and not is_conditional_stop:
                 try:
                     t_api = time.perf_counter()
+                    rest_edit_type, rest_edit_params = (
+                        ManualTradeService._sanitize_ws_order_args(
+                            exchange, order_type, ex_params, is_futures, is_edit=True
+                        )
+                        if is_futures
+                        else (order_type, ex_params)
+                    )
                     response = await exchange.edit_order(
-                        order_id, symbol, order_type, side, amount, price_arg, ex_params
+                        order_id, symbol, rest_edit_type, side, amount, price_arg, rest_edit_params
                     )
                     api_ms = int((time.perf_counter() - t_api) * 1000)
                     is_native_success = True
@@ -2384,8 +2431,11 @@ class ManualTradeService:
                 else:
                     if exchange.has.get('createOrderWs') and not ex_params.get('icebergQty'):
                         try:
+                            ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
+                                exchange, order_type, ex_params, is_futures, is_edit=False
+                            )
                             response = await exchange.create_order_ws(
-                                symbol, order_type, side, amount, price_arg, ex_params
+                                symbol, ws_type, side, amount, price_arg, ws_params
                             )
                         except Exception:
                             response = None

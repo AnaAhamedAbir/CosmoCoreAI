@@ -13,6 +13,7 @@ Fixes applied:
 import time
 import asyncio
 import logging
+from typing import Optional
 from app.services.exchange_pool import get_or_create_exchange
 from app.core.security import decrypt_key
 from app.services.notification import NotificationService
@@ -952,6 +953,7 @@ class BracketOrderService:
         3. Fires opposite Take-Profit order based on the config.
         4. Sends a Telegram notification after TP is placed.
         """
+        current_entry_id = str(entry_order_id) if entry_order_id else None
         try:
             # BUG-03 fix: Guard against empty string passphrase crashing decrypt_key
             decrypted_api_key = decrypt_key(api_key_record.api_key)

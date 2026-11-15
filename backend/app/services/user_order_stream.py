@@ -26,6 +26,13 @@ OPEN_STATUSES = {"open", "new"}
 # Key: (api_key_id, market_mode) -> {"task": asyncio.Task, "last_active": float, "user_id": int, "symbol": str | None}
 _active_streams: Dict[Tuple[int, str], Dict[str, Any]] = {}
 _redis_pub: Optional[aioredis.Redis] = None
+# Order IDs recently replaced by edit_order (cancelReplace) — suppress false WS removal flicker for 4s
+_replaced_order_ttl: Dict[str, float] = {}
+
+
+def mark_order_replaced(old_order_id: Optional[str], ttl_seconds: float = 4.0) -> None:
+    if old_order_id:
+        _replaced_order_ttl[str(old_order_id)] = time.time() + ttl_seconds
 
 
 async def _get_redis_pub() -> Optional[aioredis.Redis]:
@@ -235,6 +242,9 @@ async def _stream_worker(
                         ManualTradeService.invalidate_open_orders_cache(api_key_id)
 
                         if status in TERMINAL_STATUSES:
+                            rep_exp = _replaced_order_ttl.pop(oid, 0.0)
+                            if rep_exp and rep_exp > time.time() and status in ("canceled", "cancelled"):
+                                continue
                             related_ids = _collect_related_bracket_ids(api_key_id, oid)
                             await publish_order_sync_event(
                                 user_id=user_id,

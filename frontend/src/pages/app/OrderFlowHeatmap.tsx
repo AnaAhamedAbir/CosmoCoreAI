@@ -2826,6 +2826,21 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         new_price: mod.newPrice
                     }
                 );
+                const newOrderId = res?.id ? String(res.id) : String(mod.orderId);
+                if (newOrderId !== String(mod.orderId)) {
+                    if (line) {
+                        wallLinesRef.current.delete(key);
+                        wallLinesRef.current.set(`order-${newOrderId}`, line);
+                    }
+                    mod.targetOrder.id = newOrderId;
+                }
+                window.dispatchEvent(new CustomEvent('optimisticSwapOpenOrder', {
+                    detail: {
+                        oldOrderId: String(mod.orderId),
+                        newOrderId,
+                        newPrice: mod.newPrice
+                    }
+                }));
                 const speedText = res?.execution_speed_ms ? ` (${res.execution_speed_ms}ms ⚡)` : '';
                 toast.success(`Order price updated to ${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)}${speedText}`);
             }

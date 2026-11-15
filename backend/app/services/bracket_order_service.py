@@ -998,9 +998,10 @@ class BracketOrderService:
             average_price = float(initial_entry_price or 0.0)
             order_closed = False
             elapsed_seconds = 0
-            if entry_order_id:
-                BracketOrderService.ACTIVE_ENTRY_MONITORS[str(entry_order_id)] = {
-                    'entry_order_id': str(entry_order_id),
+            current_entry_id = str(entry_order_id) if entry_order_id else None
+            if current_entry_id:
+                BracketOrderService.ACTIVE_ENTRY_MONITORS[current_entry_id] = {
+                    'entry_order_id': current_entry_id,
                     'symbol': symbol,
                     'api_key_id': getattr(api_key_record, 'id', None),
                     'linked_tp_order_id': str(linked_tp_order_id) if linked_tp_order_id else None,
@@ -1008,10 +1009,24 @@ class BracketOrderService:
                     'cancelled': False,
                 }
 
+            def _resolve_active_entry_id(curr_id: Optional[str]) -> Optional[str]:
+                """Follow any cancelReplace / edit_order ID handoff chain seamlessly."""
+                seen = set()
+                while curr_id and curr_id not in seen:
+                    seen.add(curr_id)
+                    meta = BracketOrderService.ACTIVE_ENTRY_MONITORS.get(curr_id)
+                    next_id = meta.get('replaced_by') if isinstance(meta, dict) else None
+                    if next_id and str(next_id) != curr_id:
+                        curr_id = str(next_id)
+                    else:
+                        break
+                return curr_id
+
             # ── Polling Loop ───────────────────────────────────────────
             while True:
-                if entry_order_id and BracketOrderService.ACTIVE_ENTRY_MONITORS.get(str(entry_order_id), {}).get('cancelled'):
-                    logger.info(f"🛑 Bracket Monitor for {entry_order_id} aborted by Emergency Force Order.")
+                current_entry_id = _resolve_active_entry_id(current_entry_id)
+                if current_entry_id and BracketOrderService.ACTIVE_ENTRY_MONITORS.get(current_entry_id, {}).get('cancelled'):
+                    logger.info(f"🛑 Bracket Monitor for {current_entry_id} aborted by Emergency Force Order.")
                     break
                 if not is_unlimited and elapsed_seconds >= max_timeout_mins * 60:
                     break
@@ -1029,12 +1044,14 @@ class BracketOrderService:
                 await asyncio.sleep(sleep_time)
                 elapsed_seconds += sleep_time
 
-                if entry_order_id and BracketOrderService.ACTIVE_ENTRY_MONITORS.get(str(entry_order_id), {}).get('cancelled'):
-                    logger.info(f"🛑 Bracket Monitor for {entry_order_id} aborted by Emergency Force Order.")
+                current_entry_id = _resolve_active_entry_id(current_entry_id)
+                if current_entry_id and BracketOrderService.ACTIVE_ENTRY_MONITORS.get(current_entry_id, {}).get('cancelled'):
+                    logger.info(f"🛑 Bracket Monitor for {current_entry_id} aborted by Emergency Force Order.")
                     break
 
                 try:
-                    order_status = await exchange.fetch_order(entry_order_id, symbol)
+                    polled_entry_id = current_entry_id
+                    order_status = await exchange.fetch_order(polled_entry_id, symbol)
                     status = str(order_status.get('status') or '').lower()
                     filled = float(order_status.get('filled') or 0.0)
                     if status in ('closed', 'filled') and filled <= 0 and amount > 0:
@@ -1061,17 +1078,17 @@ class BracketOrderService:
                         if not is_futures and status == 'open' and processed_amount <= 0 and 0 < chunk_notional < 5.0:
                             logger.info(
                                 f"⏳ [Bracket Monitor] Partial fill {newly_filled} (${chunk_notional:.2f} < $5.00 Spot Min Notional) "
-                                f"for {entry_order_id}. Waiting for additional fill or order close..."
+                                f"for {polled_entry_id}. Waiting for additional fill or order close..."
                             )
                         else:
-                            logger.info(f"⚡ Partial/Full fill detected for {entry_order_id}: {newly_filled} @ {average_price} (Total: {filled}/{amount})")
+                            logger.info(f"⚡ Partial/Full fill detected for {polled_entry_id}: {newly_filled} @ {average_price} (Total: {filled}/{amount})")
                             
                             # Spawning bracket for this chunk
                             asyncio.create_task(
                                 BracketOrderService._spawn_bracket_for_amount(
                                     exchange, symbol, side, newly_filled, average_price,
                                     is_futures, tp_config, sl_config, user_id, api_key_record,
-                                    entry_order_id=entry_order_id,
+                                    entry_order_id=polled_entry_id,
                                     linked_tp_order_id=linked_tp_order_id,
                                     linked_tp_price=linked_tp_price
                                 )
@@ -1096,7 +1113,13 @@ class BracketOrderService:
                         break
 
                     elif status in ('canceled', 'cancelled', 'expired', 'rejected'):
-                        logger.info(f"⚠️ Bracket Monitor: Entry {entry_order_id} canceled. Total processed: {processed_amount}")
+                        # If the order was replaced during a drag-modify/edit_order, seamlessly follow the new order ID
+                        next_id = _resolve_active_entry_id(polled_entry_id)
+                        if next_id and next_id != polled_entry_id:
+                            logger.info(f"🔄 Bracket Monitor migrated seamlessly: {polled_entry_id} -> {next_id}")
+                            current_entry_id = next_id
+                            continue
+                        logger.info(f"⚠️ Bracket Monitor: Entry {polled_entry_id} canceled. Total processed: {processed_amount}")
                         if user_id:
                             asyncio.create_task(
                                 BracketOrderService._send_order_cancelled_notification(
@@ -1116,7 +1139,7 @@ class BracketOrderService:
 
             if not order_closed and processed_amount < amount and not is_unlimited:
                 logger.warning(
-                    f"⏰ Bracket Monitor: Entry {entry_order_id} timed out "
+                    f"⏰ Bracket Monitor: Entry {current_entry_id or entry_order_id} timed out "
                     f"after {max_timeout_mins} mins. Processed {processed_amount}/{amount}."
                 )
 
@@ -1125,6 +1148,8 @@ class BracketOrderService:
         finally:
             if entry_order_id:
                 BracketOrderService.ACTIVE_ENTRY_MONITORS.pop(str(entry_order_id), None)
+            if current_entry_id and current_entry_id != str(entry_order_id):
+                BracketOrderService.ACTIVE_ENTRY_MONITORS.pop(current_entry_id, None)
 
 
     @staticmethod

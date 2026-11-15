@@ -188,15 +188,34 @@ export const useOpenOrders = (
       fetchOrders();
     };
 
+    const handleOptimisticSwap = (event: Event) => {
+      const detail = (event as CustomEvent<{ oldOrderId?: string; newOrderId?: string; newPrice?: number }>).detail;
+      const oldId = detail?.oldOrderId ? String(detail.oldOrderId) : '';
+      const newId = detail?.newOrderId ? String(detail.newOrderId) : '';
+      if (!oldId) return;
+      setOrders((prev) =>
+        prev.map((o) => {
+          if (String(o.id) !== oldId) return o;
+          return {
+            ...o,
+            id: newId || o.id,
+            price: typeof detail.newPrice === 'number' ? detail.newPrice : o.price,
+          };
+        })
+      );
+    };
+
     window.addEventListener('refreshOpenOrders', handleRefresh);
     window.addEventListener('optimisticRemoveOpenOrder', handleOptimisticRemove);
     window.addEventListener('optimisticClearOpenOrders', handleOptimisticClear);
     window.addEventListener('rollbackRemoveOpenOrder', handleRollbackRemove);
+    window.addEventListener('optimisticSwapOpenOrder', handleOptimisticSwap);
     return () => {
       window.removeEventListener('refreshOpenOrders', handleRefresh);
       window.removeEventListener('optimisticRemoveOpenOrder', handleOptimisticRemove);
       window.removeEventListener('optimisticClearOpenOrders', handleOptimisticClear);
       window.removeEventListener('rollbackRemoveOpenOrder', handleRollbackRemove);
+      window.removeEventListener('optimisticSwapOpenOrder', handleOptimisticSwap);
     };
   }, [fetchOrders, enabled, apiKeyId]);
 

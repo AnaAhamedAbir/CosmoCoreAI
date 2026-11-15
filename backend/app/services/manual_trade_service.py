@@ -771,6 +771,13 @@ class ManualTradeService:
                 if price > 0:
                     seen_order_ids.add(order_id_str)
                     raw_iceberg_qty = float(info_dict.get('icebergQty') or 0.0)
+                    tif_upper = str(info_dict.get('timeInForce') or o.get('timeInForce') or '').upper()
+                    is_post_only_order = (
+                        'limit_maker' in raw_type
+                        or 'limit_maker' in info_type
+                        or tif_upper == 'GTX'
+                        or bool(o.get('postOnly'))
+                    )
                     orders.append({
                         'id': order_id_str,
                         'side': str(o.get('side') or '').lower(),  # 'buy' or 'sell'
@@ -780,6 +787,7 @@ class ManualTradeService:
                         'remaining': float(o.get('remaining') or o.get('amount') or info_dict.get('origQty') or 0.0),
                         'isSoftwareSL': is_stop,
                         'mode': 'TP' if is_tp else ('STOP' if is_stop else 'LIMIT'),
+                        'isPostOnly': is_post_only_order,
                         'isIceberg': raw_iceberg_qty > 0,
                         'icebergQty': raw_iceberg_qty if raw_iceberg_qty > 0 else None
                     })
@@ -1576,14 +1584,39 @@ class ManualTradeService:
                 except Exception as margin_e:
                     logger.debug(f"Pre-flight margin calculation notice: {margin_e}")
 
-            # --- Refresh Auto-Best-Limit Price right after Margin Check so BBO is 0ms fresh ---
+            # --- Refresh Auto-Best-Limit Price right after Margin Check (Redis WS BBO 1ms fast-path, REST fallback) ---
             if order_req.type.lower() == 'limit' and params.get('autoBestLimit'):
                 try:
                     from app.services.smart_peg_entry_executor import _get_market_tick
-                    ob_fresh = await exchange.fetch_order_book(order_req.symbol, limit=5)
-                    if ob_fresh and ob_fresh.get('bids') and ob_fresh.get('asks'):
-                        f_bid = float(ob_fresh['bids'][0][0])
-                        f_ask = float(ob_fresh['asks'][0][0])
+                    f_bid = 0.0
+                    f_ask = 0.0
+                    try:
+                        from app.services.user_order_stream import _get_redis_pub
+                        import json as _json
+                        r_cli = await _get_redis_pub()
+                        if r_cli is not None:
+                            ex_id = str(getattr(api_key_record, 'exchange', 'binance') or 'binance').lower()
+                            raw_ob = await asyncio.wait_for(
+                                r_cli.get(f"latest_orderbook:{ex_id}:{order_req.symbol}"),
+                                timeout=0.05,
+                            )
+                            if raw_ob:
+                                ob_json = _json.loads(raw_ob)
+                                bids_l = ob_json.get('bids') or []
+                                asks_l = ob_json.get('asks') or []
+                                if bids_l and asks_l:
+                                    f_bid = float(bids_l[0].get('price') if isinstance(bids_l[0], dict) else bids_l[0][0])
+                                    f_ask = float(asks_l[0].get('price') if isinstance(asks_l[0], dict) else asks_l[0][0])
+                    except Exception:
+                        pass
+
+                    if f_bid <= 0 or f_ask <= 0:
+                        ob_fresh = await exchange.fetch_order_book(order_req.symbol, limit=5)
+                        if ob_fresh and ob_fresh.get('bids') and ob_fresh.get('asks'):
+                            f_bid = float(ob_fresh['bids'][0][0])
+                            f_ask = float(ob_fresh['asks'][0][0])
+
+                    if f_bid > 0 and f_ask > 0:
                         f_tick = _get_market_tick(exchange, order_req.symbol, f_bid)
                         if order_req.side.lower() == 'buy':
                             target_p = f_bid if f_bid < f_ask else (f_ask - f_tick)
@@ -1933,7 +1966,7 @@ class ManualTradeService:
 
             if not is_ws_success:
                 t_order_start = time.perf_counter()
-                if exchange.has.get('createOrderWs') and not ex_params.get('postOnly'):
+                if exchange.has.get('createOrderWs') and not ex_params.get('icebergQty'):
                     try:
                         logger.info(f"⚡ Attempting WebSocket order execution for {order_req.symbol}...")
                         order_type = order_req.type.lower()
@@ -1941,9 +1974,30 @@ class ManualTradeService:
                         response = await exchange.create_order_ws(
                             order_req.symbol, order_type, order_req.side, order_req.amount, price, ex_params
                         )
+                        if (
+                            ex_params.get('postOnly')
+                            and response
+                            and str(response.get('status', '')).lower() in ('expired', 'rejected', 'canceled', 'cancelled')
+                        ):
+                            raise Exception(f"Post-Only GTX returned status='{response.get('status')}'")
                         is_ws_success = True
                         logger.info("✅ WebSocket Order execution successful!")
                     except Exception as ws_e:
+                        ws_err_s = str(ws_e).lower()
+                        is_ws_po_cross = (
+                            'immediately match' in ws_err_s
+                            or '-5022' in ws_err_s
+                            or 'post only' in ws_err_s
+                            or 'postonly' in ws_err_s
+                            or 'post-only' in ws_err_s
+                            or 'gtx' in ws_err_s
+                            or 'expired' in ws_err_s
+                        )
+                        if ex_params.get('postOnly') and is_ws_po_cross and not params.get('autoBestLimit'):
+                            raise HTTPException(
+                                status_code=400,
+                                detail="Exchange Error: Post-Only order would immediately match and take liquidity. Try again or use Smart Peg Entry."
+                            )
                         logger.warning(f"⚠️ WebSocket Order Failed ({ws_e}). Falling back to REST API.")
 
             if not is_ws_success:
@@ -2246,6 +2300,8 @@ class ManualTradeService:
                 is_conditional_stop = bool(cached_order.get('isSoftwareSL'))
                 if is_conditional_stop:
                     order_type = str(cached_order.get('mode') or 'STOP_MARKET')
+                elif cached_order.get('isPostOnly'):
+                    ex_params['postOnly'] = True
                 if cached_order.get('isIceberg') and cached_order.get('icebergQty'):
                     iceberg_q = float(cached_order['icebergQty'])
                     try:
@@ -2282,8 +2338,24 @@ class ManualTradeService:
             api_ms = 0
             is_native_success = False
 
-            # Priority 1: High-Speed Native Atomic edit_order (Binance Spot cancelReplace or Binance Futures PUT order in 1 network call)
-            if exchange.has.get('editOrder') and not is_conditional_stop:
+            from app.services.user_order_stream import mark_order_replaced
+            mark_order_replaced(str(order_id))
+
+            # Priority 0: Ultra-Fast WebSocket API edit_order_ws (Spot cancelReplace / Futures modify in ~80-150ms)
+            if exchange.has.get('editOrderWs') and not is_conditional_stop and not ex_params.get('icebergQty'):
+                try:
+                    t_ws_api = time.perf_counter()
+                    response = await exchange.edit_order_ws(
+                        order_id, symbol, order_type, side, amount, price_arg, ex_params
+                    )
+                    api_ms = int((time.perf_counter() - t_ws_api) * 1000)
+                    is_native_success = True
+                    logger.info(f"⚡ [WS EDIT] Single-roundtrip editOrderWs succeeded for {order_id} in {api_ms}ms")
+                except Exception as ws_edit_err:
+                    logger.info(f"WS editOrderWs skipped/fallback ({ws_edit_err}), trying REST editOrder")
+
+            # Priority 1: High-Speed Native Atomic REST edit_order (Binance Spot cancelReplace or Futures PUT order)
+            if not is_native_success and exchange.has.get('editOrder') and not is_conditional_stop:
                 try:
                     t_api = time.perf_counter()
                     response = await exchange.edit_order(
@@ -2301,7 +2373,7 @@ class ManualTradeService:
                 # 1. Cancel previous order (supports both regular and conditional/algo orders)
                 await bracket_order_service._cancel_futures_order_universal(exchange, order_id, symbol)
 
-                # 2. Re-create order immediately at new_price without artificial sleep
+                # 2. Re-create order immediately at new_price via WS if possible, else REST
                 if is_futures and is_conditional_stop:
                     if not ex_params.get('positionSide') and 'reduceOnly' not in ex_params:
                         ex_params = await bracket_order_service._apply_futures_exit_params(exchange, symbol, side, ex_params)
@@ -2310,9 +2382,17 @@ class ManualTradeService:
                         stop_price=new_price, extra_params=ex_params
                     )
                 else:
-                    response = await exchange.create_order(
-                        symbol, order_type, side, amount, price_arg, ex_params
-                    )
+                    if exchange.has.get('createOrderWs') and not ex_params.get('icebergQty'):
+                        try:
+                            response = await exchange.create_order_ws(
+                                symbol, order_type, side, amount, price_arg, ex_params
+                            )
+                        except Exception:
+                            response = None
+                    if not response:
+                        response = await exchange.create_order(
+                            symbol, order_type, side, amount, price_arg, ex_params
+                        )
                     if (
                         ex_params.get('postOnly')
                         and response
@@ -2326,14 +2406,24 @@ class ManualTradeService:
                         )
                 api_ms = int((time.perf_counter() - t_fallback) * 1000)
 
-            # Synchronize new order ID & price with any active software bracket (TP or Disaster SL)
+            # Synchronize new order ID & price with any active software bracket & entry monitor
             new_order_id = str(response.get('id')) if response and response.get('id') else None
             resolved_order_id = new_order_id or str(order_id)
             try:
+                if resolved_order_id != str(order_id):
+                    old_mon = bracket_order_service.ACTIVE_ENTRY_MONITORS.get(str(order_id))
+                    if isinstance(old_mon, dict):
+                        old_mon['replaced_by'] = resolved_order_id
+                        old_mon['entry_order_id'] = resolved_order_id
+                        bracket_order_service.ACTIVE_ENTRY_MONITORS[resolved_order_id] = old_mon
+                        logger.info(f"🔄 Migrated entry bracket monitor: {order_id} -> {resolved_order_id}")
+
                 if str(order_id) in bracket_order_service.KNOWN_TP_ORDER_IDS and resolved_order_id != str(order_id):
                     bracket_order_service.KNOWN_TP_ORDER_IDS.discard(str(order_id))
                     bracket_order_service.KNOWN_TP_ORDER_IDS.add(resolved_order_id)
                 for s_data in list(bracket_order_service.ACTIVE_SOFTWARE_SL.values()):
+                    if str(s_data.get('entry_order_id') or '') == str(order_id):
+                        s_data['entry_order_id'] = resolved_order_id
                     if str(s_data.get('tp_order_id') or '') == str(order_id):
                         s_data['tp_order_id'] = resolved_order_id
                         s_data['tp_price'] = float(new_price)
@@ -2346,6 +2436,8 @@ class ManualTradeService:
                 for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
                     if eb_data.get('cancelled'):
                         continue
+                    if str(eb_data.get('entry_order_id') or '') == str(order_id):
+                        eb_data['entry_order_id'] = resolved_order_id
                     if str(eb_data.get('tp_order_id') or '') == str(order_id):
                         eb_data['tp_order_id'] = resolved_order_id
                         eb_data['tp_price'] = float(new_price)

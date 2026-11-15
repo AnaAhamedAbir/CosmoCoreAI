@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { DEFAULT_EMA_TIMEFRAMES } from '../../../utils/indicators';
 
@@ -278,12 +278,7 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
     const dropdownRef = useRef<HTMLDivElement>(null);
     const triggerButtonRef = useRef<HTMLButtonElement>(null);
     const portalMenuRef = useRef<HTMLDivElement>(null);
-    const [portalPos, setPortalPos] = useState<{ top: number; left: number; width: number; maxHeight: number }>({
-        top: 64,
-        left: 16,
-        width: 320,
-        maxHeight: 500,
-    });
+    const [portalPos, setPortalPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
     const isHeatmapActive = showHeatmap !== undefined ? showHeatmap : !!settings.showHeatmap;
     const isCVDActive = showCVD !== undefined ? showCVD : !!settings.showCVD;
@@ -323,8 +318,8 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
         return flags.filter(Boolean).length;
     }, [settings, isHeatmapActive, isCVDActive, isFootprintActive]);
 
-    const updatePortalPosition = useCallback(() => {
-        if (!usePortal || !triggerButtonRef.current || typeof window === 'undefined') return;
+    const computePortalPosition = useCallback(() => {
+        if (!usePortal || !triggerButtonRef.current || typeof window === 'undefined') return null;
         const rect = triggerButtonRef.current.getBoundingClientRect();
         const vw = window.innerWidth;
         const vh = window.innerHeight;
@@ -352,10 +347,24 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
             maxHeight = Math.max(220, Math.min(preferredHeight, spaceBelow) - 48);
         }
 
-        setPortalPos({ top, left, width: menuWidth, maxHeight });
+        return { top, left, width: menuWidth, maxHeight };
     }, [usePortal]);
 
-    useEffect(() => {
+    const updatePortalPosition = useCallback(() => {
+        const next = computePortalPosition();
+        if (!next) return;
+        setPortalPos(prev => (
+            prev &&
+            prev.top === next.top &&
+            prev.left === next.left &&
+            prev.width === next.width &&
+            prev.maxHeight === next.maxHeight
+                ? prev
+                : next
+        ));
+    }, [computePortalPosition]);
+
+    useLayoutEffect(() => {
         if (!isOpen || !usePortal) return;
         updatePortalPosition();
         window.addEventListener('resize', updatePortalPosition);
@@ -445,13 +454,19 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
             ref={usePortal ? portalMenuRef : undefined}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
-            style={usePortal ? {
+            style={usePortal ? (portalPos ? {
                 position: 'fixed',
                 top: portalPos.top,
                 left: portalPos.left,
                 width: portalPos.width,
                 zIndex: 100001,
-            } : undefined}
+            } : {
+                position: 'fixed',
+                top: -9999,
+                left: -9999,
+                visibility: 'hidden',
+                zIndex: 100001,
+            }) : undefined}
             className={`${usePortal ? '' : 'absolute left-0 sm:left-auto sm:right-0 mt-2 w-[calc(100vw-32px)] max-w-sm sm:w-80 z-50'} bg-white dark:bg-[#0c0e14] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden text-gray-900 dark:text-gray-100`}
         >
             <div className="p-3 border-b border-gray-200 dark:border-white/10 flex items-center justify-between gap-2 bg-gray-50/90 dark:bg-white/[0.02]">
@@ -480,7 +495,7 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                 </div>
             </div>
             <div
-                style={usePortal ? { maxHeight: portalPos.maxHeight } : undefined}
+                style={usePortal && portalPos ? { maxHeight: portalPos.maxHeight } : undefined}
                 className={`p-2 flex flex-col gap-1 ${usePortal ? '' : 'max-h-[75vh]'} overflow-y-auto custom-scrollbar touch-pan-y overscroll-contain`}
             >
                         {/* ── Multi-Timeframe EMA Section ── */}
@@ -2483,6 +2498,10 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                 type="button"
                 onClick={(e) => {
                     if (compact) e.stopPropagation();
+                    if (!isOpen && usePortal) {
+                        const pos = computePortalPosition();
+                        if (pos) setPortalPos(pos);
+                    }
                     setIsOpen(prev => !prev);
                 }}
                 title={chartLabel ? `Indicators for ${chartLabel}` : 'Indicators'}

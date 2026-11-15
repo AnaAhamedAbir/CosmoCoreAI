@@ -806,6 +806,66 @@ class TestIcebergBracketAndEditFixes(unittest.TestCase):
 
         asyncio.run(_run())
 
+    def test_fetch_wallet_balance_fixes_spot_ws_empty_dicts_and_falls_back_to_rest(self):
+        async def _run():
+            real_binance = ccxt.binance()
+
+            class MockSpotWSBrokenParse:
+                id = "binance"
+                has = {"fetchBalanceWs": True}
+                markets = {}
+
+                def parse_balance_custom(self, response, type=None, marginMode=None, isPortfolioMargin=False):
+                    return real_binance.parse_balance_custom(response, type=type, marginMode=marginMode, isPortfolioMargin=isPortfolioMargin)
+
+                async def fetch_balance_ws(self, params=None):
+                    # Reproduces ccxt.pro.binance bug: handle_account_status_ws calls parseBalanceCustom(result) with type=None
+                    return {
+                        "info": {
+                            "updateTime": 1660801833000,
+                            "accountType": "SPOT",
+                            "balances": [
+                                {"asset": "DOGE", "free": "507.3", "locked": "0.0"},
+                                {"asset": "FDUSD", "free": "42.5", "locked": "10.0"},
+                            ],
+                        },
+                        "free": {},
+                        "used": {},
+                        "total": {},
+                    }
+
+                async def fetch_balance(self, params=None):
+                    raise AssertionError("REST fetch_balance should not be called when WS info.balances normalizes")
+
+            bal = await ManualTradeService._fetch_wallet_balance(MockSpotWSBrokenParse(), "DOGE/FDUSD")
+            self.assertAlmostEqual(float(bal["DOGE"]["free"]), 507.3, places=4)
+            self.assertAlmostEqual(float(bal["FDUSD"]["free"]), 42.5, places=4)
+            self.assertAlmostEqual(float(bal["FDUSD"]["used"]), 10.0, places=4)
+
+            # Case 2: Completely empty WS balance triggers REST fallback cleanly
+            class MockEmptyWSWithRestFallback:
+                id = "binance"
+                has = {"fetchBalanceWs": True}
+                markets = {}
+
+                async def fetch_balance_ws(self, params=None):
+                    return {"info": {}, "free": {}, "used": {}, "total": {}}
+
+                async def fetch_balance(self, params=None):
+                    return {
+                        "DOGE": {"free": 120.0, "used": 0.0, "total": 120.0},
+                        "FDUSD": {"free": 88.0, "used": 0.0, "total": 88.0},
+                        "free": {"DOGE": 120.0, "FDUSD": 88.0},
+                        "used": {"DOGE": 0.0, "FDUSD": 0.0},
+                        "total": {"DOGE": 120.0, "FDUSD": 88.0},
+                    }
+
+            bal_rest = await ManualTradeService._fetch_wallet_balance(MockEmptyWSWithRestFallback(), "DOGE/FDUSD")
+            self.assertAlmostEqual(float(bal_rest["DOGE"]["free"]), 120.0, places=4)
+            self.assertAlmostEqual(float(bal_rest["FDUSD"]["free"]), 88.0, places=4)
+
+        asyncio.run(_run())
+
 
 if __name__ == "__main__":
     unittest.main()

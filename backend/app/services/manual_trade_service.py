@@ -373,6 +373,42 @@ class ManualTradeService:
         }
 
     @staticmethod
+    def _normalize_ws_balance(exchange, bal: Any, meta: dict) -> Optional[dict]:
+        """
+        Fix ccxt.pro binance.handle_account_status_ws passing type=None to parse_balance_custom
+        on Spot, which causes bal['free']/['used']/['total'] to be empty dicts while raw
+        spot balances still live in bal['info']['balances'].
+        Returns None if normalized balance still lacks populated dicts so caller falls back to REST.
+        """
+        if not isinstance(bal, dict):
+            return None
+        has_populated_asset = any(
+            isinstance(v, dict) and ("free" in v or "total" in v)
+            for k, v in bal.items()
+            if k not in ("info", "free", "used", "total", "timestamp", "datetime")
+        )
+        if not bal.get('free') and not bal.get('total') and not has_populated_asset:
+            info = bal.get('info')
+            if (
+                not meta.get('is_futures')
+                and isinstance(info, dict)
+                and isinstance(info.get('balances'), list)
+                and hasattr(exchange, 'parse_balance_custom')
+            ):
+                try:
+                    bal = exchange.parse_balance_custom(info, type='spot')
+                except Exception as norm_err:
+                    logger.debug(f"Spot WS balance normalization fallback: {norm_err}")
+        has_populated_asset = isinstance(bal, dict) and any(
+            isinstance(v, dict) and ("free" in v or "total" in v)
+            for k, v in bal.items()
+            if k not in ("info", "free", "used", "total", "timestamp", "datetime")
+        )
+        if isinstance(bal, dict) and (bal.get('free') or bal.get('total') or has_populated_asset):
+            return bal
+        return None
+
+    @staticmethod
     async def _fetch_wallet_balance(exchange, symbol: str, meta: dict = None, api_key_id: int = None) -> dict:
         """
         Futures subType (linear vs inverse) onujayi sothik balance API call kore.
@@ -389,15 +425,21 @@ class ManualTradeService:
                 params['subType'] = 'linear'
 
         try:
-            if getattr(exchange, 'has', {}).get('fetchBalanceWs') and hasattr(exchange, 'fetch_balance_ws'):
+            if (
+                not meta.get('is_inverse')
+                and getattr(exchange, 'has', {}).get('fetchBalanceWs')
+                and hasattr(exchange, 'fetch_balance_ws')
+            ):
                 try:
-                    bal = await exchange.fetch_balance_ws(params)
-                    if api_key_id is not None:
-                        ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
-                    return bal
+                    ws_bal = await asyncio.wait_for(exchange.fetch_balance_ws({}), timeout=1.5)
+                    bal = ManualTradeService._normalize_ws_balance(exchange, ws_bal, meta)
+                    if bal is not None:
+                        if api_key_id is not None:
+                            ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
+                        return bal
                 except Exception as ws_bal_err:
                     logger.debug(f"fetch_balance_ws fallback to REST: {ws_bal_err}")
-            bal = await exchange.fetch_balance(params)
+            bal = await (exchange.fetch_balance(params) if params else exchange.fetch_balance())
             if api_key_id is not None:
                 ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
             return bal

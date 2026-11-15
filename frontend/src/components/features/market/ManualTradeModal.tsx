@@ -3889,8 +3889,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Sub-Row 4C: Full-Width Horizontally Long Force Buy & Force Sell Buttons (matching Row 3 Limit Buy/Sell style) */}
-                      <div className="flex flex-col gap-1">
+                      {/* Sub-Row 4C: Side-by-Side Horizontal Force Buy & Force Sell Buttons */}
+                      <div className="grid grid-cols-2 gap-1.5">
                         <button
                           type="button"
                           disabled={isEmergencySubmitting || selectedForceTarget?.side === 'sell'}
@@ -3900,7 +3900,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             handleEmergencyForceTrade('Buy');
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
-                          className={`relative w-full overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all select-none group shadow-sm ${selectedForceTarget?.side === 'sell'
+                          className={`relative w-full min-w-0 overflow-hidden py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1 transition-all select-none group shadow-sm ${selectedForceTarget?.side === 'sell'
                             ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed'
                             : `bg-emerald-500/15 dark:bg-gradient-to-b dark:from-emerald-500/30 dark:via-emerald-600/25 dark:to-green-900/40 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:via-emerald-600 dark:hover:to-green-700 text-emerald-700 dark:text-emerald-300 hover:text-white border hover:border-emerald-400 dark:hover:border-emerald-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)] cursor-pointer active:scale-95 disabled:opacity-50 ${selectedForceTarget?.side === 'buy'
                               ? 'border-emerald-500 dark:border-emerald-300 ring-1 ring-emerald-400/50'
@@ -3922,7 +3922,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           ) : (
                             <Zap className={`w-3.5 h-3.5 shrink-0 transition-transform ${selectedForceTarget?.side === 'sell' ? 'opacity-30' : 'text-emerald-600 dark:text-emerald-400 fill-current group-hover:text-white group-hover:scale-110'}`} />
                           )}
-                          <span className="text-[12px] uppercase tracking-wider font-black leading-none truncate">
+                          <span className="text-[11px] uppercase tracking-wider font-black leading-none shrink-0">
                             FORCE BUY
                           </span>
                           {selectedForceTarget?.side === 'buy' && (
@@ -3930,7 +3930,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               FILL
                             </span>
                           )}
-                          <span className="text-[10px] font-mono text-white/90 group-hover:text-white font-semibold truncate shrink-0">
+                          <span className="text-[9.5px] font-mono text-white/90 group-hover:text-white font-semibold truncate min-w-0">
                             •{' '}
                             {selectedForceTarget
                               ? `${Number(selectedForceTarget.amount.toFixed(1))} ${baseCurrency}${effectiveCurrentPrice > 0 ? ` ($${(selectedForceTarget.amount * effectiveCurrentPrice).toFixed(0)})` : ''}`
@@ -3949,7 +3949,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             handleEmergencyForceTrade('Sell');
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
-                          className={`relative w-full overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all select-none group shadow-sm ${selectedForceTarget?.side === 'buy'
+                          className={`relative w-full min-w-0 overflow-hidden py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1 transition-all select-none group shadow-sm ${selectedForceTarget?.side === 'buy'
                             ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed'
                             : `bg-rose-500/15 dark:bg-gradient-to-b dark:from-rose-500/30 dark:via-rose-600/25 dark:to-red-900/40 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:via-rose-600 dark:hover:to-red-700 text-rose-700 dark:text-rose-300 hover:text-white border hover:border-rose-400 dark:hover:border-rose-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)] cursor-pointer active:scale-95 disabled:opacity-50 ${selectedForceTarget?.side === 'sell'
                               ? 'border-rose-500 dark:border-rose-300 ring-1 ring-rose-400/50'
@@ -3971,7 +3971,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           ) : (
                             <Zap className={`w-3.5 h-3.5 shrink-0 transition-transform ${selectedForceTarget?.side === 'buy' ? 'opacity-30' : 'text-rose-600 dark:text-rose-400 fill-current group-hover:text-white group-hover:scale-110'}`} />
                           )}
-                          <span className="text-[12px] uppercase tracking-wider font-black leading-none truncate">
+                          <span className="text-[11px] uppercase tracking-wider font-black leading-none shrink-0">
                             FORCE SELL
                           </span>
                           {selectedForceTarget?.side === 'sell' && (
@@ -3979,7 +3979,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               EXIT
                             </span>
                           )}
-                          <span className="text-[10px] font-mono text-white/90 group-hover:text-white font-semibold truncate shrink-0">
+                          <span className="text-[9.5px] font-mono text-white/90 group-hover:text-white font-semibold truncate min-w-0">
                             •{' '}
                             {selectedForceTarget
                               ? `${Number(selectedForceTarget.amount.toFixed(1))} ${baseCurrency}${effectiveCurrentPrice > 0 ? ` ($${(selectedForceTarget.amount * effectiveCurrentPrice).toFixed(0)})` : ''}`

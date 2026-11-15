@@ -255,12 +255,8 @@ async def execute_smart_peg_entry(
             pass
 
     async def _fetch_balance_fast() -> dict:
-        if getattr(exchange, 'has', {}).get('fetchBalanceWs') and hasattr(exchange, 'fetch_balance_ws'):
-            try:
-                return await exchange.fetch_balance_ws()
-            except Exception as ws_bal_err:
-                logger.debug(f"[Smart Peg Entry] fetch_balance_ws fallback to REST: {ws_bal_err}")
-        return await exchange.fetch_balance()
+        from app.services.manual_trade_service import ManualTradeService
+        return await ManualTradeService._fetch_wallet_balance(exchange, symbol)
 
     # Balance sync helper to avoid "insufficient balance" rejections
     async def _sync_and_clamp_amount(price: float, cached_bal: Optional[dict] = None, force_refresh: bool = False) -> float:

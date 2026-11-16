@@ -4611,10 +4611,6 @@ const OrderFlowChartPanel = React.memo<{
         return newWalls;
     }, [walls, bids, asks, volumeThreshold, volumeMode]);
 
-    const handleSelectPanel = useCallback(() => {
-        onSelectActive?.(config.id);
-    }, [onSelectActive, config.id]);
-
     const handlePanelIndicatorChange = useCallback((nextSettings: IndicatorSettings) => {
         onIndicatorSettingsChange(config.id, nextSettings);
     }, [onIndicatorSettingsChange, config.id]);
@@ -4629,17 +4625,15 @@ const OrderFlowChartPanel = React.memo<{
     }, [setExternalAIPrice, setExternalAIOpenTrigger]);
 
     const handleChartBackgroundClick = useCallback((price: number) => {
-        onSelectActive?.(config.id);
         onManualTradeClick(config.id, config.symbol, price);
         setManualTradeTrigger(Date.now());
-    }, [onSelectActive, onManualTradeClick, config.id, config.symbol, setManualTradeTrigger]);
+    }, [onManualTradeClick, config.id, config.symbol, setManualTradeTrigger]);
 
     const panelContent = (
         <div 
-            onClick={handleSelectPanel}
             className={isFullscreen 
                 ? 'fixed inset-0 z-[99999] flex flex-col bg-[#050505] p-2 md:p-4 overflow-hidden w-screen h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)]' 
-                : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border transition-all duration-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col min-h-[240px] cursor-pointer ${
+                : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border transition-all duration-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col min-h-[240px] ${
                     isActive && allChartsCount > 1 
                         ? 'border-brand-primary/80 ring-2 ring-brand-primary/20 shadow-[0_0_25px_rgba(59,130,246,0.2)]' 
                         : 'border-gray-200 dark:border-white/5'

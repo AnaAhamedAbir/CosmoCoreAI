@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, TrendingUp, TrendingDown, Flame, Sparkles, BarChart2, Search, Filter, Activity } from 'lucide-react';
+import { GripVertical, X, TrendingUp, TrendingDown, Flame, Sparkles, BarChart2, Search, Filter, Activity, ZoomIn } from 'lucide-react';
 import { useBinanceMarketData, TokenData } from '../hooks/useBinanceMarketData';
 import { useMarketStore } from '../store/marketStore';
+import { useFloatingModalDrag } from '../hooks/useFloatingModalDrag';
+import { useDeviceProfile } from '../hooks/useDeviceProfile';
 
 interface TopTokensModalProps {
     isOpen: boolean;
@@ -17,302 +19,565 @@ const CATEGORIES = {
     'DeFi': ['UNI', 'AAVE', 'MKR', 'SNX', 'CRV', 'LDO', 'RUNE', 'CAKE', 'COMP', 'DYDX']
 };
 
+interface MagnifiedTarget {
+    token: TokenData;
+    listTitle: string;
+    rank: number;
+    colorClass: string;
+    x: number;
+    y: number;
+}
+
 export const TopTokensModal: React.FC<TopTokensModalProps> = ({ isOpen, onClose }) => {
-    const [isVisible, setIsVisible] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [category, setCategory] = useState<keyof typeof CATEGORIES>('All');
     const [baseMarket, setBaseMarket] = useState('USDT');
-    
+    const [isMagnifyMode, setIsMagnifyMode] = useState(false);
+    const [magnifier, setMagnifier] = useState<MagnifiedTarget | null>(null);
+
+    const { isThermalGuardActive } = useDeviceProfile();
+    const { modalContainerRef, handleStartDrag, containerStyle } = useFloatingModalDrag({
+        isOpen,
+        storageKey: 'cosmo_top_tokens_modal_pos_v1',
+        defaultWidth: 620,
+        defaultHeight: 740,
+        maxCapHeight: 778,
+        compactMaxCapHeight: 720,
+    });
+
     const data = useBinanceMarketData(isOpen, baseMarket);
     const { setGlobalSymbol } = useMarketStore();
 
-    useEffect(() => {
-        if (isOpen) {
-            setIsVisible(true);
-        } else {
-            const timer = setTimeout(() => setIsVisible(false), 300);
-            return () => clearTimeout(timer);
-        }
-    }, [isOpen]);
+    const gridContainerRef = useRef<HTMLDivElement>(null);
+    const longPressTimerRef = useRef<number | null>(null);
+    const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+    const isMagnifyingRef = useRef(false);
+    const didMagnifyRef = useRef(false);
+    const isMagnifyModeRef = useRef(isMagnifyMode);
+    isMagnifyModeRef.current = isMagnifyMode;
 
-    if (!isVisible) return null;
-
-    const filterTokens = (tokens: TokenData[]) => {
+    const filterTokens = useCallback((tokens: TokenData[]) => {
         return tokens.filter(t => {
-            const baseSymbol = baseMarket === 'All' ? t.symbol : t.symbol.replace(baseMarket, '');
-            const symbol = t.symbol.replace('USDT', ''); // Keep generic replace for category match
-            
+            const symbol = t.symbol.replace('USDT', '');
             const matchesSearch = t.symbol.toLowerCase().includes(searchQuery.toLowerCase());
             const matchesCategory = category === 'All' || CATEGORIES[category].includes(symbol);
             return matchesSearch && matchesCategory;
         });
-    };
+    }, [searchQuery, category]);
 
-    const handleTokenClick = (symbol: string) => {
-        // Find the quote asset to correctly format the symbol for the store
+    const listSections = useMemo(() => [
+        {
+            key: 'gainers',
+            title: 'Top Gainers',
+            tokens: filterTokens(data.gainers),
+            icon: <TrendingUp />,
+            colorClass: 'from-[#4ade80] to-[#22c55e]',
+            glowColor: 'from-green-500 to-emerald-600',
+        },
+        {
+            key: 'losers',
+            title: 'Top Losers',
+            tokens: filterTokens(data.losers),
+            icon: <TrendingDown />,
+            colorClass: 'from-[#f87171] to-[#ef4444]',
+            glowColor: 'from-red-500 to-rose-600',
+        },
+        {
+            key: 'hot',
+            title: 'Hot Tokens',
+            tokens: filterTokens(data.hot),
+            icon: <Flame />,
+            colorClass: 'from-[#fb923c] to-[#f97316]',
+            glowColor: 'from-orange-500 to-amber-600',
+        },
+        {
+            key: 'newTokens',
+            title: 'Trending / Volatile',
+            tokens: filterTokens(data.newTokens),
+            icon: <Sparkles />,
+            colorClass: 'from-[#c084fc] to-[#a855f7]',
+            glowColor: 'from-purple-500 to-fuchsia-600',
+        },
+        {
+            key: 'volume',
+            title: 'Highest Volume',
+            tokens: filterTokens(data.volume),
+            icon: <BarChart2 />,
+            colorClass: 'from-[#60a5fa] to-[#3b82f6]',
+            glowColor: 'from-blue-500 to-cyan-600',
+        },
+    ], [data, filterTokens]);
+
+    const tokenLookupMap = useMemo(() => {
+        const map = new Map<string, { token: TokenData; listTitle: string; rank: number; colorClass: string }>();
+        listSections.forEach(sec => {
+            sec.tokens.forEach((tok, idx) => {
+                map.set(`${sec.key}:${tok.symbol}`, {
+                    token: tok,
+                    listTitle: sec.title,
+                    rank: idx + 1,
+                    colorClass: sec.colorClass,
+                });
+            });
+        });
+        return map;
+    }, [listSections]);
+
+    const tokenLookupRef = useRef(tokenLookupMap);
+    tokenLookupRef.current = tokenLookupMap;
+
+    const clearLongPressTimer = useCallback(() => {
+        if (longPressTimerRef.current !== null) {
+            window.clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+    }, []);
+
+    const updateMagnifierAtPoint = useCallback((clientX: number, clientY: number) => {
+        if (typeof document === 'undefined') return false;
+        const el = document.elementFromPoint(clientX, clientY)?.closest('[data-token-symbol]') as HTMLElement | null;
+        if (!el) return false;
+        const sym = el.dataset.tokenSymbol;
+        const listKey = el.dataset.tokenList;
+        if (!sym || !listKey) return false;
+        const entry = tokenLookupRef.current.get(`${listKey}:${sym}`);
+        if (!entry) return false;
+        setMagnifier({
+            token: entry.token,
+            listTitle: entry.listTitle,
+            rank: entry.rank,
+            colorClass: entry.colorClass,
+            x: clientX,
+            y: clientY,
+        });
+        return true;
+    }, []);
+
+    const stopMagnifying = useCallback(() => {
+        clearLongPressTimer();
+        pointerStartRef.current = null;
+        if (isMagnifyingRef.current) {
+            isMagnifyingRef.current = false;
+            didMagnifyRef.current = true;
+            window.setTimeout(() => {
+                didMagnifyRef.current = false;
+            }, 350);
+        }
+        setMagnifier(null);
+    }, [clearLongPressTimer]);
+
+    // Native non-passive touch listeners so touch-and-hold magnifier locks scroll smoothly on Redmi Pad 2 Pro
+    useEffect(() => {
+        const gridEl = gridContainerRef.current;
+        if (!isOpen || !gridEl) return;
+
+        const onTouchStart = (e: TouchEvent) => {
+            if (e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            const tokenEl = (e.target as HTMLElement | null)?.closest('[data-token-symbol]') as HTMLElement | null;
+            if (!tokenEl) return;
+
+            pointerStartRef.current = { x: touch.clientX, y: touch.clientY };
+            clearLongPressTimer();
+
+            if (isMagnifyModeRef.current) {
+                isMagnifyingRef.current = true;
+                updateMagnifierAtPoint(touch.clientX, touch.clientY);
+                return;
+            }
+
+            longPressTimerRef.current = window.setTimeout(() => {
+                isMagnifyingRef.current = true;
+                updateMagnifierAtPoint(touch.clientX, touch.clientY);
+            }, 200);
+        };
+
+        const onTouchMove = (e: TouchEvent) => {
+            if (e.touches.length !== 1) return;
+            const touch = e.touches[0];
+
+            if (isMagnifyingRef.current) {
+                if (e.cancelable) e.preventDefault();
+                updateMagnifierAtPoint(touch.clientX, touch.clientY);
+                return;
+            }
+
+            if (pointerStartRef.current) {
+                const dx = touch.clientX - pointerStartRef.current.x;
+                const dy = touch.clientY - pointerStartRef.current.y;
+                if (Math.hypot(dx, dy) > 14) {
+                    clearLongPressTimer();
+                    pointerStartRef.current = null;
+                }
+            }
+        };
+
+        const onTouchEndOrCancel = () => {
+            stopMagnifying();
+        };
+
+        gridEl.addEventListener('touchstart', onTouchStart, { passive: true });
+        gridEl.addEventListener('touchmove', onTouchMove, { passive: false });
+        gridEl.addEventListener('touchend', onTouchEndOrCancel);
+        gridEl.addEventListener('touchcancel', onTouchEndOrCancel);
+
+        return () => {
+            clearLongPressTimer();
+            gridEl.removeEventListener('touchstart', onTouchStart);
+            gridEl.removeEventListener('touchmove', onTouchMove);
+            gridEl.removeEventListener('touchend', onTouchEndOrCancel);
+            gridEl.removeEventListener('touchcancel', onTouchEndOrCancel);
+        };
+    }, [isOpen, clearLongPressTimer, updateMagnifierAtPoint, stopMagnifying]);
+
+    // Reset magnifier when modal closes
+    useEffect(() => {
+        if (!isOpen) {
+            stopMagnifying();
+        }
+    }, [isOpen, stopMagnifying]);
+
+    if (!isOpen || typeof document === 'undefined') return null;
+
+    const getQuoteAndBase = (symbol: string) => {
         let quote = 'USDT';
         if (symbol.endsWith('BNB')) quote = 'BNB';
         else if (symbol.endsWith('BTC')) quote = 'BTC';
         else if (symbol.endsWith('FDUSD')) quote = 'FDUSD';
         else if (symbol.endsWith('USDT')) quote = 'USDT';
-        
         const base = symbol.substring(0, symbol.length - quote.length);
+        return { base, quote };
+    };
+
+    const handleTokenClick = (symbol: string) => {
+        if (didMagnifyRef.current || isMagnifyingRef.current) return;
+        const { base, quote } = getQuoteAndBase(symbol);
         setGlobalSymbol(`${base}/${quote}`);
         onClose();
     };
 
-    const renderSparkline = (history: number[], isPositive: boolean) => {
+    const renderSparkline = (history: number[], isPositive: boolean, width = 40, height = 16) => {
         if (!history || history.length < 2) return (
-            <svg width="40" height="16" className="mx-2"><line x1="0" y1="8" x2="40" y2="8" stroke="#4b5563" strokeWidth="1" strokeDasharray="2,2" /></svg>
+            <svg width={width} height={height} className="mx-1.5 shrink-0">
+                <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#4b5563" strokeWidth="1" strokeDasharray="2,2" />
+            </svg>
         );
         const min = Math.min(...history);
         const max = Math.max(...history);
         const range = max - min || 1;
-        
         const strokeColor = isPositive ? '#22c55e' : '#ef4444';
         const fillColor = isPositive ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)';
-        
-        const linePoints = history.map((val, i) => `${(i / (history.length - 1)) * 40},${16 - ((val - min) / range) * 14}`).join(' ');
-        const areaPoints = `${linePoints} 40,16 0,16`;
+        const pad = 2;
+        const linePoints = history
+            .map((val, i) => `${(i / (history.length - 1)) * width},${height - pad - ((val - min) / range) * (height - pad * 2)}`)
+            .join(' ');
+        const areaPoints = `${linePoints} ${width},${height} 0,${height}`;
 
         return (
-            <div className="relative mx-1.5 flex items-center justify-center">
-                <div className="absolute inset-0 blur-[4px] opacity-40" style={{ background: strokeColor }}></div>
-                <svg width="40" height="16" className="relative z-10 overflow-visible">
+            <div className="relative mx-1.5 flex items-center justify-center shrink-0">
+                <div className="absolute inset-0 blur-[4px] opacity-35" style={{ background: strokeColor }} />
+                <svg width={width} height={height} className="relative z-10 overflow-visible">
                     <polygon points={areaPoints} fill={fillColor} />
-                    <polyline points={linePoints} fill="none" stroke={strokeColor} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                    <polyline points={linePoints} fill="none" stroke={strokeColor} strokeWidth={width > 80 ? '2.2' : '1.2'} strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
             </div>
         );
     };
 
-    const renderTokenList = (rawTokens: TokenData[], title: string, icon: React.ReactNode, colorClass: string, glowColor: string, delayClass: string) => {
-        const tokens = filterTokens(rawTokens);
-        
-        return (
-            <div className={`relative group flex flex-col h-full overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-both ${delayClass}`}>
-                <div className={`absolute -inset-0.5 bg-gradient-to-br ${glowColor} opacity-10 group-hover:opacity-30 blur-xl transition-opacity duration-500 rounded-xl`}></div>
-                
-                <div className="relative bg-black/60 backdrop-blur-xl border border-white/5 group-hover:border-white/20 p-3 flex flex-col h-full rounded-xl transition-all duration-300">
-                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/10 relative">
-                        <div className={`p-1.5 rounded-md bg-gradient-to-br ${glowColor} bg-opacity-20 backdrop-blur-md border border-white/10 shadow-[0_0_10px_rgba(255,255,255,0.1)]`}>
-                            {React.cloneElement(icon as React.ReactElement<any>, { className: `w-4 h-4 text-white` })}
+    const renderMagnifierOverlay = () => {
+        if (!magnifier) return null;
+        const { token, listTitle, rank, colorClass, x, y } = magnifier;
+        const isPositive = token.priceChangePercent >= 0;
+        const { base, quote } = getQuoteAndBase(token.symbol);
+        const buyPct = Math.round(token.buyPressure ?? 50);
+        const sellPct = 100 - buyPct;
+
+        const winW = window.visualViewport?.width || window.innerWidth;
+        const winH = window.visualViewport?.height || window.innerHeight;
+        const lensW = Math.min(308, winW - 20);
+        const lensH = 196;
+        const left = Math.max(10, Math.min(winW - lensW - 10, Math.round(x - lensW / 2)));
+        // Place magnifier comfortably above the touch finger, or below if too close to top
+        const top = y - lensH - 34 >= 10
+            ? Math.round(y - lensH - 34)
+            : Math.min(winH - lensH - 10, Math.round(y + 42));
+
+        return createPortal(
+            <div
+                style={{ left: `${left}px`, top: `${top}px`, width: `${lensW}px` }}
+                className="fixed z-[100020] pointer-events-none select-none rounded-2xl border-2 border-cyan-400/75 bg-[#060a14]/98 shadow-[0_20px_50px_rgba(0,0,0,0.94),0_0_28px_rgba(34,211,238,0.35)] overflow-hidden"
+            >
+                <div className="h-[2px] w-full bg-gradient-to-r from-cyan-400 via-orange-400 to-rose-500" />
+                <div className="p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/45 text-cyan-300 text-[10px] font-mono font-black uppercase tracking-wider">
+                            <ZoomIn className="w-3 h-3" />
+                            2.2x Magnifier
+                        </span>
+                        <span className={`text-[11px] font-extrabold bg-clip-text text-transparent bg-gradient-to-r ${colorClass}`}>
+                            #{rank} • {listTitle}
+                        </span>
+                    </div>
+
+                    <div className="flex items-baseline justify-between gap-2">
+                        <div className="flex items-baseline gap-1.5 min-w-0">
+                            <span className="text-2xl font-black text-white tracking-tight truncate">{base}</span>
+                            <span className="text-xs font-mono font-bold text-gray-400">/{quote}</span>
                         </div>
-                        <h3 className={`font-bold text-sm tracking-wide bg-clip-text text-transparent bg-gradient-to-r ${colorClass}`}>{title}</h3>
-                        
-                        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-1.5 h-1.5">
-                            <span className="absolute inline-flex h-full w-full rounded-full bg-slate-500 dark:bg-white opacity-20 animate-ping"></span>
-                            <span className="relative inline-flex rounded-full h-1 w-1 bg-slate-600 dark:bg-white opacity-60"></span>
+                        <div className="text-right shrink-0">
+                            <div className="text-lg font-mono font-black text-white leading-tight">
+                                ${token.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                            </div>
+                            <div className={`inline-flex items-center gap-1 text-sm font-black ${isPositive ? 'text-[#4ade80]' : 'text-[#f87171]'}`}>
+                                {isPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                                <span>{isPositive ? '+' : '-'}{Math.abs(token.priceChangePercent).toFixed(2)}%</span>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto pr-1.5 custom-scrollbar space-y-1.5">
-                        {tokens.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-full text-gray-500 space-y-2">
-                                <Activity className="w-6 h-6 opacity-20 animate-pulse" />
-                                <span className="text-[10px] uppercase tracking-widest font-bold">No Data</span>
-                            </div>
-                        ) : (
-                            tokens.map((token, index) => {
-                                const isPositive = token.priceChangePercent >= 0;
-                                return (
-                                    <button 
-                                        key={token.symbol} 
-                                        onClick={() => handleTokenClick(token.symbol)}
-                                        className="relative w-full flex flex-col p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 transition-all duration-300 group/btn cursor-pointer overflow-hidden transform hover:-translate-y-0.5 hover:shadow-md"
-                                    >
-                                        <div className={`absolute inset-0 bg-gradient-to-r ${glowColor} opacity-0 group-hover/btn:opacity-10 transition-opacity duration-300 pointer-events-none`}></div>
-                                        
-                                        <div className="flex justify-between items-center w-full relative z-10">
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-gray-600 font-mono text-[9px] w-3 text-left">{index + 1}.</span>
-                                                <span className="font-bold text-[11px] text-gray-200 group-hover/btn:text-white transition-colors tracking-wide truncate max-w-[50px]">
-                                                    {baseMarket === 'All' ? token.symbol : token.symbol.replace(baseMarket, '')}
-                                                </span>
-                                            </div>
-                                            
-                                            <div className="flex items-center">
-                                                {renderSparkline(token.priceHistory, isPositive)}
-                                                <div className="flex flex-col items-end min-w-[55px]">
-                                                    <span className="text-[11px] font-mono font-bold text-white tracking-tight">
-                                                        ${token.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
-                                                    </span>
-                                                    <div className={`flex items-center gap-0.5 text-[9px] font-bold ${isPositive ? 'text-[#4ade80] drop-shadow-[0_0_3px_rgba(74,222,128,0.5)]' : 'text-[#f87171] drop-shadow-[0_0_3px_rgba(248,113,113,0.5)]'}`}>
-                                                        {isPositive ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
-                                                        <span>{Math.abs(token.priceChangePercent).toFixed(2)}%</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="w-full mt-2 flex items-center gap-1.5 opacity-40 group-hover/btn:opacity-100 transition-opacity relative z-10">
-                                            <span className="text-[7px] font-black tracking-widest text-[#4ade80] w-5">BUY</span>
-                                            <div className="flex-1 h-1 bg-black/50 rounded-full overflow-hidden flex border border-white/5">
-                                                <div className="h-full bg-[#4ade80] shadow-[0_0_5px_#4ade80] transition-all duration-500 ease-out" style={{ width: `${token.buyPressure ?? 50}%` }} />
-                                                <div className="h-full bg-[#f87171] shadow-[0_0_5px_#f87171] transition-all duration-500 ease-out" style={{ width: `${100 - (token.buyPressure ?? 50)}%` }} />
-                                            </div>
-                                            <span className="text-[7px] font-black tracking-widest text-[#f87171] w-5 text-right">SELL</span>
-                                        </div>
-                                    </button>
-                                );
-                            })
-                        )}
+                    <div className="flex items-center justify-center py-1 px-2 rounded-xl bg-white/[0.04] border border-white/10">
+                        {renderSparkline(token.priceHistory, isPositive, 260, 48)}
+                    </div>
+
+                    <div className="space-y-1">
+                        <div className="flex justify-between text-[11px] font-mono font-black">
+                            <span className="text-[#4ade80]">BUY {buyPct}%</span>
+                            <span className="text-[#f87171]">{sellPct}% SELL</span>
+                        </div>
+                        <div className="w-full h-2 bg-black/70 rounded-full overflow-hidden flex border border-white/10">
+                            <div className="h-full bg-[#4ade80] shadow-[0_0_6px_#4ade80]" style={{ width: `${buyPct}%` }} />
+                            <div className="h-full bg-[#f87171] shadow-[0_0_6px_#f87171]" style={{ width: `${sellPct}%` }} />
+                        </div>
                     </div>
                 </div>
-            </div>
+            </div>,
+            document.body
         );
     };
 
     const modalContent = (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-5 font-sans">
-            <div 
-                className={`absolute inset-0 bg-slate-900/45 dark:bg-black/70 backdrop-blur-xl transition-opacity duration-500 ${isOpen ? 'opacity-100' : 'opacity-0'}`}
-                onClick={onClose}
+        <>
+            <div
+                ref={modalContainerRef}
+                style={containerStyle}
+                className={`cosmo-theme-modal fixed w-[620px] max-w-[calc(100vw-12px)] h-[740px] rounded-xl border z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col ${
+                    isThermalGuardActive
+                        ? 'bg-[#080c16] border-orange-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
+                        : 'bg-[#070b14] bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/[0.98] to-[#050811]/[0.98] border-orange-500/35 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_20px_rgba(249,115,22,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
+                }`}
             >
-                <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-blue-500/20 rounded-full blur-[80px] mix-blend-screen pointer-events-none"></div>
-                <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-purple-500/20 rounded-full blur-[80px] mix-blend-screen pointer-events-none"></div>
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-orange-500/10 rounded-[100%] blur-[100px] mix-blend-screen pointer-events-none"></div>
-            </div>
-            
-            <div 
-                className={`cosmo-theme-modal relative w-full max-w-[95vw] xl:max-w-[1300px] h-[85vh] bg-white dark:bg-[#0a0a0c]/85 backdrop-blur-2xl rounded-2xl shadow-[0_0_60px_rgba(0,0,0,0.8)] border border-slate-200 dark:border-white/10 overflow-hidden flex flex-col transform transition-all duration-500 ease-out ${isOpen ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-8'}`}
-            >
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 border-b border-white/5 shrink-0 bg-gradient-to-b from-white/5 to-transparent relative z-20">
-                    <div className="flex items-center gap-3">
-                        <div className="relative group">
-                            <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-rose-500 rounded-lg blur opacity-70 group-hover:opacity-100 transition-opacity"></div>
-                            <div className="relative p-2.5 bg-black rounded-lg border border-white/10">
-                                <Flame className="w-5 h-5 text-orange-400" />
-                            </div>
+                {/* Top Neon Accent Line */}
+                <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-orange-400 to-rose-500 opacity-85 shrink-0" />
+
+                {/* Draggable Header */}
+                <div
+                    onMouseDown={handleStartDrag}
+                    onTouchStart={handleStartDrag}
+                    style={{ touchAction: 'none' }}
+                    className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0"
+                    title="Drag to move Top Tokens Dashboard"
+                >
+                    <div className="flex items-center gap-2 pointer-events-none min-w-0">
+                        <GripVertical className="w-3.5 h-3.5 text-orange-400/80 shrink-0" />
+                        <div className="p-1.5 bg-black/80 rounded-lg border border-orange-500/30 shrink-0">
+                            <Flame className="w-4 h-4 text-orange-400" />
                         </div>
-                        <div>
-                            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
+                        <div className="min-w-0">
+                            <h2 className="text-[13px] sm:text-[14.5px] font-black tracking-tight text-white flex items-center gap-1.5 truncate">
                                 Market <span className="bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-rose-500">Movers</span>
                             </h2>
-                            <p className="text-[10px] sm:text-[11px] font-medium text-gray-400 tracking-wider uppercase mt-0.5 flex items-center gap-1.5">
-                                <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse"></span>
-                                Live Binance Data Stream
+                            <p className="text-[9.5px] font-medium text-gray-400 tracking-wider uppercase flex items-center gap-1.5 truncate">
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
+                                Live Binance • Hold token to Magnify
                             </p>
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2.5 mt-3 sm:mt-0">
-                        <div className="relative group min-w-[180px]">
-                            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-full blur opacity-0 group-focus-within:opacity-100 transition-opacity duration-300"></div>
-                            <div className="relative flex items-center bg-black/40 border border-white/10 group-focus-within:border-blue-500/50 rounded-full px-3 py-1.5 transition-all shadow-inner">
-                                <Search className="w-3.5 h-3.5 text-gray-400 group-focus-within:text-blue-400 transition-colors" />
-                                <input 
-                                    type="text"
-                                    placeholder="Search token..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full bg-transparent border-none text-[11px] font-medium text-white ml-2 focus:outline-none placeholder-gray-600"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="relative group min-w-[120px]">
-                            <div className="absolute inset-0 bg-gradient-to-r from-orange-500/20 to-rose-500/20 rounded-full blur opacity-0 group-focus-within:opacity-100 transition-opacity duration-300"></div>
-                            <div className="relative flex items-center bg-black/40 border border-white/10 group-focus-within:border-orange-500/50 rounded-full px-3 py-1.5 transition-all cursor-pointer">
-                                <Filter className="w-3.5 h-3.5 text-gray-400 group-focus-within:text-orange-400 transition-colors" />
-                                <select 
-                                    value={category}
-                                    onChange={(e) => setCategory(e.target.value as keyof typeof CATEGORIES)}
-                                    className="w-full bg-transparent border-none text-[11px] font-bold text-white ml-1.5 focus:outline-none appearance-none cursor-pointer"
-                                >
-                                    {Object.keys(CATEGORIES).map(cat => (
-                                        <option key={cat} value={cat} className="bg-gray-900 font-bold">{cat} Sector</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Market Filter */}
-                        <div className="relative group min-w-[120px]">
-                            <div className="absolute inset-0 bg-gradient-to-r from-green-500/20 to-blue-500/20 rounded-full blur opacity-0 group-focus-within:opacity-100 transition-opacity duration-300"></div>
-                            <div className="relative flex items-center bg-black/40 border border-white/10 group-focus-within:border-green-500/50 rounded-full px-3 py-1.5 transition-all cursor-pointer">
-                                <Activity className="w-3.5 h-3.5 text-gray-400 group-focus-within:text-green-400 transition-colors" />
-                                <select 
-                                    value={baseMarket}
-                                    onChange={(e) => setBaseMarket(e.target.value)}
-                                    className="w-full bg-transparent border-none text-[11px] font-bold text-white ml-1.5 focus:outline-none appearance-none cursor-pointer"
-                                >
-                                    <option value="USDT" className="bg-gray-900 font-bold">USDT Market</option>
-                                    <option value="BNB" className="bg-gray-900 font-bold">BNB Market</option>
-                                    <option value="BTC" className="bg-gray-900 font-bold">BTC Market</option>
-                                    <option value="FDUSD" className="bg-gray-900 font-bold">FDUSD Market</option>
-                                    <option value="All" className="bg-gray-900 font-bold">All Market</option>
-                                </select>
-                            </div>
-                        </div>
-
+                    <div className="flex items-center gap-1.5 shrink-0">
                         <button
-                            onClick={onClose}
-                            className="p-2 ml-1 bg-white/5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 border border-white/10 hover:border-red-500/50 rounded-full transition-all focus:outline-none"
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsMagnifyMode(prev => {
+                                    if (prev) stopMagnifying();
+                                    return !prev;
+                                });
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer ${
+                                isMagnifyMode
+                                    ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.35)]'
+                                    : 'bg-white/[0.04] hover:bg-cyan-500/15 border-white/10 text-gray-300 hover:text-cyan-300'
+                            }`}
+                            title="Toggle Touch/Hover Magnifier Glass (or touch & hold any token)"
                         >
-                            <X className="w-4 h-4" />
+                            <ZoomIn className="w-3.5 h-3.5" />
+                            <span>Magnify {isMagnifyMode ? 'ON' : ''}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onClose();
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className="p-1 rounded-md bg-white/[0.04] hover:bg-rose-500/20 border border-white/[0.08] hover:border-rose-500/40 text-gray-400 hover:text-rose-300 transition-all cursor-pointer shrink-0"
+                            title="Close Top Tokens Dashboard"
+                        >
+                            <X className="w-3.5 h-3.5" />
                         </button>
                     </div>
                 </div>
-                
-                <div className="flex-1 p-4 sm:p-5 overflow-hidden relative z-10">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5 h-full">
-                        {renderTokenList(
-                            data.gainers, 
-                            "Top Gainers", 
-                            <TrendingUp />, 
-                            "from-[#4ade80] to-[#22c55e]",
-                            "from-green-500 to-emerald-600",
-                            "delay-[50ms]"
-                        )}
-                        {renderTokenList(
-                            data.losers, 
-                            "Top Losers", 
-                            <TrendingDown />, 
-                            "from-[#f87171] to-[#ef4444]",
-                            "from-red-500 to-rose-600",
-                            "delay-[100ms]"
-                        )}
-                        {renderTokenList(
-                            data.hot, 
-                            "Hot Tokens", 
-                            <Flame />, 
-                            "from-[#fb923c] to-[#f97316]",
-                            "from-orange-500 to-amber-600",
-                            "delay-[150ms]"
-                        )}
-                        {renderTokenList(
-                            data.newTokens, 
-                            "Trending / Volatile", 
-                            <Sparkles />, 
-                            "from-[#c084fc] to-[#a855f7]",
-                            "from-purple-500 to-fuchsia-600",
-                            "delay-[200ms]"
-                        )}
-                        {renderTokenList(
-                            data.volume, 
-                            "Highest Volume", 
-                            <BarChart2 />, 
-                            "from-[#60a5fa] to-[#3b82f6]",
-                            "from-blue-500 to-cyan-600",
-                            "delay-[250ms]"
-                        )}
+
+                {/* Compact Filter Toolbar */}
+                <div className="px-3 py-2 border-b border-white/10 bg-[#050811]/80 flex flex-wrap items-center gap-2 shrink-0">
+                    <div className="relative flex-1 min-w-[150px] flex items-center bg-black/50 border border-white/10 focus-within:border-blue-500/50 rounded-lg px-2.5 py-1.5">
+                        <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                        <input
+                            type="text"
+                            placeholder="Search token..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full bg-transparent border-none text-[12px] font-medium text-white ml-2 focus:outline-none placeholder-gray-600"
+                        />
+                    </div>
+
+                    <div className="flex items-center bg-black/50 border border-white/10 rounded-lg px-2.5 py-1.5 min-w-[115px]">
+                        <Filter className="w-3.5 h-3.5 text-orange-400/80 shrink-0" />
+                        <select
+                            value={category}
+                            onChange={(e) => setCategory(e.target.value as keyof typeof CATEGORIES)}
+                            className="w-full bg-transparent border-none text-[11.5px] font-bold text-white ml-1.5 focus:outline-none appearance-none cursor-pointer"
+                        >
+                            {Object.keys(CATEGORIES).map(cat => (
+                                <option key={cat} value={cat} className="bg-gray-900 font-bold">{cat} Sector</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex items-center bg-black/50 border border-white/10 rounded-lg px-2.5 py-1.5 min-w-[115px]">
+                        <Activity className="w-3.5 h-3.5 text-green-400/80 shrink-0" />
+                        <select
+                            value={baseMarket}
+                            onChange={(e) => setBaseMarket(e.target.value)}
+                            className="w-full bg-transparent border-none text-[11.5px] font-bold text-white ml-1.5 focus:outline-none appearance-none cursor-pointer"
+                        >
+                            <option value="USDT" className="bg-gray-900 font-bold">USDT Market</option>
+                            <option value="BNB" className="bg-gray-900 font-bold">BNB Market</option>
+                            <option value="BTC" className="bg-gray-900 font-bold">BTC Market</option>
+                            <option value="FDUSD" className="bg-gray-900 font-bold">FDUSD Market</option>
+                            <option value="All" className="bg-gray-900 font-bold">All Market</option>
+                        </select>
+                    </div>
+                </div>
+
+                {/* Scrollable Token Lists Grid */}
+                <div
+                    ref={gridContainerRef}
+                    style={{ touchAction: 'pan-y' }}
+                    onContextMenu={(e) => e.preventDefault()}
+                    onMouseLeave={() => {
+                        if (isMagnifyMode) stopMagnifying();
+                    }}
+                    className="flex-1 min-h-0 overflow-y-auto p-3 custom-scrollbar"
+                >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {listSections.map((sec, secIdx) => (
+                            <div
+                                key={sec.key}
+                                className={`relative group flex flex-col h-[265px] overflow-hidden rounded-xl border border-white/10 bg-black/60 ${secIdx === 4 ? 'sm:col-span-2' : ''}`}
+                            >
+                                <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/[0.02] shrink-0">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`p-1 rounded-md bg-gradient-to-br ${sec.glowColor} border border-white/10`}>
+                                            {React.cloneElement(sec.icon as React.ReactElement<any>, { className: 'w-3.5 h-3.5 text-white' })}
+                                        </div>
+                                        <h3 className={`font-bold text-[12.5px] tracking-wide bg-clip-text text-transparent bg-gradient-to-r ${sec.colorClass}`}>
+                                            {sec.title}
+                                        </h3>
+                                    </div>
+                                    <span className="text-[10px] font-mono text-gray-500">{sec.tokens.length}</span>
+                                </div>
+
+                                <div className="flex-1 min-h-0 overflow-y-auto p-2 custom-scrollbar space-y-1.5">
+                                    {sec.tokens.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center h-full text-gray-500 space-y-1.5">
+                                            <Activity className="w-5 h-5 opacity-25 animate-pulse" />
+                                            <span className="text-[10px] uppercase tracking-widest font-bold">No Data</span>
+                                        </div>
+                                    ) : (
+                                        sec.tokens.map((token, index) => {
+                                            const isPositive = token.priceChangePercent >= 0;
+                                            return (
+                                                <button
+                                                    key={token.symbol}
+                                                    type="button"
+                                                    data-token-symbol={token.symbol}
+                                                    data-token-list={sec.key}
+                                                    data-token-rank={index + 1}
+                                                    style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
+                                                    onContextMenu={(e) => e.preventDefault()}
+                                                    onClick={() => handleTokenClick(token.symbol)}
+                                                    onMouseDown={(e) => {
+                                                        if (e.button !== 0) return;
+                                                        clearLongPressTimer();
+                                                        const cx = e.clientX;
+                                                        const cy = e.clientY;
+                                                        longPressTimerRef.current = window.setTimeout(() => {
+                                                            isMagnifyingRef.current = true;
+                                                            updateMagnifierAtPoint(cx, cy);
+                                                        }, 220);
+                                                    }}
+                                                    onMouseMove={(e) => {
+                                                        if (isMagnifyMode || isMagnifyingRef.current) {
+                                                            updateMagnifierAtPoint(e.clientX, e.clientY);
+                                                        }
+                                                    }}
+                                                    onMouseUp={() => stopMagnifying()}
+                                                    className="relative w-full flex flex-col p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/15 transition-colors group/btn cursor-pointer overflow-hidden select-none text-left"
+                                                >
+                                                    <div className="flex justify-between items-center w-full relative z-10 gap-1">
+                                                        <div className="flex items-center gap-1.5 min-w-0">
+                                                            <span className="text-gray-500 font-mono text-[10px] w-4 text-left shrink-0">{index + 1}.</span>
+                                                            <span className="font-bold text-[12px] text-gray-200 group-hover/btn:text-white transition-colors tracking-wide truncate max-w-[78px]">
+                                                                {baseMarket === 'All' ? token.symbol : token.symbol.replace(baseMarket, '')}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="flex items-center shrink-0">
+                                                            {renderSparkline(token.priceHistory, isPositive)}
+                                                            <div className="flex flex-col items-end min-w-[62px]">
+                                                                <span className="text-[11.5px] font-mono font-bold text-white tracking-tight">
+                                                                    ${token.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                                                                </span>
+                                                                <div className={`flex items-center gap-0.5 text-[10px] font-bold ${isPositive ? 'text-[#4ade80]' : 'text-[#f87171]'}`}>
+                                                                    {isPositive ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+                                                                    <span>{Math.abs(token.priceChangePercent).toFixed(2)}%</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="w-full mt-1.5 flex items-center gap-1.5 opacity-65 group-hover/btn:opacity-100 transition-opacity relative z-10">
+                                                        <span className="text-[8px] font-black tracking-widest text-[#4ade80] w-5">BUY</span>
+                                                        <div className="flex-1 h-1 bg-black/50 rounded-full overflow-hidden flex border border-white/5">
+                                                            <div className="h-full bg-[#4ade80]" style={{ width: `${token.buyPressure ?? 50}%` }} />
+                                                            <div className="h-full bg-[#f87171]" style={{ width: `${100 - (token.buyPressure ?? 50)}%` }} />
+                                                        </div>
+                                                        <span className="text-[8px] font-black tracking-widest text-[#f87171] w-5 text-right">SELL</span>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             </div>
-            
-            <style dangerouslySetInnerHTML={{__html: `
-                .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-                .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { 
-                    background-color: rgba(255, 255, 255, 0.15); 
-                    border-radius: 10px; 
-                }
-                .custom-scrollbar:hover::-webkit-scrollbar-thumb { 
-                    background-color: rgba(255, 255, 255, 0.3); 
-                }
-            `}} />
-        </div>
+            {renderMagnifierOverlay()}
+        </>
     );
 
     return createPortal(modalContent, document.body);

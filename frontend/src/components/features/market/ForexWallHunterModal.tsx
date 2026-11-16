@@ -20,7 +20,8 @@ export const ForexWallHunterModal: FC<{
         storageKey: 'cosmo_forex_wallhunter_modal_pos_v1',
         defaultWidth: 355,
         defaultHeight: 430,
-        maxCapHeight: 460,
+        maxCapHeight: 480,
+        compactMaxCapHeight: 460,
     });
 
     // Forex specific pairs

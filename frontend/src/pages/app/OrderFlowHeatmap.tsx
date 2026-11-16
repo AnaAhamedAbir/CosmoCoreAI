@@ -4297,9 +4297,6 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
         return { displayBids: gb, displayAsks: ga, displayMax: Math.max(mxB, mxA, 1) };
     }, [bids, asks, bucket, maxTotal]);
 
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const reversedAsks = useMemo(() => displayAsks.slice().reverse(), [displayAsks]);
-
     // ── STEP 2: Depth Chart data ──────────────────────────────────────────────
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const depthData = useMemo(() => {
@@ -4376,11 +4373,11 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
                         </div>
 
                         {/* Asks */}
-                        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col justify-end">
-                            {reversedAsks.map((ask: any, i: number) => {
+                        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col-reverse">
+                            {displayAsks.map((ask: any, i: number) => {
                                 const isWall = ask.size * ask.price >= sigSize;
                                 return (
-                                    <div key={i} className={`flex px-2 py-[2px] relative hover:bg-white/5 cursor-pointer ${isWall ? 'ring-1 ring-inset ring-red-500/25' : ''}`}>
+                                    <div key={i} className={`flex px-2 py-[1.5px] leading-tight relative hover:bg-white/5 cursor-pointer shrink-0 ${isWall ? 'ring-1 ring-inset ring-red-500/25' : ''}`}>
                                         <div className="absolute right-0 top-0 h-full bg-red-500/10 dark:bg-red-500/15 transition-all duration-300 pointer-events-none"
                                             style={{ width: `${(ask.total / displayMax) * 100}%` }} />
                                         <div className={`w-1/3 text-left relative z-10 font-bold ${isWall ? 'text-red-400' : 'text-red-500/60'}`}>{formatPrice(ask.price)}</div>
@@ -4392,7 +4389,7 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
                         </div>
 
                         {/* Spread */}
-                        <div className="flex-shrink-0 px-2 py-1.5 border-y border-white/5 bg-black/20">
+                        <div className="flex-shrink-0 px-2 py-1 border-y border-white/5 bg-black/20">
                             <div className="flex items-center justify-between text-[10px]">
                                 <span className="text-gray-500 font-sans">Spread</span>
                                 {asks.length > 0 && asks[asks.length - 1] && bids.length > 0 && (
@@ -4404,11 +4401,11 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
                         </div>
 
                         {/* Bids */}
-                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
                             {displayBids.map((bid: any, i: number) => {
                                 const isWall = bid.size * bid.price >= sigSize;
                                 return (
-                                    <div key={i} className={`flex px-2 py-[2px] relative hover:bg-white/5 cursor-pointer ${isWall ? 'ring-1 ring-inset ring-green-500/25' : ''}`}>
+                                    <div key={i} className={`flex px-2 py-[1.5px] leading-tight relative hover:bg-white/5 cursor-pointer ${isWall ? 'ring-1 ring-inset ring-green-500/25' : ''}`}>
                                         <div className="absolute right-0 top-0 h-full bg-green-500/10 dark:bg-green-500/15 transition-all duration-300 pointer-events-none"
                                             style={{ width: `${(bid.total / displayMax) * 100}%` }} />
                                         <div className={`w-1/3 text-left relative z-10 font-bold ${isWall ? 'text-green-400' : 'text-green-500/60'}`}>{formatPrice(bid.price)}</div>
@@ -4429,7 +4426,7 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
                             <button onClick={() => setEvents([])} className="text-[9px] text-gray-600 hover:text-gray-400 transition-colors uppercase font-bold tracking-wider">clear</button>
                         )}
                     </div>
-                    <div className="h-[88px] overflow-y-auto custom-scrollbar">
+                    <div className="h-[64px] overflow-y-auto custom-scrollbar">
                         {events.length === 0 ? (
                             <div className="text-center text-[10px] text-gray-600 py-6">Monitoring for significant wall activity...</div>
                         ) : events.map(ev => {
@@ -4783,6 +4780,17 @@ const OrderFlowChartPanel = React.memo<{
                         setActiveWallHunterId(Number(botId));
                         setBotForChart(config.id, Number(botId));
                         setIsWallHunterOpen(false);
+                    }}
+                />
+            )}
+            {isForexWallHunterOpen && (
+                <ForexWallHunterModal
+                    isOpen={isForexWallHunterOpen}
+                    onClose={() => setIsForexWallHunterOpen(false)}
+                    onDeploySuccess={(botId) => {
+                        setActiveWallHunterId(Number(botId));
+                        setBotForChart(config.id, Number(botId));
+                        setIsForexWallHunterOpen(false);
                     }}
                 />
             )}

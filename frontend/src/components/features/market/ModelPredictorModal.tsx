@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, BrainCircuit, Target, ShieldAlert, TrendingUp, Crosshair } from 'lucide-react';
+import { GripVertical, X, BrainCircuit, Target, ShieldAlert, TrendingUp, Crosshair } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../../services/client';
+import { useFloatingModalDrag } from '../../../hooks/useFloatingModalDrag';
+import { useDeviceProfile } from '../../../hooks/useDeviceProfile';
 
 export interface PredictionResult {
     model_id: string;
@@ -46,6 +49,15 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({
     const [pricePoint, setPricePoint] = useState<string>(currentPrice.toString());
     const [isLoading, setIsLoading] = useState(false);
     const [result, setResult] = useState<PredictionResult | null>(null);
+    const { isThermalGuardActive } = useDeviceProfile();
+    const { modalContainerRef, handleStartDrag, containerStyle } = useFloatingModalDrag({
+        isOpen,
+        storageKey: 'cosmo_algo_predictor_modal_pos_v1',
+        defaultWidth: 460,
+        defaultHeight: 620,
+        maxCapHeight: 760,
+        compactMaxCapHeight: 700,
+    });
 
     // Fetch models and set initial price when opened
     useEffect(() => {
@@ -122,38 +134,50 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({
                 <BrainCircuit className={`${size === 'sm' ? 'w-5 h-5' : 'w-8 h-8'} group-hover:scale-110 transition-transform bg-transparent`} />
             </button>
 
-            {/* Modal Overlay */}
-            <AnimatePresence>
-                {isOpen && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                            onClick={() => setIsOpen(false)}
-                        />
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                            className="cosmo-theme-modal relative w-full max-w-md bg-white dark:bg-black/40 backdrop-blur-2xl border border-slate-200 dark:border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] overflow-hidden"
-                        >
-                            {/* Header */}
-                            <div className="flex items-center justify-between p-5 border-b border-white/10 bg-black/20 backdrop-blur-md">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400">
-                                        <BrainCircuit className="w-5 h-5" />
-                                    </div>
-                                    <h2 className="text-lg font-semibold text-white">ML Model Inference</h2>
-                                </div>
-                                <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white transition-colors">
-                                    <X className="w-5 h-5" />
-                                </button>
+            {/* Floating Draggable Modal */}
+            {isOpen && typeof document !== 'undefined' && createPortal(
+                <div
+                    ref={modalContainerRef}
+                    style={containerStyle}
+                    className={`cosmo-theme-modal fixed w-[460px] max-w-[calc(100vw-12px)] rounded-2xl border z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col ${
+                        isThermalGuardActive
+                            ? 'bg-[#080c16] border-indigo-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
+                            : 'bg-white dark:bg-[#070b14]/95 backdrop-blur-2xl border-slate-200 dark:border-white/10 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_20px_rgba(99,102,241,0.18)]'
+                    }`}
+                >
+                    {/* Header */}
+                    <div
+                        onMouseDown={handleStartDrag}
+                        onTouchStart={handleStartDrag}
+                        style={{ touchAction: 'none' }}
+                        className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-black/20 backdrop-blur-md cursor-grab active:cursor-grabbing select-none shrink-0"
+                        title="Drag to move Algo Predictor"
+                    >
+                        <div className="flex items-center gap-2.5 pointer-events-none min-w-0">
+                            <GripVertical className="w-4 h-4 text-indigo-400/80 shrink-0" />
+                            <div className="p-1.5 bg-indigo-500/20 rounded-lg text-indigo-400 shrink-0">
+                                <BrainCircuit className="w-4 h-4" />
                             </div>
+                            <h2 className="text-base font-semibold text-white truncate">ML Model Inference</h2>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsOpen(false);
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
 
-                            {/* Body */}
-                            <div className="p-5 space-y-5">
+                    {/* Body */}
+                    <div
+                        style={{ touchAction: 'pan-y' }}
+                        className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4 custom-scrollbar"
+                    >
                                 {/* Crosshair AI Predict Button Toggle */}
                                 <div className="flex items-center justify-between p-3.5 bg-black/30 backdrop-blur-sm border border-white/10 rounded-xl hover:bg-black/40 transition-colors">
                                     <div className="flex flex-col gap-0.5">
@@ -306,10 +330,9 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({
                                     )}
                                 </AnimatePresence>
                             </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
+                </div>,
+                document.body
+            )}
         </>
     );
 };

@@ -6,6 +6,7 @@ export interface UseFloatingModalDragOptions {
   defaultWidth: number;
   defaultHeight: number;
   maxCapHeight?: number;
+  compactMaxCapHeight?: number;
 }
 
 interface DragState {
@@ -38,6 +39,7 @@ export function useFloatingModalDrag({
   defaultWidth,
   defaultHeight,
   maxCapHeight = 480,
+  compactMaxCapHeight,
 }: UseFloatingModalDragOptions) {
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const activeDragCleanupRef = useRef<(() => void) | null>(null);
@@ -191,7 +193,7 @@ export function useFloatingModalDrag({
       const modalH = modalEl?.offsetHeight || Math.min(defaultHeight, winH - 24);
       const topMargin = isCompact ? 6 : 10;
       const bottomMargin = isCompact ? 8 : 14;
-      const cap = isCompact ? Math.min(maxCapHeight, 440) : maxCapHeight;
+      const cap = isCompact ? (compactMaxCapHeight ?? Math.min(maxCapHeight, 440)) : maxCapHeight;
       const effectiveH = Math.min(modalH, Math.max(220, winH - 180));
 
       const drag = dragRef.current;
@@ -293,7 +295,7 @@ export function useFloatingModalDrag({
       window.addEventListener('touchcancel', onUp);
       window.addEventListener('blur', onUp);
     },
-    [modalPos, defaultWidth, defaultHeight, maxCapHeight, storageKey]
+    [modalPos, defaultWidth, defaultHeight, maxCapHeight, compactMaxCapHeight, storageKey]
   );
 
   const { width: vw, height: vh } = getViewportSize();
@@ -302,7 +304,7 @@ export function useFloatingModalDrag({
   const activeX = dragRef.current.isDragging ? dragRef.current.currentX : modalPos.x;
   const maxHeightPx = Math.max(
     220,
-    Math.min(isSmall ? Math.min(maxCapHeight, 440) : maxCapHeight, Math.round(vh - activeY - (isSmall ? 8 : 14)))
+    Math.min(isSmall ? (compactMaxCapHeight ?? Math.min(maxCapHeight, 440)) : maxCapHeight, Math.round(vh - activeY - (isSmall ? 8 : 14)))
   );
 
   return {

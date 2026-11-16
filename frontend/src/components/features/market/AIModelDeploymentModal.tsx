@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, X, Play, Loader2, Database, Key, DollarSign } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { GripVertical, BrainCircuit, X, Play, Loader2, Database, Key, DollarSign } from 'lucide-react';
 import { mlModelsService } from '@/services/mlModelsService';
 import { botService } from '@/services/botService';
 import { useSettings } from '@/context/SettingsContext';
+import { useFloatingModalDrag } from '@/hooks/useFloatingModalDrag';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { CustomMLModel } from '@/types';
 import { toast } from 'react-hot-toast';
 
@@ -27,6 +29,15 @@ export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ 
     const [timeframe, setTimeframe] = useState<string>('15m');
     
     const { apiKeys } = useSettings();
+    const { isThermalGuardActive } = useDeviceProfile();
+    const { modalContainerRef, handleStartDrag, containerStyle } = useFloatingModalDrag({
+        isOpen,
+        storageKey: 'cosmo_ai_deploy_modal_pos_v1',
+        defaultWidth: 500,
+        defaultHeight: 540,
+        maxCapHeight: 720,
+        compactMaxCapHeight: 660,
+    });
 
     useEffect(() => {
         if (isOpen) {
@@ -102,35 +113,54 @@ export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ 
         }
     };
 
-    if (!isOpen) return null;
+    if (!isOpen || typeof document === 'undefined') return null;
 
-    return (
-        <AnimatePresence>
-            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                <motion.div 
-                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                    className="cosmo-theme-modal relative w-[90%] md:w-[500px] bg-white dark:bg-[#0A0A0A] rounded-2xl shadow-2xl border border-gray-200 dark:border-white/10 overflow-hidden flex flex-col"
-                >
-                    {/* Header */}
-                    <div className="p-5 border-b border-gray-200 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-brand-primary/10 to-transparent">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
-                                <BrainCircuit className="w-5 h-5 text-white" />
-                            </div>
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-800 dark:text-white leading-tight">Deploy AI Model</h2>
-                                <p className="text-xs text-slate-500 font-medium">{symbol} • {exchange}</p>
-                            </div>
-                        </div>
-                        <button onClick={onClose} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-colors">
-                            <X className="w-5 h-5" />
-                        </button>
+    return createPortal(
+        <div
+            ref={modalContainerRef}
+            style={containerStyle}
+            className={`cosmo-theme-modal fixed w-[500px] max-w-[calc(100vw-12px)] rounded-2xl border z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col ${
+                isThermalGuardActive
+                    ? 'bg-[#080c16] border-purple-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
+                    : 'bg-white dark:bg-[#0A0A0A] border-gray-200 dark:border-white/10 shadow-2xl backdrop-blur-2xl'
+            }`}
+        >
+            {/* Header */}
+            <div
+                onMouseDown={handleStartDrag}
+                onTouchStart={handleStartDrag}
+                style={{ touchAction: 'none' }}
+                className="p-4 border-b border-gray-200 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-brand-primary/10 to-transparent cursor-grab active:cursor-grabbing select-none shrink-0"
+                title="Drag to move modal"
+            >
+                <div className="flex items-center gap-2.5 pointer-events-none min-w-0">
+                    <GripVertical className="w-4 h-4 text-purple-400/80 shrink-0" />
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30 shrink-0">
+                        <BrainCircuit className="w-5 h-5 text-white" />
                     </div>
+                    <div className="min-w-0">
+                        <h2 className="text-base font-bold text-slate-800 dark:text-white leading-tight truncate">Deploy AI Model</h2>
+                        <p className="text-xs text-slate-500 font-medium truncate">{symbol} • {exchange}</p>
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onClose();
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-colors cursor-pointer shrink-0"
+                >
+                    <X className="w-4 h-4" />
+                </button>
+            </div>
 
-                    {/* Content */}
-                    <div className="p-6 space-y-6">
+            {/* Content */}
+            <div
+                style={{ touchAction: 'pan-y' }}
+                className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5 custom-scrollbar"
+            >
                         {isLoading ? (
                             <div className="flex flex-col items-center justify-center py-10">
                                 <Loader2 className="w-8 h-8 text-brand-primary animate-spin mb-4" />
@@ -224,25 +254,26 @@ export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ 
                         )}
                     </div>
 
-                    {/* Footer */}
-                    <div className="p-5 border-t border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#050505] flex gap-3">
-                        <button 
-                            onClick={onClose}
-                            className="flex-1 py-3 font-bold rounded-xl border border-gray-300 dark:border-white/10 text-slate-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-all"
-                        >
-                            Cancel
-                        </button>
-                        <button 
-                            onClick={handleDeploy}
-                            disabled={isDeploying || models.length === 0}
-                            className="flex-1 py-3 font-bold rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:-translate-y-0.5 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                            {isDeploying ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5 fill-current" />}
-                            {isDeploying ? 'Deploying...' : 'Deploy AI Bot'}
-                        </button>
-                    </div>
-                </motion.div>
+            {/* Footer */}
+            <div className="p-4 border-t border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#050505] flex gap-3 shrink-0">
+                <button 
+                    type="button"
+                    onClick={onClose}
+                    className="flex-1 py-2.5 font-bold rounded-xl border border-gray-300 dark:border-white/10 text-slate-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-all cursor-pointer"
+                >
+                    Cancel
+                </button>
+                <button 
+                    type="button"
+                    onClick={handleDeploy}
+                    disabled={isDeploying || models.length === 0}
+                    className="flex-1 py-2.5 font-bold rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:-translate-y-0.5 transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                    {isDeploying ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5 fill-current" />}
+                    {isDeploying ? 'Deploying...' : 'Deploy AI Bot'}
+                </button>
             </div>
-        </AnimatePresence>
+        </div>,
+        document.body
     );
 };

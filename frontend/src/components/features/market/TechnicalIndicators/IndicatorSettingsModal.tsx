@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Props {
   indicatorId: string;
@@ -12,10 +13,10 @@ export const IndicatorSettingsModal: React.FC<Props> = ({ indicatorId, indicator
   const [period, setPeriod] = useState(14);
   const [source, setSource] = useState('close');
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined') return null;
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+  return createPortal(
+    <div className="fixed inset-0 z-[100010] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
       <div className="cosmo-theme-modal w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-brand-primary/30 rounded-xl shadow-2xl p-6">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -69,6 +70,7 @@ export const IndicatorSettingsModal: React.FC<Props> = ({ indicatorId, indicator
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

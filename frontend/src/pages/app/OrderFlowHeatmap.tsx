@@ -271,7 +271,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     useIcebergEvents(symbol);
     const mlSetup = useMLSetupEvents(symbol);
     const showGodMode = Boolean(indicatorSettings.showLiquidationHeatmap);
-    const godModeData = useGodModeData(symbol, showGodMode);
+    const godModeData = useGodModeData(symbol, showGodMode, exchange);
     const [sessionsData, setSessionsData] = useState<{ a: SessionData[]; b: SessionData[]; c: SessionData[]; d: SessionData[]; }>({
         a: [], b: [], c: [], d: []
     });
@@ -3510,6 +3510,11 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             bookmapIntensity={indicatorSettings.liquidationBookmapIntensity}
                             spoofingThreshold={indicatorSettings.liquidationSpoofingThreshold}
                             smartMoneyBias={indicatorSettings.liquidationSmartMoneyBias}
+                            showMagnetZones={indicatorSettings.liquidationShowMagnetZones !== false}
+                            showLeveragePools={indicatorSettings.liquidationShowLeveragePools !== false}
+                            showTrajectory={indicatorSettings.liquidationShowTrajectory !== false}
+                            isDark={isDark}
+                            onZoneClick={onChartBackgroundClick}
                             candlesRef={allCandlesRef}
                         />
                     )}

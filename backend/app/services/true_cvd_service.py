@@ -20,6 +20,7 @@ class TrueCVDService:
         # Configuration
         self.absorption_threshold_usd = absorption_threshold_usd
         self.time_window_sec = time_window_sec
+        self.exchange_id = "binance"
         self.exchange: ccxtpro.Exchange = None
         self._active_tasks = []
         
@@ -43,10 +44,11 @@ class TrueCVDService:
     async def _init_exchange(self, ex_id: str = 'binance'):
         if self.exchange is None:
             ex_class = getattr(ccxtpro, ex_id)
+            default_type = 'linear' if ex_id == 'bybit' else 'swap'
             self.exchange = ex_class({
                 'enableRateLimit': True,
                 'newUpdates': True,
-                'options': {'defaultType': 'swap'}
+                'options': {'defaultType': default_type}
             })
         return self.exchange
 
@@ -67,7 +69,7 @@ class TrueCVDService:
 
     async def _watch_trades(self):
         """Streams live market trades and calculates True CVD delta"""
-        exchange = await self._init_exchange('binance')
+        exchange = await self._init_exchange(self.exchange_id)
         ex_symbol = await self._resolve_exchange_symbol(exchange, self.symbol)
         logger.info(f"TrueCVD: Started streaming live trades for {ex_symbol}")
         
@@ -176,18 +178,22 @@ class TrueCVDService:
             # Analyze every second
             await asyncio.sleep(1)
 
-    async def start(self, symbol: str):
+    async def start(self, symbol: str, exchange_id: str = "binance", absorption_threshold_usd: float | None = None):
+        clean_ex = (exchange_id or "binance").lower()
+        if absorption_threshold_usd is not None:
+            self.absorption_threshold_usd = max(5000.0, float(absorption_threshold_usd))
         if self._running:
-            if self.symbol == symbol:
+            if self.symbol == symbol and self.exchange_id == clean_ex:
                 return
             await self.stop()
             
         self._running = True
         self.symbol = symbol
+        self.exchange_id = clean_ex
         self.current_cvd = 0.0
         self._trade_history = []
         
-        logger.info(f"TrueCVD Service initializing for {symbol}")
+        logger.info(f"TrueCVD Service initializing for {symbol} ({clean_ex}, threshold=${self.absorption_threshold_usd:,.0f})")
         
         self._active_tasks.append(asyncio.create_task(self._watch_trades()))
         self._active_tasks.append(asyncio.create_task(self._analyze_absorption_loop()))

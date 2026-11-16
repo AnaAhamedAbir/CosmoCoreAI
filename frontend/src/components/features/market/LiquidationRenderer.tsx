@@ -9,7 +9,7 @@ import type {
 } from 'lightweight-charts';
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
 import { GodModeState } from '../../../hooks/useGodModeData';
-import { getThermalProfile } from '@/utils/deviceProfile';
+import { getThermalProfile, isThermalGuardActive, subscribeThermalProfile } from '@/utils/deviceProfile';
 
 interface LiquidationRendererProps {
     chart: IChartApi | null;
@@ -26,6 +26,11 @@ interface LiquidationRendererProps {
     bookmapIntensity?: number;
     spoofingThreshold?: number;
     smartMoneyBias?: boolean;
+    showMagnetZones?: boolean;
+    showLeveragePools?: boolean;
+    showTrajectory?: boolean;
+    isDark?: boolean;
+    onZoneClick?: (price: number) => void;
     candlesRef?: React.MutableRefObject<any[]>;
     candleTimes?: number[];
 }
@@ -40,6 +45,17 @@ interface CrosshairHoverState {
     x: number;
     y: number;
     visible: boolean;
+}
+
+interface MergedZone {
+    price: number;
+    intensity: number;
+    volume?: number;
+    prob?: number;
+    leverage?: string;
+    estimatedUsd?: number;
+    kind: 'magnet' | 'pool';
+    side?: 'SHORT_LIQ' | 'LONG_LIQ';
 }
 
 function snapToNearestCandleTime(targetSec: number, candleTimes: number[]): number | null {
@@ -66,6 +82,13 @@ function formatPriceLabel(price: number): string {
     if (price < 0.1) return price.toFixed(5);
     if (price < 1) return price.toFixed(4);
     return price.toFixed(2);
+}
+
+function formatCompactUsd(val: number): string {
+    if (!Number.isFinite(val) || val <= 0) return '$0';
+    if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`;
+    if (val >= 1_000) return `$${(val / 1_000).toFixed(0)}k`;
+    return `$${val.toFixed(0)}`;
 }
 
 class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
@@ -97,6 +120,12 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
             bookmapIntensity,
             spoofingThreshold,
             smartMoneyBias,
+            showMagnetZones,
+            showLeveragePools,
+            showTrajectory,
+            isDark,
+            hasZoneClickHandler,
+            isThermalGuard,
             candlesRef,
             candleTimes,
             bubblesRef,
@@ -140,113 +169,178 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
 
         ctx.save();
 
-        // 1. Draw Unified Liquidation Heatmap Bands (Short Liquidations above price = Rose/Red, Long below = Emerald/Green)
-        const activeMagnetZones =
-            useTrailingLiquidity && data.smoothed_zones && data.smoothed_zones.length > 0
-                ? data.smoothed_zones
-                : data.magnet_zones || [];
-
-        const mergedByPrice = new Map<
-            string,
-            { price: number; intensity: number; volume?: number; prob?: number }
-        >();
-
-        activeMagnetZones.forEach((z) => {
-            const p = Number(z.price);
-            const intensity = Number(z.intensity);
-            if (!Number.isFinite(p) || !Number.isFinite(intensity) || intensity < 10) return;
-            const key = p.toPrecision(8);
-            mergedByPrice.set(key, {
-                price: p,
-                intensity,
-                volume: z.volume,
-            });
-        });
-
-        (data.cascade_probs || []).forEach((z) => {
-            const p = Number(z.price);
-            const prob = Number(z.prob);
-            if (!Number.isFinite(p) || !Number.isFinite(prob)) return;
-            const key = p.toPrecision(8);
-            const existing = mergedByPrice.get(key);
-            if (existing) {
-                existing.prob = prob;
-                if (!existing.volume && z.volume) existing.volume = z.volume;
-            } else {
-                mergedByPrice.set(key, {
-                    price: p,
-                    intensity: prob,
-                    volume: z.volume,
-                    prob,
-                });
-            }
-        });
-
-        const allZones = Array.from(mergedByPrice.values());
+        const allInteractiveZones: MergedZone[] = [];
         const drawnTextY: number[] = [];
 
-        allZones.forEach((zone) => {
-            const refPrice = currentPrice > 0 ? currentPrice : zone.price;
-            const baseThickness = refPrice * 0.001;
-            let calculatedThickness = baseThickness;
-            if (zone.volume && zone.volume > 0) {
-                const volumeScale = Math.min(5, zone.volume / 200000);
-                calculatedThickness = baseThickness + baseThickness * volumeScale;
-            }
+        // 1. Draw L2 Orderbook Magnet & Cascade Zones
+        if (showMagnetZones) {
+            const activeMagnetZones =
+                useTrailingLiquidity && data.smoothed_zones && data.smoothed_zones.length > 0
+                    ? data.smoothed_zones
+                    : data.magnet_zones || [];
 
-            const yTop = toY(zone.price + calculatedThickness / 2);
-            const yBottom = toY(zone.price - calculatedThickness / 2);
-            const yCenter = toY(zone.price);
+            const mergedByPrice = new Map<string, MergedZone>();
 
-            if (yTop === null || yBottom === null || yCenter === null) return;
+            activeMagnetZones.forEach((z) => {
+                const p = Number(z.price);
+                const intensity = Number(z.intensity);
+                if (!Number.isFinite(p) || !Number.isFinite(intensity) || intensity < 10) return;
+                const key = p.toPrecision(8);
+                mergedByPrice.set(key, {
+                    price: p,
+                    intensity,
+                    volume: z.volume,
+                    kind: 'magnet',
+                });
+            });
 
-            const top = Math.min(yTop, yBottom);
-            const rawHeight = Math.abs(yBottom - yTop);
-            const height = Math.max(4, Math.min(36, rawHeight));
-            const drawTop = rawHeight < 4 ? yCenter - height / 2 : top;
-
-            if (drawTop + height < -40 || drawTop > H + 40) return;
-
-            const alpha = Math.min(0.85, (zone.intensity / 100) * (effectiveIntensityScale / 100));
-            const isShortZone = currentPrice > 0 ? zone.price > currentPrice : false;
-            const colorBase = isShortZone ? '244, 63, 94' : '16, 185, 129';
-
-            ctx.fillStyle = `rgba(${colorBase}, ${alpha * 0.32})`;
-            ctx.fillRect(0, drawTop, W, height);
-
-            // Center dashed laser line
-            ctx.beginPath();
-            ctx.strokeStyle = `rgba(${colorBase}, ${Math.min(0.9, alpha * 0.75)})`;
-            ctx.setLineDash([4, 4]);
-            ctx.lineWidth = 1;
-            ctx.moveTo(0, yCenter);
-            ctx.lineTo(W, yCenter);
-            ctx.stroke();
-            ctx.setLineDash([]);
-
-            // Collision-avoided right-edge label
-            let textY = yCenter;
-            for (let i = 0; i < 10; i++) {
-                if (drawnTextY.some((dy) => Math.abs(dy - textY) < 16)) {
-                    textY -= 16;
+            (data.cascade_probs || []).forEach((z) => {
+                const p = Number(z.price);
+                const prob = Number(z.prob);
+                if (!Number.isFinite(p) || !Number.isFinite(prob)) return;
+                const key = p.toPrecision(8);
+                const existing = mergedByPrice.get(key);
+                if (existing) {
+                    existing.prob = prob;
+                    if (!existing.volume && z.volume) existing.volume = z.volume;
                 } else {
-                    break;
+                    mergedByPrice.set(key, {
+                        price: p,
+                        intensity: prob,
+                        volume: z.volume,
+                        prob,
+                        kind: 'magnet',
+                    });
                 }
-            }
-            if (textY >= 10 && textY <= H - 10) {
-                drawnTextY.push(textY);
-                ctx.fillStyle = `rgba(${colorBase}, 0.95)`;
-                ctx.font = 'bold 11px Inter, sans-serif';
-                ctx.textAlign = 'right';
-                ctx.textBaseline = 'middle';
-                const formattedPrice = formatPriceLabel(zone.price);
-                const probSuffix = zone.prob !== undefined ? ` (${Math.round(zone.prob)}%)` : '';
-                const label = isShortZone
-                    ? `🔥 SHORT LIQ ${Math.round(zone.intensity)}%${probSuffix} @ ${formattedPrice}`
-                    : `🧲 LONG LIQ ${Math.round(zone.intensity)}%${probSuffix} @ ${formattedPrice}`;
-                ctx.fillText(label, W - 8, textY);
-            }
-        });
+            });
+
+            const magnetList = Array.from(mergedByPrice.values());
+            allInteractiveZones.push(...magnetList);
+
+            magnetList.forEach((zone) => {
+                const refPrice = currentPrice > 0 ? currentPrice : zone.price;
+                const baseThickness = refPrice * 0.001;
+                let calculatedThickness = baseThickness;
+                if (zone.volume && zone.volume > 0) {
+                    const volumeScale = Math.min(5, zone.volume / 200000);
+                    calculatedThickness = baseThickness + baseThickness * volumeScale;
+                }
+
+                const yTop = toY(zone.price + calculatedThickness / 2);
+                const yBottom = toY(zone.price - calculatedThickness / 2);
+                const yCenter = toY(zone.price);
+
+                if (yTop === null || yBottom === null || yCenter === null) return;
+
+                const top = Math.min(yTop, yBottom);
+                const rawHeight = Math.abs(yBottom - yTop);
+                const height = Math.max(4, Math.min(36, rawHeight));
+                const drawTop = rawHeight < 4 ? yCenter - height / 2 : top;
+
+                if (drawTop + height < -40 || drawTop > H + 40) return;
+
+                const alpha = Math.min(0.85, (zone.intensity / 100) * (effectiveIntensityScale / 100));
+                const isShortZone = currentPrice > 0 ? zone.price > currentPrice : false;
+                const colorBase = isShortZone ? '244, 63, 94' : '16, 185, 129';
+
+                ctx.fillStyle = `rgba(${colorBase}, ${alpha * 0.30})`;
+                ctx.fillRect(0, drawTop, W, height);
+
+                ctx.beginPath();
+                ctx.strokeStyle = `rgba(${colorBase}, ${Math.min(0.9, alpha * 0.75)})`;
+                ctx.setLineDash([4, 4]);
+                ctx.lineWidth = 1;
+                ctx.moveTo(0, yCenter);
+                ctx.lineTo(W, yCenter);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                let textY = yCenter;
+                for (let i = 0; i < 10; i++) {
+                    if (drawnTextY.some((dy) => Math.abs(dy - textY) < 16)) {
+                        textY -= 16;
+                    } else {
+                        break;
+                    }
+                }
+                if (textY >= 10 && textY <= H - 10) {
+                    drawnTextY.push(textY);
+                    ctx.fillStyle = isDark
+                        ? `rgba(${colorBase}, 0.95)`
+                        : isShortZone
+                        ? 'rgba(190, 18, 60, 0.95)'
+                        : 'rgba(4, 120, 87, 0.95)';
+                    ctx.font = 'bold 11px Inter, sans-serif';
+                    ctx.textAlign = 'right';
+                    ctx.textBaseline = 'middle';
+                    const formattedPrice = formatPriceLabel(zone.price);
+                    const probSuffix = zone.prob !== undefined ? ` (${Math.round(zone.prob)}%)` : '';
+                    const label = isShortZone
+                        ? `🔥 SHORT LIQ ${Math.round(zone.intensity)}%${probSuffix} @ ${formattedPrice}`
+                        : `🧲 LONG LIQ ${Math.round(zone.intensity)}%${probSuffix} @ ${formattedPrice}`;
+                    ctx.fillText(label, W - 8, textY);
+                }
+            });
+        }
+
+        // 1.25 Draw Estimated Leveraged Liquidation Pools (10x / 25x / 50x / 100x)
+        if (showLeveragePools && data.liquidation_pools && data.liquidation_pools.length > 0) {
+            data.liquidation_pools.forEach((pool) => {
+                const p = Number(pool.price);
+                const intensity = Number(pool.intensity);
+                if (!Number.isFinite(p) || !Number.isFinite(intensity) || intensity < 15) return;
+
+                allInteractiveZones.push({
+                    price: p,
+                    intensity,
+                    leverage: pool.leverage,
+                    estimatedUsd: pool.estimated_usd,
+                    kind: 'pool',
+                    side: pool.side,
+                });
+
+                const yCenter = toY(p);
+                if (yCenter === null || yCenter < -30 || yCenter > H + 30) return;
+
+                const isShortPool = pool.side === 'SHORT_LIQ' || (currentPrice > 0 && p > currentPrice);
+                const barHeight = Math.max(3, Math.min(12, (intensity / 100) * 12));
+                const alpha = Math.min(0.65, (intensity / 100) * (effectiveIntensityScale / 100) * 0.55);
+                const rgb = isShortPool ? '245, 158, 11' : '6, 182, 212'; // Amber for Short Liq Pools, Cyan for Long Liq Pools
+
+                const grad = ctx.createLinearGradient(0, 0, W, 0);
+                grad.addColorStop(0, `rgba(${rgb}, ${alpha * 0.15})`);
+                grad.addColorStop(0.65, `rgba(${rgb}, ${alpha * 0.35})`);
+                grad.addColorStop(1, `rgba(${rgb}, ${alpha * 0.75})`);
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, yCenter - barHeight / 2, W, barHeight);
+
+                let textY = yCenter;
+                for (let i = 0; i < 10; i++) {
+                    if (drawnTextY.some((dy) => Math.abs(dy - textY) < 15)) {
+                        textY -= 15;
+                    } else {
+                        break;
+                    }
+                }
+                if (textY >= 10 && textY <= H - 10) {
+                    drawnTextY.push(textY);
+                    ctx.fillStyle = isDark
+                        ? `rgba(${rgb}, 0.95)`
+                        : isShortPool
+                        ? 'rgba(180, 83, 9, 0.95)'
+                        : 'rgba(14, 116, 144, 0.95)';
+                    ctx.font = 'bold 10px Inter, sans-serif';
+                    ctx.textAlign = 'right';
+                    ctx.textBaseline = 'middle';
+                    const usdTag = pool.estimated_usd ? ` ${formatCompactUsd(pool.estimated_usd)}` : '';
+                    ctx.fillText(
+                        `⚡ ${pool.leverage} POOL${usdTag} @ ${formatPriceLabel(p)}`,
+                        W - 8,
+                        textY
+                    );
+                }
+            });
+        }
 
         // 1.5 Draw Trailing Liquidity Clouds (DTLC)
         if (useTrailingLiquidity && data.trailing_liquidity && currentPrice > 0) {
@@ -272,7 +366,7 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                     ctx.stroke();
                     ctx.setLineDash([]);
 
-                    ctx.fillStyle = 'rgba(16, 185, 129, 0.85)';
+                    ctx.fillStyle = isDark ? 'rgba(16, 185, 129, 0.85)' : 'rgba(4, 120, 87, 0.9)';
                     ctx.font = 'bold 10px Inter, sans-serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'alphabetic';
@@ -300,7 +394,7 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                     ctx.stroke();
                     ctx.setLineDash([]);
 
-                    ctx.fillStyle = 'rgba(239, 68, 68, 0.85)';
+                    ctx.fillStyle = isDark ? 'rgba(239, 68, 68, 0.85)' : 'rgba(185, 28, 28, 0.9)';
                     ctx.font = 'bold 10px Inter, sans-serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'alphabetic';
@@ -309,77 +403,112 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
             }
         }
 
-        // 1.6 Draw Bookmap Style Multi-Level Depth Anchored to Chart TimeScale
+        // 1.6 Draw Bookmap Style Continuous Clouds & Liquidity Lines (Anchored to Latest Candle + Zoom)
         if (showBookmap && bookmapHistoryRef.current.length > 0 && effectiveCandleTimes.length >= 2) {
-            const lastBarTime = effectiveCandleTimes[effectiveCandleTimes.length - 1];
-            const prevBarTime = effectiveCandleTimes[effectiveCandleTimes.length - 2];
-            const barIntervalSec = Math.max(1, lastBarTime - prevBarTime);
+            const snapshots = bookmapHistoryRef.current;
+            const lastIdx = effectiveCandleTimes.length - 1;
+            const lastBarTime = effectiveCandleTimes[lastIdx];
+            const prevBarTime = effectiveCandleTimes[lastIdx - 1];
 
-            // Estimate current pixel spacing per bar from visible candles so zoom scales Bookmap 1:1
-            let barSpacingPx = 8;
-            const xLast = timeScale.timeToCoordinate(lastBarTime as any);
-            const xPrev = timeScale.timeToCoordinate(prevBarTime as any);
-            if (xLast !== null && xPrev !== null && xLast > xPrev) {
-                barSpacingPx = xLast - xPrev;
-            } else {
-                const logicalRange = timeScale.getVisibleLogicalRange();
-                if (logicalRange && logicalRange.to > logicalRange.from) {
-                    barSpacingPx = Math.max(2, W / (logicalRange.to - logicalRange.from));
-                }
+            let anchorX: number | null =
+                typeof (timeScale as any).logicalToCoordinate === 'function'
+                    ? ((timeScale as any).logicalToCoordinate(lastIdx) as number | null)
+                    : (timeScale.timeToCoordinate(lastBarTime as any) as number | null);
+
+            if (anchorX === null) {
+                anchorX = timeScale.timeToCoordinate(lastBarTime as any) as number | null;
             }
 
-            let maxVol = 1;
-            const recentSnapshots = bookmapHistoryRef.current.slice(-15);
-            recentSnapshots.forEach((h) => {
-                h.depth.forEach((d) => {
-                    if (d.volume > maxVol) maxVol = d.volume;
-                });
-            });
-
-            const intensityMultiplier = (bookmapIntensity || 50) / 50;
-            const colWidth = Math.max(3, Math.min(18, barSpacingPx * 0.35));
-
-            bookmapHistoryRef.current.forEach((snapshot) => {
-                const snapSec = snapshot.time / 1000;
-                const barTime = snapToNearestCandleTime(snapSec, effectiveCandleTimes);
-                if (barTime === null) return;
-
-                let barX: number | null = timeScale.timeToCoordinate(barTime as any) as number | null;
-                if (barX === null) {
-                    if (snapSec > lastBarTime && xLast !== null) {
-                        barX = xLast + ((snapSec - lastBarTime) / barIntervalSec) * barSpacingPx;
-                    } else {
-                        return;
+            if (anchorX !== null) {
+                let barSpacingPx = 8;
+                const xLast = timeScale.timeToCoordinate(lastBarTime as any) as number | null;
+                const xPrev = timeScale.timeToCoordinate(prevBarTime as any) as number | null;
+                if (xLast !== null && xPrev !== null && xLast > xPrev) {
+                    barSpacingPx = xLast - xPrev;
+                } else {
+                    const logicalRange = timeScale.getVisibleLogicalRange();
+                    if (logicalRange && logicalRange.to > logicalRange.from) {
+                        barSpacingPx = Math.max(2, W / (logicalRange.to - logicalRange.from));
                     }
                 }
 
-                const subBarFrac = Math.max(-0.5, Math.min(1.0, (snapSec - barTime) / barIntervalSec));
-                const xPos = barX + (subBarFrac - 0.5) * barSpacingPx;
+                // Scale horizontal time-flow speed with chart zoom while keeping snapshots anchored to anchorX
+                const zoomFactor = Math.max(0.5, Math.min(2.5, barSpacingPx / 10));
+                const pxPerSec = 14 * zoomFactor;
+                const newestTimeMs = snapshots[snapshots.length - 1].time;
 
-                if (xPos + colWidth < 0 || xPos > W) return;
-
-                snapshot.depth.forEach((level) => {
-                    const y = toY(level.price);
-                    if (y === null || y < -6 || y > H + 6) return;
-
-                    const normalizedIntensity = Math.min(1.0, (level.volume / maxVol) * intensityMultiplier);
-                    if (normalizedIntensity <= 0.08) return;
-
-                    if (normalizedIntensity > 0.8) {
-                        ctx.fillStyle = `rgba(239, 68, 68, ${normalizedIntensity * 0.85})`;
-                    } else if (normalizedIntensity > 0.5) {
-                        ctx.fillStyle = `rgba(249, 115, 22, ${normalizedIntensity * 0.75})`;
-                    } else if (normalizedIntensity > 0.2) {
-                        ctx.fillStyle = `rgba(234, 179, 8, ${normalizedIntensity * 0.65})`;
-                    } else {
-                        ctx.fillStyle = `rgba(59, 130, 246, ${normalizedIntensity * 0.45})`;
-                    }
-                    ctx.fillRect(xPos, y - 2, colWidth, 5);
+                let maxVol = 1;
+                const recentSnapshots = snapshots.slice(-15);
+                recentSnapshots.forEach((h) => {
+                    h.depth.forEach((d) => {
+                        if (d.volume > maxVol) maxVol = d.volume;
+                    });
                 });
-            });
+
+                // Match BookmapHeatmapService bucket size (0.05 / 50 = 0.1% of price) so levels blend smoothly
+                const refPrice = currentPrice > 0 ? currentPrice : 1;
+                const yRef1 = toY(refPrice);
+                const yRef2 = toY(refPrice * 1.001);
+                const bandHeight =
+                    yRef1 !== null && yRef2 !== null
+                        ? Math.max(2, Math.min(9, Math.abs(yRef2 - yRef1) * 0.95))
+                        : 3.5;
+
+                const intensityMultiplier = (bookmapIntensity || 50) / 50;
+                const minCellThreshold = isThermalGuard ? 0.14 : 0.08;
+
+                // Pre-compute continuous edge-to-edge X bounds for every snapshot
+                const xPositions = snapshots.map(
+                    (s) => anchorX! - ((newestTimeMs - s.time) / 1000) * pxPerSec
+                );
+
+                for (let i = 0; i < snapshots.length; i++) {
+                    const xStart = xPositions[i];
+                    const xEnd =
+                        i < snapshots.length - 1
+                            ? xPositions[i + 1]
+                            : Math.min(W, anchorX + Math.max(36, barSpacingPx * 2.5));
+
+                    if (xEnd < 0 || xStart > W) continue;
+                    const stripWidth = Math.max(1.5, xEnd - xStart + 0.6);
+                    const distFromAnchor = Math.max(0, anchorX - xStart);
+                    const ageFade = Math.max(0.2, 1 - distFromAnchor / Math.max(250, W * 0.95));
+
+                    const depth = snapshots[i].depth;
+                    for (let j = 0; j < depth.length; j++) {
+                        const level = depth[j];
+                        const y = toY(level.price);
+                        if (y === null || y < -8 || y > H + 8) continue;
+
+                        const normalizedIntensity = Math.min(1.0, (level.volume / maxVol) * intensityMultiplier);
+                        if (normalizedIntensity <= minCellThreshold) continue;
+
+                        let rgb = '59, 130, 246'; // Blue (light resting liquidity)
+                        if (normalizedIntensity > 0.8) {
+                            rgb = '239, 68, 68'; // Red (heavy whale wall)
+                        } else if (normalizedIntensity > 0.5) {
+                            rgb = '249, 115, 22'; // Orange
+                        } else if (normalizedIntensity > 0.22) {
+                            rgb = '234, 179, 8'; // Amber/Yellow
+                        }
+
+                        // Soft continuous cloud band (no hard brick edges)
+                        const cloudAlpha = normalizedIntensity * 0.34 * ageFade;
+                        ctx.fillStyle = `rgba(${rgb}, ${cloudAlpha})`;
+                        ctx.fillRect(xStart, y - bandHeight / 2, stripWidth, bandHeight);
+
+                        // Crisp thin running liquidity line through strong levels
+                        if (normalizedIntensity > 0.42) {
+                            const lineAlpha = Math.min(0.85, normalizedIntensity * 0.78 * ageFade);
+                            ctx.fillStyle = `rgba(${rgb}, ${lineAlpha})`;
+                            ctx.fillRect(xStart, y - 0.75, stripWidth, 1.5);
+                        }
+                    }
+                }
+            }
         }
 
-        // 2. Draw Live Liquidation Bubbles (anchored to snapped candle X & price Y)
+        // 2. Draw Live Liquidation Bubbles
         if (showBubbles && bubblesRef.current.length > 0) {
             bubblesRef.current.forEach((bubble) => {
                 const x = toSnappedX(bubble.timestamp);
@@ -396,7 +525,9 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                         : ex === 'bybit'
                         ? '59, 130, 246'
                         : ex === 'okx'
-                        ? '255, 255, 255'
+                        ? isDark
+                            ? '255, 255, 255'
+                            : '71, 85, 105'
                         : ex === 'bitget'
                         ? '6, 182, 212'
                         : '168, 85, 247';
@@ -438,7 +569,7 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                     ctx.setLineDash([]);
                 }
 
-                const pulse = Math.sin(age / 200) * 2;
+                const pulse = isThermalGuard ? 0 : Math.sin(age / 200) * 2;
                 const radius = Math.max(4, baseRadius + pulse);
 
                 ctx.beginPath();
@@ -457,14 +588,21 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                 ctx.arc(x, y, radius, 0, 2 * Math.PI);
                 ctx.stroke();
 
-                ctx.fillStyle = '#fff';
-                ctx.font = 'bold 9px Arial, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
                 const valK =
                     bubble.value >= 1000000
                         ? (bubble.value / 1000000).toFixed(1) + 'M'
                         : (bubble.value / 1000).toFixed(0) + 'k';
+                ctx.font = 'bold 9px Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                if (!isDark) {
+                    ctx.lineWidth = 2.5;
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+                    ctx.strokeText(valK, x, y - radius - 8);
+                    ctx.fillStyle = '#0f172a';
+                } else {
+                    ctx.fillStyle = '#ffffff';
+                }
                 ctx.fillText(valK, x, y - radius - 8);
             });
         }
@@ -483,7 +621,7 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                     ctx.lineTo(W, callY);
                     ctx.stroke();
 
-                    ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+                    ctx.fillStyle = isDark ? 'rgba(239, 68, 68, 0.9)' : 'rgba(185, 28, 28, 0.95)';
                     ctx.font = 'bold 11px Inter, sans-serif';
                     ctx.textAlign = 'right';
                     ctx.textBaseline = 'alphabetic';
@@ -501,7 +639,7 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                     ctx.lineTo(W, putY);
                     ctx.stroke();
 
-                    ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
+                    ctx.fillStyle = isDark ? 'rgba(16, 185, 129, 0.9)' : 'rgba(4, 120, 87, 0.95)';
                     ctx.font = 'bold 11px Inter, sans-serif';
                     ctx.textAlign = 'right';
                     ctx.textBaseline = 'alphabetic';
@@ -519,7 +657,7 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
 
                 const isBullish = iceberg.type === 'BULLISH_ABSORPTION';
                 const glowColor = '168, 85, 247';
-                const textColor = isBullish ? '#22c55e' : '#ef4444';
+                const textColor = isBullish ? (isDark ? '#22c55e' : '#15803d') : (isDark ? '#ef4444' : '#b91c1c');
 
                 const age = now - iceberg.createdAt;
                 const alpha = Math.max(0, 1 - age / 15000);
@@ -557,7 +695,9 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
 
                 const alpha = Math.max(0, 1 - age / 120000);
                 ctx.beginPath();
-                ctx.strokeStyle = `rgba(156, 163, 175, ${alpha * 0.8})`;
+                ctx.strokeStyle = isDark
+                    ? `rgba(156, 163, 175, ${alpha * 0.8})`
+                    : `rgba(71, 85, 105, ${alpha * 0.8})`;
                 ctx.setLineDash([10, 5, 2, 5]);
                 ctx.lineWidth = 1.5;
                 ctx.moveTo(0, y);
@@ -565,7 +705,9 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                 ctx.stroke();
                 ctx.setLineDash([]);
 
-                ctx.fillStyle = `rgba(156, 163, 175, ${alpha})`;
+                ctx.fillStyle = isDark
+                    ? `rgba(156, 163, 175, ${alpha})`
+                    : `rgba(51, 65, 85, ${alpha})`;
                 ctx.font = 'italic bold 10px Inter, sans-serif';
                 ctx.textAlign = 'right';
                 ctx.textBaseline = 'alphabetic';
@@ -579,32 +721,50 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
 
         // 3. Draw Interactive Tooltip for hovered zone (clamped inside pane)
         if (crosshairRef.current.visible && currentPrice > 0) {
-            const hoveredZone = allZones.find(
-                (z) => Math.abs(z.price - crosshairRef.current.price) < currentPrice * 0.003
+            const hoveredZone = allInteractiveZones.find(
+                (z) => Math.abs(z.price - crosshairRef.current.price) < currentPrice * 0.0035
             );
             if (hoveredZone) {
-                const boxW = 122;
-                const boxH = 50;
+                const boxW = hasZoneClickHandler ? 138 : 124;
+                const boxH = hasZoneClickHandler ? 62 : 50;
                 const ttX = Math.max(8, Math.min(W - boxW - 8, crosshairRef.current.x + 15));
                 const ttY = Math.max(boxH + 8, Math.min(H - 8, crosshairRef.current.y - 10));
                 const isShortZone = hoveredZone.price > currentPrice;
 
-                ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-                ctx.strokeStyle = isShortZone ? 'rgba(244, 63, 94, 0.6)' : 'rgba(16, 185, 129, 0.6)';
+                ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.92)' : 'rgba(255, 255, 255, 0.96)';
+                ctx.strokeStyle =
+                    hoveredZone.kind === 'pool'
+                        ? isShortZone
+                            ? 'rgba(245, 158, 11, 0.7)'
+                            : 'rgba(6, 182, 212, 0.7)'
+                        : isShortZone
+                        ? 'rgba(244, 63, 94, 0.65)'
+                        : 'rgba(16, 185, 129, 0.65)';
                 ctx.lineWidth = 1;
 
-                const volText = hoveredZone.volume
-                    ? `Vol: $${(hoveredZone.volume / 1000).toFixed(1)}k`
+                const volText = hoveredZone.estimatedUsd
+                    ? `Pool: ${formatCompactUsd(hoveredZone.estimatedUsd)}`
+                    : hoveredZone.volume
+                    ? `Vol: ${formatCompactUsd(hoveredZone.volume)}`
                     : `Int: ${Math.round(hoveredZone.intensity)}%`;
-                const typeText = isShortZone ? 'Short Liq. Zone' : 'Long Liq. Zone';
+                const typeText =
+                    hoveredZone.kind === 'pool'
+                        ? isShortZone
+                            ? 'Short Lev. Pool'
+                            : 'Long Lev. Pool'
+                        : isShortZone
+                        ? 'Short Liq. Zone'
+                        : 'Long Liq. Zone';
 
                 const distancePct = Math.abs(currentPrice - hoveredZone.price) / currentPrice;
-                let levText = 'Est. Lev: ';
-                if (distancePct <= 0.015) levText += '100x';
-                else if (distancePct <= 0.03) levText += '50x';
-                else if (distancePct <= 0.055) levText += '20x-25x';
-                else if (distancePct <= 0.11) levText += '10x';
-                else levText += '<10x';
+                let levText = hoveredZone.leverage ? `Tier: ${hoveredZone.leverage}` : 'Est. Lev: ';
+                if (!hoveredZone.leverage) {
+                    if (distancePct <= 0.015) levText += '100x';
+                    else if (distancePct <= 0.03) levText += '50x';
+                    else if (distancePct <= 0.055) levText += '20x-25x';
+                    else if (distancePct <= 0.11) levText += '10x';
+                    else levText += '<10x';
+                }
 
                 ctx.beginPath();
                 if (typeof ctx.roundRect === 'function') {
@@ -615,24 +775,36 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                 ctx.fill();
                 ctx.stroke();
 
-                ctx.fillStyle = '#fff';
+                ctx.fillStyle = isDark ? '#ffffff' : '#0f172a';
                 ctx.font = 'bold 10px Inter, sans-serif';
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'alphabetic';
-                ctx.fillText(typeText, ttX + 7, ttY - 34);
+                ctx.fillText(typeText, ttX + 7, ttY - (boxH - 15));
 
-                ctx.fillStyle = 'rgba(148, 163, 184, 1)';
+                ctx.fillStyle = isDark ? 'rgba(148, 163, 184, 1)' : 'rgba(71, 85, 105, 1)';
                 ctx.font = '9px Inter, sans-serif';
-                ctx.fillText(volText, ttX + 7, ttY - 20);
+                ctx.fillText(volText, ttX + 7, ttY - (boxH - 29));
 
-                ctx.fillStyle = 'rgba(251, 191, 36, 1)';
-                ctx.fillText(levText, ttX + 7, ttY - 7);
+                ctx.fillStyle = isDark ? 'rgba(251, 191, 36, 1)' : 'rgba(217, 119, 6, 1)';
+                ctx.fillText(levText, ttX + 7, ttY - (boxH - 42));
+
+                if (hasZoneClickHandler) {
+                    ctx.fillStyle = isDark ? 'rgba(96, 165, 250, 0.95)' : 'rgba(37, 99, 235, 0.95)';
+                    ctx.font = 'bold 9px Inter, sans-serif';
+                    ctx.fillText('Click to Trade @ Level', ttX + 7, ttY - 7);
+                }
             }
         }
 
         // 4. Draw AI Trajectory Arrow
         const activeTrajectory = smartMoneyBias ? data.smart_trajectory : data.ai_trajectory;
-        if (activeTrajectory && activeTrajectory.direction !== 'NEUTRAL' && currentPrice > 0 && activeTrajectory.target_price > 0) {
+        if (
+            showTrajectory &&
+            activeTrajectory &&
+            activeTrajectory.direction !== 'NEUTRAL' &&
+            currentPrice > 0 &&
+            activeTrajectory.target_price > 0
+        ) {
             const currentY = toY(currentPrice);
             const targetY = toY(activeTrajectory.target_price);
 
@@ -641,12 +813,25 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                 const color = isUp ? '34, 197, 94' : '239, 68, 68';
                 const startX = W * 0.85;
                 const endX = W * 0.85;
+                const mainWidth = 2 + activeTrajectory.strength / 25;
+
+                // On mobile/tablet thermal guard, avoid expensive software shadowBlur
+                if (isThermalGuard) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = `rgba(${color}, 0.22)`;
+                    ctx.lineWidth = mainWidth + 4;
+                    ctx.setLineDash([5, 5]);
+                    ctx.moveTo(startX, currentY);
+                    ctx.lineTo(endX, targetY);
+                    ctx.stroke();
+                } else {
+                    ctx.shadowColor = `rgba(${color}, 1)`;
+                    ctx.shadowBlur = 10;
+                }
 
                 ctx.beginPath();
                 ctx.strokeStyle = `rgba(${color}, 0.85)`;
-                ctx.shadowColor = `rgba(${color}, 1)`;
-                ctx.shadowBlur = 10;
-                ctx.lineWidth = 2 + activeTrajectory.strength / 25;
+                ctx.lineWidth = mainWidth;
                 ctx.setLineDash([5, 5]);
                 ctx.moveTo(startX, currentY);
                 ctx.lineTo(endX, targetY);
@@ -668,7 +853,7 @@ class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
                 }
                 ctx.fill();
 
-                ctx.fillStyle = `rgba(${color}, 1)`;
+                ctx.fillStyle = isDark ? `rgba(${color}, 1)` : isUp ? '#15803d' : '#b91c1c';
                 ctx.font = 'bold 9px Inter, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'alphabetic';
@@ -712,6 +897,12 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
     public bookmapIntensity = 50;
     public spoofingThreshold = 500000;
     public smartMoneyBias = false;
+    public showMagnetZones = true;
+    public showLeveragePools = true;
+    public showTrajectory = true;
+    public isDark = true;
+    public hasZoneClickHandler = false;
+    public isThermalGuard = false;
     public candlesRef?: React.MutableRefObject<any[]>;
     public candleTimes?: number[];
     public bubblesRef: React.MutableRefObject<any[]>;
@@ -818,6 +1009,12 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
         bookmapIntensity: number;
         spoofingThreshold: number;
         smartMoneyBias: boolean;
+        showMagnetZones: boolean;
+        showLeveragePools: boolean;
+        showTrajectory: boolean;
+        isDark: boolean;
+        hasZoneClickHandler: boolean;
+        isThermalGuard: boolean;
         candlesRef?: React.MutableRefObject<any[]>;
         candleTimes?: number[];
     }): void {
@@ -833,6 +1030,12 @@ class LiquidationPrimitive implements ISeriesPrimitive<any> {
         this.bookmapIntensity = params.bookmapIntensity;
         this.spoofingThreshold = params.spoofingThreshold;
         this.smartMoneyBias = params.smartMoneyBias;
+        this.showMagnetZones = params.showMagnetZones;
+        this.showLeveragePools = params.showLeveragePools;
+        this.showTrajectory = params.showTrajectory;
+        this.isDark = params.isDark;
+        this.hasZoneClickHandler = params.hasZoneClickHandler;
+        this.isThermalGuard = params.isThermalGuard;
         this.candlesRef = params.candlesRef;
         this.candleTimes = params.candleTimes;
         this.requestUpdate();
@@ -864,6 +1067,11 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
     bookmapIntensity = 50,
     spoofingThreshold = 500000,
     smartMoneyBias = false,
+    showMagnetZones = true,
+    showLeveragePools = true,
+    showTrajectory = true,
+    isDark = true,
+    onZoneClick,
     candlesRef,
     candleTimes,
 }) => {
@@ -871,11 +1079,34 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
     const animRafIdRef = useRef<number | null>(null);
     const scheduleAnimationRef = useRef<() => void>(() => {});
     const lastSymbolRef = useRef<string | null>(null);
+    const hydratedKeyRef = useRef<string | null>(null);
+
+    const [isThermalGuard, setIsThermalGuard] = useState<boolean>(() => isThermalGuardActive());
+    const thermalGuardRef = useRef<boolean>(isThermalGuard);
+    thermalGuardRef.current = isThermalGuard;
+
+    useEffect(() => {
+        return subscribeThermalProfile((profile) => {
+            setIsThermalGuard(profile.isThermalGuardActive);
+        });
+    }, []);
 
     const showBubblesRef = useRef(showBubbles);
     showBubblesRef.current = showBubbles;
     const showTrueCVDRef = useRef(showTrueCVD);
     showTrueCVDRef.current = showTrueCVD;
+    const dataRef = useRef(data);
+    dataRef.current = data;
+    const onZoneClickRef = useRef(onZoneClick);
+    onZoneClickRef.current = onZoneClick;
+    const showMagnetZonesRef = useRef(showMagnetZones);
+    showMagnetZonesRef.current = showMagnetZones;
+    const showLeveragePoolsRef = useRef(showLeveragePools);
+    showLeveragePoolsRef.current = showLeveragePools;
+    const showGEXRef = useRef(showGEX);
+    showGEXRef.current = showGEX;
+    const useTrailingLiquidityRef = useRef(useTrailingLiquidity);
+    useTrailingLiquidityRef.current = useTrailingLiquidity;
 
     const bookmapHistoryRef = useRef<BookmapSnapshot[]>([]);
     const bubblesRef = useRef<any[]>([]);
@@ -909,6 +1140,12 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             bookmapIntensity,
             spoofingThreshold,
             smartMoneyBias,
+            showMagnetZones,
+            showLeveragePools,
+            showTrajectory,
+            isDark,
+            hasZoneClickHandler: Boolean(onZoneClick),
+            isThermalGuard,
             candlesRef,
             candleTimes,
         });
@@ -917,10 +1154,15 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
 
         const hasActiveAnimations = () => {
             if (typeof document !== 'undefined' && document.hidden) return false;
-            return (
-                (showBubblesRef.current && bubblesRef.current.length > 0) ||
-                (showTrueCVDRef.current && icebergsRef.current.length > 0)
-            );
+            const now = Date.now();
+            const hasActiveBubble =
+                showBubblesRef.current &&
+                bubblesRef.current.some((b) =>
+                    thermalGuardRef.current ? now - b.createdAt < 2200 : now - b.createdAt < 60000
+                );
+            const hasActiveIceberg =
+                showTrueCVDRef.current && icebergsRef.current.some((b) => now - b.createdAt < 15000);
+            return hasActiveBubble || hasActiveIceberg;
         };
 
         const animate = (timestamp: number) => {
@@ -969,6 +1211,48 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             }
         };
 
+        const clickHandler = (param: any) => {
+            const cb = onZoneClickRef.current;
+            const curData = dataRef.current;
+            if (!cb || !curData || !param?.point) return;
+
+            const clickedPrice = Number(series.coordinateToPrice(param.point.y));
+            const cp = Number(curData.current_price) || 0;
+            if (!Number.isFinite(clickedPrice) || clickedPrice <= 0 || cp <= 0) return;
+
+            const candidates: number[] = [];
+            if (showMagnetZonesRef.current) {
+                const zones =
+                    useTrailingLiquidityRef.current && curData.smoothed_zones?.length
+                        ? curData.smoothed_zones
+                        : curData.magnet_zones || [];
+                zones.forEach((z) => candidates.push(Number(z.price)));
+            }
+            if (showLeveragePoolsRef.current && curData.liquidation_pools) {
+                curData.liquidation_pools.forEach((p) => candidates.push(Number(p.price)));
+            }
+            if (showGEXRef.current && curData.gex_data) {
+                if (curData.gex_data.call_wall) candidates.push(Number(curData.gex_data.call_wall));
+                if (curData.gex_data.put_wall) candidates.push(Number(curData.gex_data.put_wall));
+            }
+
+            const tolerance = cp * 0.0035;
+            let bestPrice: number | null = null;
+            let bestDiff = tolerance;
+            for (const p of candidates) {
+                if (!Number.isFinite(p) || p <= 0) continue;
+                const diff = Math.abs(p - clickedPrice);
+                if (diff <= bestDiff) {
+                    bestDiff = diff;
+                    bestPrice = p;
+                }
+            }
+
+            if (bestPrice !== null) {
+                cb(bestPrice);
+            }
+        };
+
         const handleVisibilityChange = () => {
             if (typeof document !== 'undefined' && !document.hidden) {
                 primitive.requestUpdate();
@@ -977,6 +1261,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
         };
 
         chart.subscribeCrosshairMove(crosshairHandler);
+        chart.subscribeClick(clickHandler);
         if (typeof document !== 'undefined') {
             document.addEventListener('visibilitychange', handleVisibilityChange);
         }
@@ -984,6 +1269,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
         return () => {
             scheduleAnimationRef.current = () => {};
             chart.unsubscribeCrosshairMove(crosshairHandler);
+            chart.unsubscribeClick(clickHandler);
             if (typeof document !== 'undefined') {
                 document.removeEventListener('visibilitychange', handleVisibilityChange);
             }
@@ -1000,12 +1286,13 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
         };
     }, [chart, series]);
 
-    // Ingest new WebSocket snapshots (bubbles, icebergs, Bookmap history) only when data updates
+    // Ingest historical ring-buffer snapshot & live WebSocket snapshots
     useEffect(() => {
         if (!data) {
             bookmapHistoryRef.current = [];
             bubblesRef.current = [];
             icebergsRef.current = [];
+            hydratedKeyRef.current = null;
             setActiveIcebergsCount(0);
             return;
         }
@@ -1014,6 +1301,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             bookmapHistoryRef.current = [];
             bubblesRef.current = [];
             icebergsRef.current = [];
+            hydratedKeyRef.current = null;
             setActiveIcebergsCount(0);
         }
         if (data.symbol) {
@@ -1021,16 +1309,58 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
         }
 
         const now = Date.now();
+        const maxBookmapSnapshots = thermalGuardRef.current ? 120 : 480;
+
+        // One-time historical ring-buffer hydration on connect
+        if (data.history && hydratedKeyRef.current !== data.symbol) {
+            hydratedKeyRef.current = data.symbol || 'active';
+
+            if (showBookmap && Array.isArray(data.history.bookmap) && data.history.bookmap.length > 0) {
+                const existingTimes = new Set(bookmapHistoryRef.current.map((s) => s.time));
+                const merged = [
+                    ...data.history.bookmap.filter((s) => !existingTimes.has(s.time)),
+                    ...bookmapHistoryRef.current,
+                ].sort((a, b) => a.time - b.time);
+                bookmapHistoryRef.current = merged.slice(-maxBookmapSnapshots);
+            }
+
+            if (showBubbles && Array.isArray(data.history.bubbles)) {
+                data.history.bubbles.forEach((wf) => {
+                    if (wf.price && wf.timestamp) {
+                        const exists = bubblesRef.current.some(
+                            (b) => b.timestamp === wf.timestamp && b.price === wf.price
+                        );
+                        if (!exists) {
+                            bubblesRef.current.push({ ...wf, createdAt: wf.timestamp });
+                        }
+                    }
+                });
+            }
+
+            if (showTrueCVD && Array.isArray(data.history.icebergs)) {
+                data.history.icebergs.forEach((ev) => {
+                    if (ev.price && ev.timestamp) {
+                        const exists = icebergsRef.current.some(
+                            (b) => b.timestamp === ev.timestamp && b.price === ev.price
+                        );
+                        if (!exists) {
+                            icebergsRef.current.push({ ...ev, createdAt: ev.timestamp });
+                        }
+                    }
+                });
+            }
+        }
 
         if (showBookmap && data.orderbook_depth && data.orderbook_depth.length > 0) {
             const lastSnapshot = bookmapHistoryRef.current[bookmapHistoryRef.current.length - 1];
-            if (!lastSnapshot || now - lastSnapshot.time >= 250) {
+            const minSnapGap = thermalGuardRef.current ? 500 : 250;
+            if (!lastSnapshot || now - lastSnapshot.time >= minSnapGap) {
                 bookmapHistoryRef.current.push({
                     time: now,
                     depth: data.orderbook_depth.map((d) => ({ price: d.price, volume: d.volume })),
                 });
-                if (bookmapHistoryRef.current.length > 500) {
-                    bookmapHistoryRef.current = bookmapHistoryRef.current.slice(-480);
+                if (bookmapHistoryRef.current.length > maxBookmapSnapshots) {
+                    bookmapHistoryRef.current = bookmapHistoryRef.current.slice(-maxBookmapSnapshots);
                 }
             }
         }
@@ -1073,6 +1403,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             bookmapHistoryRef.current = [];
             bubblesRef.current = [];
             icebergsRef.current = [];
+            hydratedKeyRef.current = null;
             setActiveIcebergsCount(0);
         }
         if (symbol) {
@@ -1096,6 +1427,12 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
             bookmapIntensity,
             spoofingThreshold,
             smartMoneyBias,
+            showMagnetZones,
+            showLeveragePools,
+            showTrajectory,
+            isDark,
+            hasZoneClickHandler: Boolean(onZoneClick),
+            isThermalGuard,
             candlesRef,
             candleTimes,
         });
@@ -1113,6 +1450,12 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
         bookmapIntensity,
         spoofingThreshold,
         smartMoneyBias,
+        showMagnetZones,
+        showLeveragePools,
+        showTrajectory,
+        isDark,
+        onZoneClick,
+        isThermalGuard,
         candlesRef,
         candleTimes,
     ]);
@@ -1120,7 +1463,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
     return (
         <>
             {showTrueCVD && data && data.true_cvd !== undefined && (
-                <TrueCVDDraggableHUD data={data} icebergsCount={activeIcebergsCount} />
+                <TrueCVDDraggableHUD data={data} icebergsCount={activeIcebergsCount} isThermalGuard={isThermalGuard} />
             )}
         </>
     );
@@ -1129,9 +1472,14 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
 interface TrueCVDDraggableHUDProps {
     data: GodModeState;
     icebergsCount?: number;
+    isThermalGuard?: boolean;
 }
 
-export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, icebergsCount = 0 }) => {
+export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({
+    data,
+    icebergsCount = 0,
+    isThermalGuard = false,
+}) => {
     const [position, setPosition] = useState<{ x: number; y: number }>(() => {
         try {
             const saved = localStorage.getItem('true_cvd_hud_pos');
@@ -1198,7 +1546,7 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
     };
 
     const cvd = data.true_cvd ?? 0;
-    const cvdColor = cvd > 0 ? 'text-emerald-400' : cvd < 0 ? 'text-rose-400' : 'text-slate-200';
+    const cvdColor = cvd > 0 ? 'text-emerald-500 dark:text-emerald-400' : cvd < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200';
     const cvdVal =
         Math.abs(cvd) >= 1000000
             ? (cvd / 1000000).toFixed(2) + 'M'
@@ -1207,7 +1555,7 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
 
     return (
         <div
-            className={`absolute z-[25] pointer-events-auto select-none transition-all ${
+            className={`absolute z-[25] pointer-events-auto select-none ${isThermalGuard ? '' : 'transition-all'} ${
                 isDragging
                     ? 'cursor-grabbing scale-105 shadow-[0_0_25px_rgba(168,85,247,0.5)]'
                     : 'cursor-grab hover:shadow-[0_0_15px_rgba(168,85,247,0.25)]'
@@ -1225,7 +1573,7 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
             onDoubleClick={resetPosition}
             title="Drag with mouse to reposition anywhere • Double-click to reset to bottom-left"
         >
-            <div className="flex items-center gap-2.5 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border border-purple-500/40 hover:border-purple-400/80 rounded-lg px-3 py-2 shadow-xl dark:shadow-2xl transition-colors">
+            <div className={`flex items-center gap-2.5 ${isThermalGuard ? 'bg-white/95 dark:bg-slate-950/95' : 'bg-white/90 dark:bg-slate-950/90 backdrop-blur-md'} border border-purple-500/40 hover:border-purple-400/80 rounded-lg px-3 py-2 shadow-xl dark:shadow-2xl transition-colors`}>
                 <div className="flex flex-col gap-0.5 opacity-40 hover:opacity-80 transition-opacity">
                     <div className="flex gap-0.5">
                         <span className="w-1 h-1 bg-purple-400 rounded-full" />
@@ -1257,9 +1605,9 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
                 </div>
 
                 {activeWalls > 0 && (
-                    <div className="flex items-center gap-1 bg-purple-500/20 border border-purple-500/40 rounded px-1.5 py-0.5 ml-1 animate-pulse">
+                    <div className={`flex items-center gap-1 bg-purple-500/20 border border-purple-500/40 rounded px-1.5 py-0.5 ml-1 ${isThermalGuard ? '' : 'animate-pulse'}`}>
                         <span className="text-[10px] leading-none">🧊</span>
-                        <span className="text-[9px] font-bold text-purple-300 font-mono whitespace-nowrap leading-none">
+                        <span className="text-[9px] font-bold text-purple-700 dark:text-purple-300 font-mono whitespace-nowrap leading-none">
                             {activeWalls} Wall
                         </span>
                     </div>

@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { GodModeState } from '../../../hooks/useGodModeData';
+import { isThermalGuardActive, subscribeThermalProfile } from '@/utils/deviceProfile';
 
 interface GodModeHUDProps {
     data: GodModeState | null;
@@ -10,7 +11,14 @@ interface GodModeHUDProps {
 export const GodModeHUD: React.FC<GodModeHUDProps> = ({ data, visible }) => {
     const [position, setPosition] = useState({ x: 20, y: 80 });
     const [isDragging, setIsDragging] = useState(false);
+    const [isThermalGuard, setIsThermalGuard] = useState<boolean>(() => isThermalGuardActive());
     const dragRef = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null);
+
+    useEffect(() => {
+        return subscribeThermalProfile((profile) => {
+            setIsThermalGuard(profile.isThermalGuardActive);
+        });
+    }, []);
 
     const onPointerDown = (e: React.PointerEvent) => {
         setIsDragging(true);
@@ -65,7 +73,7 @@ export const GodModeHUD: React.FC<GodModeHUDProps> = ({ data, visible }) => {
         >
             {/* SQUEEZE ALERT */}
             {isSqueezeImminent && (
-                <div className="bg-red-600/20 border border-red-500/50 backdrop-blur-md rounded-lg px-4 py-2 shadow-[0_0_20px_rgba(239,68,68,0.4)] animate-pulse cursor-default">
+                <div className={`bg-red-600/20 border border-red-500/50 ${isThermalGuard ? 'bg-red-950/90' : 'backdrop-blur-md animate-pulse'} rounded-lg px-4 py-2 shadow-[0_0_20px_rgba(239,68,68,0.4)] cursor-default`}>
                     <h3 className="text-red-400 font-black text-sm uppercase tracking-widest flex items-center gap-2">
                         <span className="text-lg">🔥</span>
                         Squeeze Imminent 
@@ -77,7 +85,7 @@ export const GodModeHUD: React.FC<GodModeHUDProps> = ({ data, visible }) => {
 
             {/* MAIN HUD */}
             <div 
-                className={`w-64 bg-white/95 dark:bg-black/60 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-xl p-3 shadow-2xl transition-all ${isDragging ? 'cursor-grabbing scale-105 border-brand-primary/50' : 'cursor-grab'} select-none`}
+                className={`w-64 ${isThermalGuard ? 'bg-white/95 dark:bg-slate-950/95' : 'bg-white/95 dark:bg-black/60 backdrop-blur-xl'} border border-gray-200 dark:border-white/10 rounded-xl p-3 shadow-2xl ${isThermalGuard ? '' : 'transition-all'} ${isDragging ? 'cursor-grabbing scale-105 border-brand-primary/50' : 'cursor-grab'} select-none`}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
@@ -89,8 +97,10 @@ export const GodModeHUD: React.FC<GodModeHUDProps> = ({ data, visible }) => {
                         God Mode AI
                     </h4>
                     <span className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                        <span className="text-[9px] text-green-600 dark:text-green-400 font-mono tracking-wider font-bold">LIVE</span>
+                        <span className={`w-1.5 h-1.5 rounded-full bg-green-500 ${isThermalGuard ? '' : 'animate-pulse'}`}></span>
+                        <span className="text-[9px] text-green-600 dark:text-green-400 font-mono tracking-wider font-bold">
+                            {isThermalGuard ? 'ECO' : 'LIVE'}
+                        </span>
                     </span>
                 </div>
 
@@ -138,6 +148,18 @@ export const GodModeHUD: React.FC<GodModeHUDProps> = ({ data, visible }) => {
                         {spoofLabel}
                     </span>
                 </div>
+
+                {/* OPEN INTEREST & ADAPTIVE THRESHOLD INFO */}
+                {(Boolean(data.open_interest_usd) || Boolean(data.adaptive_thresholds?.whale_usd)) && (
+                    <div className="mt-2 pt-2 border-t border-gray-200/70 dark:border-white/5 flex justify-between items-center text-[9px] font-mono text-gray-500 dark:text-gray-400">
+                        <span>
+                            OI: {data.open_interest_usd ? `$${(data.open_interest_usd / 1_000_000_000 >= 1 ? (data.open_interest_usd / 1_000_000_000).toFixed(2) + 'B' : (data.open_interest_usd / 1_000_000).toFixed(0) + 'M')}` : '--'}
+                        </span>
+                        <span>
+                            Whale ≥ ${data.adaptive_thresholds?.whale_usd ? `${Math.round(data.adaptive_thresholds.whale_usd / 1000)}k` : '100k'}
+                        </span>
+                    </div>
+                )}
             </div>
         </div>
     );

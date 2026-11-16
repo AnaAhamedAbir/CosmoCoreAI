@@ -246,6 +246,9 @@ export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
         liquidationShowBookmap: true,
         liquidationBookmapIntensity: 50,
         liquidationSpoofingThreshold: 500000,
+        liquidationShowMagnetZones: true,
+        liquidationShowLeveragePools: true,
+        liquidationShowTrajectory: true,
         // Supertrend Defaults
         showSupertrend: true,
         supertrendAtrPeriod: 10,

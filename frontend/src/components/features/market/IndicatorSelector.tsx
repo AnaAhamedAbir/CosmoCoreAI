@@ -195,6 +195,9 @@ export interface IndicatorSettings {
     liquidationShowBookmap: boolean;
     liquidationBookmapIntensity: number;
     liquidationSpoofingThreshold: number;
+    liquidationShowMagnetZones?: boolean;
+    liquidationShowLeveragePools?: boolean;
+    liquidationShowTrajectory?: boolean;
     // MSB-OB Settings
     showMsbOb: boolean;
     msbObZigzagLen: number;
@@ -1690,7 +1693,25 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
 
                             {settings.showLiquidationHeatmap && (
                                 <div className="pl-7 pr-2 py-2 flex flex-col gap-3 animate-fadeIn text-[10px]">
-                                    <div className="flex flex-col gap-1.5">
+                                    <div className="flex flex-col gap-1.5 mt-2">
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <span className="text-gray-700 dark:text-gray-300 font-semibold group-hover:text-gray-900 dark:group-hover:text-white transition-colors">L2 Magnet Zones 🧲</span>
+                                            <input type="checkbox" checked={settings.liquidationShowMagnetZones !== false} onChange={() => onSettingsChange({ ...settings, liquidationShowMagnetZones: settings.liquidationShowMagnetZones === false ? true : false })} className="w-3 h-3 rounded" />
+                                        </label>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5 mt-2">
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <span className="text-amber-600 dark:text-amber-400 font-semibold group-hover:text-amber-700 dark:group-hover:text-amber-300 transition-colors">Leverage Liq Pools (10x-100x) ⚡</span>
+                                            <input type="checkbox" checked={settings.liquidationShowLeveragePools !== false} onChange={() => onSettingsChange({ ...settings, liquidationShowLeveragePools: settings.liquidationShowLeveragePools === false ? true : false })} className="w-3 h-3 rounded text-amber-500 focus:ring-amber-500" />
+                                        </label>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5 mt-2">
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <span className="text-gray-700 dark:text-gray-300 font-semibold group-hover:text-gray-900 dark:group-hover:text-white transition-colors">AI Trajectory Target 🎯</span>
+                                            <input type="checkbox" checked={settings.liquidationShowTrajectory !== false} onChange={() => onSettingsChange({ ...settings, liquidationShowTrajectory: settings.liquidationShowTrajectory === false ? true : false })} className="w-3 h-3 rounded" />
+                                        </label>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5 mt-2">
                                         <label className="flex items-center justify-between cursor-pointer group">
                                             <span className="text-gray-700 dark:text-gray-300 font-semibold group-hover:text-gray-900 dark:group-hover:text-white transition-colors">Show Live Bubbles</span>
                                             <input type="checkbox" checked={settings.liquidationShowBubbles as boolean} onChange={() => onSettingsChange({ ...settings, liquidationShowBubbles: !settings.liquidationShowBubbles })} className="w-3 h-3 rounded" />

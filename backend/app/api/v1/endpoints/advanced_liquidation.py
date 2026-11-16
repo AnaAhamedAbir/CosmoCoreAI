@@ -6,17 +6,23 @@ from app.services.god_mode_liquidation_service import god_mode_service
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
 @router.websocket("/ws/god-mode")
-async def websocket_god_mode_stream(websocket: WebSocket, symbol: str = "BTC/USDT"):
+async def websocket_god_mode_stream(
+    websocket: WebSocket,
+    symbol: str = "BTC/USDT",
+    exchange: str = "binance",
+):
     """
-    Advanced WebSocket endpoint for the God Mode Dashboard.
-    Streams consolidated multi-exchange analytics and mathematical heuristics.
+    Advanced WebSocket endpoint for the God Mode Dashboard & OrderFlow Chart.
+    Supports multi-pair concurrent runners keyed by (symbol, exchange) and
+    sends a one-time bounded history snapshot on initial connect.
     """
     await websocket.accept()
-    logger.info(f"Client connected to God Mode Stream for {symbol}")
-    
     target_symbol = symbol.upper()
-    
+    target_exchange = (exchange or "binance").lower()
+    logger.info(f"Client connected to God Mode Stream for {target_symbol} ({target_exchange})")
+
     async def send_to_client(data):
         try:
             if data.get("symbol") == target_symbol:
@@ -27,18 +33,22 @@ async def websocket_god_mode_stream(websocket: WebSocket, symbol: str = "BTC/USD
         except Exception as e:
             logger.debug(f"God Mode send_to_client suppressed: {e}")
             god_mode_service.remove_callback(send_to_client)
-            
-    god_mode_service.register_callback(send_to_client)
 
-    # Start the background pipeline if not already running for this symbol
-    asyncio.create_task(god_mode_service.start(target_symbol))
-    
+    god_mode_service.register_callback(send_to_client, symbol=target_symbol, exchange=target_exchange)
+    asyncio.create_task(god_mode_service.start(target_symbol, exchange=target_exchange))
+
+    # Send one-time ring-buffer history snapshot immediately so past candles hydrate
+    try:
+        initial_snapshot = god_mode_service.get_initial_snapshot(target_symbol, exchange=target_exchange)
+        await websocket.send_json(initial_snapshot)
+    except Exception:
+        pass
+
     try:
         while True:
-            # We don't necessarily expect incoming messages, but we keep the connection alive
             await websocket.receive_text()
     except WebSocketDisconnect:
-        logger.info(f"Client disconnected from God Mode Stream")
+        logger.info(f"Client disconnected from God Mode Stream ({target_symbol})")
     except Exception as e:
         logger.debug(f"God Mode WebSocket closed: {e}")
     finally:

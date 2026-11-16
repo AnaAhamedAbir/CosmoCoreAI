@@ -1041,7 +1041,7 @@ async def websocket_godmode(websocket: WebSocket, symbol: str):
         if channel_id in manager.active_connections:
             await manager.broadcast_to_symbol(channel_id, state)
             
-    god_mode_service.register_callback(state_callback)
+    god_mode_service.register_callback(state_callback, symbol=symbol)
     
     # Start the service for this symbol in the background
     asyncio.create_task(god_mode_service.start(symbol))

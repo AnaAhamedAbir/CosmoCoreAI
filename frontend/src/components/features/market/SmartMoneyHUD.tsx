@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { isThermalGuardActive, subscribeThermalProfile } from '@/utils/deviceProfile';
 
 interface SmartMoneyHUDProps {
     data: {
@@ -27,11 +28,18 @@ interface SmartMoneyHUDProps {
 export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, currentPrice, icebergEvents, magnetZones, visible, symbol }) => {
     const [isMinimized, setIsMinimized] = useState(false);
     const [mounted, setMounted] = useState(false);
+    const [isThermalGuard, setIsThermalGuard] = useState<boolean>(() => isThermalGuardActive());
     const [history, setHistory] = useState<{ask: number, bid: number}[]>([]);
 
     useEffect(() => {
         setMounted(true);
-        return () => setMounted(false);
+        const unsub = subscribeThermalProfile((profile) => {
+            setIsThermalGuard(profile.isThermalGuardActive);
+        });
+        return () => {
+            setMounted(false);
+            unsub();
+        };
     }, []);
 
     useEffect(() => {
@@ -117,14 +125,14 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
             className="fixed z-[9999] top-24 right-20 flex flex-col pointer-events-auto"
             style={{ touchAction: 'none' }} // Prevent scrolling when dragging
         >
-            <div className={`bg-white/95 dark:bg-black/70 backdrop-blur-xl border border-slate-200 dark:border-white/20 rounded-2xl overflow-hidden ${glowShadow} w-[400px] font-mono text-sm pointer-events-auto transition-shadow duration-500`}>
+            <div className={`${isThermalGuard ? 'bg-white/95 dark:bg-slate-950/95' : 'bg-white/95 dark:bg-black/70 backdrop-blur-xl'} border border-slate-200 dark:border-white/20 rounded-2xl overflow-hidden ${glowShadow} w-[360px] sm:w-[400px] max-w-[92vw] font-mono text-sm pointer-events-auto ${isThermalGuard ? '' : 'transition-shadow duration-500'}`}>
                 {/* Header (Draggable Handle) */}
                 <div 
                     className="flex justify-between items-center px-5 py-3 bg-gradient-to-r from-slate-100 to-slate-50 dark:from-gray-900/90 dark:to-gray-800/90 border-b border-slate-200 dark:border-white/20 select-none cursor-grab active:cursor-grabbing"
                     onDoubleClick={() => setIsMinimized(!isMinimized)}
                 >
                     <div className="flex items-center gap-3">
-                        <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
+                        <div className={`w-2.5 h-2.5 rounded-full bg-blue-500 ${isThermalGuard ? '' : 'animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.8)]'}`}></div>
                         <span className="font-bold text-slate-900 dark:text-gray-100 tracking-widest text-sm">SMART MONEY HUD</span>
                     </div>
                     <button 

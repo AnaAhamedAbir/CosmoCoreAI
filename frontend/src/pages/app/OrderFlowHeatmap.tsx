@@ -5010,6 +5010,7 @@ const OrderFlowHeatmap: React.FC = () => {
     }, [activeChartId, handleResetChartIndicators]);
 
     const [isOrderBookModalOpen, setIsOrderBookModalOpen] = useState(false);
+    const [isBotLogsModalOpen, setIsBotLogsModalOpen] = useState(false);
     const [isIndicatorModalOpen, setIsIndicatorModalOpen] = useState(false);
     const [isAIDeploymentModalOpen, setIsAIDeploymentModalOpen] = useState(false);
     const deviceProfile = useDeviceProfile();
@@ -5460,8 +5461,8 @@ const OrderFlowHeatmap: React.FC = () => {
                     />
 
                     <button
-                        onClick={() => setActiveTab(activeTab === 'bot_logs' ? 'heatmap' : 'bot_logs')}
-                        className={`flex items-center space-x-2 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${activeTab === 'bot_logs'
+                        onClick={() => setIsBotLogsModalOpen(prev => !prev)}
+                        className={`flex items-center space-x-2 px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors ${isBotLogsModalOpen
                             ? 'bg-purple-600/10 text-purple-600 dark:text-purple-400 border-purple-500/20 shadow-sm'
                             : 'bg-gray-100 dark:bg-black/30 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-black/10'
                             }`}
@@ -5771,10 +5772,10 @@ const OrderFlowHeatmap: React.FC = () => {
                         </OrderBookFloatingModal>
                     )}
 
-                    {activeTab === 'bot_logs' && (
+                    {isBotLogsModalOpen && (
                         <BotLogsFloatingModal
-                            isOpen={activeTab === 'bot_logs'}
-                            onClose={() => setActiveTab('heatmap')}
+                            isOpen={isBotLogsModalOpen}
+                            onClose={() => setIsBotLogsModalOpen(false)}
                             botId={selectedHudBotId}
                         />
                     )}

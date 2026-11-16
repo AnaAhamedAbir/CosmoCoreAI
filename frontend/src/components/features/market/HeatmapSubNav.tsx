@@ -42,9 +42,9 @@ export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({
                 <div className="flex space-x-1 bg-gray-100 dark:bg-black/30 p-1 rounded-lg">
                     <button
                         onClick={() => onChange('heatmap')}
-                        className={`flex items-center space-x-2 px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'heatmap'
-                            ? 'bg-blue-600/10 text-brand-primary border border-blue-500/20 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-black/10'
+                        className={`flex items-center space-x-2 px-4 py-2 text-sm font-medium rounded-md border transition-colors ${activeTab === 'heatmap'
+                            ? 'bg-blue-600/10 text-brand-primary border-blue-500/20 shadow-sm'
+                            : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-black/10'
                             }`}
                     >
                         <Activity size={16} />

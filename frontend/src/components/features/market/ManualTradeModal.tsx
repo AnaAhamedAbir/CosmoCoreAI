@@ -2372,7 +2372,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     if (mlFilterConfig.enabled && !(isFutures && reduceOnly)) {
       if (!mlFilterConfig.modelId) {
         toast.error('🤖 Please select a trained ML Model for the AI Filter, or turn it off.');
-        setIsMinimized(false);
         return;
       }
     }
@@ -2745,7 +2744,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     if (mlFilterConfig.enabled && !(isFutures && reduceOnly)) {
       if (!mlFilterConfig.modelId) {
         toast.error('🤖 Please select a trained ML Model from Registry for the L2 ML Filter, or turn off the filter.');
-        setIsMinimized(false);
         return;
       }
     }

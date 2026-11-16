@@ -29,8 +29,8 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
             <div className="bg-[#000000] border border-white/10 rounded-lg p-2.5 transition-all hover:border-yellow-500/30">
                 <div className="flex items-center justify-between gap-2">
                     <div>
-                        <h3 className="text-xs font-bold text-white tracking-wide">Enable Break-even Protection</h3>
-                        <p className="text-[9px] text-gray-400 mt-0.5 leading-tight">Stops the bot if PNL drops to zero after being in profit.</p>
+                        <h3 className="text-[13px] font-bold text-white tracking-wide">Enable Break-even Protection</h3>
+                        <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">Stops the bot if PNL drops to zero after being in profit.</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer shrink-0">
                         <input
@@ -46,9 +46,9 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                 {form.enableBreakevenStop && (
                     <div className="grid grid-cols-2 gap-2 mt-2.5 pt-2.5 border-t border-white/5 animate-fade-in">
                         <div className="col-span-2">
-                            <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Input Mode</label>
+                            <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Input Mode</label>
                             <select
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500/50"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-yellow-500/50"
                                 value={form.breakevenType || 'pct'}
                                 onChange={(e) => handleFormChange('breakevenType', e.target.value)}
                             >
@@ -57,31 +57,31 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                             </select>
                         </div>
                         <div>
-                            <label className="block text-[9px] font-bold text-gray-400 mb-0.5">
+                            <label className="block text-[10px] font-bold text-gray-400 mb-0.5">
                                 Activation Threshold {form.breakevenType === 'usd' ? `(${quoteAsset})` : '(PNL %)'}
                             </label>
                             <input
                                 type="number"
                                 step={form.breakevenType === 'usd' ? "1" : "0.1"}
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500/50"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-yellow-500/50"
                                 value={getNumericValue(form.breakevenActivationPct, 1.0)}
                                 onChange={(e) => handleFormChange('breakevenActivationPct', parseNumericInput(e.target.value))}
                             />
                         </div>
                         <div>
-                            <label className="block text-[9px] font-bold text-gray-400 mb-0.5">
+                            <label className="block text-[10px] font-bold text-gray-400 mb-0.5">
                                 Safety Stop Level {form.breakevenType === 'usd' ? `(${quoteAsset})` : '(PNL %)'}
                             </label>
                             <input
                                 type="number"
                                 step={form.breakevenType === 'usd' ? "0.5" : "0.05"}
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500/50"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-yellow-500/50"
                                 value={getNumericValue(form.breakevenFeeBufferPct, 0.2)}
                                 onChange={(e) => handleFormChange('breakevenFeeBufferPct', parseNumericInput(e.target.value))}
                             />
                         </div>
                         <div className="flex items-center justify-between col-span-2 bg-black/40 p-1.5 rounded-lg">
-                            <span className="text-[9px] font-bold text-gray-400">Trailing Break-even</span>
+                            <span className="text-[10px] font-bold text-gray-400">Trailing Break-even</span>
                             <label className="relative inline-flex items-center cursor-pointer shrink-0">
                                 <input
                                     type="checkbox"
@@ -96,9 +96,9 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                         {form.enableTrailingBreakeven && (
                             <div className="col-span-2 grid grid-cols-2 gap-2 bg-black/20 p-2 rounded-lg border border-white/5 animate-fade-in">
                                 <div className="col-span-2">
-                                    <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Trailing Mode</label>
+                                    <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Trailing Mode</label>
                                     <select
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500/50"
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-yellow-500/50"
                                         value={form.trailingBreakevenMode || 'auto'}
                                         onChange={(e) => handleFormChange('trailingBreakevenMode', e.target.value)}
                                     >
@@ -109,9 +109,9 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                                 {form.trailingBreakevenMode === 'manual' && (
                                     <>
                                         <div>
-                                            <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Distance Type</label>
+                                            <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Distance Type</label>
                                             <select
-                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500/50"
+                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-yellow-500/50"
                                                 value={form.trailingBreakevenType || 'pct'}
                                                 onChange={(e) => handleFormChange('trailingBreakevenType', e.target.value)}
                                             >
@@ -120,11 +120,11 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Trailing Distance {form.trailingBreakevenType === 'usd' ? `(${quoteAsset})` : '(%)'}</label>
+                                            <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Trailing Distance {form.trailingBreakevenType === 'usd' ? `(${quoteAsset})` : '(%)'}</label>
                                             <input
                                                 type="number"
                                                 step={form.trailingBreakevenType === 'usd' ? "1" : "0.1"}
-                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500/50"
+                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-yellow-500/50"
                                                 value={getNumericValue(form.trailingBreakevenDistance, 0)}
                                                 onChange={(e) => handleFormChange('trailingBreakevenDistance', parseNumericInput(e.target.value))}
                                             />
@@ -134,7 +134,7 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                             </div>
                         )}
                         <div className="flex items-center justify-between col-span-2 bg-black/40 p-1.5 rounded-lg">
-                            <span className="text-[9px] font-bold text-gray-400">Cooldown Timer</span>
+                            <span className="text-[10px] font-bold text-gray-400">Cooldown Timer</span>
                             <label className="relative inline-flex items-center cursor-pointer shrink-0">
                                 <input
                                     type="checkbox"
@@ -148,10 +148,10 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                         
                         {form.enableBreakevenCooldown && (
                             <div className="col-span-2 animate-fade-in">
-                                <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Cooldown (Minutes)</label>
+                                <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Cooldown (Minutes)</label>
                                 <input
                                     type="number"
-                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500/50"
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-yellow-500/50"
                                     value={getNumericValue(form.breakevenCooldownMins, 0)}
                                     onChange={(e) => handleFormChange('breakevenCooldownMins', parseNumericInput(e.target.value))}
                                 />
@@ -165,8 +165,8 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
             <div className="bg-[#000000] border border-white/10 rounded-lg p-2.5 transition-all hover:border-emerald-500/30">
                 <div className="flex items-center justify-between gap-2">
                     <div>
-                        <h3 className="text-xs font-bold text-white tracking-wide">Enable Global Take Profit Target</h3>
-                        <p className="text-[9px] text-gray-400 mt-0.5 leading-tight">Stops bot or notifies when total profit is reached.</p>
+                        <h3 className="text-[13px] font-bold text-white tracking-wide">Enable Global Take Profit Target</h3>
+                        <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">Stops bot or notifies when total profit is reached.</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer shrink-0">
                         <input
@@ -182,19 +182,19 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                 {form.enableGlobalTp && (
                     <div className="grid grid-cols-2 gap-2 mt-2.5 pt-2.5 border-t border-white/5 animate-fade-in">
                         <div>
-                            <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Target Amount ({quoteAsset})</label>
+                            <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Target Amount ({quoteAsset})</label>
                             <input
                                 type="number"
                                 step="1"
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-emerald-400 focus:outline-none focus:border-emerald-500/50"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-emerald-400 focus:outline-none focus:border-emerald-500/50"
                                 value={getNumericValue(form.globalTpTarget, 0)}
                                 onChange={(e) => handleFormChange('globalTpTarget', parseNumericInput(e.target.value))}
                             />
                         </div>
                         <div>
-                            <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Target Type</label>
+                            <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Target Type</label>
                             <select
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-emerald-500/50"
                                 value={form.globalTpType || 'daily'}
                                 onChange={(e) => handleFormChange('globalTpType', e.target.value)}
                             >
@@ -203,9 +203,9 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                             </select>
                         </div>
                         <div>
-                            <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Close Mode</label>
+                            <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Close Mode</label>
                             <select
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-emerald-500/50"
                                 value={form.globalTpCloseMode || 'hard'}
                                 onChange={(e) => handleFormChange('globalTpCloseMode', e.target.value)}
                             >
@@ -214,9 +214,9 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                             </select>
                         </div>
                         <div>
-                            <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Action on Hit</label>
+                            <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Action on Hit</label>
                             <select
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-emerald-500/50"
                                 value={form.globalTpAction || 'stop_bot'}
                                 onChange={(e) => handleFormChange('globalTpAction', e.target.value)}
                             >
@@ -225,7 +225,7 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                             </select>
                         </div>
                         <div className="flex items-center justify-between col-span-2 bg-black/40 p-1.5 rounded-lg">
-                            <span className="text-[9px] font-bold text-gray-400">Trailing Take Profit</span>
+                            <span className="text-[10px] font-bold text-gray-400">Trailing Take Profit</span>
                             <label className="relative inline-flex items-center cursor-pointer shrink-0">
                                 <input
                                     type="checkbox"
@@ -240,9 +240,9 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                         {form.enableTrailingGlobalTp && (
                             <div className="col-span-2 grid grid-cols-2 gap-2 bg-black/20 p-2 rounded-lg border border-white/5 animate-fade-in">
                                 <div className="col-span-2">
-                                    <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Trailing Mode</label>
+                                    <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Trailing Mode</label>
                                     <select
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50"
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-emerald-500/50"
                                         value={form.trailingGlobalTpMode || 'auto'}
                                         onChange={(e) => handleFormChange('trailingGlobalTpMode', e.target.value)}
                                     >
@@ -253,9 +253,9 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                                 {form.trailingGlobalTpMode === 'manual' && (
                                     <>
                                         <div>
-                                            <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Distance Type</label>
+                                            <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Distance Type</label>
                                             <select
-                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50"
+                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-emerald-500/50"
                                                 value={form.trailingGlobalTpType || 'pct'}
                                                 onChange={(e) => handleFormChange('trailingGlobalTpType', e.target.value)}
                                             >
@@ -264,11 +264,11 @@ export const AdvancedRiskManager: React.FC<AdvancedRiskManagerProps> = ({ form, 
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="block text-[9px] font-bold text-gray-400 mb-0.5">Trailing Drop Distance</label>
+                                            <label className="block text-[10px] font-bold text-gray-400 mb-0.5">Trailing Drop Distance</label>
                                             <input
                                                 type="number"
                                                 step={form.trailingGlobalTpType === 'usd' ? "1" : "0.1"}
-                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50"
+                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[13px] text-white focus:outline-none focus:border-emerald-500/50"
                                                 value={getNumericValue(form.trailingGlobalTpDistance, 0)}
                                                 onChange={(e) => handleFormChange('trailingGlobalTpDistance', parseNumericInput(e.target.value))}
                                             />

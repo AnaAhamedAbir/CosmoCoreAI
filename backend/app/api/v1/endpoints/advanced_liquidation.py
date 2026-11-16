@@ -17,9 +17,6 @@ async def websocket_god_mode_stream(websocket: WebSocket, symbol: str = "BTC/USD
     
     target_symbol = symbol.upper()
     
-    # Start the background pipeline if not already running for this symbol
-    asyncio.create_task(god_mode_service.start(target_symbol))
-    
     async def send_to_client(data):
         try:
             if data.get("symbol") == target_symbol:
@@ -32,6 +29,9 @@ async def websocket_god_mode_stream(websocket: WebSocket, symbol: str = "BTC/USD
             god_mode_service.remove_callback(send_to_client)
             
     god_mode_service.register_callback(send_to_client)
+
+    # Start the background pipeline if not already running for this symbol
+    asyncio.create_task(god_mode_service.start(target_symbol))
     
     try:
         while True:

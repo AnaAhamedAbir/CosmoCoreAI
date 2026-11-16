@@ -1,5 +1,13 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react';
-import { IChartApi, ISeriesApi } from 'lightweight-charts';
+import React, { useEffect, useRef, useState } from 'react';
+import type {
+    IChartApi,
+    ISeriesApi,
+    ISeriesPrimitive,
+    IPrimitivePaneView,
+    IPrimitivePaneRenderer,
+    SeriesAttachedParameter,
+} from 'lightweight-charts';
+import { CanvasRenderingTarget2D } from 'fancy-canvas';
 import { GodModeState } from '../../../hooks/useGodModeData';
 import { getThermalProfile } from '@/utils/deviceProfile';
 
@@ -7,6 +15,7 @@ interface LiquidationRendererProps {
     chart: IChartApi | null;
     series: ISeriesApi<'Candlestick'> | null;
     data: GodModeState | null;
+    symbol?: string;
     showBubbles: boolean;
     intensityScale: number; // 10-100
     useTrailingLiquidity: boolean;
@@ -17,509 +26,578 @@ interface LiquidationRendererProps {
     bookmapIntensity?: number;
     spoofingThreshold?: number;
     smartMoneyBias?: boolean;
+    candlesRef?: React.MutableRefObject<any[]>;
+    candleTimes?: number[];
 }
 
-export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart, series, data, showBubbles, intensityScale, useTrailingLiquidity, showTrueCVD, showSpoofing = true, showGEX = true, showBookmap = true, bookmapIntensity = 50, spoofingThreshold = 500000, smartMoneyBias = false }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const drawRequested = useRef<boolean>(false);
-    const drawRafIdRef = useRef<number | null>(null);
-    const animRafIdRef = useRef<number | null>(null);
-    const scheduleAnimationRef = useRef<() => void>(() => {});
-    const showBubblesRef = useRef(showBubbles);
-    showBubblesRef.current = showBubbles;
-    const showTrueCVDRef = useRef(showTrueCVD);
-    showTrueCVDRef.current = showTrueCVD;
-    const showBookmapRef = useRef(showBookmap);
-    showBookmapRef.current = showBookmap;
-    
-    // History for Bookmap time-series heatmap
-    const bookmapHistoryRef = useRef<{time: number, depth: {price: number, volume: number}[]}[]>([]);
+interface BookmapSnapshot {
+    time: number; // ms
+    depth: { price: number; volume: number }[];
+}
 
-    // Track persisting bubbles
-    const bubblesRef = useRef<any[]>([]);
-    
-    // Track persisting icebergs
-    const icebergsRef = useRef<any[]>([]);
-    
-    // Crosshair state for tooltips
-    const crosshairRef = useRef<{ price: number, x: number, y: number, visible: boolean }>({ price: 0, x: 0, y: 0, visible: false });
+interface CrosshairHoverState {
+    price: number;
+    x: number;
+    y: number;
+    visible: boolean;
+}
 
-    const drawHeatmap = useCallback(() => {
-        if (!canvasRef.current) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+function snapToNearestCandleTime(targetSec: number, candleTimes: number[]): number | null {
+    if (!candleTimes || candleTimes.length === 0) return targetSec;
+    const t = targetSec < 10_000_000_000 ? targetSec : Math.floor(targetSec / 1000);
+    if (t <= candleTimes[0]) return candleTimes[0];
+    if (t >= candleTimes[candleTimes.length - 1]) return candleTimes[candleTimes.length - 1];
 
-        if (!chart || !series || !data) return;
+    let lo = 0;
+    let hi = candleTimes.length - 1;
+    while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const val = candleTimes[mid];
+        if (val === t) return val;
+        if (val < t) lo = mid + 1;
+        else hi = mid - 1;
+    }
+    return candleTimes[Math.max(0, hi)];
+}
+
+function formatPriceLabel(price: number): string {
+    if (!Number.isFinite(price)) return '0';
+    if (price < 0.0001) return price.toFixed(8);
+    if (price < 0.1) return price.toFixed(5);
+    if (price < 1) return price.toFixed(4);
+    return price.toFixed(2);
+}
+
+class LiquidationPaneRenderer implements IPrimitivePaneRenderer {
+    private _primitive: LiquidationPrimitive;
+
+    constructor(primitive: LiquidationPrimitive) {
+        this._primitive = primitive;
+    }
+
+    draw(target: CanvasRenderingTarget2D): void {
+        target.useMediaCoordinateSpace((scope) => {
+            this._drawContent(scope.context, scope.mediaSize.width, scope.mediaSize.height);
+        });
+    }
+
+    private _drawContent(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+        const {
+            chart,
+            series,
+            data,
+            symbol,
+            showBubbles,
+            intensityScale,
+            useTrailingLiquidity,
+            showTrueCVD,
+            showSpoofing,
+            showGEX,
+            showBookmap,
+            bookmapIntensity,
+            spoofingThreshold,
+            smartMoneyBias,
+            candlesRef,
+            candleTimes,
+            bubblesRef,
+            icebergsRef,
+            bookmapHistoryRef,
+            crosshairRef,
+        } = this._primitive;
+
+        if (!chart || !series || !data || W <= 0 || H <= 0) return;
+        if (symbol && data.symbol && data.symbol.toUpperCase() !== symbol.toUpperCase()) return;
 
         const timeScale = chart.timeScale();
-        const priceScale = series.priceScale();
-        if (!timeScale || !priceScale) return;
+        if (!timeScale) return;
 
-        const timeWidth = timeScale.width();
-        const parent = canvas.parentElement;
-        if (parent) {
-            if (canvas.width !== parent.clientWidth) canvas.width = parent.clientWidth;
-            if (canvas.height !== parent.clientHeight) canvas.height = parent.clientHeight;
-        }
+        const effectiveCandleTimes = this._primitive.getNormalizedCandleTimes(candlesRef, candleTimes);
 
-        const currentPrice = data.current_price;
+        const toY = (price: number): number | null => {
+            if (!Number.isFinite(price)) return null;
+            try {
+                return series.priceToCoordinate(price);
+            } catch {
+                return null;
+            }
+        };
 
-        // 1. Draw Magnet Zones & Cascade Probs (Heatmap Bands)
-        const activeMagnetZones = (useTrailingLiquidity && data.smoothed_zones) ? data.smoothed_zones : (data.magnet_zones || []);
-        
-        const allZones = [
-            ...activeMagnetZones.map(z => ({ ...z, type: 'magnet' as const })),
-            ...(data.cascade_probs || []).map(z => ({ price: z.price, intensity: z.prob, volume: z.volume, type: 'cascade' as const }))
-        ];
+        const toSnappedX = (timeMsOrSec: number): number | null => {
+            if (!Number.isFinite(timeMsOrSec)) return null;
+            const sec = timeMsOrSec > 10_000_000_000 ? timeMsOrSec / 1000 : timeMsOrSec;
+            const snapped = snapToNearestCandleTime(sec, effectiveCandleTimes);
+            if (snapped === null) return null;
+            try {
+                return timeScale.timeToCoordinate(snapped as any);
+            } catch {
+                return null;
+            }
+        };
 
-        // Ensure text labels don't overlap vertically on compressed scales
+        const currentPrice = Number(data.current_price) || 0;
+        const effectiveIntensityScale = Math.max(10, Math.min(100, Number(intensityScale) || 75));
+        const now = Date.now();
+
+        ctx.save();
+
+        // 1. Draw Unified Liquidation Heatmap Bands (Short Liquidations above price = Rose/Red, Long below = Emerald/Green)
+        const activeMagnetZones =
+            useTrailingLiquidity && data.smoothed_zones && data.smoothed_zones.length > 0
+                ? data.smoothed_zones
+                : data.magnet_zones || [];
+
+        const mergedByPrice = new Map<
+            string,
+            { price: number; intensity: number; volume?: number; prob?: number }
+        >();
+
+        activeMagnetZones.forEach((z) => {
+            const p = Number(z.price);
+            const intensity = Number(z.intensity);
+            if (!Number.isFinite(p) || !Number.isFinite(intensity) || intensity < 10) return;
+            const key = p.toPrecision(8);
+            mergedByPrice.set(key, {
+                price: p,
+                intensity,
+                volume: z.volume,
+            });
+        });
+
+        (data.cascade_probs || []).forEach((z) => {
+            const p = Number(z.price);
+            const prob = Number(z.prob);
+            if (!Number.isFinite(p) || !Number.isFinite(prob)) return;
+            const key = p.toPrecision(8);
+            const existing = mergedByPrice.get(key);
+            if (existing) {
+                existing.prob = prob;
+                if (!existing.volume && z.volume) existing.volume = z.volume;
+            } else {
+                mergedByPrice.set(key, {
+                    price: p,
+                    intensity: prob,
+                    volume: z.volume,
+                    prob,
+                });
+            }
+        });
+
+        const allZones = Array.from(mergedByPrice.values());
         const drawnTextY: number[] = [];
 
-        allZones.forEach(zone => {
-            // Dynamic thickness based on volume (min 0.1%, max 0.6%)
-            const baseThickness = currentPrice * 0.001; 
+        allZones.forEach((zone) => {
+            const refPrice = currentPrice > 0 ? currentPrice : zone.price;
+            const baseThickness = refPrice * 0.001;
             let calculatedThickness = baseThickness;
-            if (zone.volume) {
-                // Cap volume multiplier at ~1M USD equivalent for visual sanity
-                const volumeScale = Math.min(5, zone.volume / 200000); 
-                calculatedThickness = baseThickness + (baseThickness * volumeScale);
+            if (zone.volume && zone.volume > 0) {
+                const volumeScale = Math.min(5, zone.volume / 200000);
+                calculatedThickness = baseThickness + baseThickness * volumeScale;
             }
-            
-            const yTop = series.priceToCoordinate(zone.price + (calculatedThickness/2));
-            const yBottom = series.priceToCoordinate(zone.price - (calculatedThickness/2));
-            const yCenter = series.priceToCoordinate(zone.price);
 
-            if (yTop !== null && yBottom !== null && yCenter !== null) {
-                const height = Math.abs(yBottom - yTop);
-                // Base opacity scaled by user intensity ratio 
-                const alpha = (zone.intensity / 100) * (intensityScale / 100);
-                
-                // Color logic: Cascade Red, Magnet Green
-                let colorBase = zone.type === 'magnet' ? `34, 197, 94` : `239, 68, 68`; // Green, Red
-                
-                // ── TRADITIONAL HEATMAP BAND (Spans behind candles) ──
-                // Draw glow block exactly behind the candles
-                ctx.fillStyle = `rgba(${colorBase}, ${alpha * 0.35})`; // Soften background
-                ctx.fillRect(0, Math.min(yTop, yBottom), timeWidth, height);
-                
-                // Center Horizontal Laser Line
-                ctx.beginPath();
-                ctx.strokeStyle = `rgba(${colorBase}, ${alpha * 0.8})`;
-                ctx.setLineDash([4, 4]);
-                ctx.lineWidth = 1;
-                ctx.moveTo(0, yCenter);
-                ctx.lineTo(timeWidth, yCenter);
-                ctx.stroke();
-                ctx.setLineDash([]); // reset dash for future drawing
+            const yTop = toY(zone.price + calculatedThickness / 2);
+            const yBottom = toY(zone.price - calculatedThickness / 2);
+            const yCenter = toY(zone.price);
 
-                // Draw Text Label on the right edge
+            if (yTop === null || yBottom === null || yCenter === null) return;
+
+            const top = Math.min(yTop, yBottom);
+            const rawHeight = Math.abs(yBottom - yTop);
+            const height = Math.max(4, Math.min(36, rawHeight));
+            const drawTop = rawHeight < 4 ? yCenter - height / 2 : top;
+
+            if (drawTop + height < -40 || drawTop > H + 40) return;
+
+            const alpha = Math.min(0.85, (zone.intensity / 100) * (effectiveIntensityScale / 100));
+            const isShortZone = currentPrice > 0 ? zone.price > currentPrice : false;
+            const colorBase = isShortZone ? '244, 63, 94' : '16, 185, 129';
+
+            ctx.fillStyle = `rgba(${colorBase}, ${alpha * 0.32})`;
+            ctx.fillRect(0, drawTop, W, height);
+
+            // Center dashed laser line
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(${colorBase}, ${Math.min(0.9, alpha * 0.75)})`;
+            ctx.setLineDash([4, 4]);
+            ctx.lineWidth = 1;
+            ctx.moveTo(0, yCenter);
+            ctx.lineTo(W, yCenter);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Collision-avoided right-edge label
+            let textY = yCenter;
+            for (let i = 0; i < 10; i++) {
+                if (drawnTextY.some((dy) => Math.abs(dy - textY) < 16)) {
+                    textY -= 16;
+                } else {
+                    break;
+                }
+            }
+            if (textY >= 10 && textY <= H - 10) {
+                drawnTextY.push(textY);
                 ctx.fillStyle = `rgba(${colorBase}, 0.95)`;
                 ctx.font = 'bold 11px Inter, sans-serif';
                 ctx.textAlign = 'right';
                 ctx.textBaseline = 'middle';
-                const formattedPrice = zone.price < 0.1 ? zone.price.toFixed(5) : zone.price < 1 ? zone.price.toFixed(4) : zone.price.toFixed(2);
-                const label = zone.type === 'magnet' ? `🧲 MGNT ${zone.intensity}% @ ${formattedPrice}` : `🔥 LIQ ${zone.intensity}% @ ${formattedPrice}`;
-                
-                // Basic Collision Detection for Text
-                let textY = yCenter as number;
-                for (let i = 0; i < 10; i++) {
-                    const hasCollision = drawnTextY.some(dy => Math.abs(dy - textY) < 16);
-                    if (hasCollision) {
-                        textY -= 16; // Push label up if colliding
-                    } else {
-                        break;
-                    }
-                }
-                drawnTextY.push(textY);
-
-                ctx.fillText(label, timeWidth - 6, textY);
+                const formattedPrice = formatPriceLabel(zone.price);
+                const probSuffix = zone.prob !== undefined ? ` (${Math.round(zone.prob)}%)` : '';
+                const label = isShortZone
+                    ? `🔥 SHORT LIQ ${Math.round(zone.intensity)}%${probSuffix} @ ${formattedPrice}`
+                    : `🧲 LONG LIQ ${Math.round(zone.intensity)}%${probSuffix} @ ${formattedPrice}`;
+                ctx.fillText(label, W - 8, textY);
             }
         });
-        
-        // 1.5 Draw Trailing Liquidity Clouds (if enabled)
-        if (useTrailingLiquidity && data.trailing_liquidity) {
+
+        // 1.5 Draw Trailing Liquidity Clouds (DTLC)
+        if (useTrailingLiquidity && data.trailing_liquidity && currentPrice > 0) {
             const tl = data.trailing_liquidity;
-            
-            // Draw Long Trail (Support Cloud below price)
+
             if (tl.long_level > 0 && currentPrice >= tl.long_level) {
-                const yL = series.priceToCoordinate(tl.long_level);
-                if (yL !== null) {
-                    const cloudHeight = 60; // thick cloud
-                    const grad = ctx.createLinearGradient(0, yL - cloudHeight/2, 0, yL + cloudHeight/2);
+                const yL = toY(tl.long_level);
+                if (yL !== null && yL >= -60 && yL <= H + 60) {
+                    const cloudHeight = 60;
+                    const grad = ctx.createLinearGradient(0, yL - cloudHeight / 2, 0, yL + cloudHeight / 2);
                     grad.addColorStop(0, 'rgba(16,185,129,0)');
-                    grad.addColorStop(0.5, `rgba(16,185,129,${Math.min(0.25, Math.max(0.05, tl.long_intensity/100))})`);
+                    grad.addColorStop(0.5, `rgba(16,185,129,${Math.min(0.25, Math.max(0.05, tl.long_intensity / 100))})`);
                     grad.addColorStop(1, 'rgba(16,185,129,0)');
                     ctx.fillStyle = grad;
-                    ctx.fillRect(0, yL - cloudHeight/2, timeWidth, cloudHeight);
-                    
+                    ctx.fillRect(0, yL - cloudHeight / 2, W, cloudHeight);
+
                     ctx.beginPath();
-                    ctx.strokeStyle = `rgba(16, 185, 129, 0.6)`;
+                    ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)';
                     ctx.setLineDash([12, 6]);
                     ctx.lineWidth = 2;
                     ctx.moveTo(0, yL);
-                    ctx.lineTo(timeWidth, yL);
+                    ctx.lineTo(W, yL);
                     ctx.stroke();
                     ctx.setLineDash([]);
-                    
-                    ctx.fillStyle = 'rgba(16, 185, 129, 0.8)';
-                    ctx.font = 'bold 10px Inter';
-                    ctx.fillText('TRAILING SUPPORT CLOUD', timeWidth / 2, yL - 6);
+
+                    ctx.fillStyle = 'rgba(16, 185, 129, 0.85)';
+                    ctx.font = 'bold 10px Inter, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'alphabetic';
+                    ctx.fillText('TRAILING SUPPORT CLOUD', W / 2, yL - 6);
                 }
             }
-            // Draw Short Trail (Resistance Cloud above price)
+
             if (tl.short_level > 0 && currentPrice <= tl.short_level) {
-                const yS = series.priceToCoordinate(tl.short_level);
-                if (yS !== null) {
-                    const cloudHeight = 60; 
-                    const grad = ctx.createLinearGradient(0, yS - cloudHeight/2, 0, yS + cloudHeight/2);
+                const yS = toY(tl.short_level);
+                if (yS !== null && yS >= -60 && yS <= H + 60) {
+                    const cloudHeight = 60;
+                    const grad = ctx.createLinearGradient(0, yS - cloudHeight / 2, 0, yS + cloudHeight / 2);
                     grad.addColorStop(0, 'rgba(239,68,68,0)');
-                    grad.addColorStop(0.5, `rgba(239,68,68,${Math.min(0.25, Math.max(0.05, tl.short_intensity/100))})`);
+                    grad.addColorStop(0.5, `rgba(239,68,68,${Math.min(0.25, Math.max(0.05, tl.short_intensity / 100))})`);
                     grad.addColorStop(1, 'rgba(239,68,68,0)');
                     ctx.fillStyle = grad;
-                    ctx.fillRect(0, yS - cloudHeight/2, timeWidth, cloudHeight);
-                    
+                    ctx.fillRect(0, yS - cloudHeight / 2, W, cloudHeight);
+
                     ctx.beginPath();
-                    ctx.strokeStyle = `rgba(239, 68, 68, 0.6)`;
+                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
                     ctx.setLineDash([12, 6]);
                     ctx.lineWidth = 2;
                     ctx.moveTo(0, yS);
-                    ctx.lineTo(timeWidth, yS);
+                    ctx.lineTo(W, yS);
                     ctx.stroke();
                     ctx.setLineDash([]);
-                    
-                    ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
-                    ctx.font = 'bold 10px Inter';
-                    ctx.fillText('TRAILING RESISTANCE CLOUD', timeWidth / 2, yS + 12);
+
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.85)';
+                    ctx.font = 'bold 10px Inter, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'alphabetic';
+                    ctx.fillText('TRAILING RESISTANCE CLOUD', W / 2, yS + 12);
                 }
             }
         }
 
-        // 1.5 Draw True Bookmap Style Multi-Level Heatmap Depth (Time-Series)
-        if (showBookmap && data.orderbook_depth && data.orderbook_depth.length > 0) {
-            const now = Date.now();
-            
-            // We need the logical time of the latest candle to plot X properly
-            // To prevent browser lag and flickering (calling push 60 times a second on hover),
-            // we will only add a new snapshot every 250ms.
-            const lastSnapshot = bookmapHistoryRef.current[bookmapHistoryRef.current.length - 1];
-            if (!lastSnapshot || now - lastSnapshot.time >= 250) {
-                bookmapHistoryRef.current.push({
-                    time: now,
-                    depth: data.orderbook_depth.map(d => ({ price: d.price, volume: d.volume }))
-                });
-                
-                // Prune old history (keep last 2 minutes to save memory, 120000ms)
-                if (bookmapHistoryRef.current.length > 500) {
-                    bookmapHistoryRef.current = bookmapHistoryRef.current.slice(-480);
+        // 1.6 Draw Bookmap Style Multi-Level Depth Anchored to Chart TimeScale
+        if (showBookmap && bookmapHistoryRef.current.length > 0 && effectiveCandleTimes.length >= 2) {
+            const lastBarTime = effectiveCandleTimes[effectiveCandleTimes.length - 1];
+            const prevBarTime = effectiveCandleTimes[effectiveCandleTimes.length - 2];
+            const barIntervalSec = Math.max(1, lastBarTime - prevBarTime);
+
+            // Estimate current pixel spacing per bar from visible candles so zoom scales Bookmap 1:1
+            let barSpacingPx = 8;
+            const xLast = timeScale.timeToCoordinate(lastBarTime as any);
+            const xPrev = timeScale.timeToCoordinate(prevBarTime as any);
+            if (xLast !== null && xPrev !== null && xLast > xPrev) {
+                barSpacingPx = xLast - xPrev;
+            } else {
+                const logicalRange = timeScale.getVisibleLogicalRange();
+                if (logicalRange && logicalRange.to > logicalRange.from) {
+                    barSpacingPx = Math.max(2, W / (logicalRange.to - logicalRange.from));
                 }
             }
-            
-            // Find global max volume for normalization
+
             let maxVol = 1;
-            // To save CPU, just sample the last 10 snapshots for max volume instead of all history
-            const recentSnapshots = bookmapHistoryRef.current.slice(-10);
-            recentSnapshots.forEach(h => {
-                h.depth.forEach(d => {
+            const recentSnapshots = bookmapHistoryRef.current.slice(-15);
+            recentSnapshots.forEach((h) => {
+                h.depth.forEach((d) => {
                     if (d.volume > maxVol) maxVol = d.volume;
                 });
             });
-            
-            const intensityMultiplier = (bookmapIntensity / 50); // 50 is default (1x)
-            
-            // Determine X coordinate for each historical snapshot
-            // Assuming timeWidth represents the visible width, and 1 pixel per second approx
-            // We will draw from the right edge.
-            // But a more robust way is to draw a continuous band from the right edge for the current snapshot.
-            
-            // Actually, for a lightweight overlay, drawing historical pixels is very heavy.
-            // Let's just draw the horizontal bands, but fade them out to the left?
-            // No, Bookmap is literally historical columns.
-            // Since we don't have exact Candlestick time-to-X mapping for arbitrary timestamps, 
-            // we can approximate: Right edge is `timeWidth`.
-            // We shift historical columns left by roughly 1 pixel per 500ms.
-            
+
+            const intensityMultiplier = (bookmapIntensity || 50) / 50;
+            const colWidth = Math.max(3, Math.min(18, barSpacingPx * 0.35));
+
             bookmapHistoryRef.current.forEach((snapshot) => {
-                const ageMs = now - snapshot.time;
-                // speed controls how fast it scrolls left. 50ms per pixel = 20 pixels per second.
-                const speed = 50; 
-                const xPos = timeWidth - (ageMs / speed);
-                
-                if (xPos < -10) return; // Off screen
-                
-                // Draw this column
-                // colWidth must be wide enough to touch the next column to avoid gaps
-                // If we take snapshots every 250ms, and speed is 50ms/px, the distance between cols is 250/50 = 5px.
-                const colWidth = 6; // 6px width gives slight overlap for smooth look
-                
-                snapshot.depth.forEach(level => {
-                    const y = series.priceToCoordinate(level.price);
-                    if (y !== null && y >= 0 && y <= ctx.canvas.height) {
-                        const normalizedIntensity = Math.min(1.0, (level.volume / maxVol) * intensityMultiplier);
-                        
-                        if (normalizedIntensity > 0.08) { // Increased threshold slightly to reduce CPU usage
-                            let color = '';
-                            if (normalizedIntensity > 0.8) {
-                                color = `rgba(239, 68, 68, ${normalizedIntensity * 0.9})`; // Red
-                            } else if (normalizedIntensity > 0.5) {
-                                color = `rgba(249, 115, 22, ${normalizedIntensity * 0.8})`; // Orange
-                            } else if (normalizedIntensity > 0.2) {
-                                color = `rgba(234, 179, 8, ${normalizedIntensity * 0.7})`; // Yellow
-                            } else {
-                                color = `rgba(59, 130, 246, ${normalizedIntensity * 0.5})`; // Blue
-                            }
-                            
-                            ctx.beginPath();
-                            ctx.fillStyle = color;
-                            ctx.fillRect(xPos, y - 2, colWidth, 5); // Thicker blocks for better visibility
-                        }
+                const snapSec = snapshot.time / 1000;
+                const barTime = snapToNearestCandleTime(snapSec, effectiveCandleTimes);
+                if (barTime === null) return;
+
+                let barX: number | null = timeScale.timeToCoordinate(barTime as any) as number | null;
+                if (barX === null) {
+                    if (snapSec > lastBarTime && xLast !== null) {
+                        barX = xLast + ((snapSec - lastBarTime) / barIntervalSec) * barSpacingPx;
+                    } else {
+                        return;
                     }
+                }
+
+                const subBarFrac = Math.max(-0.5, Math.min(1.0, (snapSec - barTime) / barIntervalSec));
+                const xPos = barX + (subBarFrac - 0.5) * barSpacingPx;
+
+                if (xPos + colWidth < 0 || xPos > W) return;
+
+                snapshot.depth.forEach((level) => {
+                    const y = toY(level.price);
+                    if (y === null || y < -6 || y > H + 6) return;
+
+                    const normalizedIntensity = Math.min(1.0, (level.volume / maxVol) * intensityMultiplier);
+                    if (normalizedIntensity <= 0.08) return;
+
+                    if (normalizedIntensity > 0.8) {
+                        ctx.fillStyle = `rgba(239, 68, 68, ${normalizedIntensity * 0.85})`;
+                    } else if (normalizedIntensity > 0.5) {
+                        ctx.fillStyle = `rgba(249, 115, 22, ${normalizedIntensity * 0.75})`;
+                    } else if (normalizedIntensity > 0.2) {
+                        ctx.fillStyle = `rgba(234, 179, 8, ${normalizedIntensity * 0.65})`;
+                    } else {
+                        ctx.fillStyle = `rgba(59, 130, 246, ${normalizedIntensity * 0.45})`;
+                    }
+                    ctx.fillRect(xPos, y - 2, colWidth, 5);
                 });
             });
         }
 
-        // 2. Draw Live Liquidation Bubbles
-        if (showBubbles && data.whale_feed) {
-            // Unify new bubbles with existing ones, expiring after 60 seconds
-            const now = Date.now();
-            
-            data.whale_feed.forEach(wf => {
-                if (wf.price && wf.timestamp) {
-                    const existing = bubblesRef.current.find(b => b.timestamp === wf.timestamp && b.price === wf.price);
-                    if (!existing) {
-                        bubblesRef.current.push({ ...wf, createdAt: now });
-                    }
-                }
-            });
+        // 2. Draw Live Liquidation Bubbles (anchored to snapped candle X & price Y)
+        if (showBubbles && bubblesRef.current.length > 0) {
+            bubblesRef.current.forEach((bubble) => {
+                const x = toSnappedX(bubble.timestamp);
+                const y = toY(bubble.price);
+                if (x === null || y === null || x < -160 || x > W + 160 || y < -160 || y > H + 160) return;
 
-            // Clean old bubbles (> 1 min)
-            bubblesRef.current = bubblesRef.current.filter(b => now - b.createdAt < 60000);
+                const baseRadius = Math.max(8, Math.min(40, (bubble.value / 1000000) * 15));
+                const isLongRekt = bubble.type?.toLowerCase().includes('long');
 
-            bubblesRef.current.forEach(bubble => {
-                const x = timeScale.timeToCoordinate((bubble.timestamp / 1000) as any);
-                const y = series.priceToCoordinate(bubble.price);
-                
-                if (x !== null && y !== null) {
-                    // Radius based on USD value (e.g. 100k -> small, 1m -> big)
-                    const baseRadius = Math.max(8, Math.min(40, (bubble.value / 1000000) * 15));
-                    const isLongRekt = bubble.type?.toLowerCase().includes('long');
-                    
-                    // Bubble core color based on exchange
-                    const ex = bubble.exchange?.toLowerCase();
-                    const coreColor = ex === 'binance' ? '250, 204, 21' : ex === 'bybit' ? '59, 130, 246' : ex === 'okx' ? '255, 255, 255' : ex === 'bitget' ? '6, 182, 212' : '168, 85, 247'; // Yellow, Blue, White, Cyan, Purple
-                    // Stroke color based on Long/Short
-                    const strokeColor = isLongRekt ? '239, 68, 68' : '34, 197, 94';
+                const ex = bubble.exchange?.toLowerCase();
+                const coreColor =
+                    ex === 'binance'
+                        ? '250, 204, 21'
+                        : ex === 'bybit'
+                        ? '59, 130, 246'
+                        : ex === 'okx'
+                        ? '255, 255, 255'
+                        : ex === 'bitget'
+                        ? '6, 182, 212'
+                        : '168, 85, 247';
+                const strokeColor = isLongRekt ? '239, 68, 68' : '34, 197, 94';
+                const age = now - bubble.createdAt;
 
-                    const age = now - bubble.createdAt;
-                    
-                    // Ripple Blast Animation (up to 2000ms)
-                    if (age < 2000) {
-                        const progress = age / 2000; // 0 to 1
-                        const rippleRadius = baseRadius + (progress * 150); // expands up to 150px
-                        const rippleAlpha = (1 - progress) * 0.6; // fades out
-                        
-                        ctx.beginPath();
-                        ctx.strokeStyle = `rgba(${strokeColor}, ${rippleAlpha})`;
-                        ctx.lineWidth = Math.max(1, 4 * (1 - progress));
-                        ctx.arc(x, y, rippleRadius, 0, 2 * Math.PI);
-                        ctx.stroke();
-
-                        // Second inner ripple
-                        if (progress > 0.2) {
-                            const prog2 = (age - 400) / 1600;
-                            const r2 = baseRadius + (prog2 * 100);
-                            const alpha2 = (1 - prog2) * 0.5;
-                            ctx.beginPath();
-                            ctx.strokeStyle = `rgba(${coreColor}, ${alpha2})`;
-                            ctx.lineWidth = Math.max(1, 3 * (1 - prog2));
-                            ctx.arc(x, y, r2, 0, 2 * Math.PI);
-                            ctx.stroke();
-                        }
-                    }
-
-                    // Horizontal Footprint Laser (Fades over 10 seconds)
-                    if (age < 10000) {
-                        const footprintAlpha = (1 - (age / 10000)) * 0.6;
-                        ctx.beginPath();
-                        ctx.strokeStyle = `rgba(${strokeColor}, ${footprintAlpha})`;
-                        ctx.setLineDash([4, 4]);
-                        ctx.lineWidth = footprintAlpha > 0.3 ? 2 : 1;
-                        ctx.moveTo(x, y);
-                        ctx.lineTo(timeWidth, y);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-                    }
-
-                    // Main Pulse Bubble
-                    const pulse = Math.sin(age / 200) * 2;
-                    const radius = baseRadius + pulse;
+                if (age < 2000) {
+                    const progress = age / 2000;
+                    const rippleRadius = baseRadius + progress * 150;
+                    const rippleAlpha = (1 - progress) * 0.6;
 
                     ctx.beginPath();
-                    ctx.fillStyle = `rgba(${coreColor}, 0.3)`;
-                    ctx.arc(x, y, radius, 0, 2 * Math.PI);
-                    ctx.fill();
-
-                    // Inner bright core
-                    ctx.beginPath();
-                    ctx.fillStyle = `rgba(${coreColor}, 0.8)`;
-                    ctx.arc(x, y, radius * 0.3, 0, 2 * Math.PI);
-                    ctx.fill();
-
-                    ctx.beginPath();
-                    ctx.strokeStyle = `rgba(${strokeColor}, 1)`;
-                    ctx.lineWidth = 2;
-                    ctx.arc(x, y, radius, 0, 2 * Math.PI);
+                    ctx.strokeStyle = `rgba(${strokeColor}, ${rippleAlpha})`;
+                    ctx.lineWidth = Math.max(1, 4 * (1 - progress));
+                    ctx.arc(x, y, rippleRadius, 0, 2 * Math.PI);
                     ctx.stroke();
-                    
-                    // Value text Float above bubble
-                    ctx.fillStyle = '#fff';
-                    ctx.font = 'bold 9px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    const valK = bubble.value >= 1000000 ? (bubble.value / 1000000).toFixed(1) + 'M' : (bubble.value / 1000).toFixed(0) + 'k';
-                    ctx.fillText(valK, x, y - radius - 8);
+
+                    if (progress > 0.2) {
+                        const prog2 = (age - 400) / 1600;
+                        const r2 = baseRadius + prog2 * 100;
+                        const alpha2 = (1 - prog2) * 0.5;
+                        ctx.beginPath();
+                        ctx.strokeStyle = `rgba(${coreColor}, ${alpha2})`;
+                        ctx.lineWidth = Math.max(1, 3 * (1 - prog2));
+                        ctx.arc(x, y, r2, 0, 2 * Math.PI);
+                        ctx.stroke();
+                    }
                 }
+
+                if (age < 10000) {
+                    const footprintAlpha = (1 - age / 10000) * 0.6;
+                    ctx.beginPath();
+                    ctx.strokeStyle = `rgba(${strokeColor}, ${footprintAlpha})`;
+                    ctx.setLineDash([4, 4]);
+                    ctx.lineWidth = footprintAlpha > 0.3 ? 2 : 1;
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(W, y);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                const pulse = Math.sin(age / 200) * 2;
+                const radius = Math.max(4, baseRadius + pulse);
+
+                ctx.beginPath();
+                ctx.fillStyle = `rgba(${coreColor}, 0.3)`;
+                ctx.arc(x, y, radius, 0, 2 * Math.PI);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.fillStyle = `rgba(${coreColor}, 0.8)`;
+                ctx.arc(x, y, radius * 0.3, 0, 2 * Math.PI);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.strokeStyle = `rgba(${strokeColor}, 1)`;
+                ctx.lineWidth = 2;
+                ctx.arc(x, y, radius, 0, 2 * Math.PI);
+                ctx.stroke();
+
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 9px Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const valK =
+                    bubble.value >= 1000000
+                        ? (bubble.value / 1000000).toFixed(1) + 'M'
+                        : (bubble.value / 1000).toFixed(0) + 'k';
+                ctx.fillText(valK, x, y - radius - 8);
             });
         }
 
-        // 2.6 Draw Options GEX Walls
+        // 2.5 Draw Options GEX Walls
         if (showGEX && data.gex_data) {
             const { call_wall, put_wall } = data.gex_data;
-            
-            // Draw Call Wall
-            const callY = series.priceToCoordinate(call_wall);
-            if (callY !== null) {
-                ctx.beginPath();
-                ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)'; // red-500
-                ctx.lineWidth = 2;
-                ctx.moveTo(0, callY);
-                ctx.lineTo(timeWidth, callY);
-                ctx.stroke();
 
-                ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
-                ctx.font = 'bold 11px Inter';
-                ctx.textAlign = 'right';
-                ctx.fillText(`🔥 Call Wall: $${call_wall}`, timeWidth - 6, callY - 6);
-            }
-
-            // Draw Put Wall
-            const putY = series.priceToCoordinate(put_wall);
-            if (putY !== null) {
-                ctx.beginPath();
-                ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)'; // emerald-500
-                ctx.lineWidth = 2;
-                ctx.moveTo(0, putY);
-                ctx.lineTo(timeWidth, putY);
-                ctx.stroke();
-
-                ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
-                ctx.font = 'bold 11px Inter';
-                ctx.textAlign = 'right';
-                ctx.fillText(`🛡️ Put Wall: $${put_wall}`, timeWidth - 6, putY + 14);
-            }
-        }
-        
-        // 2.5 Draw True CVD & Iceberg Events
-        if (showTrueCVD && data.iceberg_events) {
-            const now = Date.now();
-            
-            data.iceberg_events.forEach(ev => {
-                if (ev.price && ev.timestamp) {
-                    const existing = icebergsRef.current.find(b => b.timestamp === ev.timestamp && b.price === ev.price);
-                    if (!existing) {
-                        icebergsRef.current.push({ ...ev, createdAt: now });
-                    }
-                }
-            });
-
-            // Clean old icebergs (> 15 seconds)
-            icebergsRef.current = icebergsRef.current.filter(b => now - b.createdAt < 15000);
-
-            icebergsRef.current.forEach(iceberg => {
-                const x = timeScale.timeToCoordinate((iceberg.timestamp / 1000) as any);
-                const y = series.priceToCoordinate(iceberg.price);
-                
-                if (x !== null && y !== null) {
-                    const isBullish = iceberg.type === 'BULLISH_ABSORPTION';
-                    const glowColor = '168, 85, 247'; // Purple glow as requested
-                    const textColor = isBullish ? '#22c55e' : '#ef4444'; // Green or Red text
-                    
-                    const age = now - iceberg.createdAt;
-                    const alpha = Math.max(0, 1 - (age / 15000));
-                    
-                    // Purple Glow Base
+            if (Number.isFinite(call_wall) && call_wall > 0) {
+                const callY = toY(call_wall);
+                if (callY !== null && callY >= -20 && callY <= H + 20) {
                     ctx.beginPath();
-                    ctx.fillStyle = `rgba(${glowColor}, ${alpha * 0.4})`;
-                    ctx.arc(x, y, 25, 0, 2 * Math.PI);
-                    ctx.fill();
-                    
-                    // Shield Icon
-                    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-                    ctx.font = '16px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText('🛡️', x, y);
-                    
-                    // Absorption Text
-                    ctx.fillStyle = textColor;
-                    ctx.font = 'bold 10px Inter';
-                    const volK = iceberg.absorbed_volume >= 1000000 
-                        ? (iceberg.absorbed_volume / 1000000).toFixed(1) + 'M' 
+                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
+                    ctx.lineWidth = 2;
+                    ctx.moveTo(0, callY);
+                    ctx.lineTo(W, callY);
+                    ctx.stroke();
+
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+                    ctx.font = 'bold 11px Inter, sans-serif';
+                    ctx.textAlign = 'right';
+                    ctx.textBaseline = 'alphabetic';
+                    ctx.fillText(`🔥 Call Wall: $${call_wall}`, W - 8, callY - 6);
+                }
+            }
+
+            if (Number.isFinite(put_wall) && put_wall > 0) {
+                const putY = toY(put_wall);
+                if (putY !== null && putY >= -20 && putY <= H + 20) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)';
+                    ctx.lineWidth = 2;
+                    ctx.moveTo(0, putY);
+                    ctx.lineTo(W, putY);
+                    ctx.stroke();
+
+                    ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
+                    ctx.font = 'bold 11px Inter, sans-serif';
+                    ctx.textAlign = 'right';
+                    ctx.textBaseline = 'alphabetic';
+                    ctx.fillText(`🛡️ Put Wall: $${put_wall}`, W - 8, putY + 14);
+                }
+            }
+        }
+
+        // 2.6 Draw True CVD & Iceberg Events
+        if (showTrueCVD && icebergsRef.current.length > 0) {
+            icebergsRef.current.forEach((iceberg) => {
+                const x = toSnappedX(iceberg.timestamp);
+                const y = toY(iceberg.price);
+                if (x === null || y === null || x < -40 || x > W + 40 || y < -40 || y > H + 40) return;
+
+                const isBullish = iceberg.type === 'BULLISH_ABSORPTION';
+                const glowColor = '168, 85, 247';
+                const textColor = isBullish ? '#22c55e' : '#ef4444';
+
+                const age = now - iceberg.createdAt;
+                const alpha = Math.max(0, 1 - age / 15000);
+
+                ctx.beginPath();
+                ctx.fillStyle = `rgba(${glowColor}, ${alpha * 0.4})`;
+                ctx.arc(x, y, 25, 0, 2 * Math.PI);
+                ctx.fill();
+
+                ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                ctx.font = '16px Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('🛡️', x, y);
+
+                ctx.fillStyle = textColor;
+                ctx.font = 'bold 10px Inter, sans-serif';
+                const volK =
+                    iceberg.absorbed_volume >= 1000000
+                        ? (iceberg.absorbed_volume / 1000000).toFixed(1) + 'M'
                         : (iceberg.absorbed_volume / 1000).toFixed(0) + 'k';
-                    ctx.fillText(`${volK} Absorbed`, x, y - 20);
-                }
+                ctx.fillText(`${volK} Absorbed`, x, y - 20);
             });
         }
 
-        // 2.5 Draw Spoofed Zones (Ghost Orders)
-        if (showSpoofing && data.spoofed_zones) {
-            const nowTime = Date.now();
-            data.spoofed_zones.forEach(zone => {
-                if (zone.volume >= spoofingThreshold) {
-                    const age = nowTime - (zone.timestamp * 1000); // sec to ms
-                    if (age < 120000) { // max 2 mins
-                        const y = series.priceToCoordinate(zone.price);
-                        if (y !== null) {
-                            const alpha = Math.max(0, 1 - (age / 120000));
-                            
-                            // Steady dashed line instead of glitchy flicker
-                            ctx.beginPath();
-                            ctx.strokeStyle = `rgba(156, 163, 175, ${alpha * 0.8})`; // Gray-400
-                            ctx.setLineDash([10, 5, 2, 5]); 
-                            ctx.lineWidth = 1.5;
-                            ctx.moveTo(0, y);
-                            ctx.lineTo(timeWidth, y);
-                            ctx.stroke();
-                            ctx.setLineDash([]);
-                            
-                            ctx.fillStyle = `rgba(156, 163, 175, ${alpha})`;
-                            ctx.font = 'italic bold 10px Inter';
-                            ctx.textAlign = 'right';
-                            const volM = zone.volume >= 1000000 ? (zone.volume / 1000000).toFixed(1) + 'M' : (zone.volume / 1000).toFixed(0) + 'k';
-                            ctx.fillText(`👻 SPOOFED $${volM}`, timeWidth - 6, y - 6);
-                        }
-                    }
-                }
+        // 2.7 Draw Spoofed Zones (Ghost Orders)
+        if (showSpoofing && data.spoofed_zones && data.spoofed_zones.length > 0) {
+            data.spoofed_zones.forEach((zone) => {
+                if (zone.volume < spoofingThreshold) return;
+                const age = now - zone.timestamp * 1000;
+                if (age >= 120000) return;
+
+                const y = toY(zone.price);
+                if (y === null || y < -20 || y > H + 20) return;
+
+                const alpha = Math.max(0, 1 - age / 120000);
+                ctx.beginPath();
+                ctx.strokeStyle = `rgba(156, 163, 175, ${alpha * 0.8})`;
+                ctx.setLineDash([10, 5, 2, 5]);
+                ctx.lineWidth = 1.5;
+                ctx.moveTo(0, y);
+                ctx.lineTo(W, y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                ctx.fillStyle = `rgba(156, 163, 175, ${alpha})`;
+                ctx.font = 'italic bold 10px Inter, sans-serif';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'alphabetic';
+                const volM =
+                    zone.volume >= 1000000
+                        ? (zone.volume / 1000000).toFixed(1) + 'M'
+                        : (zone.volume / 1000).toFixed(0) + 'k';
+                ctx.fillText(`👻 SPOOFED $${volM}`, W - 8, y - 6);
             });
         }
 
-        // 3. Draw Interactive Tooltip for hovered zone
-        if (crosshairRef.current.visible) {
-            const hoveredZone = allZones.find(z => Math.abs(z.price - crosshairRef.current.price) < (currentPrice * 0.003));
+        // 3. Draw Interactive Tooltip for hovered zone (clamped inside pane)
+        if (crosshairRef.current.visible && currentPrice > 0) {
+            const hoveredZone = allZones.find(
+                (z) => Math.abs(z.price - crosshairRef.current.price) < currentPrice * 0.003
+            );
             if (hoveredZone) {
-                const ttX = crosshairRef.current.x + 15;
-                const ttY = crosshairRef.current.y - 15;
-                
-                ctx.fillStyle = 'rgba(15, 23, 42, 0.9)'; // Slate-900 background
-                ctx.strokeStyle = hoveredZone.type === 'magnet' ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)';
+                const boxW = 122;
+                const boxH = 50;
+                const ttX = Math.max(8, Math.min(W - boxW - 8, crosshairRef.current.x + 15));
+                const ttY = Math.max(boxH + 8, Math.min(H - 8, crosshairRef.current.y - 10));
+                const isShortZone = hoveredZone.price > currentPrice;
+
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+                ctx.strokeStyle = isShortZone ? 'rgba(244, 63, 94, 0.6)' : 'rgba(16, 185, 129, 0.6)';
                 ctx.lineWidth = 1;
-                
-                const volText = hoveredZone.volume ? `Vol: $${(hoveredZone.volume / 1000).toFixed(1)}k` : `Int: ${hoveredZone.intensity}%`;
-                const typeText = hoveredZone.type === 'magnet' ? 'Magn. Support' : 'Liq. Cascade';
-                
-                // Calculate estimated leverage based on distance from current price
-                // 100x = 1%, 50x = 2%, 25x = 4%, 10x = 10%
+
+                const volText = hoveredZone.volume
+                    ? `Vol: $${(hoveredZone.volume / 1000).toFixed(1)}k`
+                    : `Int: ${Math.round(hoveredZone.intensity)}%`;
+                const typeText = isShortZone ? 'Short Liq. Zone' : 'Long Liq. Zone';
+
                 const distancePct = Math.abs(currentPrice - hoveredZone.price) / currentPrice;
                 let levText = 'Est. Lev: ';
                 if (distancePct <= 0.015) levText += '100x';
@@ -527,56 +605,55 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                 else if (distancePct <= 0.055) levText += '20x-25x';
                 else if (distancePct <= 0.11) levText += '10x';
                 else levText += '<10x';
-                
+
                 ctx.beginPath();
-                ctx.roundRect(ttX, ttY - 40, 115, 48, 4);
+                if (typeof ctx.roundRect === 'function') {
+                    ctx.roundRect(ttX, ttY - boxH, boxW, boxH, 4);
+                } else {
+                    ctx.rect(ttX, ttY - boxH, boxW, boxH);
+                }
                 ctx.fill();
                 ctx.stroke();
-                
+
                 ctx.fillStyle = '#fff';
-                ctx.font = 'bold 10px Inter';
+                ctx.font = 'bold 10px Inter, sans-serif';
                 ctx.textAlign = 'left';
-                ctx.fillText(typeText, ttX + 6, ttY - 26);
-                
-                ctx.fillStyle = 'rgba(148, 163, 184, 1)'; // Slate-400
-                ctx.font = '9px Inter';
-                ctx.fillText(volText, ttX + 6, ttY - 14);
-                
-                ctx.fillStyle = 'rgba(251, 191, 36, 1)'; // Amber-400 for leverage
-                ctx.fillText(levText, ttX + 6, ttY - 2);
+                ctx.textBaseline = 'alphabetic';
+                ctx.fillText(typeText, ttX + 7, ttY - 34);
+
+                ctx.fillStyle = 'rgba(148, 163, 184, 1)';
+                ctx.font = '9px Inter, sans-serif';
+                ctx.fillText(volText, ttX + 7, ttY - 20);
+
+                ctx.fillStyle = 'rgba(251, 191, 36, 1)';
+                ctx.fillText(levText, ttX + 7, ttY - 7);
             }
         }
 
         // 4. Draw AI Trajectory Arrow
         const activeTrajectory = smartMoneyBias ? data.smart_trajectory : data.ai_trajectory;
-        if (activeTrajectory && activeTrajectory.direction !== 'NEUTRAL') {
-            const currentY = series.priceToCoordinate(currentPrice);
-            const targetY = series.priceToCoordinate(activeTrajectory.target_price);
-            
+        if (activeTrajectory && activeTrajectory.direction !== 'NEUTRAL' && currentPrice > 0 && activeTrajectory.target_price > 0) {
+            const currentY = toY(currentPrice);
+            const targetY = toY(activeTrajectory.target_price);
+
             if (currentY !== null && targetY !== null) {
                 const isUp = activeTrajectory.direction === 'UP';
-                const color = isUp ? '34, 197, 94' : '239, 68, 68'; // green : red
-                
-                // Calculate arrow start and end points
-                const startX = timeWidth * 0.85; // start near the right edge
-                const endX = timeWidth * 0.85;
-                
+                const color = isUp ? '34, 197, 94' : '239, 68, 68';
+                const startX = W * 0.85;
+                const endX = W * 0.85;
+
                 ctx.beginPath();
-                // Draw glowing line
-                ctx.strokeStyle = `rgba(${color}, 0.8)`;
+                ctx.strokeStyle = `rgba(${color}, 0.85)`;
                 ctx.shadowColor = `rgba(${color}, 1)`;
                 ctx.shadowBlur = 10;
-                ctx.lineWidth = 2 + (activeTrajectory.strength / 25); // thicker based on strength
-                
-                // Draw a dashed path
+                ctx.lineWidth = 2 + activeTrajectory.strength / 25;
                 ctx.setLineDash([5, 5]);
                 ctx.moveTo(startX, currentY);
                 ctx.lineTo(endX, targetY);
                 ctx.stroke();
-                ctx.setLineDash([]); // reset
-                ctx.shadowBlur = 0; // reset
-                
-                // Draw arrow head
+                ctx.setLineDash([]);
+                ctx.shadowBlur = 0;
+
                 ctx.beginPath();
                 ctx.fillStyle = `rgba(${color}, 1)`;
                 const headSize = 8;
@@ -590,39 +667,251 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                     ctx.lineTo(endX + headSize, targetY - headSize);
                 }
                 ctx.fill();
-                
-                // Label for Trajectory
+
                 ctx.fillStyle = `rgba(${color}, 1)`;
-                ctx.font = 'bold 9px Inter';
+                ctx.font = 'bold 9px Inter, sans-serif';
                 ctx.textAlign = 'center';
+                ctx.textBaseline = 'alphabetic';
                 const lblY = isUp ? targetY - 12 : targetY + 18;
-                ctx.fillText(`ALGO TARGET`, endX, lblY);
+                ctx.fillText('ALGO TARGET', endX, lblY);
             }
         }
 
-        // Wake event-driven animation loop if active animations exist
-        const hasBubbles = showBubbles && bubblesRef.current.length > 0;
-        const hasIcebergs = showTrueCVD && icebergsRef.current.length > 0;
-        const hasBookmap = showBookmap && bookmapHistoryRef.current.length > 0;
-        if ((hasBubbles || hasIcebergs || hasBookmap) && (typeof document === 'undefined' || !document.hidden)) {
-            scheduleAnimationRef.current();
+        ctx.restore();
+    }
+}
+
+class LiquidationPaneView implements IPrimitivePaneView {
+    private _renderer: LiquidationPaneRenderer;
+
+    constructor(primitive: LiquidationPrimitive) {
+        this._renderer = new LiquidationPaneRenderer(primitive);
+    }
+
+    zOrder(): 'bottom' {
+        return 'bottom';
+    }
+
+    renderer(): IPrimitivePaneRenderer | null {
+        return this._renderer;
+    }
+}
+
+class LiquidationPrimitive implements ISeriesPrimitive<any> {
+    public chart: IChartApi | null = null;
+    public series: ISeriesApi<'Candlestick'> | null = null;
+    public data: GodModeState | null = null;
+    public symbol?: string;
+    public showBubbles = true;
+    public intensityScale = 75;
+    public useTrailingLiquidity = true;
+    public showTrueCVD = false;
+    public showSpoofing = true;
+    public showGEX = true;
+    public showBookmap = true;
+    public bookmapIntensity = 50;
+    public spoofingThreshold = 500000;
+    public smartMoneyBias = false;
+    public candlesRef?: React.MutableRefObject<any[]>;
+    public candleTimes?: number[];
+    public bubblesRef: React.MutableRefObject<any[]>;
+    public icebergsRef: React.MutableRefObject<any[]>;
+    public bookmapHistoryRef: React.MutableRefObject<BookmapSnapshot[]>;
+    public crosshairRef: React.MutableRefObject<CrosshairHoverState>;
+
+    private _requestUpdate?: () => void;
+    private _paneViews: LiquidationPaneView[];
+    private _cachedCandlesSource: any[] | null = null;
+    private _cachedCandlesLen = -1;
+    private _cachedLastCandleTime = -1;
+    private _cachedNormalizedTimes: number[] = [];
+
+    constructor(
+        bubblesRef: React.MutableRefObject<any[]>,
+        icebergsRef: React.MutableRefObject<any[]>,
+        bookmapHistoryRef: React.MutableRefObject<BookmapSnapshot[]>,
+        crosshairRef: React.MutableRefObject<CrosshairHoverState>
+    ) {
+        this.bubblesRef = bubblesRef;
+        this.icebergsRef = icebergsRef;
+        this.bookmapHistoryRef = bookmapHistoryRef;
+        this.crosshairRef = crosshairRef;
+        this._paneViews = [new LiquidationPaneView(this)];
+    }
+
+    getNormalizedCandleTimes(
+        candlesRef?: React.MutableRefObject<any[]>,
+        candleTimes?: number[]
+    ): number[] {
+        const rawArr = candlesRef?.current && candlesRef.current.length > 0 ? candlesRef.current : null;
+        if (rawArr) {
+            const len = rawArr.length;
+            const lastTime = Number(rawArr[len - 1]?.time ?? -1);
+            if (
+                this._cachedCandlesSource === rawArr &&
+                this._cachedCandlesLen === len &&
+                this._cachedLastCandleTime === lastTime
+            ) {
+                return this._cachedNormalizedTimes;
+            }
+            const normalized: number[] = [];
+            for (let i = 0; i < len; i++) {
+                const t = Number(rawArr[i]?.time);
+                if (Number.isFinite(t)) {
+                    normalized.push(t < 10_000_000_000 ? t : Math.floor(t / 1000));
+                }
+            }
+            this._cachedCandlesSource = rawArr;
+            this._cachedCandlesLen = len;
+            this._cachedLastCandleTime = lastTime;
+            this._cachedNormalizedTimes = normalized;
+            return normalized;
         }
 
-    }, [chart, series, data, showBubbles, intensityScale, showTrueCVD, showBookmap, useTrailingLiquidity, showSpoofing, showGEX, bookmapIntensity, spoofingThreshold, smartMoneyBias]);
-
-    const requestDraw = useCallback(() => {
-        if (!drawRequested.current) {
-            drawRequested.current = true;
-            drawRafIdRef.current = requestAnimationFrame(() => {
-                drawRequested.current = false;
-                drawRafIdRef.current = null;
-                drawHeatmap();
-            });
+        if (candleTimes && candleTimes.length > 0) {
+            const len = candleTimes.length;
+            const lastTime = Number(candleTimes[len - 1] ?? -1);
+            if (
+                this._cachedCandlesSource === candleTimes &&
+                this._cachedCandlesLen === len &&
+                this._cachedLastCandleTime === lastTime
+            ) {
+                return this._cachedNormalizedTimes;
+            }
+            const normalized = candleTimes
+                .map((t) => Number(t))
+                .filter((t) => Number.isFinite(t))
+                .map((t) => (t < 10_000_000_000 ? t : Math.floor(t / 1000)));
+            this._cachedCandlesSource = candleTimes;
+            this._cachedCandlesLen = len;
+            this._cachedLastCandleTime = lastTime;
+            this._cachedNormalizedTimes = normalized;
+            return normalized;
         }
-    }, [drawHeatmap]);
 
+        return [];
+    }
+
+    attached(param: SeriesAttachedParameter<any, any>): void {
+        this.chart = param.chart as unknown as IChartApi;
+        this.series = param.series as unknown as ISeriesApi<'Candlestick'>;
+        this._requestUpdate = param.requestUpdate;
+        this.requestUpdate();
+    }
+
+    detached(): void {
+        this.chart = null;
+        this.series = null;
+        this._requestUpdate = undefined;
+    }
+
+    updateParams(params: {
+        data: GodModeState | null;
+        symbol?: string;
+        showBubbles: boolean;
+        intensityScale: number;
+        useTrailingLiquidity: boolean;
+        showTrueCVD: boolean;
+        showSpoofing: boolean;
+        showGEX: boolean;
+        showBookmap: boolean;
+        bookmapIntensity: number;
+        spoofingThreshold: number;
+        smartMoneyBias: boolean;
+        candlesRef?: React.MutableRefObject<any[]>;
+        candleTimes?: number[];
+    }): void {
+        this.data = params.data;
+        this.symbol = params.symbol;
+        this.showBubbles = params.showBubbles;
+        this.intensityScale = params.intensityScale;
+        this.useTrailingLiquidity = params.useTrailingLiquidity;
+        this.showTrueCVD = params.showTrueCVD;
+        this.showSpoofing = params.showSpoofing;
+        this.showGEX = params.showGEX;
+        this.showBookmap = params.showBookmap;
+        this.bookmapIntensity = params.bookmapIntensity;
+        this.spoofingThreshold = params.spoofingThreshold;
+        this.smartMoneyBias = params.smartMoneyBias;
+        this.candlesRef = params.candlesRef;
+        this.candleTimes = params.candleTimes;
+        this.requestUpdate();
+    }
+
+    requestUpdate(): void {
+        this._requestUpdate?.();
+    }
+
+    updateAllViews(): void {}
+
+    paneViews(): readonly IPrimitivePaneView[] {
+        return this._paneViews;
+    }
+}
+
+export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({
+    chart,
+    series,
+    data,
+    symbol,
+    showBubbles,
+    intensityScale,
+    useTrailingLiquidity,
+    showTrueCVD,
+    showSpoofing = true,
+    showGEX = true,
+    showBookmap = true,
+    bookmapIntensity = 50,
+    spoofingThreshold = 500000,
+    smartMoneyBias = false,
+    candlesRef,
+    candleTimes,
+}) => {
+    const primitiveRef = useRef<LiquidationPrimitive | null>(null);
+    const animRafIdRef = useRef<number | null>(null);
+    const scheduleAnimationRef = useRef<() => void>(() => {});
+    const lastSymbolRef = useRef<string | null>(null);
+
+    const showBubblesRef = useRef(showBubbles);
+    showBubblesRef.current = showBubbles;
+    const showTrueCVDRef = useRef(showTrueCVD);
+    showTrueCVDRef.current = showTrueCVD;
+
+    const bookmapHistoryRef = useRef<BookmapSnapshot[]>([]);
+    const bubblesRef = useRef<any[]>([]);
+    const icebergsRef = useRef<any[]>([]);
+    const crosshairRef = useRef<CrosshairHoverState>({ price: 0, x: 0, y: 0, visible: false });
+    const [activeIcebergsCount, setActiveIcebergsCount] = useState(0);
+
+    // Attach ISeriesPrimitive to candlestick series so all pan/zoom/scale redraws happen in the exact same canvas frame
     useEffect(() => {
         if (!chart || !series) return;
+
+        const primitive = new LiquidationPrimitive(
+            bubblesRef,
+            icebergsRef,
+            bookmapHistoryRef,
+            crosshairRef
+        );
+        primitiveRef.current = primitive;
+        series.attachPrimitive(primitive);
+
+        primitive.updateParams({
+            data,
+            symbol,
+            showBubbles,
+            intensityScale,
+            useTrailingLiquidity,
+            showTrueCVD,
+            showSpoofing,
+            showGEX,
+            showBookmap,
+            bookmapIntensity,
+            spoofingThreshold,
+            smartMoneyBias,
+            candlesRef,
+            candleTimes,
+        });
 
         let lastFrameTime = 0;
 
@@ -630,8 +919,7 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
             if (typeof document !== 'undefined' && document.hidden) return false;
             return (
                 (showBubblesRef.current && bubblesRef.current.length > 0) ||
-                (showTrueCVDRef.current && icebergsRef.current.length > 0) ||
-                (showBookmapRef.current && bookmapHistoryRef.current.length > 0)
+                (showTrueCVDRef.current && icebergsRef.current.length > 0)
             );
         };
 
@@ -643,7 +931,10 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
             const fpsInterval = 1000 / getThermalProfile().timings.liquidationFps;
             if (timestamp - lastFrameTime >= fpsInterval) {
                 lastFrameTime = timestamp;
-                requestDraw();
+                const now = Date.now();
+                bubblesRef.current = bubblesRef.current.filter((b) => now - b.createdAt < 60000);
+                icebergsRef.current = icebergsRef.current.filter((b) => now - b.createdAt < 15000);
+                primitive.requestUpdate();
             }
             if (hasActiveAnimations()) {
                 animRafIdRef.current = requestAnimationFrame(animate);
@@ -659,57 +950,39 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
         };
 
         scheduleAnimationRef.current = scheduleAnimation;
+        scheduleAnimation();
 
-        const handleRangeOrSizeChange = () => {
-            requestDraw();
-            scheduleAnimation();
+        const crosshairHandler = (param: any) => {
+            if (!param.point || !param.time) {
+                if (crosshairRef.current.visible) {
+                    crosshairRef.current.visible = false;
+                    primitive.requestUpdate();
+                }
+            } else {
+                crosshairRef.current = {
+                    price: Number(series.coordinateToPrice(param.point.y)) || 0,
+                    x: param.point.x,
+                    y: param.point.y,
+                    visible: true,
+                };
+                primitive.requestUpdate();
+            }
         };
 
         const handleVisibilityChange = () => {
             if (typeof document !== 'undefined' && !document.hidden) {
-                requestDraw();
+                primitive.requestUpdate();
                 scheduleAnimation();
             }
         };
 
-        requestDraw();
-        scheduleAnimation();
-
-        const timeScale = chart.timeScale();
-        if (typeof timeScale.subscribeVisibleTimeRangeChange === 'function') {
-            timeScale.subscribeVisibleTimeRangeChange(handleRangeOrSizeChange);
-        }
-        if (typeof timeScale.subscribeSizeChange === 'function') {
-            timeScale.subscribeSizeChange(handleRangeOrSizeChange);
-        }
-        
-        const crosshairHandler = (param: any) => {
-            if (!param.point || !param.time) {
-                crosshairRef.current.visible = false;
-            } else {
-                crosshairRef.current = {
-                    price: series.coordinateToPrice(param.point.y) || 0,
-                    x: param.point.x,
-                    y: param.point.y,
-                    visible: true
-                };
-            }
-            requestDraw();
-        };
         chart.subscribeCrosshairMove(crosshairHandler);
-
         if (typeof document !== 'undefined') {
             document.addEventListener('visibilitychange', handleVisibilityChange);
         }
 
         return () => {
             scheduleAnimationRef.current = () => {};
-            if (typeof timeScale.unsubscribeVisibleTimeRangeChange === 'function') {
-                timeScale.unsubscribeVisibleTimeRangeChange(handleRangeOrSizeChange);
-            }
-            if (typeof timeScale.unsubscribeSizeChange === 'function') {
-                timeScale.unsubscribeSizeChange(handleRangeOrSizeChange);
-            }
             chart.unsubscribeCrosshairMove(crosshairHandler);
             if (typeof document !== 'undefined') {
                 document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -718,29 +991,136 @@ export const LiquidationRenderer: React.FC<LiquidationRendererProps> = ({ chart,
                 cancelAnimationFrame(animRafIdRef.current);
                 animRafIdRef.current = null;
             }
-            if (drawRafIdRef.current !== null) {
-                cancelAnimationFrame(drawRafIdRef.current);
-                drawRafIdRef.current = null;
-                drawRequested.current = false;
+            try {
+                series.detachPrimitive(primitive);
+            } catch {
+                // Ignore if chart/series already disposed
             }
+            primitiveRef.current = null;
         };
-    }, [chart, series, requestDraw, showBubbles, showTrueCVD, showBookmap]);
+    }, [chart, series]);
 
-    // Force redraw and wake animation loop when data changes
+    // Ingest new WebSocket snapshots (bubbles, icebergs, Bookmap history) only when data updates
     useEffect(() => {
-        requestDraw();
+        if (!data) {
+            bookmapHistoryRef.current = [];
+            bubblesRef.current = [];
+            icebergsRef.current = [];
+            setActiveIcebergsCount(0);
+            return;
+        }
+
+        if (data.symbol && lastSymbolRef.current && lastSymbolRef.current !== data.symbol) {
+            bookmapHistoryRef.current = [];
+            bubblesRef.current = [];
+            icebergsRef.current = [];
+            setActiveIcebergsCount(0);
+        }
+        if (data.symbol) {
+            lastSymbolRef.current = data.symbol;
+        }
+
+        const now = Date.now();
+
+        if (showBookmap && data.orderbook_depth && data.orderbook_depth.length > 0) {
+            const lastSnapshot = bookmapHistoryRef.current[bookmapHistoryRef.current.length - 1];
+            if (!lastSnapshot || now - lastSnapshot.time >= 250) {
+                bookmapHistoryRef.current.push({
+                    time: now,
+                    depth: data.orderbook_depth.map((d) => ({ price: d.price, volume: d.volume })),
+                });
+                if (bookmapHistoryRef.current.length > 500) {
+                    bookmapHistoryRef.current = bookmapHistoryRef.current.slice(-480);
+                }
+            }
+        }
+
+        if (showBubbles && data.whale_feed) {
+            data.whale_feed.forEach((wf) => {
+                if (wf.price && wf.timestamp) {
+                    const existing = bubblesRef.current.find(
+                        (b) => b.timestamp === wf.timestamp && b.price === wf.price
+                    );
+                    if (!existing) {
+                        bubblesRef.current.push({ ...wf, createdAt: now });
+                    }
+                }
+            });
+            bubblesRef.current = bubblesRef.current.filter((b) => now - b.createdAt < 60000);
+        }
+
+        if (showTrueCVD && data.iceberg_events) {
+            data.iceberg_events.forEach((ev) => {
+                if (ev.price && ev.timestamp) {
+                    const existing = icebergsRef.current.find(
+                        (b) => b.timestamp === ev.timestamp && b.price === ev.price
+                    );
+                    if (!existing) {
+                        icebergsRef.current.push({ ...ev, createdAt: now });
+                    }
+                }
+            });
+            icebergsRef.current = icebergsRef.current.filter((b) => now - b.createdAt < 15000);
+            setActiveIcebergsCount(icebergsRef.current.length);
+        } else {
+            setActiveIcebergsCount(0);
+        }
+    }, [data, showBubbles, showTrueCVD, showBookmap]);
+
+    // Clear local animation buffers immediately when symbol changes
+    useEffect(() => {
+        if (symbol && lastSymbolRef.current && lastSymbolRef.current !== symbol) {
+            bookmapHistoryRef.current = [];
+            bubblesRef.current = [];
+            icebergsRef.current = [];
+            setActiveIcebergsCount(0);
+        }
+        if (symbol) {
+            lastSymbolRef.current = symbol;
+        }
+    }, [symbol]);
+
+    // Sync primitive params & trigger synchronous chart repaint on prop/data changes
+    useEffect(() => {
+        if (!primitiveRef.current) return;
+        primitiveRef.current.updateParams({
+            data,
+            symbol,
+            showBubbles,
+            intensityScale,
+            useTrailingLiquidity,
+            showTrueCVD,
+            showSpoofing,
+            showGEX,
+            showBookmap,
+            bookmapIntensity,
+            spoofingThreshold,
+            smartMoneyBias,
+            candlesRef,
+            candleTimes,
+        });
         scheduleAnimationRef.current();
-    }, [data, requestDraw]);
+    }, [
+        data,
+        symbol,
+        showBubbles,
+        intensityScale,
+        useTrailingLiquidity,
+        showTrueCVD,
+        showSpoofing,
+        showGEX,
+        showBookmap,
+        bookmapIntensity,
+        spoofingThreshold,
+        smartMoneyBias,
+        candlesRef,
+        candleTimes,
+    ]);
 
     return (
         <>
-            <canvas
-                ref={canvasRef}
-                className="absolute top-0 left-0 pointer-events-none"
-                style={{ zIndex: 5 }}
-            />
             {showTrueCVD && data && data.true_cvd !== undefined && (
-                <TrueCVDDraggableHUD data={data} icebergsCount={icebergsRef.current.length} />
+                <TrueCVDDraggableHUD data={data} icebergsCount={activeIcebergsCount} />
             )}
         </>
     );
@@ -761,7 +1141,7 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
                     return parsed;
                 }
             }
-        } catch (e) {}
+        } catch {}
         return { x: 0, y: 0 };
     });
 
@@ -769,7 +1149,7 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
     const dragRef = useRef<{ startX: number; startY: number; initX: number; initY: number } | null>(null);
 
     const onPointerDown = (e: React.PointerEvent) => {
-        if (e.button !== 0) return; // Left click only
+        if (e.button !== 0) return;
         setIsDragging(true);
         dragRef.current = {
             startX: e.clientX,
@@ -800,13 +1180,13 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
             };
             try {
                 localStorage.setItem('true_cvd_hud_pos', JSON.stringify(finalPos));
-            } catch (err) {}
+            } catch {}
         }
         setIsDragging(false);
         dragRef.current = null;
         try {
             e.currentTarget.releasePointerCapture(e.pointerId);
-        } catch (err) {}
+        } catch {}
     };
 
     const resetPosition = (e: React.MouseEvent) => {
@@ -814,14 +1194,15 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
         setPosition({ x: 0, y: 0 });
         try {
             localStorage.removeItem('true_cvd_hud_pos');
-        } catch (err) {}
+        } catch {}
     };
 
     const cvd = data.true_cvd ?? 0;
     const cvdColor = cvd > 0 ? 'text-emerald-400' : cvd < 0 ? 'text-rose-400' : 'text-slate-200';
-    const cvdVal = Math.abs(cvd) > 1000000
-        ? (cvd / 1000000).toFixed(2) + 'M'
-        : (cvd / 1000).toFixed(0) + 'k';
+    const cvdVal =
+        Math.abs(cvd) >= 1000000
+            ? (cvd / 1000000).toFixed(2) + 'M'
+            : (cvd / 1000).toFixed(0) + 'k';
     const activeWalls = icebergsCount || data.iceberg_events?.length || 0;
 
     return (
@@ -845,7 +1226,6 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
             title="Drag with mouse to reposition anywhere • Double-click to reset to bottom-left"
         >
             <div className="flex items-center gap-2.5 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border border-purple-500/40 hover:border-purple-400/80 rounded-lg px-3 py-2 shadow-xl dark:shadow-2xl transition-colors">
-                {/* 6-dot drag grip handle */}
                 <div className="flex flex-col gap-0.5 opacity-40 hover:opacity-80 transition-opacity">
                     <div className="flex gap-0.5">
                         <span className="w-1 h-1 bg-purple-400 rounded-full" />
@@ -861,7 +1241,6 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
                     </div>
                 </div>
 
-                {/* Info block */}
                 <div className="flex flex-col">
                     <div className="flex items-center gap-1.5">
                         <span className="text-xs leading-none">🛡️</span>
@@ -871,12 +1250,12 @@ export const TrueCVDDraggableHUD: React.FC<TrueCVDDraggableHUDProps> = ({ data, 
                     </div>
                     <div className="flex items-baseline gap-2 mt-1">
                         <span className={`text-sm font-black font-mono tracking-tight leading-none ${cvdColor}`}>
-                            {cvd > 0 ? '+' : ''}{cvdVal}
+                            {cvd > 0 ? '+' : ''}
+                            {cvdVal}
                         </span>
                     </div>
                 </div>
 
-                {/* Active Icebergs badge */}
                 {activeWalls > 0 && (
                     <div className="flex items-center gap-1 bg-purple-500/20 border border-purple-500/40 rounded px-1.5 py-0.5 ml-1 animate-pulse">
                         <span className="text-[10px] leading-none">🧊</span>

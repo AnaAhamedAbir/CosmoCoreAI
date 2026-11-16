@@ -58,6 +58,18 @@ export const sanitizeIndicatorSettings = (settings: IndicatorSettings): Indicato
         lsaShowHistoricalZones: settings.lsaShowHistoricalZones !== false,
         lsaShowHudSummary: settings.lsaShowHudSummary !== false,
         lsaEnableAlerts: Boolean(settings.lsaEnableAlerts),
+        liquidationHeatmapIntensity:
+            Number.isFinite(Number(settings.liquidationHeatmapIntensity)) && Number(settings.liquidationHeatmapIntensity) >= 10
+                ? Math.min(100, Number(settings.liquidationHeatmapIntensity))
+                : 75,
+        liquidationBookmapIntensity:
+            Number.isFinite(Number(settings.liquidationBookmapIntensity)) && Number(settings.liquidationBookmapIntensity) >= 10
+                ? Math.min(100, Number(settings.liquidationBookmapIntensity))
+                : 50,
+        liquidationSpoofingThreshold:
+            Number.isFinite(Number(settings.liquidationSpoofingThreshold)) && Number(settings.liquidationSpoofingThreshold) >= 100000
+                ? Number(settings.liquidationSpoofingThreshold)
+                : 500000,
     };
 };
 
@@ -222,7 +234,7 @@ export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
         quantumVolatilityFilter: true,
         quantumVolThreshold: 0.2,
         showLiquidationHeatmap: false,
-        liquidationHeatmapIntensity: 1.0,
+        liquidationHeatmapIntensity: 75,
         liquidationShowBubbles: true,
         liquidationShowSignalArrow: true,
         liquidationSmartMoneyBias: true,

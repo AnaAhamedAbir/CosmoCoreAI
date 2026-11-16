@@ -20,7 +20,6 @@ import { VolumeProfileWidget, VPVRData } from '../../components/features/market/
 import { CVDChart, CVDDataPoint } from '../../components/features/market/CVDChart';
 import { FootprintRenderer, FootprintCandleData, FootprintDataTick } from '../../components/features/market/FootprintRenderer';
 import { GodModeHUD } from '../../components/features/market/GodModeHUD';
-import { LiquidationHeatmapGodModeRenderer } from '../../components/features/market/LiquidationHeatmapGodModeRenderer';
 import { LiquidationRenderer } from '../../components/features/market/LiquidationRenderer';
 import { SmartMoneyHUD } from '../../components/features/market/SmartMoneyHUD';
 import { useGodModeData } from '../../hooks/useGodModeData';
@@ -466,6 +465,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         chartRef.current = chart;
         candlestickSeriesRef.current = candlestickSeries;
+        setCandlesReadyTick(t => t + 1);
         
         chart.subscribeCrosshairMove((param) => {
             if (crosshairBtnRef.current && crosshairBtnRef.current.matches(':hover')) {
@@ -1860,7 +1860,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             }
         }
         safeSetMarkers();
-    }, [godModeData, indicatorSettings.showLiquidationHeatmap, indicatorSettings.liquidationShowSignalArrow]);
+    }, [godModeData, indicatorSettings.showLiquidationHeatmap, indicatorSettings.liquidationShowSignalArrow, candlesReadyTick]);
 
     // ── SMC Flow / Aether Flow Marker Rendering Effect ──
     useEffect(() => {
@@ -3445,7 +3445,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     </button>
                 )}
                 <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden" style={{ right: 60, bottom: 26 }}>
-                    <GodModeHUD data={godModeData} visible={indicatorSettings.showLiquidationHeatmap} />
+                    <GodModeHUD data={godModeData} visible={Boolean(indicatorSettings.showLiquidationHeatmap && isActiveChart)} />
                     {indicatorSettings.showDualEngine && <DualEngineDashboard settings={indicatorSettings} candles={allCandlesRef.current} currentPrice={currentPrice} />}
                     {indicatorSettings.showWatchlistScanner && <WatchlistScanner settings={indicatorSettings} exchange={exchange} interval={interval} />}
                     {/* ── Advanced Metrics ── */}
@@ -3470,7 +3470,6 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     {indicatorSettings.showAetherFlow && <AetherFlowRenderer chart={chartRef.current} series={candlestickSeriesRef.current!} data={aetherFlowData} settings={indicatorSettings} />}
 
                     {showHeatmapOverlay && <LiquidityHeatmapRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={realHeatmapData} />}
-                    {indicatorSettings.showLiquidationHeatmap && <LiquidationHeatmapGodModeRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={godModeData} visible={indicatorSettings.showLiquidationHeatmap} />}
                     {indicatorSettings.showAutoFibo && <FibonacciCloudRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={fiboData} />}
                     {indicatorSettings.showBB && <BollingerBandsRenderer chart={chartRef.current} series={candlestickSeriesRef.current} data={bbData} visible={indicatorSettings.showBB} />}
                     {indicatorSettings.showMACD && (
@@ -3500,6 +3499,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             chart={chartRef.current}
                             series={candlestickSeriesRef.current}
                             data={godModeData}
+                            symbol={symbol}
                             showBubbles={indicatorSettings.liquidationShowBubbles}
                             intensityScale={indicatorSettings.liquidationHeatmapIntensity}
                             useTrailingLiquidity={indicatorSettings.liquidationShowTrailingCloud}
@@ -3510,10 +3510,11 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             bookmapIntensity={indicatorSettings.liquidationBookmapIntensity}
                             spoofingThreshold={indicatorSettings.liquidationSpoofingThreshold}
                             smartMoneyBias={indicatorSettings.liquidationSmartMoneyBias}
+                            candlesRef={allCandlesRef}
                         />
                     )}
-                    {indicatorSettings.showLiquidationHeatmap && indicatorSettings.liquidationShowSmartMoneyHUD && godModeData?.smart_trajectory && (
-                        <SmartMoneyHUD data={godModeData.smart_trajectory as any} currentPrice={godModeData.current_price} icebergEvents={godModeData.iceberg_events} magnetZones={godModeData.magnet_zones} visible={true} />
+                    {indicatorSettings.showLiquidationHeatmap && isActiveChart && indicatorSettings.liquidationShowSmartMoneyHUD && godModeData?.smart_trajectory && (
+                        <SmartMoneyHUD symbol={symbol} data={godModeData.smart_trajectory as any} currentPrice={godModeData.current_price} icebergEvents={godModeData.iceberg_events} magnetZones={godModeData.magnet_zones} visible={true} />
                     )}
                     {indicatorSettings.showSessions && (
                         <SessionsRenderer

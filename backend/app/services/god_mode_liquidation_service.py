@@ -24,12 +24,28 @@ class GodModeService:
         self._running = False
         self._callbacks: List[Callable[[Dict[str, Any]], Awaitable[None]]] = []
         self._lock = asyncio.Lock()
+        self._idle_stop_task: asyncio.Task | None = None
         
         self.exchanges: Dict[str, ccxtpro.Exchange] = {}
         
-        # Centralized State Object that will be broadcasted every second
-        self.state = {
-            "symbol": "BTC/USDT",
+        # Centralized State Object that will be broadcasted continuously
+        self.state = self._initial_state("BTC/USDT")
+        self._last_prices = {"binance": 0.0, "bybit": 0.0, "okx": 0.0, "bitget": 0.0}
+        self._max_volumes = {}
+        # Internal states for calculations
+        self._smoothed_zones_dict = {}
+        self._trailing_long = 0.0
+        self._trailing_short = 0.0
+        self._liq_history_1m = []
+        self._smart_vol = 0.0
+        self._dumb_vol = 0.0
+        self._funding_rate = 0.0
+        self._active_tasks = []
+
+    @staticmethod
+    def _initial_state(symbol: str = "BTC/USDT") -> Dict[str, Any]:
+        return {
+            "symbol": symbol,
             "vulnerability": [],
             "pain_threshold": {"level": 0, "status": "NORMAL", "value": 0},
             "smart_money": 50,
@@ -40,34 +56,44 @@ class GodModeService:
             "smoothed_zones": [],
             "spoofed_zones": [],
             "cascade_probs": [],
+            "orderbook_depth": [],
             "trailing_liquidity": {"long_level": 0, "short_level": 0, "long_intensity": 0, "short_intensity": 0},
             "ai_trajectory": {"target_price": 0, "strength": 0, "direction": "NEUTRAL"},
             "smart_trajectory": {"target_price": 0, "strength": 0, "direction": "NEUTRAL"},
             "current_price": 0,
             "true_cvd": 0,
             "iceberg_events": [],
-            "arbitrage": []
+            "arbitrage": [],
+            "gex_data": None,
         }
-        self._last_prices = {}
-        self._max_volumes = {}    
-        # Internal states for calculations
-        self._smoothed_zones_dict = {}
-        self._trailing_long = 0.0
-        self._trailing_short = 0.0
-        self._liq_history_1m = []
-        self._smart_vol = 0.0
-        self._dumb_vol = 0.0
-        self._funding_rate = 0.0
-        self._active_tasks = []
-        self._last_prices = {"binance": 0.0, "bybit": 0.0, "okx": 0.0, "bitget": 0.0}
 
     def register_callback(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]):
+        if self._idle_stop_task and not self._idle_stop_task.done():
+            self._idle_stop_task.cancel()
+            self._idle_stop_task = None
         if callback not in self._callbacks:
             self._callbacks.append(callback)
 
     def remove_callback(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]):
         if callback in self._callbacks:
             self._callbacks.remove(callback)
+        if not self._callbacks and self._running:
+            try:
+                loop = asyncio.get_running_loop()
+                if self._idle_stop_task and not self._idle_stop_task.done():
+                    self._idle_stop_task.cancel()
+                self._idle_stop_task = loop.create_task(self._schedule_idle_stop())
+            except RuntimeError:
+                pass
+
+    async def _schedule_idle_stop(self):
+        try:
+            await asyncio.sleep(5)
+            if not self._callbacks and self._running:
+                logger.info("GodMode: No active WebSocket subscribers; stopping background streams.")
+                await self.stop()
+        except asyncio.CancelledError:
+            pass
 
     async def _handle_true_cvd_event(self, payload: Dict[str, Any]):
         """Receives updates from the modular True CVD service"""
@@ -133,13 +159,35 @@ class GodModeService:
                 logger.debug(f"GodMode funding err: {e}")
             await asyncio.sleep(60)
 
+    async def _resolve_exchange_symbol(self, exchange: ccxtpro.Exchange, symbol: str) -> str:
+        """Resolves BTC/USDT vs BTC/USDT:USDT linear swap symbol format for each exchange."""
+        try:
+            if not getattr(exchange, "markets", None):
+                await exchange.load_markets()
+            markets = exchange.markets or {}
+            if symbol in markets:
+                return symbol
+            base_pair = symbol.split(":")[0]
+            candidates = [
+                f"{base_pair}:USDT",
+                base_pair,
+                f"{base_pair}:USD",
+            ]
+            for cand in candidates:
+                if cand in markets:
+                    return cand
+        except Exception as e:
+            logger.debug(f"GodMode symbol resolution fallback for {symbol}: {e}")
+        return symbol
+
     async def _watch_liquidations(self, ex_id: str, symbol: str):
         exchange = await self._init_exchange(ex_id)
-        logger.info(f"GodMode: Started {ex_id} liquidation stream for {symbol}")
+        ex_symbol = await self._resolve_exchange_symbol(exchange, symbol)
+        logger.info(f"GodMode: Started {ex_id} liquidation stream for {ex_symbol}")
         
         while self._running:
             try:
-                liquidations = await exchange.watch_liquidations(symbol)
+                liquidations = await exchange.watch_liquidations(ex_symbol)
                 if not isinstance(liquidations, list):
                     liquidations = [liquidations]
 
@@ -156,9 +204,10 @@ class GodModeService:
                 
     async def _watch_ticker_for_arb(self, ex_id: str, symbol: str):
         exchange = await self._init_exchange(ex_id)
+        ex_symbol = await self._resolve_exchange_symbol(exchange, symbol)
         while self._running:
             try:
-                ticker = await exchange.watch_ticker(symbol)
+                ticker = await exchange.watch_ticker(ex_symbol)
                 price = getattr(ticker, 'last', ticker.get('last'))
                 if price:
                     self._last_prices[ex_id] = float(price)
@@ -251,17 +300,21 @@ class GodModeService:
     async def _watch_orderbook_loop(self, ex_id: str, symbol: str):
         """Scans real-time orderbook to find high-leverage clusters (Predictive Heatmap)"""
         exchange = await self._init_exchange(ex_id)
-        logger.info(f"GodMode: Started {ex_id} orderbook stream for {symbol} heatmap")
+        ex_symbol = await self._resolve_exchange_symbol(exchange, symbol)
+        logger.info(f"GodMode: Started {ex_id} orderbook stream for {ex_symbol} heatmap")
         
         while self._running:
             try:
                 # Get L2 Depth
-                orderbook = await exchange.watch_order_book(symbol)
+                orderbook = await exchange.watch_order_book(ex_symbol)
+                bids = orderbook.get('bids', []) if orderbook else []
+                asks = orderbook.get('asks', []) if orderbook else []
                 cp = self.state['current_price']
+                if cp <= 0 and bids and asks:
+                    cp = (float(bids[0][0]) + float(asks[0][0])) / 2.0
+                    self.state['current_price'] = cp
                 
                 if cp > 0 and orderbook:
-                    bids = orderbook.get('bids', [])
-                    asks = orderbook.get('asks', [])
                     
                     if bids and asks:
                         # Focus on liquidity within 5% of current price (100x and 50x liquidations)
@@ -272,51 +325,55 @@ class GodModeService:
                             await asyncio.sleep(1)
                             continue
                             
-                        # Find top 5 liquidity spikes (volume) on both sides
-                        top_bids = sorted(bids_within_range, key=lambda x: x[1], reverse=True)[:5]
-                        top_asks = sorted(asks_within_range, key=lambda x: x[1], reverse=True)[:5]
+                        # Find top 5 liquidity spikes (USD notional volume) on both sides
+                        top_bids = sorted(bids_within_range, key=lambda x: float(x[0]) * float(x[1]), reverse=True)[:5]
+                        top_asks = sorted(asks_within_range, key=lambda x: float(x[0]) * float(x[1]), reverse=True)[:5]
                         
-                        max_bid_vol = max(top_bids, key=lambda x: x[1])[1] if top_bids else 1
-                        max_ask_vol = max(top_asks, key=lambda x: x[1])[1] if top_asks else 1
+                        max_bid_vol = max((float(b[0]) * float(b[1]) for b in top_bids), default=1.0) or 1.0
+                        max_ask_vol = max((float(a[0]) * float(a[1]) for a in top_asks), default=1.0) or 1.0
                         
                         magnet_zones = []
                         cascade_probs = []
                         
-                        # Process Asks (Short Liquidations / Resistance)
+                        # Process Asks (Short Liquidations / Resistance) - volume in USD
                         for ask in top_asks:
-                            price, vol = float(ask[0]), float(ask[1])
-                            intensity = min(100, int((vol / max_ask_vol) * 100))
+                            price, qty = float(ask[0]), float(ask[1])
+                            vol_usd = price * qty
+                            intensity = min(100, int((vol_usd / max_ask_vol) * 100))
                             if intensity > 30: # Only add significant clusters
-                                magnet_zones.append({"price": price, "intensity": intensity, "volume": vol})
+                                magnet_zones.append({"price": price, "intensity": intensity, "volume": vol_usd})
                                 dist = abs(price - cp) / cp
                                 prob = min(99, int((1 - (dist * 20)) * intensity))
-                                cascade_probs.append({"price": price, "prob": max(10, prob), "volume": vol})
+                                cascade_probs.append({"price": price, "prob": max(10, prob), "volume": vol_usd})
                                 
-                        # Process Bids (Long Liquidations / Support)
+                        # Process Bids (Long Liquidations / Support) - volume in USD
                         for bid in top_bids:
-                            price, vol = float(bid[0]), float(bid[1])
-                            intensity = min(100, int((vol / max_bid_vol) * 100))
+                            price, qty = float(bid[0]), float(bid[1])
+                            vol_usd = price * qty
+                            intensity = min(100, int((vol_usd / max_bid_vol) * 100))
                             if intensity > 30:
-                                magnet_zones.append({"price": price, "intensity": intensity, "volume": vol})
+                                magnet_zones.append({"price": price, "intensity": intensity, "volume": vol_usd})
                                 dist = abs(price - cp) / cp
                                 prob = min(99, int((1 - (dist * 20)) * intensity))
-                                cascade_probs.append({"price": price, "prob": max(10, prob), "volume": vol})
+                                cascade_probs.append({"price": price, "prob": max(10, prob), "volume": vol_usd})
                                 
-                        # --- Time-Weighted Liquidity Smoothing (TWLS) ---
+                        # --- Time-Weighted Liquidity Smoothing (TWLS) in USD ---
                         ALPHA = 0.15 # EMA Smoothing factor
                         current_volumes = {}
                         for ask in top_asks:
-                            p, v = float(ask[0]), float(ask[1])
-                            if v > max_ask_vol * 0.1: current_volumes[p] = v
+                            p, q = float(ask[0]), float(ask[1])
+                            v_usd = p * q
+                            if v_usd > max_ask_vol * 0.1: current_volumes[p] = v_usd
                         for bid in top_bids:
-                            p, v = float(bid[0]), float(bid[1])
-                            if v > max_bid_vol * 0.1: current_volumes[p] = v
+                            p, q = float(bid[0]), float(bid[1])
+                            v_usd = p * q
+                            if v_usd > max_bid_vol * 0.1: current_volumes[p] = v_usd
                             
-                        for p, v in current_volumes.items():
+                        for p, v_usd in current_volumes.items():
                             if p in self._smoothed_zones_dict:
-                                self._smoothed_zones_dict[p] = (v * ALPHA) + (self._smoothed_zones_dict[p] * (1 - ALPHA))
+                                self._smoothed_zones_dict[p] = (v_usd * ALPHA) + (self._smoothed_zones_dict[p] * (1 - ALPHA))
                             else:
-                                self._smoothed_zones_dict[p] = v
+                                self._smoothed_zones_dict[p] = v_usd
                                 
                         keys_to_remove = []
                         for p in self._smoothed_zones_dict:
@@ -327,11 +384,11 @@ class GodModeService:
                         for k in keys_to_remove: del self._smoothed_zones_dict[k]
                         
                         smoothed_zones = []
-                        for p, v in self._smoothed_zones_dict.items():
+                        for p, v_usd in self._smoothed_zones_dict.items():
                             ref_max = max_ask_vol if p > cp else max_bid_vol
-                            intensity = min(100, int((v / (ref_max + 1)) * 100))
+                            intensity = min(100, int((v_usd / (ref_max + 1)) * 100))
                             if intensity > 20:
-                                smoothed_zones.append({"price": p, "intensity": intensity, "volume": v})
+                                smoothed_zones.append({"price": p, "intensity": intensity, "volume": v_usd})
                                
                                 
                         # Calculate Magnetic Liquidity Pull Vector (AI Trajectory) - RAW
@@ -529,75 +586,102 @@ class GodModeService:
 
     async def start(self, symbol: str):
         """Initialize the streams for a specific symbol"""
-        if self._running:
-            if self.state.get("symbol") == symbol:
-                return
-            logger.info(f"GodMode: Switching symbol from {self.state.get('symbol')} to {symbol}")
-            await self.stop()
+        async with self._lock:
+            if self._idle_stop_task and not self._idle_stop_task.done():
+                self._idle_stop_task.cancel()
+                self._idle_stop_task = None
+
+            if self._running:
+                if self.state.get("symbol") == symbol:
+                    return
+                logger.info(f"GodMode: Switching symbol from {self.state.get('symbol')} to {symbol}")
+                await self._stop_locked()
+                
+            self._running = True
+            self.state = self._initial_state(symbol)
             
-        self._running = True
-        self.state["symbol"] = symbol
-        
-        logger.info(f"GodMode Pipeline initializing for {symbol}")
-        
-        # Start core loops
-        self._active_tasks.append(asyncio.create_task(self._broadcast_loop()))
-        self._active_tasks.append(asyncio.create_task(self._calculate_heuristics_loop(symbol)))
-        self._active_tasks.append(asyncio.create_task(self._scan_global_vulnerabilities()))
-        self._active_tasks.append(asyncio.create_task(self._fetch_funding_loop(symbol)))
-        
-        # Start multi-exchange hooks
-        self._active_tasks.append(asyncio.create_task(self._watch_liquidations('binance', symbol)))
-        self._active_tasks.append(asyncio.create_task(self._watch_liquidations('bybit', symbol)))
-        self._active_tasks.append(asyncio.create_task(self._watch_liquidations('okx', symbol)))
-        self._active_tasks.append(asyncio.create_task(self._watch_liquidations('bitget', symbol)))
-        
-        self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('binance', symbol)))
-        self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('bybit', symbol)))
-        self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('okx', symbol)))
-        self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('bitget', symbol)))
-        
-        # Start real orderbook heatmap engine
-        self._active_tasks.append(asyncio.create_task(self._watch_orderbook_loop('binance', symbol)))
-        
-        # Integrate Modular True CVD Service
-        true_cvd_service.register_callback(self._handle_true_cvd_event)
-        self._active_tasks.append(asyncio.create_task(true_cvd_service.start(symbol)))
-        
-        # Integrate Modular GEX Options Service
-        gex_options_service.register_callback(self._handle_gex_event)
-        self._active_tasks.append(asyncio.create_task(gex_options_service.start(symbol)))
+            logger.info(f"GodMode Pipeline initializing for {symbol}")
+            
+            # Start core loops
+            self._active_tasks.append(asyncio.create_task(self._broadcast_loop()))
+            self._active_tasks.append(asyncio.create_task(self._calculate_heuristics_loop(symbol)))
+            self._active_tasks.append(asyncio.create_task(self._scan_global_vulnerabilities()))
+            self._active_tasks.append(asyncio.create_task(self._fetch_funding_loop(symbol)))
+            
+            # Start multi-exchange hooks
+            self._active_tasks.append(asyncio.create_task(self._watch_liquidations('binance', symbol)))
+            self._active_tasks.append(asyncio.create_task(self._watch_liquidations('bybit', symbol)))
+            self._active_tasks.append(asyncio.create_task(self._watch_liquidations('okx', symbol)))
+            self._active_tasks.append(asyncio.create_task(self._watch_liquidations('bitget', symbol)))
+            
+            self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('binance', symbol)))
+            self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('bybit', symbol)))
+            self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('okx', symbol)))
+            self._active_tasks.append(asyncio.create_task(self._watch_ticker_for_arb('bitget', symbol)))
+            
+            # Start real orderbook heatmap engine
+            self._active_tasks.append(asyncio.create_task(self._watch_orderbook_loop('binance', symbol)))
+            
+            # Integrate Modular True CVD Service
+            true_cvd_service.register_callback(self._handle_true_cvd_event)
+            self._active_tasks.append(asyncio.create_task(true_cvd_service.start(symbol)))
+            
+            # Integrate Modular GEX Options Service
+            gex_options_service.register_callback(self._handle_gex_event)
+            self._active_tasks.append(asyncio.create_task(gex_options_service.start(symbol)))
 
     async def stop(self):
-        """Cleanup resources"""
+        """Cleanup resources safely under lock"""
+        async with self._lock:
+            await self._stop_locked()
+
+    async def _stop_locked(self):
         self._running = False
-        for task in self._active_tasks:
+        tasks = list(self._active_tasks)
+        self._active_tasks.clear()
+        for task in tasks:
             task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
             
-        for name, ex in self.exchanges.items():
-            await ex.close()
+        for name, ex in list(self.exchanges.items()):
+            try:
+                await ex.close()
+            except Exception as e:
+                logger.debug(f"GodMode exchange close err ({name}): {e}")
+        self.exchanges.clear()
             
-        await true_cvd_service.stop()
+        try:
+            await true_cvd_service.stop()
+        except Exception as e:
+            logger.debug(f"TrueCVD stop err: {e}")
         try:
             true_cvd_service.remove_callback(self._handle_true_cvd_event)
         except Exception:
             pass
             
-        await gex_options_service.stop()
+        try:
+            await gex_options_service.stop()
+        except Exception as e:
+            logger.debug(f"GEX stop err: {e}")
         try:
             gex_options_service.remove_callback(self._handle_gex_event)
         except Exception:
             pass
-            
-        self._active_tasks.clear()
-        self.exchanges.clear()
+
+        smart_money_trajectory_service.reset()
         
-        # Reset memory
+        # Reset internal memory and state so stale symbol data (like GEX walls) never leaks
         self._liq_history_1m = []
-        self._smart_vol = 0
-        self._dumb_vol = 0
-        self.state["whale_feed"] = []
-        self.state["iceberg_events"] = []
+        self._smoothed_zones_dict = {}
+        self._max_volumes = {}
+        self._trailing_long = 0.0
+        self._trailing_short = 0.0
+        self._last_prices = {"binance": 0.0, "bybit": 0.0, "okx": 0.0, "bitget": 0.0}
+        self._funding_rate = 0.0
+        self._smart_vol = 0.0
+        self._dumb_vol = 0.0
+        self.state = self._initial_state(self.state.get("symbol", "BTC/USDT"))
         self.state["spoofed_zones"] = []
         self.state["gex_data"] = None
         self.state["orderbook_depth"] = []

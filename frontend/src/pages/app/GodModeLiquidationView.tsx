@@ -24,6 +24,8 @@ const GodModeLiquidationView: React.FC = () => {
     const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
     const markersPluginRef = useRef<any>(null);
     const lastCandleTimeRef = useRef<any>(null);
+    const candlesRef = useRef<any[]>([]);
+    const [, setChartReadyTick] = useState(0);
 
     // Initialize Lightweight Chart
     useEffect(() => {
@@ -47,6 +49,7 @@ const GodModeLiquidationView: React.FC = () => {
 
         chartRef.current = chart;
         seriesRef.current = series;
+        setChartReadyTick((t) => t + 1);
 
         // Fetch basic history to make the chart look alive
         const fetchHistory = async () => {
@@ -76,7 +79,9 @@ const GodModeLiquidationView: React.FC = () => {
                     if (formatted.length > 0) {
                         lastCandleTimeRef.current = formatted[formatted.length - 1].time;
                     }
+                    candlesRef.current = formatted;
                     series.setData(formatted);
+                    setChartReadyTick((t) => t + 1);
                 }
             } catch (e) {
                 console.error("Failed to fetch history for GodMode chart", e);
@@ -296,9 +301,9 @@ const GodModeLiquidationView: React.FC = () => {
 
                              <div className="flex-1 relative bg-slate-50/70 dark:bg-black/50">
                                   <div ref={chartContainerRef} className="absolute inset-0"></div>
-                                  <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} showBubbles={indicatorSettings.liquidationShowBubbles} intensityScale={100} useTrailingLiquidity={trailingLiquidityEnabled} showTrueCVD={true} showSpoofing={true} showGEX={true} showBookmap={true} bookmapIntensity={50} spoofingThreshold={500000} smartMoneyBias={indicatorSettings.liquidationSmartMoneyBias} />
+                                  <LiquidationRenderer chart={chartRef.current} series={seriesRef.current} data={state as any} symbol={activePair} showBubbles={indicatorSettings.liquidationShowBubbles} intensityScale={100} useTrailingLiquidity={trailingLiquidityEnabled} showTrueCVD={true} showSpoofing={true} showGEX={true} showBookmap={true} bookmapIntensity={50} spoofingThreshold={500000} smartMoneyBias={indicatorSettings.liquidationSmartMoneyBias} candlesRef={candlesRef} />
                                   {indicatorSettings.liquidationShowSmartMoneyHUD !== false && state.smart_trajectory && (
-                                      <SmartMoneyHUD data={state.smart_trajectory as any} currentPrice={state.current_price} icebergEvents={state.iceberg_events} magnetZones={state.magnet_zones} visible={true} />
+                                      <SmartMoneyHUD symbol={activePair} data={state.smart_trajectory as any} currentPrice={state.current_price} icebergEvents={state.iceberg_events} magnetZones={state.magnet_zones} visible={true} />
                                   )}
                              </div>
                              

@@ -3,6 +3,8 @@ export interface GodModeSignalData {
     magnet_zones?: { price: number; intensity?: number; weight?: number }[];
     cascade_probs?: { price: number; probability?: number; prob?: number }[];
     cvd_spoof?: string;
+    true_cvd?: number;
+    smart_trajectory?: { direction?: 'UP' | 'DOWN' | 'NEUTRAL'; strength?: number };
 }
 
 export interface GodModeSignalResult {
@@ -11,13 +13,12 @@ export interface GodModeSignalResult {
 }
 
 export function calculateGodModeSignal(data: GodModeSignalData | null): GodModeSignalResult {
-    if (!data) return { score: 0, signal: 'NEUTRAL' };
+    if (!data || !data.current_price) return { score: 0, signal: 'NEUTRAL' };
     
     let score = 0;
     
     // 1. Magnet Zones Analysis
     if (data.magnet_zones && data.magnet_zones.length > 0) {
-        // Find the strongest magnet zone
         const strongestMagnet = data.magnet_zones.reduce((prev, current) => {
             const prevVal = prev.intensity || prev.weight || 0;
             const currVal = current.intensity || current.weight || 0;
@@ -46,13 +47,14 @@ export function calculateGodModeSignal(data: GodModeSignalData | null): GodModeS
         }
     }
     
-    // 3. CVD Spoof Analysis
-    if (data.cvd_spoof) {
-        if (data.cvd_spoof === 'POSITIVE') {
-            score += 30;
-        } else if (data.cvd_spoof === 'NEGATIVE') {
-            score -= 30;
-        }
+    // 3. Smart Trajectory / True CVD Flow Bias
+    // Note: backend cvd_spoof === "NEGATIVE" means "no spoof detected", not bearish direction.
+    if (data.smart_trajectory && data.smart_trajectory.direction && data.smart_trajectory.direction !== 'NEUTRAL') {
+        score += data.smart_trajectory.direction === 'UP' ? 30 : -30;
+    } else if (typeof data.true_cvd === 'number' && data.true_cvd !== 0) {
+        score += data.true_cvd > 0 ? 30 : -30;
+    } else if (data.cvd_spoof === 'POSITIVE') {
+        score += 30;
     }
     
     // Determine final signal

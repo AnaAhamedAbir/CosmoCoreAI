@@ -50,6 +50,9 @@ export const useGodModeData = (symbol: string, enabled: boolean = true) => {
             return;
         }
 
+        // Clear previous symbol's stale zones/HUD immediately on symbol switch
+        setGodModeData(null);
+
         // Ensure slash is kept raw since fastapi endpoint uses {symbol:path}
         // e.g. BTC/USDT
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -59,6 +62,7 @@ export const useGodModeData = (symbol: string, enabled: boolean = true) => {
         let ws: WebSocket | null = null;
         let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
         let isSubscribed = true;
+        const expectedSymbol = symbol.toUpperCase();
 
         const connect = () => {
             if (!isSubscribed) return;
@@ -75,7 +79,11 @@ export const useGodModeData = (symbol: string, enabled: boolean = true) => {
                     const data = JSON.parse(event.data);
                     // Handle broadcast wrapping if present
                     const payload = data.data || data; 
-                    if (payload && payload.magnet_zones !== undefined) {
+                    if (
+                        payload &&
+                        payload.magnet_zones !== undefined &&
+                        (!payload.symbol || String(payload.symbol).toUpperCase() === expectedSymbol)
+                    ) {
                         setGodModeData(payload);
                     }
                 } catch (e) {

@@ -22,13 +22,20 @@ export const GodModeHUD: React.FC<GodModeHUDProps> = ({ data, visible }) => {
         if (!isDragging || !dragRef.current) return;
         const dx = e.clientX - dragRef.current.startX;
         const dy = e.clientY - dragRef.current.startY;
-        setPosition({ x: dragRef.current.initX + dx, y: dragRef.current.initY + dy });
+        const maxX = typeof window !== 'undefined' ? Math.max(0, window.innerWidth - 264) : 9999;
+        const maxY = typeof window !== 'undefined' ? Math.max(0, window.innerHeight - 160) : 9999;
+        setPosition({
+            x: Math.max(0, Math.min(maxX, dragRef.current.initX + dx)),
+            y: Math.max(0, Math.min(maxY, dragRef.current.initY + dy)),
+        });
     };
 
     const onPointerUp = (e: React.PointerEvent) => {
         setIsDragging(false);
         dragRef.current = null;
-        e.currentTarget.releasePointerCapture(e.pointerId);
+        try {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+        } catch {}
     };
 
     if (!visible || !data) return null;
@@ -41,7 +48,15 @@ export const GodModeHUD: React.FC<GodModeHUDProps> = ({ data, visible }) => {
     const totalMoney = smart + dumb;
     const smartRatio = totalMoney > 0 ? (smart / totalMoney) * 100 : 50;
 
-    const isSqueezeImminent = pain_threshold?.value >= 90 || pain_threshold?.status === 'critical';
+    // Backend provides level (0-100%), status ('NORMAL' | 'HIGH' | 'EXTREME'), and value (USD)
+    const painPct = Math.min(100, Math.max(0, Number(pain_threshold?.level ?? 0)));
+    const painStatus = String(pain_threshold?.status || 'NORMAL').toUpperCase();
+    const isSqueezeImminent = painPct >= 90 || painStatus === 'CRITICAL' || painStatus === 'EXTREME';
+
+    const rawSpoof = String(cvd_spoof || 'NEUTRAL').toUpperCase();
+    const isHighSpoof = rawSpoof.includes('HIGH') || rawSpoof.includes('DETECTED');
+    const isMediumSpoof = rawSpoof.includes('MEDIUM');
+    const spoofLabel = isHighSpoof ? 'HIGH RISK' : isMediumSpoof ? 'MEDIUM' : 'Normal';
 
     const content = (
         <div 
@@ -56,7 +71,7 @@ export const GodModeHUD: React.FC<GodModeHUDProps> = ({ data, visible }) => {
                         Squeeze Imminent 
                         <span className="text-lg">🔥</span>
                     </h3>
-                    <p className="text-red-200/80 text-[10px] font-mono mt-0.5">Pain Threshold: {pain_threshold.value}%</p>
+                    <p className="text-red-200/80 text-[10px] font-mono mt-0.5">Pain Threshold: {painPct}%</p>
                 </div>
             )}
 
@@ -83,14 +98,14 @@ export const GodModeHUD: React.FC<GodModeHUDProps> = ({ data, visible }) => {
                 <div className="mb-3">
                     <div className="flex justify-between items-end mb-1">
                         <span className="text-[10px] text-gray-600 dark:text-gray-400 font-semibold uppercase">Pain Threshold</span>
-                        <span className={`text-xs font-bold font-mono ${pain_threshold?.value > 80 ? 'text-red-500' : 'text-gray-800 dark:text-gray-200'}`}>
-                            {pain_threshold?.value || 0}%
+                        <span className={`text-xs font-bold font-mono ${painPct > 80 ? 'text-red-500' : 'text-gray-800 dark:text-gray-200'}`}>
+                            {painPct}%
                         </span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden">
                         <div 
-                            className={`h-full rounded-full transition-all duration-1000 ${pain_threshold?.value > 80 ? 'bg-gradient-to-r from-orange-500 to-red-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`}
-                            style={{ width: `${Math.min(100, Math.max(0, pain_threshold?.value || 0))}%` }}
+                            className={`h-full rounded-full transition-all duration-1000 ${painPct > 80 ? 'bg-gradient-to-r from-orange-500 to-red-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`}
+                            style={{ width: `${painPct}%` }}
                         />
                     </div>
                 </div>
@@ -119,8 +134,8 @@ export const GodModeHUD: React.FC<GodModeHUDProps> = ({ data, visible }) => {
                 {/* CVD SPOOF STATUS */}
                 <div className="bg-gray-100 dark:bg-white/5 rounded-lg p-2 flex justify-between items-center border border-gray-200 dark:border-white/5">
                     <span className="text-[10px] text-gray-600 dark:text-gray-400 font-semibold uppercase">Spoof Rating</span>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cvd_spoof === 'High' ? 'bg-red-500/20 text-red-600 dark:text-red-400' : cvd_spoof === 'Medium' ? 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400' : 'bg-gray-200 dark:bg-gray-500/20 text-gray-700 dark:text-gray-300'}`}>
-                        {cvd_spoof || 'Normal'}
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isHighSpoof ? 'bg-red-500/20 text-red-600 dark:text-red-400' : isMediumSpoof ? 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400' : 'bg-gray-200 dark:bg-gray-500/20 text-gray-700 dark:text-gray-300'}`}>
+                        {spoofLabel}
                     </span>
                 </div>
             </div>

@@ -50,16 +50,32 @@ class TrueCVDService:
             })
         return self.exchange
 
+    async def _resolve_exchange_symbol(self, exchange: ccxtpro.Exchange, symbol: str) -> str:
+        try:
+            if not getattr(exchange, "markets", None):
+                await exchange.load_markets()
+            markets = exchange.markets or {}
+            if symbol in markets:
+                return symbol
+            base_pair = symbol.split(":")[0]
+            for cand in (f"{base_pair}:USDT", base_pair, f"{base_pair}:USD"):
+                if cand in markets:
+                    return cand
+        except Exception as e:
+            logger.debug(f"TrueCVD symbol resolution fallback for {symbol}: {e}")
+        return symbol
+
     async def _watch_trades(self):
         """Streams live market trades and calculates True CVD delta"""
         exchange = await self._init_exchange('binance')
-        logger.info(f"TrueCVD: Started streaming live trades for {self.symbol}")
+        ex_symbol = await self._resolve_exchange_symbol(exchange, self.symbol)
+        logger.info(f"TrueCVD: Started streaming live trades for {ex_symbol}")
         
         self._window_start_price = 0.0
         
         while self._running:
             try:
-                trades = await exchange.watch_trades(self.symbol)
+                trades = await exchange.watch_trades(ex_symbol)
                 now = time.time()
                 
                 if not isinstance(trades, list):
@@ -104,9 +120,11 @@ class TrueCVDService:
                 # Clean old trades outside the window
                 self._trade_history = [t for t in self._trade_history if now - t["time"] <= self.time_window_sec]
                 
-                # Recalculate window volumes to be accurate
+                # Recalculate 60s rolling window volumes and True CVD
                 buy_vol = sum(t["value"] for t in self._trade_history if t["side"] == 'buy')
                 sell_vol = sum(t["value"] for t in self._trade_history if t["side"] == 'sell')
+                rolling_cvd = buy_vol - sell_vol
+                self.current_cvd = rolling_cvd
                 
                 # Determine start price of the current active window
                 if self._trade_history:
@@ -180,7 +198,10 @@ class TrueCVDService:
             task.cancel()
         
         if self.exchange:
-            await self.exchange.close()
+            try:
+                await self.exchange.close()
+            except Exception:
+                pass
             self.exchange = None
             
         self._active_tasks.clear()

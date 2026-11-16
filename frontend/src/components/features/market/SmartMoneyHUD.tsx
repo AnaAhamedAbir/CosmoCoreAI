@@ -21,9 +21,10 @@ interface SmartMoneyHUDProps {
     icebergEvents?: any[];
     magnetZones?: any[];
     visible: boolean;
+    symbol?: string;
 }
 
-export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, currentPrice, icebergEvents, magnetZones, visible }) => {
+export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, currentPrice, icebergEvents, magnetZones, visible, symbol }) => {
     const [isMinimized, setIsMinimized] = useState(false);
     const [mounted, setMounted] = useState(false);
     const [history, setHistory] = useState<{ask: number, bid: number}[]>([]);
@@ -32,6 +33,10 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
         setMounted(true);
         return () => setMounted(false);
     }, []);
+
+    useEffect(() => {
+        setHistory([]);
+    }, [symbol]);
 
     useEffect(() => {
         if (data && data.ask_dominance !== undefined && data.bid_dominance !== undefined) {
@@ -285,7 +290,7 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                                         </div>
                                         <div className="space-y-1.5">
                                             {magnets.map((mag, i) => {
-                                                const dist = Math.abs(((mag.price - currentPrice) / currentPrice) * 100);
+                                                const dist = currentPrice > 0 ? Math.abs(((mag.price - currentPrice) / currentPrice) * 100) : 0;
                                                 return (
                                                     <div key={i} className="flex justify-between items-center text-xs bg-slate-50 dark:bg-gradient-to-r dark:from-black/60 dark:to-black/30 p-2 rounded-md border-l-4 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors" style={{ borderLeftColor: mag.price > currentPrice ? '#10B981' : '#F43F5E' }}>
                                                         <span className="text-slate-900 dark:text-gray-200 font-black tracking-wider">${formatPrice(mag.price)}</span>
@@ -304,18 +309,27 @@ export const SmartMoneyHUD: React.FC<SmartMoneyHUDProps> = React.memo(({ data, c
                                             <span className="animate-pulse text-sm">🐋</span> LIVE WHALE FEED
                                         </div>
                                         <div className="space-y-1.5 max-h-24 overflow-y-auto custom-scrollbar pr-2">
-                                            {icebergEvents.slice(0, 4).map((ev, i) => (
-                                                <div key={i} className="text-xs flex justify-between items-center bg-slate-50 dark:bg-black/40 p-2 rounded-md hover:bg-slate-100 dark:hover:bg-white/5 transition-colors border border-slate-200 dark:border-white/5">
-                                                    <span className={`font-black tracking-widest px-1.5 py-0.5 rounded ${ev.type === 'buy' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10' : 'text-rose-600 dark:text-rose-400 bg-rose-500/10'}`}>
-                                                        {ev.type === 'buy' ? 'BUY' : 'SELL'}
-                                                    </span>
-                                                    <span className="text-slate-900 dark:text-gray-200 font-mono">
-                                                        <span className="font-bold">{(ev.volume || 0).toFixed(1)}</span> 
-                                                        <span className="text-slate-400 dark:text-gray-600 mx-1">@</span> 
-                                                        <span className="text-slate-600 dark:text-gray-400">${formatPrice(ev.price)}</span>
-                                                    </span>
-                                                </div>
-                                            ))}
+                                            {icebergEvents.slice(0, 4).map((ev, i) => {
+                                                const isBull = ev.type === 'buy' || String(ev.type || '').toUpperCase().includes('BULLISH');
+                                                const volUsd = Number(ev.absorbed_volume ?? ev.volume ?? 0);
+                                                const formattedVol = volUsd >= 1_000_000
+                                                    ? `$${(volUsd / 1_000_000).toFixed(2)}M`
+                                                    : volUsd >= 1_000
+                                                    ? `$${(volUsd / 1_000).toFixed(0)}k`
+                                                    : `$${volUsd.toFixed(0)}`;
+                                                return (
+                                                    <div key={i} className="text-xs flex justify-between items-center bg-slate-50 dark:bg-black/40 p-2 rounded-md hover:bg-slate-100 dark:hover:bg-white/5 transition-colors border border-slate-200 dark:border-white/5">
+                                                        <span className={`font-black tracking-widest px-1.5 py-0.5 rounded ${isBull ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10' : 'text-rose-600 dark:text-rose-400 bg-rose-500/10'}`}>
+                                                            {isBull ? 'BUY ABS' : 'SELL ABS'}
+                                                        </span>
+                                                        <span className="text-slate-900 dark:text-gray-200 font-mono">
+                                                            <span className="font-bold">{formattedVol}</span> 
+                                                            <span className="text-slate-400 dark:text-gray-600 mx-1">@</span> 
+                                                            <span className="text-slate-600 dark:text-gray-400">${formatPrice(ev.price)}</span>
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 )}

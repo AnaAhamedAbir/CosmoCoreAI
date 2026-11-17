@@ -2289,7 +2289,7 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   100% {
     opacity: 1;
     scale: 1;
-    filter: blur(0px) brightness(1);
+    filter: none;
   }
 }
 
@@ -2312,7 +2312,7 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   100% {
     opacity: 1;
     scale: 1;
-    filter: blur(0px) brightness(1);
+    filter: none;
   }
 }
 
@@ -2335,7 +2335,7 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   100% {
     opacity: 1;
     scale: 1;
-    filter: blur(0px) brightness(1);
+    filter: none;
   }
 }
 
@@ -2358,7 +2358,7 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   100% {
     opacity: 1;
     scale: 1;
-    filter: blur(0px) brightness(1);
+    filter: none;
   }
 }
 
@@ -2381,7 +2381,7 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   100% {
     opacity: 1;
     scale: 1;
-    filter: blur(0px) brightness(1);
+    filter: none;
   }
 }
 
@@ -2404,7 +2404,7 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   100% {
     opacity: 1;
     scale: 1;
-    filter: blur(0px) brightness(1);
+    filter: none;
   }
 }
 
@@ -2427,7 +2427,7 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   100% {
     opacity: 1;
     scale: 1;
-    filter: blur(0px) brightness(1);
+    filter: none;
   }
 }
 
@@ -2450,7 +2450,7 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   100% {
     opacity: 1;
     scale: 1;
-    filter: blur(0px) brightness(1);
+    filter: none;
   }
 }
 
@@ -2564,6 +2564,158 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   animation: cosmo-modal-corner-snap 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   transform-origin: center center;
   will-change: scale, opacity;
+}
+
+/* ==========================================================================
+   Cyber Manual Trade Morph System (Minimize Collapse & Expand Unfold)
+   Anamorphic spring compression, tactical sonar shockwave ring,
+   vertical holographic laser lattice scan, and genesis energy bloom.
+   ========================================================================== */
+
+@keyframes cyber-hud-collapse {
+  0% {
+    opacity: 0.7;
+    scale: 1.05 0.78;
+    filter: brightness(1.35) blur(3px);
+    box-shadow: 0 0 35px rgba(6, 182, 212, 0.65), 0 0 70px rgba(52, 211, 153, 0.35);
+  }
+  50% {
+    scale: 0.98 1.03;
+    filter: brightness(1.15) blur(0px);
+    box-shadow: 0 0 25px rgba(6, 182, 212, 0.45);
+  }
+  75% {
+    scale: 1.01 0.99;
+  }
+  100% {
+    opacity: 1;
+    scale: 1 1;
+    filter: none;
+  }
+}
+
+@keyframes cyber-sonar-ping {
+  0% {
+    opacity: 0.95;
+    transform: scale(0.96);
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.75), inset 0 0 15px rgba(52, 211, 153, 0.6);
+  }
+  60% {
+    opacity: 0.6;
+    box-shadow: 0 0 0 14px rgba(6, 182, 212, 0.3), inset 0 0 25px rgba(52, 211, 153, 0.25);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.05);
+    box-shadow: 0 0 0 26px rgba(6, 182, 212, 0), inset 0 0 35px rgba(52, 211, 153, 0);
+  }
+}
+
+@keyframes cyber-condense-streak {
+  0% {
+    opacity: 1;
+    transform: scaleX(1.8);
+    filter: brightness(2);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scaleX(1);
+    filter: brightness(1.3);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(0.2);
+    filter: brightness(1);
+  }
+}
+
+@keyframes cyber-terminal-unfold {
+  0% {
+    opacity: 0.6;
+    scale: 0.94 0.65;
+    filter: brightness(1.4) blur(4px);
+    box-shadow: 0 0 60px rgba(52, 211, 153, 0.7), 0 0 120px rgba(6, 182, 212, 0.4);
+  }
+  55% {
+    opacity: 1;
+    scale: 1.015 1.022;
+    filter: brightness(1.1) blur(0px);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 35px rgba(6, 182, 212, 0.35);
+  }
+  78% {
+    scale: 0.995 0.992;
+  }
+  100% {
+    opacity: 1;
+    scale: 1 1;
+    filter: none;
+  }
+}
+
+@keyframes holo-projector-sweep {
+  0% {
+    top: 0%;
+    opacity: 0;
+    transform: scaleY(2.2);
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 0.9;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+    transform: scaleY(0.4);
+  }
+}
+
+@keyframes cyber-genesis-bloom {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.92, 0.7);
+  }
+  45% {
+    opacity: 0.65;
+    transform: scale(1.05, 1.03);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.12, 1.08);
+  }
+}
+
+.animate-cyber-hud-collapse {
+  animation: cyber-hud-collapse 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: top center;
+  will-change: scale, opacity, filter, box-shadow;
+}
+
+.animate-cyber-sonar {
+  animation: cyber-sonar-ping 0.55s ease-out forwards;
+  will-change: transform, opacity, box-shadow;
+}
+
+.animate-cyber-condense {
+  animation: cyber-condense-streak 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity, filter;
+}
+
+.animate-cyber-terminal-unfold {
+  animation: cyber-terminal-unfold 0.46s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: top center;
+  will-change: scale, opacity, filter, box-shadow;
+}
+
+.animate-holo-projector {
+  animation: holo-projector-sweep 0.52s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: top, opacity, transform;
+}
+
+.animate-cyber-genesis-bloom {
+  animation: cyber-genesis-bloom 0.58s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
 }
 
 

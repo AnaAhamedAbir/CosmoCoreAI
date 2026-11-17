@@ -9,6 +9,7 @@ import { mlModelsService } from '../../../services/mlModelsService';
 import { trainingStudioToolsService } from '../../../services/trainingStudioToolsService';
 import { CustomMLModel } from '../../../types';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
 
 const MotionButton = motion.button as any;
 const MotionDiv = motion.div as any;
@@ -59,6 +60,30 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   const { isThermalGuardActive, timings } = useDeviceProfile();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [morphAction, setMorphAction] = useState<'none' | 'minimizing' | 'expanding'>('none');
+  const isFirstMountRef = React.useRef(true);
+  const prevMinimizedRef = React.useRef(isMinimized);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      setMorphAction('none');
+      return;
+    }
+    if (isFirstMountRef.current) {
+      isFirstMountRef.current = false;
+      prevMinimizedRef.current = isMinimized;
+      return;
+    }
+    if (prevMinimizedRef.current !== isMinimized) {
+      const action = isMinimized ? 'minimizing' : 'expanding';
+      setMorphAction(action);
+      prevMinimizedRef.current = isMinimized;
+      const timer = setTimeout(() => {
+        setMorphAction('none');
+      }, 550);
+      return () => clearTimeout(timer);
+    }
+  }, [isMinimized, isOpen]);
   const [activeTerminalTab, setActiveTerminalTab] = useState<'order' | 'brackets' | 'ai' | 'orders'>('order');
   const [submittingSide, setSubmittingSide] = useState<'Buy' | 'Sell' | null>(null);
   const [activeSymbol, setActiveSymbol] = useState<string>(symbol);
@@ -1551,6 +1576,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
             ? 'rgba(9, 13, 22, 0.98)'
             : 'rgba(6, 9, 15, 0.96)';
       modalEl.style.transition = 'none';
+      modalEl.style.animation = 'none';
     }
 
     const applyMove = (clientX: number, clientY: number) => {
@@ -1594,6 +1620,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         (modalContainerRef.current.style as any).webkitBackdropFilter = '';
         modalContainerRef.current.style.backgroundColor = '';
         modalContainerRef.current.style.transition = '';
+        modalContainerRef.current.style.animation = '';
       }
 
       const finalPos = { x: drag.currentX, y: drag.currentY };
@@ -3210,7 +3237,15 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     : '778px',
                 willChange: 'transform'
               }}
-              className={`cosmo-theme-modal fixed rounded-xl ${isMinimized
+              className={`cosmo-theme-modal fixed rounded-xl ${
+                isThermalGuardActive
+                  ? 'animate-cosmo-modal-fast'
+                  : morphAction === 'minimizing'
+                    ? 'animate-cyber-hud-collapse'
+                    : morphAction === 'expanding'
+                      ? 'animate-cyber-terminal-unfold'
+                      : 'animate-cosmo-modal-cyan'
+              } ${isMinimized
                 ? isThermalGuardActive
                   ? 'w-[474px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
                   : 'w-[474px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
@@ -3219,6 +3254,39 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                   : 'w-[620px] max-w-[calc(100vw-12px)] flex flex-col bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
                 } border z-[99999] overflow-hidden transition-colors duration-200 select-none`}
             >
+              {morphAction === 'none' && (
+                <FloatingModalCyberFX color="cyan" isThermalGuard={isThermalGuardActive} />
+              )}
+
+              {/* MINIMIZE FX: Tactical Sonar Shockwave Radar Pulse */}
+              {morphAction === 'minimizing' && !isThermalGuardActive && (
+                <div className="absolute -inset-2 rounded-xl pointer-events-none z-50 animate-cyber-sonar" />
+              )}
+              {/* MINIMIZE FX: Horizontal Condensation Particle Streak */}
+              {morphAction === 'minimizing' && !isThermalGuardActive && (
+                <div className="absolute top-0 left-0 right-0 h-[2.5px] pointer-events-none z-50 overflow-hidden flex items-center justify-center">
+                  <div className="w-full h-full animate-cyber-condense bg-gradient-to-r from-transparent via-cyan-300 via-emerald-300 to-transparent shadow-[0_0_16px_#22d3ee]" />
+                </div>
+              )}
+
+              {/* EXPAND FX: Holographic Genesis Radiant Bloom */}
+              {morphAction === 'expanding' && !isThermalGuardActive && (
+                <div className="absolute -inset-3 rounded-2xl pointer-events-none -z-10 animate-cyber-genesis-bloom bg-gradient-to-r from-emerald-500/25 via-cyan-500/30 to-emerald-500/25 blur-xl" />
+              )}
+              {/* EXPAND FX: Holographic Projector Vertical Scan Sweep */}
+              {morphAction === 'expanding' && !isThermalGuardActive && (
+                <div className="absolute inset-x-0 h-1.5 pointer-events-none z-50 animate-holo-projector bg-gradient-to-r from-transparent via-cyan-300 via-white to-transparent shadow-[0_0_20px_#22d3ee,0_0_35px_#34d399]" />
+              )}
+              {/* EXPAND FX: Tactical Corner Reticles locking into the full 620px frame */}
+              {morphAction === 'expanding' && !isThermalGuardActive && (
+                <div className="absolute inset-1 pointer-events-none z-50 animate-cosmo-modal-corner">
+                  <span className="absolute top-0 left-0 w-3.5 h-3.5 border-t-2 border-l-2 border-emerald-400 rounded-tl-sm shadow-[0_0_8px_#34d399]" />
+                  <span className="absolute top-0 right-0 w-3.5 h-3.5 border-t-2 border-r-2 border-cyan-400 rounded-tr-sm shadow-[0_0_8px_#22d3ee]" />
+                  <span className="absolute bottom-0 left-0 w-3.5 h-3.5 border-b-2 border-l-2 border-cyan-400 rounded-bl-sm shadow-[0_0_8px_#22d3ee]" />
+                  <span className="absolute bottom-0 right-0 w-3.5 h-3.5 border-b-2 border-r-2 border-emerald-400 rounded-br-sm shadow-[0_0_8px_#34d399]" />
+                </div>
+              )}
+
               {isMinimized ? (
                 /* ULTRA-SLIM PREMIUM MINIMIZED QUICK TRADE CYBER-HUD */
                 <div

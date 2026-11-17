@@ -260,7 +260,7 @@ export function useFloatingModalDrag({
           (modalEl.style as unknown as { webkitBackdropFilter: string }).webkitBackdropFilter = '';
           modalEl.style.backgroundColor = '';
           modalEl.style.transition = '';
-          modalEl.style.animation = '';
+          modalEl.style.animation = 'none';
         }
         window.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('mouseup', onUp);

@@ -2573,8 +2573,8 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
 
 @keyframes modal-simple-switch {
   0% {
-    opacity: 0.65;
-    transform: scale(0.985);
+    opacity: 0.2;
+    transform: scale(0.94);
   }
   100% {
     opacity: 1;
@@ -2583,7 +2583,7 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
 }
 
 .animate-modal-simple-switch {
-  animation: modal-simple-switch 0.18s cubic-bezier(0.16, 1, 0.3, 1) ease-out forwards;
+  animation: modal-simple-switch 0.34s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   transform-origin: top center;
   will-change: opacity, transform;
 }

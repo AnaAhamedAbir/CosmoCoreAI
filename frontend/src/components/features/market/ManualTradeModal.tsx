@@ -1596,7 +1596,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         (modalContainerRef.current.style as any).webkitBackdropFilter = '';
         modalContainerRef.current.style.backgroundColor = '';
         modalContainerRef.current.style.transition = '';
-        modalContainerRef.current.style.animation = '';
+        modalContainerRef.current.style.animation = 'none';
       }
 
       const finalPos = { x: drag.currentX, y: drag.currentY };
@@ -3195,6 +3195,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           {isOpen && (
             <div
               ref={modalContainerRef}
+              onAnimationEnd={(e) => {
+                if (e.target === e.currentTarget) {
+                  (e.currentTarget as HTMLElement).style.animation = 'none';
+                }
+              }}
               style={{
                 left: 0,
                 top: 0,
@@ -3241,8 +3246,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                   <div className="px-2.5 py-1.5 space-y-1 relative z-10">
                     {/* Row 1: Single-Line Ultra-Slim Drag Handle & Header */}
                     <div
-                      onMouseDown={handleStartDrag}
-                      onTouchStart={handleStartDrag}
                       style={{ touchAction: 'none' }}
                       className="flex items-center justify-between gap-1 cursor-grab active:cursor-grabbing select-none"
                       title="Drag to move HUD"

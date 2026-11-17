@@ -463,10 +463,11 @@ const SystemAlertWidget: React.FC = () => {
   const logWsRef   = useRef<WebSocket | null>(null);
   const prevLen    = useRef(0);
 
-  // Waterdrop animation states
+  // Cyber Quantum HUD animation states
   const [animatingOpen, setAnimatingOpen] = useState(false);
-  const [btnRipple, setBtnRipple] = useState(false);
+  const [btnFlash, setBtnFlash] = useState(false);
   const prevOpenRef = useRef(open);
+  const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -474,7 +475,7 @@ const SystemAlertWidget: React.FC = () => {
       setAnimatingOpen(true);
       const timer = setTimeout(() => {
         setAnimatingOpen(false);
-      }, 850);
+      }, 500);
       return () => clearTimeout(timer);
     } else {
       setAnimatingOpen(false);
@@ -493,28 +494,39 @@ const SystemAlertWidget: React.FC = () => {
     return () => window.removeEventListener('resize', onResize);
   }, [isDragging, open]);
 
-  // Unified Drag System (Mouse, Touch, Stylus — Zero Lag)
+  // Unified Drag System (Mouse, Touch, Stylus — 60/120fps RAF Zero Lag)
   useEffect(() => {
     if (!isDragging) return;
 
     const onPointerMove = (e: PointerEvent) => {
       e.preventDefault();
-      const dx = e.clientX - dragRef.current.startX;
-      const dy = e.clientY - dragRef.current.startY;
+      const clientX = e.clientX;
+      const clientY = e.clientY;
 
-      const modalWidth = Math.min(530, window.innerWidth - 20);
-      const modalHeight = Math.min(530, window.innerHeight - 20);
+      if (rafRef.current !== null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const dx = clientX - dragRef.current.startX;
+        const dy = clientY - dragRef.current.startY;
 
-      const maxX = Math.max(0, window.innerWidth - modalWidth);
-      const maxY = Math.max(0, window.innerHeight - modalHeight);
+        const modalWidth = Math.min(530, window.innerWidth - 20);
+        const modalHeight = Math.min(530, window.innerHeight - 20);
 
-      setPosition({
-        x: Math.max(0, Math.min(maxX, dragRef.current.curX + dx)),
-        y: Math.max(0, Math.min(maxY, dragRef.current.curY + dy)),
+        const maxX = Math.max(0, window.innerWidth - modalWidth);
+        const maxY = Math.max(0, window.innerHeight - modalHeight);
+
+        setPosition({
+          x: Math.max(0, Math.min(maxX, dragRef.current.curX + dx)),
+          y: Math.max(0, Math.min(maxY, dragRef.current.curY + dy)),
+        });
       });
     };
 
     const onPointerUp = () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       setIsDragging(false);
     };
 
@@ -523,6 +535,10 @@ const SystemAlertWidget: React.FC = () => {
     window.addEventListener('pointercancel', onPointerUp);
 
     return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
@@ -551,6 +567,10 @@ const SystemAlertWidget: React.FC = () => {
 
   const handlePointerUp = (e: React.PointerEvent) => {
     if (isDragging) {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       setIsDragging(false);
       try {
         if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -563,8 +583,8 @@ const SystemAlertWidget: React.FC = () => {
   };
 
   const handleOpen = () => {
-    setBtnRipple(true);
-    setTimeout(() => setBtnRipple(false), 750);
+    setBtnFlash(true);
+    setTimeout(() => setBtnFlash(false), 450);
     setOpen(v => {
       const next = !v;
       if (next) {
@@ -601,12 +621,15 @@ const SystemAlertWidget: React.FC = () => {
           boxShadow: hasAlert ? '0 0 20px rgba(239,68,68,0.15)' : 'none',
         }}
       >
-        {/* Waterdrop ripple on click */}
-        {btnRipple && (
+        {/* Cyber Button Flash Feedback */}
+        {btnFlash && (
           <span
-            className="absolute inset-0 rounded-xl pointer-events-none animate-waterdrop-btn-ripple"
+            className="absolute inset-0 rounded-xl pointer-events-none animate-cyber-btn-flash"
             style={{
-              background: 'radial-gradient(circle at center, rgba(139,92,246,0.45) 0%, rgba(6,182,212,0.25) 50%, transparent 75%)',
+              background: isDark
+                ? 'linear-gradient(135deg, rgba(124,58,237,0.40), rgba(6,182,212,0.30))'
+                : 'linear-gradient(135deg, rgba(99,102,241,0.30), rgba(6,182,212,0.20))',
+              boxShadow: 'inset 0 0 12px rgba(124,58,237,0.6)',
             }}
           />
         )}
@@ -650,7 +673,7 @@ const SystemAlertWidget: React.FC = () => {
             isDragging
               ? ''
               : animatingOpen
-              ? 'animate-waterdrop-bloom pointer-events-auto'
+              ? 'animate-cyber-hud-open pointer-events-auto'
               : open
               ? 'opacity-100 pointer-events-auto scale-100 transition-[opacity,transform] duration-200'
               : 'opacity-0 pointer-events-none scale-95 transition-[opacity,transform] duration-200'
@@ -662,30 +685,45 @@ const SystemAlertWidget: React.FC = () => {
             maxWidth: 'calc(100vw - 20px)',
             transformOrigin: 'center center',
             willChange: isDragging ? 'top, left' : 'transform, opacity, filter',
+            contain: isDragging ? 'paint' : 'none',
           }}
         >
-          {/* Waterdrop Expanding Concentric Ripples */}
+          {/* Cyber HUD Corner Targeting Reticles */}
           {open && animatingOpen && !isDragging && (
-            <div className="absolute inset-0 pointer-events-none -z-10 flex items-center justify-center overflow-visible">
-              <span
-                className="absolute inset-[-14px] rounded-3xl animate-waterdrop-ripple-1 border pointer-events-none"
+            <div className="absolute inset-[-4px] pointer-events-none z-40 animate-cyber-corner">
+              <span className="absolute top-0 left-0 w-3.5 h-3.5 border-t-2 border-l-2 border-violet-400 rounded-tl-sm shadow-[0_0_8px_#a78bfa]" />
+              <span className="absolute top-0 right-0 w-3.5 h-3.5 border-t-2 border-r-2 border-violet-400 rounded-tr-sm shadow-[0_0_8px_#a78bfa]" />
+              <span className="absolute bottom-0 left-0 w-3.5 h-3.5 border-b-2 border-l-2 border-cyan-400 rounded-bl-sm shadow-[0_0_8px_#22d3ee]" />
+              <span className="absolute bottom-0 right-0 w-3.5 h-3.5 border-b-2 border-r-2 border-cyan-400 rounded-br-sm shadow-[0_0_8px_#22d3ee]" />
+            </div>
+          )}
+
+          {/* Cyber Horizon Laser Beam Flare */}
+          {open && animatingOpen && !isDragging && (
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden z-40">
+              <div
+                className="w-full h-0.5 animate-cyber-beam"
                 style={{
-                  borderColor: isDark ? 'rgba(167, 139, 250, 0.45)' : 'rgba(124, 58, 237, 0.40)',
-                  boxShadow: isDark
-                    ? '0 0 30px rgba(139, 92, 246, 0.35), inset 0 0 15px rgba(139, 92, 246, 0.2)'
-                    : '0 0 25px rgba(124, 58, 237, 0.25)',
-                }}
-              />
-              <span
-                className="absolute inset-[-28px] rounded-3xl animate-waterdrop-ripple-2 border pointer-events-none"
-                style={{
-                  borderColor: isDark ? 'rgba(6, 182, 212, 0.35)' : 'rgba(6, 182, 212, 0.30)',
-                  boxShadow: isDark
-                    ? '0 0 40px rgba(6, 182, 212, 0.25), inset 0 0 20px rgba(6, 182, 212, 0.15)'
-                    : '0 0 30px rgba(6, 182, 212, 0.20)',
+                  background: isDark
+                    ? 'linear-gradient(90deg, transparent, #a78bfa, #ffffff, #22d3ee, transparent)'
+                    : 'linear-gradient(90deg, transparent, #7c3aed, #06b6d4, transparent)',
+                  boxShadow: '0 0 16px #a78bfa, 0 0 32px #22d3ee',
                 }}
               />
             </div>
+          )}
+
+          {/* Quantum Ambient Aura Glow */}
+          {open && animatingOpen && !isDragging && (
+            <div
+              className="absolute inset-[-10px] rounded-3xl pointer-events-none -z-10 animate-cyber-aura"
+              style={{
+                border: isDark ? '1px solid rgba(167, 139, 250, 0.45)' : '1px solid rgba(124, 58, 237, 0.40)',
+                boxShadow: isDark
+                  ? '0 0 35px rgba(139, 92, 246, 0.3), 0 0 70px rgba(6, 182, 212, 0.2)'
+                  : '0 0 30px rgba(124, 58, 237, 0.25)',
+              }}
+            />
           )}
 
           {/* Outer glow border */}
@@ -707,15 +745,16 @@ const SystemAlertWidget: React.FC = () => {
                 : '0 12px 35px rgba(0,0,0,0.12), 0 0 25px rgba(124,58,237,0.1)'),
           }}
         >
-          {/* Waterdrop Liquid Sheen Sweep */}
+          {/* Biometric Laser Scanline Sweep */}
           {animatingOpen && !isDragging && (
-            <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden rounded-2xl" aria-hidden="true">
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-30 rounded-2xl">
               <div
-                className="w-1/2 h-full animate-waterdrop-sheen"
+                className="absolute left-0 right-0 h-[2px] animate-cyber-scan"
                 style={{
                   background: isDark
-                    ? 'linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.25), rgba(255, 255, 255, 0.35), transparent)'
-                    : 'linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.20), rgba(255, 255, 255, 0.6), transparent)',
+                    ? 'linear-gradient(90deg, transparent 5%, #a78bfa 30%, #ffffff 50%, #22d3ee 70%, transparent 95%)'
+                    : 'linear-gradient(90deg, transparent 5%, #7c3aed 30%, #ffffff 50%, #06b6d4 70%, transparent 95%)',
+                  boxShadow: '0 0 14px #a78bfa, 0 0 28px rgba(167,139,250,0.5)',
                 }}
               />
             </div>
@@ -723,10 +762,10 @@ const SystemAlertWidget: React.FC = () => {
           <div className="rounded-2xl overflow-hidden flex flex-col" style={{
             height: 'min(530px, calc(100vh - 30px))',
             background: isDark
-              ? (isThermalGuardActive() ? 'rgba(8,8,18,0.96)' : 'rgba(8,8,18,0.85)')
-              : (isThermalGuardActive() ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.94)'),
-            backdropFilter: open && !isThermalGuardActive() ? 'blur(30px)' : 'none',
-            WebkitBackdropFilter: open && !isThermalGuardActive() ? 'blur(30px)' : 'none',
+              ? (isDragging || isThermalGuardActive() ? 'rgba(8,8,18,0.98)' : 'rgba(8,8,18,0.85)')
+              : (isDragging || isThermalGuardActive() ? 'rgba(255,255,255,0.99)' : 'rgba(255,255,255,0.94)'),
+            backdropFilter: open && !isThermalGuardActive() && !isDragging ? 'blur(30px)' : 'none',
+            WebkitBackdropFilter: open && !isThermalGuardActive() && !isDragging ? 'blur(30px)' : 'none',
           }}>
             {/* Scanline overlay */}
             <div className="absolute inset-0 pointer-events-none rounded-2xl overflow-hidden z-10 opacity-[0.025]"

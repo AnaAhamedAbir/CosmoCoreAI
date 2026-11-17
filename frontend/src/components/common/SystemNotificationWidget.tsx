@@ -419,7 +419,7 @@ const NotificationDetailModal: React.FC<{
       }}
     >
       <div
-        className="relative w-full max-w-lg rounded-2xl p-px animate-waterdrop-bloom"
+        className="relative w-full max-w-lg rounded-2xl p-px animate-cyber-hud-open"
         style={{
           transformOrigin: 'center center',
           background: `linear-gradient(135deg, ${neon}65, rgba(255,255,255,0.12), ${catCfg.secondaryNeon}45)`,
@@ -627,7 +627,7 @@ const NotificationCard: React.FC<{
   onDismiss: (id: number) => void;
   onMarkRead: (id: number) => void;
   onNavigateRoute: (path: string) => void;
-}> = ({ item, isDark, onSelect, onDismiss, onMarkRead, onNavigateRoute }) => {
+}> = React.memo(({ item, isDark, onSelect, onDismiss, onMarkRead, onNavigateRoute }) => {
   const catCfg = CATEGORY_CFG[item.category] ?? CATEGORY_CFG.market_alerts;
   const neon = getAccentNeon(item);
   const Icon = catCfg.Icon;
@@ -904,7 +904,8 @@ const NotificationCard: React.FC<{
       </div>
     </div>
   );
-};
+});
+NotificationCard.displayName = 'NotificationCard';
 
 // ─── Main Widget ──────────────────────────────────────────────────────────────
 
@@ -955,10 +956,11 @@ const SystemNotificationWidget: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef({ startX: 0, startY: 0, curX: 0, curY: 0 });
 
-  // Waterdrop animation states
+  // Cyber Quantum HUD animation states
   const [animatingOpen, setAnimatingOpen] = useState(false);
-  const [btnRipple, setBtnRipple] = useState(false);
+  const [btnFlash, setBtnFlash] = useState(false);
   const prevOpenRef = useRef(open);
+  const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -966,7 +968,7 @@ const SystemNotificationWidget: React.FC = () => {
       setAnimatingOpen(true);
       const timer = setTimeout(() => {
         setAnimatingOpen(false);
-      }, 850);
+      }, 500);
       return () => clearTimeout(timer);
     } else {
       setAnimatingOpen(false);
@@ -986,8 +988,8 @@ const SystemNotificationWidget: React.FC = () => {
   }, [isDragging, open]);
 
   const handleTriggerClick = () => {
-    setBtnRipple(true);
-    setTimeout(() => setBtnRipple(false), 750);
+    setBtnFlash(true);
+    setTimeout(() => setBtnFlash(false), 450);
     setOpen(v => {
       const next = !v;
       if (next) {
@@ -997,33 +999,50 @@ const SystemNotificationWidget: React.FC = () => {
     });
   };
 
-  // Unified pointer drag system
+  // High-performance pointer drag system (60/120fps RAF throttled, zero lag)
   useEffect(() => {
     if (!isDragging) return;
 
     const onPointerMove = (e: PointerEvent) => {
       e.preventDefault();
-      const dx = e.clientX - dragRef.current.startX;
-      const dy = e.clientY - dragRef.current.startY;
+      const clientX = e.clientX;
+      const clientY = e.clientY;
 
-      const modalWidth = Math.min(560, window.innerWidth - 20);
-      const modalHeight = Math.min(580, window.innerHeight - 30);
-      const maxX = Math.max(0, window.innerWidth - modalWidth);
-      const maxY = Math.max(0, window.innerHeight - modalHeight);
+      if (rafRef.current !== null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const dx = clientX - dragRef.current.startX;
+        const dy = clientY - dragRef.current.startY;
 
-      setPosition({
-        x: Math.max(0, Math.min(maxX, dragRef.current.curX + dx)),
-        y: Math.max(0, Math.min(maxY, dragRef.current.curY + dy)),
+        const modalWidth = Math.min(560, window.innerWidth - 20);
+        const modalHeight = Math.min(580, window.innerHeight - 30);
+        const maxX = Math.max(0, window.innerWidth - modalWidth);
+        const maxY = Math.max(0, window.innerHeight - modalHeight);
+
+        setPosition({
+          x: Math.max(0, Math.min(maxX, dragRef.current.curX + dx)),
+          y: Math.max(0, Math.min(maxY, dragRef.current.curY + dy)),
+        });
       });
     };
 
-    const onPointerUp = () => setIsDragging(false);
+    const onPointerUp = () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      setIsDragging(false);
+    };
 
     window.addEventListener('pointermove', onPointerMove, { passive: false });
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerUp);
 
     return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
@@ -1230,12 +1249,15 @@ const SystemNotificationWidget: React.FC = () => {
           boxShadow: hasUnread ? '0 0 18px rgba(34,211,238,0.18)' : 'none',
         }}
       >
-        {/* Waterdrop ripple on click */}
-        {btnRipple && (
+        {/* Cyber Button Flash Feedback */}
+        {btnFlash && (
           <span
-            className="absolute inset-0 rounded-xl pointer-events-none animate-waterdrop-btn-ripple"
+            className="absolute inset-0 rounded-xl pointer-events-none animate-cyber-btn-flash"
             style={{
-              background: 'radial-gradient(circle at center, rgba(34,211,238,0.45) 0%, rgba(167,139,250,0.25) 50%, transparent 75%)',
+              background: isDark
+                ? 'linear-gradient(135deg, rgba(34,211,238,0.40), rgba(167,139,250,0.30))'
+                : 'linear-gradient(135deg, rgba(6,182,212,0.30), rgba(99,102,241,0.20))',
+              boxShadow: 'inset 0 0 12px rgba(34,211,238,0.6)',
             }}
           />
         )}
@@ -1306,7 +1328,7 @@ const SystemNotificationWidget: React.FC = () => {
             isDragging
               ? ''
               : animatingOpen
-              ? 'animate-waterdrop-bloom pointer-events-auto'
+              ? 'animate-cyber-hud-open pointer-events-auto'
               : open
               ? 'opacity-100 pointer-events-auto scale-100 transition-[opacity,transform] duration-200'
               : 'opacity-0 pointer-events-none scale-95 transition-[opacity,transform] duration-200'
@@ -1318,31 +1340,46 @@ const SystemNotificationWidget: React.FC = () => {
             maxWidth: 'calc(100vw - 20px)',
             transformOrigin: 'center center',
             willChange: isDragging ? 'top, left' : 'transform, opacity, filter',
+            contain: isDragging ? 'paint' : 'none',
             touchAction: 'none',
           }}
         >
-          {/* Waterdrop Expanding Concentric Ripples */}
+          {/* Cyber HUD Corner Targeting Reticles */}
           {open && animatingOpen && !isDragging && (
-            <div className="absolute inset-0 pointer-events-none -z-10 flex items-center justify-center overflow-visible">
-              <span
-                className="absolute inset-[-14px] rounded-3xl animate-waterdrop-ripple-1 border pointer-events-none"
+            <div className="absolute inset-[-4px] pointer-events-none z-40 animate-cyber-corner">
+              <span className="absolute top-0 left-0 w-3.5 h-3.5 border-t-2 border-l-2 border-cyan-400 rounded-tl-sm shadow-[0_0_8px_#22d3ee]" />
+              <span className="absolute top-0 right-0 w-3.5 h-3.5 border-t-2 border-r-2 border-cyan-400 rounded-tr-sm shadow-[0_0_8px_#22d3ee]" />
+              <span className="absolute bottom-0 left-0 w-3.5 h-3.5 border-b-2 border-l-2 border-violet-400 rounded-bl-sm shadow-[0_0_8px_#a78bfa]" />
+              <span className="absolute bottom-0 right-0 w-3.5 h-3.5 border-b-2 border-r-2 border-violet-400 rounded-br-sm shadow-[0_0_8px_#a78bfa]" />
+            </div>
+          )}
+
+          {/* Cyber Horizon Laser Beam Flare */}
+          {open && animatingOpen && !isDragging && (
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden z-40">
+              <div
+                className="w-full h-0.5 animate-cyber-beam"
                 style={{
-                  borderColor: isDark ? 'rgba(34, 211, 238, 0.50)' : 'rgba(6, 182, 212, 0.45)',
-                  boxShadow: isDark
-                    ? '0 0 32px rgba(34, 211, 238, 0.38), inset 0 0 16px rgba(34, 211, 238, 0.22)'
-                    : '0 0 25px rgba(6, 182, 212, 0.28)',
-                }}
-              />
-              <span
-                className="absolute inset-[-28px] rounded-3xl animate-waterdrop-ripple-2 border pointer-events-none"
-                style={{
-                  borderColor: isDark ? 'rgba(167, 139, 250, 0.38)' : 'rgba(124, 58, 237, 0.32)',
-                  boxShadow: isDark
-                    ? '0 0 42px rgba(167, 139, 250, 0.26), inset 0 0 20px rgba(167, 139, 250, 0.16)'
-                    : '0 0 32px rgba(124, 58, 237, 0.22)',
+                  background: isDark
+                    ? 'linear-gradient(90deg, transparent, #22d3ee, #ffffff, #a78bfa, transparent)'
+                    : 'linear-gradient(90deg, transparent, #06b6d4, #6366f1, transparent)',
+                  boxShadow: '0 0 16px #22d3ee, 0 0 32px #a78bfa',
                 }}
               />
             </div>
+          )}
+
+          {/* Quantum Ambient Aura Glow */}
+          {open && animatingOpen && !isDragging && (
+            <div
+              className="absolute inset-[-10px] rounded-3xl pointer-events-none -z-10 animate-cyber-aura"
+              style={{
+                border: isDark ? '1px solid rgba(34, 211, 238, 0.45)' : '1px solid rgba(6, 182, 212, 0.40)',
+                boxShadow: isDark
+                  ? '0 0 35px rgba(34, 211, 238, 0.3), 0 0 70px rgba(167, 139, 250, 0.2)'
+                  : '0 0 30px rgba(6, 182, 212, 0.25)',
+              }}
+            />
           )}
 
           {/* Outer glow border */}
@@ -1359,15 +1396,16 @@ const SystemNotificationWidget: React.FC = () => {
                 : '0 20px 50px rgba(15,23,42,0.20)',
             }}
           >
-            {/* Waterdrop Liquid Sheen Sweep */}
+            {/* Biometric Laser Scanline Sweep */}
             {animatingOpen && !isDragging && (
-              <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden rounded-2xl" aria-hidden="true">
+              <div className="absolute inset-0 pointer-events-none overflow-hidden z-30 rounded-2xl">
                 <div
-                  className="w-1/2 h-full animate-waterdrop-sheen"
+                  className="absolute left-0 right-0 h-[2px] animate-cyber-scan"
                   style={{
                     background: isDark
-                      ? 'linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.28), rgba(255, 255, 255, 0.40), transparent)'
-                      : 'linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.22), rgba(255, 255, 255, 0.65), transparent)',
+                      ? 'linear-gradient(90deg, transparent 5%, #22d3ee 30%, #ffffff 50%, #a78bfa 70%, transparent 95%)'
+                      : 'linear-gradient(90deg, transparent 5%, #06b6d4 30%, #ffffff 50%, #6366f1 70%, transparent 95%)',
+                    boxShadow: '0 0 14px #22d3ee, 0 0 28px rgba(34,211,238,0.5)',
                   }}
                 />
               </div>
@@ -1377,10 +1415,10 @@ const SystemNotificationWidget: React.FC = () => {
               style={{
                 height: 'min(580px, calc(100vh - 30px))',
                 background: isDark
-                  ? (isThermalGuardActive() ? 'rgba(8, 10, 20, 0.97)' : 'rgba(8, 10, 20, 0.90)')
-                  : (isThermalGuardActive() ? 'rgba(248, 250, 252, 0.99)' : 'rgba(248, 250, 252, 0.95)'),
-                backdropFilter: open && !isThermalGuardActive() ? 'blur(30px)' : 'none',
-                WebkitBackdropFilter: open && !isThermalGuardActive() ? 'blur(30px)' : 'none',
+                  ? (isDragging || isThermalGuardActive() ? 'rgba(8, 10, 20, 0.98)' : 'rgba(8, 10, 20, 0.90)')
+                  : (isDragging || isThermalGuardActive() ? 'rgba(248, 250, 252, 0.99)' : 'rgba(248, 250, 252, 0.95)'),
+                backdropFilter: open && !isThermalGuardActive() && !isDragging ? 'blur(30px)' : 'none',
+                WebkitBackdropFilter: open && !isThermalGuardActive() && !isDragging ? 'blur(30px)' : 'none',
               }}
             >
               {/* Scanline overlay */}
@@ -1794,7 +1832,7 @@ const SystemNotificationWidget: React.FC = () => {
               </div>
 
               {/* ── Notification List ── */}
-              <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
+              <div className={`flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin ${isDragging ? 'pointer-events-none select-none' : ''}`}>
                 {filteredNotifications.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full gap-3 py-10">
                     <div

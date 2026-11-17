@@ -908,6 +908,16 @@ const NotificationCard: React.FC<{
 
 // ─── Main Widget ──────────────────────────────────────────────────────────────
 
+const getCenterPosition = (modalWidth: number, modalHeight: number) => {
+  if (typeof window === 'undefined') return { x: 100, y: 100 };
+  const w = Math.min(modalWidth, window.innerWidth - 20);
+  const h = Math.min(modalHeight, window.innerHeight - 30);
+  return {
+    x: Math.max(10, Math.round((window.innerWidth - w) / 2)),
+    y: Math.max(10, Math.round((window.innerHeight - h) / 2)),
+  };
+};
+
 const SystemNotificationWidget: React.FC = () => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -941,47 +951,51 @@ const SystemNotificationWidget: React.FC = () => {
   const [selectedItem, setSelectedItem] = useState<SystemNotificationItem | null>(null);
 
   // Draggable floating window state (matches SystemAlertWidget pattern)
-  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [position, setPosition] = useState(() => getCenterPosition(560, 580));
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef({ startX: 0, startY: 0, curX: 0, curY: 0 });
 
   // Waterdrop animation states
   const [animatingOpen, setAnimatingOpen] = useState(false);
   const [btnRipple, setBtnRipple] = useState(false);
-  const [waterdropKey, setWaterdropKey] = useState(0);
   const prevOpenRef = useRef(open);
 
   useEffect(() => {
-    if (open && !prevOpenRef.current) {
-      setWaterdropKey(k => k + 1);
+    if (open) {
+      setPosition(getCenterPosition(560, 580));
       setAnimatingOpen(true);
       const timer = setTimeout(() => {
         setAnimatingOpen(false);
-      }, 550);
+      }, 850);
       return () => clearTimeout(timer);
-    } else if (!open) {
+    } else {
       setAnimatingOpen(false);
     }
     prevOpenRef.current = open;
   }, [open]);
 
+  // Handle window resize when not dragging
+  useEffect(() => {
+    const onResize = () => {
+      if (!isDragging && !open) {
+        setPosition(getCenterPosition(560, 580));
+      }
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [isDragging, open]);
+
   const handleTriggerClick = () => {
     setBtnRipple(true);
-    setTimeout(() => setBtnRipple(false), 550);
-    setOpen(v => !v);
+    setTimeout(() => setBtnRipple(false), 750);
+    setOpen(v => {
+      const next = !v;
+      if (next) {
+        setPosition(getCenterPosition(560, 580));
+      }
+      return next;
+    });
   };
-
-  // Center floating window when opened
-  useEffect(() => {
-    if (open) {
-      const modalWidth = Math.min(560, window.innerWidth - 20);
-      const modalHeight = Math.min(580, window.innerHeight - 30);
-      setPosition({
-        x: Math.max(10, (window.innerWidth - modalWidth) / 2),
-        y: Math.max(10, (window.innerHeight - modalHeight) / 2),
-      });
-    }
-  }, [open]);
 
   // Unified pointer drag system
   useEffect(() => {
@@ -1122,6 +1136,7 @@ const SystemNotificationWidget: React.FC = () => {
 
   const handleToastOpen = (toast: SystemNotificationToast) => {
     dismissToast(toast.toastId);
+    setPosition(getCenterPosition(560, 580));
     setOpen(true);
     if (toast.kind === 'news_burst') {
       setActiveTab('sentiment_news');
@@ -1286,7 +1301,7 @@ const SystemNotificationWidget: React.FC = () => {
       {/* ─── Draggable Floating Cyberpunk Window ─── */}
       {(open || !isThermalGuardActive()) && createPortal(
         <div
-          key={`sys-notify-window-${waterdropKey}`}
+          id="system-notification-floating-window"
           className={`fixed z-[9999] ${
             isDragging
               ? ''

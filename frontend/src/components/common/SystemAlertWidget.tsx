@@ -367,6 +367,16 @@ const StatusNode: React.FC<{ active: boolean; color: string; neon: string; label
 
 // ─── Main Widget ──────────────────────────────────────────────────────────────
 
+const getCenterPosition = (modalWidth: number, modalHeight: number) => {
+  if (typeof window === 'undefined') return { x: 100, y: 100 };
+  const w = Math.min(modalWidth, window.innerWidth - 20);
+  const h = Math.min(modalHeight, window.innerHeight - 20);
+  return {
+    x: Math.max(10, Math.round((window.innerWidth - w) / 2)),
+    y: Math.max(10, Math.round((window.innerHeight - h) / 2)),
+  };
+};
+
 const SystemAlertWidget: React.FC = () => {
   const { alerts, unreadCount, connected, clearAlerts, markAllRead } = useSystemAlerts();
   const { theme } = useTheme();
@@ -445,7 +455,7 @@ const SystemAlertWidget: React.FC = () => {
     };
   }, [open, tab]);
 
-  const [position, setPosition]     = useState({ x: 0, y: 0 });
+  const [position, setPosition]     = useState(() => getCenterPosition(530, 530));
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef({ startX: 0, startY: 0, curX: 0, curY: 0 });
 
@@ -456,34 +466,32 @@ const SystemAlertWidget: React.FC = () => {
   // Waterdrop animation states
   const [animatingOpen, setAnimatingOpen] = useState(false);
   const [btnRipple, setBtnRipple] = useState(false);
-  const [waterdropKey, setWaterdropKey] = useState(0);
   const prevOpenRef = useRef(open);
 
   useEffect(() => {
-    if (open && !prevOpenRef.current) {
-      setWaterdropKey(k => k + 1);
+    if (open) {
+      setPosition(getCenterPosition(530, 530));
       setAnimatingOpen(true);
       const timer = setTimeout(() => {
         setAnimatingOpen(false);
-      }, 550);
+      }, 850);
       return () => clearTimeout(timer);
-    } else if (!open) {
+    } else {
       setAnimatingOpen(false);
     }
     prevOpenRef.current = open;
   }, [open]);
 
-  // Initial position - Center of screen (responsive for desktop & tablets like Redmi Pad)
+  // Handle window resize when not dragging
   useEffect(() => {
-    if (open) {
-      const modalWidth = Math.min(530, window.innerWidth - 20);
-      const modalHeight = Math.min(530, window.innerHeight - 20);
-      setPosition({ 
-        x: Math.max(10, (window.innerWidth - modalWidth) / 2), 
-        y: Math.max(10, (window.innerHeight - modalHeight) / 2) 
-      });
-    }
-  }, [open]);
+    const onResize = () => {
+      if (!isDragging && !open) {
+        setPosition(getCenterPosition(530, 530));
+      }
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [isDragging, open]);
 
   // Unified Drag System (Mouse, Touch, Stylus — Zero Lag)
   useEffect(() => {
@@ -556,10 +564,14 @@ const SystemAlertWidget: React.FC = () => {
 
   const handleOpen = () => {
     setBtnRipple(true);
-    setTimeout(() => setBtnRipple(false), 550);
+    setTimeout(() => setBtnRipple(false), 750);
     setOpen(v => {
-      if (!v) markAllRead();
-      return !v;
+      const next = !v;
+      if (next) {
+        setPosition(getCenterPosition(530, 530));
+        markAllRead();
+      }
+      return next;
     });
   };
 
@@ -633,7 +645,7 @@ const SystemAlertWidget: React.FC = () => {
       {/* ─── Floating Window ─── */}
       {(open || !isThermalGuardActive()) && createPortal(
         <div
-          key={`sys-alert-window-${waterdropKey}`}
+          id="system-alert-floating-window"
           className={`fixed z-[9999] ${
             isDragging
               ? ''

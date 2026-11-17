@@ -121,15 +121,25 @@ async def disconnect(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log the error and handle exceptions gracefully."""
     import httpx
-    from telegram.error import NetworkError
+    from telegram.error import NetworkError, Conflict
     
-    if isinstance(context.error, (NetworkError, httpx.RemoteProtocolError, httpx.ReadTimeout)):
+    if isinstance(context.error, Conflict):
+        logger.warning(
+            "⚠️ [Telegram Bot Conflict] Another instance of this bot is already active (e.g. on your VPS). "
+            "Telegram allows only ONE active bot instance polling at a time per token. "
+            "To stop this on local machine, run 'docker stop cosmo_telegram_bot' or set DISABLE_TELEGRAM_BOT=true in .env."
+        )
+    elif isinstance(context.error, (NetworkError, httpx.RemoteProtocolError, httpx.ReadTimeout)):
         logger.warning(f"⚠️ Telegram Network Error (safely ignored): {type(context.error).__name__}")
     else:
         logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
 
 def main() -> None:
     """Start the bot."""
+    if os.getenv("DISABLE_TELEGRAM_BOT", "false").lower() in ("true", "1", "yes"):
+        logger.info("Telegram Master Bot is disabled via DISABLE_TELEGRAM_BOT=true.")
+        return
+
     token = settings.TELEGRAM_MASTER_BOT_TOKEN
     
     if not token:

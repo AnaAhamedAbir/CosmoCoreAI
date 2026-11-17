@@ -453,6 +453,26 @@ const SystemAlertWidget: React.FC = () => {
   const logWsRef   = useRef<WebSocket | null>(null);
   const prevLen    = useRef(0);
 
+  // Waterdrop animation states
+  const [animatingOpen, setAnimatingOpen] = useState(false);
+  const [btnRipple, setBtnRipple] = useState(false);
+  const [waterdropKey, setWaterdropKey] = useState(0);
+  const prevOpenRef = useRef(open);
+
+  useEffect(() => {
+    if (open && !prevOpenRef.current) {
+      setWaterdropKey(k => k + 1);
+      setAnimatingOpen(true);
+      const timer = setTimeout(() => {
+        setAnimatingOpen(false);
+      }, 550);
+      return () => clearTimeout(timer);
+    } else if (!open) {
+      setAnimatingOpen(false);
+    }
+    prevOpenRef.current = open;
+  }, [open]);
+
   // Initial position - Center of screen (responsive for desktop & tablets like Redmi Pad)
   useEffect(() => {
     if (open) {
@@ -535,6 +555,8 @@ const SystemAlertWidget: React.FC = () => {
   };
 
   const handleOpen = () => {
+    setBtnRipple(true);
+    setTimeout(() => setBtnRipple(false), 550);
     setOpen(v => {
       if (!v) markAllRead();
       return !v;
@@ -558,7 +580,7 @@ const SystemAlertWidget: React.FC = () => {
         ref={triggerRef}
         id="system-alert-widget-trigger"
         onClick={handleOpen}
-        className={`relative flex items-center gap-2 px-3 h-9 rounded-xl border transition-all duration-300 cursor-pointer select-none overflow-hidden ${open ? 'ring-1 ring-violet-500/50' : ''}`}
+        className={`relative flex items-center gap-2 px-3 h-9 rounded-xl border transition-all duration-300 cursor-pointer select-none overflow-hidden active:scale-95 ${open ? 'ring-1 ring-violet-500/50' : ''}`}
         style={{
           background: hasAlert
             ? 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(124,58,237,0.10))'
@@ -567,6 +589,16 @@ const SystemAlertWidget: React.FC = () => {
           boxShadow: hasAlert ? '0 0 20px rgba(239,68,68,0.15)' : 'none',
         }}
       >
+        {/* Waterdrop ripple on click */}
+        {btnRipple && (
+          <span
+            className="absolute inset-0 rounded-xl pointer-events-none animate-waterdrop-btn-ripple"
+            style={{
+              background: 'radial-gradient(circle at center, rgba(139,92,246,0.45) 0%, rgba(6,182,212,0.25) 50%, transparent 75%)',
+            }}
+          />
+        )}
+
         {/* Shimmer on hover */}
         <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity"
           style={{ background: isDark ? 'linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent)' : 'linear-gradient(90deg, transparent, rgba(0,0,0,0.03), transparent)' }} />
@@ -601,20 +633,51 @@ const SystemAlertWidget: React.FC = () => {
       {/* ─── Floating Window ─── */}
       {(open || !isThermalGuardActive()) && createPortal(
         <div
+          key={`sys-alert-window-${waterdropKey}`}
           className={`fixed z-[9999] ${
-            isDragging ? '' : 'transition-[opacity,transform] duration-200'
-          } ${open ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 pointer-events-none scale-95'}`}
+            isDragging
+              ? ''
+              : animatingOpen
+              ? 'animate-waterdrop-bloom pointer-events-auto'
+              : open
+              ? 'opacity-100 pointer-events-auto scale-100 transition-[opacity,transform] duration-200'
+              : 'opacity-0 pointer-events-none scale-95 transition-[opacity,transform] duration-200'
+          }`}
           style={{
             top: `${position.y}px`,
             left: `${position.x}px`,
             width: '530px',
             maxWidth: 'calc(100vw - 20px)',
-            transformOrigin: 'top left',
-            willChange: isDragging ? 'top, left' : 'auto',
+            transformOrigin: 'center center',
+            willChange: isDragging ? 'top, left' : 'transform, opacity, filter',
           }}
         >
-        {/* Outer glow border */}
-        <div className="rounded-2xl p-px"
+          {/* Waterdrop Expanding Concentric Ripples */}
+          {open && animatingOpen && !isDragging && (
+            <div className="absolute inset-0 pointer-events-none -z-10 flex items-center justify-center overflow-visible">
+              <span
+                className="absolute inset-[-14px] rounded-3xl animate-waterdrop-ripple-1 border pointer-events-none"
+                style={{
+                  borderColor: isDark ? 'rgba(167, 139, 250, 0.45)' : 'rgba(124, 58, 237, 0.40)',
+                  boxShadow: isDark
+                    ? '0 0 30px rgba(139, 92, 246, 0.35), inset 0 0 15px rgba(139, 92, 246, 0.2)'
+                    : '0 0 25px rgba(124, 58, 237, 0.25)',
+                }}
+              />
+              <span
+                className="absolute inset-[-28px] rounded-3xl animate-waterdrop-ripple-2 border pointer-events-none"
+                style={{
+                  borderColor: isDark ? 'rgba(6, 182, 212, 0.35)' : 'rgba(6, 182, 212, 0.30)',
+                  boxShadow: isDark
+                    ? '0 0 40px rgba(6, 182, 212, 0.25), inset 0 0 20px rgba(6, 182, 212, 0.15)'
+                    : '0 0 30px rgba(6, 182, 212, 0.20)',
+                }}
+              />
+            </div>
+          )}
+
+          {/* Outer glow border */}
+          <div className="rounded-2xl p-px relative overflow-hidden"
           style={{
             background: isDark
               ? (isDragging
@@ -632,6 +695,19 @@ const SystemAlertWidget: React.FC = () => {
                 : '0 12px 35px rgba(0,0,0,0.12), 0 0 25px rgba(124,58,237,0.1)'),
           }}
         >
+          {/* Waterdrop Liquid Sheen Sweep */}
+          {animatingOpen && !isDragging && (
+            <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden rounded-2xl" aria-hidden="true">
+              <div
+                className="w-1/2 h-full animate-waterdrop-sheen"
+                style={{
+                  background: isDark
+                    ? 'linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.25), rgba(255, 255, 255, 0.35), transparent)'
+                    : 'linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.20), rgba(255, 255, 255, 0.6), transparent)',
+                }}
+              />
+            </div>
+          )}
           <div className="rounded-2xl overflow-hidden flex flex-col" style={{
             height: 'min(530px, calc(100vh - 30px))',
             background: isDark

@@ -2109,5 +2109,142 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   text-rendering: optimizeSpeed;
 }
 
+/* ==========================================================================
+   Smooth Waterdrop Animation System
+   Organic liquid surface tension, droplet elastic expansion, concentric water
+   ripple waves, and specular caustic sheen for Sys Monitor & Sys Notification.
+   ========================================================================== */
+
+@keyframes waterdrop-bloom {
+  0% {
+    opacity: 0;
+    transform: scale(0.22) translateY(-26px);
+    filter: blur(14px) brightness(1.25);
+    border-radius: 44px;
+  }
+  38% {
+    opacity: 0.95;
+    transform: scale(1.042, 0.962) translateY(5px);
+    filter: blur(1px) brightness(1.08);
+    border-radius: 22px;
+  }
+  62% {
+    opacity: 1;
+    transform: scale(0.984, 1.018) translateY(-2px);
+    filter: blur(0px);
+    border-radius: 17px;
+  }
+  82% {
+    transform: scale(1.008, 0.996) translateY(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1, 1) translateY(0);
+    filter: blur(0px) brightness(1);
+    border-radius: 16px;
+  }
+}
+
+@keyframes waterdrop-condense {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.75) translateY(-16px);
+    filter: blur(8px);
+  }
+}
+
+@keyframes waterdrop-ripple-1 {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.85;
+    border-width: 2px;
+  }
+  50% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(1.28);
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+@keyframes waterdrop-ripple-2 {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.7;
+    border-width: 1.5px;
+  }
+  55% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1.42);
+    opacity: 0;
+    border-width: 0.5px;
+  }
+}
+
+@keyframes waterdrop-sheen {
+  0% {
+    transform: translateX(-140%) skewX(-25deg);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateX(260%) skewX(-25deg);
+    opacity: 0;
+  }
+}
+
+@keyframes waterdrop-button-ripple {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.animate-waterdrop-bloom {
+  animation: waterdrop-bloom 0.52s cubic-bezier(0.25, 1, 0.35, 1) forwards;
+  will-change: transform, opacity, filter;
+}
+
+.animate-waterdrop-condense {
+  animation: waterdrop-condense 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+  will-change: transform, opacity, filter;
+}
+
+.animate-waterdrop-ripple-1 {
+  animation: waterdrop-ripple-1 0.72s cubic-bezier(0.2, 0.8, 0.25, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.animate-waterdrop-ripple-2 {
+  animation: waterdrop-ripple-2 0.88s cubic-bezier(0.2, 0.8, 0.25, 1) 0.08s forwards;
+  will-change: transform, opacity;
+}
+
+.animate-waterdrop-sheen {
+  animation: waterdrop-sheen 0.65s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.animate-waterdrop-btn-ripple {
+  animation: waterdrop-button-ripple 0.55s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
+  will-change: transform, opacity;
+}
+
+
 
 

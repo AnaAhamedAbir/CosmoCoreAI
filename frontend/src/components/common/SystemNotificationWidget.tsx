@@ -409,7 +409,7 @@ const NotificationDetailModal: React.FC<{
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[99999] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[99999] flex items-center justify-center p-4 animate-fadeIn"
       style={{
         background: isDark ? 'rgba(0, 0, 0, 0.80)' : 'rgba(15, 23, 42, 0.45)',
         backdropFilter: 'blur(8px)',
@@ -419,8 +419,9 @@ const NotificationDetailModal: React.FC<{
       }}
     >
       <div
-        className="relative w-full max-w-lg rounded-2xl p-px"
+        className="relative w-full max-w-lg rounded-2xl p-px animate-waterdrop-bloom"
         style={{
+          transformOrigin: 'center center',
           background: `linear-gradient(135deg, ${neon}65, rgba(255,255,255,0.12), ${catCfg.secondaryNeon}45)`,
           boxShadow: isDark
             ? `0 0 60px ${neon}30, 0 30px 80px rgba(0,0,0,0.9)`
@@ -944,6 +945,32 @@ const SystemNotificationWidget: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef({ startX: 0, startY: 0, curX: 0, curY: 0 });
 
+  // Waterdrop animation states
+  const [animatingOpen, setAnimatingOpen] = useState(false);
+  const [btnRipple, setBtnRipple] = useState(false);
+  const [waterdropKey, setWaterdropKey] = useState(0);
+  const prevOpenRef = useRef(open);
+
+  useEffect(() => {
+    if (open && !prevOpenRef.current) {
+      setWaterdropKey(k => k + 1);
+      setAnimatingOpen(true);
+      const timer = setTimeout(() => {
+        setAnimatingOpen(false);
+      }, 550);
+      return () => clearTimeout(timer);
+    } else if (!open) {
+      setAnimatingOpen(false);
+    }
+    prevOpenRef.current = open;
+  }, [open]);
+
+  const handleTriggerClick = () => {
+    setBtnRipple(true);
+    setTimeout(() => setBtnRipple(false), 550);
+    setOpen(v => !v);
+  };
+
   // Center floating window when opened
   useEffect(() => {
     if (open) {
@@ -1167,9 +1194,9 @@ const SystemNotificationWidget: React.FC = () => {
       <button
         type="button"
         id="system-notification-widget-trigger"
-        onClick={() => setOpen(v => !v)}
+        onClick={handleTriggerClick}
         aria-label="Toggle system notifications"
-        className={`relative flex items-center gap-2 px-2.5 sm:px-3 h-9 rounded-xl border transition-all duration-300 cursor-pointer select-none overflow-hidden shrink-0 ${
+        className={`relative flex items-center gap-2 px-2.5 sm:px-3 h-9 rounded-xl border transition-all duration-300 cursor-pointer select-none overflow-hidden shrink-0 active:scale-95 ${
           open ? 'ring-1 ring-cyan-400/50' : ''
         }`}
         style={{
@@ -1188,6 +1215,16 @@ const SystemNotificationWidget: React.FC = () => {
           boxShadow: hasUnread ? '0 0 18px rgba(34,211,238,0.18)' : 'none',
         }}
       >
+        {/* Waterdrop ripple on click */}
+        {btnRipple && (
+          <span
+            className="absolute inset-0 rounded-xl pointer-events-none animate-waterdrop-btn-ripple"
+            style={{
+              background: 'radial-gradient(circle at center, rgba(34,211,238,0.45) 0%, rgba(167,139,250,0.25) 50%, transparent 75%)',
+            }}
+          />
+        )}
+
         {/* Hover shimmer */}
         <div
           className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity pointer-events-none"
@@ -1249,22 +1286,53 @@ const SystemNotificationWidget: React.FC = () => {
       {/* ─── Draggable Floating Cyberpunk Window ─── */}
       {(open || !isThermalGuardActive()) && createPortal(
         <div
+          key={`sys-notify-window-${waterdropKey}`}
           className={`fixed z-[9999] ${
-            isDragging ? '' : 'transition-[opacity,transform] duration-200'
-          } ${open ? 'opacity-100 pointer-events-auto scale-100' : 'opacity-0 pointer-events-none scale-95'}`}
+            isDragging
+              ? ''
+              : animatingOpen
+              ? 'animate-waterdrop-bloom pointer-events-auto'
+              : open
+              ? 'opacity-100 pointer-events-auto scale-100 transition-[opacity,transform] duration-200'
+              : 'opacity-0 pointer-events-none scale-95 transition-[opacity,transform] duration-200'
+          }`}
           style={{
             top: `${position.y}px`,
             left: `${position.x}px`,
             width: '560px',
             maxWidth: 'calc(100vw - 20px)',
-            transformOrigin: 'top left',
-            willChange: isDragging ? 'top, left' : 'auto',
+            transformOrigin: 'center center',
+            willChange: isDragging ? 'top, left' : 'transform, opacity, filter',
             touchAction: 'none',
           }}
         >
+          {/* Waterdrop Expanding Concentric Ripples */}
+          {open && animatingOpen && !isDragging && (
+            <div className="absolute inset-0 pointer-events-none -z-10 flex items-center justify-center overflow-visible">
+              <span
+                className="absolute inset-[-14px] rounded-3xl animate-waterdrop-ripple-1 border pointer-events-none"
+                style={{
+                  borderColor: isDark ? 'rgba(34, 211, 238, 0.50)' : 'rgba(6, 182, 212, 0.45)',
+                  boxShadow: isDark
+                    ? '0 0 32px rgba(34, 211, 238, 0.38), inset 0 0 16px rgba(34, 211, 238, 0.22)'
+                    : '0 0 25px rgba(6, 182, 212, 0.28)',
+                }}
+              />
+              <span
+                className="absolute inset-[-28px] rounded-3xl animate-waterdrop-ripple-2 border pointer-events-none"
+                style={{
+                  borderColor: isDark ? 'rgba(167, 139, 250, 0.38)' : 'rgba(124, 58, 237, 0.32)',
+                  boxShadow: isDark
+                    ? '0 0 42px rgba(167, 139, 250, 0.26), inset 0 0 20px rgba(167, 139, 250, 0.16)'
+                    : '0 0 32px rgba(124, 58, 237, 0.22)',
+                }}
+              />
+            </div>
+          )}
+
           {/* Outer glow border */}
           <div
-            className="rounded-2xl p-px"
+            className="rounded-2xl p-px relative overflow-hidden"
             style={{
               background: isDragging
                 ? 'linear-gradient(135deg, #06b6d470, #a78bfa60, #06b6d470)'
@@ -1276,6 +1344,19 @@ const SystemNotificationWidget: React.FC = () => {
                 : '0 20px 50px rgba(15,23,42,0.20)',
             }}
           >
+            {/* Waterdrop Liquid Sheen Sweep */}
+            {animatingOpen && !isDragging && (
+              <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden rounded-2xl" aria-hidden="true">
+                <div
+                  className="w-1/2 h-full animate-waterdrop-sheen"
+                  style={{
+                    background: isDark
+                      ? 'linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.28), rgba(255, 255, 255, 0.40), transparent)'
+                      : 'linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.22), rgba(255, 255, 255, 0.65), transparent)',
+                  }}
+                />
+              </div>
+            )}
             <div
               className="rounded-2xl overflow-hidden flex flex-col relative"
               style={{

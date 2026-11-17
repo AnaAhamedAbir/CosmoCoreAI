@@ -293,7 +293,11 @@ export const CosmicStarBackground: React.FC = () => {
                 }}
             />
             {/* 3D Starfield Canvas */}
-            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+            <canvas
+                ref={canvasRef}
+                className="absolute inset-0 w-full h-full pointer-events-none"
+                style={{ willChange: 'transform', transform: 'translateZ(0)' }}
+            />
         </div>
     );
 };

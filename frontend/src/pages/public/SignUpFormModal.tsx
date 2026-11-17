@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import Button from '@/components/common/Button';
 import { registerUser } from '@/services/auth';
 import { Logo, GoogleLogo, GithubLogo, AppleLogo, UserCircleIcon, KeyIcon } from '@/constants';
@@ -38,21 +39,24 @@ const InputField: React.FC<InputFieldProps> = ({ id, type, placeholder, value, o
 interface SignUpFormModalProps {
     onClose: () => void;
     onRegister: () => void;
+    onSwitchToLogin?: () => void;
 }
 
-const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister }) => {
+const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister, onSwitchToLogin }) => {
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [isClosing, setIsClosing] = useState(false);
 
-    const handleClose = () => {
-        setIsClosing(true);
-        setTimeout(onClose, 300);
-    };
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onClose]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -78,14 +82,27 @@ const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister }
 
     return (
         <div
-            className={`fixed inset-0 z-[100] flex items-center justify-center p-4 transition-all duration-300 ${isClosing ? 'opacity-0' : 'opacity-100'}`}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4"
             role="dialog"
             aria-modal="true"
         >
-            <div className="absolute inset-0 bg-[#020610]/40 backdrop-blur-sm" onClick={handleClose}></div>
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="absolute inset-0 bg-[#020610]/70"
+                style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
+                onClick={onClose}
+            />
 
-            <div
-                className={`relative w-full max-w-4xl bg-[#070F20]/40 backdrop-blur-md rounded-3xl border border-white/10 shadow-[0_0_50px_rgba(6,182,212,0.15)] overflow-hidden flex flex-col md:flex-row transform transition-all duration-300 ${isClosing ? 'scale-95 translate-y-4' : 'scale-100 translate-y-0 animate-modal-content-slide-down'}`}
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className="relative w-full max-w-4xl bg-[#070F20]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_0_50px_rgba(6,182,212,0.15)] overflow-hidden flex flex-col md:flex-row"
+                style={{ willChange: 'transform, opacity', transform: 'translateZ(0)' }}
                 onClick={e => e.stopPropagation()}
             >
                 {/* Glow outlines */}
@@ -142,7 +159,8 @@ const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister }
                 {/* Right Side - Form */}
                 <div className="w-full md:w-7/12 p-6 md:p-8 relative flex flex-col justify-center">
                     <button
-                        onClick={handleClose}
+                        type="button"
+                        onClick={onClose}
                         className="absolute top-4 right-4 p-2 text-slate-500 hover:text-white transition-colors rounded-full hover:bg-white/10 z-20"
                     >
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -231,12 +249,16 @@ const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister }
 
                     <div className="mt-6 text-center text-xs text-slate-500">
                         Already authenticated?{' '}
-                        <button onClick={handleClose} className="font-bold text-cyan-400 hover:text-cyan-300 hover:underline decoration-cyan-400/30 underline-offset-4 transition-all">
+                        <button 
+                            type="button"
+                            onClick={onSwitchToLogin || onClose} 
+                            className="font-bold text-cyan-400 hover:text-cyan-300 hover:underline decoration-cyan-400/30 underline-offset-4 transition-all"
+                        >
                             Initialize Login Sequence
                         </button>
                     </div>
                 </div>
-            </div>
+            </motion.div>
         </div>
     );
 };

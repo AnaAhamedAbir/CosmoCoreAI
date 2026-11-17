@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import PublicWebsite from '@/pages/public/PublicWebsite';
 import AppDashboard from '@/pages/app/AppDashboard';
 import LoginTransition from '@/pages/app/LoginTransition';
@@ -228,26 +229,32 @@ function App() {
         return (
           <>
             <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />
-            {appState === AppState.SHOW_LOGIN_MODAL && (
-              <LoginFormModal
-                onClose={() => setAppState(AppState.PUBLIC)}
-                onLoginSuccess={handleAuthSuccess}
-                onSwitchToSignup={switchToSignUp}
-                onSwitchToForgotPassword={handleForgotPasswordInitiate}
-              />
-            )}
-            {appState === AppState.SHOW_SIGNUP_MODAL && (
-              <SignUpFormModal
-                onClose={() => setAppState(AppState.PUBLIC)}
-                onRegister={handleAuthSuccess}
-              />
-            )}
-            {appState === AppState.SHOW_FORGOT_PASSWORD_MODAL && (
-              <ForgotPasswordModal
-                onClose={() => setAppState(AppState.PUBLIC)}
-                onBackToLogin={handleBackToLogin}
-              />
-            )}
+            <AnimatePresence>
+              {appState === AppState.SHOW_LOGIN_MODAL && (
+                <LoginFormModal
+                  key="login-modal"
+                  onClose={() => setAppState(AppState.PUBLIC)}
+                  onLoginSuccess={handleAuthSuccess}
+                  onSwitchToSignup={switchToSignUp}
+                  onSwitchToForgotPassword={handleForgotPasswordInitiate}
+                />
+              )}
+              {appState === AppState.SHOW_SIGNUP_MODAL && (
+                <SignUpFormModal
+                  key="signup-modal"
+                  onClose={() => setAppState(AppState.PUBLIC)}
+                  onRegister={handleAuthSuccess}
+                  onSwitchToLogin={switchToLogin}
+                />
+              )}
+              {appState === AppState.SHOW_FORGOT_PASSWORD_MODAL && (
+                <ForgotPasswordModal
+                  key="forgot-password-modal"
+                  onClose={() => setAppState(AppState.PUBLIC)}
+                  onBackToLogin={handleBackToLogin}
+                />
+              )}
+            </AnimatePresence>
           </>
         );
     }

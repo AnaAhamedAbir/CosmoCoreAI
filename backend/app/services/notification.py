@@ -311,6 +311,7 @@ class NotificationService:
             active_users = db.query(NotificationSettings).filter(
                 NotificationSettings.is_enabled == True,
                 NotificationSettings.telegram_chat_id != None,
+                NotificationSettings.telegram_chat_id != "",
                 or_(
                     NotificationSettings.telegram_bot_token != None,
                     NotificationSettings.use_master_bot == True

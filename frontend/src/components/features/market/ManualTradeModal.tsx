@@ -298,7 +298,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   React.useEffect(() => {
     notificationService.getSettings()
       .then(s => {
-        const active = Boolean(s && s.is_enabled && s.alert_manual_trade !== false && (s.use_master_bot || (s.telegram_bot_token && s.telegram_chat_id)));
+        const active = Boolean(s && s.is_enabled && s.alert_manual_trade !== false && s.telegram_chat_id && (s.use_master_bot || s.telegram_bot_token));
         setIsTelegramConnected(active);
       })
       .catch(() => setIsTelegramConnected(false));

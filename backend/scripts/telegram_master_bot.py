@@ -84,6 +84,40 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     finally:
         db.close()
 
+async def disconnect(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /disconnect, /stop, or /unlink commands from a user on Telegram."""
+    chat_id = update.effective_chat.id
+    db = SessionLocal()
+    try:
+        notification_settings = db.query(NotificationSettings).filter(
+            NotificationSettings.telegram_chat_id == str(chat_id)
+        ).first()
+
+        if not notification_settings:
+            await update.message.reply_text(
+                "ℹ️ This Telegram chat is not currently connected to any CosmoQuantAI account."
+            )
+            return
+
+        user = db.query(User).filter(User.id == notification_settings.user_id).first()
+        user_name = user.full_name or user.email if user else "your account"
+
+        notification_settings.telegram_chat_id = None
+        notification_settings.telegram_bot_token = None
+        db.commit()
+
+        await update.message.reply_text(
+            f"🔌 Successfully disconnected from CosmoQuantAI ({user_name})!\n\n"
+            "You will no longer receive alerts in this chat.\n"
+            "You can reconnect at any time from your web dashboard."
+        )
+        logger.info(f"Successfully unlinked telegram chat {chat_id} from user {notification_settings.user_id}")
+    except Exception as e:
+        logger.error(f"Error disconnecting telegram user: {e}")
+        await update.message.reply_text("An internal error occurred while disconnecting. Please try again.")
+    finally:
+        db.close()
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log the error and handle exceptions gracefully."""
     import httpx
@@ -105,6 +139,7 @@ def main() -> None:
     application = Application.builder().token(token).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler(["disconnect", "stop", "unlink"], disconnect))
     application.add_error_handler(error_handler)
 
     logger.info("Starting CosmoQuantAI Master Bot polling...")

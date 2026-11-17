@@ -33,11 +33,16 @@ def update_notification_settings(
 ):
     settings = db.query(NotificationSettings).filter(NotificationSettings.user_id == current_user.id).first()
     
+    update_data = settings_in.model_dump(exclude_unset=True)
+    for field in ("telegram_chat_id", "telegram_bot_token"):
+        if field in update_data and (update_data[field] == "" or update_data[field] is None):
+            update_data[field] = None
+
     if not settings:
-        settings = NotificationSettings(user_id=current_user.id, **settings_in.model_dump())
+        settings = NotificationSettings(user_id=current_user.id, **update_data)
         db.add(settings)
     else:
-        for field, value in settings_in.model_dump(exclude_unset=True).items():
+        for field, value in update_data.items():
             setattr(settings, field, value)
             
     db.commit()
@@ -87,4 +92,24 @@ def get_telegram_connect_link(
     payload = f"user_{current_user.id}"
     link = f"https://t.me/{bot_username}?start={payload}"
     return {"link": link}
+
+@router.post("/disconnect", response_model=NotificationSettingsResponse)
+def disconnect_telegram(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    settings = db.query(NotificationSettings).filter(NotificationSettings.user_id == current_user.id).first()
+    if settings:
+        settings.telegram_chat_id = None
+        settings.telegram_bot_token = None
+        db.commit()
+        db.refresh(settings)
+        return settings
+    return NotificationSettingsResponse(
+        user_id=current_user.id,
+        telegram_bot_token=None,
+        telegram_chat_id=None,
+        is_enabled=False
+    )
+
 

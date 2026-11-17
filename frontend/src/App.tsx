@@ -206,50 +206,6 @@ function App() {
 
   const renderContent = () => {
     switch (appState) {
-      case AppState.SHOW_FORGOT_PASSWORD_MODAL:
-        return (
-          <>
-            <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />
-            <ForgotPasswordModal
-              onClose={() => setAppState(AppState.PUBLIC)}
-              onBackToLogin={handleBackToLogin}
-            />
-          </>
-        );
-
-      case AppState.RESET_PASSWORD_SCREEN:
-        if (!resetToken) return <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />;
-        return <ResetPasswordScreen token={resetToken} onResetSuccess={handleResetSuccess} />;
-
-      // সাইনআপ মোডাল রেন্ডারিং
-      case AppState.SHOW_SIGNUP_MODAL:
-        return (
-          <>
-            <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />
-            <SignUpFormModal
-              onClose={() => setAppState(AppState.PUBLIC)}
-              onRegister={handleAuthSuccess} // সাকসেস হলে ট্রানজিশন হবে
-            />
-          </>
-        );
-
-      // লগইন মোডাল রেন্ডারিং (নতুন)
-      case AppState.SHOW_LOGIN_MODAL:
-        return (
-          <>
-            <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />
-            <LoginFormModal
-              onClose={() => setAppState(AppState.PUBLIC)}
-              onLoginSuccess={handleAuthSuccess}
-              onSwitchToSignup={switchToSignUp}
-              onSwitchToForgotPassword={handleForgotPasswordInitiate}
-            />
-          </>
-        );
-
-      case AppState.LOGGING_IN_TRANSITION:
-        return <LoginTransition onAnimationComplete={() => setAppState(AppState.LOGGED_IN)} />;
-
       case AppState.LOGGED_IN:
         return (
           <AppDashboard
@@ -257,9 +213,43 @@ function App() {
           />
         );
 
+      case AppState.LOGGING_IN_TRANSITION:
+        return <LoginTransition onAnimationComplete={() => setAppState(AppState.LOGGED_IN)} />;
+
+      case AppState.RESET_PASSWORD_SCREEN:
+        if (!resetToken) return <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />;
+        return <ResetPasswordScreen token={resetToken} onResetSuccess={handleResetSuccess} />;
+
+      case AppState.SHOW_FORGOT_PASSWORD_MODAL:
+      case AppState.SHOW_SIGNUP_MODAL:
+      case AppState.SHOW_LOGIN_MODAL:
       case AppState.PUBLIC:
       default:
-        return <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />;
+        return (
+          <>
+            <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />
+            {appState === AppState.SHOW_LOGIN_MODAL && (
+              <LoginFormModal
+                onClose={() => setAppState(AppState.PUBLIC)}
+                onLoginSuccess={handleAuthSuccess}
+                onSwitchToSignup={switchToSignUp}
+                onSwitchToForgotPassword={handleForgotPasswordInitiate}
+              />
+            )}
+            {appState === AppState.SHOW_SIGNUP_MODAL && (
+              <SignUpFormModal
+                onClose={() => setAppState(AppState.PUBLIC)}
+                onRegister={handleAuthSuccess}
+              />
+            )}
+            {appState === AppState.SHOW_FORGOT_PASSWORD_MODAL && (
+              <ForgotPasswordModal
+                onClose={() => setAppState(AppState.PUBLIC)}
+                onBackToLogin={handleBackToLogin}
+              />
+            )}
+          </>
+        );
     }
   };
 

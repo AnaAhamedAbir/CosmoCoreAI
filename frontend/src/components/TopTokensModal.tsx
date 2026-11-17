@@ -5,6 +5,7 @@ import { useBinanceMarketData, TokenData } from '../hooks/useBinanceMarketData';
 import { useMarketStore } from '../store/marketStore';
 import { useFloatingModalDrag } from '../hooks/useFloatingModalDrag';
 import { useDeviceProfile } from '../hooks/useDeviceProfile';
+import { FloatingModalCyberFX } from './common/FloatingModalCyberFX';
 
 interface TopTokensModalProps {
     isOpen: boolean;
@@ -361,11 +362,15 @@ export const TopTokensModal: React.FC<TopTokensModalProps> = ({ isOpen, onClose 
                 ref={modalContainerRef}
                 style={containerStyle}
                 className={`cosmo-theme-modal fixed w-[620px] max-w-[calc(100vw-12px)] h-[740px] rounded-xl border z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col ${
+                    isThermalGuardActive ? 'animate-cosmo-modal-fast' : 'animate-cosmo-modal-orange'
+                } ${
                     isThermalGuardActive
                         ? 'bg-[#080c16] border-orange-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
                         : 'bg-[#070b14] bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/[0.98] to-[#050811]/[0.98] border-orange-500/35 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_20px_rgba(249,115,22,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
                 }`}
             >
+                <FloatingModalCyberFX color="orange" isThermalGuard={isThermalGuardActive} />
+
                 {/* Top Neon Accent Line */}
                 <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-orange-400 to-rose-500 opacity-85 shrink-0" />
 

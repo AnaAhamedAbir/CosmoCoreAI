@@ -6,6 +6,7 @@ import { botService } from '@/services/botService';
 import { useSettings } from '@/context/SettingsContext';
 import { useFloatingModalDrag } from '@/hooks/useFloatingModalDrag';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { FloatingModalCyberFX } from '@/components/common/FloatingModalCyberFX';
 import { CustomMLModel } from '@/types';
 import { toast } from 'react-hot-toast';
 
@@ -120,11 +121,15 @@ export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ 
             ref={modalContainerRef}
             style={containerStyle}
             className={`cosmo-theme-modal fixed w-[500px] max-w-[calc(100vw-12px)] rounded-2xl border z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col ${
+                isThermalGuardActive ? 'animate-cosmo-modal-fast' : 'animate-cosmo-modal-purple'
+            } ${
                 isThermalGuardActive
                     ? 'bg-[#080c16] border-purple-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
                     : 'bg-white dark:bg-[#0A0A0A] border-gray-200 dark:border-white/10 shadow-2xl backdrop-blur-2xl'
             }`}
         >
+            <FloatingModalCyberFX color="purple" isThermalGuard={isThermalGuardActive} />
+
             {/* Header */}
             <div
                 onMouseDown={handleStartDrag}

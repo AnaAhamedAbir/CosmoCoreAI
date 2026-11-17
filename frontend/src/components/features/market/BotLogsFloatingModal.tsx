@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { GripVertical, X, Terminal } from 'lucide-react';
 import { useFloatingModalDrag } from '@/hooks/useFloatingModalDrag';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { FloatingModalCyberFX } from '@/components/common/FloatingModalCyberFX';
 import { BotLogsTab } from './BotLogsTab';
 
 interface BotLogsFloatingModalProps {
@@ -32,11 +33,15 @@ export const BotLogsFloatingModal: React.FC<BotLogsFloatingModalProps> = ({
       ref={modalContainerRef}
       style={containerStyle}
       className={`cosmo-theme-modal fixed w-[640px] max-w-[calc(100vw-12px)] h-[460px] rounded-xl border z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col ${
+        isThermalGuardActive ? 'animate-cosmo-modal-fast' : 'animate-cosmo-modal-purple'
+      } ${
         isThermalGuardActive
           ? 'bg-[#080c16] border-purple-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
           : 'bg-[#070b14] bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/[0.98] to-[#050811]/[0.98] border-purple-500/35 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_20px_rgba(168,85,247,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
       }`}
     >
+      <FloatingModalCyberFX color="purple" isThermalGuard={isThermalGuardActive} />
+
       {/* Top Neon Accent Line */}
       <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-purple-500 to-indigo-500 opacity-85 shrink-0" />
 

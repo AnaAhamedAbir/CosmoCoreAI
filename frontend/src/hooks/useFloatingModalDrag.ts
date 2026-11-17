@@ -221,6 +221,7 @@ export function useFloatingModalDrag({
           ? 'rgba(255, 255, 255, 0.98)'
           : 'rgba(7, 11, 20, 0.98)';
         modalEl.style.transition = 'none';
+        modalEl.style.animation = 'none';
       }
 
       const applyMove = (clientX: number, clientY: number) => {
@@ -259,6 +260,7 @@ export function useFloatingModalDrag({
           (modalEl.style as unknown as { webkitBackdropFilter: string }).webkitBackdropFilter = '';
           modalEl.style.backgroundColor = '';
           modalEl.style.transition = '';
+          modalEl.style.animation = '';
         }
         window.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('mouseup', onUp);

@@ -6,6 +6,7 @@ import { toast } from 'react-hot-toast';
 import apiClient from '../../../services/client';
 import { useFloatingModalDrag } from '../../../hooks/useFloatingModalDrag';
 import { useDeviceProfile } from '../../../hooks/useDeviceProfile';
+import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
 
 export interface PredictionResult {
     model_id: string;
@@ -140,11 +141,15 @@ export const ModelPredictorModal: React.FC<ModelPredictorModalProps> = ({
                     ref={modalContainerRef}
                     style={containerStyle}
                     className={`cosmo-theme-modal fixed w-[460px] max-w-[calc(100vw-12px)] rounded-2xl border z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col ${
+                        isThermalGuardActive ? 'animate-cosmo-modal-fast' : 'animate-cosmo-modal-indigo'
+                    } ${
                         isThermalGuardActive
                             ? 'bg-[#080c16] border-indigo-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
                             : 'bg-white dark:bg-[#070b14]/95 backdrop-blur-2xl border-slate-200 dark:border-white/10 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_20px_rgba(99,102,241,0.18)]'
                     }`}
                 >
+                    <FloatingModalCyberFX color="indigo" isThermalGuard={isThermalGuardActive} />
+
                     {/* Header */}
                     <div
                         onMouseDown={handleStartDrag}

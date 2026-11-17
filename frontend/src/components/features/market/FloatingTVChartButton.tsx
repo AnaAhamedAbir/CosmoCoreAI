@@ -21,6 +21,7 @@ import { HeatmapSymbolSelector } from './HeatmapSymbolSelector';
 import { TimeframeSelector } from './TimeframeSelector';
 import { useTheme } from '../../../context/ThemeContext';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { FloatingModalCyberFX } from '@/components/common/FloatingModalCyberFX';
 
 const MotionButton = motion.button as any;
 const MotionDiv   = motion.div   as any;
@@ -627,6 +628,7 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
       if (modalEl) {
         modalEl.style.pointerEvents = 'auto';
         modalEl.style.transition = 'none';
+        modalEl.style.animation = 'none';
         modalEl.style.boxShadow = 'none';
         modalEl.style.backdropFilter = 'none';
         (modalEl.style as any).webkitBackdropFilter = 'none';
@@ -682,6 +684,7 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
         if (modalContainerRef.current) {
           modalContainerRef.current.style.pointerEvents = '';
           modalContainerRef.current.style.transition = '';
+          modalContainerRef.current.style.animation = '';
           modalContainerRef.current.style.backdropFilter = '';
           (modalContainerRef.current.style as any).webkitBackdropFilter = '';
           modalContainerRef.current.style.backgroundColor = '';
@@ -802,11 +805,15 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
                 zIndex: 100000,
               }}
               className={`cosmo-theme-modal fixed ${modalWidthClass} rounded-2xl ${
+                isThermalGuardActive ? 'animate-cosmo-modal-fast' : 'animate-cosmo-modal-violet'
+              } ${
                 isThermalGuardActive
                   ? 'bg-[#070C17] border-violet-500/30 shadow-[0_12px_36px_rgba(0,0,0,0.92)]'
                   : 'bg-white dark:bg-[#070C17] backdrop-blur-xl border border-slate-200 dark:border-violet-500/20 shadow-[0_16px_64px_rgba(0,0,0,0.85)]'
               } flex flex-col overflow-hidden select-none`}
             >
+              <FloatingModalCyberFX color="violet" isThermalGuard={isThermalGuardActive} />
+
               {/* ── DRAG HANDLE ─────────────────────────────────────────── */}
               <div
                 onMouseDown={handleStartDrag}

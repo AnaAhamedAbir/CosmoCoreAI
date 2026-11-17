@@ -13,6 +13,7 @@ import { CustomMLModel } from '../../../types';
 import { AdvancedRiskManager } from './AdvancedRiskManager';
 import { GodModeBotTriggerSettings } from './GodModeBotTriggerSettings';
 import { useDeviceProfile } from '../../../hooks/useDeviceProfile';
+import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
 
 const getDefaultProxySymbol = (nativeSym: string) =>
     nativeSym ? `${nativeSym.split('/')[0]}/USDT` : 'BTC/USDT';
@@ -782,6 +783,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     ? 'rgba(255, 255, 255, 0.98)'
                     : 'rgba(7, 11, 20, 0.98)';
             modalEl.style.transition = 'none';
+            modalEl.style.animation = 'none';
         }
 
         const applyMove = (clientX: number, clientY: number) => {
@@ -828,6 +830,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 (modalEl.style as any).webkitBackdropFilter = '';
                 modalEl.style.backgroundColor = '';
                 modalEl.style.transition = '';
+                modalEl.style.animation = '';
             }
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onUp);
@@ -1472,11 +1475,15 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 willChange: 'transform'
             }}
             className={`cosmo-theme-modal fixed w-[620px] max-w-[calc(100vw-12px)] rounded-xl border z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col ${
+                isThermalGuardActive ? 'animate-cosmo-modal-fast' : 'animate-cosmo-modal-amber'
+            } ${
                 isThermalGuardActive
                     ? 'bg-[#080c16] border-amber-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
                     : 'bg-[#070b14] bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/[0.98] to-[#050811]/[0.98] border-amber-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_20px_rgba(245,158,11,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
             }`}
         >
+            <FloatingModalCyberFX color="amber" isThermalGuard={isThermalGuardActive} />
+
             {/* Top Neon Horizon Accent Line */}
             <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-amber-400 to-orange-500 opacity-85 shrink-0" />
 

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import PublicWebsite from '@/pages/public/PublicWebsite';
 import AppDashboard from '@/pages/app/AppDashboard';
@@ -36,7 +37,14 @@ const clearPortfolioSessionCache = () => {
 };
 
 function App() {
-  const [appState, setAppState] = useState<AppState>(AppState.PUBLIC);
+  const navigate = useNavigate();
+  const [appState, setAppState] = useState<AppState>(() => {
+    if (typeof window !== 'undefined') {
+      const token = sessionStorage.getItem('accessToken') || localStorage.getItem('accessToken');
+      if (token) return AppState.LOGGED_IN;
+    }
+    return AppState.PUBLIC;
+  });
   const [resetToken, setResetToken] = useState<string | null>(null);
 
   // Sync dynamic viewport height (--app-height) for tablet/mobile Chrome (e.g., Redmi Pad 2 Pro)
@@ -92,7 +100,31 @@ function App() {
     };
   }, []);
 
+  const handleLogout = useCallback(() => {
+    sessionStorage.removeItem('accessToken');
+    sessionStorage.removeItem('refreshToken');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    clearPortfolioSessionCache();
+    
+    // Broadcast logout to other tabs
+    localStorage.setItem('cross-tab-logout', Date.now().toString());
+    
+    // Reset React Router to root cleanly without hard reload
+    navigate('/', { replace: true });
+
+    // Instantly reset scroll to top of public page
+    window.scrollTo({ top: 0, behavior: 'instant' });
+
+    setAppState(AppState.PUBLIC);
+  }, [navigate]);
+
   useEffect(() => {
+    const handleAppLogout = () => {
+      handleLogout();
+    };
+    window.addEventListener('app:logout', handleAppLogout);
+
     // Check if token exists in current tab's session or local storage
     const token = sessionStorage.getItem('accessToken') || localStorage.getItem('accessToken');
     if (token) {
@@ -135,9 +167,8 @@ function App() {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         clearPortfolioSessionCache();
-        if (window.location.pathname !== '/') {
-          window.history.replaceState({}, document.title, '/');
-        }
+        navigate('/', { replace: true });
+        window.scrollTo({ top: 0, behavior: 'instant' });
         setAppState(AppState.PUBLIC);
       }
     };
@@ -150,13 +181,14 @@ function App() {
     if (resetTokenParam) {
       setResetToken(resetTokenParam);
       setAppState(AppState.RESET_PASSWORD_SCREEN);
-      window.history.replaceState({}, document.title, "/");
+      navigate('/', { replace: true });
     }
 
     return () => {
+      window.removeEventListener('app:logout', handleAppLogout);
       window.removeEventListener('storage', handleStorageEvent);
     };
-  }, []);
+  }, [handleLogout, navigate]);
 
   const handleForgotPasswordInitiate = useCallback(() => {
     setAppState(AppState.SHOW_FORGOT_PASSWORD_MODAL);
@@ -193,81 +225,12 @@ function App() {
     setAppState(AppState.LOGGING_IN_TRANSITION);
   }, []);
 
-  const handleLogout = useCallback(() => {
-    sessionStorage.removeItem('accessToken');
-    sessionStorage.removeItem('refreshToken');
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    clearPortfolioSessionCache();
-    
-    // Broadcast logout to other tabs
-    localStorage.setItem('cross-tab-logout', Date.now().toString());
-    
-    // Reset URL to root cleanly without hard reload
-    if (window.location.pathname !== '/') {
-      window.history.replaceState({}, document.title, '/');
-    }
-
-    setAppState(AppState.PUBLIC);
-  }, []);
-
-  const renderContent = () => {
-    switch (appState) {
-      case AppState.LOGGED_IN:
-        return (
-          <AppDashboard
-            onLogout={handleLogout}
-          />
-        );
-
-      case AppState.LOGGING_IN_TRANSITION:
-        return <LoginTransition onAnimationComplete={() => setAppState(AppState.LOGGED_IN)} />;
-
-      case AppState.RESET_PASSWORD_SCREEN:
-        if (!resetToken) return <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />;
-        return <ResetPasswordScreen token={resetToken} onResetSuccess={handleResetSuccess} />;
-
-      case AppState.SHOW_FORGOT_PASSWORD_MODAL:
-      case AppState.SHOW_SIGNUP_MODAL:
-      case AppState.SHOW_LOGIN_MODAL:
-      case AppState.PUBLIC:
-      default:
-        return (
-          <>
-            <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />
-            <AnimatePresence>
-              {appState === AppState.SHOW_LOGIN_MODAL && (
-                <LoginFormModal
-                  key="login-modal"
-                  onClose={() => setAppState(AppState.PUBLIC)}
-                  onLoginSuccess={handleAuthSuccess}
-                  onSwitchToSignup={switchToSignUp}
-                  onSwitchToForgotPassword={handleForgotPasswordInitiate}
-                />
-              )}
-              {appState === AppState.SHOW_SIGNUP_MODAL && (
-                <SignUpFormModal
-                  key="signup-modal"
-                  onClose={() => setAppState(AppState.PUBLIC)}
-                  onRegister={handleAuthSuccess}
-                  onSwitchToLogin={switchToLogin}
-                />
-              )}
-              {appState === AppState.SHOW_FORGOT_PASSWORD_MODAL && (
-                <ForgotPasswordModal
-                  key="forgot-password-modal"
-                  onClose={() => setAppState(AppState.PUBLIC)}
-                  onBackToLogin={handleBackToLogin}
-                />
-              )}
-            </AnimatePresence>
-          </>
-        );
-    }
-  };
+  const isDashboardActive = appState === AppState.LOGGED_IN;
+  const isTransitioning = appState === AppState.LOGGING_IN_TRANSITION;
+  const isResetScreen = appState === AppState.RESET_PASSWORD_SCREEN && Boolean(resetToken);
 
   return (
-    <div className={appState === AppState.LOGGED_IN ? "h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-full max-w-[100vw] overflow-hidden font-sans" : "min-h-[var(--app-height,100dvh)] font-sans"}>
+    <div className={isDashboardActive ? "h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-full max-w-[100vw] overflow-hidden font-sans" : "min-h-[var(--app-height,100dvh)] font-sans"}>
       <Toaster 
         position="top-right" 
         toastOptions={{ 
@@ -275,7 +238,52 @@ function App() {
           style: { zIndex: 999999 } 
         }} 
       />
-      {renderContent()}
+      
+      {/* 1. Public Landing Page & Modals (preserved across transitions so it never re-animates on logout) */}
+      <div className={isDashboardActive || isTransitioning || isResetScreen ? "hidden" : "contents"}>
+        <PublicWebsite onLogin={handleLoginInitiate} onSignUp={handleSignUpInitiate} />
+        <AnimatePresence>
+          {appState === AppState.SHOW_LOGIN_MODAL && (
+            <LoginFormModal
+              key="login-modal"
+              onClose={() => setAppState(AppState.PUBLIC)}
+              onLoginSuccess={handleAuthSuccess}
+              onSwitchToSignup={switchToSignUp}
+              onSwitchToForgotPassword={handleForgotPasswordInitiate}
+            />
+          )}
+          {appState === AppState.SHOW_SIGNUP_MODAL && (
+            <SignUpFormModal
+              key="signup-modal"
+              onClose={() => setAppState(AppState.PUBLIC)}
+              onRegister={handleAuthSuccess}
+              onSwitchToLogin={switchToLogin}
+            />
+          )}
+          {appState === AppState.SHOW_FORGOT_PASSWORD_MODAL && (
+            <ForgotPasswordModal
+              key="forgot-password-modal"
+              onClose={() => setAppState(AppState.PUBLIC)}
+              onBackToLogin={handleBackToLogin}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* 2. Login Transition */}
+      {isTransitioning && (
+        <LoginTransition onAnimationComplete={() => setAppState(AppState.LOGGED_IN)} />
+      )}
+
+      {/* 3. Authenticated Dashboard */}
+      {isDashboardActive && (
+        <AppDashboard onLogout={handleLogout} />
+      )}
+
+      {/* 4. Reset Password Screen */}
+      {isResetScreen && (
+        <ResetPasswordScreen token={resetToken!} onResetSuccess={handleResetSuccess} />
+      )}
     </div>
   );
 }

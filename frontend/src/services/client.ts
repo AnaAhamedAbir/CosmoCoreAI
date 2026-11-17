@@ -59,7 +59,9 @@ apiClient.interceptors.response.use(
                 sessionStorage.removeItem('refreshToken');
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
-                window.location.href = '/';
+                if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('app:logout'));
+                }
                 return Promise.reject(refreshError);
             }
         }

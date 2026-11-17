@@ -199,8 +199,17 @@ const PublicFooter: React.FC = () => (
 );
 
 
+let hasWarpedIn = false;
+
 const PublicWebsite: React.FC<PublicWebsiteProps> = ({ onLogin, onSignUp }) => {
     const [currentView, setCurrentView] = useState<PublicView>('Home');
+    const [shouldWarp] = useState(() => {
+        if (!hasWarpedIn && typeof window !== 'undefined') {
+            hasWarpedIn = true;
+            return true;
+        }
+        return false;
+    });
 
     const renderContent = () => {
         switch (currentView) {
@@ -217,7 +226,7 @@ const PublicWebsite: React.FC<PublicWebsiteProps> = ({ onLogin, onSignUp }) => {
     return (
         <div className="flex flex-col min-h-screen bg-transparent text-white selection:bg-cyan-500/30">
             <CosmicStarBackground />
-            <div className="flex flex-col flex-grow animate-warp-in origin-top">
+            <div className={`flex flex-col flex-grow origin-top ${shouldWarp ? 'animate-warp-in' : ''}`}>
                 <PublicHeader onLogin={onLogin} onSignUp={onSignUp} currentView={currentView} setCurrentView={setCurrentView} />
                 <main className="flex-grow pt-20 relative z-10">
                     {renderContent()}

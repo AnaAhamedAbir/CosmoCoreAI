@@ -164,6 +164,11 @@ export const CosmicStarBackground: React.FC = () => {
                 return;
             }
 
+            if (canvas.offsetParent === null) {
+                animId = requestAnimationFrame(animate);
+                return;
+            }
+
             if (thermalGuard && starX && starY && starZ && starSizeMul && starColorIdx && bucketData && bucketCounts) {
                 if (lastFrameTime && (timestamp - lastFrameTime) < minMobileFrameMs) {
                     animId = requestAnimationFrame(animate);

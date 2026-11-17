@@ -135,6 +135,9 @@ function App() {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         clearPortfolioSessionCache();
+        if (window.location.pathname !== '/') {
+          window.history.replaceState({}, document.title, '/');
+        }
         setAppState(AppState.PUBLIC);
       }
     };
@@ -200,9 +203,12 @@ function App() {
     // Broadcast logout to other tabs
     localStorage.setItem('cross-tab-logout', Date.now().toString());
     
+    // Reset URL to root cleanly without hard reload
+    if (window.location.pathname !== '/') {
+      window.history.replaceState({}, document.title, '/');
+    }
+
     setAppState(AppState.PUBLIC);
-    // পেজ রিফ্রেশ করে দিলে সব ক্লিন হয়ে যাবে (Context reset)
-    window.location.reload();
   }, []);
 
   const renderContent = () => {

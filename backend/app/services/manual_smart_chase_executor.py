@@ -1164,7 +1164,11 @@ async def execute_manual_smart_chase(
                             break
 
                         try:
-                            latest_ob = await exchange.fetch_order_book(symbol, limit=ob_depth_limit)
+                            if peg_strategy in ('bbo', 'inside_spread'):
+                                from app.services.smart_peg_entry_executor import _fetch_bbo_fast
+                                latest_ob = await _fetch_bbo_fast(exchange, symbol)
+                            else:
+                                latest_ob = await exchange.fetch_order_book(symbol, limit=ob_depth_limit)
                             if latest_ob and latest_ob.get('bids') and latest_ob.get('asks') and len(latest_ob['bids']) > 0 and len(latest_ob['asks']) > 0:
                                 l_best_bid = float(latest_ob['bids'][0][0])
                                 l_best_ask = float(latest_ob['asks'][0][0])

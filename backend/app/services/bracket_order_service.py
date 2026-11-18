@@ -1411,6 +1411,29 @@ class BracketOrderService:
             entry_lock = BracketOrderService.ENTRY_BRACKET_LOCKS.setdefault(lock_key, asyncio.Lock())
             await entry_lock.acquire()
         try:
+            # Resolve dedicated unthrottled order exchange instance (0ms cache hit) so TP/SL placement
+            # never waits ~280ms behind background fetch_order/fetch_open_orders polls in CCXT's throttle queue.
+            order_ex = exchange
+            if api_key_record and hasattr(api_key_record, 'api_key') and hasattr(api_key_record, 'secret_key'):
+                try:
+                    dec_api = decrypt_key(api_key_record.api_key)
+                    dec_sec = decrypt_key(api_key_record.secret_key)
+                    raw_pp = getattr(api_key_record, 'passphrase', None)
+                    dec_pp = decrypt_key(raw_pp) if raw_pp else None
+                    cand_ex = await get_or_create_exchange(
+                        api_key_id=api_key_record.id,
+                        exchange_name=api_key_record.exchange,
+                        decrypted_api_key=dec_api,
+                        decrypted_secret=dec_sec,
+                        is_futures=is_futures,
+                        passphrase=dec_pp,
+                        purpose="order",
+                    )
+                    if cand_ex is not None:
+                        order_ex = cand_ex
+                except Exception:
+                    order_ex = exchange
+
             # Ensure exchange markets are loaded if possible (non-fatal)
             if not getattr(exchange, 'markets', None):
                 try:
@@ -1537,16 +1560,16 @@ class BracketOrderService:
                     tp_order_type = tp_config.get('order_type', 'Limit').lower()
                     tp_price = BracketOrderService._compute_tp_price(tp_config, weighted_entry, opposite_side)
 
-                    final_tp_price = BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price)
+                    final_tp_price = BracketOrderService._safe_price_to_precision(order_ex, symbol, tp_price)
                     t_cons_tp_start = time.perf_counter()
-                    ex_params = await BracketOrderService._apply_futures_exit_params(exchange, symbol, opposite_side) if is_futures else {}
+                    ex_params = await BracketOrderService._apply_futures_exit_params(order_ex, symbol, opposite_side) if is_futures else {}
                     try:
                         tp_res = None
                         if tp_order_type == 'limit':
                             ex_params_po = dict(ex_params)
                             ex_params_po['postOnly'] = True
                             try:
-                                tp_res = await exchange.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_po)
+                                tp_res = await order_ex.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_po)
                             except Exception as po_cons_err:
                                 logger.warning(f"Consolidated TP Post-Only rejected ({po_cons_err}). Retrying with standard GTC Limit...")
                                 tp_res = None
@@ -1554,20 +1577,20 @@ class BracketOrderService:
                                 ex_params_gtc = dict(ex_params)
                                 ex_params_gtc.pop('postOnly', None)
                                 ex_params_gtc['timeInForce'] = 'GTC'
-                                tp_res = await exchange.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_gtc)
+                                tp_res = await order_ex.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_gtc)
                         else:
                             if is_futures:
                                 tp_cond_params = dict(ex_params)
                                 tp_cond_params['stopPrice'] = final_tp_price
                                 tp_res = await BracketOrderService._place_futures_conditional_order(
-                                    exchange, symbol, 'TAKE_PROFIT_MARKET', opposite_side, tp_target_amt,
+                                    order_ex, symbol, 'TAKE_PROFIT_MARKET', opposite_side, tp_target_amt,
                                     stop_price=final_tp_price, extra_params=tp_cond_params
                                 )
                             else:
                                 ex_params_gtc = dict(ex_params)
                                 ex_params_gtc.pop('postOnly', None)
                                 ex_params_gtc['timeInForce'] = 'GTC'
-                                tp_res = await exchange.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_gtc)
+                                tp_res = await order_ex.create_limit_order(symbol, opposite_side, tp_target_amt, final_tp_price, ex_params_gtc)
                         cons_tp_ms = max(1, int((time.perf_counter() - t_cons_tp_start) * 1000))
                         if tp_res and tp_res.get('id'):
                             new_tp_id = str(tp_res.get('id'))
@@ -1793,23 +1816,46 @@ class BracketOrderService:
                 mode          = tp_config.get('mode', 'percentage')
                 val           = float(tp_config.get('value', 0))
                 tp_price      = BracketOrderService._compute_tp_price(tp_config, average_price, opposite_side)
-                final_tp_price = BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price)
+                final_tp_price = BracketOrderService._safe_price_to_precision(order_ex, symbol, tp_price)
     
                 t_tp_start = time.perf_counter()
-                ex_params = await BracketOrderService._apply_futures_exit_params(exchange, symbol, opposite_side) if is_futures else {}
+                ex_params = await BracketOrderService._apply_futures_exit_params(order_ex, symbol, opposite_side) if is_futures else {}
                 try:
                     tp_res = None
                     if tp_order_type == 'limit':
-                        # 1st attempt: Post-Only Maker limit order (saves fees)
-                        ex_params_po = dict(ex_params)
-                        ex_params_po['postOnly'] = True
+                        # 1ms local Redis BBO check: if final_tp_price already crosses the book,
+                        # skip the doomed Post-Only (GTX) attempt to avoid wasting 1 extra RTT (~255ms)
+                        skip_post_only = False
                         try:
-                            tp_res = await exchange.create_limit_order(
-                                symbol, opposite_side, final_amount, final_tp_price, ex_params_po
-                            )
-                        except Exception as po_e:
-                            logger.warning(f"⚠️ Bracket TP Post-Only rejected ({po_e}). Retrying immediately with standard GTC Limit...")
-                            tp_res = None
+                            import json
+                            from app.services.smart_peg_entry_executor import _get_redis_bbo
+                            r_bbo = await asyncio.wait_for(_get_redis_bbo(), timeout=0.015)
+                            if r_bbo is not None:
+                                ex_name = str(getattr(order_ex, 'id', 'binance')).lower()
+                                raw_bbo = await asyncio.wait_for(r_bbo.get(f"bbo:{ex_name}:{symbol}"), timeout=0.015)
+                                if raw_bbo:
+                                    bbo_d = json.loads(raw_bbo)
+                                    if (time.time() - float(bbo_d.get("ts") or 0)) < 2.5:
+                                        b_bid = float(bbo_d.get("bid") or 0)
+                                        b_ask = float(bbo_d.get("ask") or 0)
+                                        if opposite_side == 'buy' and b_ask > 0 and final_tp_price >= b_ask:
+                                            skip_post_only = True
+                                        elif opposite_side == 'sell' and b_bid > 0 and final_tp_price <= b_bid:
+                                            skip_post_only = True
+                        except Exception:
+                            pass
+
+                        if not skip_post_only:
+                            # 1st attempt: Post-Only Maker limit order (saves fees)
+                            ex_params_po = dict(ex_params)
+                            ex_params_po['postOnly'] = True
+                            try:
+                                tp_res = await order_ex.create_limit_order(
+                                    symbol, opposite_side, final_amount, final_tp_price, ex_params_po
+                                )
+                            except Exception as po_e:
+                                logger.warning(f"⚠️ Bracket TP Post-Only rejected ({po_e}). Retrying immediately with standard GTC Limit...")
+                                tp_res = None
 
                         # On Binance Futures, a GTX Post-Only order that crosses the book returns HTTP 200 with status='expired'
                         if not tp_res or str(tp_res.get('status', '')).lower() in ('expired', 'canceled', 'cancelled', 'rejected'):
@@ -1821,7 +1867,7 @@ class BracketOrderService:
                             ex_params_gtc = dict(ex_params)
                             ex_params_gtc.pop('postOnly', None)
                             ex_params_gtc['timeInForce'] = 'GTC'
-                            tp_res = await exchange.create_limit_order(
+                            tp_res = await order_ex.create_limit_order(
                                 symbol, opposite_side, final_amount, final_tp_price, ex_params_gtc
                             )
                             logger.info(f"✅ Bracket Monitor: Standard GTC Limit TP placed successfully! ID: {tp_res.get('id')}")
@@ -1834,7 +1880,7 @@ class BracketOrderService:
                             tp_cond_params = dict(ex_params)
                             tp_cond_params['stopPrice'] = final_tp_price
                             tp_res = await BracketOrderService._place_futures_conditional_order(
-                                exchange, symbol, 'TAKE_PROFIT_MARKET', opposite_side, final_amount,
+                                order_ex, symbol, 'TAKE_PROFIT_MARKET', opposite_side, final_amount,
                                 stop_price=final_tp_price, extra_params=tp_cond_params
                             )
                             logger.info(f"✅ Bracket Monitor: Conditional TAKE_PROFIT_MARKET placed at {final_tp_price}! ID: {tp_res.get('id')}")
@@ -1842,7 +1888,7 @@ class BracketOrderService:
                             ex_params_gtc = dict(ex_params)
                             ex_params_gtc.pop('postOnly', None)
                             ex_params_gtc['timeInForce'] = 'GTC'
-                            tp_res = await exchange.create_limit_order(
+                            tp_res = await order_ex.create_limit_order(
                                 symbol, opposite_side, final_amount, final_tp_price, ex_params_gtc
                             )
                             logger.info(f"✅ Bracket Monitor: Spot Limit TP placed at {final_tp_price}! ID: {tp_res.get('id')}")
@@ -1920,10 +1966,10 @@ class BracketOrderService:
                         try:
                             logger.info(f"🚀 Bracket Monitor: Placing Native Trailing Stop for {symbol} (Futures)")
                             sl_params = await BracketOrderService._apply_futures_exit_params(
-                                exchange, symbol, opposite_side, {'callbackRate': sl_val}
+                                order_ex, symbol, opposite_side, {'callbackRate': sl_val}
                             )
                             sl_res = await BracketOrderService._place_futures_conditional_order(
-                                exchange, symbol, 'TRAILING_STOP_MARKET', opposite_side, final_amount,
+                                order_ex, symbol, 'TRAILING_STOP_MARKET', opposite_side, final_amount,
                                 callback_rate=sl_val, extra_params=sl_params
                             )
                             logger.info(f"✅ Native Trailing SL placed! ID: {sl_res.get('id')}")
@@ -2019,12 +2065,12 @@ class BracketOrderService:
                     if is_futures:
                         try:
                             disaster_price = final_sl_price * (1 - (max_dev / 100.0)) if opposite_side == 'sell' else final_sl_price * (1 + (max_dev / 100.0))
-                            disaster_price_prec = BracketOrderService._safe_price_to_precision(exchange, symbol, disaster_price)
+                            disaster_price_prec = BracketOrderService._safe_price_to_precision(order_ex, symbol, disaster_price)
                             disaster_params = await BracketOrderService._apply_futures_exit_params(
-                                exchange, symbol, opposite_side, {'stopPrice': disaster_price_prec}
+                                order_ex, symbol, opposite_side, {'stopPrice': disaster_price_prec}
                             )
                             d_res = await BracketOrderService._place_futures_conditional_order(
-                                exchange, symbol, 'STOP_MARKET', opposite_side, final_amount,
+                                order_ex, symbol, 'STOP_MARKET', opposite_side, final_amount,
                                 stop_price=disaster_price_prec, extra_params=disaster_params
                             )
                             disaster_sl_order_id = d_res.get('id')
@@ -2100,12 +2146,12 @@ class BracketOrderService:
                         )
                     else:
                         sl_params = await BracketOrderService._apply_futures_exit_params(
-                            exchange, symbol, opposite_side, {'stopPrice': final_sl_price}
+                            order_ex, symbol, opposite_side, {'stopPrice': final_sl_price}
                         )
                         sl_res = None
                         try:
                             sl_res = await BracketOrderService._place_futures_conditional_order(
-                                exchange, symbol, 'STOP_MARKET', opposite_side, final_amount,
+                                order_ex, symbol, 'STOP_MARKET', opposite_side, final_amount,
                                 stop_price=final_sl_price, extra_params=sl_params
                             )
                             logger.info(f"✅ Bracket Monitor: SL placed! ID: {sl_res.get('id') if sl_res else 'Local'}")

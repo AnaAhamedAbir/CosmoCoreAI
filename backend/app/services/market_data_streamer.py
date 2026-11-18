@@ -203,6 +203,13 @@ class MarketDataStreamer:
                 # Publish to Redis
                 if redis:
                     await redis.setex(f"latest_orderbook:{exchange_id}:{symbol}", 60, json.dumps(payload))
+                    if bids and asks:
+                        bbo_payload = {
+                            "bid": bids[0]["price"],
+                            "ask": asks[0]["price"],
+                            "ts": payload["ts"],
+                        }
+                        await redis.setex(f"bbo:{exchange_id}:{symbol}", 60, json.dumps(bbo_payload))
                     await redis.publish(channel, json.dumps(payload))
 
                 try:

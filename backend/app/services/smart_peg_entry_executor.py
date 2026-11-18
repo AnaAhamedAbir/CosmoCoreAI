@@ -49,13 +49,28 @@ def _is_order_already_closed_error(err: Exception) -> bool:
     return any(kw in err_str for kw in ('filled', 'unknown order', '-2011', '-2013'))
 
 
-async def _fetch_bbo_fast(exchange, symbol: str, max_age_seconds: float = 0.45) -> Optional[Dict[str, Any]]:
-    """Read live orderbook from Redis WS stream (~1ms) when fresh, else fall back to REST."""
+async def _fetch_bbo_fast(exchange, symbol: str, max_age_seconds: float = 1.5) -> Optional[Dict[str, Any]]:
+    """Read live orderbook/BBO from Redis WS stream (~1ms) when fresh, else fall back to REST."""
     try:
         from app.services.user_order_stream import _get_redis_pub
         r_cli = await _get_redis_pub()
         if r_cli is not None:
             ex_id = str(getattr(exchange, 'id', 'binance') or 'binance').lower()
+            now_ts = time.time()
+            # Fast-path 1: ultra-compact bbo:{ex_id}:{symbol} key
+            raw_bbo = await asyncio.wait_for(
+                r_cli.get(f"bbo:{ex_id}:{symbol}"),
+                timeout=0.020,
+            )
+            if raw_bbo:
+                bbo_json = json.loads(raw_bbo)
+                ts = bbo_json.get('ts')
+                bid_p = float(bbo_json.get('bid') or 0.0)
+                ask_p = float(bbo_json.get('ask') or 0.0)
+                if ts is not None and bid_p > 0 and ask_p > 0 and 0.0 <= (now_ts - float(ts)) <= max_age_seconds:
+                    return {'bids': [[bid_p, 1.0]], 'asks': [[ask_p, 1.0]]}
+
+            # Fast-path 2: full latest_orderbook:{ex_id}:{symbol} key
             raw_ob = await asyncio.wait_for(
                 r_cli.get(f"latest_orderbook:{ex_id}:{symbol}"),
                 timeout=0.025,
@@ -63,7 +78,7 @@ async def _fetch_bbo_fast(exchange, symbol: str, max_age_seconds: float = 0.45) 
             if raw_ob:
                 ob_json = json.loads(raw_ob)
                 ts = ob_json.get('ts')
-                if ts is not None and 0.0 <= (time.time() - float(ts)) <= max_age_seconds:
+                if ts is not None and 0.0 <= (now_ts - float(ts)) <= max_age_seconds:
                     bids_raw = ob_json.get('bids') or []
                     asks_raw = ob_json.get('asks') or []
                     if bids_raw and asks_raw:
@@ -584,8 +599,8 @@ async def execute_smart_peg_entry(
             except Exception as notify_first_err:
                 logger.warning(f"Failed to send Smart Peg trade fired notification: {notify_first_err}")
 
-        # 5. Dynamic BBO Peg Watch Loop (100ms in urgent_mode, 150ms standard; WS BBO + parallel fill check)
-        peg_poll_interval = 0.10 if urgent_mode else 0.15
+        # 5. Dynamic BBO Peg Watch Loop (80ms in urgent_mode, 100ms standard; 1ms Redis BBO check FIRST)
+        peg_poll_interval = 0.08 if urgent_mode else 0.10
         poll_count = 0
         latest_order_chk = None
         user_cancelled = False
@@ -604,76 +619,14 @@ async def execute_smart_peg_entry(
                 await asyncio.sleep(peg_poll_interval)
                 poll_count += 1
 
-                # Fetch order status (every 2 polls) and live BBO in PARALLEL to avoid serial REST delay
-                chk_in_loop = None
+                # PRIORITY A: Fetch live BBO from Redis FIRST (~1ms) without blocking on REST fetch_order!
                 latest_ob = None
-                if poll_count % 2 == 0:
-                    order_res, ob_res = await asyncio.gather(
-                        exchange.fetch_order(order_id, symbol),
-                        _fetch_bbo_fast(exchange, symbol),
-                        return_exceptions=True,
-                    )
-                    if isinstance(order_res, Exception):
-                        logger.debug(f"Entry order poll check notice: {order_res}")
-                    else:
-                        chk_in_loop = order_res
-                    if isinstance(ob_res, Exception):
-                        logger.debug(f"Entry BBO poll non-fatal error: {ob_res}")
-                    else:
-                        latest_ob = ob_res
-                else:
-                    try:
-                        latest_ob = await _fetch_bbo_fast(exchange, symbol)
-                    except Exception as ob_p_err:
-                        logger.debug(f"Entry BBO poll non-fatal error: {ob_p_err}")
+                try:
+                    latest_ob = await _fetch_bbo_fast(exchange, symbol)
+                except Exception as ob_p_err:
+                    logger.debug(f"Entry BBO poll non-fatal error: {ob_p_err}")
 
-                if chk_in_loop:
-                    chk_st = str(chk_in_loop.get('status', '')).lower()
-                    if chk_st in ['closed', 'filled']:
-                        logger.info(f"✅ [Smart Peg Entry] Order #{order_id} filled detected during BBO shadow watch!")
-                        latest_order_chk = chk_in_loop
-                        break
-                    elif chk_st in ['expired', 'canceled', 'cancelled', 'rejected']:
-                        latest_order_chk = chk_in_loop
-                        repeg_triggered = True
-                        break
-                    else:
-                        curr_loop_filled = float(chk_in_loop.get('filled') or 0.0)
-                        if curr_loop_filled > order_processed_filled:
-                            chunk_filled = curr_loop_filled - order_processed_filled
-                            exec_p = float(chk_in_loop.get('average') or chk_in_loop.get('price') or target_maker_price)
-                            chunk_notional = _calc_order_notional_usd(exchange, symbol, chunk_filled, exec_p)
-                            if is_futures or chunk_notional >= min_notional or total_filled > 0:
-                                order_processed_filled = curr_loop_filled
-                                total_filled += chunk_filled
-                                accumulated_cost += (chunk_filled * exec_p)
-                                remaining_amount = max(0.0, remaining_amount - chunk_filled)
-                                if cid in ACTIVE_SMART_PEGS:
-                                    ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
-                                    ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
-                                logger.info(
-                                    f"⚡ [Smart Peg Entry] Resting Partial Fill detected on #{order_id}: "
-                                    f"+{chunk_filled} @ {exec_p} (Total Filled: {total_filled}/{amount})"
-                                )
-                                if (tp_config or sl_config) and not reduce_only:
-                                    from app.services.bracket_order_service import BracketOrderService
-                                    asyncio.create_task(
-                                        BracketOrderService._spawn_bracket_for_amount(
-                                            exchange=exchange,
-                                            symbol=symbol,
-                                            side=side.lower(),
-                                            filled_amount=chunk_filled,
-                                            average_price=exec_p,
-                                            is_futures=is_futures,
-                                            tp_config=tp_config,
-                                            sl_config=sl_config,
-                                            user_id=user_id,
-                                            api_key_record=api_key_record,
-                                            entry_order_id=cid
-                                        )
-                                    )
-
-                # Verify if we are still top of book
+                # Verify if we are still top of book BEFORE making any slow REST fetch_order call
                 try:
                     if latest_ob and latest_ob.get('bids') and latest_ob.get('asks') and len(latest_ob['bids']) > 0 and len(latest_ob['asks']) > 0:
                         l_best_bid = float(latest_ob['bids'][0][0])
@@ -699,12 +652,12 @@ async def execute_smart_peg_entry(
                             except Exception:
                                 pass
 
-                        # Outbid / Spread shift condition with FIFO Queue Priority protection:
-                        # - Outbid: 2 polls (~300ms standard, 100ms urgent) to step ahead quickly while avoiding 1-tick noise.
-                        # - Retreat: 4 polls (~600ms standard, 200ms urgent) because resting order is at front of queue.
+                        # Instant BBO shadow re-peg:
+                        # - Outbid: 1 poll (immediate re-peg on first tick!)
+                        # - Retreat: 1 poll in urgent_mode, 2 polls (~180ms) standard
                         if new_maker != target_maker_price:
                             is_outbid = (new_maker > target_maker_price) if side.lower() == "buy" else (new_maker < target_maker_price)
-                            min_polls_required = (1 if is_outbid else 2) if urgent_mode else (2 if is_outbid else 4)
+                            min_polls_required = 1 if (is_outbid or urgent_mode) else 2
                             if poll_count >= min_polls_required:
                                 logger.info(
                                     f"⚡ [Smart Peg Entry] BBO shifted ({'outbid' if is_outbid else 'retreat'}): {target_maker_price} ➜ {new_maker} "
@@ -729,7 +682,7 @@ async def execute_smart_peg_entry(
                                             )
                                             break
 
-                                # ── PRIORITY 0 (WS ~80-150ms) & PRIORITY 1 (REST ~250ms): NATIVE ATOMIC RE-PEG ──
+                                # ── SINGLE-RTT ATOMIC RE-PEG (~250ms) ──
                                 try:
                                     from app.services.user_order_stream import mark_order_replaced
                                     mark_order_replaced(str(order_id))
@@ -747,17 +700,29 @@ async def execute_smart_peg_entry(
                                     ws_edit_ready = is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=is_inverse)
                                 except Exception:
                                     ws_edit_ready = True
-                                if (
-                                    getattr(exchange, 'has', {}).get('editOrderWs')
-                                    and hasattr(exchange, 'edit_order_ws')
-                                    and ws_edit_ready
-                                ):
-                                    edit_candidates.append(('WS', exchange.edit_order_ws, ws_edit_type, ws_edit_params))
-                                if getattr(exchange, 'has', {}).get('editOrder') and hasattr(exchange, 'edit_order'):
-                                    rest_type, rest_params = (
-                                        (ws_edit_type, ws_edit_params) if is_futures else ('limit', ex_params)
-                                    )
-                                    edit_candidates.append(('REST', exchange.edit_order, rest_type, rest_params))
+
+                                # Note: Binance Futures (fapi/dapi) PUT /order rejects GTX (postOnly=True) orders with -5026
+                                # ("Only GTC order can be modified"). On real CCXT Binance Futures with postOnly=True,
+                                # skip doomed PUT /order and use 1-RTT concurrent cancel + create below!
+                                is_real_binance_futures_gtx = (
+                                    is_futures
+                                    and bool(ex_params.get('postOnly'))
+                                    and isinstance(getattr(exchange, 'urls', None), dict)
+                                    and str(getattr(exchange, 'id', '')).lower().startswith('binance')
+                                )
+
+                                if not is_real_binance_futures_gtx:
+                                    if (
+                                        getattr(exchange, 'has', {}).get('editOrderWs')
+                                        and hasattr(exchange, 'edit_order_ws')
+                                        and ws_edit_ready
+                                    ):
+                                        edit_candidates.append(('WS', exchange.edit_order_ws, ws_edit_type, ws_edit_params))
+                                    if getattr(exchange, 'has', {}).get('editOrder') and hasattr(exchange, 'edit_order'):
+                                        rest_type, rest_params = (
+                                            (ws_edit_type, ws_edit_params) if is_futures else ('limit', ex_params)
+                                        )
+                                        edit_candidates.append(('REST', exchange.edit_order, rest_type, rest_params))
 
                                 edit_res = None
                                 edit_channel = None
@@ -792,13 +757,47 @@ async def execute_smart_peg_entry(
                                 if order_filled_during_edit:
                                     break
 
+                                # ── FAST 1-RTT PARALLEL CANCEL + CREATE FOR FUTURES POST-ONLY (GTX) ──
+                                if not edit_res and is_futures:
+                                    t_par_start = time.perf_counter()
+                                    c_res, p_res = await asyncio.gather(
+                                        exchange.cancel_order(order_id, symbol),
+                                        _place_maker_order(exchange, symbol, side, remaining_amount, new_maker, ex_params, is_futures),
+                                        return_exceptions=True,
+                                    )
+                                    repeg_ms = int((time.perf_counter() - t_par_start) * 1000)
+                                    if isinstance(c_res, Exception) and _is_order_already_closed_error(c_res):
+                                        # Old order filled right before cancel! Cancel the newly placed order if it succeeded
+                                        if isinstance(p_res, dict) and p_res.get('id'):
+                                            try:
+                                                await exchange.cancel_order(p_res['id'], symbol)
+                                            except Exception:
+                                                pass
+                                        try:
+                                            chk_fill = await exchange.fetch_order(order_id, symbol)
+                                            if chk_fill.get('status', '').lower() in ['closed', 'filled']:
+                                                latest_order_chk = chk_fill
+                                                break
+                                        except Exception:
+                                            pass
+                                    elif isinstance(p_res, dict) and p_res.get('id'):
+                                        if isinstance(c_res, dict):
+                                            c_raw_f = float(c_res.get('filled') or c_res.get('info', {}).get('executedQty') or 0.0)
+                                            if c_raw_f > order_processed_filled:
+                                                p_res.setdefault('info', {})['cancelResponse'] = {
+                                                    'executedQty': str(c_raw_f),
+                                                    'price': str(c_res.get('average') or c_res.get('price') or target_maker_price),
+                                                }
+                                        edit_res = p_res
+                                        edit_channel = 'PARALLEL-1RTT'
+
                                 if edit_res and edit_res.get('id'):
                                     old_oid = order_id
                                     order_id = str(edit_res.get('id'))
                                     target_maker_price = new_maker
                                     attempts += 1
 
-                                    # Check if there was a partial fill on the cancelled order during atomic cancelReplace (Spot)
+                                    # Check if there was a partial fill on the cancelled order during atomic cancelReplace / parallel cancel
                                     cancel_info = edit_res.get('info', {}).get('cancelResponse', {}) if isinstance(edit_res, dict) else {}
                                     if cancel_info:
                                         c_raw_filled = float(cancel_info.get('executedQty') or 0.0)
@@ -861,6 +860,60 @@ async def execute_smart_peg_entry(
                                 break
                 except Exception as ob_p_err:
                     logger.debug(f"Entry BBO poll non-fatal error: {ob_p_err}")
+
+                # PRIORITY B: Only when BBO did NOT shift (resting at top of book), periodically check fill status
+                if poll_count % 4 == 0:
+                    chk_in_loop = None
+                    try:
+                        chk_in_loop = await exchange.fetch_order(order_id, symbol)
+                    except Exception as order_res_err:
+                        logger.debug(f"Entry order poll check notice: {order_res_err}")
+
+                    if chk_in_loop:
+                        chk_st = str(chk_in_loop.get('status', '')).lower()
+                        if chk_st in ['closed', 'filled']:
+                            logger.info(f"✅ [Smart Peg Entry] Order #{order_id} filled detected during BBO shadow watch!")
+                            latest_order_chk = chk_in_loop
+                            break
+                        elif chk_st in ['expired', 'canceled', 'cancelled', 'rejected']:
+                            latest_order_chk = chk_in_loop
+                            repeg_triggered = True
+                            break
+                        else:
+                            curr_loop_filled = float(chk_in_loop.get('filled') or 0.0)
+                            if curr_loop_filled > order_processed_filled:
+                                chunk_filled = curr_loop_filled - order_processed_filled
+                                exec_p = float(chk_in_loop.get('average') or chk_in_loop.get('price') or target_maker_price)
+                                chunk_notional = _calc_order_notional_usd(exchange, symbol, chunk_filled, exec_p)
+                                if is_futures or chunk_notional >= min_notional or total_filled > 0:
+                                    order_processed_filled = curr_loop_filled
+                                    total_filled += chunk_filled
+                                    accumulated_cost += (chunk_filled * exec_p)
+                                    remaining_amount = max(0.0, remaining_amount - chunk_filled)
+                                    if cid in ACTIVE_SMART_PEGS:
+                                        ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
+                                        ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
+                                    logger.info(
+                                        f"⚡ [Smart Peg Entry] Resting Partial Fill detected on #{order_id}: "
+                                        f"+{chunk_filled} @ {exec_p} (Total Filled: {total_filled}/{amount})"
+                                    )
+                                    if (tp_config or sl_config) and not reduce_only:
+                                        from app.services.bracket_order_service import BracketOrderService
+                                        asyncio.create_task(
+                                            BracketOrderService._spawn_bracket_for_amount(
+                                                exchange=exchange,
+                                                symbol=symbol,
+                                                side=side.lower(),
+                                                filled_amount=chunk_filled,
+                                                average_price=exec_p,
+                                                is_futures=is_futures,
+                                                tp_config=tp_config,
+                                                sl_config=sl_config,
+                                                user_id=user_id,
+                                                api_key_record=api_key_record,
+                                                entry_order_id=cid
+                                            )
+                                        )
 
         # Handle user cancellation
         if user_cancelled:

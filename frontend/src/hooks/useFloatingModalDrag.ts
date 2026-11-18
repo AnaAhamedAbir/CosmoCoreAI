@@ -132,15 +132,23 @@ export function useFloatingModalDrag({
       });
     };
 
+    const handleAnimationEnd = (e: AnimationEvent) => {
+      if (e.target === modalEl) {
+        modalEl.style.animation = 'none';
+      }
+    };
+
     const rafId = requestAnimationFrame(applyClamp);
     const resizeObserver = new ResizeObserver(applyClamp);
     resizeObserver.observe(modalEl);
+    modalEl.addEventListener('animationend', handleAnimationEnd);
     window.addEventListener('resize', applyClamp);
     window.visualViewport?.addEventListener('resize', applyClamp);
 
     return () => {
       cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
+      modalEl.removeEventListener('animationend', handleAnimationEnd);
       window.removeEventListener('resize', applyClamp);
       window.visualViewport?.removeEventListener('resize', applyClamp);
     };
@@ -168,6 +176,7 @@ export function useFloatingModalDrag({
         target.closest('button') ||
         target.closest('input') ||
         target.closest('select') ||
+        target.closest('textarea') ||
         target.closest('[data-no-drag="true"]')
       ) {
         return;

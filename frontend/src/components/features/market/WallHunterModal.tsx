@@ -791,8 +791,8 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             const rawX = drag.originX + (clientX - drag.startX);
             const rawY = drag.originY + (clientY - drag.startY);
 
-            const clampedX = Math.max(drag.minX, Math.min(drag.maxX, rawX));
-            const clampedY = Math.max(drag.minY, Math.min(drag.maxY, rawY));
+            const clampedX = Math.round(Math.max(drag.minX, Math.min(drag.maxX, rawX)));
+            const clampedY = Math.round(Math.max(drag.minY, Math.min(drag.maxY, rawY)));
 
             drag.currentX = clampedX;
             drag.currentY = clampedY;
@@ -830,7 +830,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 (modalEl.style as any).webkitBackdropFilter = '';
                 modalEl.style.backgroundColor = '';
                 modalEl.style.transition = '';
-                modalEl.style.animation = '';
+                modalEl.style.animation = 'none';
             }
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onUp);
@@ -861,7 +861,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
         activeDragCleanupRef.current = cleanupDrag;
 
-        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mousemove', onMouseMove, { passive: true });
         window.addEventListener('mouseup', onUp);
         window.addEventListener('touchmove', onTouchMove, { passive: false });
         window.addEventListener('touchend', onUp);
@@ -1458,6 +1458,11 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
     return createPortal(
         <div
             ref={modalContainerRef}
+            onAnimationEnd={(e) => {
+                if (e.target === e.currentTarget) {
+                    (e.currentTarget as HTMLElement).style.animation = 'none';
+                }
+            }}
             style={{
                 left: 0,
                 top: 0,

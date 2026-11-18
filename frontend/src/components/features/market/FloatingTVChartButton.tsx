@@ -648,8 +648,8 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
         const rawX = drag.originX + (clientX - drag.startX);
         const rawY = drag.originY + (clientY - drag.startY);
 
-        const clampedX = Math.max(drag.minX, Math.min(drag.maxX, rawX));
-        const clampedY = Math.max(drag.minY, Math.min(drag.maxY, rawY));
+        const clampedX = Math.round(Math.max(drag.minX, Math.min(drag.maxX, rawX)));
+        const clampedY = Math.round(Math.max(drag.minY, Math.min(drag.maxY, rawY)));
 
         drag.currentX = clampedX;
         drag.currentY = clampedY;
@@ -684,7 +684,7 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
         if (modalContainerRef.current) {
           modalContainerRef.current.style.pointerEvents = '';
           modalContainerRef.current.style.transition = '';
-          modalContainerRef.current.style.animation = '';
+          modalContainerRef.current.style.animation = 'none';
           modalContainerRef.current.style.backdropFilter = '';
           (modalContainerRef.current.style as any).webkitBackdropFilter = '';
           modalContainerRef.current.style.backgroundColor = '';
@@ -794,6 +794,11 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
           isOpen ? (
             <div
               ref={modalContainerRef}
+              onAnimationEnd={(e) => {
+                if (e.target === e.currentTarget) {
+                  (e.currentTarget as HTMLElement).style.animation = 'none';
+                }
+              }}
               style={{
                 position: 'fixed',
                 left: 0,

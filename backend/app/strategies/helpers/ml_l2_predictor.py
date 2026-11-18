@@ -1,7 +1,5 @@
 import os
 import joblib
-import torch
-import torch.nn as nn
 import numpy as np
 import pandas as pd
 import logging
@@ -15,9 +13,6 @@ warnings.filterwarnings("ignore", message="X does not have valid feature names")
 
 from app.db.session import SessionLocal
 from app.models.ml_model import CustomMLModel, ModelVersion
-from app.services.ml_architectures import SimpleLSTM, SimpleGRU, CNN1D, DeepLOB, TimeSeriesTransformer
-from app.services.auto_feature_selector import calculate_l2_advanced_features
-from app.strategies.helpers.ml_advanced_setup_generator import MLAdvancedSetupGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +269,10 @@ class MLL2Predictor:
                             est.n_jobs = 1
                 self.is_loaded = True
             elif self.model_type in ["LSTM", "GRU", "1D-CNN", "DeepLOB", "Transformer"]:
+                import torch
+                from app.services.ml_architectures import (
+                    SimpleLSTM, SimpleGRU, CNN1D, DeepLOB, TimeSeriesTransformer
+                )
                 # Determine input size
                 input_size = len(self.model_features) if self.model_features else 3
                 out_size = 3 if self.prediction_target == "advanced_setup" else 1
@@ -516,6 +515,7 @@ class MLL2Predictor:
                     all_needed_feats.extend(self.pca_model_data["to_compress"])
                 if any("WAP" in f or "Distance" in f or "Proxy" in f or "Slope" in f or "Imbalance" in f for f in all_needed_feats):
                     if len(self.l2_history) >= 2:
+                        from app.services.auto_feature_selector import calculate_l2_advanced_features
                         df_hist = pd.DataFrame(self.l2_history)
                         try:
                             df_adv, _ = calculate_l2_advanced_features(df_hist)
@@ -661,6 +661,7 @@ class MLL2Predictor:
                 else:
                     pred = float(self.model.predict(features)[0])
             elif self.model_type in ["LSTM", "GRU"]:
+                import torch
                 X_t = torch.FloatTensor(seq_features).unsqueeze(0) # (1, seq_len, num_features)
                 with torch.no_grad():
                     if self.prediction_target == "advanced_setup":
@@ -671,6 +672,7 @@ class MLL2Predictor:
                     else:
                         pred = self.model(X_t).item()
             elif self.model_type in ["1D-CNN", "DeepLOB", "Transformer"]:
+                import torch
                 X_t = torch.FloatTensor(seq_features).unsqueeze(0) # (1, seq_len, num_features)
                 with torch.no_grad():
                     if self.prediction_target == "advanced_setup":
@@ -783,6 +785,7 @@ class MLL2Predictor:
                     }
                 else:
                     # Fallback to heuristic generator
+                    from app.strategies.helpers.ml_advanced_setup_generator import MLAdvancedSetupGenerator
                     generator = MLAdvancedSetupGenerator(bot_instance)
                     setup = generator.generate_setup(current_price, side, confidence)
                     setup["source"] = "Heuristic_Fallback"

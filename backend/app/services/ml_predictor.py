@@ -452,6 +452,17 @@ def _trigger_bg_feature_refresh(
     t.start()
 
 
+def _trim_process_memory() -> None:
+    """Release temporary DataFrame buffers back to the OS allocator."""
+    import gc
+    gc.collect()
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
 def warmup_model_and_features(model_id: str, symbol: str) -> bool:
     """Pre-loads the model into RAM and populates _FEATURE_ROW_CACHE for 0ms manual trade execution."""
     from app.db.session import SessionLocal
@@ -463,6 +474,7 @@ def warmup_model_and_features(model_id: str, symbol: str) -> bool:
             db=db,
             fast_mode=True
         )
+        _trim_process_memory()
         return True
     except Exception as e:
         print(f"[ml_predictor] Warmup warning for model {model_id} on {symbol}: {e}")

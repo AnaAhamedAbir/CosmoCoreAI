@@ -248,6 +248,7 @@ class ManualTradeService:
     _MARGIN_MODE_CACHE = {}  # { cache_key: (margin_mode_upper, expire_timestamp) }
     _ORDER_META_CACHE = {}   # { (api_key_id, order_id_str): (order_meta_dict, timestamp) }
     _ML_PREDICTOR_CACHE = {}  # { f"{model_id}_{symbol}": MLL2Predictor }
+    _ML_ROUTE_CACHE = {}     # { model_id: (use_ohlcv_predictor, model_name, timestamp) }
     _OPEN_ORDERS_CACHE = {}  # { (api_key_id, symbol): (timestamp, result_dict) }
     _WALLET_BALANCE_CACHE = {}  # { (api_key_id, is_futures[, is_inverse]): (balance_dict, timestamp) }
     _WS_BALANCE_DISABLED_UNTIL = {}  # { id(exchange): expire_timestamp }
@@ -1147,6 +1148,125 @@ class ManualTradeService:
             raise HTTPException(status_code=500, detail=f"Open Orders Error: {str(e)}")
 
     @staticmethod
+    def _should_use_ohlcv_predictor(
+        dataset_type: Optional[str],
+        indicators: Optional[list],
+        model_features: Optional[list],
+        is_loaded: bool = True,
+    ) -> bool:
+        """Determines whether a model routes to `ml_predictor` (Route A) vs `MLL2Predictor` (Route B)."""
+        if dataset_type in ('l2_orderbook', 'hybrid_deep') and is_loaded and not bool(indicators):
+            return False
+        if (
+            not is_loaded
+            or dataset_type in ('ohlcv', 'historical_trades', 'hybrid', 'forex')
+            or bool(indicators)
+        ):
+            return True
+        ohlcv_indicator_prefixes = (
+            'Open', 'High', 'Low', 'Volume', 'RSI', 'MACD', 'EMA', 'SMA',
+            'BB_', 'ATR', 'ADX', 'Stoch', 'CCI', 'OBV', 'MFI', 'WillR', 'ROC'
+        )
+        return bool(model_features) and any(
+            any(str(f).startswith(pref) for pref in ohlcv_indicator_prefixes)
+            for f in model_features
+        )
+
+    @staticmethod
+    def _inspect_ml_filter_route(ml_model_id: str) -> Tuple[bool, Optional[str]]:
+        """
+        Lightweight pre-flight check reading DB record + small metadata JSON only (zero
+        joblib/torch model deserialization) so OHLCV/Tick-Trade models bypass MLL2Predictor.
+        """
+        import os
+        import json
+
+        model_id = str(ml_model_id)
+        now_ts = time.time()
+        cached = ManualTradeService._ML_ROUTE_CACHE.get(model_id)
+        if cached and (now_ts - cached[2]) < 30.0:
+            return cached[0], cached[1]
+
+        from app.models.ml_model import CustomMLModel, ModelVersion
+
+        use_ohlcv = True
+        model_name = None
+        db = SessionLocal()
+        try:
+            db_model = db.query(CustomMLModel).filter(CustomMLModel.id == model_id).first()
+            if not db_model or not db_model.active_version_id:
+                ManualTradeService._ML_ROUTE_CACHE[model_id] = (True, None, now_ts)
+                return True, None
+
+            model_name = db_model.name
+            db_version = db.query(ModelVersion).filter(ModelVersion.id == db_model.active_version_id).first()
+            if not db_version or not db_version.file_path:
+                ManualTradeService._ML_ROUTE_CACHE[model_id] = (True, model_name, now_ts)
+                return True, model_name
+
+            file_path = db_version.file_path
+            if "scaler_train_" in file_path:
+                file_path = file_path.replace("scaler_train_", "model_train_")
+            if "pca_train_" in file_path:
+                file_path = file_path.replace("pca_train_", "model_train_")
+
+            model_dir_chk = os.path.dirname(file_path)
+            if (
+                not os.path.exists(file_path)
+                or os.path.basename(file_path).lower().startswith(("pca", "scaler"))
+            ) and os.path.isdir(model_dir_chk):
+                for f in sorted(os.listdir(model_dir_chk)):
+                    fl = f.lower()
+                    if (
+                        f.endswith((".pkl", ".pt", ".zip"))
+                        and not fl.startswith(("pca", "scaler", "checkpoint", "replay"))
+                        and "scaler" not in fl
+                        and "pca" not in fl
+                    ):
+                        file_path = os.path.join(model_dir_chk, f)
+                        if fl.startswith("model"):
+                            break
+
+            if db_model.model_type in ["PPO-RL", "SAC-RL", "A2C-RL", "DQN-RL"]:
+                file_path = file_path.replace(".pkl", ".zip").replace(".pt", ".zip")
+
+            is_loaded = os.path.exists(file_path)
+            dataset_type = None
+            indicators = []
+            model_features = None
+
+            if is_loaded:
+                model_dir = os.path.dirname(file_path)
+                candidate_meta_paths = [
+                    getattr(db_version, "metadata_path", None),
+                    file_path.replace(".zip", ".json").replace(".pkl", ".json").replace(".pt", ".json"),
+                    os.path.join(model_dir, "metadata.json"),
+                ]
+                meta_path = next((p for p in candidate_meta_paths if p and os.path.exists(p)), None)
+                if meta_path:
+                    try:
+                        with open(meta_path, "r") as f:
+                            meta = json.load(f)
+                        dataset_type = meta.get("dataset_type")
+                        indicators = meta.get("indicators", [])
+                        model_features = meta.get("features")
+                    except Exception:
+                        pass
+
+            use_ohlcv = ManualTradeService._should_use_ohlcv_predictor(
+                dataset_type=dataset_type,
+                indicators=indicators,
+                model_features=model_features,
+                is_loaded=is_loaded,
+            )
+            ManualTradeService._ML_ROUTE_CACHE[model_id] = (use_ohlcv, model_name, now_ts)
+            return use_ohlcv, model_name
+        except Exception:
+            return True, model_name
+        finally:
+            db.close()
+
+    @staticmethod
     async def warmup_ml_filter(symbol: str, ml_model_id: str) -> dict:
         """
         Pre-warms the ML model, scalers, PCA, and live feature cache in RAM
@@ -1155,8 +1275,15 @@ class ManualTradeService:
         if not ml_model_id or not symbol:
             return {"status": "skipped"}
         try:
+            use_ohlcv_predictor, _ = await asyncio.to_thread(
+                ManualTradeService._inspect_ml_filter_route, str(ml_model_id)
+            )
+            if use_ohlcv_predictor:
+                from app.services import ml_predictor
+                await asyncio.to_thread(ml_predictor.warmup_model_and_features, str(ml_model_id), symbol)
+                return {"status": "warmed", "model_id": str(ml_model_id), "symbol": symbol}
+
             from app.strategies.helpers.ml_l2_predictor import MLL2Predictor
-            from app.services import ml_predictor
 
             predictor_key = f"{ml_model_id}_{symbol}"
             predictor = ManualTradeService._ML_PREDICTOR_CACHE.get(predictor_key)
@@ -1177,6 +1304,7 @@ class ManualTradeService:
                 except Exception:
                     pass
             else:
+                from app.services import ml_predictor
                 await asyncio.to_thread(ml_predictor.warmup_model_and_features, str(ml_model_id), symbol)
 
             return {"status": "warmed", "model_id": str(ml_model_id), "symbol": symbol}
@@ -1258,40 +1386,38 @@ class ManualTradeService:
                 detail="AI Filter Error: Please select a trained ML Model from Registry or turn off the L2 ML Filter."
             )
 
-        from app.strategies.helpers.ml_l2_predictor import MLL2Predictor
-
         predictor_key = f"{ml_model_id}_{symbol}"
         predictor = ManualTradeService._ML_PREDICTOR_CACHE.get(predictor_key)
+        routed_model_name = None
+
         if (
-            predictor is None
-            or not getattr(predictor, 'is_loaded', False)
-            or isinstance(getattr(predictor, 'model', None), dict)
+            predictor is not None
+            and getattr(predictor, 'is_loaded', False)
+            and not isinstance(getattr(predictor, 'model', None), dict)
         ):
-            predictor = MLL2Predictor(str(ml_model_id))
-            if getattr(predictor, 'is_loaded', False) and not isinstance(getattr(predictor, 'model', None), dict):
-                ManualTradeService._ML_PREDICTOR_CACHE[predictor_key] = predictor
-
-        dataset_type = getattr(predictor, 'dataset_type', None)
-        indicators = getattr(predictor, 'indicators', None) or []
-        model_features = getattr(predictor, 'model_features', None) or []
-
-        if dataset_type in ('l2_orderbook', 'hybrid_deep') and getattr(predictor, 'is_loaded', False) and not bool(indicators):
-            use_ohlcv_predictor = False
-        elif (
-            not getattr(predictor, 'is_loaded', False)
-            or dataset_type in ('ohlcv', 'historical_trades', 'hybrid', 'forex')
-            or bool(indicators)
-        ):
-            use_ohlcv_predictor = True
+            use_ohlcv_predictor = ManualTradeService._should_use_ohlcv_predictor(
+                dataset_type=getattr(predictor, 'dataset_type', None),
+                indicators=getattr(predictor, 'indicators', None) or [],
+                model_features=getattr(predictor, 'model_features', None) or [],
+                is_loaded=True,
+            )
         else:
-            ohlcv_indicator_prefixes = (
-                'Open', 'High', 'Low', 'Volume', 'RSI', 'MACD', 'EMA', 'SMA',
-                'BB_', 'ATR', 'ADX', 'Stoch', 'CCI', 'OBV', 'MFI', 'WillR', 'ROC'
+            use_ohlcv_predictor, routed_model_name = await asyncio.to_thread(
+                ManualTradeService._inspect_ml_filter_route, str(ml_model_id)
             )
-            use_ohlcv_predictor = bool(model_features) and any(
-                any(str(f).startswith(pref) for pref in ohlcv_indicator_prefixes)
-                for f in model_features
-            )
+            if not use_ohlcv_predictor:
+                from app.strategies.helpers.ml_l2_predictor import MLL2Predictor
+                predictor = await asyncio.to_thread(MLL2Predictor, str(ml_model_id))
+                if getattr(predictor, 'is_loaded', False) and not isinstance(getattr(predictor, 'model', None), dict):
+                    ManualTradeService._ML_PREDICTOR_CACHE[predictor_key] = predictor
+                use_ohlcv_predictor = ManualTradeService._should_use_ohlcv_predictor(
+                    dataset_type=getattr(predictor, 'dataset_type', None),
+                    indicators=getattr(predictor, 'indicators', None) or [],
+                    model_features=getattr(predictor, 'model_features', None) or [],
+                    is_loaded=bool(getattr(predictor, 'is_loaded', False)),
+                )
+            else:
+                predictor = None
 
         is_buy_side = str(side or 'buy').strip().lower() in ('buy', 'long')
         exec_mode_lower = str(execution_mode or 'basic').strip().lower()
@@ -1353,7 +1479,10 @@ class ManualTradeService:
                 elif pred_res.get("price"):
                     mid_p = float(pred_res["price"])
 
-            model_label = getattr(predictor, 'model_name', None) or str(pred_res.get("algorithm", "AI Model"))
+            model_label = (
+                (getattr(predictor, 'model_name', None) if predictor is not None else routed_model_name)
+                or str(pred_res.get("algorithm", "AI Model"))
+            )
             ai_sl = pred_res.get("sl")
             ai_tp = pred_res.get("tp")
 

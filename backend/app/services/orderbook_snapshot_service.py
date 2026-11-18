@@ -50,6 +50,7 @@ class OrderbookSnapshotService:
                 and not s.startswith("logs_")
                 and not s.startswith("status_")
                 and not s.startswith("godmode_")
+                and not s.startswith("user_notif_")
             ):
                 symbols_to_record.add(s)
 

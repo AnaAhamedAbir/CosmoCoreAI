@@ -2054,13 +2054,14 @@ class ManualTradeService:
 
                 order_req.amount = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, order_req.amount)
 
-            # --- Pre-flight Margin Check (Zero-Latency Cached with Non-Blocking Refresh on Futures) ---
+            # --- Pre-flight Margin Check (Zero-Latency Cached with Non-Blocking Refresh on Futures & Smart Peg) ---
+            is_smart_peg_req = order_req.type.lower() in ('smart_peg', 'smartpeg')
             bal = ManualTradeService._get_cached_wallet_balance(
                 api_key_record.id, is_futures, max_age_seconds=300.0, is_inverse=is_inverse
             )
             if not bal:
-                if is_futures:
-                    # Warm balance cache in background so order placement does not pay an extra REST RTT
+                if is_futures or is_smart_peg_req:
+                    # Warm balance cache in background so order placement / Smart Peg executes in 1 RTT (~255ms)
                     asyncio.create_task(
                         ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)
                     )
@@ -2206,6 +2207,7 @@ class ManualTradeService:
                         contract_size=contract_size,
                         is_inverse=is_inverse,
                         anchor_price=peg_anchor_price,
+                        preloaded_balance=bal if bal else None,
                         skip_exchange_upgrade=True,
                     )
                 )

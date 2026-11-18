@@ -1200,6 +1200,87 @@ class TestEndpointsAndServicesFixes(unittest.IsolatedAsyncioTestCase):
             self.assertLess(sl_elapsed, rtt * 2.2)
             self.assertLess(upd["execution_speed_ms"], int(rtt * 2200))
 
+    async def test_spot_smart_peg_single_rtt_latency(self):
+        """
+        Verifies Spot Smart Peg entry (e.g. DOGE/FDUSD SELL) does NOT make a blocking
+        fetch_balance() REST call before placing the LIMIT_MAKER order, achieving 1-RTT speed.
+        """
+        ex = MockExchange("DOGE/FDUSD", tick=0.0001)
+        ex.apiKey = "spot_peg_key"
+        rtt = 0.045
+        calls = []
+
+        async def slow_bal(params=None):
+            calls.append("fetch_balance")
+            await asyncio.sleep(rtt)
+            return {"DOGE": {"free": 2000.0, "total": 2000.0}, "free": {"DOGE": 2000.0}}
+
+        async def slow_limit(symbol, side, amount, price, params=None):
+            calls.append("create_limit_order")
+            await asyncio.sleep(rtt)
+            return {
+                "id": "spot_peg_1",
+                "symbol": symbol,
+                "side": side,
+                "amount": amount,
+                "price": price,
+                "status": "closed",
+                "filled": amount,
+                "average": price,
+            }
+
+        ex.fetch_balance = slow_bal
+        ex.create_limit_order = slow_limit
+
+        class DummyRedis:
+            async def get(self, key):
+                return json.dumps({"bid": 0.0592, "ask": 0.0593, "ts": time.time()})
+
+        ManualTradeService._WALLET_BALANCE_CACHE.clear()
+        db = FakeDB()
+        notify_calls = []
+
+        async def capture_notify(**kwargs):
+            notify_calls.append(kwargs)
+
+        req = SimpleNamespace(
+            api_key_id=7,
+            exchange_id="binance",
+            symbol="DOGE/FDUSD",
+            side="sell",
+            type="smart_peg",
+            amount=1024.0,
+            price=None,
+            params={"maxChaseDeviationPct": 5.0},
+            attached_tp=None,
+            attached_sl=None,
+            use_native_tp_sl=False,
+            iceberg_qty=None,
+            enable_ml_filter=False,
+        )
+
+        fake_uos = SimpleNamespace(
+            _get_redis_pub=AsyncMock(return_value=DummyRedis()),
+            mark_order_replaced=lambda *a, **kw: None,
+            ensure_user_order_stream=lambda *a, **kw: None,
+        )
+        with patch.object(ManualTradeService, "_get_exchange", AsyncMock(return_value=ex)), \
+             patch.dict(sys.modules, {"app.services.user_order_stream": fake_uos}), \
+             patch("app.services.manual_trade_service._send_trade_fired_notification", side_effect=capture_notify), \
+             patch("app.services.smart_peg_entry_executor.SessionLocal", FakeDB):
+            t0 = time.perf_counter()
+            res = await ManualTradeService.place_manual_trade(db=db, user_id=1, order_req=req, start_time=t0)
+            self.assertEqual(res["status"], "pegging")
+            for _ in range(30):
+                await asyncio.sleep(0.01)
+                if notify_calls:
+                    break
+
+        self.assertEqual(len(notify_calls), 1)
+        # create_limit_order must fire in 1 RTT without waiting on a blocking fetch_balance first!
+        self.assertLess(notify_calls[0]["latency_ms"], int(rtt * 2200))
+        self.assertIn("create_limit_order", calls)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

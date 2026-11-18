@@ -276,9 +276,13 @@ async def execute_smart_peg_entry(
         except Exception:
             pass
 
+    api_key_id = getattr(api_key_record, 'id', None)
+
     async def _fetch_balance_fast() -> dict:
         from app.services.manual_trade_service import ManualTradeService
-        return await ManualTradeService._fetch_wallet_balance(exchange, symbol)
+        return await ManualTradeService._fetch_wallet_balance(
+            exchange, symbol, api_key_id=api_key_id
+        )
 
     # Balance sync helper to avoid "insufficient balance" rejections
     async def _sync_and_clamp_amount(price: float, cached_bal: Optional[dict] = None, force_refresh: bool = False) -> float:
@@ -296,10 +300,11 @@ async def execute_smart_peg_entry(
                 base_asset = parts[0]
                 quote_asset = parts[1].split(':')[0]
                 bal = cached_bal or await _fetch_balance_fast()
+                from app.services.manual_trade_service import ManualTradeService
 
                 if side.lower() == "buy":
                     # Buying base using quote (e.g. FDUSD or USDT)
-                    free_quote = float(bal.get(quote_asset, {}).get('free', 0.0))
+                    free_quote, _, _ = ManualTradeService._extract_asset_balance(bal, quote_asset)
                     if free_quote <= 0:
                         logger.warning(f"⚠️ [Smart Peg Entry] No free {quote_asset} available to buy {base_asset}!")
                         return 0.0
@@ -317,7 +322,7 @@ async def execute_smart_peg_entry(
                             remaining_amount = adjusted
                 else:
                     # Selling base for quote
-                    free_base = float(bal.get(base_asset, {}).get('free', 0.0))
+                    free_base, _, _ = ManualTradeService._extract_asset_balance(bal, base_asset)
                     if free_base <= 0:
                         logger.warning(f"⚠️ [Smart Peg Entry] No free {base_asset} available to sell!")
                         return 0.0
@@ -333,21 +338,26 @@ async def execute_smart_peg_entry(
 
         return remaining_amount
 
-    # Fetch initial orderbook & balance in PARALLEL (or reuse preloaded snapshots for ~0ms overhead)
+    # Reuse preloaded BBO / RAM-cached wallet balance for 0ms overhead -> 1-RTT initial placement
     has_preloaded_ob = bool(
         isinstance(preloaded_ob, dict) and preloaded_ob.get('bids') and preloaded_ob.get('asks')
     )
     initial_ob = preloaded_ob if has_preloaded_ob else None
-    cached_bal = preloaded_balance if isinstance(preloaded_balance, dict) else None
+    cached_bal = preloaded_balance if (isinstance(preloaded_balance, dict) and preloaded_balance) else None
+    if cached_bal is None and not is_futures and api_key_id is not None:
+        try:
+            from app.services.manual_trade_service import ManualTradeService
+            ram_bal = ManualTradeService._get_cached_wallet_balance(
+                api_key_id, is_futures=False, max_age_seconds=300.0, is_inverse=False
+            )
+            if isinstance(ram_bal, dict) and ram_bal:
+                cached_bal = ram_bal
+        except Exception:
+            pass
+
     try:
-        need_ob = initial_ob is None
-        need_bal = (not is_futures) and (cached_bal is None)
-        if need_ob and need_bal:
-            initial_ob, cached_bal = await asyncio.gather(_fetch_bbo_fast(exchange, symbol), _fetch_balance_fast())
-        elif need_ob:
+        if initial_ob is None:
             initial_ob = await _fetch_bbo_fast(exchange, symbol)
-        elif need_bal:
-            cached_bal = await _fetch_balance_fast()
     except Exception as ob_err:
         logger.error(f"❌ [Smart Peg Entry] Failed to fetch initial data: {ob_err}")
         return None
@@ -361,8 +371,10 @@ async def execute_smart_peg_entry(
     market_benchmark_price = b_bid if side.lower() == 'buy' else b_ask
     initial_benchmark_price = float(anchor_price) if (anchor_price and float(anchor_price) > 0) else market_benchmark_price
 
-    # Initial clamp (uses pre-fetched cached_bal for 0ms overhead)
-    remaining_amount = await _sync_and_clamp_amount(initial_benchmark_price, cached_bal=cached_bal)
+    # Initial clamp in 0ms if balance is cached; otherwise skip blocking REST fetch_balance()
+    # (Binance enforces Spot balance atomically on order placement; -2010 auto-clamps cleanly below).
+    if cached_bal:
+        remaining_amount = await _sync_and_clamp_amount(initial_benchmark_price, cached_bal=cached_bal)
     initial_notional = _calc_order_notional_usd(exchange, symbol, remaining_amount, initial_benchmark_price)
     if remaining_amount <= 0 or initial_notional < min_notional:
         logger.warning(f"⚠️ [Smart Peg Entry] Amount {remaining_amount} (~${initial_notional:.2f}) below min notional ${min_notional:.2f}. Aborted.")
@@ -554,6 +566,14 @@ async def execute_smart_peg_entry(
                 except Exception as adj_e:
                     logger.debug(f"Post-only fallback retry failed: {adj_e}")
                     peg_order = None
+            elif not is_futures and ('insufficient' in str(place_err).lower() or '-2010' in str(place_err)):
+                logger.warning(f"⚠️ [Smart Peg Entry] Spot balance not free (-2010/insufficient): {place_err}. Clamping from live balance...")
+                remaining_amount = await _sync_and_clamp_amount(target_maker_price, force_refresh=True)
+                rem_val = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
+                if remaining_amount <= 0 or rem_val < min_notional:
+                    logger.warning(f"🛑 [Smart Peg Entry] Insufficient free balance (${rem_val:.2f} < ${min_notional:.2f}). Stopping peg.")
+                    break
+                continue
             else:
                 logger.warning(f"⚠️ [Smart Peg Entry] Placement error: {place_err}")
 

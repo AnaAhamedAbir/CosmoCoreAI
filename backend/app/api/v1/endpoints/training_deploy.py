@@ -17,7 +17,15 @@ from app.schemas.training_deploy import (
     RetrainModelResponse,
     WallHunterBotItem,
 )
-from app.services.training_deploy_service import TrainingDeployService
+
+
+class _TrainingDeployServiceProxy:
+    def __getattr__(self, name):
+        from app.services.training_deploy_service import TrainingDeployService
+        return getattr(TrainingDeployService, name)
+
+
+TrainingDeployService = _TrainingDeployServiceProxy()
 
 router = APIRouter()
 

@@ -1,18 +1,19 @@
 import logging
 import asyncio
-from app.celery_app import celery_app
-from app.db.session import SessionLocal
-from app.forex import models
-from app.forex.services.engine import ForexAlgoEngine
+from app.core.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
-engine = ForexAlgoEngine()
 
 @celery_app.task(name="run_forex_bots_task")
 def run_forex_bots_task():
     """
     Background job that runs periodically (e.g., every minute) to execute automated logic for active Forex bots.
     """
+    from app.db.session import SessionLocal
+    from app.forex import models
+    from app.forex.services.engine import ForexAlgoEngine
+
+    engine = ForexAlgoEngine()
     db = SessionLocal()
     try:
         active_bots = db.query(models.ForexBot).filter(models.ForexBot.status == "active").all()

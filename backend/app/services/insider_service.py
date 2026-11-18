@@ -1,7 +1,5 @@
 import requests
 import os
-import yfinance as yf
-import pandas as pd
 from sqlalchemy.orm import Session
 from app.models.insider import InsiderFiling
 from app.schemas.insider import InsiderFilingCreate
@@ -52,6 +50,8 @@ def fetch_from_yahoo(tickers: list):
     """
     Fallback Source: Scrape from Yahoo Finance using yfinance
     """
+    import yfinance as yf
+    import pandas as pd
     print("FMP Failed. Switching to Yahoo Finance Scraper...")
     filings = []
     

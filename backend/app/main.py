@@ -276,19 +276,27 @@ async def subscribe_to_app_notifications():
                 except Exception:
                     pass
 
-async def fetch_market_data_background():
-    local_exchange_client = None
-    print("🚀 Background Market Data Task Started")
-    
+async def _init_binance_spot_client():
+    """Create ccxtpro.binance spot client reusing pre-warmed markets cache to avoid duplicate 120MB load."""
+    from app.services.ccxt_service import ccxt_service
+    client = ccxtpro.binance({
+        'enableRateLimit': True,
+        'options': {'adjustForTimeDifference': True, 'defaultType': 'spot'}  # Explicitly spot — prevents routing to dapi.binance.com (COIN-M)
+    })
     try:
-        local_exchange_client = ccxtpro.binance({
-            'enableRateLimit': True,
-            'options': {'adjustForTimeDifference': True, 'defaultType': 'spot'}  # Explicitly spot — prevents routing to dapi.binance.com (COIN-M)
-        })
-        await local_exchange_client.load_markets()
+        spot_mkts = await ccxt_service.get_full_markets('binance', 'spot')
+        if spot_mkts and hasattr(client, 'set_markets'):
+            client.set_markets(spot_mkts)
+        else:
+            await client.load_markets()
     except Exception as e:
         print(f"⚠️ [Ignored] Failed to initialize exchange client markets: {e}")
         # Proceed without markets loaded, as some websocket streams can run without it.
+    return client
+
+async def fetch_market_data_background():
+    print("🚀 Background Market Data Task Started")
+    local_exchange_client = await _init_binance_spot_client()
 
     # WebSocket Background Updater for Tickers
     async def _keep_tickers_updated():
@@ -363,15 +371,7 @@ async def fetch_market_data_background():
             
             # Ensure we have a client
             if not local_exchange_client:
-                 try:
-                    local_exchange_client = ccxtpro.binance({
-                        'enableRateLimit': True,
-                        'options': {'adjustForTimeDifference': True, 'defaultType': 'spot'}  # Explicitly spot
-                    })
-                    await local_exchange_client.load_markets()
-                 except Exception as e:
-                    print(f"⚠️ [Ignored] Re-init client failed to load markets: {e}")
-                    # Continue using the client even if load_markets failed
+                local_exchange_client = await _init_binance_spot_client()
 
             # --- 1. Process Individual Subscriptions (Existing Logic) ---
             NON_MARKET_CHANNELS = {

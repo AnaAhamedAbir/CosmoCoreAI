@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, WebSocket, HTTPException, Query, status,
 from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api import deps
-from app.strategies.grid import GridTradingBot
 from app.models.grid import GridBot, GridOrder
 from app.schemas.grid import GridBotCreate, GridBotResponse, GridBotUpdate
 from app.core.config import settings
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 # For multi-worker setups, a pub/sub command channel is better, but this handles the requirement "Remove global running_grid_bots".
 # This variable is module-scoped but limited to this process.
 _local_bot_tasks: Dict[int, asyncio.Task] = {}
-_local_bot_instances: Dict[int, GridTradingBot] = {}
+_local_bot_instances: Dict[int, Any] = {}
 
 def get_real_api_credentials_by_id(db: Session, user_id: int, api_key_id: int):
     api_key_entry = db.query(models.ApiKey).filter(
@@ -53,6 +52,7 @@ async def run_bot_task(bot_id: int, config: Dict[str, Any]):
         await redis.set(f"gridbot:status:{bot_id}", "running")
         
         # Initialize and Start
+        from app.strategies.grid import GridTradingBot
         grid_bot = GridTradingBot(bot_id, config)
         _local_bot_instances[bot_id] = grid_bot
         await grid_bot.start()

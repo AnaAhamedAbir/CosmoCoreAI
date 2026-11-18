@@ -9,7 +9,6 @@ from app.api import deps
 from app import models
 from app.schemas.analytics import PerformanceMetrics, CorrelationRequest, CorrelationResponse, RollingCorrelationPoint
 from app.services.analytics import analytics_service
-from app.services.market_analysis_service import market_analysis_service
 from app.services.websocket_manager import manager
 
 router = APIRouter()
@@ -43,7 +42,8 @@ def get_correlation_matrix(
     try:
         if not request.symbols or len(request.symbols) < 2:
             raise HTTPException(status_code=400, detail="At least two symbols are required.")
-            
+
+        from app.services.market_analysis_service import market_analysis_service
         result = market_analysis_service.get_correlation_data(
             symbols=request.symbols,
             timeframe=request.timeframe
@@ -64,6 +64,7 @@ def get_rolling_correlation(
     Get rolling correlation history between two assets.
     """
     try:
+        from app.services.market_analysis_service import market_analysis_service
         return market_analysis_service.get_rolling_correlation(
             symbol_a=symbol_a,
             symbol_b=symbol_b,
@@ -79,6 +80,7 @@ def get_rolling_correlation(
 # If api_router includes this with prefix="/analytics", then url is /api/v1/analytics/ws/correlation
 @router.websocket("/ws/correlation")
 async def websocket_endpoint(websocket: WebSocket):
+    from app.services.market_analysis_service import market_analysis_service
     await manager.connect(websocket, "correlation_feed")
     try:
         symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'ADA/USDT', 'XRP/USDT', 'BNB/USDT']

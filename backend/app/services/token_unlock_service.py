@@ -3,27 +3,32 @@ import logging
 import json
 from datetime import datetime, timedelta
 import aiohttp
-from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 from app.models.token_unlock import TokenUnlockEvent
 from app.core.config import settings
-try:
-    from google import genai
-except ImportError:
-    genai = None
 
 logger = logging.getLogger(__name__)
 
 class TokenUnlockService:
     def __init__(self, db: Session):
         self.db = db
-        # Initialize GenAI client if key exists
-        self.ai_client = None
-        if settings.GEMINI_API_KEY and genai:
-            try:
-                self.ai_client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            except Exception as e:
-                logger.error(f"Failed to init Gemini client: {e}")
+        # Initialize GenAI client lazily on first use so google.genai/PIL stay unloaded until needed
+        self._ai_client = None
+        self._ai_initialized = False
+
+    @property
+    def ai_client(self):
+        if not self._ai_initialized:
+            self._ai_initialized = True
+            if settings.GEMINI_API_KEY:
+                try:
+                    from google import genai
+                    self._ai_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+                except ImportError:
+                    pass
+                except Exception as e:
+                    logger.error(f"Failed to init Gemini client: {e}")
+        return self._ai_client
 
     async def fetch_unlock_data(self, symbol: str) -> dict:
         """
@@ -127,6 +132,7 @@ class TokenUnlockService:
                         # Try alternate Source
                         return self._generate_mock_fallback(symbol)
                     
+                    from bs4 import BeautifulSoup
                     html = await resp.text()
                     soup = BeautifulSoup(html, 'html.parser')
                     

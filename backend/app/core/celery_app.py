@@ -66,10 +66,16 @@ celery_app.conf.update(
         'app.tasks.evaluate_model_drift_task': {'queue': 'heavy'},
         'app.tasks.sync_fetch_news_heavy': {'queue': 'heavy'},
         'app.tasks.sync_sentiment_analysis_heavy': {'queue': 'heavy'},
+        'app.tasks.auto_retrain_models': {'queue': 'heavy'},
+        'app.tasks.prune_l2_data': {'queue': 'heavy'},
+        'app.tasks.parse_tickstory_csv_task': {'queue': 'heavy'},
+        'app.tasks.merge_hybrid_dataset_task': {'queue': 'heavy'},
+        'merge_hybrid_dataset_task': {'queue': 'heavy'},
     },
+    result_expires=3600,
     broker_connection_retry_on_startup=True,
     broker_transport_options={'visibility_timeout': 86400},  # 24 hours to prevent duplicate long tasks
 )
 
 # Auto-discover tasks in packages
-celery_app.autodiscover_tasks(["app.tasks"])
+celery_app.autodiscover_tasks(["app.tasks", "app.forex"])

@@ -1,6 +1,5 @@
 from fastapi import APIRouter, HTTPException
 from typing import Any
-from app.services.regime_service import RegimeService
 from app.schemas.regime import RegimeResponse
 
 router = APIRouter()
@@ -12,6 +11,7 @@ def get_market_regime() -> Any:
     Uses Hidden Markov Models (HMM) on BTC/USDT data.
     """
     try:
+        from app.services.regime_service import RegimeService
         service = RegimeService()
         result = service.execute()
         return result

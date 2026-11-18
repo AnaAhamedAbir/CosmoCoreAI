@@ -8,17 +8,11 @@ from datetime import datetime, timedelta
 from app import models
 from app.constants import VALID_TIMEFRAMES 
 import asyncio
-from tqdm import tqdm
 from app.services.websocket_manager import manager
 from fastapi.concurrency import run_in_threadpool
 from app.core.cache import cache
 from fastapi import HTTPException
 from app.core.config import settings
-import pandas as pd
-import pandas_ta as ta
-import numpy as np
-from app.services.news_service import news_service
-from app.services.sentiment_service import sentiment_service
 
 class MarketService:
     def __init__(self):
@@ -151,6 +145,7 @@ class MarketService:
             # শুরুতেই একটা ০% মেসেজ পাঠানো যাতে UI রেডি হয়
             await self._broadcast_progress(symbol, safe_symbol, 0, f"Starting sync for {symbol}...")
 
+            from tqdm import tqdm
             with tqdm(total=total_duration, desc=f"Syncing {symbol}", unit="ms") as pbar:
                 while current_since < end_ts:
                     try:
@@ -599,6 +594,8 @@ class MarketService:
         Orchestrates calls to internal methods and external services.
         """
         try:
+            from app.services.news_service import news_service
+            from app.services.sentiment_service import sentiment_service
             # 1. Get Real-Time Metrics (Smart Money, Netflow)
             rt_metrics = await self.get_real_time_sentiment_metrics(symbol)
             
@@ -674,6 +671,11 @@ class MarketService:
             raise HTTPException(status_code=500, detail="Failed to fetch market data")
         finally:
             await exchange.close()
+
+        import pandas as pd
+        import pandas_ta as ta  # noqa: F401 - registers df.ta accessor
+        import numpy as np
+        from app.services.news_service import news_service
 
         if not ohlcv:
             return []

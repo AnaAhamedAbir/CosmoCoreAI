@@ -1,14 +1,10 @@
 from typing import Any, List, Dict
 import asyncio
-import pandas as pd
-import pandas_ta as ta
-import ccxt.async_support as ccxt
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from app import schemas, models
 from app.crud import indicator as crud_indicator
 from app.api import deps
-from app.strategies.helpers.ict_po3_tracker import ICTPowerOfThree
 
 router = APIRouter()
 
@@ -35,6 +31,8 @@ def get_po3_history(
     """
     try:
         import ccxt
+        import pandas as pd
+        from app.strategies.helpers.ict_po3_tracker import ICTPowerOfThree
         exchange = ccxt.binance({'enableRateLimit': True})
         formatted_symbol = symbol.replace("-", "/").upper()
         ohlcv = exchange.fetch_ohlcv(formatted_symbol, timeframe=timeframe, limit=500)
@@ -113,6 +111,11 @@ hline(30, "Oversold", color=color.green)
 
 @router.websocket("/ws/stream/{symbol_param}")
 async def websocket_indicator_stream(websocket: WebSocket, symbol_param: str):
+    import pandas as pd
+    import pandas_ta as ta  # noqa: F401 - registers df.ta accessor
+    import ccxt.async_support as ccxt
+    from app.strategies.helpers.ict_po3_tracker import ICTPowerOfThree
+
     await websocket.accept()
     # Decode symbol e.g., BTC-USDT to BTC/USDT
     symbol = symbol_param.replace("-", "/").upper()

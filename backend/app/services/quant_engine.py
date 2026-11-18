@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from statsmodels.tsa.stattools import coint
 from typing import Dict, Union, Tuple, List
 
 def calculate_correlation_matrix(price_data: pd.DataFrame) -> Dict:
@@ -48,6 +47,7 @@ def calculate_cointegration(series_a: Union[pd.Series, np.ndarray], series_b: Un
     
     # Run cointegration test
     # coint returns: t-stat, p-value, crit_values
+    from statsmodels.tsa.stattools import coint
     score, p_value, _ = coint(series_a, series_b)
     
     return {

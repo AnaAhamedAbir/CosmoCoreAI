@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 from app.api import deps
 from app.api.v1.endpoints.grid_bot import get_real_api_credentials_by_id
 from app.core.redis import redis_manager
-from app.strategies.order_block_bot import OrderBlockBotTask
 from typing import Dict, Any
 import asyncio
 import logging
@@ -12,7 +11,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Local task registry
-_local_ob_tasks: Dict[int, OrderBlockBotTask] = {}
+_local_ob_tasks: Dict[int, Any] = {}
 
 class DummyOBBotModel:
     # Dummy mock model so we don't have to pollute the DB schema in this single task execution
@@ -50,6 +49,7 @@ async def start_ob_bot(
         
     await redis.set(f"obbot:status:{bot_id}", "running")
     
+    from app.strategies.order_block_bot import OrderBlockBotTask
     bot_task = OrderBlockBotTask(bot_id, config)
     _local_ob_tasks[bot_id] = bot_task
     

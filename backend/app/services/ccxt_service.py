@@ -1,3 +1,5 @@
+import asyncio
+import gc
 import ccxt.async_support as ccxt
 import json
 import logging
@@ -20,6 +22,7 @@ class CcxtService:
     # In-memory cache for full markets data to make bot startup instant
     _market_cache = {}
     _market_cache_timestamp = {}
+    _market_locks: Dict[str, asyncio.Lock] = {}
 
     def __init__(self):
         pass
@@ -64,16 +67,19 @@ class CcxtService:
 
         api = None
         try:
-            exchange_class = getattr(ccxt, exchange_id)
-            api = exchange_class({
-                'enableRateLimit': True,
-                'options': {
-                    'adjustForTimeDifference': True,
-                    'recvWindow': 60000 if exchange_id == 'mexc' else 10000
-                }
-            })
-            
-            markets = await api.load_markets()
+            # Reuse pre-warmed/shared market cache when available to avoid duplicate 120MB load_markets()
+            if exchange_id == 'binance' or f"{exchange_id}_spot" in self._market_cache:
+                markets = await self.get_full_markets(exchange_id, 'spot')
+            else:
+                exchange_class = getattr(ccxt, exchange_id)
+                api = exchange_class({
+                    'enableRateLimit': True,
+                    'options': {
+                        'adjustForTimeDifference': True,
+                        'recvWindow': 60000 if exchange_id == 'mexc' else 10000
+                    }
+                })
+                markets = await api.load_markets()
             
             pairs = []
             for symbol, market in markets.items():
@@ -106,36 +112,57 @@ class CcxtService:
         if cache_key in self._market_cache:
             if time.time() - self._market_cache_timestamp.get(cache_key, 0) < 3600:
                 return self._market_cache[cache_key]
-                
-        if exchange_id not in ccxt.exchanges:
-            raise ValueError(f"Exchange '{exchange_id}' not found in CCXT.")
 
-        api = None
-        try:
-            exchange_class = getattr(ccxt, exchange_id)
-            api = exchange_class({
-                'enableRateLimit': True,
-                'options': {
-                    'defaultType': default_type,
-                    'adjustForTimeDifference': True,
-                    'recvWindow': 60000 if exchange_id == 'mexc' else 10000
-                }
-            })
-            
-            markets = await api.load_markets()
-            
-            # Save to memory cache
-            self._market_cache[cache_key] = markets
-            self._market_cache_timestamp[cache_key] = time.time()
-            logger.info(f"Successfully cached {len(markets)} markets for {cache_key} in memory.")
-            
-            return markets
-        except Exception as e:
-            logger.error(f"Error fetching full markets for {cache_key}: {e}")
-            return {}
-        finally:
-            if api:
-                await api.close()
+        # Serialize concurrent loads for the same exchange (avoids duplicate startup fetches)
+        lock_key = exchange_id if exchange_id == 'binance' else cache_key
+        lock = self._market_locks.setdefault(lock_key, asyncio.Lock())
+
+        async with lock:
+            if cache_key in self._market_cache:
+                if time.time() - self._market_cache_timestamp.get(cache_key, 0) < 3600:
+                    return self._market_cache[cache_key]
+
+            # Binance load_markets() returns the full spot+futures+options map regardless of defaultType
+            if exchange_id == 'binance' and default_type in ('spot', 'swap', 'future'):
+                for alt_type in ('spot', 'swap', 'future'):
+                    alt_key = f"binance_{alt_type}"
+                    if alt_key in self._market_cache and time.time() - self._market_cache_timestamp.get(alt_key, 0) < 3600:
+                        self._market_cache[cache_key] = self._market_cache[alt_key]
+                        self._market_cache_timestamp[cache_key] = self._market_cache_timestamp[alt_key]
+                        logger.info(f"Reused cached Binance markets ({len(self._market_cache[alt_key])}) for {cache_key} (0ms)")
+                        return self._market_cache[cache_key]
+
+            if exchange_id not in ccxt.exchanges:
+                raise ValueError(f"Exchange '{exchange_id}' not found in CCXT.")
+
+            api = None
+            try:
+                exchange_class = getattr(ccxt, exchange_id)
+                api = exchange_class({
+                    'enableRateLimit': True,
+                    'options': {
+                        'defaultType': default_type,
+                        'adjustForTimeDifference': True,
+                        'recvWindow': 60000 if exchange_id == 'mexc' else 10000
+                    }
+                })
+                
+                markets = await api.load_markets()
+                
+                # Save to memory cache only when non-empty
+                if markets:
+                    self._market_cache[cache_key] = markets
+                    self._market_cache_timestamp[cache_key] = time.time()
+                    logger.info(f"Successfully cached {len(markets)} markets for {cache_key} in memory.")
+                
+                return markets
+            except Exception as e:
+                logger.error(f"Error fetching full markets for {cache_key}: {e}")
+                return {}
+            finally:
+                if api:
+                    await api.close()
+                gc.collect()
 
     # --- NEW FUTURES & EXECUTION HELPERS ---
     

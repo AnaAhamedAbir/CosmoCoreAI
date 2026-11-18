@@ -3,7 +3,6 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api import deps
-from app.services.news_service import news_service
 
 router = APIRouter()
 
@@ -23,6 +22,7 @@ def read_education(
 
 @router.post("/refresh-news")
 async def refresh_news(db: Session = Depends(deps.get_db)):
+    from app.services.news_service import news_service
     count = await news_service.fetch_and_process_latest_news()
     return {"message": f"Fetched {count} new articles"}
 

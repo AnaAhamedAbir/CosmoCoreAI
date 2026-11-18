@@ -20,7 +20,6 @@ from app.schemas.training_deploy import (
     ManualTradePinRequest,
     PaperReplayRequest,
 )
-from app.services.ml_backtest_runner import _build_ohlcv_slice, _generate_signals
 from app.services.system_notification_service import SystemNotificationService
 
 logger = logging.getLogger(__name__)
@@ -258,6 +257,7 @@ class TrainingDeployService:
             x_eval = x_raw
 
         # Extract price series via ml_backtest_runner helper or direct column lookup
+        from app.services.ml_backtest_runner import _build_ohlcv_slice
         ohlcv_df = _build_ohlcv_slice(df_slice, len(df_slice), lambda _msg: None)
         prices: Optional[np.ndarray] = None
         if ohlcv_df is not None and "close" in ohlcv_df.columns and len(ohlcv_df) == len(df_slice):
@@ -568,6 +568,7 @@ class TrainingDeployService:
                     dataset_path=dataset_path,
                 )
 
+                from app.services.ml_backtest_runner import _generate_signals
                 signals = _generate_signals(
                     loaded_model,
                     algorithm,

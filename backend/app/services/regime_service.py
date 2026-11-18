@@ -1,7 +1,5 @@
 import numpy as np
 import pandas as pd
-import ccxt
-from hmmlearn.hmm import GaussianHMM
 import logging
 from typing import Dict, Any, List
 
@@ -11,6 +9,8 @@ logger = logging.getLogger(__name__)
 
 class RegimeService:
     def __init__(self, symbol: str = 'BTC/USDT', timeframe: str = '1h', limit: int = 2000):
+        import ccxt
+        from hmmlearn.hmm import GaussianHMM
         self.symbol = symbol
         self.timeframe = timeframe
         self.limit = limit

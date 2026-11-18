@@ -29,7 +29,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: cosmo_celery_worker_default
-    command: celery -A app.core.celery_app worker -Q celery --loglevel=warning --concurrency=3
+    command: celery -A app.core.celery_app worker -Q celery --loglevel=warning --concurrency=2 --max-tasks-per-child=50 --max-memory-per-child=200000
     volumes:
       - ./backend:/app
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for log monitoring

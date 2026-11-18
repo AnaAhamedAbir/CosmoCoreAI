@@ -1,14 +1,25 @@
-from .celery_app import celery_app
-from app.db.session import SessionLocal
+from app.core.celery_app import celery_app
 import sys
 import math
 import time
-from . import utils 
+from . import utils
 import asyncio
 import json
-from app.models import SentimentHistory
-from app.models.whale_alert import WhaleAlert
-from app.services.notification import NotificationService
+
+# Pre-warm DB & LogMonitor modules in the default Celery worker master process BEFORE fork()
+# so child workers share SQLAlchemy/psycopg2/models via Copy-on-Write (saves ~50MB per child).
+if "worker" in sys.argv and "heavy" not in sys.argv:
+    try:
+        import app.db.session  # noqa: F401
+        import app.models.notification  # noqa: F401
+        import app.services.log_monitor_service  # noqa: F401
+    except Exception:
+        pass
+
+
+def _new_db():
+    from app.db.session import SessionLocal
+    return SessionLocal()
 class MarketServiceProxy:
     def __init__(self):
         self._instance = None
@@ -21,7 +32,6 @@ class MarketServiceProxy:
 
 MarketService = MarketServiceProxy
 
-from app.services.session_monitor import SessionMonitorService
 from app.core.logger import get_task_logger
 
 class NewsServiceProxy:
@@ -189,7 +199,7 @@ def _emit_backtest_notification(
 def run_backtest_task(self, symbol: str, timeframe: str, strategy_name: str, initial_cash: float, params: dict, start_date: str = None, end_date: str = None, custom_data_file: str = None, commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0, secondary_timeframe: str = None, stop_loss: float = 0.0, take_profit: float = 0.0, trailing_stop: float = 0.0, indicator_id: int = None, user_id: int = None):
     from app.services.backtest_engine import BacktestEngine
     from app.services.report_generator import generate_report
-    db = SessionLocal()
+    db = _new_db()
     engine = BacktestEngine()
     
     last_percent = -1
@@ -269,7 +279,7 @@ def run_backtest_task(self, symbol: str, timeframe: str, strategy_name: str, ini
 @celery_app.task(bind=True)
 def run_optimization_task(self, symbol: str, timeframe: str, strategy_name: str, initial_cash: float, params: dict, start_date: str = None, end_date: str = None, method="grid", population_size=50, generations=10, commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0, user_id: int = None):
     from app.services.backtest_engine import BacktestEngine
-    db = SessionLocal()
+    db = _new_db()
     engine = BacktestEngine()
     
     def on_progress(percent, meta=None):
@@ -380,7 +390,7 @@ def run_walk_forward_task(self, symbol, timeframe, strategy_name, initial_cash, 
         publish_task_status('WFA', self.request.id, 'processing', percent, data=meta)
 
     from app.services.backtest_engine import BacktestEngine
-    db = SessionLocal()
+    db = _new_db()
     engine = BacktestEngine()
     
     try:
@@ -441,7 +451,7 @@ def run_walk_forward_task(self, symbol, timeframe, strategy_name, initial_cash, 
 def run_batch_backtest_task(self, symbol: str, timeframe: str, initial_cash: float, strategies: list = None, start_date: str = None, end_date: str = None, commission: float = 0.001, slippage: float = 0.0, custom_data_file: str = None, user_id: int = None):
     from app.services.backtest_engine import BacktestEngine
     from app.strategies import STRATEGY_MAP
-    db = SessionLocal()
+    db = _new_db()
     engine = BacktestEngine()
     
     results = []
@@ -544,7 +554,7 @@ def run_batch_backtest_task(self, symbol: str, timeframe: str, initial_cash: flo
 @celery_app.task(bind=True)
 def run_live_bot_task(self, bot_id: int):
     from app.services.live_engine import LiveBotEngine
-    db = SessionLocal()
+    db = _new_db()
     try:
         from app.models import Bot
         bot = db.query(Bot).filter(Bot.id == bot_id).first()
@@ -571,13 +581,10 @@ def run_live_bot_task(self, bot_id: int):
         r = utils.get_redis_client()
         r.delete(f"bot_task:{bot_id}")
 
-import ccxt
 import os
 import csv
 from datetime import datetime, timedelta
-from .celery_app import celery_app
 from celery import current_task
-from tqdm import tqdm
 from .utils import get_redis_client
 
 DATA_FEED_DIR = "app/data_feeds"
@@ -627,6 +634,8 @@ def safe_parse_date(exchange, date_str):
 @celery_app.task(bind=True)
 def download_candles_task(self, exchange_id, symbol, timeframe, start_date, end_date=None):
     try:
+        import ccxt
+        from tqdm import tqdm
         if exchange_id not in ccxt.exchanges:
             return {"status": "failed", "error": f"Exchange {exchange_id} not found"}
             
@@ -731,6 +740,8 @@ def download_candles_task(self, exchange_id, symbol, timeframe, start_date, end_
 @celery_app.task(bind=True)
 def download_trades_task(self, exchange_id, symbol, start_date, end_date=None):
     try:
+        import ccxt
+        from tqdm import tqdm
         if exchange_id not in ccxt.exchanges:
              return {"status": "failed", "error": f"Exchange {exchange_id} not found"}
         
@@ -839,10 +850,11 @@ def fetch_and_store_sentiment(self):
     """
     Background Task: Fetch news, calculate sentiment score, and save to DB.
     """
-    db = SessionLocal()
+    db = _new_db()
     try:
         # ✅ MOVED: Import moved here to prevent Circular Import
-        from app.services.news_service import news_service 
+        from app.services.news_service import news_service
+        from app.models import SentimentHistory
         
         print("🔄 Fetching periodic sentiment data...")
         
@@ -903,7 +915,7 @@ def prune_database():
     Daily cleanup task to remove old sentiment data (retention: 30 days).
     """
     logger = get_task_logger("db_worker", "db_pruner.log")
-    db = SessionLocal()
+    db = _new_db()
     try:
         count = MarketService().prune_old_sentiment_data(db)
         logger.info(f"✅ Pruned {count} old records from SentimentHistory.")
@@ -922,10 +934,11 @@ def monitor_whale_movements():
     Uses Etherscan API via ChainService.
     """
     from app.services.chain_service import ChainService
+    from app.models.whale_alert import WhaleAlert
     from asgiref.sync import async_to_sync
     import asyncio
     
-    db = SessionLocal()
+    db = _new_db()
     try:
         print("🐋 Starting Whale Scan via Etherscan...")
         
@@ -995,10 +1008,11 @@ def execute_sor_child_order(user_id: int, exchange_id: str, symbol: str, side: s
     """
     Executes a single split order (Child Order) for SOR.
     """
+    import ccxt
     from app import models
     from app.core.security import decrypt_key
     
-    db = SessionLocal()
+    db = _new_db()
     exchange = None
     try:
         print(f"⚡ Executing SOR Child Order: {side} {amount} {symbol} on {exchange_id}")
@@ -1092,6 +1106,7 @@ def run_session_monitor_task():
     Periodic Task: Check for trading session starts every minute.
     """
     try:
+        from app.services.session_monitor import SessionMonitorService
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(SessionMonitorService.check_and_notify_sessions())
@@ -1143,7 +1158,7 @@ def broadcast_container_logs():
 
         # Pre-check in sync context whether anyone wants live logs
         # (avoids SQLAlchemy MissingGreenlet when querying inside async)
-        db = SessionLocal()
+        db = _new_db()
         try:
             active_setting = db.query(NotificationSettings).filter(
                 NotificationSettings.broadcast_live_logs == True
@@ -1173,10 +1188,9 @@ def prune_l2_data():
     NEW: Now auto-archives the data to a 10GB limited Parquet storage before deletion!
     """
     logger = get_task_logger("l2_pruner", "l2_pruner.log")
-    db = SessionLocal()
+    db = _new_db()
     try:
         from app.models.orderbook_snapshot import OrderBookSnapshot
-        from app.services.dataset_archiver import DatasetArchiver
         from datetime import datetime, timedelta, timezone
         
         threshold = datetime.now(timezone.utc) - timedelta(hours=24)
@@ -1196,6 +1210,8 @@ def prune_l2_data():
 
         # 2. Archive records to Parquet (includes 10GB smart management)
         if auto_archiver_enabled:
+            from app.services.dataset_archiver import DatasetArchiver
+
             def log_proxy(msg):
                 logger.info(msg)
                 
@@ -1228,11 +1244,10 @@ def auto_retrain_models():
     If so, dispatch the train_model_task.
     """
     logger = get_task_logger("auto_retrain", "auto_retrain.log")
-    db = SessionLocal()
+    db = _new_db()
     try:
         from app.models.ml_model import CustomMLModel, ModelVersion
         from datetime import datetime, timedelta
-        from app.services.ml_training_engine import train_model_task
         
         now = datetime.utcnow()
         
@@ -1316,6 +1331,7 @@ def auto_retrain_models():
                 
                 # Execute training synchronously within this Celery worker
                 try:
+                    from app.services.ml_training_engine import train_model_task
                     train_model_task(job_id, db)
                     retrained_count += 1
                     
@@ -1481,7 +1497,7 @@ def celery_train_model_task(self, job_id: str):
     
     logger.info(f"🚀 Celery picked up ML Training Job: {job_id}")
     
-    db = SessionLocal()
+    db = _new_db()
     try:
         # train_model_task handles all the async magic and DB commits internally
         train_model_task(job_id=job_id, db=db)
@@ -1509,13 +1525,12 @@ def evaluate_model_drift_task(self):
     from app.models.prediction_log import PredictionLog
     from app.models.ml_model import CustomMLModel
     from app.services.notification import NotificationService
-    import ccxt
     from datetime import timedelta
     
     logger = get_task_logger("drift_monitor", "drift.log")
     logger.info("🔍 Starting Model Drift Evaluation")
     
-    db = SessionLocal()
+    db = _new_db()
     try:
         # Find unevaluated logs older than 2 hours to ensure data is available
         cutoff_time = datetime.utcnow() - timedelta(hours=2)
@@ -1528,6 +1543,7 @@ def evaluate_model_drift_task(self):
             logger.info("No unevaluated predictions found.")
             return "No unevaluated logs."
             
+        import ccxt
         exchange = ccxt.binance({'enableRateLimit': True})
         models_to_check = set()
         

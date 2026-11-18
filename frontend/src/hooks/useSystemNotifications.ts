@@ -521,6 +521,18 @@ export function useSystemNotifications() {
                     },
                   })
                 );
+              } else if (evtName === 'order_added' && (data.order || (Array.isArray(data.orders) && data.orders.length > 0))) {
+                window.dispatchEvent(
+                  new CustomEvent('optimisticAddOpenOrder', {
+                    detail: {
+                      order: data.order,
+                      orders: data.orders,
+                      replaceId: data.replace_id,
+                      apiKeyId: data.api_key_id,
+                      symbol: data.symbol,
+                    },
+                  })
+                );
               } else if (evtName === 'orders_cleared') {
                 window.dispatchEvent(
                   new CustomEvent('optimisticClearOpenOrders', {

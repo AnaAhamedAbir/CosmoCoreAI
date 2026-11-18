@@ -1087,13 +1087,15 @@ class BracketOrderService:
         user_id: int = 0,   # BUG-07: pass user_id for notification
         linked_tp_order_id: str = None,
         linked_tp_price: float = None,
+        initial_filled_amount: float = 0.0,
+        initial_filled_price: float = 0.0,
     ):
         """
         Background task:
         1. Monitors the entry order status for up to `timeout_mins`.
-        2. Detects full or partial fills.
-        3. Fires opposite Take-Profit order based on the config.
-        4. Sends a Telegram notification after TP is placed.
+        2. Detects full or partial fills (via instant UserOrderStream wakeup or adaptive polling).
+        3. Fires opposite Take-Profit & Stop-Loss orders concurrently based on the config.
+        4. Sends notifications and syncs TP/SL lines to the chart immediately.
         """
         current_entry_id = str(entry_order_id) if entry_order_id else None
         try:
@@ -1111,6 +1113,33 @@ class BracketOrderService:
                 is_futures=is_futures,
                 passphrase=passphrase,
             )
+
+            # Ultra-fast 0ms shortcut when Market / Limit order already filled on placement response
+            init_filled = float(initial_filled_amount or 0.0)
+            if init_filled > 0:
+                fill_px = float(initial_filled_price or initial_entry_price or 0.0)
+                if user_id and fill_px > 0:
+                    asyncio.create_task(
+                        BracketOrderService._send_entry_filled_notification(
+                            user_id=user_id,
+                            symbol=symbol,
+                            side=side,
+                            filled=init_filled,
+                            total_amount=amount,
+                            average_price=fill_px,
+                            is_futures=is_futures,
+                        )
+                    )
+                if tp_config or sl_config:
+                    await BracketOrderService._spawn_bracket_for_amount(
+                        exchange, symbol, side, init_filled, fill_px,
+                        is_futures, tp_config, sl_config, user_id, api_key_record,
+                        entry_order_id=current_entry_id,
+                        linked_tp_order_id=linked_tp_order_id,
+                        linked_tp_price=linked_tp_price,
+                    )
+                if init_filled >= float(amount or 0.0) * 0.99:
+                    return
 
             # Determine if unlimited monitoring (0, None, <=0) is requested
             is_unlimited = False
@@ -1138,11 +1167,11 @@ class BracketOrderService:
                 f"Symbol: {symbol} | Timeout: {'Unlimited (Until Filled)' if is_unlimited else f'{max_timeout_mins} min'}"
             )
 
-            processed_amount = 0.0
-            average_price = float(initial_entry_price or 0.0)
+            processed_amount = init_filled
+            average_price = float(initial_filled_price or initial_entry_price or 0.0)
             order_closed = False
             elapsed_seconds = 0
-            current_entry_id = str(entry_order_id) if entry_order_id else None
+            fill_event = asyncio.Event()
             if current_entry_id:
                 BracketOrderService.ACTIVE_ENTRY_MONITORS[current_entry_id] = {
                     'entry_order_id': current_entry_id,
@@ -1151,6 +1180,7 @@ class BracketOrderService:
                     'linked_tp_order_id': str(linked_tp_order_id) if linked_tp_order_id else None,
                     'linked_tp_price': float(linked_tp_price) if linked_tp_price else None,
                     'cancelled': False,
+                    'fill_event': fill_event,
                 }
 
             def _resolve_active_entry_id(curr_id: Optional[str]) -> Optional[str]:
@@ -1166,16 +1196,17 @@ class BracketOrderService:
                         break
                 return curr_id
 
-            # ── Polling Loop ───────────────────────────────────────────
+            # ── Polling + Event-Driven Wakeup Loop ─────────────────────
             while True:
                 current_entry_id = _resolve_active_entry_id(current_entry_id)
-                if current_entry_id and BracketOrderService.ACTIVE_ENTRY_MONITORS.get(current_entry_id, {}).get('cancelled'):
+                mon_meta = BracketOrderService.ACTIVE_ENTRY_MONITORS.get(current_entry_id, {}) if current_entry_id else {}
+                if mon_meta.get('cancelled'):
                     logger.info(f"🛑 Bracket Monitor for {current_entry_id} aborted by Emergency Force Order.")
                     break
                 if not is_unlimited and elapsed_seconds >= max_timeout_mins * 60:
                     break
                 
-                # Adaptive Polling: Ultra-fast initial check (350ms) to detect immediate fills instantly
+                # Adaptive Polling: Ultra-fast initial check (350ms), woken INSTANTLY (<1ms) by UserOrderStream on WS fill
                 if elapsed_seconds == 0:
                     sleep_time = 0.35
                 elif elapsed_seconds < 300: # First 5 mins
@@ -1184,18 +1215,29 @@ class BracketOrderService:
                     sleep_time = 10
                 else: # After 1 hour
                     sleep_time = 30
-                    
-                await asyncio.sleep(sleep_time)
-                elapsed_seconds += sleep_time
+
+                mon_fill_ev = mon_meta.get('fill_event') or fill_event
+                t_wait0 = time.perf_counter()
+                try:
+                    await asyncio.wait_for(mon_fill_ev.wait(), timeout=sleep_time)
+                    mon_fill_ev.clear()
+                    elapsed_seconds += max(0.05, time.perf_counter() - t_wait0)
+                except asyncio.TimeoutError:
+                    elapsed_seconds += sleep_time
 
                 current_entry_id = _resolve_active_entry_id(current_entry_id)
-                if current_entry_id and BracketOrderService.ACTIVE_ENTRY_MONITORS.get(current_entry_id, {}).get('cancelled'):
+                mon_meta = BracketOrderService.ACTIVE_ENTRY_MONITORS.get(current_entry_id, {}) if current_entry_id else {}
+                if mon_meta.get('cancelled'):
                     logger.info(f"🛑 Bracket Monitor for {current_entry_id} aborted by Emergency Force Order.")
                     break
 
                 try:
                     polled_entry_id = current_entry_id
-                    order_status = await exchange.fetch_order(polled_entry_id, symbol)
+                    ws_snap = mon_meta.pop('ws_order_snapshot', None) if isinstance(mon_meta, dict) else None
+                    if isinstance(ws_snap, dict) and str(ws_snap.get('status') or '').lower():
+                        order_status = ws_snap
+                    else:
+                        order_status = await exchange.fetch_order(polled_entry_id, symbol)
                     status = str(order_status.get('status') or '').lower()
                     filled = float(order_status.get('filled') or 0.0)
                     if status in ('closed', 'filled') and filled <= 0 and amount > 0:
@@ -1780,44 +1822,88 @@ class BracketOrderService:
                     raw_res = await exchange.private_post_orderlist_oco(payload)
                     oco_placement_ms = max(1, int((time.perf_counter() - t_oco_start) * 1000))
                     if isinstance(raw_res, dict):
+                        oco_lines = []
                         for rep in (raw_res.get('orderReports') or []):
-                            if str(rep.get('type', '')).upper() in ('LIMIT_MAKER', 'LIMIT') and rep.get('orderId'):
-                                BracketOrderService.KNOWN_TP_ORDER_IDS.add(str(rep.get('orderId')))
+                            rep_oid = str(rep.get('orderId') or '')
+                            rep_type = str(rep.get('type', '')).upper()
+                            if rep_oid:
+                                if rep_type in ('LIMIT_MAKER', 'LIMIT'):
+                                    BracketOrderService.KNOWN_TP_ORDER_IDS.add(rep_oid)
+                                rep_px = float(rep.get('price') or rep.get('stopPrice') or (tp_price if rep_type in ('LIMIT_MAKER', 'LIMIT') else sl_price) or 0.0)
+                                is_sl_leg = 'STOP' in rep_type
+                                if rep_px > 0:
+                                    oco_lines.append({
+                                        'id': rep_oid,
+                                        'side': opposite_side,
+                                        'price': rep_px,
+                                        'amount': float(final_amount),
+                                        'filled': 0.0,
+                                        'remaining': float(final_amount),
+                                        'isSoftwareSL': is_sl_leg,
+                                        'mode': 'STOP' if is_sl_leg else 'TP',
+                                    })
+                        if api_key_id is not None:
+                            try:
+                                from app.services.manual_trade_service import ManualTradeService
+                                ManualTradeService.invalidate_open_orders_cache(int(api_key_id), symbol)
+                            except Exception:
+                                pass
+                        if user_id and oco_lines and api_key_id is not None:
+                            try:
+                                from app.services.user_order_stream import publish_order_sync_event
+                                asyncio.create_task(
+                                    publish_order_sync_event(
+                                        user_id=user_id,
+                                        event="order_added",
+                                        api_key_id=int(api_key_id),
+                                        symbol=symbol,
+                                        orders=oco_lines,
+                                        replace_id=str(entry_order_id) if entry_order_id else None,
+                                    )
+                                )
+                            except Exception:
+                                pass
                     logger.info(f"✅ Native Binance OCO placed successfully in {oco_placement_ms}ms! ID: {raw_res.get('orderListId')}")
                     
                     if user_id:
-                        try:
-                            from app.db.session import SessionLocal
-                            db = SessionLocal()
+                        async def _notify_oco():
                             try:
-                                msg = (
-                                    f"✅ *NATIVE OCO PLACED (SPOT)*\n"
-                                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                                    f"• Exchange: Binance Spot\n"
-                                    f"• Pair: `{symbol}`\n"
-                                    f"• Amount: `{final_amount}`\n"
-                                    f"• TP Target Price: `${BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price)}`\n"
-                                    f"• SL Trigger Price: `${BracketOrderService._safe_price_to_precision(exchange, symbol, sl_price)}`\n"
-                                    f"⏱ Placement Speed: `{oco_placement_ms} ms` ⚡"
-                                )
-                                await NotificationService.send_message(db, user_id, msg, parse_mode="Markdown", alert_type="alert_manual_trade")
-                            finally:
-                                db.close()
-                        except Exception:
-                            pass
+                                from app.db.session import SessionLocal
+                                db = SessionLocal()
+                                try:
+                                    msg = (
+                                        f"✅ *NATIVE OCO PLACED (SPOT)*\n"
+                                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                                        f"• Exchange: Binance Spot\n"
+                                        f"• Pair: `{symbol}`\n"
+                                        f"• Amount: `{final_amount}`\n"
+                                        f"• TP Target Price: `${BracketOrderService._safe_price_to_precision(exchange, symbol, tp_price)}`\n"
+                                        f"• SL Trigger Price: `${BracketOrderService._safe_price_to_precision(exchange, symbol, sl_price)}`\n"
+                                        f"⏱ Placement Speed: `{oco_placement_ms} ms` ⚡"
+                                    )
+                                    await NotificationService.send_message(db, user_id, msg, parse_mode="Markdown", alert_type="alert_manual_trade")
+                                finally:
+                                    db.close()
+                            except Exception:
+                                pass
+                        asyncio.create_task(_notify_oco())
                     return # Exit since we placed both successfully!
                 except Exception as e:
                     logger.warning(f"⚠️ Native OCO failed ({e}). Falling back to Software Bracket TP/SL.")
 
-            # Preserve any existing/linked tp_order_id unless overridden by a new TP placement below
-            # --- Execute TP ---
-            if tp_config:
+            # Execute TP and SL concurrently in 1 single RTT (~255ms) so chart lines appear right away!
+            pre_sl_ids = set(BracketOrderService.ACTIVE_SOFTWARE_SL.keys()) if sl_config else set()
+
+            async def _exec_tp_leg():
+                nonlocal tp_order_id, resolved_tp_price
+                if not tp_config:
+                    return
                 tp_order_type = tp_config.get('order_type', 'Limit').lower()
                 mode          = tp_config.get('mode', 'percentage')
                 val           = float(tp_config.get('value', 0))
                 tp_price      = BracketOrderService._compute_tp_price(tp_config, average_price, opposite_side)
                 final_tp_price = BracketOrderService._safe_price_to_precision(order_ex, symbol, tp_price)
-    
+
                 t_tp_start = time.perf_counter()
                 ex_params = await BracketOrderService._apply_futures_exit_params(order_ex, symbol, opposite_side) if is_futures else {}
                 try:
@@ -1892,7 +1978,7 @@ class BracketOrderService:
                                 symbol, opposite_side, final_amount, final_tp_price, ex_params_gtc
                             )
                             logger.info(f"✅ Bracket Monitor: Spot Limit TP placed at {final_tp_price}! ID: {tp_res.get('id')}")
-    
+
                     tp_placement_ms = max(1, int((time.perf_counter() - t_tp_start) * 1000))
                     if tp_res:
                         tp_order_id = tp_res.get('id')
@@ -1901,33 +1987,35 @@ class BracketOrderService:
                             BracketOrderService.KNOWN_TP_ORDER_IDS.add(str(tp_order_id))
 
                     logger.info(f"✅ Bracket Monitor: TP placed in {tp_placement_ms}ms! ID: {tp_res.get('id') if tp_res else 'N/A'}")
-    
+
                     if user_id and tp_res:
-                        try:
-                            from app.db.session import SessionLocal
-                            db = SessionLocal()
+                        async def _notify_tp():
                             try:
-                                tp_type_label = "Post-Only Maker" if tp_order_type == 'limit' else ("Conditional Market" if is_futures else "Limit")
-                                exchange_display = api_key_record.exchange.capitalize() if api_key_record else "Exchange"
-                                msg = (
-                                    f"🎯 *TAKE-PROFIT ORDER PLACED*\n"
-                                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                                    f"• Exchange: `{exchange_display}`\n"
-                                    f"• Pair: `{symbol}`\n"
-                                    f"• TP Side: *{opposite_side.upper()}*\n"
-                                    f"• Amount: `{final_amount}`\n"
-                                    f"• TP Target Price: `${final_tp_price}`\n"
-                                    f"• Mode: `{mode}` ({val}{'%' if mode == 'percentage' else '$'})\n"
-                                    f"• Order Type: `{tp_type_label}`\n"
-                                    f"• Status: `Resting in Orderbook 🎯`\n"
-                                    f"⏱ Placement Speed: `{tp_placement_ms} ms` ⚡"
-                                )
-                                await NotificationService.send_message(db, user_id, msg, parse_mode="Markdown", alert_type="alert_manual_trade")
-                            finally:
-                                db.close()
-                        except Exception as notify_err:
-                            logger.warning(f"TP notification failed (non-fatal): {notify_err}")
-    
+                                from app.db.session import SessionLocal
+                                db = SessionLocal()
+                                try:
+                                    tp_type_label = "Post-Only Maker" if tp_order_type == 'limit' else ("Conditional Market" if is_futures else "Limit")
+                                    exchange_display = api_key_record.exchange.capitalize() if api_key_record else "Exchange"
+                                    msg = (
+                                        f"🎯 *TAKE-PROFIT ORDER PLACED*\n"
+                                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                                        f"• Exchange: `{exchange_display}`\n"
+                                        f"• Pair: `{symbol}`\n"
+                                        f"• TP Side: *{opposite_side.upper()}*\n"
+                                        f"• Amount: `{final_amount}`\n"
+                                        f"• TP Target Price: `${final_tp_price}`\n"
+                                        f"• Mode: `{mode}` ({val}{'%' if mode == 'percentage' else '$'})\n"
+                                        f"• Order Type: `{tp_type_label}`\n"
+                                        f"• Status: `Resting in Orderbook 🎯`\n"
+                                        f"⏱ Placement Speed: `{tp_placement_ms} ms` ⚡"
+                                    )
+                                    await NotificationService.send_message(db, user_id, msg, parse_mode="Markdown", alert_type="alert_manual_trade")
+                                finally:
+                                    db.close()
+                            except Exception as notify_err:
+                                logger.warning(f"TP notification failed (non-fatal): {notify_err}")
+                        asyncio.create_task(_notify_tp())
+
                 except Exception as ex_e:
                     logger.error(f"❌ Bracket Monitor: Failed to place TP Order! {ex_e}")
                     if user_id:
@@ -1937,8 +2025,9 @@ class BracketOrderService:
                             )
                         )
 
-            # --- Execute SL ---
-            if sl_config:
+            async def _exec_sl_leg():
+                if not sl_config:
+                    return
                 sl_type = sl_config.get('type', 'fixed')
                 sl_mode = sl_config.get('mode', 'percentage')
                 sl_val  = float(sl_config.get('value', 0))
@@ -1976,21 +2065,23 @@ class BracketOrderService:
                             placed_native = True
                             
                             if user_id:
-                                try:
-                                    from app.db.session import SessionLocal
-                                    db = SessionLocal()
+                                async def _notify_trail():
                                     try:
-                                        msg = (
-                                            f"🛡️ *Native Trailing SL Executed*\n"
-                                            f"Exchange: {api_key_record.exchange.capitalize()}\n"
-                                            f"Pair: `{symbol}`\n"
-                                            f"Callback Rate: `{sl_val}%`"
-                                        )
-                                        await NotificationService.send_message(db, user_id, msg, alert_type="alert_manual_trade")
-                                    finally:
-                                        db.close()
-                                except Exception:
-                                    pass
+                                        from app.db.session import SessionLocal
+                                        db = SessionLocal()
+                                        try:
+                                            msg = (
+                                                f"🛡️ *Native Trailing SL Executed*\n"
+                                                f"Exchange: {api_key_record.exchange.capitalize()}\n"
+                                                f"Pair: `{symbol}`\n"
+                                                f"Callback Rate: `{sl_val}%`"
+                                            )
+                                            await NotificationService.send_message(db, user_id, msg, alert_type="alert_manual_trade")
+                                        finally:
+                                            db.close()
+                                    except Exception:
+                                        pass
+                                asyncio.create_task(_notify_trail())
 
                             # Spawn OCO Watchdog so Native Trailing SL and TP cancel each other when one fills
                             init_trail_sl = (
@@ -2157,24 +2248,26 @@ class BracketOrderService:
                             logger.info(f"✅ Bracket Monitor: SL placed! ID: {sl_res.get('id') if sl_res else 'Local'}")
 
                             if user_id:
-                                try:
-                                    from app.db.session import SessionLocal
-                                    db = SessionLocal()
+                                async def _notify_fixed_sl():
                                     try:
-                                        msg = (
-                                            f"🛡️ *Bracket SL Executed (Chunk)*\n"
-                                            f"Exchange: {api_key_record.exchange.capitalize()}\n"
-                                            f"Pair: `{symbol}`\n"
-                                            f"SL Side: {opposite_side.upper()}\n"
-                                            f"Amount: `{final_amount}`\n"
-                                            f"Stop Price: `{final_sl_price}`\n"
-                                            f"Mode: {sl_mode} ({sl_val}{'%' if sl_mode == 'percentage' else '$'})"
-                                        )
-                                        await NotificationService.send_message(db, user_id, msg, alert_type="alert_manual_trade")
-                                    finally:
-                                        db.close()
-                                except Exception as notify_err:
-                                    logger.warning(f"SL notification failed (non-fatal): {notify_err}")
+                                        from app.db.session import SessionLocal
+                                        db = SessionLocal()
+                                        try:
+                                            msg = (
+                                                f"🛡️ *Bracket SL Executed (Chunk)*\n"
+                                                f"Exchange: {api_key_record.exchange.capitalize()}\n"
+                                                f"Pair: `{symbol}`\n"
+                                                f"SL Side: {opposite_side.upper()}\n"
+                                                f"Amount: `{final_amount}`\n"
+                                                f"Stop Price: `{final_sl_price}`\n"
+                                                f"Mode: {sl_mode} ({sl_val}{'%' if sl_mode == 'percentage' else '$'})"
+                                            )
+                                            await NotificationService.send_message(db, user_id, msg, alert_type="alert_manual_trade")
+                                        finally:
+                                            db.close()
+                                    except Exception as notify_err:
+                                        logger.warning(f"SL notification failed (non-fatal): {notify_err}")
+                                asyncio.create_task(_notify_fixed_sl())
 
                         except Exception as ex_e:
                             logger.error(
@@ -2214,6 +2307,14 @@ class BracketOrderService:
                             )
                         )
 
+            leg_tasks = []
+            if tp_config:
+                leg_tasks.append(_exec_tp_leg())
+            if sl_config:
+                leg_tasks.append(_exec_sl_leg())
+            if leg_tasks:
+                await asyncio.gather(*leg_tasks)
+
             eb_key = str(entry_order_id) if entry_order_id else (matched_eb_key or (f"tp:{tp_order_id}" if tp_order_id else None))
             resolved_tp_id = str(tp_order_id) if tp_order_id else None
             if eb_key:
@@ -2240,6 +2341,70 @@ class BracketOrderService:
             if eb_key or sl_config:
                 # Yield 1 event-loop tick so any spawned SL monitor task registers in ACTIVE_SOFTWARE_SL before lock release
                 await asyncio.sleep(0)
+
+            # Sync TP link into newly spawned SL monitors + push instant chart lines via WS order_sync
+            pushed_bracket_lines = []
+            if resolved_tp_id and resolved_tp_price:
+                tp_line = {
+                    'id': str(resolved_tp_id),
+                    'side': opposite_side,
+                    'price': float(resolved_tp_price),
+                    'amount': float(final_amount),
+                    'filled': 0.0,
+                    'remaining': float(final_amount),
+                    'isSoftwareSL': False,
+                    'mode': 'TP',
+                }
+                pushed_bracket_lines.append(tp_line)
+                if api_key_id is not None:
+                    try:
+                        from app.services.manual_trade_service import ManualTradeService
+                        ManualTradeService._ORDER_META_CACHE[(int(api_key_id), str(resolved_tp_id))] = (tp_line, time.time())
+                    except Exception:
+                        pass
+
+            if sl_config:
+                for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
+                    if sid not in pre_sl_ids and isinstance(sdata, dict) and not sdata.get('cancelled'):
+                        if resolved_tp_id and not sdata.get('tp_order_id'):
+                            sdata['tp_order_id'] = str(resolved_tp_id)
+                        if resolved_tp_price and not sdata.get('tp_price'):
+                            sdata['tp_price'] = float(resolved_tp_price)
+                        sl_px = float(sdata.get('trigger_price') if sdata.get('trigger_price') is not None else sdata.get('price', 0.0))
+                        if sl_px > 0 and sdata.get('status') != 'pegging':
+                            pushed_bracket_lines.append({
+                                'id': str(sid),
+                                'side': str(sdata.get('side') or opposite_side),
+                                'price': sl_px,
+                                'amount': float(sdata.get('amount') or final_amount),
+                                'filled': 0.0,
+                                'remaining': float(sdata.get('amount') or final_amount),
+                                'isSoftwareSL': True,
+                                'mode': sdata.get('mode', 'SMART_CHASE'),
+                                'type': sdata.get('type', 'smart_chase'),
+                            })
+
+            if api_key_id is not None:
+                try:
+                    from app.services.manual_trade_service import ManualTradeService
+                    ManualTradeService.invalidate_open_orders_cache(int(api_key_id), symbol)
+                except Exception:
+                    pass
+                if user_id and pushed_bracket_lines:
+                    try:
+                        from app.services.user_order_stream import publish_order_sync_event
+                        asyncio.create_task(
+                            publish_order_sync_event(
+                                user_id=user_id,
+                                event="order_added",
+                                api_key_id=int(api_key_id),
+                                symbol=symbol,
+                                orders=pushed_bracket_lines,
+                                replace_id=str(entry_order_id) if entry_order_id else None,
+                            )
+                        )
+                    except Exception:
+                        pass
 
             return {
                 'tp_order_id': resolved_tp_id,

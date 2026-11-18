@@ -28,6 +28,7 @@ class MarketDataStreamer:
         if self._initialized:
             return
         self._active_streams: Set[str] = set()
+        self._bbo_stream_active: Set[str] = set()
         self._exchange_instances: Dict[str, ccxtpro.Exchange] = {}
         self._tasks: Dict[str, asyncio.Task] = {}
         self._last_traded_prices: Dict[str, float] = {}
@@ -62,7 +63,8 @@ class MarketDataStreamer:
         # Start the background tasks
         task_ob = asyncio.create_task(self._stream_order_book(internal_exchange_id, symbol, stream_key))
         task_trades = asyncio.create_task(self._stream_trades(internal_exchange_id, symbol, stream_key))
-        self._tasks[stream_key] = [task_ob, task_trades]
+        task_bbo = asyncio.create_task(self._stream_bbo(internal_exchange_id, symbol, stream_key))
+        self._tasks[stream_key] = [task_ob, task_trades, task_bbo]
 
     async def _get_exchange_instance(self, exchange_id: str, symbol: str) -> ccxtpro.Exchange:
         # Resolve to specific futures class & separate Spot/Futures cache key
@@ -155,9 +157,19 @@ class MarketDataStreamer:
                 # CCXT watch_order_book handles the WS connection gracefully behind the scenes
                 orderbook = await exchange.watch_order_book(symbol.upper(), limit=depth_limit)
 
+                raw_bids = orderbook.get('bids', [])
+                raw_asks = orderbook.get('asks', [])
+                if redis and raw_bids and raw_asks and stream_key not in self._bbo_stream_active:
+                    bbo_fast = {
+                        "bid": float(raw_bids[0][0]),
+                        "ask": float(raw_asks[0][0]),
+                        "ts": time.time(),
+                    }
+                    await redis.setex(f"bbo:{exchange_id}:{symbol}", 60, json.dumps(bbo_fast))
+
                 bids = []
                 bid_total = 0
-                for bid in orderbook.get('bids', []):
+                for bid in raw_bids:
                     price = float(bid[0])
                     size = float(bid[1])
                     bid_total += size
@@ -165,7 +177,7 @@ class MarketDataStreamer:
                     
                 asks = []
                 ask_total = 0
-                for ask in orderbook.get('asks', []):
+                for ask in raw_asks:
                     price = float(ask[0])
                     size = float(ask[1])
                     ask_total += size
@@ -203,13 +215,6 @@ class MarketDataStreamer:
                 # Publish to Redis
                 if redis:
                     await redis.setex(f"latest_orderbook:{exchange_id}:{symbol}", 60, json.dumps(payload))
-                    if bids and asks:
-                        bbo_payload = {
-                            "bid": bids[0]["price"],
-                            "ask": asks[0]["price"],
-                            "ts": payload["ts"],
-                        }
-                        await redis.setex(f"bbo:{exchange_id}:{symbol}", 60, json.dumps(bbo_payload))
                     await redis.publish(channel, json.dumps(payload))
 
                 try:
@@ -306,6 +311,44 @@ class MarketDataStreamer:
                     logger.error(f"Error watching trades {symbol} on {exchange_id}: {e}")
                 await asyncio.sleep(5)
 
+    async def _stream_bbo(self, exchange_id: str, symbol: str, stream_key: str):
+        """
+        Real-time zero-batching Best Bid/Ask (@bookTicker) stream for Spot, USDT-M, and COIN-M.
+        Writes `bbo:{exchange_id}:{symbol}` to Redis the millisecond top-of-book changes so Smart Peg
+        and Smart Chase follow BBO without waiting on 100ms-250ms depth snapshots.
+        """
+        redis = redis_manager.get_redis()
+        if not redis:
+            return
+        try:
+            exchange = await self._get_exchange_instance(exchange_id, symbol)
+        except Exception:
+            return
+        if not getattr(exchange, 'has', {}).get('watchBidsAsks') or not hasattr(exchange, 'watch_bids_asks'):
+            return
+
+        sym_u = symbol.upper()
+        while stream_key in self._active_streams:
+            try:
+                res = await exchange.watch_bids_asks([sym_u])
+                tkr = res.get(sym_u) if isinstance(res, dict) else None
+                if not isinstance(tkr, dict) and isinstance(res, dict) and res:
+                    tkr = next(iter(res.values()))
+                if isinstance(tkr, dict):
+                    bid_p = float(tkr.get('bid') or 0.0)
+                    ask_p = float(tkr.get('ask') or 0.0)
+                    if bid_p > 0 and ask_p > 0:
+                        self._bbo_stream_active.add(stream_key)
+                        await redis.setex(
+                            f"bbo:{exchange_id}:{symbol}",
+                            60,
+                            json.dumps({"bid": bid_p, "ask": ask_p, "ts": time.time()}),
+                        )
+            except Exception as e:
+                self._bbo_stream_active.discard(stream_key)
+                if "not supported" in str(e).lower():
+                    return
+                await asyncio.sleep(2)
 
     async def stop_streaming(self, stream_key: str):
         """Stops a specific market data stream and cleans up its tasks."""
@@ -314,6 +357,7 @@ class MarketDataStreamer:
 
         logger.info(f"🛑 Stopping stream: {stream_key}")
         self._active_streams.discard(stream_key)
+        self._bbo_stream_active.discard(stream_key)
 
         # Cancel associated tasks
         if stream_key in self._tasks:
@@ -343,6 +387,7 @@ class MarketDataStreamer:
     async def stop_all(self):
         """Stops all running streams and closes exchange instances."""
         self._active_streams.clear()
+        self._bbo_stream_active.clear()
         
         # Cancel all tasks
         for task_list in self._tasks.values():

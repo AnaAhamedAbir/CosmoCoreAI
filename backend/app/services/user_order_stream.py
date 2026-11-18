@@ -54,6 +54,9 @@ async def publish_order_sync_event(
     order_id: Optional[str] = None,
     order_ids: Optional[List[str]] = None,
     status: Optional[str] = None,
+    order: Optional[Dict[str, Any]] = None,
+    orders: Optional[List[Dict[str, Any]]] = None,
+    replace_id: Optional[str] = None,
 ) -> None:
     """Publish a lightweight order_sync event to the user's notification WebSocket channel."""
     if not user_id:
@@ -67,6 +70,9 @@ async def publish_order_sync_event(
         "order_id": str(order_id) if order_id else None,
         "order_ids": [str(x) for x in order_ids if x] if order_ids else None,
         "status": status,
+        "order": order,
+        "orders": orders,
+        "replace_id": str(replace_id) if replace_id else None,
         "ts": time.time(),
     }
     try:
@@ -230,6 +236,23 @@ async def _stream_worker(
                         if not oid or not status:
                             continue
 
+                        # Wake any BracketOrderService entry monitor IMMEDIATELY (<1ms) on fill/partial-fill
+                        try:
+                            filled_val = float(o.get("filled") or 0.0)
+                        except (ValueError, TypeError):
+                            filled_val = 0.0
+                        if status in ("closed", "filled") or filled_val > 0:
+                            try:
+                                from app.services.bracket_order_service import BracketOrderService
+                                mon = BracketOrderService.ACTIVE_ENTRY_MONITORS.get(oid)
+                                if isinstance(mon, dict):
+                                    mon["ws_order_snapshot"] = o
+                                    fill_ev = mon.get("fill_event")
+                                    if fill_ev and not fill_ev.is_set():
+                                        fill_ev.set()
+                            except Exception:
+                                pass
+
                         prev_status = seen_statuses.get(oid)
                         if prev_status == status:
                             continue
@@ -257,6 +280,33 @@ async def _stream_worker(
                                 status=status,
                             )
                         elif status in OPEN_STATUSES:
+                            order_line = None
+                            try:
+                                from app.services.bracket_order_service import BracketOrderService
+                                is_disaster = any(
+                                    str(s.get("disaster_sl_order_id") or "") == oid
+                                    for s in BracketOrderService.ACTIVE_SOFTWARE_SL.values()
+                                )
+                                if not is_disaster:
+                                    px = float(o.get("price") or o.get("stopPrice") or o.get("triggerPrice") or 0.0)
+                                    amt = float(o.get("amount") or 0.0)
+                                    rem = float(o.get("remaining") if o.get("remaining") is not None else max(0.0, amt - filled_val))
+                                    raw_t = str(o.get("type") or "").lower()
+                                    if px > 0 and amt > 0:
+                                        is_tp = ("take_profit" in raw_t) or (oid in BracketOrderService.KNOWN_TP_ORDER_IDS)
+                                        is_sl = (not is_tp) and ("stop" in raw_t or "trailing" in raw_t)
+                                        order_line = {
+                                            "id": oid,
+                                            "side": str(o.get("side") or "").lower(),
+                                            "price": px,
+                                            "amount": amt,
+                                            "filled": filled_val,
+                                            "remaining": rem,
+                                            "isSoftwareSL": is_sl,
+                                            "mode": "TP" if is_tp else ("STOP" if is_sl else "LIMIT"),
+                                        }
+                            except Exception:
+                                order_line = None
                             await publish_order_sync_event(
                                 user_id=user_id,
                                 event="order_added",
@@ -264,6 +314,7 @@ async def _stream_worker(
                                 symbol=sym,
                                 order_id=oid,
                                 status=status,
+                                order=order_line,
                             )
 
             except asyncio.CancelledError:

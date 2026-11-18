@@ -2709,20 +2709,34 @@ class ManualTradeService:
             except Exception as notify_err:
                 logger.warning(f"Failed to trigger telegram notification: {notify_err}")
 
+            try:
+                from app.services.user_order_stream import ensure_user_order_stream
+                ensure_user_order_stream(user_id, api_key_record, is_futures, order_req.symbol)
+            except Exception:
+                pass
+
             # [Bracket Order Link] — spawned as a background asyncio task, non-blocking
             # Also monitors plain limit orders to ensure entry fill alert is delivered to Telegram
             has_tp = (getattr(order_req.attached_tp, 'enabled', False) if order_req.attached_tp else False)
             has_sl = (getattr(order_req.attached_sl, 'enabled', False) if order_req.attached_sl else False)
             is_limit_order = order_req.type.lower() == 'limit'
 
+            resp_status = str(response.get('status') or '').lower() if isinstance(response, dict) else ''
+            resp_filled = float(response.get('filled') or 0.0) if isinstance(response, dict) else 0.0
+            is_immediately_filled = (
+                order_req.type.lower() == 'market'
+                or resp_status in ('closed', 'filled')
+            )
+            init_filled_amt = (
+                (resp_filled if resp_filled > 0 else float(order_req.amount or 0.0))
+                if is_immediately_filled else 0.0
+            )
+            initial_price = (
+                (response.get('average') or response.get('price') or getattr(order_req, 'price', 0.0) or req_price or 0.0)
+                if isinstance(response, dict) else (getattr(order_req, 'price', 0.0) or req_price or 0.0)
+            )
+
             if not is_native_otoco_used and (has_tp or has_sl or is_limit_order):
-                initial_price = (
-                    response.get('average') or
-                    response.get('price') or
-                    getattr(order_req, 'price', 0.0) or
-                    req_price or
-                    0.0
-                )
                 asyncio.create_task(
                     bracket_order_service.monitor_and_execute_bracket(
                         api_key_record=safe_api_key_record,
@@ -2736,34 +2750,47 @@ class ManualTradeService:
                         initial_entry_price=float(initial_price) if initial_price else 0.0,
                         user_id=user_id,
                         linked_tp_order_id=native_oto_tp_order_id,
-                        linked_tp_price=native_oto_tp_price
+                        linked_tp_price=native_oto_tp_price,
+                        initial_filled_amount=init_filled_amt,
+                        initial_filled_price=float(initial_price) if initial_price else 0.0,
                     )
                 )
 
-            try:
-                from app.services.user_order_stream import ensure_user_order_stream
-                ensure_user_order_stream(user_id, api_key_record, is_futures, order_req.symbol)
-            except Exception:
-                pass
+            ManualTradeService.invalidate_open_orders_cache(api_key_record.id, order_req.symbol)
 
             if response and response.get('id'):
                 oid_placed = str(response.get('id'))
-                ManualTradeService._ORDER_META_CACHE[(int(api_key_record.id), oid_placed)] = (
-                    {
-                        'id': oid_placed,
-                        'side': str(order_req.side or '').lower(),
-                        'price': float(response.get('price') or response.get('average') or req_price or 0.0),
-                        'amount': float(order_req.amount or 0.0),
-                        'isSoftwareSL': False,
-                        'mode': 'LIMIT',
-                        'isPostOnly': bool(ex_params.get('postOnly')),
-                        'isIceberg': valid_iceberg is not None and float(valid_iceberg) > 0,
-                        'icebergQty': float(valid_iceberg) if (valid_iceberg is not None and float(valid_iceberg) > 0) else None,
-                    },
-                    time.time(),
-                )
-
-            ManualTradeService.invalidate_open_orders_cache(api_key_record.id, order_req.symbol)
+                order_line_px = float(response.get('price') or response.get('average') or req_price or 0.0)
+                order_meta = {
+                    'id': oid_placed,
+                    'side': str(order_req.side or '').lower(),
+                    'price': order_line_px,
+                    'amount': float(order_req.amount or 0.0),
+                    'filled': resp_filled,
+                    'remaining': max(0.0, float(order_req.amount or 0.0) - resp_filled),
+                    'isSoftwareSL': False,
+                    'mode': 'LIMIT',
+                    'isPostOnly': bool(ex_params.get('postOnly')),
+                    'isIceberg': valid_iceberg is not None and float(valid_iceberg) > 0,
+                    'icebergQty': float(valid_iceberg) if (valid_iceberg is not None and float(valid_iceberg) > 0) else None,
+                }
+                ManualTradeService._ORDER_META_CACHE[(int(api_key_record.id), oid_placed)] = (order_meta, time.time())
+                if not is_immediately_filled and order_line_px > 0 and user_id:
+                    try:
+                        from app.services.user_order_stream import publish_order_sync_event
+                        asyncio.create_task(
+                            publish_order_sync_event(
+                                user_id=user_id,
+                                event="order_added",
+                                api_key_id=api_key_record.id,
+                                symbol=order_req.symbol,
+                                order_id=oid_placed,
+                                status="open",
+                                order=order_meta,
+                            )
+                        )
+                    except Exception:
+                        pass
             return {
                 "id": response.get('id'),
                 "symbol": response.get('symbol'),

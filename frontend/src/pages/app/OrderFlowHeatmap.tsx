@@ -754,10 +754,29 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             }
 
             toast.loading(`Placing ${side} Limit at ${dropPrice.toFixed(5)}...`, { id: 'quick-trade' });
+            const quickOptId = `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            window.dispatchEvent(
+                new CustomEvent('optimisticAddOpenOrder', {
+                    detail: {
+                        apiKeyId: Number(apiId),
+                        symbol: symbol,
+                        order: {
+                            id: quickOptId,
+                            side: side.toLowerCase() as 'buy' | 'sell',
+                            price: Number(dropPrice),
+                            amount: Number(size),
+                            filled: 0,
+                            remaining: Number(size),
+                            isSoftwareSL: false,
+                            mode: 'LIMIT',
+                        },
+                    },
+                })
+            );
 
             try {
                 // Place Order
-                await manualTradeService.placeOrder({
+                const quickRes = await manualTradeService.placeOrder({
                     symbol: symbol,
                     side: side,
                     type: 'Limit',
@@ -769,8 +788,31 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     client_timestamp: Date.now()
                 });
 
+                if (quickRes?.id) {
+                    window.dispatchEvent(
+                        new CustomEvent('optimisticAddOpenOrder', {
+                            detail: {
+                                apiKeyId: Number(apiId),
+                                symbol: symbol,
+                                replaceId: quickOptId,
+                                order: {
+                                    id: String(quickRes.id),
+                                    side: side.toLowerCase() as 'buy' | 'sell',
+                                    price: Number(quickRes.price || dropPrice),
+                                    amount: Number(quickRes.amount || size),
+                                    filled: 0,
+                                    remaining: Number(quickRes.amount || size),
+                                    isSoftwareSL: false,
+                                    mode: 'LIMIT',
+                                },
+                            },
+                        })
+                    );
+                }
+                window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
                 toast.success(`✅ Quick ${side} Limit Placed at ${dropPrice.toFixed(4)}`, { id: 'quick-trade' });
             } catch (error: any) {
+                window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: quickOptId, apiKeyId: Number(apiId) } }));
                 toast.error(`❌ Order Failed: ${error.message || 'Unknown Error'}`, { id: 'quick-trade' });
             }
         };

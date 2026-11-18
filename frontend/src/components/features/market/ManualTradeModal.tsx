@@ -2488,6 +2488,30 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
     setIsSubmitting(true);
     setSubmittingSide(side);
+    const optAmt = (isInverseFutures && contractsCount) ? contractsCount : baseAmount;
+    const optTempId = (typeof window !== 'undefined' && dropPrice > 0) ? `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` : '';
+    if (optTempId) {
+      window.dispatchEvent(
+        new CustomEvent('optimisticAddOpenOrder', {
+          detail: {
+            apiKeyId: selectedApi ? Number(selectedApi) : undefined,
+            symbol: activeSymbol,
+            order: {
+              id: optTempId,
+              side: side.toLowerCase(),
+              price: Number(dropPrice),
+              amount: Number(optAmt),
+              filled: 0,
+              remaining: Number(optAmt),
+              isSoftwareSL: false,
+              mode: 'LIMIT',
+              isIceberg: Boolean(dragIcebergQty && dragIcebergQty > 0),
+              icebergQty: dragIcebergQty,
+            },
+          },
+        })
+      );
+    }
 
     try {
       const paramsPayload: any = isFutures ? { leverage, marginMode, reduceOnly } : {};
@@ -2507,7 +2531,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         symbol: activeSymbol,
         side,
         type: isSmartPeg ? 'SmartPeg' : 'Limit',
-        amount: (isInverseFutures && contractsCount) ? contractsCount : baseAmount,
+        amount: optAmt,
         price: dropPrice,
         exchange_id: resolvedExchange,
         api_key_id: selectedApi ? Number(selectedApi) : undefined,
@@ -2530,6 +2554,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       const orderRes = await manualTradeService.placeOrder(payload);
 
       if (orderRes?.rejected_by_ai || orderRes?.status === 'rejected_by_ai') {
+        if (optTempId) {
+          window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: optTempId, apiKeyId: selectedApi } }));
+        }
         triggerAiShieldRejection(orderRes, side);
         toast.dismiss(toastId);
         return;
@@ -2538,6 +2565,36 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       toast.dismiss(toastId);
 
       const createdOrderId = orderRes?.id;
+      const resStatus = String(orderRes?.status || '').toLowerCase();
+      if (typeof window !== 'undefined') {
+        if (resStatus === 'closed' || resStatus === 'filled') {
+          if (optTempId) {
+            window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: optTempId, apiKeyId: selectedApi } }));
+          }
+        } else if (createdOrderId) {
+          window.dispatchEvent(
+            new CustomEvent('optimisticAddOpenOrder', {
+              detail: {
+                apiKeyId: selectedApi ? Number(selectedApi) : undefined,
+                symbol: activeSymbol,
+                replaceId: optTempId || undefined,
+                order: {
+                  id: String(createdOrderId),
+                  side: side.toLowerCase(),
+                  price: Number(orderRes?.price || dropPrice),
+                  amount: Number(orderRes?.amount || optAmt),
+                  filled: 0,
+                  remaining: Number(orderRes?.amount || optAmt),
+                  isSoftwareSL: false,
+                  mode: 'LIMIT',
+                  isIceberg: Boolean(dragIcebergQty && dragIcebergQty > 0),
+                  icebergQty: dragIcebergQty,
+                },
+              },
+            })
+          );
+        }
+      }
       const aiNote = orderRes?.ai_filter_info ? ` [🤖 ${orderRes.ai_filter_info}]` : '';
 
       toast.custom(
@@ -2570,6 +2627,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         window.dispatchEvent(new CustomEvent('refreshOpenOrders'));
       }
     } catch (err: any) {
+      if (optTempId) {
+        window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: optTempId, apiKeyId: selectedApi } }));
+      }
       const errMsg = err?.response?.data?.detail || err?.message || 'Failed to place order';
       toast.error(`❌ Order Failed: ${errMsg}`, { id: toastId, duration: 5000 });
     } finally {
@@ -2860,6 +2920,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
     setIsSubmitting(true);
     setSubmittingSide(side);
+    let formOptTempId = '';
     try {
       if (orderType === 'Limit' && !isAutoLimit && (!limitPrice || Number(limitPrice) <= 0)) {
         toast.error('Please enter a valid limit price or enable Auto Limit.');
@@ -2971,14 +3032,79 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         payload.ml_bearish_threshold = mlFilterConfig.bearishThreshold;
       }
 
+      const formAmt = (isInverseFutures && contractsCount) ? contractsCount : baseAmount;
+      const formPreviewPrice =
+        orderType === 'Limit' && !isAutoLimit
+          ? Number(limitPrice)
+          : (effectiveOrderPrice || convPrice || 0);
+      if (typeof window !== 'undefined' && orderType !== 'Market' && formPreviewPrice > 0) {
+        formOptTempId = `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        window.dispatchEvent(
+          new CustomEvent('optimisticAddOpenOrder', {
+            detail: {
+              apiKeyId: selectedApi ? Number(selectedApi) : undefined,
+              symbol: activeSymbol,
+              order: {
+                id: formOptTempId,
+                side: side.toLowerCase(),
+                price: Number(formPreviewPrice),
+                amount: Number(formAmt),
+                filled: 0,
+                remaining: Number(formAmt),
+                isSoftwareSL: false,
+                mode: 'LIMIT',
+                isIceberg: Boolean(resolvedIcebergQty && resolvedIcebergQty > 0),
+                icebergQty: resolvedIcebergQty,
+              },
+            },
+          })
+        );
+      }
+
       const orderRes = await manualTradeService.placeOrder(payload);
       if (orderRes?.rejected_by_ai || orderRes?.status === 'rejected_by_ai') {
+        if (formOptTempId) {
+          window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: formOptTempId, apiKeyId: selectedApi } }));
+        }
         triggerAiShieldRejection(orderRes, side);
         return;
       }
       setAiRejectNotice(null);
 
       const createdOrderId = orderRes?.id;
+      const resStatus = String(orderRes?.status || '').toLowerCase();
+      if (typeof window !== 'undefined') {
+        if (orderType === 'Market' || resStatus === 'closed' || resStatus === 'filled') {
+          if (formOptTempId) {
+            window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: formOptTempId, apiKeyId: selectedApi } }));
+          }
+        } else if (createdOrderId) {
+          const confirmedPx = Number(orderRes?.price || formPreviewPrice || 0);
+          if (confirmedPx > 0) {
+            window.dispatchEvent(
+              new CustomEvent('optimisticAddOpenOrder', {
+                detail: {
+                  apiKeyId: selectedApi ? Number(selectedApi) : undefined,
+                  symbol: activeSymbol,
+                  replaceId: formOptTempId || undefined,
+                  order: {
+                    id: String(createdOrderId),
+                    side: side.toLowerCase(),
+                    price: confirmedPx,
+                    amount: Number(orderRes?.amount || formAmt),
+                    filled: 0,
+                    remaining: Number(orderRes?.amount || formAmt),
+                    isSoftwareSL: false,
+                    mode: 'LIMIT',
+                    isIceberg: Boolean(resolvedIcebergQty && resolvedIcebergQty > 0),
+                    icebergQty: resolvedIcebergQty,
+                  },
+                },
+              })
+            );
+          }
+        }
+      }
       const aiNote = orderRes?.ai_filter_info ? ` [🤖 ${orderRes.ai_filter_info}]` : '';
 
       toast.custom(
@@ -3059,6 +3185,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         }
       }, 1500);
     } catch (error: any) {
+      if (formOptTempId) {
+        window.dispatchEvent(new CustomEvent('optimisticRemoveOpenOrder', { detail: { orderId: formOptTempId, apiKeyId: selectedApi } }));
+      }
       // BUG-02 fix: Read FastAPI detail message if available
       const errMsg = error?.response?.data?.detail || error?.message || 'Unknown error occurred';
       if (typeof errMsg === 'string' && errMsg.includes('AI Filter Denied')) {

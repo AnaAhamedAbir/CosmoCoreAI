@@ -1,5 +1,6 @@
 import ast
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -1280,6 +1281,86 @@ class TestEndpointsAndServicesFixes(unittest.IsolatedAsyncioTestCase):
         # create_limit_order must fire in 1 RTT without waiting on a blocking fetch_balance first!
         self.assertLess(notify_calls[0]["latency_ms"], int(rtt * 2200))
         self.assertIn("create_limit_order", calls)
+
+    async def test_futures_smart_peg_repeg_single_rtt_and_nonblocking_bbo_watch(self):
+        """
+        Verifies Binance Futures Post-Only (GTX) Smart Peg skips PUT /order (-5026),
+        executes concurrent cancel + create in 1 RTT when BBO shifts, and handles
+        concurrent GTX expired without a duplicate cancel_order.
+        """
+        ex = MockExchange("DOGE/USD:DOGE", tick=0.0001, is_inverse=True, contract_size=10.0)
+        ex.id = "binance"
+        ex.urls = {"api": {"ws": {"ws-api": {}}}}
+        ex.has["editOrder"] = True
+        rtt = 0.045
+        events = []
+        bbo_state = {"bid": 0.0592, "ask": 0.0593}
+
+        async def cancel_fn(oid, sym, params=None):
+            events.append(("cancel", oid))
+            await asyncio.sleep(rtt)
+            return {"id": oid, "status": "canceled", "filled": 0.0}
+
+        async def create_fn(sym, side, amt, px, params=None):
+            events.append(("create", round(float(px), 4)))
+            await asyncio.sleep(rtt)
+            if len([e for e in events if e[0] == "create"]) == 1:
+                return {"id": "cm_ord_1", "symbol": sym, "side": side, "amount": amt, "price": px, "status": "open"}
+            return {"id": "cm_ord_2", "symbol": sym, "side": side, "amount": amt, "price": px, "status": "closed", "filled": amt, "average": px}
+
+        async def edit_fn(*args, **kwargs):
+            raise AssertionError("PUT /order (edit_order) must NOT be called for real Binance Futures GTX orders")
+
+        ex.cancel_order = cancel_fn
+        ex.create_limit_order = create_fn
+        ex.edit_order = edit_fn
+        ex.fetch_order_book = AsyncMock(side_effect=AssertionError("REST fetch_order_book must not be called when Redis BBO is fresh"))
+
+        class DynamicRedis:
+            async def get(self, key):
+                return json.dumps({"bid": bbo_state["bid"], "ask": bbo_state["ask"], "ts": time.time()})
+
+        fake_uos = SimpleNamespace(
+            _get_redis_pub=AsyncMock(return_value=DynamicRedis()),
+            mark_order_replaced=lambda *a, **kw: None,
+            ensure_user_order_stream=lambda *a, **kw: None,
+        )
+        peg_exec.ACTIVE_SMART_PEGS.clear()
+        with patch.dict(sys.modules, {"app.services.user_order_stream": fake_uos}), \
+             patch("app.services.smart_peg_entry_executor.SessionLocal", FakeDB), \
+             patch.object(ManualTradeService, "_is_binance_hedge_mode", AsyncMock(return_value=False)):
+            shift_ts = {}
+
+            async def _shift_bbo():
+                await asyncio.sleep(0.06)
+                bbo_state["bid"] = 0.0593
+                bbo_state["ask"] = 0.0594
+                shift_ts["t"] = time.perf_counter()
+
+            t_start = time.perf_counter()
+            shifter = asyncio.create_task(_shift_bbo())
+            res = await peg_exec.execute_smart_peg_entry(
+                exchange=ex,
+                symbol="DOGE/USD:DOGE",
+                side="buy",
+                amount=3.0,
+                is_futures=True,
+                user_id=0,
+                is_inverse=True,
+                send_initial_notify=False,
+                skip_exchange_upgrade=True,
+            )
+            t_end = time.perf_counter()
+            await shifter
+            total_elapsed = t_end - t_start
+            repeg_follow_elapsed = t_end - shift_ts.get("t", t_start)
+
+        self.assertEqual(res["id"], "cm_ord_2")
+        self.assertEqual(events.count(("cancel", "cm_ord_1")), 1)
+        self.assertIn(("create", 0.0593), events)
+        # Re-peg follow latency from BBO shift to new order landing must stay <= 1 poll (~40-60ms) + 1 RTT (45ms)
+        self.assertLess(repeg_follow_elapsed, rtt * 3.0)
+        self.assertLess(total_elapsed, 0.35)
 
 
 if __name__ == "__main__":

@@ -41,6 +41,8 @@ export const useOpenOrders = (
   const isMountedRef = useRef(true); // BUG-05: mount guard
   // Short-lived optimistic tombstone IDs so in-flight HTTP polls cannot resurrect cancelled lines
   const tombstoneMapRef = useRef<Map<string, number>>(new Map());
+  // Short-lived optimistic added/synced order lines so chart renders at 0ms even during in-flight HTTP polls
+  const optimisticOrdersRef = useRef<Map<string, OpenLimitOrder & { _exp: number }>>(new Map());
 
   useEffect(() => {
     ordersRef.current = orders;
@@ -115,6 +117,16 @@ export const useOpenOrders = (
             deduped.set(id, sl);
           }
         }
+        const optMap = optimisticOrdersRef.current;
+        for (const [oid, optOrder] of optMap.entries()) {
+          const tExp = tombstones.get(oid);
+          if (deduped.has(oid) || optOrder._exp <= now || (tExp && tExp > now)) {
+            optMap.delete(oid);
+          } else {
+            const { _exp, ...cleanOrder } = optOrder;
+            deduped.set(oid, cleanOrder);
+          }
+        }
         setOrders(Array.from(deduped.values()));
       }
     } catch (err) {
@@ -160,7 +172,10 @@ export const useOpenOrders = (
       if (targets.size === 0) return;
 
       const expiry = Date.now() + 5000;
-      targets.forEach((id) => tombstoneMapRef.current.set(id, expiry));
+      targets.forEach((id) => {
+        tombstoneMapRef.current.set(id, expiry);
+        optimisticOrdersRef.current.delete(id);
+      });
       setOrders((prev) => prev.filter((o) => !targets.has(String(o.id))));
     };
     const handleOptimisticClear = (e: Event) => {
@@ -173,7 +188,72 @@ export const useOpenOrders = (
       for (const o of ordersRef.current) {
         if (o?.id) tombstoneMapRef.current.set(String(o.id), expiry);
       }
+      optimisticOrdersRef.current.clear();
       setOrders([]);
+    };
+    const handleOptimisticAdd = (e: Event) => {
+      if (!enabled) return;
+      const detail = (e as CustomEvent<{
+        order?: OpenLimitOrder;
+        orders?: OpenLimitOrder[];
+        replaceId?: string;
+        apiKeyId?: string | number;
+        symbol?: string;
+      }>).detail;
+      if (!detail) return;
+      if (detail.apiKeyId !== undefined && detail.apiKeyId !== null && String(detail.apiKeyId) !== String(apiKeyId)) {
+        return;
+      }
+      if (detail.symbol && symbol && String(detail.symbol).trim().toUpperCase() !== String(symbol).trim().toUpperCase()) {
+        return;
+      }
+      const incoming = [
+        ...(Array.isArray(detail.orders) ? detail.orders : []),
+        ...(detail.order ? [detail.order] : []),
+      ].filter((o) => o && o.id && Number(o.price) > 0);
+      if (incoming.length === 0 && !detail.replaceId) return;
+
+      const repId = detail.replaceId ? String(detail.replaceId) : '';
+      if (repId) {
+        optimisticOrdersRef.current.delete(repId);
+        tombstoneMapRef.current.set(repId, Date.now() + 5000);
+      }
+
+      const exp = Date.now() + 4500;
+      for (const raw of incoming) {
+        const oid = String(raw.id);
+        tombstoneMapRef.current.delete(oid);
+        optimisticOrdersRef.current.set(oid, {
+          ...raw,
+          id: oid,
+          price: Number(raw.price),
+          amount: Number(raw.amount ?? 0),
+          filled: Number(raw.filled ?? 0),
+          remaining: Number(raw.remaining ?? raw.amount ?? 0),
+          _exp: exp,
+        });
+      }
+
+      setOrders((prev) => {
+        const nextMap = new Map<string, OpenLimitOrder>();
+        for (const o of prev) {
+          const oid = String(o.id);
+          if (repId && oid === repId) continue;
+          nextMap.set(oid, o);
+        }
+        for (const raw of incoming) {
+          const oid = String(raw.id);
+          nextMap.set(oid, {
+            ...raw,
+            id: oid,
+            price: Number(raw.price),
+            amount: Number(raw.amount ?? 0),
+            filled: Number(raw.filled ?? 0),
+            remaining: Number(raw.remaining ?? raw.amount ?? 0),
+          });
+        }
+        return Array.from(nextMap.values());
+      });
     };
     const handleRollbackRemove = (e: Event) => {
       if (!enabled) return;
@@ -206,28 +286,34 @@ export const useOpenOrders = (
     };
 
     window.addEventListener('refreshOpenOrders', handleRefresh);
+    window.addEventListener('optimisticAddOpenOrder', handleOptimisticAdd);
     window.addEventListener('optimisticRemoveOpenOrder', handleOptimisticRemove);
     window.addEventListener('optimisticClearOpenOrders', handleOptimisticClear);
     window.addEventListener('rollbackRemoveOpenOrder', handleRollbackRemove);
     window.addEventListener('optimisticSwapOpenOrder', handleOptimisticSwap);
     return () => {
       window.removeEventListener('refreshOpenOrders', handleRefresh);
+      window.removeEventListener('optimisticAddOpenOrder', handleOptimisticAdd);
       window.removeEventListener('optimisticRemoveOpenOrder', handleOptimisticRemove);
       window.removeEventListener('optimisticClearOpenOrders', handleOptimisticClear);
       window.removeEventListener('rollbackRemoveOpenOrder', handleRollbackRemove);
       window.removeEventListener('optimisticSwapOpenOrder', handleOptimisticSwap);
     };
-  }, [fetchOrders, enabled, apiKeyId]);
+  }, [fetchOrders, enabled, apiKeyId, symbol]);
 
   // Polling loop with proper mount guard
   useEffect(() => {
     if (!enabled || !apiKeyId || !symbol) {
       isMountedRef.current = false;
+      optimisticOrdersRef.current.clear();
+      tombstoneMapRef.current.clear();
       setOrders([]);
       return;
     }
 
     isMountedRef.current = true; // BUG-05: mark mounted on (re)run
+    optimisticOrdersRef.current.clear();
+    tombstoneMapRef.current.clear();
 
     fetchOrders(); // Immediate fetch on mount or dependency change
     timerRef.current = setInterval(fetchOrders, effectiveIntervalMs);

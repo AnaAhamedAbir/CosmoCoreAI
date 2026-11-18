@@ -730,19 +730,40 @@ async def place_drag_bracket_endpoint(
             raise HTTPException(status_code=404, detail="Active API Key not found.")
 
         is_futures = bool(req.is_futures or (':' in req.symbol))
-        exchange = await manual_trade_service._get_exchange(api_key_record, is_futures)
+        exchange = await manual_trade_service._get_exchange(api_key_record, is_futures, purpose="order")
 
         # 2. Fetch current market price and format price
         final_price = BracketOrderService._safe_price_to_precision(exchange, req.symbol, req.price)
         if final_price <= 0:
             raise HTTPException(status_code=400, detail="Invalid price level.")
 
-        current_px = 0.0
-        try:
-            ticker = await exchange.fetch_ticker(req.symbol)
-            current_px = float(ticker.get('last') or ticker.get('close') or req.price)
-        except Exception:
-            current_px = req.price
+        async def _fetch_curr_px() -> float:
+            try:
+                from app.services.user_order_stream import _get_redis_pub
+                import json as _json
+                r_cli = await _get_redis_pub()
+                if r_cli is not None:
+                    ex_id = str(getattr(api_key_record, 'exchange', 'binance') or 'binance').lower()
+                    raw_ob = await asyncio.wait_for(
+                        r_cli.get(f"latest_orderbook:{ex_id}:{req.symbol}"),
+                        timeout=0.04,
+                    )
+                    if raw_ob:
+                        ob_json = _json.loads(raw_ob)
+                        bids_l = ob_json.get('bids') or []
+                        asks_l = ob_json.get('asks') or []
+                        if bids_l and asks_l:
+                            b0 = float(bids_l[0].get('price') if isinstance(bids_l[0], dict) else bids_l[0][0])
+                            a0 = float(asks_l[0].get('price') if isinstance(asks_l[0], dict) else asks_l[0][0])
+                            if b0 > 0 and a0 > 0:
+                                return (b0 + a0) / 2.0
+            except Exception:
+                pass
+            try:
+                ticker = await exchange.fetch_ticker(req.symbol)
+                return float(ticker.get('last') or ticker.get('close') or req.price)
+            except Exception:
+                return float(req.price)
 
         bracket_type = req.bracket_type.lower()
         amount = float(req.amount or 0.0)
@@ -756,7 +777,17 @@ async def place_drag_bracket_endpoint(
         pos_entry_side = None
         is_inverse = False
         if is_futures:
-            pos_info = await manual_trade_service.get_active_position(db, current_user.id, req.api_key_id, req.symbol) or {}
+            px_res, pos_res = await asyncio.gather(
+                _fetch_curr_px(),
+                manual_trade_service.get_active_position(db, current_user.id, req.api_key_id, req.symbol),
+                return_exceptions=True,
+            )
+            current_px = float(req.price) if isinstance(px_res, Exception) else float(px_res or req.price)
+            pos_info = {} if isinstance(pos_res, Exception) else (pos_res or {})
+        else:
+            current_px = await _fetch_curr_px()
+
+        if is_futures:
             pos_amt = float(pos_info.get('amount') or 0.0)
             pos_contracts = float(pos_info.get('contracts') or 0.0)
             mkt = (getattr(exchange, 'markets', None) or {}).get(req.symbol, {}) if exchange else {}
@@ -786,6 +817,7 @@ async def place_drag_bracket_endpoint(
                 ref_str in BracketOrderService.ACTIVE_ENTRY_BRACKETS
                 or ref_str in BracketOrderService.ACTIVE_SOFTWARE_SL
                 or any(str(eb.get('tp_order_id') or '') == ref_str for eb in BracketOrderService.ACTIVE_ENTRY_BRACKETS.values())
+                or any(BracketOrderService._matches_bracket_ref(sid, sdata, ref_str) for sid, sdata in BracketOrderService.ACTIVE_SOFTWARE_SL.items())
             ):
                 has_known_in_memory_bracket = True
 
@@ -799,6 +831,8 @@ async def place_drag_bracket_endpoint(
                 initial_amount=amount,
                 initial_entry_side=entry_side,
             )
+            if matched_target_amount > 0 and entry_side in ('buy', 'sell'):
+                has_known_in_memory_bracket = True
 
         if is_futures and (pos_amt > 0 or pos_contracts > 0):
             if entry_side is None and pos_entry_side:
@@ -859,7 +893,7 @@ async def place_drag_bracket_endpoint(
         # A Take-Profit (TP) placed BELOW market price (final_price < current_px) is a BUY exit (Dip Buy-Back TP, entry_side='sell').
         # (Exception: if an active entry bracket ALREADY exists in memory with a verified side, keep its known side).
         if current_px > 0 and final_price > 0:
-            if bracket_type == 'sl':
+            if bracket_type == 'sl' and not has_known_in_memory_bracket:
                 expected_entry = 'sell' if final_price > current_px else 'buy'
                 if entry_side != expected_entry:
                     logger.info(

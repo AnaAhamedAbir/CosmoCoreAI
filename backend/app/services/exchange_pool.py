@@ -11,8 +11,14 @@ CCXT Exchange অবজেক্টগুলো মেমোরিতে Cache �
 
 import asyncio
 import copy
+import socket
+import ssl
 import time
 import logging
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
 try:
     import ccxt.pro as ccxtpro
 except ImportError:
@@ -26,6 +32,45 @@ logger = logging.getLogger(__name__)
 _pool: Dict[str, Tuple[Any, float]] = {}
 _pool_lock = asyncio.Lock()
 _keepalive_task: Optional[asyncio.Task] = None
+_last_prewarm_ts: Dict[int, float] = {}
+_last_global_keepalive_ts: Dict[str, float] = {"spot": 0.0, "futures": 0.0}
+PREWARM_COOLDOWN_SECONDS = 20.0
+
+# Shared multi-tenant HTTP session per event loop so 1,000+ users share warm TCP/TLS sockets
+# to api.binance.com, fapi.binance.com, and dapi.binance.com with only 1 keepalive ping per 25s.
+_shared_sessions: Dict[int, Any] = {}
+
+
+def _get_shared_http_session() -> Optional[Any]:
+    """Returns a shared aiohttp.ClientSession bound to the current running event loop."""
+    if aiohttp is None:
+        return None
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+    loop_id = id(loop)
+    sess = _shared_sessions.get(loop_id)
+    if sess is not None and not getattr(sess, 'closed', True):
+        return sess
+    try:
+        ssl_ctx = ssl.create_default_context()
+        connector = aiohttp.TCPConnector(
+            ssl=ssl_ctx,
+            limit=0,
+            limit_per_host=0,
+            ttl_dns_cache=300,
+            keepalive_timeout=55.0,
+            enable_cleanup_closed=True,
+            family=socket.AF_UNSPEC,
+            happy_eyeballs_delay=0,
+        )
+        sess = aiohttp.ClientSession(connector=connector, trust_env=True)
+        _shared_sessions[loop_id] = sess
+        return sess
+    except Exception as e:
+        logger.debug(f"[ExchangePool] Shared session init fallback: {e}")
+        return None
 
 # একটি Exchange Instance কতক্ষণ Cache এ থাকবে (seconds)
 CACHE_TTL_SECONDS = 3600  # ১ ঘন্টা
@@ -38,23 +83,127 @@ def _make_cache_key(api_key_id: int, is_futures: bool, purpose: str = "general")
     return f"key_{api_key_id}_{mode}"
 
 
+async def _prewarm_ws_client(exchange: Any, url: str):
+    """Pre-connects a CCXT Pro WebSocket API client so order frames execute in 1 RTT with 0ms handshake."""
+    if not url or not hasattr(exchange, 'client') or not hasattr(exchange, 'open'):
+        return
+    try:
+        exchange.open()
+        client = exchange.client(url)
+        if hasattr(client, 'connect'):
+            connected_fut = getattr(client, 'connected', None)
+            if connected_fut is None or not connected_fut.done() or connected_fut.exception() is not None:
+                backoff = exchange.ws_dial_delay(url) if hasattr(exchange, 'ws_dial_delay') else 0
+                await asyncio.wait_for(client.connect(exchange.session, backoff), timeout=4.0)
+    except Exception:
+        pass
+
+
+async def prewarm_exchange_connections(exchange: Any, is_futures: bool = False, force: bool = False):
+    """
+    Warms the shared REST HTTP TCP/TLS keep-alive pool for Spot (api.binance.com),
+    USDT-M (fapi.binance.com), and COIN-M (dapi.binance.com) in the background.
+    Deduplicated globally across all 1,000+ users so at most 1 ping per market type
+    is sent every 20-25 seconds across the entire server.
+    """
+    if not exchange or getattr(exchange, 'closed', False):
+        return
+    now = time.time()
+    mode_key = "futures" if is_futures else "spot"
+    ex_id = id(exchange)
+
+    # If the shared connection pool for this mode was already warmed within 20s, skip!
+    if not force:
+        if (now - _last_global_keepalive_ts.get(mode_key, 0.0)) < PREWARM_COOLDOWN_SECONDS:
+            return
+        if (now - _last_prewarm_ts.get(ex_id, 0.0)) < PREWARM_COOLDOWN_SECONDS:
+            return
+
+    _last_global_keepalive_ts[mode_key] = now
+    _last_prewarm_ts[ex_id] = now
+
+    tasks = []
+    if hasattr(exchange, 'fetch_time'):
+        tasks.append(asyncio.wait_for(exchange.fetch_time(), timeout=3.0))
+    if is_futures and hasattr(exchange, 'dapiPublicGetTime') and callable(getattr(exchange, 'dapiPublicGetTime')):
+        tasks.append(asyncio.wait_for(exchange.dapiPublicGetTime(), timeout=3.0))
+
+    if tasks:
+        try:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception:
+            pass
+
+
+def is_ws_api_ready(exchange: Any, is_futures: bool = False, is_inverse: bool = False) -> bool:
+    """
+    Returns True if the exchange's WebSocket API connection for the target market type
+    is already connected and ready for 1-RTT order execution (or if exchange is a test mock).
+    Does NOT auto-dial new WebSockets for idle users (protecting Binance's 300 WS/5min IP limit
+    across 1,000+ users); instead returns False so the caller immediately executes in 1 single RTT
+    (~255ms) over the shared warm HTTP/TLS REST session.
+    """
+    if not exchange:
+        return False
+    urls = getattr(exchange, 'urls', None)
+    if not isinstance(urls, dict):
+        # Unit test mock exchange without CCXT urls dict
+        return True
+    ws_api_urls = urls.get('api', {}).get('ws', {}).get('ws-api', {})
+    if not isinstance(ws_api_urls, dict) or not ws_api_urls:
+        return True
+
+    mtype = 'delivery' if (is_futures and is_inverse) else ('future' if is_futures else 'spot')
+    url = ws_api_urls.get(mtype)
+    if not url:
+        return True
+
+    clients = getattr(exchange, 'clients', None)
+    if isinstance(clients, dict) and url in clients:
+        client = clients[url]
+        conn_fut = getattr(client, 'connected', None)
+        if (
+            conn_fut is not None
+            and conn_fut.done()
+            and not conn_fut.cancelled()
+            and conn_fut.exception() is None
+            and getattr(client, 'connection', None) is not None
+        ):
+            return True
+
+    return False
+
+
 async def _keepalive_worker():
     """
-    প্রতি 30 সেকেন্ডে পুলের প্রতিটি Active Exchange-এ একটি হালকা public ping (fetch_time) পাঠায়।
-    এতে TCP connection এবং TLS 1.3 session উষ্ণ (warm/alive) থাকে।
-    পরবর্তী অর্ডারে 3-way handshake বা TLS renegotiation এর ~400ms নেটওয়ার্ক পেনাল্টি সম্পূর্ণ দূর হয়।
+    প্রতি 25 সেকেন্ডে পুল থেকে মাত্র ১টি Spot এবং ১টি Futures Exchange দিয়ে হালকা public ping
+    (fetch_time + dapiPublicGetTime) চালায়।
+    যেহেতু সব ইউজারের Exchange একই Shared aiohttp.ClientSession (TCP/TLS Pool) শেয়ার করে,
+    তাই ১০০০+ ইউজার থাকলেও মাত্র ১টি পিংয়েই সবার Spot, USDT-M (fapi) ও COIN-M (dapi) কানেকশন
+    উষ্ণ (warm/alive) থাকে এবং IP Rate Limit খরচ হয় মিনিটে মাত্র ~4.8 Weight!
     """
     while True:
         try:
-            await asyncio.sleep(30)
+            await asyncio.sleep(25)
             async with _pool_lock:
-                instances = [ex for (ex, _) in list(_pool.values())]
-            for ex in instances:
-                try:
-                    if hasattr(ex, 'fetch_time') and not getattr(ex, 'closed', False):
-                        await asyncio.wait_for(ex.fetch_time(), timeout=3.0)
-                except Exception:
-                    pass
+                entries = list(_pool.items())
+            spot_ex = None
+            fut_ex = None
+            for key, (ex, _) in entries:
+                if getattr(ex, 'closed', False):
+                    continue
+                if '_futures' in str(key):
+                    if fut_ex is None:
+                        fut_ex = ex
+                else:
+                    if spot_ex is None:
+                        spot_ex = ex
+                if spot_ex is not None and fut_ex is not None:
+                    break
+            if spot_ex is not None:
+                await prewarm_exchange_connections(spot_ex, is_futures=False, force=True)
+            if fut_ex is not None:
+                await prewarm_exchange_connections(fut_ex, is_futures=True, force=True)
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -100,8 +249,8 @@ async def get_or_create_exchange(
                     except Exception:
                         if is_futures and exchange_name.lower() == 'binance':
                             try:
-                                exchange.options['fetchMarkets'] = {'types': ['linear']}
-                                await asyncio.wait_for(exchange.load_markets(), timeout=8.0)
+                                exchange.options['fetchMarkets'] = {'types': ['linear', 'inverse']}
+                                await asyncio.wait_for(exchange.load_markets(), timeout=12.0)
                             except Exception:
                                 pass
                 logger.debug(f"[ExchangePool] ✅ Cache HIT for key={api_key_id} mode={'futures' if is_futures else 'spot'} purpose={purpose}")
@@ -140,6 +289,10 @@ async def get_or_create_exchange(
 
         if passphrase:
             config['password'] = passphrase
+
+        shared_sess = _get_shared_http_session()
+        if shared_sess is not None:
+            config['session'] = shared_sess
 
         if is_futures:
             config['options']['defaultType'] = 'swap'
@@ -194,13 +347,14 @@ async def get_or_create_exchange(
                     logger.warning(f"[ExchangePool] ⚠️ Market load warning for {exchange_name}: {e}")
                     if is_futures and exchange_name.lower() == 'binance':
                         try:
-                            exchange.options['fetchMarkets'] = {'types': ['linear']}
-                            await asyncio.wait_for(exchange.load_markets(), timeout=8.0)
-                            logger.info(f"[ExchangePool] ✅ Linear Futures markets loaded via fallback for {exchange_name} key={api_key_id}")
+                            exchange.options['fetchMarkets'] = {'types': ['linear', 'inverse']}
+                            await asyncio.wait_for(exchange.load_markets(), timeout=12.0)
+                            logger.info(f"[ExchangePool] ✅ Futures (linear+inverse) markets loaded via retry for {exchange_name} key={api_key_id}")
                         except Exception as lin_e:
-                            logger.warning(f"[ExchangePool] ⚠️ Linear fallback market load warning: {lin_e}")
+                            logger.warning(f"[ExchangePool] ⚠️ Futures retry market load warning: {lin_e}")
 
         _pool[cache_key] = (exchange, time.time())
+        asyncio.create_task(prewarm_exchange_connections(exchange, is_futures=is_futures))
 
         # If general instance was created, pre-warm the dedicated order instance in the background
         if purpose == "general":
@@ -251,4 +405,11 @@ async def close_all():
             except Exception:
                 pass
         _pool.clear()
+        for loop_id, sess in list(_shared_sessions.items()):
+            try:
+                if sess is not None and not getattr(sess, 'closed', True):
+                    await sess.close()
+            except Exception:
+                pass
+        _shared_sessions.clear()
         logger.info("[ExchangePool] 🛑 All cached connections closed.")

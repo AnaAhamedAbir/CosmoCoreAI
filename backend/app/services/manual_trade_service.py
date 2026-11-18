@@ -14,6 +14,13 @@ from sqlalchemy.orm import Session
 from app import models
 from app.core.security import decrypt_key
 from app.services.exchange_pool import get_or_create_exchange
+try:
+    from app.services.exchange_pool import is_ws_api_ready, prewarm_exchange_connections
+except ImportError:
+    def is_ws_api_ready(exchange, is_futures: bool = False, is_inverse: bool = False) -> bool:
+        return True
+    async def prewarm_exchange_connections(exchange, is_futures: bool = False):
+        pass
 from app.services.notification import NotificationService
 from app.services.bracket_order_service import bracket_order_service
 from app.db.session import SessionLocal
@@ -236,12 +243,26 @@ async def _maybe_emit_api_health_alert(
 
 
 class ManualTradeService:
-    _HEDGE_MODE_CACHE = {}  # { cache_key: (is_hedge, expire_timestamp) }
-    _LEVERAGE_CACHE = {}    # { cache_key: (leverage, expire_timestamp) }
+    _HEDGE_MODE_CACHE = {}   # { cache_key: (is_hedge, expire_timestamp) }
+    _LEVERAGE_CACHE = {}     # { cache_key: (leverage, expire_timestamp) }
+    _MARGIN_MODE_CACHE = {}  # { cache_key: (margin_mode_upper, expire_timestamp) }
+    _ORDER_META_CACHE = {}   # { (api_key_id, order_id_str): (order_meta_dict, timestamp) }
     _ML_PREDICTOR_CACHE = {}  # { f"{model_id}_{symbol}": MLL2Predictor }
     _OPEN_ORDERS_CACHE = {}  # { (api_key_id, symbol): (timestamp, result_dict) }
-    _WALLET_BALANCE_CACHE = {}  # { (api_key_id, is_futures): (balance_dict, timestamp) }
+    _WALLET_BALANCE_CACHE = {}  # { (api_key_id, is_futures[, is_inverse]): (balance_dict, timestamp) }
     _WS_BALANCE_DISABLED_UNTIL = {}  # { id(exchange): expire_timestamp }
+    _PREWARM_INFLIGHT_TS = {}  # { f"{apiKey}_{symbol}": last_trigger_timestamp }
+
+    @staticmethod
+    def _normalize_margin_mode_str(margin_mode: Optional[str]) -> Optional[str]:
+        if not margin_mode:
+            return None
+        mm = str(margin_mode).strip().upper()
+        if mm in ('CROSS', 'CROSSED'):
+            return 'CROSSED'
+        if mm == 'ISOLATED':
+            return 'ISOLATED'
+        return mm
 
     @staticmethod
     def invalidate_wallet_balance_cache(api_key_id: int = None):
@@ -254,19 +275,32 @@ class ManualTradeService:
                     ManualTradeService._WALLET_BALANCE_CACHE.pop(k, None)
 
     @staticmethod
-    def _update_wallet_balance_cache(api_key_id: int, is_futures: bool, balance: dict):
+    def _update_wallet_balance_cache(api_key_id: int, is_futures: bool, balance: dict, is_inverse: Optional[bool] = None):
         """Caches wallet balance for ultra-fast zero-latency pre-flight order validation."""
         if api_key_id and isinstance(balance, dict):
-            ManualTradeService._WALLET_BALANCE_CACHE[(int(api_key_id), bool(is_futures))] = (balance, time.time())
+            now_ts = time.time()
+            ManualTradeService._WALLET_BALANCE_CACHE[(int(api_key_id), bool(is_futures))] = (balance, now_ts)
+            if is_inverse is not None:
+                ManualTradeService._WALLET_BALANCE_CACHE[(int(api_key_id), bool(is_futures), bool(is_inverse))] = (balance, now_ts)
 
     @staticmethod
-    def _get_cached_wallet_balance(api_key_id: int, is_futures: bool, max_age_seconds: float = 45.0) -> Optional[dict]:
+    def _get_cached_wallet_balance(
+        api_key_id: int, is_futures: bool, max_age_seconds: float = 45.0, is_inverse: Optional[bool] = None
+    ) -> Optional[dict]:
         """Returns cached wallet balance if fresh (< max_age_seconds old), saving ~300-700ms on order placement."""
+        now_ts = time.time()
+        if is_inverse is not None:
+            sub_key = (int(api_key_id), bool(is_futures), bool(is_inverse))
+            cached_sub = ManualTradeService._WALLET_BALANCE_CACHE.get(sub_key)
+            if cached_sub:
+                bal_data, ts = cached_sub
+                if now_ts - ts <= max_age_seconds:
+                    return bal_data
         key = (int(api_key_id), bool(is_futures))
         cached = ManualTradeService._WALLET_BALANCE_CACHE.get(key)
         if cached:
             bal_data, ts = cached
-            if time.time() - ts <= max_age_seconds:
+            if now_ts - ts <= max_age_seconds:
                 return bal_data
         return None
 
@@ -384,15 +418,83 @@ class ManualTradeService:
         }
 
     @staticmethod
-    def _normalize_ws_balance(exchange, bal: Any, meta: dict) -> Optional[dict]:
+    def _inject_zero_update_time_futures_assets(
+        bal: dict, exchange=None, symbol: str = None, is_inverse: bool = False
+    ) -> dict:
+        """
+        CCXT 4.5.76 parse_balance_custom skips Futures/COIN-M assets with updateTime == 0
+        (e.g. freshly transferred DOGE in COIN-M wallet before first trade).
+        This helper extracts those assets directly from bal['info'] in 0ms without extra REST calls,
+        and also caches symbol leverage/marginMode/hedgeMode from bal['info']['positions'] if present.
+        """
+        if not isinstance(bal, dict):
+            return bal
+        info = bal.get('info')
+        if exchange and symbol and isinstance(info, dict) and isinstance(info.get('positions'), list):
+            try:
+                ManualTradeService._cache_position_risk_metadata(
+                    exchange, symbol, is_inverse, info['positions']
+                )
+            except Exception:
+                pass
+
+        raw_assets = None
+        if isinstance(info, list):
+            raw_assets = info
+        elif isinstance(info, dict) and isinstance(info.get('assets'), list):
+            raw_assets = info.get('assets')
+        if not raw_assets:
+            return bal
+
+        free_map = bal.setdefault('free', {}) if isinstance(bal.get('free'), dict) else {}
+        used_map = bal.setdefault('used', {}) if isinstance(bal.get('used'), dict) else {}
+        total_map = bal.setdefault('total', {}) if isinstance(bal.get('total'), dict) else {}
+
+        for item in raw_assets:
+            if not isinstance(item, dict):
+                continue
+            asset = str(item.get('asset') or '').strip().upper()
+            if not asset:
+                continue
+            existing = bal.get(asset) if isinstance(bal.get(asset), dict) else {}
+            if float(existing.get('total') or existing.get('free') or 0.0) > 0:
+                continue
+            avail = float(
+                item.get('availableBalance')
+                or item.get('withdrawAvailable')
+                or item.get('walletBalance')
+                or item.get('balance')
+                or 0.0
+            )
+            tot = float(
+                item.get('walletBalance')
+                or item.get('marginBalance')
+                or item.get('balance')
+                or avail
+            )
+            if avail > 0 or tot > 0:
+                used = max(0.0, tot - avail)
+                bal[asset] = {'free': avail, 'used': used, 'total': tot}
+                free_map[asset] = avail
+                used_map[asset] = used
+                total_map[asset] = tot
+        return bal
+
+    @staticmethod
+    def _normalize_ws_balance(exchange, bal: Any, meta: dict, symbol: str = None) -> Optional[dict]:
         """
         Fix ccxt.pro binance.handle_account_status_ws passing type=None to parse_balance_custom
         on Spot, which causes bal['free']/['used']/['total'] to be empty dicts while raw
         spot balances still live in bal['info']['balances'].
+        Also injects COIN-M / Futures assets with updateTime=0 from bal['info'].
         Returns None if normalized balance still lacks populated dicts so caller falls back to REST.
         """
         if not isinstance(bal, dict):
             return None
+        if meta.get('is_futures'):
+            ManualTradeService._inject_zero_update_time_futures_assets(
+                bal, exchange=exchange, symbol=symbol, is_inverse=bool(meta.get('is_inverse'))
+            )
         has_populated_asset = any(
             isinstance(v, dict) and ("free" in v or "total" in v)
             for k, v in bal.items()
@@ -428,43 +530,51 @@ class ManualTradeService:
         if not meta:
             meta = ManualTradeService._get_contract_meta(exchange, symbol)
 
+        is_fut = bool(meta.get('is_futures'))
+        is_inv = bool(meta.get('is_inverse'))
         params = {}
-        if meta.get('is_futures'):
-            if meta.get('is_inverse'):
-                params['subType'] = 'inverse'
-            else:
-                params['subType'] = 'linear'
+        if is_fut:
+            params['subType'] = 'inverse' if is_inv else 'linear'
 
         try:
             ex_ptr = id(exchange)
             ws_allowed = time.time() >= ManualTradeService._WS_BALANCE_DISABLED_UNTIL.get(ex_ptr, 0.0)
             if (
                 ws_allowed
-                and not meta.get('is_inverse')
                 and getattr(exchange, 'has', {}).get('fetchBalanceWs')
                 and hasattr(exchange, 'fetch_balance_ws')
+                and is_ws_api_ready(exchange, is_futures=is_fut, is_inverse=is_inv)
             ):
                 try:
-                    ws_bal = await asyncio.wait_for(exchange.fetch_balance_ws({}), timeout=0.55)
-                    bal = ManualTradeService._normalize_ws_balance(exchange, ws_bal, meta)
+                    ws_params = {'type': 'delivery'} if (is_fut and is_inv) else ({'type': 'future'} if is_fut else {})
+                    ws_bal = await asyncio.wait_for(exchange.fetch_balance_ws(ws_params), timeout=0.55)
+                    bal = ManualTradeService._normalize_ws_balance(exchange, ws_bal, meta, symbol=symbol)
                     if bal is not None:
                         if api_key_id is not None:
-                            ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
+                            ManualTradeService._update_wallet_balance_cache(api_key_id, is_fut, bal, is_inverse=is_inv)
                         return bal
                     ManualTradeService._WS_BALANCE_DISABLED_UNTIL[ex_ptr] = time.time() + 60.0
                 except Exception as ws_bal_err:
                     ManualTradeService._WS_BALANCE_DISABLED_UNTIL[ex_ptr] = time.time() + 60.0
                     logger.debug(f"fetch_balance_ws fallback to REST (cooldown 60s): {ws_bal_err}")
             bal = await (exchange.fetch_balance(params) if params else exchange.fetch_balance())
+            if is_fut and isinstance(bal, dict):
+                ManualTradeService._inject_zero_update_time_futures_assets(
+                    bal, exchange=exchange, symbol=symbol, is_inverse=is_inv
+                )
             if api_key_id is not None:
-                ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
+                ManualTradeService._update_wallet_balance_cache(api_key_id, is_fut, bal, is_inverse=is_inv)
             return bal
         except Exception as e:
-            if meta.get('is_inverse'):
+            if is_inv:
                 try:
                     bal = await exchange.fetch_balance({'type': 'delivery'})
+                    if isinstance(bal, dict):
+                        ManualTradeService._inject_zero_update_time_futures_assets(
+                            bal, exchange=exchange, symbol=symbol, is_inverse=is_inv
+                        )
                     if api_key_id is not None:
-                        ManualTradeService._update_wallet_balance_cache(api_key_id, meta.get('is_futures', False), bal)
+                        ManualTradeService._update_wallet_balance_cache(api_key_id, is_fut, bal, is_inverse=is_inv)
                     return bal
                 except Exception:
                     pass
@@ -513,11 +623,119 @@ class ManualTradeService:
                 try:
                     res = await m()
                     val = bool(res.get('dualSidePosition', False))
-                    ManualTradeService._HEDGE_MODE_CACHE[cache_key] = (val, now + 300)
+                    ManualTradeService._HEDGE_MODE_CACHE[cache_key] = (val, now + 3600)
                     return val
                 except Exception:
                     pass
         return False
+
+    @staticmethod
+    def _cache_position_risk_metadata(exchange, symbol: str, is_inverse: bool, records: list):
+        """Extracts leverage, marginType/isolated, and hedge mode from raw or parsed position records into RAM caches."""
+        if not exchange or not symbol or not isinstance(records, list):
+            return
+        api_k = getattr(exchange, 'apiKey', '')
+        key_sym = f"{api_k}_{symbol}"
+        hedge_key = f"{api_k}_{bool(is_inverse)}"
+        now_ts = time.time()
+        target_clean = str(symbol).split(':')[0].replace('/', '').upper()
+
+        for rec in records:
+            if not isinstance(rec, dict):
+                continue
+            info = rec.get('info') if isinstance(rec.get('info'), dict) else rec
+            rec_sym = str(rec.get('symbol') or info.get('symbol') or '').upper()
+            rec_clean = rec_sym.split(':')[0].replace('/', '').replace('_PERP', '')
+            if rec_clean and target_clean and rec_clean != target_clean and target_clean not in rec_clean:
+                continue
+
+            # 1. Leverage
+            lev_raw = rec.get('leverage') or info.get('leverage')
+            if lev_raw is not None:
+                try:
+                    lev_int = int(float(lev_raw))
+                    if lev_int > 0:
+                        ManualTradeService._LEVERAGE_CACHE[key_sym] = (lev_int, now_ts + 3600)
+                except (ValueError, TypeError):
+                    pass
+
+            # 2. Margin Mode (isolated / cross or boolean 'isolated' from account positions)
+            mm_raw = rec.get('marginMode') or rec.get('marginType') or info.get('marginType')
+            if not mm_raw and 'isolated' in info and info.get('isolated') is not None:
+                iso_val = info.get('isolated')
+                is_iso = iso_val is True or str(iso_val).strip().lower() == 'true'
+                mm_raw = 'ISOLATED' if is_iso else 'CROSSED'
+            mm_norm = ManualTradeService._normalize_margin_mode_str(mm_raw)
+            if mm_norm:
+                ManualTradeService._MARGIN_MODE_CACHE[key_sym] = (mm_norm, now_ts + 3600)
+
+            # 3. Hedge Mode (positionSide LONG/SHORT vs BOTH)
+            pos_side = str(info.get('positionSide') or '').upper()
+            if pos_side in ('LONG', 'SHORT'):
+                ManualTradeService._HEDGE_MODE_CACHE[hedge_key] = (True, now_ts + 3600)
+            elif pos_side == 'BOTH':
+                ManualTradeService._HEDGE_MODE_CACHE[hedge_key] = (False, now_ts + 3600)
+
+    @staticmethod
+    async def _prewarm_futures_trading_state(exchange, symbol: str, is_inverse: bool = False):
+        """
+        Background pre-warmer triggered when ManualTradeModal fetches balance/position.
+        Pre-connects WS-API (ws-fapi / ws-dapi), warms REST TCP/TLS pools (fapi / dapi),
+        and populates _HEDGE_MODE_CACHE, _MARGIN_MODE_CACHE, and _LEVERAGE_CACHE so that
+        subsequent BUY/SELL order clicks execute in 1 single RTT (~250ms) with 0ms pre-flight overhead.
+        """
+        if not exchange or not symbol:
+            return
+        try:
+            api_k = getattr(exchange, 'apiKey', '')
+            key_sym = f"{api_k}_{symbol}"
+            hedge_key = f"{api_k}_{bool(is_inverse)}"
+            now_ts = time.time()
+
+            last_prewarm = ManualTradeService._PREWARM_INFLIGHT_TS.get(key_sym, 0.0)
+            if (now_ts - last_prewarm) < 15.0:
+                return
+            ManualTradeService._PREWARM_INFLIGHT_TS[key_sym] = now_ts
+
+            need_hedge = (
+                hedge_key not in ManualTradeService._HEDGE_MODE_CACHE
+                or ManualTradeService._HEDGE_MODE_CACHE[hedge_key][1] <= now_ts
+            )
+            need_sym_meta = (
+                key_sym not in ManualTradeService._LEVERAGE_CACHE
+                or ManualTradeService._LEVERAGE_CACHE[key_sym][1] <= now_ts
+                or key_sym not in ManualTradeService._MARGIN_MODE_CACHE
+                or ManualTradeService._MARGIN_MODE_CACHE[key_sym][1] <= now_ts
+            )
+
+            # Warm shared TCP/TLS pool (deduplicated globally across all users to 1 ping / 20s)
+            await prewarm_exchange_connections(exchange, is_futures=True)
+
+            # Fetch PositionRisk first (Weight=1 on COIN-M, Weight=5 on USDT-M) because it returns
+            # leverage, marginType, AND positionSide (Hedge Mode) in a single lightweight call,
+            # saving the expensive 30-weight PositionSideDual endpoint across 1,000+ users!
+            if (need_sym_meta or need_hedge) and getattr(exchange, 'id', '').lower().startswith('binance'):
+                clean_sym = str(symbol).split(':')[0].replace('/', '').upper()
+                native_sym = bracket_order_service._resolve_native_futures_symbol(exchange, symbol, is_inverse=is_inverse)
+                try:
+                    raw_list = None
+                    if is_inverse and hasattr(exchange, 'dapiPrivateGetPositionRisk'):
+                        raw_list = await exchange.dapiPrivateGetPositionRisk({'pair': clean_sym})
+                    elif not is_inverse and hasattr(exchange, 'fapiPrivateV2GetPositionRisk'):
+                        raw_list = await exchange.fapiPrivateV2GetPositionRisk({'symbol': native_sym})
+                    if isinstance(raw_list, list):
+                        ManualTradeService._cache_position_risk_metadata(exchange, symbol, is_inverse, raw_list)
+                except Exception:
+                    pass
+
+            # Only call PositionSideDual (Weight=30) as a fallback if Hedge Mode is still unknown
+            if (
+                hedge_key not in ManualTradeService._HEDGE_MODE_CACHE
+                or ManualTradeService._HEDGE_MODE_CACHE[hedge_key][1] <= time.time()
+            ):
+                await ManualTradeService._is_binance_hedge_mode(exchange, symbol, is_inverse=is_inverse)
+        except Exception:
+            pass
 
     @staticmethod
     async def get_fast_balance(db: Session, user_id: int, api_key_id: int, symbol: str, force_refresh: bool = False) -> dict:
@@ -538,11 +756,16 @@ class ManualTradeService:
         try:
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
             meta = ManualTradeService._get_contract_meta(exchange, symbol)
+            is_inv = bool(meta.get('is_inverse'))
             balance = None
             if not force_refresh:
-                balance = ManualTradeService._get_cached_wallet_balance(api_key_id, meta.get('is_futures', is_futures), max_age_seconds=2.5)
+                balance = ManualTradeService._get_cached_wallet_balance(
+                    api_key_id, meta.get('is_futures', is_futures), max_age_seconds=2.5, is_inverse=is_inv
+                )
             if balance is None:
                 balance = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)
+            if is_futures:
+                asyncio.create_task(ManualTradeService._prewarm_futures_trading_state(exchange, symbol, is_inverse=is_inv))
 
             base_part = meta["base"]
             quote_part = meta["quote"]
@@ -568,6 +791,7 @@ class ManualTradeService:
                     if hasattr(exchange, 'dapiPrivateGetBalance'):
                         d_bals = await exchange.dapiPrivateGetBalance()
                         if isinstance(d_bals, list):
+                            ManualTradeService._inject_zero_update_time_futures_assets({'info': d_bals, **balance})
                             for b in d_bals:
                                 if str(b.get('asset', '')).upper() == base_part.upper():
                                     avail = float(b.get('availableBalance') or b.get('withdrawAvailable') or b.get('balance') or 0.0)
@@ -575,6 +799,8 @@ class ManualTradeService:
                                     base_free = avail
                                     base_used = max(0.0, tot - avail)
                                     base_total = tot
+                                    balance[base_part] = {'free': base_free, 'used': base_used, 'total': base_total}
+                                    ManualTradeService._update_wallet_balance_cache(api_key_id, is_futures, balance, is_inverse=True)
                                     logger.info(f"💰 Direct dapiPrivateGetBalance for {base_part}: free={base_free}, total={base_total}")
                                     break
                 except Exception as d_err:
@@ -592,6 +818,8 @@ class ManualTradeService:
                                     base_free = avail
                                     base_used = max(0.0, tot - avail)
                                     base_total = tot
+                                    balance[base_part] = {'free': base_free, 'used': base_used, 'total': base_total}
+                                    ManualTradeService._update_wallet_balance_cache(api_key_id, is_futures, balance, is_inverse=True)
                                     logger.info(f"💰 Direct dapiPrivateGetAccount for {base_part}: free={base_free}, total={base_total}")
                                     break
                     except Exception as acct_err:
@@ -666,14 +894,18 @@ class ManualTradeService:
              return {"amount": 0.0, "side": "none"}
             
         try:
-            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
+            exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
             meta = ManualTradeService._get_contract_meta(exchange, symbol)
+            is_inv = bool(meta.get('is_inverse'))
             
             pos_params = {}
-            if meta.get('is_inverse'):
+            if is_inv:
                 pos_params['subType'] = 'inverse'
 
             positions = await exchange.fetch_positions([symbol], pos_params)
+            if isinstance(positions, list) and positions:
+                ManualTradeService._cache_position_risk_metadata(exchange, symbol, is_inv, positions)
+            asyncio.create_task(ManualTradeService._prewarm_futures_trading_state(exchange, symbol, is_inverse=is_inv))
             
             # Find the active position for this symbol
             active_pos = None
@@ -788,11 +1020,18 @@ class ManualTradeService:
         is_futures = ':' in symbol
 
         try:
-            from app.services.user_order_stream import ensure_user_order_stream
-            ensure_user_order_stream(user_id, api_key_record, is_futures, symbol)
+            try:
+                from app.services.user_order_stream import ensure_user_order_stream
+                ensure_user_order_stream(user_id, api_key_record, is_futures, symbol)
+            except Exception:
+                pass
 
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
+            meta = ManualTradeService._get_contract_meta(exchange, symbol)
+            is_inv = bool(meta.get('is_inverse'))
             if is_futures:
+                asyncio.create_task(ManualTradeService._prewarm_futures_trading_state(exchange, symbol, is_inverse=is_inv))
+            if is_futures and not is_inv:
                 std_res, stop_res = await asyncio.gather(
                     exchange.fetch_open_orders(symbol),
                     exchange.fetch_open_orders(symbol, params={'stop': True}),
@@ -880,7 +1119,7 @@ class ManualTradeService:
                         or tif_upper == 'GTX'
                         or bool(o.get('postOnly'))
                     )
-                    orders.append({
+                    order_entry = {
                         'id': order_id_str,
                         'side': str(o.get('side') or '').lower(),  # 'buy' or 'sell'
                         'price': price,
@@ -892,7 +1131,9 @@ class ManualTradeService:
                         'isPostOnly': is_post_only_order,
                         'isIceberg': raw_iceberg_qty > 0,
                         'icebergQty': raw_iceberg_qty if raw_iceberg_qty > 0 else None
-                    })
+                    }
+                    orders.append(order_entry)
+                    ManualTradeService._ORDER_META_CACHE[(int(api_key_id), order_id_str)] = (order_entry, now_ts)
 
             res = {"orders": orders, "symbol": symbol, "exchange": api_key_record.exchange}
             ManualTradeService._OPEN_ORDERS_CACHE[cache_key] = (now_ts, res)
@@ -1569,7 +1810,60 @@ class ManualTradeService:
                 margin_mode = params.get('marginMode')
                 reduce_only = params.get('reduceOnly', False)
 
-                is_hedge_mode = await ManualTradeService._is_binance_hedge_mode(exchange, order_req.symbol, is_inverse=is_inverse)
+                api_k = getattr(exchange, 'apiKey', '')
+                now_ts = time.time()
+                hedge_cache_key = f"{api_k}_{bool(is_inverse)}"
+                sym_cache_key = f"{api_k}_{order_req.symbol}"
+
+                # Prepare concurrent pre-flight tasks for any uncached/changed futures settings (1 RTT instead of 3)
+                preflight_tasks = []
+
+                cached_hedge_entry = ManualTradeService._HEDGE_MODE_CACHE.get(hedge_cache_key)
+                if cached_hedge_entry and now_ts < cached_hedge_entry[1]:
+                    is_hedge_mode = cached_hedge_entry[0]
+                else:
+                    is_hedge_mode = None
+
+                async def _sync_hedge():
+                    return await ManualTradeService._is_binance_hedge_mode(exchange, order_req.symbol, is_inverse=is_inverse)
+
+                if is_hedge_mode is None:
+                    preflight_tasks.append(('hedge', _sync_hedge()))
+
+                target_mm = ManualTradeService._normalize_margin_mode_str(margin_mode)
+                if target_mm:
+                    cached_mm, mm_exp = ManualTradeService._MARGIN_MODE_CACHE.get(sym_cache_key, (None, 0))
+                    if cached_mm != target_mm or now_ts >= mm_exp:
+                        async def _sync_margin_mode():
+                            try:
+                                await exchange.set_margin_mode(margin_mode, order_req.symbol)
+                            except Exception as mm_e:
+                                logger.warning(f"Margin mode set skipped (may already be set or unsupported): {mm_e}")
+                            ManualTradeService._MARGIN_MODE_CACHE[sym_cache_key] = (target_mm, time.time() + 3600)
+
+                        preflight_tasks.append(('margin_mode', _sync_margin_mode()))
+
+                if leverage:
+                    try:
+                        lev_int = int(float(leverage))
+                    except (ValueError, TypeError):
+                        lev_int = leverage
+                    cached_lev, exp_ts = ManualTradeService._LEVERAGE_CACHE.get(sym_cache_key, (None, 0))
+                    if cached_lev != lev_int or now_ts >= exp_ts:
+                        async def _sync_leverage():
+                            try:
+                                await exchange.set_leverage(leverage, order_req.symbol)
+                            except Exception as lev_e:
+                                logger.warning(f"Leverage set skipped (may already be set): {lev_e}")
+                            ManualTradeService._LEVERAGE_CACHE[sym_cache_key] = (lev_int, time.time() + 3600)
+
+                        preflight_tasks.append(('leverage', _sync_leverage()))
+
+                if preflight_tasks:
+                    pf_results = await asyncio.gather(*(t[1] for t in preflight_tasks), return_exceptions=True)
+                    for (t_name, _), t_res in zip(preflight_tasks, pf_results):
+                        if t_name == 'hedge' and not isinstance(t_res, Exception):
+                            is_hedge_mode = bool(t_res)
 
                 if is_hedge_mode:
                     # In Binance Hedge Mode, positionSide MUST be LONG or SHORT.
@@ -1586,24 +1880,6 @@ class ManualTradeService:
                 else:
                     if reduce_only:
                         ex_params['reduceOnly'] = True
-
-                if margin_mode:
-                    try:
-                        await exchange.set_margin_mode(margin_mode, order_req.symbol)
-                    except Exception as mm_e:
-                        logger.warning(f"Margin mode set skipped (may already be set or unsupported): {mm_e}")
-
-                if leverage:
-                    lev_cache_key = f"{getattr(exchange, 'apiKey', '')}_{order_req.symbol}"
-                    now_ts = time.time()
-                    cached_lev, exp_ts = ManualTradeService._LEVERAGE_CACHE.get(lev_cache_key, (None, 0))
-                    if cached_lev != leverage or now_ts >= exp_ts:
-                        try:
-                            await exchange.set_leverage(leverage, order_req.symbol)
-                            ManualTradeService._LEVERAGE_CACHE[lev_cache_key] = (leverage, now_ts + 600)
-                        except Exception as lev_e:
-                            logger.warning(f"Leverage set skipped (may already be set): {lev_e}")
-                            ManualTradeService._LEVERAGE_CACHE[lev_cache_key] = (leverage, now_ts + 600)
 
             # Prepare Limit Order parameters if needed (Moved before margin check)
             if order_req.type.lower() == 'limit':
@@ -1626,8 +1902,13 @@ class ManualTradeService:
                     req_price = float(raw_lp)
                 elif is_inverse:
                     try:
-                        ticker = await exchange.fetch_ticker(order_req.symbol)
-                        req_price = ticker.get('last', 0)
+                        from app.services.smart_peg_entry_executor import _fetch_bbo_fast
+                        ob_fast = await _fetch_bbo_fast(exchange, order_req.symbol)
+                        if ob_fast and ob_fast.get('bids') and ob_fast.get('asks'):
+                            req_price = (float(ob_fast['bids'][0][0]) + float(ob_fast['asks'][0][0])) / 2.0
+                        if not req_price or req_price <= 0:
+                            ticker = await exchange.fetch_ticker(order_req.symbol)
+                            req_price = ticker.get('last', 0)
                     except Exception:
                         req_price = 0
 
@@ -1644,14 +1925,23 @@ class ManualTradeService:
 
                 order_req.amount = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, order_req.amount)
 
-            # --- Pre-flight Margin Check (Zero-Latency Cached with Fresh Network Fallback) ---
-            bal = ManualTradeService._get_cached_wallet_balance(api_key_record.id, is_futures, max_age_seconds=45.0)
+            # --- Pre-flight Margin Check (Zero-Latency Cached with Non-Blocking Refresh on Futures) ---
+            bal = ManualTradeService._get_cached_wallet_balance(
+                api_key_record.id, is_futures, max_age_seconds=300.0, is_inverse=is_inverse
+            )
             if not bal:
-                try:
-                    bal = await ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)
-                except Exception as margin_e:
-                    logger.debug(f"Pre-flight margin check fetch skipped: {margin_e}")
+                if is_futures:
+                    # Warm balance cache in background so order placement does not pay an extra REST RTT
+                    asyncio.create_task(
+                        ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)
+                    )
                     bal = {}
+                else:
+                    try:
+                        bal = await ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)
+                    except Exception as margin_e:
+                        logger.debug(f"Pre-flight margin check fetch skipped: {margin_e}")
+                        bal = {}
 
             if bal:
                 try:
@@ -1786,7 +2076,8 @@ class ManualTradeService:
                         ai_filter_info=ai_filter_info,
                         contract_size=contract_size,
                         is_inverse=is_inverse,
-                        anchor_price=peg_anchor_price
+                        anchor_price=peg_anchor_price,
+                        skip_exchange_upgrade=True,
                     )
                 )
 
@@ -2068,7 +2359,11 @@ class ManualTradeService:
 
             if not is_ws_success:
                 t_order_start = time.perf_counter()
-                if exchange.has.get('createOrderWs') and not ex_params.get('icebergQty'):
+                if (
+                    exchange.has.get('createOrderWs')
+                    and not ex_params.get('icebergQty')
+                    and is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=is_inverse)
+                ):
                     try:
                         logger.info(f"⚡ Attempting WebSocket order execution for {order_req.symbol}...")
                         order_type = order_req.type.lower()
@@ -2314,8 +2609,28 @@ class ManualTradeService:
                     )
                 )
 
-            from app.services.user_order_stream import ensure_user_order_stream
-            ensure_user_order_stream(user_id, api_key_record, is_futures, order_req.symbol)
+            try:
+                from app.services.user_order_stream import ensure_user_order_stream
+                ensure_user_order_stream(user_id, api_key_record, is_futures, order_req.symbol)
+            except Exception:
+                pass
+
+            if response and response.get('id'):
+                oid_placed = str(response.get('id'))
+                ManualTradeService._ORDER_META_CACHE[(int(api_key_record.id), oid_placed)] = (
+                    {
+                        'id': oid_placed,
+                        'side': str(order_req.side or '').lower(),
+                        'price': float(response.get('price') or response.get('average') or req_price or 0.0),
+                        'amount': float(order_req.amount or 0.0),
+                        'isSoftwareSL': False,
+                        'mode': 'LIMIT',
+                        'isPostOnly': bool(ex_params.get('postOnly')),
+                        'isIceberg': valid_iceberg is not None and float(valid_iceberg) > 0,
+                        'icebergQty': float(valid_iceberg) if (valid_iceberg is not None and float(valid_iceberg) > 0) else None,
+                    },
+                    time.time(),
+                )
 
             ManualTradeService.invalidate_open_orders_cache(api_key_record.id, order_req.symbol)
             return {
@@ -2386,16 +2701,38 @@ class ManualTradeService:
         try:
             # 1. Use unthrottled dedicated order connection pool instance
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
-            
+            meta = ManualTradeService._get_contract_meta(exchange, symbol)
+            is_inverse = bool(meta.get('is_inverse'))
+            oid_str = str(order_id)
+
             # 2. Fast Parameter Lookup from RAM Cache (0ms) instead of slow fetch_order network round-trip (~230ms)
             cache_key = (int(api_key_id), str(symbol).strip().upper())
             cached_order = None
             if cache_key in ManualTradeService._OPEN_ORDERS_CACHE:
                 _, cached_res = ManualTradeService._OPEN_ORDERS_CACHE[cache_key]
                 for o in cached_res.get('orders', []):
-                    if str(o.get('id')) == str(order_id):
+                    if str(o.get('id')) == oid_str:
                         cached_order = o
                         break
+
+            if cached_order is None:
+                meta_entry = ManualTradeService._ORDER_META_CACHE.get((int(api_key_id), oid_str))
+                if meta_entry and (time.time() - meta_entry[1]) < 3600:
+                    cached_order = meta_entry[0]
+
+            if cached_order is None:
+                # Check known in-memory bracket / entry registries (0ms)
+                if (
+                    oid_str in bracket_order_service.ACTIVE_ENTRY_MONITORS
+                    or oid_str in bracket_order_service.KNOWN_TP_ORDER_IDS
+                    or any(
+                        str(eb.get('tp_order_id') or '') == oid_str or str(eb.get('entry_order_id') or '') == oid_str
+                        for eb in bracket_order_service.ACTIVE_ENTRY_BRACKETS.values()
+                    )
+                ):
+                    cached_order = {'id': oid_str, 'isSoftwareSL': False, 'mode': 'LIMIT'}
+                elif any(str(s.get('disaster_sl_order_id') or '') == oid_str for s in bracket_order_service.ACTIVE_SOFTWARE_SL.values()):
+                    cached_order = {'id': oid_str, 'isSoftwareSL': True, 'mode': 'STOP_MARKET'}
 
             order_type = 'limit'
             is_conditional_stop = False
@@ -2419,8 +2756,8 @@ class ManualTradeService:
                     if 'timeInForce' not in ex_params and not ex_params.get('postOnly'):
                         ex_params['timeInForce'] = 'GTC'
                     logger.info(f"🧊 Preserved Iceberg slice {fmt_iceberg_q} from cache during order edit")
-            elif is_futures:
-                # If order not in cache and on futures, check if it was a conditional stop
+            elif is_futures and not is_inverse:
+                # If order not in cache and on linear futures, check if it was a conditional stop
                 try:
                     orig_o = await exchange.fetch_order(order_id, symbol, params={'stop': True})
                     if orig_o:
@@ -2431,6 +2768,18 @@ class ManualTradeService:
                             is_conditional_stop = True
                 except Exception:
                     pass
+
+            if is_futures and not is_conditional_stop:
+                is_hedge = await ManualTradeService._is_binance_hedge_mode(exchange, symbol, is_inverse=is_inverse)
+                if is_hedge and 'positionSide' not in ex_params:
+                    is_exit_tp = (
+                        oid_str in bracket_order_service.KNOWN_TP_ORDER_IDS
+                        or (cached_order and str(cached_order.get('mode') or '').upper() == 'TP')
+                    )
+                    if str(side).lower() == 'buy':
+                        ex_params['positionSide'] = 'SHORT' if is_exit_tp else 'LONG'
+                    else:
+                        ex_params['positionSide'] = 'LONG' if is_exit_tp else 'SHORT'
 
             # Apply exchange precision safely to prevent precision filter rejections
             new_price = bracket_order_service._safe_price_to_precision(exchange, symbol, new_price)
@@ -2445,11 +2794,19 @@ class ManualTradeService:
             api_ms = 0
             is_native_success = False
 
-            from app.services.user_order_stream import mark_order_replaced
-            mark_order_replaced(str(order_id))
+            try:
+                from app.services.user_order_stream import mark_order_replaced
+                mark_order_replaced(str(order_id))
+            except Exception:
+                pass
 
             # Priority 0: Ultra-Fast WebSocket API edit_order_ws (Spot cancelReplace / Futures modify in ~80-150ms)
-            if exchange.has.get('editOrderWs') and not is_conditional_stop and not ex_params.get('icebergQty'):
+            if (
+                exchange.has.get('editOrderWs')
+                and not is_conditional_stop
+                and not ex_params.get('icebergQty')
+                and is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=is_inverse)
+            ):
                 try:
                     t_ws_api = time.perf_counter()
                     ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
@@ -2488,7 +2845,9 @@ class ManualTradeService:
             if not is_native_success:
                 t_fallback = time.perf_counter()
                 # 1. Cancel previous order (supports both regular and conditional/algo orders)
-                await bracket_order_service._cancel_futures_order_universal(exchange, order_id, symbol)
+                await bracket_order_service._cancel_futures_order_universal(
+                    exchange, order_id, symbol, is_conditional=is_conditional_stop
+                )
 
                 # 2. Re-create order immediately at new_price via WS if possible, else REST
                 if is_futures and is_conditional_stop:
@@ -2499,7 +2858,11 @@ class ManualTradeService:
                         stop_price=new_price, extra_params=ex_params
                     )
                 else:
-                    if exchange.has.get('createOrderWs') and not ex_params.get('icebergQty'):
+                    if (
+                        exchange.has.get('createOrderWs')
+                        and not ex_params.get('icebergQty')
+                        and is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=is_inverse)
+                    ):
                         try:
                             ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
                                 exchange, order_type, ex_params, is_futures, is_edit=False
@@ -2529,6 +2892,11 @@ class ManualTradeService:
             # Synchronize new order ID & price with any active software bracket & entry monitor
             new_order_id = str(response.get('id')) if response and response.get('id') else None
             resolved_order_id = new_order_id or str(order_id)
+            if cached_order and resolved_order_id:
+                updated_meta = dict(cached_order)
+                updated_meta['id'] = resolved_order_id
+                updated_meta['price'] = float(new_price)
+                ManualTradeService._ORDER_META_CACHE[(int(api_key_id), resolved_order_id)] = (updated_meta, time.time())
             try:
                 if resolved_order_id != str(order_id):
                     old_mon = bracket_order_service.ACTIVE_ENTRY_MONITORS.get(str(order_id))

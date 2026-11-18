@@ -84,7 +84,14 @@ async def _fetch_bbo_fast(exchange, symbol: str, max_age_seconds: float = 0.45) 
 
 async def _place_maker_order(exchange, symbol: str, side: str, amount: float, price: float, ex_params: dict, is_futures: bool):
     """Place a Post-Only Maker limit order via WS API (~80-150ms) with seamless REST fallback."""
-    if getattr(exchange, 'has', {}).get('createOrderWs'):
+    ws_ready = True
+    try:
+        from app.services.exchange_pool import is_ws_api_ready
+        ws_ready = is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=_is_inverse_market(exchange, symbol))
+    except Exception:
+        ws_ready = True
+
+    if getattr(exchange, 'has', {}).get('createOrderWs') and ws_ready:
         try:
             from app.services.manual_trade_service import ManualTradeService
             ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
@@ -734,7 +741,17 @@ async def execute_smart_peg_entry(
                                     exchange, 'limit', ex_params, is_futures, is_edit=True
                                 )
                                 edit_candidates = []
-                                if getattr(exchange, 'has', {}).get('editOrderWs') and hasattr(exchange, 'edit_order_ws'):
+                                ws_edit_ready = True
+                                try:
+                                    from app.services.exchange_pool import is_ws_api_ready
+                                    ws_edit_ready = is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=is_inverse)
+                                except Exception:
+                                    ws_edit_ready = True
+                                if (
+                                    getattr(exchange, 'has', {}).get('editOrderWs')
+                                    and hasattr(exchange, 'edit_order_ws')
+                                    and ws_edit_ready
+                                ):
                                     edit_candidates.append(('WS', exchange.edit_order_ws, ws_edit_type, ws_edit_params))
                                 if getattr(exchange, 'has', {}).get('editOrder') and hasattr(exchange, 'edit_order'):
                                     rest_type, rest_params = (

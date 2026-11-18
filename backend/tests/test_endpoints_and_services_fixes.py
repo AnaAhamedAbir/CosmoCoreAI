@@ -1079,6 +1079,127 @@ class TestEndpointsAndServicesFixes(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ACTIVE_SMART_CHASES["chase_buy_1"]["target_updated"])
         self.assertAlmostEqual(ACTIVE_SMART_CHASES["chase_buy_1"]["max_chase_price"], 0.11 * 1.03, places=8)
 
+    async def test_futures_coin_m_entry_and_sl_modify_single_rtt_latency(self):
+        """
+        Verifies that COIN-M Futures (DOGE/USD:DOGE) entry placement and software SL modification
+        each execute in 1 single network RTT (~50ms in test) without redundant sequential
+        set_margin_mode / set_leverage / dapiPrivateGetPositionSideDual / dapiPrivateDeleteAlgoOrder calls.
+        """
+        ex = MockExchange("DOGE/USD:DOGE", tick=0.0001, is_inverse=True, contract_size=10.0)
+        ex.apiKey = "coinm_fast_key"
+        ex.has["createOrderWs"] = True
+        ex.has["cancelOrderWs"] = True
+        ex.has["fetchBalanceWs"] = True
+        rtt = 0.045
+        calls = []
+
+        async def dapi_dual():
+            calls.append("dapiPrivateGetPositionSideDual")
+            await asyncio.sleep(rtt)
+            return {"dualSidePosition": False}
+
+        async def dapi_risk(params=None):
+            calls.append("dapiPrivateGetPositionRisk")
+            await asyncio.sleep(rtt)
+            return [{"symbol": "DOGEUSD_PERP", "positionAmt": "0", "leverage": "1", "marginType": "isolated", "positionSide": "BOTH"}]
+
+        async def set_mm(mm, sym):
+            calls.append("set_margin_mode")
+            await asyncio.sleep(rtt)
+            return {"code": 200}
+
+        async def set_lev(lev, sym):
+            calls.append("set_leverage")
+            await asyncio.sleep(rtt)
+            return {"leverage": lev}
+
+        async def fetch_bal_ws(params=None):
+            calls.append("fetch_balance_ws")
+            await asyncio.sleep(rtt)
+            return {"info": {"assets": [{"asset": "DOGE", "availableBalance": "1000.0", "walletBalance": "1000.0", "updateTime": 0}]}}
+
+        async def create_ws(symbol, order_type, side, amount, price=None, params=None):
+            calls.append("create_order_ws")
+            await asyncio.sleep(rtt)
+            return {"id": "ord_doge_cm_1", "symbol": symbol, "type": order_type, "side": side, "amount": amount, "price": price, "status": "open"}
+
+        async def cancel_ws(oid, symbol, params=None):
+            calls.append("cancel_order_ws")
+            await asyncio.sleep(rtt)
+            return {"id": oid, "status": "canceled"}
+
+        async def dapi_post_order(req):
+            calls.append("dapiPrivatePostOrder")
+            await asyncio.sleep(rtt)
+            return {"orderId": "dis_doge_cm_2", "status": "NEW"}
+
+        ex.dapiPrivateGetPositionSideDual = dapi_dual
+        ex.dapiPrivateGetPositionRisk = dapi_risk
+        ex.set_margin_mode = set_mm
+        ex.set_leverage = set_lev
+        ex.fetch_balance_ws = fetch_bal_ws
+        ex.create_order_ws = create_ws
+        ex.cancel_order_ws = cancel_ws
+        ex.dapiPrivatePostOrder = dapi_post_order
+
+        db = FakeDB()
+        with patch.object(ManualTradeService, "_get_exchange", AsyncMock(return_value=ex)), \
+             patch("app.services.manual_trade_service._send_trade_fired_notification", AsyncMock()), \
+             patch.object(BracketOrderService, "monitor_and_execute_bracket", AsyncMock()), \
+             patch.object(BracketOrderService, "_send_sl_modified_notification", AsyncMock()):
+
+            # 1. Prewarm via get_fast_balance (extracts updateTime=0 DOGE balance and prewarms futures caches)
+            bal_res = await ManualTradeService.get_fast_balance(db, 1, 7, "DOGE/USD:DOGE")
+            self.assertAlmostEqual(bal_res["base_free"], 1000.0, places=2)
+            await asyncio.sleep(0.08)
+            calls.clear()
+
+            # 2. Place limit entry order -> should only make 1 network call (create_order_ws)
+            req = SimpleNamespace(
+                api_key_id=7,
+                exchange_id="binance",
+                symbol="DOGE/USD:DOGE",
+                side="buy",
+                type="limit",
+                amount=3.0,
+                price=0.0593,
+                params={"leverage": 1, "marginMode": "isolated", "contracts": 3.0},
+                attached_tp=SimpleNamespace(enabled=True, value=0.0001, mode="price", order_type="Limit", dict=lambda: {"enabled": True}),
+                attached_sl=SimpleNamespace(enabled=True, value=0.0001, mode="price", type="smart_chase", dict=lambda: {"enabled": True}),
+                use_native_tp_sl=False,
+                iceberg_qty=None,
+                enable_ml_filter=False,
+            )
+            t0 = time.perf_counter()
+            await ManualTradeService.place_manual_trade(db=db, user_id=1, order_req=req, start_time=t0)
+            entry_elapsed = time.perf_counter() - t0
+            self.assertEqual(calls, ["create_order_ws"])
+            self.assertLess(entry_elapsed, rtt * 2.2)
+
+            # 3. Modify software SL -> should concurrently cancel old disaster stop & place new disaster stop in 1 RTT
+            calls.clear()
+            BracketOrderService.ACTIVE_SOFTWARE_SL["sl_cm_1"] = {
+                "id": "sl_cm_1",
+                "api_key_id": 7,
+                "symbol": "DOGE/USD:DOGE",
+                "side": "sell",
+                "amount": 3.0,
+                "trigger_price": 0.0592,
+                "price": 0.0592,
+                "mode": "SMART_CHASE",
+                "is_futures": True,
+                "exchange": ex,
+                "disaster_sl_order_id": "dis_doge_cm_1",
+                "max_deviation_pct": 1.0,
+            }
+            t1 = time.perf_counter()
+            upd = await BracketOrderService.update_software_bracket("sl_cm_1", 0.0582, api_key_id=7, user_id=1)
+            sl_elapsed = time.perf_counter() - t1
+            self.assertEqual(set(calls), {"cancel_order_ws", "dapiPrivatePostOrder"})
+            self.assertEqual(BracketOrderService.ACTIVE_SOFTWARE_SL["sl_cm_1"]["disaster_sl_order_id"], "dis_doge_cm_2")
+            self.assertLess(sl_elapsed, rtt * 2.2)
+            self.assertLess(upd["execution_speed_ms"], int(rtt * 2200))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

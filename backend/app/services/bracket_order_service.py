@@ -15,6 +15,11 @@ import asyncio
 import logging
 from typing import Optional
 from app.services.exchange_pool import get_or_create_exchange
+try:
+    from app.services.exchange_pool import is_ws_api_ready
+except ImportError:
+    def is_ws_api_ready(exchange, is_futures: bool = False, is_inverse: bool = False) -> bool:
+        return True
 from app.core.security import decrypt_key
 from app.services.notification import NotificationService
 
@@ -144,13 +149,27 @@ class BracketOrderService:
     @staticmethod
     async def _fetch_futures_order_universal(exchange, order_id: str, symbol: str, is_conditional: bool = False) -> dict:
         """
-        Fetches a Futures order across both standard (/fapi/v1/order) and conditional/algo (/fapi/v1/algoOrder)
-        endpoints so STOP_MARKET / TAKE_PROFIT_MARKET / TRAILING_STOP_MARKET orders never fail with -2013.
+        Fetches a Futures order across both standard (/fapi/v1/order or /dapi/v1/order) and
+        conditional/algo (/fapi/v1/algoOrder) endpoints so STOP_MARKET / TAKE_PROFIT_MARKET /
+        TRAILING_STOP_MARKET orders never fail with -2013.
+        On COIN-M (inverse), all orders live on standard /dapi/v1/order.
         """
         if not exchange or not order_id:
             return {}
         oid_str = str(order_id)
-        if is_conditional:
+        is_inverse = False
+        try:
+            if getattr(exchange, 'markets', None) and symbol in exchange.markets:
+                mkt = exchange.markets[symbol]
+                is_inverse = bool(mkt.get('inverse') or mkt.get('subType') == 'inverse')
+            elif ':' in str(symbol or ''):
+                parts = str(symbol).split('/')
+                if len(parts) > 1 and ':' in parts[1]:
+                    is_inverse = (parts[0].upper() == parts[1].split(':')[1].upper())
+        except Exception:
+            pass
+
+        if is_conditional and not is_inverse:
             try:
                 return await exchange.fetch_order(oid_str, symbol, params={'stop': True})
             except Exception:
@@ -200,6 +219,15 @@ class BracketOrderService:
 
         prec_amount = BracketOrderService._safe_amount_to_precision(exchange, symbol, amount)
         prec_stop = BracketOrderService._safe_price_to_precision(exchange, symbol, stop_price) if stop_price is not None else None
+        stop_str = None
+        if prec_stop is not None:
+            try:
+                if getattr(exchange, 'markets', None) and symbol in exchange.markets and hasattr(exchange, 'price_to_precision'):
+                    stop_str = str(exchange.price_to_precision(symbol, prec_stop))
+            except Exception:
+                stop_str = None
+            if not stop_str:
+                stop_str = f"{float(prec_stop):.8f}".rstrip('0').rstrip('.') or "0"
 
         params = dict(extra_params or {})
         if prec_stop is not None:
@@ -230,8 +258,8 @@ class BracketOrderService:
                     'type': order_type.upper(),
                     'quantity': str(prec_amount),
                 }
-                if prec_stop is not None:
-                    algo_req['triggerPrice'] = str(prec_stop)
+                if stop_str is not None:
+                    algo_req['triggerPrice'] = stop_str
                 if callback_rate is not None:
                     algo_req['callbackRate'] = str(callback_rate)
                 if params.get('positionSide'):
@@ -259,8 +287,8 @@ class BracketOrderService:
                     'type': order_type.upper(),
                     'quantity': str(int(prec_amount)) if is_inverse else str(prec_amount),
                 }
-                if prec_stop is not None:
-                    std_req['stopPrice'] = str(prec_stop)
+                if stop_str is not None:
+                    std_req['stopPrice'] = stop_str
                 if callback_rate is not None:
                     std_req['callbackRate'] = str(callback_rate)
                 if params.get('positionSide'):
@@ -288,12 +316,14 @@ class BracketOrderService:
 
         raise last_err or RuntimeError(f"Failed to place {order_type} conditional order for {symbol}")
 
+    _HEDGE_MODE_CACHE = {}  # { cache_key: (is_hedge, expire_timestamp) }
+
     @staticmethod
     async def _apply_futures_exit_params(exchange, symbol: str, exit_side: str, base_params: dict = None) -> dict:
         """
         Futures exit orders (TP, SL, Disaster SL, Trailing SL) er jonno Binance Hedge Mode
         ebong One-Way Mode onujayi sothik params (positionSide vs reduceOnly) set kore.
-        COIN-M (Inverse) er khetre dapi check kore, Linear er khetre fapi check kore.
+        Uses ManualTradeService._is_binance_hedge_mode RAM cache (0ms) instead of uncached REST calls.
         """
         params = dict(base_params or {})
         is_futures = ':' in symbol
@@ -316,22 +346,34 @@ class BracketOrderService:
             except Exception:
                 pass
 
-            methods = (
-                ['dapiPrivateGetPositionSideDual', 'fapiPrivateGetPositionSideDual']
-                if is_inverse else
-                ['fapiPrivateGetPositionSideDual', 'dapiPrivateGetPositionSideDual']
-            )
             is_hedge_mode = False
-            for m_name in methods:
-                m = getattr(exchange, m_name, None)
-                if m and callable(m):
-                    try:
-                        res = await m()
-                        if res.get('dualSidePosition', False):
-                            is_hedge_mode = True
-                        break
-                    except Exception:
-                        pass
+            try:
+                from app.services.manual_trade_service import ManualTradeService
+                is_hedge_mode = await ManualTradeService._is_binance_hedge_mode(
+                    exchange, symbol, is_inverse=is_inverse
+                )
+            except Exception:
+                cache_key = f"{getattr(exchange, 'apiKey', '')}_{is_inverse}"
+                now = time.time()
+                cached_h = BracketOrderService._HEDGE_MODE_CACHE.get(cache_key)
+                if cached_h and now < cached_h[1]:
+                    is_hedge_mode = cached_h[0]
+                else:
+                    methods = (
+                        ['dapiPrivateGetPositionSideDual', 'fapiPrivateGetPositionSideDual']
+                        if is_inverse else
+                        ['fapiPrivateGetPositionSideDual', 'dapiPrivateGetPositionSideDual']
+                    )
+                    for m_name in methods:
+                        m = getattr(exchange, m_name, None)
+                        if m and callable(m):
+                            try:
+                                res = await m()
+                                is_hedge_mode = bool(res.get('dualSidePosition', False))
+                                BracketOrderService._HEDGE_MODE_CACHE[cache_key] = (is_hedge_mode, now + 3600)
+                                break
+                            except Exception:
+                                pass
 
             if is_hedge_mode:
                 params['positionSide'] = 'LONG' if exit_side.lower() == 'sell' else 'SHORT'
@@ -741,17 +783,40 @@ class BracketOrderService:
 
     
     @staticmethod
-    async def _cancel_futures_order_universal(exchange, order_id: str, symbol: str):
+    async def _cancel_futures_order_universal(
+        exchange, order_id: str, symbol: str, is_conditional: Optional[bool] = None
+    ):
         """
-        Safely cancels an order on Futures/Spot using WebSocket API when available (~80-120ms)
-        with instant REST fallback, attempting standard and conditional/algo cancellation
-        concurrently on Futures.
+        Safely cancels an order on Futures/Spot using WebSocket API when already connected (~80-250ms)
+        with instant REST fallback.
+        - On COIN-M (inverse, e.g. DOGE/USD:DOGE): all orders (both standard limit and STOP_MARKET)
+          live on standard /dapi/v1/order, so we skip the non-existent /dapi/v1/algoOrder endpoint.
+        - On Linear (USDT-M): uses single targeted endpoint when `is_conditional` is known, or
+          concurrently tries both when unknown.
         """
         if not order_id or not exchange:
             return
 
+        is_futures = ':' in str(symbol or '')
+        is_inverse = False
+        if is_futures:
+            try:
+                if getattr(exchange, 'markets', None) and symbol in exchange.markets:
+                    mkt = exchange.markets[symbol]
+                    is_inverse = bool(mkt.get('inverse') or mkt.get('subType') == 'inverse')
+                else:
+                    parts = str(symbol).split('/')
+                    if len(parts) > 1 and ':' in parts[1]:
+                        is_inverse = (parts[0].upper() == parts[1].split(':')[1].upper())
+            except Exception:
+                pass
+
         async def _cancel_std():
-            if getattr(exchange, 'has', {}).get('cancelOrderWs') and hasattr(exchange, 'cancel_order_ws'):
+            if (
+                getattr(exchange, 'has', {}).get('cancelOrderWs')
+                and hasattr(exchange, 'cancel_order_ws')
+                and is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=is_inverse)
+            ):
                 try:
                     return await exchange.cancel_order_ws(order_id, symbol)
                 except Exception as ws_err:
@@ -761,7 +826,6 @@ class BracketOrderService:
                     logger.debug(f"cancel_order_ws fallback to REST for {order_id}: {ws_err}")
             return await exchange.cancel_order(order_id, symbol)
 
-        is_futures = ':' in str(symbol or '')
         if not is_futures:
             try:
                 await _cancel_std()
@@ -769,6 +833,44 @@ class BracketOrderService:
             except Exception as e:
                 logger.debug(f"Standard cancel notice for {order_id}: {e}")
             return
+
+        # COIN-M Inverse Futures: conditional STOP_MARKET & limit orders are both on standard /dapi/v1/order
+        if is_inverse:
+            try:
+                await _cancel_std()
+                logger.info(f"✅ Cancelled COIN-M order {order_id} on {symbol}")
+                return
+            except Exception as inv_err:
+                logger.debug(f"COIN-M standard cancel notice for {order_id}: {inv_err}")
+                try:
+                    await exchange.cancel_order(order_id, symbol, params={'stop': True})
+                except Exception:
+                    pass
+                return
+
+        if is_conditional is True:
+            try:
+                await exchange.cancel_order(order_id, symbol, params={'stop': True})
+                logger.info(f"✅ Cancelled conditional/algo order {order_id} on {symbol}")
+                return
+            except Exception:
+                try:
+                    await _cancel_std()
+                except Exception:
+                    pass
+                return
+
+        if is_conditional is False:
+            try:
+                await _cancel_std()
+                logger.info(f"✅ Cancelled regular order {order_id} on {symbol}")
+                return
+            except Exception:
+                try:
+                    await exchange.cancel_order(order_id, symbol, params={'stop': True})
+                except Exception:
+                    pass
+                return
 
         res_std, res_stop = await asyncio.gather(
             _cancel_std(),
@@ -892,25 +994,53 @@ class BracketOrderService:
         max_dev = float(sl_meta.get('max_deviation_pct') or 1.0)
         if disaster_order_id and exchange and is_futures:
             try:
-                # Cancel previous disaster stop (supports both regular and conditional/algo orders)
-                await BracketOrderService._cancel_futures_order_universal(exchange, disaster_order_id, symbol)
+                order_ex = exchange
+                api_key_rec = sl_meta.get('api_key_record')
+                if api_key_rec and hasattr(api_key_rec, 'api_key') and hasattr(api_key_rec, 'secret_key'):
+                    try:
+                        dec_api = decrypt_key(api_key_rec.api_key)
+                        dec_sec = decrypt_key(api_key_rec.secret_key)
+                        raw_pp = getattr(api_key_rec, 'passphrase', None)
+                        dec_pp = decrypt_key(raw_pp) if raw_pp else None
+                        cand_ex = await get_or_create_exchange(
+                            api_key_id=api_key_rec.id,
+                            exchange_name=api_key_rec.exchange,
+                            decrypted_api_key=dec_api,
+                            decrypted_secret=dec_sec,
+                            is_futures=is_futures,
+                            passphrase=dec_pp,
+                            purpose="order",
+                        )
+                        if cand_ex is not None:
+                            order_ex = cand_ex
+                    except Exception:
+                        order_ex = exchange
 
-                # Re-place disaster stop at new price (exact for pure stop, or ± max_dev for smart chase)
                 mode = sl_meta.get('mode', 'SMART_CHASE')
                 if mode in ['STOP', 'fixed', 'STOP_MARKET']:
                     disaster_price = prec_price
                 else:
                     disaster_price = prec_price * (1 - (max_dev / 100.0)) if side == 'sell' else prec_price * (1 + (max_dev / 100.0))
-                disaster_price_prec = BracketOrderService._safe_price_to_precision(exchange, symbol, disaster_price)
+                disaster_price_prec = BracketOrderService._safe_price_to_precision(order_ex, symbol, disaster_price)
                 disaster_params = await BracketOrderService._apply_futures_exit_params(
-                    exchange, symbol, side, {'stopPrice': disaster_price_prec}
+                    order_ex, symbol, side, {'stopPrice': disaster_price_prec}
                 )
+                prec_amount = BracketOrderService._safe_amount_to_precision(order_ex, symbol, amount)
 
-                prec_amount = BracketOrderService._safe_amount_to_precision(exchange, symbol, amount)
-                d_res = await BracketOrderService._place_futures_conditional_order(
-                    exchange, symbol, 'STOP_MARKET', side, prec_amount,
+                # Cancel previous disaster stop & place updated disaster stop concurrently in 1 single RTT (~250ms)
+                cancel_task = BracketOrderService._cancel_futures_order_universal(
+                    order_ex, disaster_order_id, symbol, is_conditional=True
+                )
+                place_task = BracketOrderService._place_futures_conditional_order(
+                    order_ex, symbol, 'STOP_MARKET', side, prec_amount,
                     stop_price=disaster_price_prec, extra_params=disaster_params
                 )
+                _, d_res = await asyncio.gather(cancel_task, place_task, return_exceptions=True)
+                if isinstance(d_res, Exception) or not isinstance(d_res, dict) or not d_res.get('id'):
+                    d_res = await BracketOrderService._place_futures_conditional_order(
+                        order_ex, symbol, 'STOP_MARKET', side, prec_amount,
+                        stop_price=disaster_price_prec, extra_params=disaster_params
+                    )
                 sl_meta['disaster_sl_order_id'] = d_res.get('id')
                 logger.info(f"🛡️ Replaced Native Disaster SL at {disaster_price_prec} (New ID: {d_res.get('id')})")
             except Exception as d_err:
@@ -979,7 +1109,7 @@ class BracketOrderService:
                 decrypted_api_key=decrypted_api_key,
                 decrypted_secret=decrypted_secret,
                 is_futures=is_futures,
-                passphrase=passphrase
+                passphrase=passphrase,
             )
 
             # Determine if unlimited monitoring (0, None, <=0) is requested

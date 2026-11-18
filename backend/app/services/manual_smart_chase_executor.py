@@ -427,25 +427,30 @@ async def execute_manual_smart_chase(
         f"Max Dev: {max_deviation_pct}% | Execution: {exec_info} | MinNotional: ${min_notional:.2f}"
     )
 
-    # Detect Binance Hedge Mode on Futures to avoid -4061 rejection
+    # Detect Binance Hedge Mode on Futures (cached in RAM to avoid 255ms roundtrip)
     is_hedge_mode = False
     is_inverse = _is_inverse_market(exchange, symbol)
     if is_futures and exchange_name.lower().startswith('binance'):
-        methods = (
-            ['dapiPrivateGetPositionSideDual', 'fapiPrivateGetPositionSideDual']
-            if is_inverse else
-            ['fapiPrivateGetPositionSideDual', 'dapiPrivateGetPositionSideDual']
-        )
-        for method_name in methods:
-            method = getattr(exchange, method_name, None)
-            if method and callable(method):
-                try:
-                    res = await method()
-                    is_hedge_mode = bool(res.get('dualSidePosition', False))
-                    logger.info(f"🛡️ [Manual Smart Chase] Binance Futures mode: {'Hedge' if is_hedge_mode else 'One-Way'}")
-                    break
-                except Exception:
-                    pass
+        try:
+            from app.services.manual_trade_service import ManualTradeService
+            is_hedge_mode = await ManualTradeService._is_binance_hedge_mode(exchange, symbol, is_inverse=is_inverse)
+            logger.info(f"🛡️ [Manual Smart Chase] Binance Futures mode (cached): {'Hedge' if is_hedge_mode else 'One-Way'}")
+        except Exception:
+            methods = (
+                ['dapiPrivateGetPositionSideDual', 'fapiPrivateGetPositionSideDual']
+                if is_inverse else
+                ['fapiPrivateGetPositionSideDual', 'dapiPrivateGetPositionSideDual']
+            )
+            for method_name in methods:
+                method = getattr(exchange, method_name, None)
+                if method and callable(method):
+                    try:
+                        res = await method()
+                        is_hedge_mode = bool(res.get('dualSidePosition', False))
+                        logger.info(f"🛡️ [Manual Smart Chase] Binance Futures mode: {'Hedge' if is_hedge_mode else 'One-Way'}")
+                        break
+                    except Exception:
+                        pass
 
     cid = chase_id or f"chase_{getattr(api_key_record, 'id', user_id)}_{symbol}_{int(datetime.utcnow().timestamp())}"
 
@@ -459,16 +464,22 @@ async def execute_manual_smart_chase(
         own_tp_str = str(tp_order_id) if tp_order_id else None
         own_dis_str = str(disaster_sl_order_id) if disaster_sl_order_id else None
         if tp_order_id:
-            cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, tp_order_id, symbol))
+            cancel_tasks.append(
+                BracketOrderService._cancel_futures_order_universal(exchange, tp_order_id, symbol, is_conditional=False)
+            )
             labels.append(('TP', str(tp_order_id)))
         if disaster_sl_order_id:
-            cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, disaster_sl_order_id, symbol))
+            cancel_tasks.append(
+                BracketOrderService._cancel_futures_order_universal(exchange, disaster_sl_order_id, symbol, is_conditional=True)
+            )
             labels.append(('Disaster SL', str(disaster_sl_order_id)))
         if entry_order_id and str(entry_order_id) in BracketOrderService.ACTIVE_ENTRY_MONITORS:
             entry_mon = BracketOrderService.ACTIVE_ENTRY_MONITORS.get(str(entry_order_id))
             if entry_mon and not entry_mon.get('cancelled'):
                 entry_mon['cancelled'] = True
-                cancel_tasks.append(BracketOrderService._cancel_futures_order_universal(exchange, str(entry_order_id), symbol))
+                cancel_tasks.append(
+                    BracketOrderService._cancel_futures_order_universal(exchange, str(entry_order_id), symbol, is_conditional=False)
+                )
                 labels.append(('Partial Entry', str(entry_order_id)))
 
         # Only scan open orders on exchange if requested (e.g. balance/reduceOnly blocked) or if no linked TP/SL ID was passed,
@@ -518,7 +529,7 @@ async def execute_manual_smart_chase(
 
             try:
                 open_orders = await exchange.fetch_open_orders(symbol)
-                if is_futures:
+                if is_futures and not is_inverse:
                     try:
                         cond_orders = await exchange.fetch_open_orders(symbol, params={'stop': True})
                         if cond_orders:

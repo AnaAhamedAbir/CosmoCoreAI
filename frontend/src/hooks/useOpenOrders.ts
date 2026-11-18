@@ -273,6 +273,24 @@ export const useOpenOrders = (
       const oldId = detail?.oldOrderId ? String(detail.oldOrderId) : '';
       const newId = detail?.newOrderId ? String(detail.newOrderId) : '';
       if (!oldId) return;
+      const existing = ordersRef.current.find((o) => String(o.id) === oldId) || optimisticOrdersRef.current.get(oldId);
+      if (existing) {
+        const resolvedId = newId || String(existing.id);
+        const updatedOrder: OpenLimitOrder = {
+          ...existing,
+          id: resolvedId,
+          price: typeof detail.newPrice === 'number' ? detail.newPrice : existing.price,
+        };
+        if (oldId !== resolvedId) {
+          optimisticOrdersRef.current.delete(oldId);
+          tombstoneMapRef.current.set(oldId, Date.now() + 4500);
+        }
+        tombstoneMapRef.current.delete(resolvedId);
+        optimisticOrdersRef.current.set(resolvedId, {
+          ...updatedOrder,
+          _exp: Date.now() + 3500,
+        });
+      }
       setOrders((prev) =>
         prev.map((o) => {
           if (String(o.id) !== oldId) return o;

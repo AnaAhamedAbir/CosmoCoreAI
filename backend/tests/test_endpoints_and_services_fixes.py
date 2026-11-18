@@ -1177,7 +1177,8 @@ class TestEndpointsAndServicesFixes(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(calls, ["create_order_ws"])
             self.assertLess(entry_elapsed, rtt * 2.2)
 
-            # 3. Modify software SL -> should concurrently cancel old disaster stop & place new disaster stop in 1 RTT
+            # 3. Modify software SL (SMART_CHASE) -> returns instantaneously (~0-2ms) while coalesced
+            # background task concurrently cancels old disaster stop & places replacement in 1 RTT.
             calls.clear()
             BracketOrderService.ACTIVE_SOFTWARE_SL["sl_cm_1"] = {
                 "id": "sl_cm_1",
@@ -1196,10 +1197,13 @@ class TestEndpointsAndServicesFixes(unittest.IsolatedAsyncioTestCase):
             t1 = time.perf_counter()
             upd = await BracketOrderService.update_software_bracket("sl_cm_1", 0.0582, api_key_id=7, user_id=1)
             sl_elapsed = time.perf_counter() - t1
+            self.assertLess(sl_elapsed, 0.05)
+            self.assertLess(upd["execution_speed_ms"], 25)
+            self.assertEqual(BracketOrderService.ACTIVE_SOFTWARE_SL["sl_cm_1"]["trigger_price"], 0.0582)
+
+            await asyncio.sleep(rtt * 2.5)
             self.assertEqual(set(calls), {"cancel_order_ws", "dapiPrivatePostOrder"})
             self.assertEqual(BracketOrderService.ACTIVE_SOFTWARE_SL["sl_cm_1"]["disaster_sl_order_id"], "dis_doge_cm_2")
-            self.assertLess(sl_elapsed, rtt * 2.2)
-            self.assertLess(upd["execution_speed_ms"], int(rtt * 2200))
 
     async def test_spot_smart_peg_single_rtt_latency(self):
         """
@@ -1361,6 +1365,118 @@ class TestEndpointsAndServicesFixes(unittest.IsolatedAsyncioTestCase):
         # Re-peg follow latency from BBO shift to new order landing must stay <= 1 poll (~40-60ms) + 1 RTT (45ms)
         self.assertLess(repeg_follow_elapsed, rtt * 3.0)
         self.assertLess(total_elapsed, 0.35)
+
+    async def test_fetch_ticker_fast_uses_redis_without_rest(self):
+        """
+        Verifies _fetch_ticker_fast reads Redis bbo: + last_price: with 0 REST fetch_ticker calls
+        and falls back cleanly to exchange.fetch_ticker when require_last=True and last_price is stale.
+        """
+        ex = MockExchange("DOGE/USDC:USDC", tick=0.00001)
+        ex.id = "binance"
+        rest_calls = []
+
+        async def mock_fetch_ticker(sym):
+            rest_calls.append(sym)
+            return {"bid": 0.0585, "ask": 0.0586, "last": 0.05855, "close": 0.05855}
+
+        ex.fetch_ticker = mock_fetch_ticker
+        now_ts = time.time()
+        kv = {
+            "bbo:binance:DOGE/USDC:USDC": json.dumps({"bid": 0.05858, "ask": 0.05859, "ts": now_ts}),
+            "last_price:binance:DOGE/USDC:USDC": json.dumps({"last": 0.05859, "ts": now_ts}),
+        }
+
+        class MgetRedis:
+            async def mget(self, keys):
+                return [kv.get(k) for k in keys]
+
+        fake_uos = SimpleNamespace(_get_redis_pub=AsyncMock(return_value=MgetRedis()))
+        with patch.dict(sys.modules, {"app.services.user_order_stream": fake_uos}):
+            tkr = await peg_exec._fetch_ticker_fast(ex, "DOGE/USDC:USDC", require_last=True)
+            self.assertEqual(tkr["bid"], 0.05858)
+            self.assertEqual(tkr["ask"], 0.05859)
+            self.assertEqual(tkr["last"], 0.05859)
+            self.assertEqual(rest_calls, [])
+
+            # If last_price is stale and require_last=True, must fall back cleanly to REST
+            kv["last_price:binance:DOGE/USDC:USDC"] = json.dumps({"last": 0.05000, "ts": now_ts - 10.0})
+            tkr_fb = await peg_exec._fetch_ticker_fast(ex, "DOGE/USDC:USDC", require_last=True)
+            self.assertEqual(tkr_fb["last"], 0.05855)
+            self.assertEqual(rest_calls, ["DOGE/USDC:USDC"])
+
+    async def test_upsert_open_order_cache_preserves_cache_without_invalidation(self):
+        """
+        Verifies ManualTradeService.upsert_open_order_cache replaces replaced peg IDs in place
+        inside _OPEN_ORDERS_CACHE without forcing REST fetch_open_orders cache misses.
+        """
+        ManualTradeService._OPEN_ORDERS_CACHE.clear()
+        cache_key = (1, "DOGE/USDC:USDC")
+        ManualTradeService._OPEN_ORDERS_CACHE[cache_key] = (
+            time.time(),
+            {
+                "orders": [
+                    {"id": "6449868105", "side": "sell", "price": 0.05860, "amount": 4312.0, "mode": "LIMIT"},
+                    {"id": "tp_other_1", "side": "buy", "price": 0.05854, "amount": 4312.0, "mode": "TP"},
+                ],
+                "symbol": "DOGE/USDC:USDC",
+                "exchange": "binance",
+            },
+        )
+        new_entry = {"id": "6449868182", "side": "sell", "price": 0.05859, "amount": 4312.0, "mode": "LIMIT", "isPostOnly": True}
+        ManualTradeService.upsert_open_order_cache(1, "DOGE/USDC:USDC", new_entry, replace_id="6449868105")
+
+        res = await ManualTradeService.get_open_limit_orders(db=FakeDB(), user_id=1, api_key_id=1, symbol="DOGE/USDC:USDC")
+        ids = {o["id"]: o for o in res["orders"]}
+        self.assertNotIn("6449868105", ids)
+        self.assertIn("6449868182", ids)
+        self.assertIn("tp_other_1", ids)
+        self.assertEqual(ids["6449868182"]["price"], 0.05859)
+
+    async def test_disaster_sl_replace_does_not_remove_tp_or_sl_chart_lines(self):
+        """
+        Verifies modifying a Smart Chase SL (which cancels & replaces internal backup disaster_sl_order_id)
+        marks old disaster ID replaced and UserOrderStream never clears active SL or TP chart lines.
+        """
+        import types
+        redis_pkg = types.ModuleType("redis")
+        redis_aio = types.ModuleType("redis.asyncio")
+        redis_aio.Redis = object
+        redis_aio.from_url = lambda *a, **kw: None
+        redis_pkg.asyncio = redis_aio
+        ws_mgr = types.ModuleType("app.services.websocket_manager")
+        ws_mgr.manager = SimpleNamespace(broadcast=AsyncMock())
+        cfg_mod = types.ModuleType("app.core.config")
+        cfg_mod.settings = SimpleNamespace(REDIS_URL="redis://localhost:6379")
+
+        with patch.dict(sys.modules, {
+            "redis": redis_pkg,
+            "redis.asyncio": redis_aio,
+            "app.services.websocket_manager": ws_mgr,
+            "app.core.config": cfg_mod,
+        }):
+            from app.services import user_order_stream as uos
+
+            BracketOrderService.ACTIVE_SOFTWARE_SL.clear()
+            BracketOrderService.ACTIVE_SOFTWARE_SL["sl_sc_9"] = {
+                "id": "sl_sc_9",
+                "api_key_id": 1,
+                "symbol": "DOGE/USDC:USDC",
+                "side": "sell",
+                "amount": 4325.0,
+                "trigger_price": 0.0585,
+                "price": 0.0585,
+                "mode": "SMART_CHASE",
+                "is_futures": True,
+                "tp_order_id": "tp_6449868245",
+                "disaster_sl_order_id": "3000002410082518",
+                "max_deviation_pct": 4.0,
+            }
+            self.assertTrue(uos._is_internal_disaster_sl_id(1, "3000002410082518"))
+            self.assertFalse(uos._is_internal_disaster_sl_id(1, "tp_6449868245"))
+            uos.mark_order_replaced("3000002410082518", ttl_seconds=6.0)
+            self.assertIn("3000002410082518", uos._replaced_order_ttl)
+            uos._replaced_order_ttl.pop("3000002410082518", None)
+            sys.modules.pop("app.services.user_order_stream", None)
 
 
 if __name__ == "__main__":

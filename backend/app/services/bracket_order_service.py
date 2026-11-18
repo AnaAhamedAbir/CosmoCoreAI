@@ -36,6 +36,15 @@ class BracketOrderService:
     ACTIVE_ENTRY_MONITORS = {}  # { entry_order_id: { symbol, api_key_id, cancelled } }
 
     @staticmethod
+    async def _fetch_ticker_fast(exchange, symbol: str, require_last: bool = False) -> dict:
+        """Read Redis @bookTicker/@trade cache (~1ms, 0 REST weight) with seamless REST fallback."""
+        try:
+            from app.services.smart_peg_entry_executor import _fetch_ticker_fast
+            return await _fetch_ticker_fast(exchange, symbol, require_last=require_last)
+        except Exception:
+            return await exchange.fetch_ticker(symbol)
+
+    @staticmethod
     def _get_sl_param(sl_config: dict, snake_key: str, camel_key: str, default_val):
         if not sl_config or not isinstance(sl_config, dict):
             return default_val
@@ -989,62 +998,100 @@ class BracketOrderService:
         if set_manual_override:
             sl_meta['manual_trigger_override'] = prec_price
 
-        # If disaster SL order exists on futures exchange, replace it with updated disaster level
+        # If disaster SL order exists on futures exchange, replace it with updated disaster level.
+        # For SMART_CHASE / TRAILING software monitors, the active RAM trigger (`trigger_price`) updates in <1ms;
+        # moving the distant backup Disaster SL runs coalesced in the background so chart dragging stays instant!
         disaster_order_id = sl_meta.get('disaster_sl_order_id')
         max_dev = float(sl_meta.get('max_deviation_pct') or 1.0)
+        is_native_fixed_stop = str(mode or '').strip().upper() in ('STOP', 'FIXED', 'STOP_MARKET')
         if disaster_order_id and exchange and is_futures:
-            try:
-                order_ex = exchange
-                api_key_rec = sl_meta.get('api_key_record')
-                if api_key_rec and hasattr(api_key_rec, 'api_key') and hasattr(api_key_rec, 'secret_key'):
-                    try:
-                        dec_api = decrypt_key(api_key_rec.api_key)
-                        dec_sec = decrypt_key(api_key_rec.secret_key)
-                        raw_pp = getattr(api_key_rec, 'passphrase', None)
-                        dec_pp = decrypt_key(raw_pp) if raw_pp else None
-                        cand_ex = await get_or_create_exchange(
-                            api_key_id=api_key_rec.id,
-                            exchange_name=api_key_rec.exchange,
-                            decrypted_api_key=dec_api,
-                            decrypted_secret=dec_sec,
-                            is_futures=is_futures,
-                            passphrase=dec_pp,
-                            purpose="order",
-                        )
-                        if cand_ex is not None:
-                            order_ex = cand_ex
-                    except Exception:
+            seq = int(sl_meta.get('_disaster_seq', 0)) + 1
+            sl_meta['_disaster_seq'] = seq
+            lock = sl_meta.get('_disaster_lock')
+            if lock is None:
+                lock = asyncio.Lock()
+                sl_meta['_disaster_lock'] = lock
+
+            async def _replace_disaster_sl(target_trig_price: float, my_seq: int):
+                try:
+                    async with lock:
+                        if sl_meta.get('_disaster_seq') != my_seq:
+                            return
+                        if sl_id not in BracketOrderService.ACTIVE_SOFTWARE_SL or sl_meta.get('cancelled'):
+                            return
+                        curr_dis_id = sl_meta.get('disaster_sl_order_id')
+                        if not curr_dis_id:
+                            return
+
+                        try:
+                            from app.services.user_order_stream import mark_order_replaced
+                            mark_order_replaced(str(curr_dis_id), ttl_seconds=6.0)
+                        except Exception:
+                            pass
+
                         order_ex = exchange
+                        api_key_rec = sl_meta.get('api_key_record')
+                        if api_key_rec and hasattr(api_key_rec, 'api_key') and hasattr(api_key_rec, 'secret_key'):
+                            try:
+                                dec_api = decrypt_key(api_key_rec.api_key)
+                                dec_sec = decrypt_key(api_key_rec.secret_key)
+                                raw_pp = getattr(api_key_rec, 'passphrase', None)
+                                dec_pp = decrypt_key(raw_pp) if raw_pp else None
+                                cand_ex = await get_or_create_exchange(
+                                    api_key_id=api_key_rec.id,
+                                    exchange_name=api_key_rec.exchange,
+                                    decrypted_api_key=dec_api,
+                                    decrypted_secret=dec_sec,
+                                    is_futures=is_futures,
+                                    passphrase=dec_pp,
+                                    purpose="order",
+                                )
+                                if cand_ex is not None:
+                                    order_ex = cand_ex
+                            except Exception:
+                                order_ex = exchange
 
-                mode = sl_meta.get('mode', 'SMART_CHASE')
-                if mode in ['STOP', 'fixed', 'STOP_MARKET']:
-                    disaster_price = prec_price
-                else:
-                    disaster_price = prec_price * (1 - (max_dev / 100.0)) if side == 'sell' else prec_price * (1 + (max_dev / 100.0))
-                disaster_price_prec = BracketOrderService._safe_price_to_precision(order_ex, symbol, disaster_price)
-                disaster_params = await BracketOrderService._apply_futures_exit_params(
-                    order_ex, symbol, side, {'stopPrice': disaster_price_prec}
-                )
-                prec_amount = BracketOrderService._safe_amount_to_precision(order_ex, symbol, amount)
+                        curr_mode = sl_meta.get('mode', 'SMART_CHASE')
+                        if str(curr_mode or '').strip().upper() in ('STOP', 'FIXED', 'STOP_MARKET'):
+                            disaster_price = target_trig_price
+                        else:
+                            disaster_price = (
+                                target_trig_price * (1 - (max_dev / 100.0))
+                                if side == 'sell'
+                                else target_trig_price * (1 + (max_dev / 100.0))
+                            )
+                        disaster_price_prec = BracketOrderService._safe_price_to_precision(order_ex, symbol, disaster_price)
+                        disaster_params = await BracketOrderService._apply_futures_exit_params(
+                            order_ex, symbol, side, {'stopPrice': disaster_price_prec}
+                        )
+                        curr_amt = sl_meta.get('amount') if sl_meta.get('amount') is not None else amount
+                        prec_amount = BracketOrderService._safe_amount_to_precision(order_ex, symbol, curr_amt)
 
-                # Cancel previous disaster stop & place updated disaster stop concurrently in 1 single RTT (~250ms)
-                cancel_task = BracketOrderService._cancel_futures_order_universal(
-                    order_ex, disaster_order_id, symbol, is_conditional=True
-                )
-                place_task = BracketOrderService._place_futures_conditional_order(
-                    order_ex, symbol, 'STOP_MARKET', side, prec_amount,
-                    stop_price=disaster_price_prec, extra_params=disaster_params
-                )
-                _, d_res = await asyncio.gather(cancel_task, place_task, return_exceptions=True)
-                if isinstance(d_res, Exception) or not isinstance(d_res, dict) or not d_res.get('id'):
-                    d_res = await BracketOrderService._place_futures_conditional_order(
-                        order_ex, symbol, 'STOP_MARKET', side, prec_amount,
-                        stop_price=disaster_price_prec, extra_params=disaster_params
-                    )
-                sl_meta['disaster_sl_order_id'] = d_res.get('id')
-                logger.info(f"🛡️ Replaced Native Disaster SL at {disaster_price_prec} (New ID: {d_res.get('id')})")
-            except Exception as d_err:
-                logger.warning(f"⚠️ Failed to update native disaster SL: {d_err}")
+                        # Cancel old disaster SL & place updated disaster SL concurrently in 1 RTT
+                        cancel_task = BracketOrderService._cancel_futures_order_universal(
+                            order_ex, curr_dis_id, symbol, is_conditional=True
+                        )
+                        place_task = BracketOrderService._place_futures_conditional_order(
+                            order_ex, symbol, 'STOP_MARKET', side, prec_amount,
+                            stop_price=disaster_price_prec, extra_params=disaster_params
+                        )
+                        _, d_res = await asyncio.gather(cancel_task, place_task, return_exceptions=True)
+                        if isinstance(d_res, Exception) or not isinstance(d_res, dict) or not d_res.get('id'):
+                            if sl_meta.get('_disaster_seq') == my_seq and not sl_meta.get('cancelled'):
+                                d_res = await BracketOrderService._place_futures_conditional_order(
+                                    order_ex, symbol, 'STOP_MARKET', side, prec_amount,
+                                    stop_price=disaster_price_prec, extra_params=disaster_params
+                                )
+                        if isinstance(d_res, dict) and d_res.get('id'):
+                            sl_meta['disaster_sl_order_id'] = d_res.get('id')
+                            logger.info(f"🛡️ Replaced Native Disaster SL at {disaster_price_prec} (New ID: {d_res.get('id')})")
+                except Exception as d_err:
+                    logger.warning(f"⚠️ Failed to update native disaster SL: {d_err}")
+
+            if is_native_fixed_stop:
+                await _replace_disaster_sl(prec_price, seq)
+            else:
+                asyncio.create_task(_replace_disaster_sl(prec_price, seq))
 
         total_ms = int((time.perf_counter() - t0) * 1000)
         logger.info(f"✅ Software SL [{mode}] for {symbol} ({side}) trigger price updated to {prec_price} in {total_ms}ms")
@@ -1253,7 +1300,7 @@ class BracketOrderService:
                         )
                         if average_price <= 0:
                             try:
-                                ticker = await exchange.fetch_ticker(symbol)
+                                ticker = await BracketOrderService._fetch_ticker_fast(exchange, symbol, require_last=False)
                                 average_price = float(ticker.get('last') or ticker.get('close') or 0.0)
                             except Exception:
                                 pass
@@ -1487,7 +1534,7 @@ class BracketOrderService:
             average_price = float(average_price or 0.0)
             if average_price <= 0:
                 try:
-                    ticker = await exchange.fetch_ticker(symbol)
+                    ticker = await BracketOrderService._fetch_ticker_fast(exchange, symbol, require_last=False)
                     average_price = float(ticker.get('last') or ticker.get('close') or ticker.get('bid') or ticker.get('ask') or 0.0)
                     logger.info(f"📊 Resolved fallback average_price={average_price} from live ticker for {symbol}")
                 except Exception as tick_err:
@@ -2541,7 +2588,9 @@ class BracketOrderService:
                 auto_breakeven_buffer_pct = float(sl_meta['auto_breakeven_buffer_pct'])
 
             try:
-                ticker = await exchange.fetch_ticker(symbol)
+                ticker = await BracketOrderService._fetch_ticker_fast(
+                    exchange, symbol, require_last=(trigger_source not in ['bid_ask', 'bbo'])
+                )
                 last_price = float(ticker.get('last') or 0.0)
                 best_bid = float(ticker.get('bid') or last_price)
                 best_ask = float(ticker.get('ask') or last_price)
@@ -2985,7 +3034,7 @@ class BracketOrderService:
                         )
                         return
 
-                ticker = await exchange.fetch_ticker(symbol)
+                ticker = await BracketOrderService._fetch_ticker_fast(exchange, symbol, require_last=True)
                 current_price = float(ticker.get('last') or 0.0)
                 if current_price <= 0:
                     continue
@@ -3208,8 +3257,10 @@ class BracketOrderService:
                 auto_breakeven_buffer_pct = float(sl_meta['auto_breakeven_buffer_pct'])
 
             try:
-                # ── PRIORITY 1: FETCH TICKER FIRST FOR ULTRA-FAST SL DETECTION ──
-                ticker = await exchange.fetch_ticker(symbol)
+                # ── PRIORITY 1: FETCH LIVE BBO / TICKER (Redis WS cache ~1ms, REST fallback) ──
+                ticker = await BracketOrderService._fetch_ticker_fast(
+                    exchange, symbol, require_last=(trigger_source not in ['bid_ask', 'bbo'])
+                )
                 last_price = float(ticker.get('last') or 0.0)
                 best_bid = float(ticker.get('bid') or last_price)
                 best_ask = float(ticker.get('ask') or last_price)
@@ -3325,7 +3376,7 @@ class BracketOrderService:
                     1 for s in BracketOrderService.ACTIVE_SOFTWARE_SL.values()
                     if not s.get('cancelled') and s.get('status') == 'monitoring'
                 )
-                periodic_mod = 3 if active_sl_count <= 3 else (6 if active_sl_count <= 10 else 12)
+                periodic_mod = 8 if active_sl_count <= 3 else (14 if active_sl_count <= 10 else 24)
 
                 tp_touched = False
                 tp_near = False

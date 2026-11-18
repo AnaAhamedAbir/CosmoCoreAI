@@ -673,15 +673,26 @@ async def execute_manual_smart_chase(
 
         return remaining_amount
 
+    async def _fetch_ob_fast_or_rest(depth_limit: int = 5):
+        if peg_strategy in ('bbo', 'inside_spread'):
+            try:
+                from app.services.smart_peg_entry_executor import _fetch_bbo_fast
+                bbo_ob = await _fetch_bbo_fast(exchange, symbol)
+                if bbo_ob and bbo_ob.get('bids') and bbo_ob.get('asks'):
+                    return bbo_ob
+            except Exception:
+                pass
+        return await exchange.fetch_order_book(symbol, limit=depth_limit)
+
     # ── STEP 2: CONCURRENT BALANCE SYNC & L2 ORDERBOOK FETCH ──
-    # Concurrently fetching balance and initial L2 book saves ~250-350ms of network latency!
+    # Concurrently fetching balance and initial L2 book (or ~1ms Redis BBO) saves ~250-350ms!
     cached_initial_ob = None
     initial_bal = None
     if not is_futures:
         await asyncio.sleep(0.1)  # Minimal 100ms buffer for Binance ledger release
         bal_res, ob_res = await asyncio.gather(
             exchange.fetch_balance(),
-            exchange.fetch_order_book(symbol, limit=ob_depth_limit),
+            _fetch_ob_fast_or_rest(ob_depth_limit),
             return_exceptions=True
         )
         if not isinstance(ob_res, Exception) and isinstance(ob_res, dict):
@@ -691,7 +702,7 @@ async def execute_manual_smart_chase(
     else:
         pos_fut_res, ob_res = await asyncio.gather(
             _sync_and_clamp_amount(original_sl),
-            exchange.fetch_order_book(symbol, limit=ob_depth_limit),
+            _fetch_ob_fast_or_rest(ob_depth_limit),
             return_exceptions=True
         )
         if not isinstance(ob_res, Exception) and isinstance(ob_res, dict):
@@ -811,7 +822,7 @@ async def execute_manual_smart_chase(
             cached_initial_ob = None
         else:
             try:
-                ob = await exchange.fetch_order_book(symbol, limit=ob_depth_limit)
+                ob = await _fetch_ob_fast_or_rest(ob_depth_limit)
             except Exception as ob_e:
                 logger.warning(f"⚠️ [Manual Smart Chase] Could not fetch orderbook, falling back to ticker: {ob_e}")
 
@@ -821,7 +832,8 @@ async def execute_manual_smart_chase(
             current_price = best_bid if exit_side == "sell" else best_ask
         else:
             try:
-                ticker = await exchange.fetch_ticker(symbol)
+                from app.services.smart_peg_entry_executor import _fetch_ticker_fast
+                ticker = await _fetch_ticker_fast(exchange, symbol, require_last=False)
                 current_price = float(ticker.get('last') or original_sl)
                 best_bid = float(ticker.get('bid') or current_price)
                 best_ask = float(ticker.get('ask') or current_price)
@@ -962,7 +974,7 @@ async def execute_manual_smart_chase(
                 chase_res = None
                 try:
                     # Nudge 1 tick further away to ensure it rests as maker
-                    fresh_ob = await exchange.fetch_order_book(symbol, limit=5)
+                    fresh_ob = await _fetch_ob_fast_or_rest(5)
                     f_bid = float(fresh_ob['bids'][0][0]) if fresh_ob.get('bids') else best_bid
                     f_ask = float(fresh_ob['asks'][0][0]) if fresh_ob.get('asks') else best_ask
 
@@ -1059,288 +1071,334 @@ async def execute_manual_smart_chase(
 
             user_cancelled = False
             repeg_triggered = False
+            order_already_cancelled = False
             latest_order_chk = chase_res if str(chase_res.get('status', '')).lower() in ('closed', 'filled') else None
 
             if latest_order_chk is None:
                 if chase_mode == 'dynamic_bbo':
-                    # ── DYNAMIC BBO PEGGING ENGINE (Order Book Shadowing with Queue Priority) ──
-                    # Actively monitors the orderbook top with FIFO Queue Priority protection.
-                    # Key rules:
-                    # 1. Minimum Resting Time: Every order rests at least min_resting_sec (default 1.2s - 2.5s)
-                    #    on the exchange book to gain FIFO queue priority before being cancelled.
-                    # 2. Directional One-Way Chase (Never run away from incoming fills!):
-                    #    - If BUY SL (Short Exit): When price drops towards our order (favorable), DO NOT CANCEL!
-                    #      Let sellers fill our resting bid. Only chase UP if sellers move higher away from us.
-                    #    - If SELL SL (Long Exit): When price rises towards our order (favorable), DO NOT CANCEL!
-                    #      Let buyers fill our resting ask. Only chase DOWN if buyers drop lower away from us.
-                    # 3. Fast Fill Detection: Checks order status frequently to capture fills immediately.
                     peg_poll_interval = 0.25  # 250ms orderbook sampling
                     min_resting_sec = max(1.2, min(chase_delay_sec, 2.5))  # Minimum 1.2s - 2.5s queue holding time
                     max_peg_watch_time = max(15.0, chase_delay_sec * 5.0)  # Give resting order ample time (15s+) at Top-of-Book
                     start_watch_time = asyncio.get_event_loop().time()
                     poll_count = 0
+                    order_chk_task = None
 
-                    while True:
-                        if cancel_event.is_set():
-                            user_cancelled = True
-                            break
-
-                        await asyncio.sleep(peg_poll_interval)
-                        poll_count += 1
-
-                        target_changed = _sync_live_target()
-                        if target_changed:
-                            if (exit_side == "sell" and target_maker_price < max_chase_price) or (exit_side == "buy" and target_maker_price > max_chase_price):
-                                logger.warning(
-                                    f"🚨 [Dynamic BBO Peg] Live target update breached circuit breaker: "
-                                    f"Resting={target_maker_price} vs Limit={max_chase_price}. Breaking watch to re-evaluate!"
-                                )
+                    try:
+                        while True:
+                            if cancel_event.is_set():
+                                user_cancelled = True
                                 break
-                            if cid in ACTIVE_SMART_CHASES:
-                                ACTIVE_SMART_CHASES[cid]['current_maker_price'] = target_maker_price
 
-                        # Fast fill detection: check order status every ~0.75s (3 polls) to detect fills immediately
-                        if poll_count % 3 == 0:
-                            try:
-                                chk_in_loop = await exchange.fetch_order(order_id, symbol)
-                                chk_st = str(chk_in_loop.get('status', '')).lower()
-                                if chk_st in ['closed', 'filled']:
-                                    logger.info(f"✅ [Dynamic BBO Peg] Order #{order_id} filled detected during BBO shadow watch!")
-                                    latest_order_chk = chk_in_loop
-                                    break
-                                elif chk_st in ['expired', 'canceled', 'cancelled', 'rejected']:
-                                    curr_loop_filled = float(chk_in_loop.get('filled') or 0.0)
-                                    chunk_filled = max(0.0, curr_loop_filled - order_processed_filled)
-                                    if chunk_filled > 0:
-                                        order_processed_filled = curr_loop_filled
-                                        remaining_amount = _format_rem_amount(remaining_amount - chunk_filled)
-                                        if cid in ACTIVE_SMART_CHASES:
-                                            ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
-                                        rem_val = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
-                                        if remaining_amount <= 0 or rem_val < min_notional:
-                                            latest_order_chk = {
-                                                'status': 'closed',
-                                                'id': order_id,
-                                                'filled': curr_loop_filled,
-                                                'average': chk_in_loop.get('average') or target_maker_price,
-                                            }
-                                            break
-                                    repeg_triggered = True
-                                    break
-                                else:
-                                    curr_loop_filled = float(chk_in_loop.get('filled') or 0.0)
-                                    if curr_loop_filled > order_processed_filled:
-                                        chunk_filled = curr_loop_filled - order_processed_filled
-                                        order_processed_filled = curr_loop_filled
-                                        remaining_amount = _format_rem_amount(remaining_amount - chunk_filled)
-                                        if cid in ACTIVE_SMART_CHASES:
-                                            ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
-                                        logger.info(
-                                            f"⚡ [Dynamic BBO Peg] Resting Partial Fill detected on #{order_id}: "
-                                            f"+{chunk_filled} (Remaining: {remaining_amount})"
-                                        )
-                                        rem_val = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
-                                        if remaining_amount <= 0 or rem_val < min_notional:
-                                            logger.info(
-                                                f"✅ [Dynamic BBO Peg] Remaining ${rem_val:.2f} < Min Notional ${min_notional:.2f} after partial fill."
-                                            )
-                                            try:
-                                                await exchange.cancel_order(order_id, symbol)
-                                            except Exception:
-                                                pass
-                                            latest_order_chk = {
-                                                'status': 'closed',
-                                                'id': order_id,
-                                                'filled': curr_loop_filled,
-                                                'average': chk_in_loop.get('average') or target_maker_price,
-                                            }
-                                            break
-                            except Exception as poll_chk_e:
-                                logger.debug(f"Order poll check notice: {poll_chk_e}")
+                            await asyncio.sleep(peg_poll_interval)
+                            poll_count += 1
 
-                        elapsed = asyncio.get_event_loop().time() - start_watch_time
-                        if elapsed >= max_peg_watch_time:
-                            logger.info(f"⏱️ [Dynamic BBO Peg] Order #{order_id} rested for {elapsed:.1f}s at Top-of-Book. Synchronizing...")
-                            break
-
-                        try:
-                            if peg_strategy in ('bbo', 'inside_spread'):
-                                from app.services.smart_peg_entry_executor import _fetch_bbo_fast
-                                latest_ob = await _fetch_bbo_fast(exchange, symbol)
-                            else:
-                                latest_ob = await exchange.fetch_order_book(symbol, limit=ob_depth_limit)
-                            if latest_ob and latest_ob.get('bids') and latest_ob.get('asks') and len(latest_ob['bids']) > 0 and len(latest_ob['asks']) > 0:
-                                l_best_bid = float(latest_ob['bids'][0][0])
-                                l_best_ask = float(latest_ob['asks'][0][0])
-                                l_tick = _get_market_tick(exchange, symbol, l_best_bid)
-
-                                # ── CIRCUIT BREAKER IN-LOOP CHECK ──
-                                if (exit_side == "sell" and l_best_bid < max_chase_price) or (exit_side == "buy" and l_best_ask > max_chase_price):
+                            target_changed = _sync_live_target()
+                            if target_changed:
+                                if (exit_side == "sell" and target_maker_price < max_chase_price) or (exit_side == "buy" and target_maker_price > max_chase_price):
                                     logger.warning(
-                                        f"🚨 [Dynamic BBO Peg] Circuit Breaker breached during orderbook watch! "
-                                        f"Book: Bid={l_best_bid}, Ask={l_best_ask} vs Limit={max_chase_price}. Breaking to sweep immediately!"
+                                        f"🚨 [Dynamic BBO Peg] Live target update breached circuit breaker: "
+                                        f"Resting={target_maker_price} vs Limit={max_chase_price}. Breaking watch to re-evaluate!"
                                     )
                                     break
+                                if cid in ACTIVE_SMART_CHASES:
+                                    ACTIVE_SMART_CHASES[cid]['current_maker_price'] = target_maker_price
 
-                                new_maker_price = _calculate_target_maker_price(
-                                    exit_side=exit_side,
-                                    ob=latest_ob,
-                                    tick=l_tick,
-                                    peg_strategy=peg_strategy,
-                                    wall_multiplier=wall_multiplier,
-                                    max_chase_price=max_chase_price,
-                                    exchange=exchange,
-                                    symbol=symbol
-                                )
+                            # Harvest non-blocking background fill check (0ms stall on BBO / Circuit Breaker!)
+                            if order_chk_task is not None and order_chk_task.done():
+                                chk_in_loop = None
+                                try:
+                                    chk_in_loop = order_chk_task.result()
+                                except Exception as poll_chk_e:
+                                    logger.debug(f"Order poll check notice: {poll_chk_e}")
+                                finally:
+                                    order_chk_task = None
 
-                                # ── DIRECTIONAL CHASE RULE (Never run away from incoming fills!) ──
-                                # For BUY SL: We only chase if the market moved UP (higher than our bid), leaving us behind.
-                                # If market moved DOWN (lower than our bid), incoming market sellers will hit our bid! NEVER retreat!
-                                # For SELL SL: We only chase if the market moved DOWN (lower than our ask), leaving us behind.
-                                # If market moved UP (higher than our ask), incoming market buyers will hit our ask! NEVER retreat!
-                                is_running_away = False
-                                if exit_side == "buy":
-                                    if new_maker_price > target_maker_price:
-                                        is_running_away = True
-                                else:
-                                    if new_maker_price < target_maker_price:
-                                        is_running_away = True
+                                if chk_in_loop:
+                                    chk_st = str(chk_in_loop.get('status', '')).lower()
+                                    if chk_st in ['closed', 'filled']:
+                                        logger.info(f"✅ [Dynamic BBO Peg] Order #{order_id} filled detected during BBO shadow watch!")
+                                        latest_order_chk = chk_in_loop
+                                        break
+                                    elif chk_st in ['expired', 'canceled', 'cancelled', 'rejected']:
+                                        curr_loop_filled = float(chk_in_loop.get('filled') or 0.0)
+                                        chunk_filled = max(0.0, curr_loop_filled - order_processed_filled)
+                                        if chunk_filled > 0:
+                                            order_processed_filled = curr_loop_filled
+                                            remaining_amount = _format_rem_amount(remaining_amount - chunk_filled)
+                                            if cid in ACTIVE_SMART_CHASES:
+                                                ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
+                                            rem_val = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
+                                            if remaining_amount <= 0 or rem_val < min_notional:
+                                                latest_order_chk = {
+                                                    'status': 'closed',
+                                                    'id': order_id,
+                                                    'filled': curr_loop_filled,
+                                                    'average': chk_in_loop.get('average') or target_maker_price,
+                                                }
+                                                break
+                                        order_already_cancelled = True
+                                        repeg_triggered = True
+                                        break
+                                    else:
+                                        curr_loop_filled = float(chk_in_loop.get('filled') or 0.0)
+                                        if curr_loop_filled > order_processed_filled:
+                                            chunk_filled = curr_loop_filled - order_processed_filled
+                                            order_processed_filled = curr_loop_filled
+                                            remaining_amount = _format_rem_amount(remaining_amount - chunk_filled)
+                                            if cid in ACTIVE_SMART_CHASES:
+                                                ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
+                                            logger.info(
+                                                f"⚡ [Dynamic BBO Peg] Resting Partial Fill detected on #{order_id}: "
+                                                f"+{chunk_filled} (Remaining: {remaining_amount})"
+                                            )
+                                            rem_val = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
+                                            if remaining_amount <= 0 or rem_val < min_notional:
+                                                logger.info(
+                                                    f"✅ [Dynamic BBO Peg] Remaining ${rem_val:.2f} < Min Notional ${min_notional:.2f} after partial fill."
+                                                )
+                                                try:
+                                                    await exchange.cancel_order(order_id, symbol)
+                                                except Exception:
+                                                    pass
+                                                latest_order_chk = {
+                                                    'status': 'closed',
+                                                    'id': order_id,
+                                                    'filled': curr_loop_filled,
+                                                    'average': chk_in_loop.get('average') or target_maker_price,
+                                                }
+                                                break
 
-                                # If market moved away, only cancel after giving the order its minimum resting time (FIFO queue priority)
-                                # Urgent exception: If market drifted by 3 or more ticks, re-peg immediately so we don't get left too far behind
-                                drift_ticks = abs(new_maker_price - target_maker_price) / l_tick if l_tick > 0 else 1.0
-                                is_urgent_drift = is_running_away and (drift_ticks >= 3.0)
+                            elapsed = asyncio.get_event_loop().time() - start_watch_time
+                            if elapsed >= max_peg_watch_time:
+                                logger.info(f"⏱️ [Dynamic BBO Peg] Order #{order_id} rested for {elapsed:.1f}s at Top-of-Book. Synchronizing...")
+                                break
 
-                                if (is_running_away and (elapsed >= min_resting_sec or is_urgent_drift)) or (target_changed and new_maker_price != target_maker_price):
-                                    logger.info(
-                                        f"⚡ [Dynamic BBO Peg] Market shifted away: {target_maker_price} ➜ {new_maker_price} "
-                                        f"(Bid={l_best_bid}, Ask={l_best_ask}) after {elapsed:.2f}s resting. Fast re-pegging to maintain maker priority..."
-                                    )
-                                    # ── CIRCUIT BREAKER PRE-CHECK ON NEW TARGET PRICE ──
-                                    if (exit_side == "sell" and new_maker_price < max_chase_price) or (exit_side == "buy" and new_maker_price > max_chase_price):
+                            repeg_handled = False
+                            try:
+                                latest_ob = await _fetch_ob_fast_or_rest(ob_depth_limit)
+                                if latest_ob and latest_ob.get('bids') and latest_ob.get('asks') and len(latest_ob['bids']) > 0 and len(latest_ob['asks']) > 0:
+                                    l_best_bid = float(latest_ob['bids'][0][0])
+                                    l_best_ask = float(latest_ob['asks'][0][0])
+                                    l_tick = _get_market_tick(exchange, symbol, l_best_bid)
+
+                                    # ── CIRCUIT BREAKER IN-LOOP CHECK ──
+                                    if (exit_side == "sell" and l_best_bid < max_chase_price) or (exit_side == "buy" and l_best_ask > max_chase_price):
                                         logger.warning(
-                                            f"🚨 [Dynamic BBO Peg] Circuit breaker breached on new target price {new_maker_price}! Sweeping market immediately!"
+                                            f"🚨 [Dynamic BBO Peg] Circuit Breaker breached during orderbook watch! "
+                                            f"Book: Bid={l_best_bid}, Ask={l_best_ask} vs Limit={max_chase_price}. Breaking to sweep immediately!"
                                         )
                                         break
 
-                                    # ── PRIORITY 1: HIGH-SPEED NATIVE ATOMIC EDIT_ORDER (cancelReplace on Spot, PUT on Futures) ──
-                                    t_repeg_start = time.perf_counter()
-                                    native_repeg_ok = False
+                                    new_maker_price = _calculate_target_maker_price(
+                                        exit_side=exit_side,
+                                        ob=latest_ob,
+                                        tick=l_tick,
+                                        peg_strategy=peg_strategy,
+                                        wall_multiplier=wall_multiplier,
+                                        max_chase_price=max_chase_price,
+                                        exchange=exchange,
+                                        symbol=symbol
+                                    )
 
-                                    if getattr(exchange, 'has', {}).get('editOrder'):
-                                        try:
-                                            edit_res = await exchange.edit_order(
-                                                order_id, symbol, 'limit', exit_side, remaining_amount, new_maker_price, ex_params
+                                    is_running_away = (
+                                        (new_maker_price > target_maker_price)
+                                        if exit_side == "buy"
+                                        else (new_maker_price < target_maker_price)
+                                    )
+                                    drift_ticks = abs(new_maker_price - target_maker_price) / l_tick if l_tick > 0 else 1.0
+                                    is_urgent_drift = is_running_away and (drift_ticks >= 3.0)
+
+                                    if (is_running_away and (elapsed >= min_resting_sec or is_urgent_drift)) or (target_changed and new_maker_price != target_maker_price):
+                                        logger.info(
+                                            f"⚡ [Dynamic BBO Peg] Market shifted away: {target_maker_price} ➜ {new_maker_price} "
+                                            f"(Bid={l_best_bid}, Ask={l_best_ask}) after {elapsed:.2f}s resting. Fast re-pegging to maintain maker priority..."
+                                        )
+                                        # ── CIRCUIT BREAKER PRE-CHECK ON NEW TARGET PRICE ──
+                                        if (exit_side == "sell" and new_maker_price < max_chase_price) or (exit_side == "buy" and new_maker_price > max_chase_price):
+                                            logger.warning(
+                                                f"🚨 [Dynamic BBO Peg] Circuit breaker breached on new target price {new_maker_price}! Sweeping market immediately!"
                                             )
-                                            repeg_ms = int((time.perf_counter() - t_repeg_start) * 1000)
-                                            if edit_res and edit_res.get('id'):
-                                                old_oid = order_id
-                                                order_id = str(edit_res.get('id'))
-                                                target_maker_price = new_maker_price
-                                                attempts += 1
+                                            break
 
-                                                edit_info = edit_res.get('info') if isinstance(edit_res, dict) and isinstance(edit_res.get('info'), dict) else {}
-                                                cancel_info = edit_info.get('cancelResponse') if isinstance(edit_info.get('cancelResponse'), dict) else {}
-                                                c_raw_filled = 0.0
-                                                if cancel_info:
-                                                    c_raw_filled = float(cancel_info.get('executedQty') or 0.0)
-                                                    chunk = max(0.0, c_raw_filled - order_processed_filled)
-                                                    if chunk > 0:
-                                                        remaining_amount = _format_rem_amount(remaining_amount - chunk)
-                                                        if cid in ACTIVE_SMART_CHASES:
-                                                            ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
-                                                        logger.info(
-                                                            f"🔄 [Dynamic BBO Peg] Captured partial fill during atomic cancelReplace: "
-                                                            f"{chunk} (Remaining: {remaining_amount})"
-                                                        )
-                                                elif str(old_oid) == str(order_id):
-                                                    edit_filled = float(edit_res.get('filled') or 0.0)
-                                                    if edit_filled > order_processed_filled:
-                                                        chunk = edit_filled - order_processed_filled
-                                                        remaining_amount = _format_rem_amount(remaining_amount - chunk)
-                                                        if cid in ACTIVE_SMART_CHASES:
-                                                            ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
-                                                        c_raw_filled = edit_filled
+                                        if order_chk_task is not None and not order_chk_task.done():
+                                            order_chk_task.cancel()
+                                            order_chk_task = None
 
-                                                if str(old_oid) != str(order_id):
-                                                    order_processed_filled = 0.0
-                                                    if str(edit_res.get('status', '')).lower() not in ('closed', 'filled'):
-                                                        new_filled = float(edit_res.get('filled') or 0.0)
-                                                        if new_filled > 0:
-                                                            remaining_amount = _format_rem_amount(remaining_amount - new_filled)
-                                                            order_processed_filled = new_filled
-                                                            if cid in ACTIVE_SMART_CHASES:
-                                                                ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
-                                                else:
-                                                    order_processed_filled = max(order_processed_filled, c_raw_filled)
+                                        t_repeg_start = time.perf_counter()
+                                        edit_res = None
+                                        edit_channel = "Native"
+                                        repeg_ms = 0
+                                        filled_during_repeg = False
 
-                                                if cid in ACTIVE_SMART_CHASES:
-                                                    ACTIVE_SMART_CHASES[cid]['current_order_id'] = order_id
-                                                    ACTIVE_SMART_CHASES[cid]['current_maker_price'] = target_maker_price
-                                                    ACTIVE_SMART_CHASES[cid]['current_attempt'] = attempts
-                                                    ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
+                                        is_real_binance_futures_gtx = (
+                                            is_futures
+                                            and bool(ex_params.get('postOnly'))
+                                            and isinstance(getattr(exchange, 'urls', None), dict)
+                                            and str(getattr(exchange, 'id', '')).lower().startswith('binance')
+                                        )
 
-                                                logger.info(
-                                                    f"⚡ [Dynamic BBO Peg] Native atomic re-peg SUCCESS in {repeg_ms}ms! ⚡ "
-                                                    f"Order #{old_oid} ➜ #{order_id} at {target_maker_price} (Attempt {attempts}/{attempt_max_str})"
+                                        if not is_real_binance_futures_gtx and getattr(exchange, 'has', {}).get('editOrder'):
+                                            try:
+                                                cand_res = await exchange.edit_order(
+                                                    order_id, symbol, 'limit', exit_side, remaining_amount, new_maker_price, ex_params
                                                 )
+                                                repeg_ms = int((time.perf_counter() - t_repeg_start) * 1000)
+                                                if cand_res and cand_res.get('id'):
+                                                    edit_res = cand_res
+                                            except Exception as edit_err:
+                                                err_str = str(edit_err).lower()
+                                                repeg_ms = int((time.perf_counter() - t_repeg_start) * 1000)
+                                                if any(kw in err_str for kw in ['filled', 'unknown order', '-2011', '-2013']):
+                                                    logger.info(f"✅ [Dynamic BBO Peg] Order #{order_id} filled or closed during edit ({edit_err}). Verifying fill status...")
+                                                    try:
+                                                        chk_fill = await exchange.fetch_order(order_id, symbol)
+                                                        if chk_fill.get('status', '').lower() in ['closed', 'filled']:
+                                                            latest_order_chk = chk_fill
+                                                            filled_during_repeg = True
+                                                            break
+                                                    except Exception:
+                                                        pass
+                                                logger.info(f"Native editOrder fallback notice ({edit_err}) [{repeg_ms}ms], proceeding with zero-delay cancel+create")
 
-                                                # Check if the new order was immediately filled upon replacement
-                                                if str(edit_res.get('status', '')).lower() in ('closed', 'filled'):
-                                                    logger.info(f"🎯 [Dynamic BBO Peg] New order #{order_id} filled immediately upon replacement!")
-                                                    latest_order_chk = edit_res
-                                                    break
-
-                                                rem_val = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
-                                                if remaining_amount <= 0 or rem_val < min_notional:
-                                                    logger.info(
-                                                        f"✅ [Dynamic BBO Peg] Position closed or remaining ${rem_val:.2f} < Min Notional ${min_notional:.2f} after cancelReplace."
-                                                    )
-                                                    if str(edit_res.get('status', '')).lower() not in ('closed', 'filled', 'canceled', 'cancelled', 'expired', 'rejected'):
-                                                        try:
-                                                            await exchange.cancel_order(order_id, symbol)
-                                                        except Exception:
-                                                            pass
-                                                    latest_order_chk = {
-                                                        'status': 'closed',
-                                                        'id': order_id,
-                                                        'filled': c_raw_filled,
-                                                        'average': target_maker_price,
-                                                    }
-                                                    break
-
-                                                start_watch_time = asyncio.get_event_loop().time()
-                                                poll_count = 0
-                                                native_repeg_ok = True
-
-                                                if max_attempts > 0 and attempts >= max_attempts:
-                                                    logger.info(f"⚠️ [Dynamic BBO Peg] Max attempts ({max_attempts}) reached after re-peg.")
-                                                    break
-
-                                                continue  # Stay right in BBO shadow loop! Zero delay!
-                                        except Exception as edit_err:
-                                            err_str = str(edit_err).lower()
-                                            repeg_ms = int((time.perf_counter() - t_repeg_start) * 1000)
-
-                                            # Fast check: If exchange reports order already closed/filled
-                                            if any(kw in err_str for kw in ['filled', 'unknown order', '-2011', '-2013']):
-                                                logger.info(f"✅ [Dynamic BBO Peg] Order #{order_id} filled or closed during edit ({edit_err}). Verifying fill status...")
+                                        # Concurrent 1-RTT cancel + GTX create ONLY for real Binance Futures Post-Only
+                                        # (bypasses doomed PUT /order -5026). Standard editOrder fallbacks still use Priority 2 cancel
+                                        # so cancel_res partial fills are deducted before placing the replacement order.
+                                        if not edit_res and not filled_during_repeg and is_real_binance_futures_gtx:
+                                            t_par = time.perf_counter()
+                                            c_res, p_res = await asyncio.gather(
+                                                exchange.cancel_order(order_id, symbol),
+                                                exchange.create_limit_order(symbol, exit_side, remaining_amount, new_maker_price, ex_params),
+                                                return_exceptions=True,
+                                            )
+                                            repeg_ms = int((time.perf_counter() - t_par) * 1000)
+                                            if isinstance(c_res, Exception) and any(kw in str(c_res).lower() for kw in ('filled', 'unknown order', '-2011', '-2013')):
+                                                chk_closed = False
                                                 try:
                                                     chk_fill = await exchange.fetch_order(order_id, symbol)
                                                     if chk_fill.get('status', '').lower() in ['closed', 'filled']:
                                                         latest_order_chk = chk_fill
-                                                        break
+                                                        chk_closed = True
                                                 except Exception:
                                                     pass
+                                                if chk_closed:
+                                                    if isinstance(p_res, dict) and p_res.get('id'):
+                                                        try:
+                                                            await exchange.cancel_order(p_res['id'], symbol)
+                                                        except Exception:
+                                                            pass
+                                                    break
+                                                order_already_cancelled = True
+                                                if isinstance(p_res, dict) and p_res.get('id') and str(p_res.get('status', '')).lower() not in ('expired', 'rejected', 'canceled', 'cancelled'):
+                                                    edit_res = p_res
+                                                    edit_channel = 'PARALLEL-1RTT'
+                                            elif isinstance(p_res, dict) and p_res.get('id') and str(p_res.get('status', '')).lower() not in ('expired', 'rejected', 'canceled', 'cancelled'):
+                                                edit_res = p_res
+                                                edit_channel = 'PARALLEL-1RTT'
+                                            elif isinstance(c_res, dict):
+                                                order_already_cancelled = True
 
-                                            logger.info(f"Native editOrder fallback notice ({edit_err}) [{repeg_ms}ms], proceeding with zero-delay cancel+create")
+                                        if filled_during_repeg:
+                                            break
 
-                                    # Fallback: Break to clean zero-delay cancel + create
-                                    repeg_triggered = True
-                                    cached_initial_ob = latest_ob  # Pre-cache for next attempt!
-                                    break
-                        except Exception as ob_poll_e:
-                            logger.debug(f"BBO poll non-fatal error: {ob_poll_e}")
+                                        if edit_res and edit_res.get('id'):
+                                            old_oid = order_id
+                                            order_id = str(edit_res.get('id'))
+                                            order_already_cancelled = False
+                                            target_maker_price = new_maker_price
+                                            attempts += 1
+
+                                            edit_info = edit_res.get('info') if isinstance(edit_res, dict) and isinstance(edit_res.get('info'), dict) else {}
+                                            cancel_info = edit_info.get('cancelResponse') if isinstance(edit_info.get('cancelResponse'), dict) else {}
+                                            c_raw_filled = 0.0
+                                            if cancel_info:
+                                                c_raw_filled = float(cancel_info.get('executedQty') or 0.0)
+                                                chunk = max(0.0, c_raw_filled - order_processed_filled)
+                                                if chunk > 0:
+                                                    remaining_amount = _format_rem_amount(remaining_amount - chunk)
+                                                    if cid in ACTIVE_SMART_CHASES:
+                                                        ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
+                                                    logger.info(
+                                                        f"🔄 [Dynamic BBO Peg] Captured partial fill during atomic cancelReplace: "
+                                                        f"{chunk} (Remaining: {remaining_amount})"
+                                                    )
+                                            elif str(old_oid) == str(order_id):
+                                                edit_filled = float(edit_res.get('filled') or 0.0)
+                                                if edit_filled > order_processed_filled:
+                                                    chunk = edit_filled - order_processed_filled
+                                                    remaining_amount = _format_rem_amount(remaining_amount - chunk)
+                                                    if cid in ACTIVE_SMART_CHASES:
+                                                        ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
+                                                    c_raw_filled = edit_filled
+
+                                            if str(old_oid) != str(order_id):
+                                                order_processed_filled = 0.0
+                                                if str(edit_res.get('status', '')).lower() not in ('closed', 'filled'):
+                                                    new_filled = float(edit_res.get('filled') or 0.0)
+                                                    if new_filled > 0:
+                                                        remaining_amount = _format_rem_amount(remaining_amount - new_filled)
+                                                        order_processed_filled = new_filled
+                                                        if cid in ACTIVE_SMART_CHASES:
+                                                            ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
+                                            else:
+                                                order_processed_filled = max(order_processed_filled, c_raw_filled)
+
+                                            if cid in ACTIVE_SMART_CHASES:
+                                                ACTIVE_SMART_CHASES[cid]['current_order_id'] = order_id
+                                                ACTIVE_SMART_CHASES[cid]['current_maker_price'] = target_maker_price
+                                                ACTIVE_SMART_CHASES[cid]['current_attempt'] = attempts
+                                                ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
+
+                                            logger.info(
+                                                f"⚡ [Dynamic BBO Peg] {edit_channel} atomic re-peg SUCCESS in {repeg_ms}ms! ⚡ "
+                                                f"Order #{old_oid} ➜ #{order_id} at {target_maker_price} (Attempt {attempts}/{attempt_max_str})"
+                                            )
+
+                                            if str(edit_res.get('status', '')).lower() in ('closed', 'filled'):
+                                                logger.info(f"🎯 [Dynamic BBO Peg] New order #{order_id} filled immediately upon replacement!")
+                                                latest_order_chk = edit_res
+                                                break
+
+                                            rem_val = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
+                                            if remaining_amount <= 0 or rem_val < min_notional:
+                                                logger.info(
+                                                    f"✅ [Dynamic BBO Peg] Position closed or remaining ${rem_val:.2f} < Min Notional ${min_notional:.2f} after cancelReplace."
+                                                )
+                                                if str(edit_res.get('status', '')).lower() not in ('closed', 'filled', 'canceled', 'cancelled', 'expired', 'rejected'):
+                                                    try:
+                                                        await exchange.cancel_order(order_id, symbol)
+                                                    except Exception:
+                                                        pass
+                                                latest_order_chk = {
+                                                    'status': 'closed',
+                                                    'id': order_id,
+                                                    'filled': c_raw_filled,
+                                                    'average': target_maker_price,
+                                                }
+                                                break
+
+                                            start_watch_time = asyncio.get_event_loop().time()
+                                            poll_count = 0
+                                            repeg_handled = True
+
+                                            if max_attempts > 0 and attempts >= max_attempts:
+                                                logger.info(f"⚠️ [Dynamic BBO Peg] Max attempts ({max_attempts}) reached after re-peg.")
+                                                break
+
+                                            continue
+
+                                        # Fallback: Break to clean zero-delay cancel + create
+                                        repeg_triggered = True
+                                        cached_initial_ob = latest_ob
+                                        break
+                            except Exception as ob_poll_e:
+                                logger.debug(f"BBO poll non-fatal error: {ob_poll_e}")
+
+                            # Spawn non-blocking background order check every ~0.75s (3 polls)
+                            if not repeg_handled and poll_count % 3 == 0 and (order_chk_task is None or order_chk_task.done()):
+                                order_chk_task = asyncio.create_task(exchange.fetch_order(order_id, symbol))
+                    finally:
+                        if order_chk_task is not None and not order_chk_task.done():
+                            order_chk_task.cancel()
                 else:
                     # Interval Timer Mode: Wait for full chase_delay_sec
                     try:
@@ -1420,18 +1478,19 @@ async def execute_manual_smart_chase(
                     # ── PRIORITY 2: ZERO-DELAY CANCEL + RE-PEG FALLBACK ──
                     cancel_res = None
                     was_already_filled = False
-                    try:
-                        t_c0 = time.perf_counter()
-                        cancel_res = await exchange.cancel_order(order_id, symbol)
-                        c_ms = int((time.perf_counter() - t_c0) * 1000)
-                        logger.info(f"⚡ [Dynamic BBO Peg] Cancelled resting limit order #{order_id} in {c_ms}ms")
-                    except Exception as cancel_e:
-                        c_err = str(cancel_e).lower()
-                        if any(kw in c_err for kw in ['filled', 'unknown order', '-2011', '-2013']):
-                            was_already_filled = True
-                            logger.info(f"✅ [Dynamic BBO Peg] Order #{order_id} was already filled before cancel: {cancel_e}")
-                        else:
-                            logger.debug(f"Cancel chase order error: {cancel_e}")
+                    if not order_already_cancelled:
+                        try:
+                            t_c0 = time.perf_counter()
+                            cancel_res = await exchange.cancel_order(order_id, symbol)
+                            c_ms = int((time.perf_counter() - t_c0) * 1000)
+                            logger.info(f"⚡ [Dynamic BBO Peg] Cancelled resting limit order #{order_id} in {c_ms}ms")
+                        except Exception as cancel_e:
+                            c_err = str(cancel_e).lower()
+                            if any(kw in c_err for kw in ['filled', 'unknown order', '-2011', '-2013']):
+                                was_already_filled = True
+                                logger.info(f"✅ [Dynamic BBO Peg] Order #{order_id} was already filled before cancel: {cancel_e}")
+                            else:
+                                logger.debug(f"Cancel chase order error: {cancel_e}")
 
                     # If order was filled right before or during cancel:
                     if was_already_filled or (cancel_res and str(cancel_res.get('status', '')).lower() in ['closed', 'filled']):

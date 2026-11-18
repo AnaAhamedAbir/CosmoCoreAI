@@ -2854,7 +2854,14 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         amount: mod.targetOrder.amount
                     }
                 );
-                const speedText = res?.execution_speed_ms ? ` (${res.execution_speed_ms}ms ⚡)` : '';
+                const speedText = res?.execution_speed_ms !== undefined ? ` (${res.execution_speed_ms}ms ⚡)` : '';
+                window.dispatchEvent(new CustomEvent('optimisticSwapOpenOrder', {
+                    detail: {
+                        oldOrderId: String(mod.orderId),
+                        newOrderId: String(mod.orderId),
+                        newPrice: mod.newPrice
+                    }
+                }));
                 toast.success(`🎯 ${mod.modeName} Stop-Loss updated to ${mod.newPrice < 1 ? mod.newPrice.toFixed(6) : mod.newPrice.toFixed(4)}${speedText}`);
             } else {
                 const editAmount = mod.targetOrder.remaining > 0 ? mod.targetOrder.remaining : mod.targetOrder.amount;

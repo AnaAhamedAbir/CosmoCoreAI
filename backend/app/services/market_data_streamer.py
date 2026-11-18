@@ -32,6 +32,7 @@ class MarketDataStreamer:
         self._exchange_instances: Dict[str, ccxtpro.Exchange] = {}
         self._tasks: Dict[str, asyncio.Task] = {}
         self._last_traded_prices: Dict[str, float] = {}
+        self._last_price_redis_ts: Dict[str, float] = {}
         self._lock = asyncio.Lock()
         self._initialized = True
 
@@ -271,7 +272,16 @@ class MarketDataStreamer:
                     trade_ts = int(raw_ts) if raw_ts else int(time.time() * 1000)
 
                     if last_price > 0:
+                        prev_last = self._last_traded_prices.get(stream_key)
                         self._last_traded_prices[stream_key] = last_price
+                        now_lp_ts = time.time()
+                        if redis and (last_price != prev_last or (now_lp_ts - self._last_price_redis_ts.get(stream_key, 0.0)) >= 0.05):
+                            self._last_price_redis_ts[stream_key] = now_lp_ts
+                            await redis.setex(
+                                f"last_price:{exchange_id}:{symbol}",
+                                60,
+                                json.dumps({"last": last_price, "ts": now_lp_ts}),
+                            )
                     
                     payload = {
                         "type": "trade",

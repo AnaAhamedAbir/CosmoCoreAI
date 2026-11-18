@@ -319,6 +319,34 @@ class ManualTradeService:
             ManualTradeService._OPEN_ORDERS_CACHE.pop(cache_key, None)
 
     @staticmethod
+    def upsert_open_order_cache(api_key_id: int, symbol: str, order_entry: dict, replace_id: str = None):
+        """
+        Update cached open orders in-place during rapid Smart Peg / Smart Chase re-pegs
+        so frontend HTTP polls stay RAM-cached without hitting REST rate limits.
+        """
+        if api_key_id is None or not symbol or not isinstance(order_entry, dict):
+            return
+        cache_key = (int(api_key_id), str(symbol).strip().upper())
+        cached = ManualTradeService._OPEN_ORDERS_CACHE.get(cache_key)
+        if not cached:
+            return
+        cached_ts, cached_res = cached
+        if not isinstance(cached_res, dict):
+            return
+        drop_ids = {str(order_entry.get('id') or '')}
+        if replace_id:
+            drop_ids.add(str(replace_id))
+        existing_orders = [
+            o for o in (cached_res.get('orders') or [])
+            if str((o or {}).get('id') or '') not in drop_ids
+        ]
+        existing_orders.append(dict(order_entry))
+        ManualTradeService._OPEN_ORDERS_CACHE[cache_key] = (
+            cached_ts,
+            {**cached_res, 'orders': existing_orders},
+        )
+
+    @staticmethod
     def _sanitize_ws_order_args(exchange, order_type: str, params: dict, is_futures: bool, is_edit: bool = False):
         """
         Translate CCXT unified params (postOnly, icebergAmount) into native Binance args before

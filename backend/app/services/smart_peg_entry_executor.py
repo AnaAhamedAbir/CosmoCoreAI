@@ -11,6 +11,7 @@ Once filled, automatically links and spawns configured Attached TP & Attached SL
 """
 
 import asyncio
+from collections import deque
 import json
 import logging
 import time
@@ -94,6 +95,91 @@ async def _fetch_bbo_fast(exchange, symbol: str, max_age_seconds: float = 1.5) -
         pass
 
     return await exchange.fetch_order_book(symbol, limit=5)
+
+
+async def _fetch_ticker_fast(
+    exchange,
+    symbol: str,
+    max_age_seconds: float = 2.0,
+    require_last: bool = False,
+) -> Dict[str, Any]:
+    """
+    Zero-REST live ticker reader backed by Redis @bookTicker (`bbo:`) and @trade (`last_price:`).
+    Cuts per-position `fetch_ticker()` REST weight to ~0 while falling back cleanly to REST.
+    """
+    try:
+        from app.services.user_order_stream import _get_redis_pub
+        r_cli = await _get_redis_pub()
+        if r_cli is not None:
+            ex_id = str(getattr(exchange, 'id', 'binance') or 'binance').lower()
+            now_ts = time.time()
+            k_bbo = f"bbo:{ex_id}:{symbol}"
+            k_last = f"last_price:{ex_id}:{symbol}"
+            k_ob = f"latest_orderbook:{ex_id}:{symbol}"
+
+            if hasattr(r_cli, 'mget'):
+                raw_bbo, raw_last, raw_ob = await asyncio.wait_for(
+                    r_cli.mget([k_bbo, k_last, k_ob]),
+                    timeout=0.050,
+                )
+            else:
+                raw_bbo, raw_last, raw_ob = await asyncio.wait_for(
+                    asyncio.gather(r_cli.get(k_bbo), r_cli.get(k_last), r_cli.get(k_ob)),
+                    timeout=0.050,
+                )
+
+            bid_p = 0.0
+            ask_p = 0.0
+            last_p = 0.0
+
+            if raw_bbo:
+                bbo_json = json.loads(raw_bbo)
+                ts = bbo_json.get('ts')
+                if ts is not None and -0.5 <= (now_ts - float(ts)) <= max_age_seconds:
+                    bid_p = float(bbo_json.get('bid') or 0.0)
+                    ask_p = float(bbo_json.get('ask') or 0.0)
+
+            if raw_last:
+                last_json = json.loads(raw_last)
+                ts = last_json.get('ts')
+                if ts is not None and -0.5 <= (now_ts - float(ts)) <= max_age_seconds:
+                    last_p = float(last_json.get('last') or 0.0)
+
+            if raw_ob and (bid_p <= 0 or ask_p <= 0 or (require_last and last_p <= 0)):
+                ob_json = json.loads(raw_ob)
+                ts = ob_json.get('ts')
+                if ts is not None and -0.5 <= (now_ts - float(ts)) <= max_age_seconds:
+                    if bid_p <= 0 or ask_p <= 0:
+                        bids_raw = ob_json.get('bids') or []
+                        asks_raw = ob_json.get('asks') or []
+                        if bids_raw and asks_raw:
+                            b0, a0 = bids_raw[0], asks_raw[0]
+                            bid_p = float(b0['price'] if isinstance(b0, dict) else b0[0])
+                            ask_p = float(a0['price'] if isinstance(a0, dict) else a0[0])
+                    if last_p <= 0:
+                        last_p = float(ob_json.get('currentPrice') or 0.0)
+
+            if bid_p > 0 and ask_p > 0 and (not require_last or last_p > 0):
+                eff_last = last_p if last_p > 0 else ((bid_p + ask_p) / 2.0)
+                return {
+                    'bid': bid_p,
+                    'ask': ask_p,
+                    'last': eff_last,
+                    'close': eff_last,
+                }
+            if require_last and last_p > 0 and bid_p <= 0:
+                return {'bid': last_p, 'ask': last_p, 'last': last_p, 'close': last_p}
+
+            # Ensure WS streamer warms up in background when Redis cache misses
+            try:
+                from app.services.market_data_streamer import market_data_streamer
+                asyncio.create_task(market_data_streamer.start_streaming(ex_id, symbol))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return await exchange.fetch_ticker(symbol)
 
 
 async def _place_maker_order(exchange, symbol: str, side: str, amount: float, price: float, ex_params: dict, is_futures: bool):
@@ -590,7 +676,6 @@ async def execute_smart_peg_entry(
             if api_key_id is not None:
                 try:
                     from app.services.manual_trade_service import ManualTradeService
-                    ManualTradeService.invalidate_open_orders_cache(int(api_key_id), symbol)
                     line_obj = {
                         'id': str(curr_oid),
                         'side': side.lower(),
@@ -602,6 +687,9 @@ async def execute_smart_peg_entry(
                         'mode': 'LIMIT',
                         'isPostOnly': True,
                     }
+                    ManualTradeService.upsert_open_order_cache(
+                        int(api_key_id), symbol, line_obj, replace_id=str(replace_id) if replace_id else None
+                    )
                     ManualTradeService._ORDER_META_CACHE[(int(api_key_id), str(curr_oid))] = (line_obj, time.time())
                     if user_id:
                         from app.services.user_order_stream import publish_order_sync_event
@@ -664,6 +752,8 @@ async def execute_smart_peg_entry(
         order_already_cancelled = False
         order_processed_filled = 0.0
         order_chk_task = None
+        repeg_timestamps = deque(maxlen=24)
+        last_repeg_mono = 0.0
 
         # If order already filled immediately, skip watch loop
         if str(peg_order.get('status', '')).lower() in ('closed', 'filled'):
@@ -776,6 +866,26 @@ async def execute_smart_peg_entry(
                                 is_outbid = (new_maker > target_maker_price) if side.lower() == "buy" else (new_maker < target_maker_price)
                                 min_polls_required = 1 if (is_outbid or urgent_mode) else 2
                                 if poll_count >= min_polls_required:
+                                    # Adaptive anti-ping-pong pacing: 0ms for normal fills (<=5 re-pegs/10s),
+                                    # enforces a small gap between re-pegs on flickery books so Binance UID rate limits aren't hit.
+                                    now_rp = time.monotonic()
+                                    while repeg_timestamps and (now_rp - repeg_timestamps[0]) > 10.0:
+                                        repeg_timestamps.popleft()
+                                    recent_rp_cnt = len(repeg_timestamps)
+                                    if recent_rp_cnt >= 6:
+                                        min_gap = 0.75 if recent_rp_cnt >= 12 else 0.30
+                                        wait_needed = min_gap - (now_rp - last_repeg_mono)
+                                        if wait_needed > 0:
+                                            try:
+                                                await asyncio.wait_for(cancel_event.wait(), timeout=wait_needed)
+                                                user_cancelled = True
+                                                break
+                                            except asyncio.TimeoutError:
+                                                pass
+                                            continue  # Re-sample fresh BBO before firing replacement
+                                    last_repeg_mono = time.monotonic()
+                                    repeg_timestamps.append(last_repeg_mono)
+
                                     logger.info(
                                         f"⚡ [Smart Peg Entry] BBO shifted ({'outbid' if is_outbid else 'retreat'}): {target_maker_price} ➜ {new_maker} "
                                         f"(Bid={l_best_bid}, Ask={l_best_ask}). Fast re-pegging to BBO..."

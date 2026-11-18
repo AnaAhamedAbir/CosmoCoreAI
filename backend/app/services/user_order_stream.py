@@ -100,6 +100,28 @@ def _resolve_market_mode(symbol: Optional[str], is_futures: bool) -> str:
     return "swap"
 
 
+def _is_internal_disaster_sl_id(api_key_id: int, oid: str) -> bool:
+    """True when `oid` is an internal backup Disaster SL order (hidden from chart overlay)."""
+    if not oid:
+        return False
+    oid_s = str(oid)
+    try:
+        from app.services.bracket_order_service import BracketOrderService
+        from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
+
+        for sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.values()):
+            km = sdata.get("api_key_id") is None or int(sdata.get("api_key_id")) == int(api_key_id)
+            if km and str(sdata.get("disaster_sl_order_id") or "") == oid_s:
+                return True
+
+        for cdata in list(ACTIVE_SMART_CHASES.values()):
+            if str(cdata.get("disaster_sl_order_id") or "") == oid_s:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def _collect_related_bracket_ids(api_key_id: int, oid: str) -> List[str]:
     """Return any software SL / entry bracket / smart chase IDs linked to `oid`."""
     related = [oid] if oid else []
@@ -267,7 +289,10 @@ async def _stream_worker(
 
                         if status in TERMINAL_STATUSES:
                             rep_exp = _replaced_order_ttl.pop(oid, 0.0)
-                            if rep_exp and rep_exp > time.time() and status in ("canceled", "cancelled"):
+                            if rep_exp and rep_exp > time.time() and status in ("canceled", "cancelled", "expired"):
+                                continue
+                            # Cancelling/replacing a hidden backup Disaster SL must NEVER remove active TP or Smart Chase SL chart lines
+                            if status in ("canceled", "cancelled", "expired", "rejected") and _is_internal_disaster_sl_id(api_key_id, oid):
                                 continue
                             related_ids = _collect_related_bracket_ids(api_key_id, oid)
                             await publish_order_sync_event(

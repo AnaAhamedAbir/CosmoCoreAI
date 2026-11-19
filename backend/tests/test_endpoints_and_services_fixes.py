@@ -1478,6 +1478,68 @@ class TestEndpointsAndServicesFixes(unittest.IsolatedAsyncioTestCase):
             uos._replaced_order_ttl.pop("3000002410082518", None)
             sys.modules.pop("app.services.user_order_stream", None)
 
+    async def test_futures_smart_peg_auto_clamps_on_margin_insufficient_2019(self):
+        """
+        Reproduces DOGE/USDC:USDC 100% 10x SELL (16802.475935 @ 0.05888) where Binance
+        rejects with `-2019 Margin is insufficient.` on attempt 1: verifies Smart Peg
+        immediately auto-adjusts size downward instead of retrying the exact same failing size.
+        """
+        ex = MockExchange("DOGE/USDC:USDC", tick=0.00001)
+        ex.id = "binance"
+        ex.fetch_balance = AsyncMock(
+            return_value={"USDC": {"free": 98.93, "total": 98.93}, "free": {"USDC": 98.93}}
+        )
+        placed_amounts = []
+
+        async def create_fn(sym, side, amt, px, params=None):
+            placed_amounts.append(float(amt))
+            if float(amt) >= 16600.0:
+                raise Exception('binance {"code":-2019,"msg":"Margin is insufficient."}')
+            return {
+                "id": "doge_usdc_adjusted_1",
+                "symbol": sym,
+                "side": side,
+                "amount": float(amt),
+                "price": px,
+                "status": "closed",
+                "filled": float(amt),
+                "average": px,
+            }
+
+        ex.create_limit_order = create_fn
+
+        class StaticRedis:
+            async def get(self, key):
+                return json.dumps({"bid": 0.05887, "ask": 0.05888, "ts": time.time()})
+
+        fake_uos = SimpleNamespace(
+            _get_redis_pub=AsyncMock(return_value=StaticRedis()),
+            mark_order_replaced=lambda *a, **kw: None,
+            ensure_user_order_stream=lambda *a, **kw: None,
+        )
+        peg_exec.ACTIVE_SMART_PEGS.clear()
+        with patch.dict(sys.modules, {"app.services.user_order_stream": fake_uos}), \
+             patch("app.services.smart_peg_entry_executor.SessionLocal", FakeDB), \
+             patch.object(ManualTradeService, "_is_binance_hedge_mode", AsyncMock(return_value=False)):
+            res = await peg_exec.execute_smart_peg_entry(
+                exchange=ex,
+                symbol="DOGE/USDC:USDC",
+                side="sell",
+                amount=16802.475935,
+                is_futures=True,
+                user_id=0,
+                leverage=10,
+                send_initial_notify=False,
+                skip_exchange_upgrade=True,
+            )
+
+        self.assertIsNotNone(res)
+        self.assertEqual(res["id"], "doge_usdc_adjusted_1")
+        self.assertEqual(len(placed_amounts), 2)
+        self.assertGreaterEqual(placed_amounts[0], 16800.0)
+        self.assertLess(placed_amounts[1], placed_amounts[0])
+        self.assertLessEqual(placed_amounts[1], 16500.0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

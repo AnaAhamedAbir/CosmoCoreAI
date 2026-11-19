@@ -429,11 +429,11 @@ async def execute_smart_peg_entry(
     )
     initial_ob = preloaded_ob if has_preloaded_ob else None
     cached_bal = preloaded_balance if (isinstance(preloaded_balance, dict) and preloaded_balance) else None
-    if cached_bal is None and not is_futures and api_key_id is not None:
+    if cached_bal is None and api_key_id is not None:
         try:
             from app.services.manual_trade_service import ManualTradeService
             ram_bal = ManualTradeService._get_cached_wallet_balance(
-                api_key_id, is_futures=False, max_age_seconds=300.0, is_inverse=False
+                api_key_id, is_futures=is_futures, max_age_seconds=300.0, is_inverse=is_inverse
             )
             if isinstance(ram_bal, dict) and ram_bal:
                 cached_bal = ram_bal
@@ -457,9 +457,35 @@ async def execute_smart_peg_entry(
     initial_benchmark_price = float(anchor_price) if (anchor_price and float(anchor_price) > 0) else market_benchmark_price
 
     # Initial clamp in 0ms if balance is cached; otherwise skip blocking REST fetch_balance()
-    # (Binance enforces Spot balance atomically on order placement; -2010 auto-clamps cleanly below).
+    # (Binance enforces balance/margin atomically on order placement; -2010 / -2019 auto-clamps cleanly below).
     if cached_bal:
-        remaining_amount = await _sync_and_clamp_amount(initial_benchmark_price, cached_bal=cached_bal)
+        if is_futures and not reduce_only and leverage and float(leverage) > 0 and market_benchmark_price > 0:
+            try:
+                parts = symbol.split('/')
+                if len(parts) >= 2:
+                    from app.services.manual_trade_service import ManualTradeService
+                    m_asset = parts[0] if is_inverse else parts[1].split(':')[0]
+                    free_m, _, _ = ManualTradeService._extract_asset_balance(cached_bal, m_asset)
+                    if free_m > 0:
+                        lev_f = float(leverage)
+                        if is_inverse:
+                            c_sz = float(contract_size or 10.0)
+                            fut_cap = float(int((free_m * 0.985 * market_benchmark_price * lev_f) // c_sz))
+                        else:
+                            fut_cap = (free_m * lev_f * 0.985) / market_benchmark_price
+                        if 0 < fut_cap < remaining_amount:
+                            if hasattr(exchange, 'amount_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
+                                fut_cap = float(exchange.amount_to_precision(symbol, fut_cap))
+                            if 0 < fut_cap < remaining_amount:
+                                logger.info(
+                                    f"🔄 [Smart Peg Entry] Pre-clamped Futures size from {remaining_amount} ➜ {fut_cap} "
+                                    f"(98.5% margin buffer, Free: {free_m} {m_asset} @ {lev_f}x)"
+                                )
+                                remaining_amount = fut_cap
+            except Exception as fpc_err:
+                logger.debug(f"Futures pre-clamp notice (non-fatal): {fpc_err}")
+        elif not is_futures:
+            remaining_amount = await _sync_and_clamp_amount(initial_benchmark_price, cached_bal=cached_bal)
     initial_notional = _calc_order_notional_usd(exchange, symbol, remaining_amount, initial_benchmark_price)
     if remaining_amount <= 0 or initial_notional < min_notional:
         logger.warning(f"⚠️ [Smart Peg Entry] Amount {remaining_amount} (~${initial_notional:.2f}) below min notional ${min_notional:.2f}. Aborted.")
@@ -493,6 +519,7 @@ async def execute_smart_peg_entry(
     total_filled = 0.0
     accumulated_cost = 0.0
     final_res = None
+    margin_clamp_retries = 0
 
     while remaining_amount > 0 and not cancel_event.is_set():
         if max_attempts > 0 and attempts >= max_attempts:
@@ -658,6 +685,89 @@ async def execute_smart_peg_entry(
                 if remaining_amount <= 0 or rem_val < min_notional:
                     logger.warning(f"🛑 [Smart Peg Entry] Insufficient free balance (${rem_val:.2f} < ${min_notional:.2f}). Stopping peg.")
                     break
+                continue
+            elif is_futures and any(
+                kw in str(place_err).lower()
+                for kw in ('-2019', 'margin is insufficient', 'insufficient margin', 'insufficient balance', '-2010')
+            ):
+                margin_clamp_retries += 1
+                prev_amt = float(remaining_amount)
+                if margin_clamp_retries > 6:
+                    logger.warning(
+                        f"🛑 [Smart Peg Entry] Futures margin still insufficient after {margin_clamp_retries - 1} auto-adjustments. Stopping peg."
+                    )
+                    await _send_notify(
+                        f"🛑 *Smart Peg Entry Stopped: Insufficient Margin*\n"
+                        f"Exchange: {exchange_name}\n"
+                        f"Pair: `{symbol}`\n"
+                        f"Reason: `{place_err}`"
+                    )
+                    break
+
+                cand_amt = prev_amt * (0.98 if margin_clamp_retries == 1 else (0.96 if margin_clamp_retries == 2 else 0.93))
+                if margin_clamp_retries == 1:
+                    try:
+                        fresh_bal = await _fetch_balance_fast()
+                        parts = symbol.split('/')
+                        if fresh_bal and len(parts) >= 2:
+                            from app.services.manual_trade_service import ManualTradeService
+                            m_asset = parts[0] if is_inverse else parts[1].split(':')[0]
+                            free_margin, _, _ = ManualTradeService._extract_asset_balance(fresh_bal, m_asset)
+                            if free_margin <= 0:
+                                logger.warning(f"🛑 [Smart Peg Entry] No free {m_asset} margin available on Futures! Stopping peg.")
+                                await _send_notify(
+                                    f"🛑 *Smart Peg Entry Stopped: Insufficient {m_asset} Margin*\n"
+                                    f"Exchange: {exchange_name}\nPair: `{symbol}`\nFree Margin: `0`"
+                                )
+                                remaining_amount = 0.0
+                                break
+                            lev_f = float(leverage) if (leverage and float(leverage) > 0) else 0.0
+                            if lev_f > 0 and target_maker_price > 0:
+                                if is_inverse:
+                                    c_sz = float(contract_size or 10.0)
+                                    bal_cap = float(int((free_margin * 0.982 * target_maker_price * lev_f) // c_sz))
+                                else:
+                                    bal_cap = (free_margin * lev_f * 0.982) / target_maker_price
+                                if 0 < bal_cap < cand_amt:
+                                    cand_amt = bal_cap
+                    except Exception as fut_bal_err:
+                        logger.debug(f"Futures margin clamp balance lookup notice: {fut_bal_err}")
+
+                try:
+                    if hasattr(exchange, 'amount_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
+                        cand_amt = float(exchange.amount_to_precision(symbol, cand_amt))
+                except Exception:
+                    cand_amt = round(cand_amt, 4)
+
+                # Ensure strict step-down so integer/coarse-lot contracts never retry exact failed amount
+                if cand_amt >= prev_amt and prev_amt > 1:
+                    try:
+                        step_amt = prev_amt - max(1.0, round(prev_amt * 0.02))
+                        if hasattr(exchange, 'amount_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
+                            cand_amt = float(exchange.amount_to_precision(symbol, step_amt))
+                        else:
+                            cand_amt = step_amt
+                    except Exception:
+                        cand_amt = max(0.0, prev_amt - 1.0)
+
+                rem_val = _calc_order_notional_usd(exchange, symbol, cand_amt, target_maker_price)
+                if cand_amt <= 0 or rem_val < min_notional:
+                    logger.warning(
+                        f"🛑 [Smart Peg Entry] Futures margin insufficient and auto-adjusted notional ${rem_val:.2f} < ${min_notional:.2f}. Stopping."
+                    )
+                    await _send_notify(
+                        f"🛑 *Smart Peg Entry Stopped: Insufficient Margin*\n"
+                        f"Exchange: {exchange_name}\nPair: `{symbol}`\nReason: `{place_err}`"
+                    )
+                    break
+
+                remaining_amount = cand_amt
+                if cid in ACTIVE_SMART_PEGS:
+                    ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
+                logger.warning(
+                    f"🔄 [Smart Peg Entry] Futures margin insufficient (-2019): Auto-adjusted size {prev_amt} ➜ {remaining_amount} "
+                    f"(Retry {margin_clamp_retries}/6)"
+                )
                 continue
             else:
                 logger.warning(f"⚠️ [Smart Peg Entry] Placement error: {place_err}")
@@ -1072,6 +1182,16 @@ async def execute_smart_peg_entry(
                                                     safe_px = rec_bid if side.lower() == 'buy' else rec_ask
                                                 if hasattr(exchange, 'price_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
                                                     safe_px = float(exchange.price_to_precision(symbol, safe_px))
+                                                p_err_s = str(p_res).lower() if isinstance(p_res, Exception) else ''
+                                                if any(kw in p_err_s for kw in ('-2019', 'margin is insufficient', 'insufficient margin', 'insufficient balance', '-2010')):
+                                                    adj_rec = float(remaining_amount) * 0.98
+                                                    if hasattr(exchange, 'amount_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
+                                                        adj_rec = float(exchange.amount_to_precision(symbol, adj_rec))
+                                                    if 0 < adj_rec < remaining_amount:
+                                                        logger.warning(
+                                                            f"🔄 [Smart Peg Entry] Re-peg margin insufficient: adjusting size {remaining_amount} ➜ {adj_rec}"
+                                                        )
+                                                        remaining_amount = adj_rec
                                                 p_rec = await _place_maker_order(
                                                     exchange, symbol, side, remaining_amount, safe_px, ex_params, is_futures
                                                 )

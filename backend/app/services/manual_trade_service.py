@@ -2122,10 +2122,11 @@ class ManualTradeService:
                             free_quote = float(bal.get(quote_part, {}).get('free', 0.0)) or (float(bal.get('free', {}).get(quote_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0)
                             notional_value = order_req.amount * req_price
                             required_margin = notional_value / lev if is_futures else notional_value
-                            if required_margin >= (free_quote * 0.99):
+                            buf = 0.985 if is_futures else 0.99
+                            if required_margin >= (free_quote * buf):
                                 if required_margin <= (free_quote * 1.05):
                                     logger.info(f"🛠️ Pre-flight Margin: Auto-adjusting size (Req: {required_margin}, Free: {free_quote})")
-                                    order_req.amount = order_req.amount * (free_quote / required_margin) * 0.99
+                                    order_req.amount = order_req.amount * (free_quote / required_margin) * buf
                         elif order_req.side.lower() == 'sell' and not is_futures:
                             free_base = float(bal.get(base_part, {}).get('free', 0.0)) or (float(bal.get('free', {}).get(base_part, 0.0)) if isinstance(bal.get('free'), dict) else 0.0)
                             if order_req.amount >= (free_base * 0.99):
@@ -2569,30 +2570,50 @@ class ManualTradeService:
                         )
                     except Exception as mkt_e:
                         err_s = str(mkt_e).lower()
-                        is_insufficient = ('-2010' in err_s or 'insufficient balance' in err_s) and ('immediately match' not in err_s)
+                        is_insufficient = any(
+                            kw in err_s for kw in ('-2010', '-2019', 'insufficient balance', 'margin is insufficient', 'insufficient margin')
+                        ) and ('immediately match' not in err_s)
                         if is_insufficient:
                             try:
-                                fresh_bal = await ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)
-                                base_part = meta["base"]
-                                quote_part = meta["quote"]
-                                if order_req.side.lower() == 'buy':
-                                    free_q = float(fresh_bal.get(quote_part, {}).get('free', 0.0)) or 0.0
-                                    if free_q > 0 and req_price and req_price > 0:
-                                        adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, (free_q / req_price) * 0.99)
-                                        if float(adj_amt) < float(order_req.amount):
-                                            order_req.amount = float(adj_amt)
-                                            response = await exchange.create_market_order(
-                                                order_req.symbol, order_req.side, order_req.amount, params=ex_params
-                                            )
-                                elif order_req.side.lower() == 'sell' and not is_futures:
-                                    free_b = float(fresh_bal.get(base_part, {}).get('free', 0.0)) or 0.0
-                                    if free_b > 0:
-                                        adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, free_b * 0.999)
-                                        if float(adj_amt) < float(order_req.amount):
-                                            order_req.amount = float(adj_amt)
-                                            response = await exchange.create_market_order(
-                                                order_req.symbol, order_req.side, order_req.amount, params=ex_params
-                                            )
+                                if is_futures:
+                                    lev_f = float(params.get('leverage') or 1.0)
+                                    fresh_bal = await ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)
+                                    m_asset = meta["base"] if is_inverse else meta["quote"]
+                                    free_m = float(fresh_bal.get(m_asset, {}).get('free', 0.0)) or 0.0
+                                    if is_inverse and free_m > 0 and req_price and req_price > 0:
+                                        cap_amt = max(1.0, (free_m * 0.98 * req_price * lev_f) // contract_size)
+                                    elif free_m > 0 and req_price and req_price > 0:
+                                        cap_amt = (free_m * lev_f * 0.98) / req_price
+                                    else:
+                                        cap_amt = float(order_req.amount) * 0.975
+                                    adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, min(float(order_req.amount) * 0.98, cap_amt))
+                                    if 0 < float(adj_amt) < float(order_req.amount):
+                                        order_req.amount = float(adj_amt)
+                                        response = await exchange.create_market_order(
+                                            order_req.symbol, order_req.side, order_req.amount, params=ex_params
+                                        )
+                                else:
+                                    fresh_bal = await ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)
+                                    base_part = meta["base"]
+                                    quote_part = meta["quote"]
+                                    if order_req.side.lower() == 'buy':
+                                        free_q = float(fresh_bal.get(quote_part, {}).get('free', 0.0)) or 0.0
+                                        if free_q > 0 and req_price and req_price > 0:
+                                            adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, (free_q / req_price) * 0.99)
+                                            if float(adj_amt) < float(order_req.amount):
+                                                order_req.amount = float(adj_amt)
+                                                response = await exchange.create_market_order(
+                                                    order_req.symbol, order_req.side, order_req.amount, params=ex_params
+                                                )
+                                    elif order_req.side.lower() == 'sell':
+                                        free_b = float(fresh_bal.get(base_part, {}).get('free', 0.0)) or 0.0
+                                        if free_b > 0:
+                                            adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, free_b * 0.999)
+                                            if float(adj_amt) < float(order_req.amount):
+                                                order_req.amount = float(adj_amt)
+                                                response = await exchange.create_market_order(
+                                                    order_req.symbol, order_req.side, order_req.amount, params=ex_params
+                                                )
                             except Exception:
                                 pass
                         if not response:
@@ -2613,22 +2634,39 @@ class ManualTradeService:
                             break
                         except Exception as lim_e:
                             err_s = str(lim_e).lower()
-                            # Safe auto-clamp retry on insufficient balance (e.g. 100% slider micro-deviations)
-                            is_insufficient = ('-2010' in err_s or 'insufficient balance' in err_s) and ('immediately match' not in err_s)
+                            # Safe auto-clamp retry on insufficient balance/margin (e.g. 100% slider micro-deviations)
+                            is_insufficient = any(
+                                kw in err_s for kw in ('-2010', '-2019', 'insufficient balance', 'margin is insufficient', 'insufficient margin')
+                            ) and ('immediately match' not in err_s)
                             if is_insufficient:
                                 try:
                                     fresh_bal = await ManualTradeService._fetch_wallet_balance(exchange, order_req.symbol, meta, api_key_id=api_key_record.id)
                                     base_part = meta["base"]
                                     quote_part = meta["quote"]
                                     clamped = False
-                                    if order_req.side.lower() == 'buy':
+                                    if is_futures:
+                                        lev_f = float(params.get('leverage') or 1.0)
+                                        m_asset = base_part if is_inverse else quote_part
+                                        free_m = float(fresh_bal.get(m_asset, {}).get('free', 0.0)) or 0.0
+                                        lim_px = float(order_req.price or req_price or 0.0)
+                                        if is_inverse and free_m > 0 and lim_px > 0:
+                                            cap_amt = max(1.0, (free_m * 0.98 * lim_px * lev_f) // contract_size)
+                                        elif free_m > 0 and lim_px > 0:
+                                            cap_amt = (free_m * lev_f * 0.98) / lim_px
+                                        else:
+                                            cap_amt = float(order_req.amount) * 0.975
+                                        adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, min(float(order_req.amount) * 0.98, cap_amt))
+                                        if 0 < float(adj_amt) < float(order_req.amount):
+                                            order_req.amount = float(adj_amt)
+                                            clamped = True
+                                    elif order_req.side.lower() == 'buy':
                                         free_q = float(fresh_bal.get(quote_part, {}).get('free', 0.0)) or 0.0
                                         if free_q > 0 and float(order_req.price) > 0:
                                             adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, (free_q / float(order_req.price)) * 0.99)
                                             if float(adj_amt) < float(order_req.amount):
                                                 order_req.amount = float(adj_amt)
                                                 clamped = True
-                                    elif order_req.side.lower() == 'sell' and not is_futures:
+                                    elif order_req.side.lower() == 'sell':
                                         free_b = float(fresh_bal.get(base_part, {}).get('free', 0.0)) or 0.0
                                         if free_b > 0:
                                             adj_amt = bracket_order_service._safe_amount_to_precision(exchange, order_req.symbol, free_b * 0.999)

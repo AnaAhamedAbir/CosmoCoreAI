@@ -1851,7 +1851,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       }
     }
 
-    const val = maxValue * percentage;
+    // Apply a 1.5% safety cushion at 100% on Futures opening orders so Binance's
+    // initial-margin + assumed open-loss/taker-fee reserve never rejects with -2019.
+    const effectivePct = (futures && !redOnly) ? Math.min(percentage, 0.985) : percentage;
+    const val = maxValue * effectivePct;
     const decimals = mode === 'quote' ? 2 : 6;
     const rounded = Math.floor(val * Math.pow(10, decimals)) / Math.pow(10, decimals);
     return rounded > 0 ? rounded.toString() : '';

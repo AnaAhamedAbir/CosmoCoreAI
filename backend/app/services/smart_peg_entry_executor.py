@@ -853,8 +853,8 @@ async def execute_smart_peg_entry(
             except Exception as notify_first_err:
                 logger.warning(f"Failed to send Smart Peg trade fired notification: {notify_first_err}")
 
-        # 5. Dynamic BBO Peg Watch Loop (35ms in urgent_mode, 40ms standard; non-blocking fill check + 1ms Redis BBO)
-        peg_poll_interval = 0.035 if urgent_mode else 0.04
+        # 5. Dynamic BBO Peg Watch Loop (25ms in urgent/Force mode, 40ms standard; non-blocking fill check + 1ms Redis BBO)
+        peg_poll_interval = 0.025 if urgent_mode else 0.04
         poll_count = 0
         latest_order_chk = None
         user_cancelled = False
@@ -1101,9 +1101,17 @@ async def execute_smart_peg_entry(
                                     # ── FAST 1-RTT PARALLEL CANCEL + CREATE FOR FUTURES POST-ONLY (GTX) ──
                                     if not edit_res and is_futures:
                                         t_par_start = time.perf_counter()
+                                        async def _place_next_leg():
+                                            # Stagger One-Way reduceOnly replacements by 35ms so cancel arrives at Binance matching engine first (-2022 guard)
+                                            if ex_params.get('reduceOnly'):
+                                                await asyncio.sleep(0.035)
+                                            return await _place_maker_order(
+                                                exchange, symbol, side, remaining_amount, new_maker, ex_params, is_futures
+                                            )
+
                                         c_res, p_res = await asyncio.gather(
                                             exchange.cancel_order(order_id, symbol),
-                                            _place_maker_order(exchange, symbol, side, remaining_amount, new_maker, ex_params, is_futures),
+                                            _place_next_leg(),
                                             return_exceptions=True,
                                         )
                                         repeg_ms = int((time.perf_counter() - t_par_start) * 1000)

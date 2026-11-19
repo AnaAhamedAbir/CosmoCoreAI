@@ -1051,7 +1051,9 @@ class ManualTradeService:
         try:
             try:
                 from app.services.user_order_stream import ensure_user_order_stream
-                ensure_user_order_stream(user_id, api_key_record, is_futures, symbol)
+                uos_res = ensure_user_order_stream(user_id, api_key_record, is_futures, symbol)
+                if asyncio.iscoroutine(uos_res):
+                    uos_res.close()
             except Exception:
                 pass
 
@@ -3280,6 +3282,14 @@ class ManualTradeService:
         specific_oid = str(target_order_id).strip() if (target_order_id and str(target_order_id).strip().lower() != 'all') else None
 
         try:
+            try:
+                from app.services.user_order_stream import ensure_user_order_stream
+                uos_res = ensure_user_order_stream(user_id, api_key_record, is_futures, symbol)
+                if asyncio.iscoroutine(uos_res):
+                    uos_res.close()
+            except Exception:
+                pass
+
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
             meta = ManualTradeService._get_contract_meta(exchange, symbol)
             is_inverse = meta["is_inverse"]
@@ -3303,6 +3313,8 @@ class ManualTradeService:
             resolved_all_quote_amt = 0.0
             is_exit_order = str(target_order_mode or '').upper() in ('TP', 'STOP', 'SL', 'SMART_CHASE', 'TRAILING', 'TRAILING_CHASE', 'FIXED')
             ai_filter_info = None
+            pos_info = None
+            prewarmed_ob = None
 
             # --- L2 Machine Learning Filter Gatekeeper (Before cancelling open orders) ---
             if enable_ml_filter and not reduce_only and not is_exit_order:
@@ -3310,6 +3322,7 @@ class ManualTradeService:
                 if is_futures:
                     try:
                         p_chk = await ManualTradeService.get_active_position(db, user_id, api_key_id, symbol)
+                        pos_info = p_chk
                         p_amt = float((p_chk or {}).get('amount') or 0.0)
                         p_side = str((p_chk or {}).get('side') or 'none').lower()
                         if p_amt > 0 and ((p_side == 'long' and side_lower == 'sell') or (p_side == 'short' and side_lower == 'buy')):
@@ -3353,30 +3366,28 @@ class ManualTradeService:
                                 attached_sl = AttachedSLConfig(enabled=True, mode='absolute', value=safe_sl)
 
             if specific_oid:
-                # --- TARGETED SINGLE ORDER / BRACKET CANCELLATION ---
-                # 1A. Check if specific_oid is an active Smart Peg Entry
+                # --- TARGETED SINGLE ORDER / BRACKET CANCELLATION (CONCURRENT 1-RTT) ---
+                cancel_tasks = []
+                in_mem_handled = False
+
                 if specific_oid in ACTIVE_SMART_PEGS:
+                    in_mem_handled = True
                     pdata = ACTIVE_SMART_PEGS.get(specific_oid) or {}
                     if resolved_specific_amt <= 0:
                         resolved_specific_amt = float(pdata.get('amount') or 0.0)
-                    stopped_pegs += await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id, peg_id=specific_oid)
+                    cancel_tasks.append(('peg', stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id, peg_id=specific_oid)))
 
-                # 1B. Check if specific_oid is an active Smart Chase SL
                 if specific_oid in ACTIVE_SMART_CHASES:
+                    in_mem_handled = True
                     cdata = ACTIVE_SMART_CHASES.get(specific_oid) or {}
                     if resolved_specific_amt <= 0:
                         resolved_specific_amt = float(cdata.get('amount') or 0.0)
                     is_exit_order = True
                     tp_oid = cdata.get('tp_order_id')
                     if tp_oid:
-                        try:
-                            await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
-                            cancelled_open_orders += 1
-                        except Exception:
-                            pass
-                    stopped_chases += await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id, chase_id=specific_oid)
+                        cancel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)))
+                    cancel_tasks.append(('chase', stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id, chase_id=specific_oid)))
 
-                # 1C. Check if specific_oid matches a Software SL bracket (by sl_id, tp_order_id, disaster_sl_order_id, or entry_order_id)
                 for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
                     key_match = (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == int(api_key_id))
                     if not key_match or not _sym_matches(sdata.get('symbol', ''), symbol) or sdata.get('cancelled'):
@@ -3387,6 +3398,7 @@ class ManualTradeService:
                         or str(sdata.get('disaster_sl_order_id') or '') == specific_oid
                         or str(sdata.get('entry_order_id') or '') == specific_oid
                     ):
+                        in_mem_handled = True
                         sdata['cancelled'] = True
                         cancelled_brackets += 1
                         is_exit_order = True
@@ -3395,19 +3407,10 @@ class ManualTradeService:
                         tp_oid = sdata.get('tp_order_id')
                         dis_oid = sdata.get('disaster_sl_order_id')
                         if tp_oid:
-                            try:
-                                await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
-                                cancelled_open_orders += 1
-                            except Exception:
-                                pass
+                            cancel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)))
                         if dis_oid:
-                            try:
-                                await bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol)
-                                cancelled_open_orders += 1
-                            except Exception:
-                                pass
+                            cancel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol, is_conditional=True)))
 
-                # 1D. Check ACTIVE_ENTRY_BRACKETS (TP-only brackets)
                 for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
                     key_match = (eb_data.get('api_key_id') is None or int(eb_data.get('api_key_id')) == int(api_key_id))
                     if not key_match or not _sym_matches(eb_data.get('symbol', ''), symbol) or eb_data.get('cancelled'):
@@ -3419,19 +3422,14 @@ class ManualTradeService:
                             resolved_specific_amt = float(eb_data.get('amount') or 0.0)
                         tp_oid = eb_data.get('tp_order_id')
                         if tp_oid:
-                            try:
-                                await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
-                                cancelled_open_orders += 1
-                            except Exception:
-                                pass
+                            cancel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)))
 
-                # 1E. If specific_oid is a pending entry monitor or exchange order, abort monitor & cancel order on exchange
                 if specific_oid in bracket_order_service.ACTIVE_ENTRY_MONITORS:
                     bracket_order_service.ACTIVE_ENTRY_MONITORS[specific_oid]['cancelled'] = True
                 if specific_oid in bracket_order_service.KNOWN_TP_ORDER_IDS:
                     is_exit_order = True
 
-                if specific_oid not in ACTIVE_SMART_PEGS and specific_oid not in ACTIVE_SMART_CHASES and specific_oid not in bracket_order_service.ACTIVE_SOFTWARE_SL:
+                if not in_mem_handled and specific_oid not in bracket_order_service.ACTIVE_SOFTWARE_SL:
                     if resolved_specific_amt <= 0:
                         try:
                             ord_info = await exchange.fetch_order(specific_oid, symbol)
@@ -3439,15 +3437,27 @@ class ManualTradeService:
                                 resolved_specific_amt = float(ord_info.get('remaining') or ord_info.get('amount') or 0.0)
                         except Exception:
                             pass
-                    try:
-                        await bracket_order_service._cancel_futures_order_universal(exchange, specific_oid, symbol)
-                        cancelled_open_orders += 1
-                    except Exception:
-                        pass
+                    cancel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, specific_oid, symbol)))
+
+                if is_futures and pos_info is None:
+                    cancel_tasks.append(('pos', ManualTradeService.get_active_position(db, user_id, api_key_id, symbol)))
+                cancel_tasks.append(('ob', _fetch_bbo_fast(exchange, symbol)))
+
+                if cancel_tasks:
+                    res_list = await asyncio.gather(*(t[1] for t in cancel_tasks), return_exceptions=True)
+                    for (tag, _), r_val in zip(cancel_tasks, res_list):
+                        if tag == 'peg' and isinstance(r_val, int):
+                            stopped_pegs += r_val
+                        elif tag == 'chase' and isinstance(r_val, int):
+                            stopped_chases += r_val
+                        elif tag == 'ord' and not isinstance(r_val, Exception):
+                            cancelled_open_orders += 1
+                        elif tag == 'pos' and not isinstance(r_val, Exception):
+                            pos_info = r_val
+                        elif tag == 'ob' and not isinstance(r_val, Exception):
+                            prewarmed_ob = r_val
             else:
-                # --- CANCEL ALL OPEN ORDERS & BRACKETS ON SYMBOL ---
-                # Snapshot active pegs/orders BEFORE cancelling so Spot unlock polling and
-                # approximate released balance work reliably even if Binance balance lags.
+                # --- CANCEL ALL OPEN ORDERS & BRACKETS ON SYMBOL (CONCURRENT 1-RTT) ---
                 for pid, pdata in list(ACTIVE_SMART_PEGS.items()):
                     key_match = (pdata.get('api_key_id') is None or int(pdata.get('api_key_id')) == int(api_key_id))
                     if key_match and _sym_matches(pdata.get('symbol', ''), symbol):
@@ -3462,9 +3472,10 @@ class ManualTradeService:
                 try:
                     cache_key = (int(api_key_id), str(symbol).strip().upper())
                     cached_oo = ManualTradeService._OPEN_ORDERS_CACHE.get(cache_key)
-                    if cached_oo and (time.time() - cached_oo[0]) < 10.0 and isinstance(cached_oo[1], dict):
+                    if cached_oo and (time.time() - cached_oo[0]) < 15.0 and isinstance(cached_oo[1], dict):
                         pre_open_orders = list(cached_oo[1].get('orders') or [])
-                    else:
+                    elif not is_futures:
+                        # Only pre-fetch open orders synchronously on Spot when uncached (Futures uses pos_info + cancel_all directly)
                         pre_res = await ManualTradeService.get_open_limit_orders(
                             db, user_id, api_key_id, symbol, force_refresh=True
                         )
@@ -3481,13 +3492,15 @@ class ManualTradeService:
                 except Exception:
                     pre_open_orders = []
 
-                stopped_chases = await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
-                stopped_pegs = await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
-
                 for em_id, em_data in list(bracket_order_service.ACTIVE_ENTRY_MONITORS.items()):
                     key_match = (em_data.get('api_key_id') is None or int(em_data.get('api_key_id')) == int(api_key_id))
                     if key_match and _sym_matches(em_data.get('symbol', ''), symbol):
                         em_data['cancelled'] = True
+
+                parallel_tasks = [
+                    ('chase', stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id)),
+                    ('peg', stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id)),
+                ]
 
                 for sl_id, sdata in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
                     key_match = (sdata.get('api_key_id') is None or int(sdata.get('api_key_id')) == int(api_key_id))
@@ -3497,15 +3510,9 @@ class ManualTradeService:
                         tp_oid = sdata.get('tp_order_id')
                         dis_oid = sdata.get('disaster_sl_order_id')
                         if tp_oid:
-                            try:
-                                await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
-                            except Exception:
-                                pass
+                            parallel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)))
                         if dis_oid:
-                            try:
-                                await bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol)
-                            except Exception:
-                                pass
+                            parallel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(dis_oid), symbol, is_conditional=True)))
 
                 for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
                     key_match = (eb_data.get('api_key_id') is None or int(eb_data.get('api_key_id')) == int(api_key_id))
@@ -3513,65 +3520,121 @@ class ManualTradeService:
                         eb_data['cancelled'] = True
                         tp_oid = eb_data.get('tp_order_id')
                         if tp_oid:
-                            try:
-                                await bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)
-                            except Exception:
-                                pass
+                            parallel_tasks.append(('ord', bracket_order_service._cancel_futures_order_universal(exchange, str(tp_oid), symbol)))
 
-                cancel_all_ok = False
                 if getattr(exchange, 'has', {}).get('cancelAllOrdersWs') and hasattr(exchange, 'cancel_all_orders_ws'):
+                    parallel_tasks.append(('cancel_all_ws', exchange.cancel_all_orders_ws(symbol)))
+                elif hasattr(exchange, 'cancel_all_orders'):
+                    parallel_tasks.append(('cancel_all_rest', exchange.cancel_all_orders(symbol)))
+
+                if is_futures and not is_inverse and hasattr(exchange, 'cancel_all_orders'):
+                    async def _cancel_all_stop_orders():
+                        try:
+                            return await exchange.cancel_all_orders(symbol, params={'stop': True})
+                        except TypeError:
+                            return None
+                    parallel_tasks.append(('cancel_all_stop', _cancel_all_stop_orders()))
+
+                if is_futures and pos_info is None:
+                    parallel_tasks.append(('pos', ManualTradeService.get_active_position(db, user_id, api_key_id, symbol)))
+                parallel_tasks.append(('ob', _fetch_bbo_fast(exchange, symbol)))
+
+                par_res = await asyncio.gather(*(t[1] for t in parallel_tasks), return_exceptions=True)
+                cancel_all_ok = False
+                ws_cancel_failed = False
+                for (tag, _), r_val in zip(parallel_tasks, par_res):
+                    if tag == 'chase' and isinstance(r_val, int):
+                        stopped_chases += r_val
+                    elif tag == 'peg' and isinstance(r_val, int):
+                        stopped_pegs += r_val
+                    elif tag == 'ord' and not isinstance(r_val, Exception):
+                        cancelled_open_orders += 1
+                    elif tag == 'cancel_all_ws':
+                        if not isinstance(r_val, Exception):
+                            cancel_all_ok = True
+                            cancelled_open_orders += max(1, len(pre_open_orders)) if pre_open_orders else 1
+                        else:
+                            ws_cancel_failed = True
+                            logger.debug(f"cancel_all_orders_ws fallback to REST for {symbol}: {r_val}")
+                    elif tag == 'cancel_all_rest' and not isinstance(r_val, Exception):
+                        cancel_all_ok = True
+                        cancelled_open_orders += max(1, len(pre_open_orders)) if pre_open_orders else 1
+                    elif tag == 'cancel_all_stop' and not isinstance(r_val, Exception):
+                        cancelled_open_orders += 1
+                    elif tag == 'pos' and not isinstance(r_val, Exception):
+                        pos_info = r_val
+                    elif tag == 'ob' and not isinstance(r_val, Exception):
+                        prewarmed_ob = r_val
+
+                if ws_cancel_failed and not cancel_all_ok and hasattr(exchange, 'cancel_all_orders'):
                     try:
-                        await exchange.cancel_all_orders_ws(symbol)
+                        await exchange.cancel_all_orders(symbol)
                         cancelled_open_orders += max(1, len(pre_open_orders)) if pre_open_orders else 1
                         cancel_all_ok = True
-                    except Exception as ws_ca_err:
-                        logger.debug(f"cancel_all_orders_ws fallback to REST for {symbol}: {ws_ca_err}")
-                if not cancel_all_ok:
-                    try:
-                        if hasattr(exchange, 'cancel_all_orders'):
-                            await exchange.cancel_all_orders(symbol)
-                            cancelled_open_orders += max(1, len(pre_open_orders)) if pre_open_orders else 1
-                            cancel_all_ok = True
                     except Exception:
                         pass
 
-                if not cancel_all_ok:
-                    for o in pre_open_orders:
-                        oid = o.get('id') if isinstance(o, dict) else None
-                        if oid:
-                            try:
-                                await bracket_order_service._cancel_futures_order_universal(exchange, str(oid), symbol)
-                                cancelled_open_orders += 1
-                            except Exception:
-                                pass
+                if not cancel_all_ok and pre_open_orders:
+                    rem_cancels = [
+                        bracket_order_service._cancel_futures_order_universal(exchange, str(o.get('id')), symbol)
+                        for o in pre_open_orders if isinstance(o, dict) and o.get('id')
+                    ]
+                    if rem_cancels:
+                        rem_res = await asyncio.gather(*rem_cancels, return_exceptions=True)
+                        cancelled_open_orders += sum(1 for r in rem_res if not isinstance(r, Exception))
 
                 ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
 
-            # 3. Fetch live BBO (1ms Redis WS first) & wallet balance concurrently with 0ms blind sleep
+            # 3. Resolve Futures opposite-position check first so closing exits skip unnecessary balance RTTs!
             has_cancelled_orders = bool(
                 cancelled_open_orders > 0 or cancelled_brackets > 0 or stopped_pegs > 0 or stopped_chases > 0
             )
-            cached_bal = None if has_cancelled_orders else ManualTradeService._get_cached_wallet_balance(
-                api_key_id, is_futures, max_age_seconds=10.0
+            pos_amt = float((pos_info or {}).get('amount') or 0.0) if is_futures else 0.0
+            pos_contracts = float((pos_info or {}).get('contracts') or 0.0) if is_futures else 0.0
+            pos_side = str((pos_info or {}).get('side') or 'none').lower() if is_futures else 'none'
+            is_opp_futures_pos = bool(
+                is_futures
+                and (pos_amt > 0 or pos_contracts > 0)
+                and ((pos_side == 'long' and side_lower == 'sell') or (pos_side == 'short' and side_lower == 'buy'))
             )
+            is_closing_position = bool(reduce_only) or (is_futures and is_exit_order) or is_opp_futures_pos
 
-            if cached_bal is not None:
-                ob = None
-                try:
-                    ob = await _fetch_bbo_fast(exchange, symbol)
-                except Exception:
-                    ob = None
-                bal = cached_bal
+            ob = prewarmed_ob
+            bal = None
+            if is_futures and is_closing_position:
+                bal = ManualTradeService._get_cached_wallet_balance(
+                    api_key_id, is_futures, max_age_seconds=30.0, is_inverse=is_inverse
+                ) or {}
+                if ob is None:
+                    try:
+                        ob = await _fetch_bbo_fast(exchange, symbol)
+                    except Exception:
+                        ob = None
             else:
-                ob_res, bal_res = await asyncio.gather(
-                    _fetch_bbo_fast(exchange, symbol),
-                    ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id),
-                    return_exceptions=True,
+                cached_bal = None if (has_cancelled_orders and not is_futures) else ManualTradeService._get_cached_wallet_balance(
+                    api_key_id, is_futures, max_age_seconds=(30.0 if (is_futures and not has_cancelled_orders) else 10.0), is_inverse=is_inverse
                 )
-                ob = None if isinstance(ob_res, Exception) else ob_res
-                if isinstance(bal_res, Exception):
-                    raise bal_res
-                bal = bal_res
+                if cached_bal is not None and not (is_futures and has_cancelled_orders):
+                    if ob is None:
+                        try:
+                            ob = await _fetch_bbo_fast(exchange, symbol)
+                        except Exception:
+                            ob = None
+                    bal = cached_bal
+                else:
+                    gather_b = [ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)]
+                    if ob is None:
+                        gather_b.append(_fetch_bbo_fast(exchange, symbol))
+                    gb_res = await asyncio.gather(*gather_b, return_exceptions=True)
+                    if isinstance(gb_res[0], Exception):
+                        if cached_bal is not None:
+                            bal = cached_bal
+                        else:
+                            raise gb_res[0]
+                    else:
+                        bal = gb_res[0]
+                    if len(gb_res) > 1 and not isinstance(gb_res[1], Exception):
+                        ob = gb_res[1]
 
             ref_price = 0.0
             best_bid = 0.0
@@ -3614,44 +3677,44 @@ class ManualTradeService:
                 else (resolved_all_quote_amt if resolved_all_quote_amt > 0 else resolved_all_base_amt * ref_price)
             )
 
-            if has_cancelled_orders:
+            if has_cancelled_orders and not (is_futures and is_closing_position):
                 lev_eff = float(leverage or 1.0) if is_futures else 1.0
-                needed_val = 0.0
-                if side_lower == 'buy' and unlock_quote_amt > 0:
-                    needed_val = (unlock_quote_amt * pct_ratio) / lev_eff
-                elif side_lower == 'sell' and unlock_base_amt > 0:
-                    needed_val = unlock_base_amt * pct_ratio
+                if is_futures:
+                    # On Linear Futures, margin is ALWAYS quote_part (even on SELL!); on Inverse, it is base_part.
+                    margin_asset = base_part if is_inverse else quote_part
+                    needed_margin = (unlock_quote_amt * pct_ratio) / lev_eff if unlock_quote_amt > 0 else 0.0
+                    if needed_margin > 0:
+                        for _ in range(2):
+                            fm = _extract_bal(bal, margin_asset, 'free')
+                            if fm >= needed_margin * 0.98:
+                                break
+                            await asyncio.sleep(0.05)
+                            bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)
+                else:
+                    needed_val = 0.0
+                    if side_lower == 'buy' and unlock_quote_amt > 0:
+                        needed_val = unlock_quote_amt * pct_ratio
+                    elif side_lower == 'sell' and unlock_base_amt > 0:
+                        needed_val = unlock_base_amt * pct_ratio
 
-                for attempt in range(6):
-                    if side_lower == 'buy':
-                        fq = _extract_bal(bal, quote_part, 'free')
-                        uq = _extract_bal(bal, quote_part, 'used')
-                        # If free quote covers expected cost or used balance dropped to 0
-                        if (needed_val > 0 and fq >= needed_val * 0.98) or (needed_val <= 0 and not specific_oid and uq <= 0):
-                            break
-                    else:
-                        fb = _extract_bal(bal, base_part, 'free')
-                        ub = _extract_bal(bal, base_part, 'used')
-                        if (needed_val > 0 and fb >= needed_val * 0.98) or (needed_val <= 0 and not specific_oid and ub <= 0):
-                            break
-                    await asyncio.sleep(0.05)
-                    bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)
+                    for attempt in range(6):
+                        if side_lower == 'buy':
+                            fq = _extract_bal(bal, quote_part, 'free')
+                            uq = _extract_bal(bal, quote_part, 'used')
+                            if (needed_val > 0 and fq >= needed_val * 0.98) or (needed_val <= 0 and not specific_oid and uq <= 0):
+                                break
+                        else:
+                            fb = _extract_bal(bal, base_part, 'free')
+                            ub = _extract_bal(bal, base_part, 'used')
+                            if (needed_val > 0 and fb >= needed_val * 0.98) or (needed_val <= 0 and not specific_oid and ub <= 0):
+                                break
+                        await asyncio.sleep(0.05)
+                        bal = await ManualTradeService._fetch_wallet_balance(exchange, symbol, meta, api_key_id=api_key_id)
 
             target_amount = 0.0
-            is_closing_position = bool(reduce_only) or (is_futures and is_exit_order)
 
             if is_futures:
-                # Check if user has an active opposite Futures position to force-close/reduce
-                pos_info = None
-                try:
-                    pos_info = await ManualTradeService.get_active_position(db, user_id, api_key_id, symbol)
-                except Exception:
-                    pos_info = None
-
-                pos_amt = float((pos_info or {}).get('amount') or 0.0)
-                pos_contracts = float((pos_info or {}).get('contracts') or 0.0)
-                pos_side = str((pos_info or {}).get('side') or 'none').lower()
-                if (pos_amt > 0 or pos_contracts > 0) and ((pos_side == 'long' and side_lower == 'sell') or (pos_side == 'short' and side_lower == 'buy')):
+                if is_opp_futures_pos:
                     is_closing_position = True
                     if specific_oid and resolved_specific_amt > 0:
                         target_amount = min(pos_amt if not is_inverse else (pos_contracts or pos_amt), resolved_specific_amt * pct_ratio)
@@ -3667,22 +3730,34 @@ class ManualTradeService:
                         else:
                             target_amount = pos_amt * pct_ratio
                 else:
-                    # Opening / adding to Futures position -> sync margin mode & leverage
-                    if margin_mode:
-                        try:
-                            await exchange.set_margin_mode(margin_mode, symbol)
-                        except Exception:
-                            pass
+                    # Opening / adding to Futures position -> sync margin mode & leverage concurrently ONLY on cache miss
+                    sym_cache_key = f"{getattr(exchange, 'apiKey', '')}_{symbol}"
+                    now_ts = time.time()
+                    sync_tasks = []
+                    target_mm = ManualTradeService._normalize_margin_mode_str(margin_mode)
+                    if target_mm:
+                        cached_mm, mm_exp = ManualTradeService._MARGIN_MODE_CACHE.get(sym_cache_key, (None, 0))
+                        if cached_mm != target_mm or now_ts >= mm_exp:
+                            async def _sync_mm():
+                                try:
+                                    await exchange.set_margin_mode(margin_mode, symbol)
+                                except Exception:
+                                    pass
+                                ManualTradeService._MARGIN_MODE_CACHE[sym_cache_key] = (target_mm, time.time() + 3600)
+                            sync_tasks.append(_sync_mm())
                     if leverage:
-                        lev_cache_key = f"{getattr(exchange, 'apiKey', '')}_{symbol}"
-                        now_ts = time.time()
-                        cached_lev, exp_ts = ManualTradeService._LEVERAGE_CACHE.get(lev_cache_key, (None, 0))
-                        if cached_lev != leverage or now_ts >= exp_ts:
-                            try:
-                                await exchange.set_leverage(int(leverage), symbol)
-                            except Exception:
-                                pass
-                            ManualTradeService._LEVERAGE_CACHE[lev_cache_key] = (leverage, now_ts + 600)
+                        lev_int = int(float(leverage))
+                        cached_lev, exp_ts = ManualTradeService._LEVERAGE_CACHE.get(sym_cache_key, (None, 0))
+                        if cached_lev != lev_int or now_ts >= exp_ts:
+                            async def _sync_lv():
+                                try:
+                                    await exchange.set_leverage(lev_int, symbol)
+                                except Exception:
+                                    pass
+                                ManualTradeService._LEVERAGE_CACHE[sym_cache_key] = (lev_int, time.time() + 3600)
+                            sync_tasks.append(_sync_lv())
+                    if sync_tasks:
+                        await asyncio.gather(*sync_tasks, return_exceptions=True)
 
                     lev = float(leverage or 1)
                     if is_inverse:
@@ -3788,11 +3863,20 @@ class ManualTradeService:
 
             # 4A. Execute as Dynamic Smart Peg Maker (0% Maker Fee)
             if mode_lower in ('limit_maker', 'maker', 'smart_peg'):
-                peg_cid = f"peg_{api_key_record.id}_{symbol}_{int(time.time())}"
+                clean_sym = str(symbol).replace('/', '_').replace(':', '_')
+                peg_cid = f"peg_{api_key_record.id}_{clean_sym}_{int(time.time())}"
                 bal_unlocked = is_futures or (
                     (side_lower == 'sell' and _extract_bal(bal, base_part, 'free') >= target_amount * 0.999)
                     or (side_lower == 'buy' and _extract_bal(bal, quote_part, 'free') >= target_amount * ref_price * 0.998)
                 )
+                # Refresh 1ms Redis BBO after cancellations so Attempt 1 never uses a stale pre-cancel quote
+                fresh_ob = ob
+                try:
+                    latest_bbo = await _fetch_bbo_fast(exchange, symbol)
+                    if latest_bbo and latest_bbo.get('bids') and latest_bbo.get('asks'):
+                        fresh_ob = latest_bbo
+                except Exception:
+                    pass
                 asyncio.create_task(
                     execute_smart_peg_entry(
                         exchange=exchange,
@@ -3815,7 +3899,7 @@ class ManualTradeService:
                         contract_size=contract_size,
                         is_inverse=is_inverse,
                         send_initial_notify=True,
-                        preloaded_ob=ob,
+                        preloaded_ob=fresh_ob,
                         preloaded_balance=bal if bal_unlocked else None,
                         skip_exchange_upgrade=True,
                     )

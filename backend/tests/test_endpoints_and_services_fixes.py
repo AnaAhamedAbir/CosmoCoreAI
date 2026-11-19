@@ -1540,6 +1540,109 @@ class TestEndpointsAndServicesFixes(unittest.IsolatedAsyncioTestCase):
         self.assertLess(placed_amounts[1], placed_amounts[0])
         self.assertLessEqual(placed_amounts[1], 16500.0)
 
+    async def test_futures_emergency_force_sell_single_rtt_startup_and_no_unlock_loop(self):
+        """
+        Verifies Futures Emergency Force Sell after cancelling TP + Disaster SL:
+        - Cancels TP/Disaster SL + checks position concurrently in ~1 RTT (no sequential waterfall)
+        - Skips the Spot 6x base_part unlock-polling loop completely
+        - Skips cached set_margin_mode / set_leverage calls
+        - Spawns urgent Smart Peg (25ms BBO poll) immediately.
+        """
+        ex = MockExchange("DOGE/USDC:USDC", tick=0.00001)
+        ex.apiKey = "force_fut_key"
+        ex.has["cancelAllOrders"] = True
+        ex._bids = [[0.05887, 100.0]]
+        ex._asks = [[0.05888, 100.0]]
+        rtt = 0.045
+        call_log = []
+
+        async def slow_cancel(oid, sym, params=None):
+            call_log.append(("cancel", oid))
+            await asyncio.sleep(rtt)
+            return {"id": oid, "status": "canceled"}
+
+        async def slow_cancel_all(sym, params=None):
+            call_log.append(("cancel_all", bool((params or {}).get("stop"))))
+            await asyncio.sleep(rtt)
+            return []
+
+        async def slow_pos(*args, **kwargs):
+            call_log.append(("get_active_position", None))
+            await asyncio.sleep(rtt)
+            return {"amount": 4312.0, "contracts": 4312.0, "contract_size": 1.0, "is_inverse": False, "side": "long"}
+
+        ex.cancel_order = slow_cancel
+        ex.cancel_all_orders = slow_cancel_all
+        ex.set_margin_mode = AsyncMock(side_effect=AssertionError("Cached margin_mode must not call REST set_margin_mode"))
+        ex.set_leverage = AsyncMock(side_effect=AssertionError("Cached leverage must not call REST set_leverage"))
+        ex.fetch_balance = AsyncMock(side_effect=AssertionError("Closing opposite Futures position must NOT poll fetch_balance 6x"))
+
+        sym_k = f"{ex.apiKey}_DOGE/USDC:USDC"
+        ManualTradeService._MARGIN_MODE_CACHE[sym_k] = ("CROSS", time.time() + 3600)
+        ManualTradeService._LEVERAGE_CACHE[sym_k] = (10, time.time() + 3600)
+        ManualTradeService._OPEN_ORDERS_CACHE[(7, "DOGE/USDC:USDC")] = (
+            time.time(),
+            {"orders": [{"id": "tp_1", "side": "sell", "price": 0.05895, "amount": 4312.0, "remaining": 4312.0}]},
+        )
+
+        BracketOrderService.ACTIVE_SOFTWARE_SL.clear()
+        BracketOrderService.ACTIVE_SOFTWARE_SL["sl_force_1"] = {
+            "id": "sl_force_1",
+            "api_key_id": 7,
+            "symbol": "DOGE/USDC:USDC",
+            "side": "sell",
+            "amount": 4312.0,
+            "trigger_price": 0.05850,
+            "tp_order_id": "tp_1",
+            "disaster_sl_order_id": "dis_1",
+            "is_futures": True,
+        }
+
+        class StaticRedis:
+            async def get(self, key):
+                return json.dumps({"bid": 0.05887, "ask": 0.05888, "ts": time.time()})
+
+        spawned_kwargs = {}
+
+        async def capture_peg(**kwargs):
+            spawned_kwargs.update(kwargs)
+            return {"id": "peg_done", "status": "closed"}
+
+        fake_uos = SimpleNamespace(
+            _get_redis_pub=AsyncMock(return_value=StaticRedis()),
+            mark_order_replaced=lambda *a, **kw: None,
+            ensure_user_order_stream=lambda *a, **kw: None,
+        )
+
+        with patch.object(ManualTradeService, "_get_exchange", AsyncMock(return_value=ex)), \
+             patch.object(ManualTradeService, "get_active_position", side_effect=slow_pos), \
+             patch.dict(sys.modules, {"app.services.user_order_stream": fake_uos}), \
+             patch("app.services.smart_peg_entry_executor.execute_smart_peg_entry", side_effect=capture_peg):
+            t0 = time.perf_counter()
+            res = await ManualTradeService.execute_emergency_force_order(
+                db=FakeDB(),
+                user_id=1,
+                api_key_id=7,
+                symbol="DOGE/USDC:USDC",
+                side="sell",
+                execution_mode="limit_maker",
+                size_pct=100.0,
+                leverage=10,
+                margin_mode="cross",
+                target_order_id="all",
+                start_time=t0,
+            )
+            elapsed = time.perf_counter() - t0
+            await asyncio.sleep(0.01)
+
+        self.assertEqual(res["status"], "pegging")
+        self.assertEqual(res["amount"], 4312.0)
+        # Parallel cancels + position fetch must finish in ~1 RTT (< 2.5 * rtt), never 5+ sequential RTTs!
+        self.assertLess(elapsed, rtt * 2.5)
+        self.assertTrue(spawned_kwargs.get("urgent_mode"))
+        self.assertTrue(spawned_kwargs.get("reduce_only"))
+        self.assertNotIn(":", spawned_kwargs.get("peg_id", ""))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

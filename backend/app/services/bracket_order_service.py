@@ -695,7 +695,9 @@ class BracketOrderService:
     @staticmethod
     async def monitor_native_otoco(
         exchange, symbol: str, side: str, amount: float, entry_price: float,
-        raw_res: dict, user_id: int
+        raw_res: dict, user_id: int, api_key_id: Optional[int] = None,
+        monitor_id: Optional[str] = None,
+        skip_entry_fill_notify: bool = False,
     ):
         """
         Monitors Binance Native Spot OTO/OTOCO order list.
@@ -703,7 +705,14 @@ class BracketOrderService:
         """
         if not user_id:
             return
+        mid = None
         try:
+            from app.services.manual_trade_persistence import (
+                schedule_mark_terminal,
+                schedule_update_monitor,
+                schedule_upsert_monitor,
+            )
+
             order_list = raw_res.get('orderReports', [])
             side_up = str(side or '').upper()
             working_order = next(
@@ -720,6 +729,24 @@ class BracketOrderService:
             sl_id = sl_order.get('orderId') if sl_order else None
             opposite_side = 'sell' if side.lower() == 'buy' else 'buy'
 
+            mid = monitor_id or f"otoco:{working_id or tp_id or sl_id or raw_res.get('orderListId', '')}"
+            if api_key_id and mid and mid != "otoco:":
+                schedule_upsert_monitor(
+                    monitor_id=mid,
+                    kind="native_otoco",
+                    user_id=user_id,
+                    api_key_id=api_key_id,
+                    symbol=symbol,
+                    is_futures=False,
+                    side=side,
+                    status="monitoring",
+                    amount=float(amount or 0.0),
+                    entry_price=float(entry_price or 0.0),
+                    entry_order_id=str(working_id) if working_id else None,
+                    tp_order_id=str(tp_id) if tp_id else None,
+                    config={"raw_res": raw_res},
+                )
+
             # 1. Wait for working entry order to fill
             if working_id:
                 for _ in range(600):
@@ -728,16 +755,19 @@ class BracketOrderService:
                         chk = await exchange.fetch_order(str(working_id), symbol)
                         st = chk.get('status', '').lower()
                         if st in ('closed', 'filled'):
-                            fill_p = float(chk.get('average') or chk.get('price') or entry_price)
-                            await BracketOrderService._send_entry_filled_notification(
-                                user_id=user_id,
-                                symbol=symbol,
-                                side=side,
-                                filled=amount,
-                                total_amount=amount,
-                                average_price=fill_p,
-                                is_futures=False
-                            )
+                            if mid:
+                                schedule_update_monitor(mid, config_patch={'working_filled': True})
+                            if not skip_entry_fill_notify:
+                                fill_p = float(chk.get('average') or chk.get('price') or entry_price)
+                                await BracketOrderService._send_entry_filled_notification(
+                                    user_id=user_id,
+                                    symbol=symbol,
+                                    side=side,
+                                    filled=amount,
+                                    total_amount=amount,
+                                    average_price=fill_p,
+                                    is_futures=False
+                                )
                             break
                         elif st in ('canceled', 'cancelled', 'expired', 'rejected'):
                             await BracketOrderService._send_order_cancelled_notification(
@@ -748,6 +778,8 @@ class BracketOrderService:
                                 processed_amount=0,
                                 total_amount=amount
                             )
+                            if mid:
+                                schedule_mark_terminal(mid, status="cancelled", reason=f"otoco_working_{st}")
                             return
                     except Exception:
                         pass
@@ -768,6 +800,8 @@ class BracketOrderService:
                                 entry_price=entry_price,
                                 exit_price=exit_p
                             )
+                            if mid:
+                                schedule_mark_terminal(mid, status="completed", reason="otoco_tp_filled")
                             return
 
                     if sl_id:
@@ -783,9 +817,13 @@ class BracketOrderService:
                                 exit_price=exit_p,
                                 sl_method="Native Spot OTOCO Stop-Loss"
                             )
+                            if mid:
+                                schedule_mark_terminal(mid, status="completed", reason="otoco_sl_filled")
                             return
                 except Exception:
                     pass
+            if mid:
+                schedule_mark_terminal(mid, status="completed", reason="otoco_monitor_timeout")
         except Exception as e:
             logger.debug(f"monitor_native_otoco notice: {e}")
 
@@ -957,6 +995,15 @@ class BracketOrderService:
                 chase_meta['max_chase_price'] = new_max_chase
                 chase_meta['current_maker_price'] = prec_price
                 chase_meta['target_updated'] = True
+                try:
+                    from app.services.manual_trade_persistence import schedule_update_monitor
+                    schedule_update_monitor(
+                        sl_id,
+                        fields={'trigger_price': prec_price},
+                        config_patch={'original_sl': prec_price, 'max_chase_price': new_max_chase},
+                    )
+                except Exception:
+                    pass
                 total_ms = int((time.perf_counter() - t0) * 1000)
                 logger.info(
                     f"🎯 Updated active smart chase target for {sl_id} to {prec_price} "
@@ -997,6 +1044,14 @@ class BracketOrderService:
         sl_meta['price'] = prec_price
         if set_manual_override:
             sl_meta['manual_trigger_override'] = prec_price
+        try:
+            from app.services.manual_trade_persistence import schedule_update_monitor
+            upd_fields = {'trigger_price': prec_price}
+            if set_manual_override:
+                upd_fields['manual_trigger_override'] = prec_price
+            schedule_update_monitor(sl_id, fields=upd_fields)
+        except Exception:
+            pass
 
         # If disaster SL order exists on futures exchange, replace it with updated disaster level.
         # For SMART_CHASE / TRAILING software monitors, the active RAM trigger (`trigger_price`) updates in <1ms;
@@ -1084,6 +1139,14 @@ class BracketOrderService:
                                 )
                         if isinstance(d_res, dict) and d_res.get('id'):
                             sl_meta['disaster_sl_order_id'] = d_res.get('id')
+                            try:
+                                from app.services.manual_trade_persistence import schedule_update_monitor
+                                schedule_update_monitor(
+                                    sl_id,
+                                    fields={'disaster_sl_order_id': str(d_res.get('id'))},
+                                )
+                            except Exception:
+                                pass
                             logger.info(f"🛡️ Replaced Native Disaster SL at {disaster_price_prec} (New ID: {d_res.get('id')})")
                 except Exception as d_err:
                     logger.warning(f"⚠️ Failed to update native disaster SL: {d_err}")
@@ -1136,6 +1199,7 @@ class BracketOrderService:
         linked_tp_price: float = None,
         initial_filled_amount: float = 0.0,
         initial_filled_price: float = 0.0,
+        resume_processed_amount: Optional[float] = None,
     ):
         """
         Background task:
@@ -1214,9 +1278,10 @@ class BracketOrderService:
                 f"Symbol: {symbol} | Timeout: {'Unlimited (Until Filled)' if is_unlimited else f'{max_timeout_mins} min'}"
             )
 
-            processed_amount = init_filled
+            processed_amount = float(resume_processed_amount) if resume_processed_amount is not None else init_filled
             average_price = float(initial_filled_price or initial_entry_price or 0.0)
             order_closed = False
+            order_was_cancelled = False
             elapsed_seconds = 0
             fill_event = asyncio.Event()
             if current_entry_id:
@@ -1229,6 +1294,30 @@ class BracketOrderService:
                     'cancelled': False,
                     'fill_event': fill_event,
                 }
+                try:
+                    from app.services.manual_trade_persistence import schedule_upsert_monitor
+                    schedule_upsert_monitor(
+                        monitor_id=current_entry_id,
+                        kind='entry_monitor',
+                        user_id=user_id,
+                        api_key_id=getattr(api_key_record, 'id', None),
+                        symbol=symbol,
+                        is_futures=is_futures,
+                        side=side,
+                        status='monitoring',
+                        amount=float(amount or 0.0),
+                        entry_price=average_price,
+                        entry_order_id=current_entry_id,
+                        tp_order_id=str(linked_tp_order_id) if linked_tp_order_id else None,
+                        tp_price=float(linked_tp_price) if linked_tp_price else None,
+                        config={
+                            'tp_config': tp_config,
+                            'sl_config': sl_config,
+                            'processed_amount': processed_amount,
+                        },
+                    )
+                except Exception:
+                    pass
 
             def _resolve_active_entry_id(curr_id: Optional[str]) -> Optional[str]:
                 """Follow any cancelReplace / edit_order ID handoff chain seamlessly."""
@@ -1248,6 +1337,7 @@ class BracketOrderService:
                 current_entry_id = _resolve_active_entry_id(current_entry_id)
                 mon_meta = BracketOrderService.ACTIVE_ENTRY_MONITORS.get(current_entry_id, {}) if current_entry_id else {}
                 if mon_meta.get('cancelled'):
+                    order_was_cancelled = True
                     logger.info(f"🛑 Bracket Monitor for {current_entry_id} aborted by Emergency Force Order.")
                     break
                 if not is_unlimited and elapsed_seconds >= max_timeout_mins * 60:
@@ -1275,6 +1365,7 @@ class BracketOrderService:
                 current_entry_id = _resolve_active_entry_id(current_entry_id)
                 mon_meta = BracketOrderService.ACTIVE_ENTRY_MONITORS.get(current_entry_id, {}) if current_entry_id else {}
                 if mon_meta.get('cancelled'):
+                    order_was_cancelled = True
                     logger.info(f"🛑 Bracket Monitor for {current_entry_id} aborted by Emergency Force Order.")
                     break
 
@@ -1340,6 +1431,15 @@ class BracketOrderService:
                                     )
                                 )
                             processed_amount = filled
+                            if current_entry_id:
+                                try:
+                                    from app.services.manual_trade_persistence import schedule_update_monitor
+                                    schedule_update_monitor(
+                                        current_entry_id,
+                                        config_patch={'processed_amount': processed_amount},
+                                    )
+                                except Exception:
+                                    pass
 
                     if status in ('closed', 'filled') or processed_amount >= amount * 0.99:
                         order_closed = True
@@ -1365,6 +1465,7 @@ class BracketOrderService:
                                 )
                             )
                         order_closed = True
+                        order_was_cancelled = True
                         break
 
                 except Exception as poll_e:
@@ -1375,6 +1476,18 @@ class BracketOrderService:
                     f"⏰ Bracket Monitor: Entry {current_entry_id or entry_order_id} timed out "
                     f"after {max_timeout_mins} mins. Processed {processed_amount}/{amount}."
                 )
+
+            term_id = current_entry_id or (str(entry_order_id) if entry_order_id else None)
+            if term_id:
+                try:
+                    from app.services.manual_trade_persistence import schedule_mark_terminal
+                    schedule_mark_terminal(
+                        term_id,
+                        status='cancelled' if order_was_cancelled else 'completed',
+                        reason='entry_cancelled' if order_was_cancelled else ('entry_timeout' if not order_closed else 'entry_completed'),
+                    )
+                except Exception:
+                    pass
 
         except Exception as main_e:
             logger.error(f"Bracket Monitor critical failure: {main_e}", exc_info=True)
@@ -1775,6 +1888,21 @@ class BracketOrderService:
                                         sdata['price'] = prec_sl
                                         if not is_consolidation_chunk and sl_mode_curr == 'absolute':
                                             sdata['manual_trigger_override'] = prec_sl
+                        try:
+                            from app.services.manual_trade_persistence import schedule_update_monitor
+                            cons_fields = {
+                                'amount': float(new_total_amt),
+                                'entry_price': float(weighted_entry),
+                                'trigger_price': float(sdata.get('trigger_price')) if sdata.get('trigger_price') is not None else None,
+                                'manual_trigger_override': float(sdata.get('manual_trigger_override')) if sdata.get('manual_trigger_override') is not None else None,
+                                'tp_order_id': str(sdata.get('tp_order_id')) if sdata.get('tp_order_id') else None,
+                                'tp_price': float(sdata.get('tp_price')) if sdata.get('tp_price') else None,
+                            }
+                            cons_fields = {k: v for k, v in cons_fields.items() if v is not None}
+                            if cons_fields:
+                                schedule_update_monitor(str(sid), fields=cons_fields)
+                        except Exception:
+                            pass
                         break
 
                 # Consolidate / Update Futures disaster SL if present (after trigger_price is synced)
@@ -2413,10 +2541,25 @@ class BracketOrderService:
             if sl_config:
                 for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items()):
                     if sid not in pre_sl_ids and isinstance(sdata, dict) and not sdata.get('cancelled'):
+                        tp_linked = False
                         if resolved_tp_id and not sdata.get('tp_order_id'):
                             sdata['tp_order_id'] = str(resolved_tp_id)
+                            tp_linked = True
                         if resolved_tp_price and not sdata.get('tp_price'):
                             sdata['tp_price'] = float(resolved_tp_price)
+                            tp_linked = True
+                        if tp_linked:
+                            try:
+                                from app.services.manual_trade_persistence import schedule_update_monitor
+                                tp_upd = {}
+                                if sdata.get('tp_order_id'):
+                                    tp_upd['tp_order_id'] = str(sdata['tp_order_id'])
+                                if sdata.get('tp_price'):
+                                    tp_upd['tp_price'] = float(sdata['tp_price'])
+                                if tp_upd:
+                                    schedule_update_monitor(str(sid), fields=tp_upd)
+                            except Exception:
+                                pass
                         sl_px = float(sdata.get('trigger_price') if sdata.get('trigger_price') is not None else sdata.get('price', 0.0))
                         if sl_px > 0 and sdata.get('status') != 'pegging':
                             pushed_bracket_lines.append({
@@ -2486,24 +2629,38 @@ class BracketOrderService:
         auto_breakeven_trigger_pct: float = 1.0,
         auto_breakeven_buffer_pct: float = 0.05,
         entry_order_id: str = None,
-        tp_price: float = None
+        tp_price: float = None,
+        sl_id: Optional[str] = None,
+        initial_highest_price: Optional[float] = None,
+        initial_lowest_price: Optional[float] = None,
+        initial_breakeven_activated: bool = False,
+        initial_manual_trigger_override: Optional[float] = None,
+        initial_trigger_price: Optional[float] = None,
     ):
-        highest_price = entry_price
-        lowest_price = entry_price
+        highest_price = float(initial_highest_price) if initial_highest_price else entry_price
+        lowest_price = float(initial_lowest_price) if initial_lowest_price else entry_price
+        init_trig = (
+            float(initial_trigger_price)
+            if initial_trigger_price is not None
+            else (float(initial_manual_trigger_override) if initial_manual_trigger_override is not None else entry_price)
+        )
         
-        sl_id = str(uuid.uuid4())
+        sl_id = sl_id or str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
             'id': sl_id,
             'entry_order_id': str(entry_order_id) if entry_order_id else None,
             'api_key_id': getattr(api_key_record, 'id', None),
             'api_key_record': api_key_record,
+            'user_id': user_id,
             'symbol': symbol,
             'side': opposite_side,
             'amount': amount,
             'type': 'trailing_chase' if is_smart_chase_exit else 'trailing',
             'mode': 'TRAILING_CHASE' if is_smart_chase_exit else mode,
-            'price': entry_price,
-            'trigger_price': entry_price,
+            'price': init_trig,
+            'trigger_price': init_trig,
+            'highest_price': highest_price,
+            'lowest_price': lowest_price,
             'entry_price': entry_price,
             'val': val,
             'is_futures': is_futures,
@@ -2516,13 +2673,59 @@ class BracketOrderService:
             'auto_breakeven_enabled': auto_breakeven_enabled,
             'auto_breakeven_trigger_pct': auto_breakeven_trigger_pct,
             'auto_breakeven_buffer_pct': auto_breakeven_buffer_pct,
-            'breakeven_activated': False,
+            'breakeven_activated': bool(initial_breakeven_activated),
             'max_deviation_pct': max_deviation_pct,
             'max_attempts': max_attempts,
             'chase_delay_ms': chase_delay_ms,
             'tp_order_id': str(tp_order_id) if tp_order_id else None,
             'tp_price': float(tp_price) if tp_price else None
         }
+        if initial_manual_trigger_override is not None:
+            BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['manual_trigger_override'] = float(initial_manual_trigger_override)
+        try:
+            from app.services.manual_trade_persistence import schedule_upsert_monitor
+            schedule_upsert_monitor(
+                monitor_id=sl_id,
+                kind='software_sl',
+                user_id=user_id,
+                api_key_id=getattr(api_key_record, 'id', None),
+                symbol=symbol,
+                is_futures=is_futures,
+                side=opposite_side,
+                status='monitoring',
+                sl_type='trailing_chase' if is_smart_chase_exit else 'trailing',
+                sl_mode='TRAILING_CHASE' if is_smart_chase_exit else str(mode),
+                amount=float(amount or 0.0),
+                entry_price=float(entry_price or 0.0),
+                trigger_price=float(init_trig),
+                highest_price=highest_price,
+                lowest_price=lowest_price,
+                entry_order_id=str(entry_order_id) if entry_order_id else None,
+                tp_order_id=str(tp_order_id) if tp_order_id else None,
+                tp_price=float(tp_price) if tp_price else None,
+                breakeven_activated=bool(initial_breakeven_activated),
+                manual_trigger_override=float(initial_manual_trigger_override) if initial_manual_trigger_override is not None else None,
+                config={
+                    'val': float(val or 0.0),
+                    'sl_mode_raw': str(mode),
+                    'atr_period': int(atr_period),
+                    'atr_multiplier': float(atr_multiplier),
+                    'atr_timeframe': str(atr_timeframe),
+                    'is_smart_chase_exit': bool(is_smart_chase_exit),
+                    'max_deviation_pct': float(max_deviation_pct),
+                    'chase_delay_ms': int(chase_delay_ms),
+                    'max_attempts': int(max_attempts),
+                    'chase_mode': str(chase_mode),
+                    'trigger_source': str(trigger_source),
+                    'peg_strategy': str(peg_strategy),
+                    'wall_multiplier': float(wall_multiplier),
+                    'auto_breakeven_enabled': bool(auto_breakeven_enabled),
+                    'auto_breakeven_trigger_pct': float(auto_breakeven_trigger_pct),
+                    'auto_breakeven_buffer_pct': float(auto_breakeven_buffer_pct),
+                },
+            )
+        except Exception:
+            pass
 
         logger.info(
             f"🏁 {'Trailing Chase (Maker)' if is_smart_chase_exit else 'Trailing SL'} loop started for {symbol} | "
@@ -2551,6 +2754,11 @@ class BracketOrderService:
             sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
             if not sl_meta or sl_meta.get('cancelled'):
                 logger.info(f"🛑 Trailing SL monitor cancelled by user for {symbol}.")
+                try:
+                    from app.services.manual_trade_persistence import schedule_mark_terminal
+                    schedule_mark_terminal(sl_id, status='cancelled', reason='trailing_cancelled')
+                except Exception:
+                    pass
                 BracketOrderService._mark_entry_bracket_closed(
                     entry_order_id=(sl_meta.get('entry_order_id') if sl_meta else entry_order_id),
                     tp_order_id=((sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id),
@@ -2671,6 +2879,18 @@ class BracketOrderService:
                             sl_meta['manual_trigger_override'] = target_be
                             sl_meta['trigger_price'] = target_be
                             sl_meta['price'] = target_be
+                            try:
+                                from app.services.manual_trade_persistence import schedule_update_monitor
+                                schedule_update_monitor(
+                                    sl_id,
+                                    fields={
+                                        'breakeven_activated': True,
+                                        'manual_trigger_override': float(target_be),
+                                        'trigger_price': float(target_be),
+                                    },
+                                )
+                            except Exception:
+                                pass
                             logger.info(f"🛡️ [Auto-Breakeven] Activated for Trailing {symbol}! Profit: +{profit_pct:.2f}% >= +{auto_breakeven_trigger_pct}%. SL moved to {target_be}")
                             if user_id:
                                 asyncio.create_task(
@@ -2726,6 +2946,13 @@ class BracketOrderService:
 
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['trigger_price'] = trigger_price
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['price'] = trigger_price
+                    BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['highest_price'] = highest_price
+                    BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['lowest_price'] = lowest_price
+                    try:
+                        from app.services.manual_trade_persistence import schedule_throttled_trailing_hwm
+                        schedule_throttled_trailing_hwm(sl_id, highest_price, lowest_price, trigger_price)
+                    except Exception:
+                        pass
 
                     if current_price <= trigger_price:
                         if (was_tp_touched or not curr_tp_price) and await BracketOrderService._check_linked_tp_filled(
@@ -2763,6 +2990,13 @@ class BracketOrderService:
 
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['trigger_price'] = trigger_price
                     BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['price'] = trigger_price
+                    BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['highest_price'] = highest_price
+                    BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['lowest_price'] = lowest_price
+                    try:
+                        from app.services.manual_trade_persistence import schedule_throttled_trailing_hwm
+                        schedule_throttled_trailing_hwm(sl_id, highest_price, lowest_price, trigger_price)
+                    except Exception:
+                        pass
 
                     if current_price >= trigger_price:
                         if (was_tp_touched or not curr_tp_price) and await BracketOrderService._check_linked_tp_filled(
@@ -2790,11 +3024,17 @@ class BracketOrderService:
         curr_entry_id = (sl_meta.get('entry_order_id') if sl_meta else None) or entry_order_id
         curr_tp_id = (sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id
         if not sl_triggered:
+            try:
+                from app.services.manual_trade_persistence import schedule_mark_terminal
+                schedule_mark_terminal(sl_id, status='completed', reason='trailing_tp_or_closed')
+            except Exception:
+                pass
             BracketOrderService._mark_entry_bracket_closed(entry_order_id=curr_entry_id, tp_order_id=curr_tp_id)
             if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
                 del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
             return
 
+        cancelled_during_exec = False
         try:
             curr_amount = float(sl_meta.get('amount') if (sl_meta and sl_meta.get('amount') is not None) else amount)
             BracketOrderService._mark_entry_bracket_closed(entry_order_id=curr_entry_id, tp_order_id=curr_tp_id)
@@ -2868,9 +3108,18 @@ class BracketOrderService:
                         sl_method=f"Trailing SL ({mode_str})"
                     )
                 )
+        except asyncio.CancelledError:
+            cancelled_during_exec = True
+            raise
         except Exception as e:
             logger.error(f"❌ Failed to execute Trailing SL: {e}")
         finally:
+            try:
+                from app.services.manual_trade_persistence import schedule_mark_terminal
+                if not cancelled_during_exec and not is_smart_chase_exit:
+                    schedule_mark_terminal(sl_id, status='completed', reason='trailing_market_executed')
+            except Exception:
+                pass
             BracketOrderService._mark_entry_bracket_closed(entry_order_id=curr_entry_id, tp_order_id=curr_tp_id)
             if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
                 del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
@@ -2886,14 +3135,18 @@ class BracketOrderService:
         auto_breakeven_trigger_pct: float = 1.0,
         auto_breakeven_buffer_pct: float = 0.05,
         entry_order_id: str = None,
-        tp_price: float = None
+        tp_price: float = None,
+        sl_id: Optional[str] = None,
+        initial_breakeven_activated: bool = False,
+        initial_manual_trigger_override: Optional[float] = None,
     ):
-        sl_id = str(uuid.uuid4())
+        sl_id = sl_id or str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
             'id': sl_id,
             'entry_order_id': str(entry_order_id) if entry_order_id else None,
             'api_key_id': getattr(api_key_record, 'id', None),
             'api_key_record': api_key_record,
+            'user_id': user_id,
             'symbol': symbol,
             'side': opposite_side,
             'amount': amount,
@@ -2907,10 +3160,42 @@ class BracketOrderService:
             'exchange': exchange,
             'status': 'monitoring',
             'auto_breakeven_enabled': auto_breakeven_enabled,
-            'breakeven_activated': False,
+            'breakeven_activated': bool(initial_breakeven_activated),
             'tp_order_id': str(tp_order_id) if tp_order_id else None,
             'tp_price': float(tp_price) if tp_price else None
         }
+        if initial_manual_trigger_override is not None:
+            BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['manual_trigger_override'] = float(initial_manual_trigger_override)
+        try:
+            from app.services.manual_trade_persistence import schedule_upsert_monitor
+            schedule_upsert_monitor(
+                monitor_id=sl_id,
+                kind='software_sl',
+                user_id=user_id,
+                api_key_id=getattr(api_key_record, 'id', None),
+                symbol=symbol,
+                is_futures=is_futures,
+                side=opposite_side,
+                status='monitoring',
+                sl_type='fixed',
+                sl_mode='STOP',
+                amount=float(amount or 0.0),
+                entry_price=float(entry_price or 0.0),
+                trigger_price=float(initial_sl_price or 0.0),
+                entry_order_id=str(entry_order_id) if entry_order_id else None,
+                tp_order_id=str(tp_order_id) if tp_order_id else None,
+                tp_price=float(tp_price) if tp_price else None,
+                disaster_sl_order_id=str(disaster_sl_order_id) if disaster_sl_order_id else None,
+                breakeven_activated=bool(initial_breakeven_activated),
+                manual_trigger_override=float(initial_manual_trigger_override) if initial_manual_trigger_override is not None else None,
+                config={
+                    'auto_breakeven_enabled': bool(auto_breakeven_enabled),
+                    'auto_breakeven_trigger_pct': float(auto_breakeven_trigger_pct),
+                    'auto_breakeven_buffer_pct': float(auto_breakeven_buffer_pct),
+                },
+            )
+        except Exception:
+            pass
         logger.info(
             f"🛡️ [Fixed SL Watchdog/Breakeven] Started for {symbol} | Initial SL: {initial_sl_price} | "
             f"Native SL ID: {disaster_sl_order_id or 'Software-Fallback'} | TP ID: {tp_order_id or 'None'} | "
@@ -2919,6 +3204,9 @@ class BracketOrderService:
 
         loop_tick = 0
         pos_closed_streak = 0
+        should_mark_terminal = False
+        terminal_status = 'completed'
+        terminal_reason = 'fixed_sl_finished'
 
         try:
             while True:
@@ -2927,6 +3215,9 @@ class BracketOrderService:
                 sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
                 if not sl_meta or sl_meta.get('cancelled'):
                     logger.info(f"🛑 Fixed SL Auto-Breakeven monitor cancelled by user for {symbol}.")
+                    should_mark_terminal = True
+                    terminal_status = 'cancelled'
+                    terminal_reason = 'fixed_sl_cancelled'
                     BracketOrderService._mark_entry_bracket_closed(
                         entry_order_id=(sl_meta.get('entry_order_id') if sl_meta else entry_order_id),
                         tp_order_id=((sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id),
@@ -2936,209 +3227,246 @@ class BracketOrderService:
                         await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
                     return
 
-                # Synchronize dynamic entry_price, amount, and order IDs
-                if sl_meta.get('entry_price'):
-                    entry_price = float(sl_meta['entry_price'])
-                if sl_meta.get('amount') is not None:
-                    amount = float(sl_meta['amount'])
-                if sl_meta.get('tp_order_id'):
-                    tp_order_id = sl_meta['tp_order_id']
-                if sl_meta.get('disaster_sl_order_id'):
-                    disaster_sl_order_id = sl_meta['disaster_sl_order_id']
+                try:
+                    # Synchronize dynamic entry_price, amount, and order IDs
+                    if sl_meta.get('entry_price'):
+                        entry_price = float(sl_meta['entry_price'])
+                    if sl_meta.get('amount') is not None:
+                        amount = float(sl_meta['amount'])
+                    if sl_meta.get('tp_order_id'):
+                        tp_order_id = sl_meta['tp_order_id']
+                    if sl_meta.get('disaster_sl_order_id'):
+                        disaster_sl_order_id = sl_meta['disaster_sl_order_id']
 
-                # 1. Check if TP order filled on exchange
-                curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
-                if curr_tp_id:
-                    try:
-                        tp_chk = (
-                            await BracketOrderService._fetch_futures_order_universal(exchange, curr_tp_id, symbol, is_conditional=False)
-                            if is_futures else await exchange.fetch_order(curr_tp_id, symbol)
-                        )
-                        if tp_chk and str(tp_chk.get('status', '')).lower() in ['closed', 'filled']:
-                            logger.info(f"🎯 TP order {curr_tp_id} filled! Cancelling SL and closing Fixed SL monitor for {symbol}.")
-                            BracketOrderService._mark_entry_bracket_closed(
-                                entry_order_id=sl_meta.get('entry_order_id'),
-                                tp_order_id=curr_tp_id,
+                    # 1. Check if TP order filled on exchange
+                    curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
+                    if curr_tp_id:
+                        try:
+                            tp_chk = (
+                                await BracketOrderService._fetch_futures_order_universal(exchange, curr_tp_id, symbol, is_conditional=False)
+                                if is_futures else await exchange.fetch_order(curr_tp_id, symbol)
                             )
-                            exit_price = float(tp_chk.get('average') or tp_chk.get('price') or 0.0)
-                            if user_id:
-                                try:
+                            if tp_chk and str(tp_chk.get('status', '')).lower() in ['closed', 'filled']:
+                                logger.info(f"🎯 TP order {curr_tp_id} filled! Cancelling SL and closing Fixed SL monitor for {symbol}.")
+                                should_mark_terminal = True
+                                terminal_status = 'completed'
+                                terminal_reason = 'fixed_sl_tp_filled'
+                                BracketOrderService._mark_entry_bracket_closed(
+                                    entry_order_id=sl_meta.get('entry_order_id'),
+                                    tp_order_id=curr_tp_id,
+                                )
+                                exit_price = float(tp_chk.get('average') or tp_chk.get('price') or 0.0)
+                                if user_id:
+                                    try:
+                                        asyncio.create_task(
+                                            BracketOrderService._send_tp_completed_notification(
+                                                user_id=user_id,
+                                                symbol=symbol,
+                                                opposite_side=opposite_side,
+                                                amount=amount,
+                                                entry_price=entry_price,
+                                                exit_price=exit_price
+                                            )
+                                        )
+                                    except Exception:
+                                        pass
+                                curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
+                                if curr_disaster:
+                                    await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
+                                return
+                        except Exception:
+                            pass
+
+                    # 2. Check if native SL order filled on futures (conditional/algo order aware)
+                    curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
+                    if curr_disaster:
+                        try:
+                            sl_chk = (
+                                await BracketOrderService._fetch_futures_order_universal(exchange, curr_disaster, symbol, is_conditional=True)
+                                if is_futures else await exchange.fetch_order(curr_disaster, symbol)
+                            )
+                            if sl_chk and str(sl_chk.get('status', '')).lower() in ['closed', 'filled']:
+                                logger.info(f"🛡️ Native Fixed SL order {curr_disaster} filled! Cancelling TP and closing monitor for {symbol}.")
+                                should_mark_terminal = True
+                                terminal_status = 'completed'
+                                terminal_reason = 'fixed_sl_native_filled'
+                                BracketOrderService._mark_entry_bracket_closed(
+                                    entry_order_id=sl_meta.get('entry_order_id'),
+                                    tp_order_id=curr_tp_id,
+                                )
+                                exit_p = float(sl_chk.get('average') or sl_chk.get('price') or sl_chk.get('stopPrice') or initial_sl_price)
+                                if user_id:
                                     asyncio.create_task(
-                                        BracketOrderService._send_tp_completed_notification(
+                                        BracketOrderService._send_sl_completed_notification(
                                             user_id=user_id,
                                             symbol=symbol,
                                             opposite_side=opposite_side,
                                             amount=amount,
                                             entry_price=entry_price,
-                                            exit_price=exit_price
+                                            exit_price=exit_p,
+                                            sl_method="Native Futures Fixed SL"
                                         )
                                     )
-                                except Exception:
-                                    pass
-                            curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
+                                if curr_tp_id:
+                                    await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp_id, symbol)
+                                return
+                        except Exception:
+                            pass
+
+                    # 3. Check if position was closed externally (after initial indexing grace period of 5 ticks / ~7.5s)
+                    if is_futures and loop_tick > 5:
+                        pos_open = await BracketOrderService._check_futures_position_is_open(exchange, symbol, opposite_side)
+                        if not pos_open:
+                            pos_closed_streak += 1
+                        else:
+                            pos_closed_streak = 0
+                        if pos_closed_streak >= 2:
+                            logger.info(f"🚫 Position confirmed closed externally on {symbol}. Cleaning up bracket orders.")
+                            should_mark_terminal = True
+                            terminal_status = 'completed'
+                            terminal_reason = 'fixed_sl_position_closed'
                             if curr_disaster:
                                 await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
-                            return
-                    except Exception:
-                        pass
-
-                # 2. Check if native SL order filled on futures (conditional/algo order aware)
-                curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
-                if curr_disaster:
-                    try:
-                        sl_chk = (
-                            await BracketOrderService._fetch_futures_order_universal(exchange, curr_disaster, symbol, is_conditional=True)
-                            if is_futures else await exchange.fetch_order(curr_disaster, symbol)
-                        )
-                        if sl_chk and str(sl_chk.get('status', '')).lower() in ['closed', 'filled']:
-                            logger.info(f"🛡️ Native Fixed SL order {curr_disaster} filled! Cancelling TP and closing monitor for {symbol}.")
+                            if curr_tp_id:
+                                await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp_id, symbol)
                             BracketOrderService._mark_entry_bracket_closed(
                                 entry_order_id=sl_meta.get('entry_order_id'),
                                 tp_order_id=curr_tp_id,
                             )
-                            exit_p = float(sl_chk.get('average') or sl_chk.get('price') or sl_chk.get('stopPrice') or initial_sl_price)
+                            return
+
+                    ticker = await BracketOrderService._fetch_ticker_fast(exchange, symbol, require_last=True)
+                    current_price = float(ticker.get('last') or 0.0)
+                    if current_price <= 0:
+                        continue
+
+                    # 4. Auto-Breakeven check
+                    if auto_breakeven_enabled and not sl_meta.get('breakeven_activated', False) and entry_price > 0:
+                        profit_pct = (
+                            ((current_price - entry_price) / entry_price * 100.0)
+                            if opposite_side == 'sell'
+                            else ((entry_price - current_price) / entry_price * 100.0)
+                        )
+                        if profit_pct >= auto_breakeven_trigger_pct:
+                            be_buf = auto_breakeven_buffer_pct / 100.0
+                            target_be = entry_price * (1.0 + be_buf) if opposite_side == 'sell' else entry_price * (1.0 - be_buf)
+                            target_be = BracketOrderService._safe_price_to_precision(exchange, symbol, target_be)
+
+                            sl_meta['breakeven_activated'] = True
+                            try:
+                                from app.services.manual_trade_persistence import schedule_update_monitor
+                                schedule_update_monitor(sl_id, fields={'breakeven_activated': True})
+                            except Exception:
+                                pass
+                            logger.info(f"🛡️ [Auto-Breakeven] Activated for Fixed SL {symbol}! Profit: +{profit_pct:.2f}% >= +{auto_breakeven_trigger_pct}%. Moving SL to {target_be}")
+                            await BracketOrderService.update_software_bracket(sl_id, target_be, getattr(api_key_record, 'id', None), user_id)
                             if user_id:
                                 asyncio.create_task(
-                                    BracketOrderService._send_sl_completed_notification(
+                                    BracketOrderService._send_breakeven_notification(
                                         user_id=user_id,
                                         symbol=symbol,
-                                        opposite_side=opposite_side,
-                                        amount=amount,
                                         entry_price=entry_price,
-                                        exit_price=exit_p,
-                                        sl_method="Native Futures Fixed SL"
+                                        current_price=current_price,
+                                        target_be=target_be,
+                                        profit_pct=profit_pct
                                     )
                                 )
-                            if curr_tp_id:
-                                await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp_id, symbol)
-                            return
-                    except Exception:
-                        pass
 
-                # 3. Check if position was closed externally (after initial indexing grace period of 5 ticks / ~7.5s)
-                if is_futures and loop_tick > 5:
-                    pos_open = await BracketOrderService._check_futures_position_is_open(exchange, symbol, opposite_side)
-                    if not pos_open:
-                        pos_closed_streak += 1
-                    else:
-                        pos_closed_streak = 0
-                    if pos_closed_streak >= 2:
-                        logger.info(f"🚫 Position confirmed closed externally on {symbol}. Cleaning up bracket orders.")
-                        if curr_disaster:
-                            await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
-                        if curr_tp_id:
-                            await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp_id, symbol)
-                        BracketOrderService._mark_entry_bracket_closed(
-                            entry_order_id=sl_meta.get('entry_order_id'),
-                            tp_order_id=curr_tp_id,
-                        )
-                        return
-
-                ticker = await BracketOrderService._fetch_ticker_fast(exchange, symbol, require_last=True)
-                current_price = float(ticker.get('last') or 0.0)
-                if current_price <= 0:
-                    continue
-
-                # 4. Auto-Breakeven check
-                if auto_breakeven_enabled and not sl_meta.get('breakeven_activated', False) and entry_price > 0:
-                    profit_pct = (
-                        ((current_price - entry_price) / entry_price * 100.0)
-                        if opposite_side == 'sell'
-                        else ((entry_price - current_price) / entry_price * 100.0)
-                    )
-                    if profit_pct >= auto_breakeven_trigger_pct:
-                        be_buf = auto_breakeven_buffer_pct / 100.0
-                        target_be = entry_price * (1.0 + be_buf) if opposite_side == 'sell' else entry_price * (1.0 - be_buf)
-                        target_be = BracketOrderService._safe_price_to_precision(exchange, symbol, target_be)
-
-                        sl_meta['breakeven_activated'] = True
-                        logger.info(f"🛡️ [Auto-Breakeven] Activated for Fixed SL {symbol}! Profit: +{profit_pct:.2f}% >= +{auto_breakeven_trigger_pct}%. Moving SL to {target_be}")
-                        await BracketOrderService.update_software_bracket(sl_id, target_be, getattr(api_key_record, 'id', None), user_id)
-                        if user_id:
-                            asyncio.create_task(
-                                BracketOrderService._send_breakeven_notification(
-                                    user_id=user_id,
-                                    symbol=symbol,
-                                    entry_price=entry_price,
-                                    current_price=current_price,
-                                    target_be=target_be,
-                                    profit_pct=profit_pct
+                    # 5. If Spot (or Futures when native STOP_MARKET placement failed), check trigger condition for software market exit
+                    curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
+                    if (not is_futures or not curr_disaster) and current_price > 0:
+                        current_trig = float(sl_meta.get('trigger_price') or initial_sl_price)
+                        triggered = (current_price <= current_trig) if opposite_side == 'sell' else (current_price >= current_trig)
+                        if triggered:
+                            curr_amount = float(sl_meta.get('amount') if sl_meta.get('amount') is not None else amount)
+                            if await BracketOrderService._check_linked_tp_filled(
+                                exchange=exchange,
+                                symbol=symbol,
+                                is_futures=is_futures,
+                                sl_meta=sl_meta,
+                                fallback_tp_order_id=tp_order_id,
+                                user_id=user_id,
+                                entry_price=entry_price,
+                                opposite_side=opposite_side,
+                                default_amount=curr_amount,
+                                context_label="Fixed SL monitor",
+                            ):
+                                should_mark_terminal = True
+                                terminal_status = 'completed'
+                                terminal_reason = 'fixed_sl_tp_filled'
+                                if curr_disaster:
+                                    await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
+                                return
+                            logger.info(
+                                f"💥 Software Fixed SL triggered on {'Futures' if is_futures else 'Spot'} {symbol}! "
+                                f"Current: {current_price}, Trigger: {current_trig}. Exiting market..."
+                            )
+                            should_mark_terminal = True
+                            terminal_status = 'completed'
+                            terminal_reason = 'fixed_sl_market_executed'
+                            try:
+                                curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
+                                if curr_tp_id:
+                                    await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp_id, symbol)
+                                    await asyncio.sleep(0.15)
+                                BracketOrderService._mark_entry_bracket_closed(
+                                    entry_order_id=sl_meta.get('entry_order_id') or entry_order_id,
+                                    tp_order_id=curr_tp_id,
                                 )
-                            )
-
-                # 5. If Spot (or Futures when native STOP_MARKET placement failed), check trigger condition for software market exit
-                curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
-                if (not is_futures or not curr_disaster) and current_price > 0:
-                    current_trig = float(sl_meta.get('trigger_price') or initial_sl_price)
-                    triggered = (current_price <= current_trig) if opposite_side == 'sell' else (current_price >= current_trig)
-                    if triggered:
-                        curr_amount = float(sl_meta.get('amount') if sl_meta.get('amount') is not None else amount)
-                        if await BracketOrderService._check_linked_tp_filled(
-                            exchange=exchange,
-                            symbol=symbol,
-                            is_futures=is_futures,
-                            sl_meta=sl_meta,
-                            fallback_tp_order_id=tp_order_id,
-                            user_id=user_id,
-                            entry_price=entry_price,
-                            opposite_side=opposite_side,
-                            default_amount=curr_amount,
-                            context_label="Fixed SL monitor",
-                        ):
-                            if curr_disaster:
-                                await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol)
-                            return
-                        logger.info(
-                            f"💥 Software Fixed SL triggered on {'Futures' if is_futures else 'Spot'} {symbol}! "
-                            f"Current: {current_price}, Trigger: {current_trig}. Exiting market..."
-                        )
-                        try:
-                            curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
-                            if curr_tp_id:
-                                await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp_id, symbol)
-                                await asyncio.sleep(0.15)
-                            BracketOrderService._mark_entry_bracket_closed(
-                                entry_order_id=sl_meta.get('entry_order_id') or entry_order_id,
-                                tp_order_id=curr_tp_id,
-                            )
-                            sell_amt = curr_amount
-                            if not is_futures and opposite_side.lower() == 'sell':
-                                try:
-                                    base_currency = symbol.split('/')[0]
-                                    balance = await exchange.fetch_balance()
-                                    available = float(balance.get(base_currency, {}).get('free', 0.0))
-                                    if 0 < available < curr_amount:
-                                        sell_amt = BracketOrderService._safe_amount_to_precision(exchange, symbol, available)
-                                    elif available <= 0:
-                                        logger.warning("No free base balance available to execute Spot Fixed SL (maybe already closed by TP).")
-                                        return
-                                except Exception as bal_e:
-                                    logger.debug(f"Spot Fixed SL balance check notice: {bal_e}")
-                            exit_params = await BracketOrderService._apply_futures_exit_params(exchange, symbol, opposite_side) if is_futures else {}
-                            await exchange.create_market_order(symbol, opposite_side, sell_amt, params=exit_params)
-                            if user_id:
-                                asyncio.create_task(
-                                    BracketOrderService._send_sl_completed_notification(
-                                        user_id=user_id,
-                                        symbol=symbol,
-                                        opposite_side=opposite_side,
-                                        amount=sell_amt,
-                                        entry_price=entry_price,
-                                        exit_price=current_price,
-                                        sl_method=f"{'Futures' if is_futures else 'Spot'} Fixed SL (Software Market Trigger)"
+                                sell_amt = curr_amount
+                                if not is_futures and opposite_side.lower() == 'sell':
+                                    try:
+                                        base_currency = symbol.split('/')[0]
+                                        balance = await exchange.fetch_balance()
+                                        available = float(balance.get(base_currency, {}).get('free', 0.0))
+                                        if 0 < available < curr_amount:
+                                            sell_amt = BracketOrderService._safe_amount_to_precision(exchange, symbol, available)
+                                        elif available <= 0:
+                                            logger.warning("No free base balance available to execute Spot Fixed SL (maybe already closed by TP).")
+                                            return
+                                    except Exception as bal_e:
+                                        logger.debug(f"Spot Fixed SL balance check notice: {bal_e}")
+                                exit_params = await BracketOrderService._apply_futures_exit_params(exchange, symbol, opposite_side) if is_futures else {}
+                                await exchange.create_market_order(symbol, opposite_side, sell_amt, params=exit_params)
+                                if user_id:
+                                    asyncio.create_task(
+                                        BracketOrderService._send_sl_completed_notification(
+                                            user_id=user_id,
+                                            symbol=symbol,
+                                            opposite_side=opposite_side,
+                                            amount=sell_amt,
+                                            entry_price=entry_price,
+                                            exit_price=current_price,
+                                            sl_method=f"{'Futures' if is_futures else 'Spot'} Fixed SL (Software Market Trigger)"
+                                        )
                                     )
-                                )
-                        except Exception as mkt_err:
-                            logger.error(f"Failed to market exit on Fixed SL for {symbol}: {mkt_err}")
-                        return
+                            except Exception as mkt_err:
+                                logger.error(f"Failed to market exit on Fixed SL for {symbol}: {mkt_err}")
+                            return
+                except asyncio.CancelledError:
+                    raise
+                except Exception as tick_err:
+                    logger.debug(f"Fixed SL Auto-Breakeven transient tick error for {symbol}: {tick_err}")
+        except asyncio.CancelledError:
+            raise
         except Exception as loop_err:
             logger.error(f"Error in Fixed SL Auto-Breakeven loop: {loop_err}")
         finally:
             curr_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
-            BracketOrderService._mark_entry_bracket_closed(
-                entry_order_id=(curr_meta.get('entry_order_id') if curr_meta else None) or entry_order_id,
-                tp_order_id=(curr_meta.get('tp_order_id') if curr_meta else None) or tp_order_id,
-            )
+            if should_mark_terminal:
+                try:
+                    from app.services.manual_trade_persistence import schedule_mark_terminal
+                    schedule_mark_terminal(
+                        sl_id,
+                        status=terminal_status,
+                        reason=terminal_reason,
+                    )
+                except Exception:
+                    pass
+                BracketOrderService._mark_entry_bracket_closed(
+                    entry_order_id=(curr_meta.get('entry_order_id') if curr_meta else None) or entry_order_id,
+                    tp_order_id=(curr_meta.get('tp_order_id') if curr_meta else None) or tp_order_id,
+                )
             if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:
                 del BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]
 
@@ -3158,13 +3486,17 @@ class BracketOrderService:
         auto_breakeven_buffer_pct: float = 0.05,
         entry_order_id: str = None,
         tp_price: float = None,
+        sl_id: Optional[str] = None,
+        initial_breakeven_activated: bool = False,
+        initial_manual_trigger_override: Optional[float] = None,
     ):
-        sl_id = str(uuid.uuid4())
+        sl_id = sl_id or str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
             'id': sl_id,
             'entry_order_id': str(entry_order_id) if entry_order_id else None,
             'api_key_id': getattr(api_key_record, 'id', None),
             'api_key_record': api_key_record,
+            'user_id': user_id,
             'symbol': symbol,
             'side': opposite_side,
             'amount': amount,
@@ -3187,10 +3519,49 @@ class BracketOrderService:
             'auto_breakeven_enabled': auto_breakeven_enabled,
             'auto_breakeven_trigger_pct': auto_breakeven_trigger_pct,
             'auto_breakeven_buffer_pct': auto_breakeven_buffer_pct,
-            'breakeven_activated': False,
+            'breakeven_activated': bool(initial_breakeven_activated),
             'tp_order_id': str(tp_order_id) if tp_order_id else None,
             'tp_price': float(tp_price) if tp_price else None,
         }
+        if initial_manual_trigger_override is not None:
+            BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id]['manual_trigger_override'] = float(initial_manual_trigger_override)
+        try:
+            from app.services.manual_trade_persistence import schedule_upsert_monitor
+            schedule_upsert_monitor(
+                monitor_id=sl_id,
+                kind='software_sl',
+                user_id=user_id,
+                api_key_id=getattr(api_key_record, 'id', None),
+                symbol=symbol,
+                is_futures=is_futures,
+                side=opposite_side,
+                status='monitoring',
+                sl_type='smart_chase',
+                sl_mode='SMART_CHASE',
+                amount=float(amount or 0.0),
+                entry_price=float(entry_price or 0.0),
+                trigger_price=float(sl_price or 0.0),
+                entry_order_id=str(entry_order_id) if entry_order_id else None,
+                tp_order_id=str(tp_order_id) if tp_order_id else None,
+                tp_price=float(tp_price) if tp_price else None,
+                disaster_sl_order_id=str(disaster_sl_order_id) if disaster_sl_order_id else None,
+                breakeven_activated=bool(initial_breakeven_activated),
+                manual_trigger_override=float(initial_manual_trigger_override) if initial_manual_trigger_override is not None else None,
+                config={
+                    'max_deviation_pct': float(max_deviation_pct),
+                    'chase_delay_ms': int(chase_delay_ms),
+                    'max_attempts': int(max_attempts),
+                    'chase_mode': str(chase_mode),
+                    'trigger_source': str(trigger_source),
+                    'peg_strategy': str(peg_strategy),
+                    'wall_multiplier': float(wall_multiplier),
+                    'auto_breakeven_enabled': bool(auto_breakeven_enabled),
+                    'auto_breakeven_trigger_pct': float(auto_breakeven_trigger_pct),
+                    'auto_breakeven_buffer_pct': float(auto_breakeven_buffer_pct),
+                },
+            )
+        except Exception:
+            pass
 
         side_tag = "BUY (Buy-Back ⚡)" if opposite_side.lower() == 'buy' else "SELL (Long Exit 🛡️)"
         tp_tag = f" | Linked TP: #{tp_order_id} (@ {tp_price})" if tp_order_id else " | Linked TP: None"
@@ -3210,6 +3581,11 @@ class BracketOrderService:
             sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
             if not sl_meta or sl_meta.get('cancelled'):
                 logger.info(f"🛑 Smart Chase monitor cancelled by user for {symbol}.")
+                try:
+                    from app.services.manual_trade_persistence import schedule_mark_terminal
+                    schedule_mark_terminal(sl_id, status='cancelled', reason='smart_chase_monitor_cancelled')
+                except Exception:
+                    pass
                 BracketOrderService._mark_entry_bracket_closed(
                     entry_order_id=(sl_meta.get('entry_order_id') if sl_meta else entry_order_id),
                     tp_order_id=((sl_meta.get('tp_order_id') if sl_meta else None) or tp_order_id),
@@ -3300,6 +3676,11 @@ class BracketOrderService:
 
                         if should_move:
                             sl_meta['breakeven_activated'] = True
+                            try:
+                                from app.services.manual_trade_persistence import schedule_update_monitor
+                                schedule_update_monitor(sl_id, fields={'breakeven_activated': True})
+                            except Exception:
+                                pass
                             logger.info(f"🛡️ [Auto-Breakeven] Activated for Smart Chase {symbol}! Profit: +{profit_pct:.2f}% >= +{auto_breakeven_trigger_pct}%. Updating SL to {target_be}")
                             await BracketOrderService.update_software_bracket(sl_id, target_be, getattr(api_key_record, 'id', None), user_id)
                             current_sl_trigger = target_be
@@ -3493,6 +3874,11 @@ class BracketOrderService:
         BracketOrderService._mark_entry_bracket_closed(entry_order_id=curr_entry_id, tp_order_id=curr_tp_id)
 
         if not sl_triggered:
+            try:
+                from app.services.manual_trade_persistence import schedule_mark_terminal
+                schedule_mark_terminal(sl_id, status='completed', reason='smart_chase_tp_or_closed')
+            except Exception:
+                pass
             return
 
         try:
@@ -3521,6 +3907,11 @@ class BracketOrderService:
             )
         except Exception as exec_err:
             logger.error(f"❌ Error invoking execute_manual_smart_chase: {exec_err}")
+            try:
+                from app.services.manual_trade_persistence import schedule_mark_terminal
+                schedule_mark_terminal(sl_id, status='failed', reason=str(exec_err)[:200])
+            except Exception:
+                pass
         finally:
             BracketOrderService._mark_entry_bracket_closed(entry_order_id=curr_entry_id, tp_order_id=curr_tp_id)
             if sl_id in BracketOrderService.ACTIVE_SOFTWARE_SL:

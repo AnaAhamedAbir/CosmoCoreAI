@@ -767,6 +767,38 @@ async def execute_manual_smart_chase(
         'cancel_event': cancel_event,
         'started_at': datetime.utcnow().isoformat()
     }
+    try:
+        from app.services.manual_trade_persistence import schedule_upsert_monitor
+        schedule_upsert_monitor(
+            monitor_id=cid,
+            kind='smart_chase',
+            user_id=user_id,
+            api_key_id=getattr(api_key_record, 'id', None),
+            symbol=symbol,
+            is_futures=is_futures,
+            side=exit_side,
+            status='chasing',
+            sl_type='smart_chase',
+            sl_mode='SMART_CHASE',
+            amount=float(remaining_amount or 0.0),
+            entry_price=float(entry_price or 0.0),
+            trigger_price=float(original_sl or 0.0),
+            entry_order_id=str(entry_order_id) if entry_order_id else None,
+            tp_order_id=str(tp_order_id) if tp_order_id else None,
+            disaster_sl_order_id=str(disaster_sl_order_id) if disaster_sl_order_id else None,
+            config={
+                'original_sl': float(original_sl or 0.0),
+                'max_deviation_pct': float(max_deviation_pct),
+                'chase_delay_ms': int(chase_delay_ms),
+                'max_attempts': int(max_attempts),
+                'chase_mode': str(chase_mode),
+                'trigger_source': str(trigger_source),
+                'peg_strategy': str(peg_strategy),
+                'wall_multiplier': float(wall_multiplier),
+            },
+        )
+    except Exception:
+        pass
 
     def _sync_live_target() -> bool:
         nonlocal original_sl, max_chase_price
@@ -1067,6 +1099,15 @@ async def execute_manual_smart_chase(
             order_processed_filled = 0.0
             if cid in ACTIVE_SMART_CHASES:
                 ACTIVE_SMART_CHASES[cid]['current_order_id'] = order_id
+            try:
+                from app.services.manual_trade_persistence import schedule_update_monitor
+                schedule_update_monitor(
+                    cid,
+                    fields={'amount': float(remaining_amount), 'trigger_price': float(original_sl)},
+                    config_patch={'current_order_id': order_id, 'original_sl': float(original_sl)},
+                )
+            except Exception:
+                pass
             logger.info(f"✅ [Manual Smart Chase] Order #{order_id} ACTIVE on exchange book at {target_maker_price} (Mode: {chase_mode.upper()})")
 
             user_cancelled = False
@@ -1127,6 +1168,11 @@ async def execute_manual_smart_chase(
                                             remaining_amount = _format_rem_amount(remaining_amount - chunk_filled)
                                             if cid in ACTIVE_SMART_CHASES:
                                                 ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
+                                            try:
+                                                from app.services.manual_trade_persistence import schedule_update_monitor
+                                                schedule_update_monitor(cid, fields={'amount': float(remaining_amount)})
+                                            except Exception:
+                                                pass
                                             rem_val = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
                                             if remaining_amount <= 0 or rem_val < min_notional:
                                                 latest_order_chk = {
@@ -1147,6 +1193,11 @@ async def execute_manual_smart_chase(
                                             remaining_amount = _format_rem_amount(remaining_amount - chunk_filled)
                                             if cid in ACTIVE_SMART_CHASES:
                                                 ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
+                                            try:
+                                                from app.services.manual_trade_persistence import schedule_update_monitor
+                                                schedule_update_monitor(cid, fields={'amount': float(remaining_amount)})
+                                            except Exception:
+                                                pass
                                             logger.info(
                                                 f"⚡ [Dynamic BBO Peg] Resting Partial Fill detected on #{order_id}: "
                                                 f"+{chunk_filled} (Remaining: {remaining_amount})"
@@ -1347,6 +1398,15 @@ async def execute_manual_smart_chase(
                                                 ACTIVE_SMART_CHASES[cid]['current_maker_price'] = target_maker_price
                                                 ACTIVE_SMART_CHASES[cid]['current_attempt'] = attempts
                                                 ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
+                                            try:
+                                                from app.services.manual_trade_persistence import schedule_update_monitor
+                                                schedule_update_monitor(
+                                                    cid,
+                                                    fields={'amount': float(remaining_amount)},
+                                                    config_patch={'current_order_id': str(order_id)},
+                                                )
+                                            except Exception:
+                                                pass
 
                                             logger.info(
                                                 f"⚡ [Dynamic BBO Peg] {edit_channel} atomic re-peg SUCCESS in {repeg_ms}ms! ⚡ "
@@ -1546,6 +1606,15 @@ async def execute_manual_smart_chase(
                             remaining_amount = _format_rem_amount(remaining_amount - filled)
                             if cid in ACTIVE_SMART_CHASES:
                                 ACTIVE_SMART_CHASES[cid]['amount'] = remaining_amount
+                            try:
+                                from app.services.manual_trade_persistence import schedule_update_monitor
+                                schedule_update_monitor(
+                                    cid,
+                                    fields={'amount': float(remaining_amount)},
+                                    config_patch={'current_order_id': None},
+                                )
+                            except Exception:
+                                pass
                             rem_val = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
                             if remaining_amount <= 0 or rem_val < min_notional:
                                 logger.info(
@@ -1566,6 +1635,11 @@ async def execute_manual_smart_chase(
     # Check if cancelled by user
     if final_res and final_res.get('status') == 'cancelled':
         logger.info(f"🛑 [Manual Smart Chase] Cancelled by user. Skipping final fallback market sweep.")
+        try:
+            from app.services.manual_trade_persistence import schedule_mark_terminal
+            schedule_mark_terminal(cid, status='cancelled', reason='smart_chase_user_cancelled')
+        except Exception:
+            pass
         ACTIVE_SMART_CHASES.pop(cid, None)
         return final_res
 
@@ -1627,5 +1701,10 @@ async def execute_manual_smart_chase(
             )
             final_res = {'status': 'closed', 'id': 'dust_sweep_skipped', 'filled': remaining_amount}
 
+    try:
+        from app.services.manual_trade_persistence import schedule_mark_terminal
+        schedule_mark_terminal(cid, status='completed', reason='smart_chase_finished')
+    except Exception:
+        pass
     ACTIVE_SMART_CHASES.pop(cid, None)
     return final_res

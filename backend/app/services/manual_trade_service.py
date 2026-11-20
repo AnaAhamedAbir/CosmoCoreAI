@@ -2503,7 +2503,8 @@ class ManualTradeService:
                                     amount=order_req.amount,
                                     entry_price=order_req.price,
                                     raw_res=raw_res,
-                                    user_id=user_id
+                                    user_id=user_id,
+                                    api_key_id=api_key_record.id,
                                 )
                             )
                 except Exception as e:
@@ -3124,29 +3125,42 @@ class ManualTradeService:
                 updated_meta['price'] = float(new_price)
                 ManualTradeService._ORDER_META_CACHE[(int(api_key_id), resolved_order_id)] = (updated_meta, time.time())
             try:
+                from app.services.manual_trade_persistence import (
+                    schedule_replace_entry_monitor_id,
+                    schedule_update_monitor,
+                )
                 if resolved_order_id != str(order_id):
                     old_mon = bracket_order_service.ACTIVE_ENTRY_MONITORS.get(str(order_id))
                     if isinstance(old_mon, dict):
                         old_mon['replaced_by'] = resolved_order_id
                         old_mon['entry_order_id'] = resolved_order_id
                         bracket_order_service.ACTIVE_ENTRY_MONITORS[resolved_order_id] = old_mon
+                        schedule_replace_entry_monitor_id(str(order_id), resolved_order_id)
                         logger.info(f"🔄 Migrated entry bracket monitor: {order_id} -> {resolved_order_id}")
 
                 if str(order_id) in bracket_order_service.KNOWN_TP_ORDER_IDS and resolved_order_id != str(order_id):
                     bracket_order_service.KNOWN_TP_ORDER_IDS.discard(str(order_id))
                     bracket_order_service.KNOWN_TP_ORDER_IDS.add(resolved_order_id)
-                for s_data in list(bracket_order_service.ACTIVE_SOFTWARE_SL.values()):
+                for sid, s_data in list(bracket_order_service.ACTIVE_SOFTWARE_SL.items()):
+                    upd = {}
                     if str(s_data.get('entry_order_id') or '') == str(order_id):
                         s_data['entry_order_id'] = resolved_order_id
+                        upd['entry_order_id'] = resolved_order_id
                     if str(s_data.get('tp_order_id') or '') == str(order_id):
                         s_data['tp_order_id'] = resolved_order_id
                         s_data['tp_price'] = float(new_price)
+                        upd['tp_order_id'] = resolved_order_id
+                        upd['tp_price'] = float(new_price)
                         logger.info(f"🔄 Updated active bracket tp_order_id: {order_id} -> {resolved_order_id} @ {new_price}")
                     if str(s_data.get('disaster_sl_order_id') or '') == str(order_id):
                         s_data['disaster_sl_order_id'] = resolved_order_id
                         s_data['trigger_price'] = new_price
                         s_data['price'] = new_price
+                        upd['disaster_sl_order_id'] = resolved_order_id
+                        upd['trigger_price'] = float(new_price)
                         logger.info(f"🔄 Updated active bracket disaster_sl_order_id: {order_id} -> {resolved_order_id} @ {new_price}")
+                    if upd:
+                        schedule_update_monitor(str(sid), fields=upd)
                 for eb_id, eb_data in list(bracket_order_service.ACTIVE_ENTRY_BRACKETS.items()):
                     if eb_data.get('cancelled'):
                         continue
@@ -3400,6 +3414,11 @@ class ManualTradeService:
                     ):
                         in_mem_handled = True
                         sdata['cancelled'] = True
+                        try:
+                            from app.services.manual_trade_persistence import schedule_mark_terminal
+                            schedule_mark_terminal(str(sl_id), status='cancelled', reason='emergency_force_order')
+                        except Exception:
+                            pass
                         cancelled_brackets += 1
                         is_exit_order = True
                         if resolved_specific_amt <= 0:
@@ -3426,6 +3445,11 @@ class ManualTradeService:
 
                 if specific_oid in bracket_order_service.ACTIVE_ENTRY_MONITORS:
                     bracket_order_service.ACTIVE_ENTRY_MONITORS[specific_oid]['cancelled'] = True
+                try:
+                    from app.services.manual_trade_persistence import schedule_mark_terminal
+                    schedule_mark_terminal(specific_oid, status='cancelled', reason='emergency_force_order')
+                except Exception:
+                    pass
                 if specific_oid in bracket_order_service.KNOWN_TP_ORDER_IDS:
                     is_exit_order = True
 
@@ -3496,6 +3520,11 @@ class ManualTradeService:
                     key_match = (em_data.get('api_key_id') is None or int(em_data.get('api_key_id')) == int(api_key_id))
                     if key_match and _sym_matches(em_data.get('symbol', ''), symbol):
                         em_data['cancelled'] = True
+                try:
+                    from app.services.manual_trade_persistence import schedule_mark_terminal_by_scope
+                    schedule_mark_terminal_by_scope(api_key_id, symbol, status='cancelled', reason='emergency_force_order_all')
+                except Exception:
+                    pass
 
                 parallel_tasks = [
                     ('chase', stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id)),
@@ -4116,6 +4145,11 @@ class ManualTradeService:
                     or str(sdata.get('entry_order_id') or '') == specific_oid
                 ):
                     sdata['cancelled'] = True
+                    try:
+                        from app.services.manual_trade_persistence import schedule_mark_terminal
+                        schedule_mark_terminal(str(sl_id), status='cancelled', reason='cancel_manual_order')
+                    except Exception:
+                        pass
                     cancelled_ids.add(str(sl_id))
                     for linked_key in ('tp_order_id', 'disaster_sl_order_id', 'entry_order_id'):
                         val = sdata.get(linked_key)
@@ -4141,6 +4175,11 @@ class ManualTradeService:
             # 5. Check Entry Monitors
             if specific_oid in bracket_order_service.ACTIVE_ENTRY_MONITORS:
                 bracket_order_service.ACTIVE_ENTRY_MONITORS[specific_oid]['cancelled'] = True
+            try:
+                from app.services.manual_trade_persistence import schedule_mark_terminal
+                schedule_mark_terminal(specific_oid, status='cancelled', reason='cancel_manual_order')
+            except Exception:
+                pass
 
             # Invalidate cache before/during exchange calls so concurrent polls never serve stale data
             ManualTradeService.invalidate_open_orders_cache(api_key_id, symbol)
@@ -4225,6 +4264,11 @@ class ManualTradeService:
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures)
 
             # Immediately mark in-memory monitors & brackets cancelled and collect linked exchange IDs
+            try:
+                from app.services.manual_trade_persistence import schedule_mark_terminal_by_scope
+                schedule_mark_terminal_by_scope(api_key_id, symbol, status='cancelled', reason='cancel_all_manual_orders')
+            except Exception:
+                pass
             for em_id, em_data in list(bracket_order_service.ACTIVE_ENTRY_MONITORS.items()):
                 key_match = (em_data.get('api_key_id') is None or int(em_data.get('api_key_id')) == int(api_key_id))
                 if key_match and _sym_matches(em_data.get('symbol', ''), symbol):
@@ -4346,6 +4390,11 @@ class ManualTradeService:
                     raise HTTPException(status_code=400, detail=f"No active position to close on {symbol}.")
 
                 # 2. Cancel conflicting brackets/orders first
+                try:
+                    from app.services.manual_trade_persistence import schedule_mark_terminal_by_scope
+                    schedule_mark_terminal_by_scope(api_key_id, symbol, status='completed', reason='close_active_position')
+                except Exception:
+                    pass
                 await stop_smart_chase(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
                 await stop_smart_peg(symbol=symbol, api_key_id=api_key_id, user_id=user_id)
 

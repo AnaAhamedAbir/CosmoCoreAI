@@ -856,9 +856,23 @@ async def startup_event():
     running_tasks.add(pnl_task)
     pnl_task.add_done_callback(running_tasks.discard)
 
+    # Task O: Auto-Resume Interrupted Manual Trade SL / Bracket Monitors
+    try:
+        from app.services.manual_trade_recovery import recover_manual_trade_monitors
+        recovery_task = asyncio.create_task(recover_manual_trade_monitors(startup_delay_seconds=0.5))
+        running_tasks.add(recovery_task)
+        recovery_task.add_done_callback(running_tasks.discard)
+    except Exception as _rec_err:
+        logger.warning(f"⚠️ Failed to schedule manual trade auto-recovery: {_rec_err}")
+
 @app.on_event("shutdown")
 async def shutdown_event():
     print("🛑 Server Shutdown Initiated...")
+    try:
+        from app.services.manual_trade_persistence import flush_active_monitors_on_shutdown
+        await flush_active_monitors_on_shutdown(timeout_seconds=3.0)
+    except Exception as _flush_err:
+        logger.warning(f"⚠️ Failed to flush manual trade monitors on shutdown: {_flush_err}")
     
     # 3. Graceful Shutdown (সব টাস্ক ক্যানসেল করা)
     # Stop Bot Manager

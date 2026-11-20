@@ -260,6 +260,18 @@ async def edit_order(
         from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
         if order_id in ACTIVE_SMART_CHASES:
             _update_smart_chase_target(ACTIVE_SMART_CHASES[order_id], request.new_price, request.side)
+            try:
+                from app.services.manual_trade_persistence import schedule_update_monitor
+                schedule_update_monitor(
+                    order_id,
+                    fields={'trigger_price': float(request.new_price)},
+                    config_patch={
+                        'original_sl': float(request.new_price),
+                        'max_chase_price': ACTIVE_SMART_CHASES[order_id].get('max_chase_price'),
+                    },
+                )
+            except Exception:
+                pass
             asyncio.create_task(BracketOrderService._send_sl_modified_notification(
                 user_id=current_user.id,
                 symbol=request.symbol,
@@ -302,6 +314,14 @@ async def edit_order(
                 if str(s_meta.get('tp_order_id') or '') == str(order_id):
                     s_meta['tp_order_id'] = resolved_order_id
                     s_meta['tp_price'] = resolved_price
+                    try:
+                        from app.services.manual_trade_persistence import schedule_update_monitor
+                        schedule_update_monitor(
+                            str(s_id),
+                            fields={'tp_order_id': resolved_order_id, 'tp_price': resolved_price},
+                        )
+                    except Exception:
+                        pass
                     logger.info(f"🔄 Linked software bracket {s_id} TP order updated: {order_id} -> {resolved_order_id} @ {resolved_price}")
 
         for eb_id, eb_meta in list(BracketOrderService.ACTIVE_ENTRY_BRACKETS.items()):
@@ -342,6 +362,18 @@ async def update_software_bracket_endpoint(
         from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
         if sl_id in ACTIVE_SMART_CHASES:
             _update_smart_chase_target(ACTIVE_SMART_CHASES[sl_id], req.new_price, req.side)
+            try:
+                from app.services.manual_trade_persistence import schedule_update_monitor
+                schedule_update_monitor(
+                    sl_id,
+                    fields={'trigger_price': float(req.new_price)},
+                    config_patch={
+                        'original_sl': float(req.new_price),
+                        'max_chase_price': ACTIVE_SMART_CHASES[sl_id].get('max_chase_price'),
+                    },
+                )
+            except Exception:
+                pass
             asyncio.create_task(BracketOrderService._send_sl_modified_notification(
                 user_id=current_user.id,
                 symbol=ACTIVE_SMART_CHASES[sl_id].get('symbol', ''),
@@ -1025,6 +1057,34 @@ async def place_drag_bracket_endpoint(
                     api_key_id=req.api_key_id,
                     user_id=current_user.id
                 )
+                try:
+                    from app.services.manual_trade_persistence import schedule_update_monitor
+                    drag_fields = {
+                        'trigger_price': float(final_price),
+                        'manual_trigger_override': float(final_price),
+                        'amount': float(sl_meta.get('amount') or final_amount),
+                    }
+                    if sl_meta.get('tp_order_id'):
+                        drag_fields['tp_order_id'] = str(sl_meta['tp_order_id'])
+                    if sl_meta.get('tp_price'):
+                        drag_fields['tp_price'] = float(sl_meta['tp_price'])
+                    if sl_meta.get('entry_order_id'):
+                        drag_fields['entry_order_id'] = str(sl_meta['entry_order_id'])
+                    if sl_meta.get('type'):
+                        drag_fields['sl_type'] = str(sl_meta['type'])
+                    if sl_meta.get('mode'):
+                        drag_fields['sl_mode'] = str(sl_meta['mode'])
+                    drag_cfg_patch = {}
+                    for ck in (
+                        'max_attempts', 'chase_delay_ms', 'max_deviation_pct', 'chase_mode',
+                        'trigger_source', 'peg_strategy', 'wall_multiplier', 'auto_breakeven_enabled',
+                        'auto_breakeven_trigger_pct', 'auto_breakeven_buffer_pct',
+                    ):
+                        if ck in sl_meta:
+                            drag_cfg_patch[ck] = sl_meta[ck]
+                    schedule_update_monitor(str(target_sl_id), fields=drag_fields, config_patch=drag_cfg_patch)
+                except Exception:
+                    pass
 
                 manual_trade_service.invalidate_open_orders_cache(api_key_record.id, req.symbol)
                 sl_mode_label = str(sl_meta.get('type', 'smart_chase')).replace('_', ' ').title()
@@ -1241,6 +1301,14 @@ async def place_drag_bracket_endpoint(
                     if sdata and not sdata.get('cancelled'):
                         sdata['tp_order_id'] = str(new_tp_id)
                         sdata['tp_price'] = resolved_tp_px
+                        try:
+                            from app.services.manual_trade_persistence import schedule_update_monitor
+                            schedule_update_monitor(
+                                str(sid),
+                                fields={'tp_order_id': str(new_tp_id), 'tp_price': resolved_tp_px},
+                            )
+                        except Exception:
+                            pass
                         logger.info(f"🔗 Linked Drag TP {new_tp_id} to active SL monitor {sid} on {req.symbol}")
             tp_buyback_tag = " (Dip Buy-Back)" if opposite_side == 'buy' else ""
             msg = f"🎯 Take Profit{tp_buyback_tag} placed at {final_price} for {final_amount} {req.symbol}"
@@ -1470,8 +1538,27 @@ async def stop_smart_chase_endpoint(
             id_match = (req.sl_id is None or sl_id == req.sl_id)
             if key_match and sym_match and id_match:
                 data['cancelled'] = True
+                try:
+                    from app.services.manual_trade_persistence import schedule_mark_terminal
+                    schedule_mark_terminal(str(sl_id), status='cancelled', reason='stop_smart_chase_endpoint')
+                except Exception:
+                    pass
                 cancelled_monitors += 1
                 logger.info(f"🛑 Marked software SL {sl_id} for {req.symbol} as cancelled.")
+        try:
+            from app.services.manual_trade_persistence import schedule_mark_terminal, schedule_mark_terminal_by_scope
+            if req.sl_id:
+                schedule_mark_terminal(str(req.sl_id), status='cancelled', reason='stop_smart_chase_endpoint')
+            elif req.api_key_id is not None:
+                schedule_mark_terminal_by_scope(
+                    req.api_key_id,
+                    req.symbol,
+                    kinds=('software_sl', 'smart_chase', 'smart_peg'),
+                    status='cancelled',
+                    reason='stop_smart_chase_endpoint',
+                )
+        except Exception:
+            pass
 
         total_stopped = stopped_chases + stopped_pegs + cancelled_monitors
         if total_stopped > 0:
@@ -1515,6 +1602,20 @@ async def stop_smart_peg_endpoint(
             user_id=current_user.id,
             peg_id=req.sl_id
         )
+        try:
+            from app.services.manual_trade_persistence import schedule_mark_terminal, schedule_mark_terminal_by_scope
+            if req.sl_id:
+                schedule_mark_terminal(str(req.sl_id), status='cancelled', reason='stop_smart_peg_endpoint')
+            elif req.api_key_id is not None:
+                schedule_mark_terminal_by_scope(
+                    req.api_key_id,
+                    req.symbol,
+                    kinds=('smart_peg',),
+                    status='cancelled',
+                    reason='stop_smart_peg_endpoint',
+                )
+        except Exception:
+            pass
         if stopped_pegs > 0:
             await _emit_trading_in_app(
                 user_id=current_user.id,

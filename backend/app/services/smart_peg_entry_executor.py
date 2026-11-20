@@ -288,6 +288,7 @@ async def execute_smart_peg_entry(
     preloaded_ob: Optional[Dict[str, Any]] = None,
     preloaded_balance: Optional[Dict[str, Any]] = None,
     skip_exchange_upgrade: bool = False,
+    initial_benchmark_override: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Executes a continuous Dynamic BBO Maker Peg Entry.
@@ -454,7 +455,10 @@ async def execute_smart_peg_entry(
     b_bid = float(initial_ob['bids'][0][0])
     b_ask = float(initial_ob['asks'][0][0])
     market_benchmark_price = b_bid if side.lower() == 'buy' else b_ask
-    initial_benchmark_price = float(anchor_price) if (anchor_price and float(anchor_price) > 0) else market_benchmark_price
+    if initial_benchmark_override and float(initial_benchmark_override) > 0:
+        initial_benchmark_price = float(initial_benchmark_override)
+    else:
+        initial_benchmark_price = float(anchor_price) if (anchor_price and float(anchor_price) > 0) else market_benchmark_price
 
     # Initial clamp in 0ms if balance is cached; otherwise skip blocking REST fetch_balance()
     # (Binance enforces balance/margin atomically on order placement; -2010 / -2019 auto-clamps cleanly below).
@@ -513,6 +517,36 @@ async def execute_smart_peg_entry(
         'cancel_event': cancel_event,
         'started_at': datetime.utcnow().isoformat()
     }
+    try:
+        from app.services.manual_trade_persistence import schedule_upsert_monitor
+        schedule_upsert_monitor(
+            monitor_id=cid,
+            kind='smart_peg',
+            user_id=user_id,
+            api_key_id=getattr(api_key_record, 'id', None),
+            symbol=symbol,
+            is_futures=is_futures,
+            side=side.lower(),
+            status='pegging',
+            amount=float(remaining_amount or 0.0),
+            entry_price=float(initial_benchmark_price or 0.0),
+            config={
+                'tp_config': tp_config,
+                'sl_config': sl_config,
+                'max_chase_deviation_pct': float(max_chase_deviation_pct),
+                'max_attempts': int(max_attempts),
+                'reduce_only': bool(reduce_only),
+                'urgent_mode': bool(urgent_mode),
+                'leverage': leverage,
+                'margin_mode': margin_mode,
+                'ai_filter_info': ai_filter_info,
+                'contract_size': float(contract_size),
+                'is_inverse': bool(is_inverse),
+                'anchor_price': float(anchor_price) if (anchor_price and float(anchor_price) > 0) else None,
+            },
+        )
+    except Exception:
+        pass
 
     cached_ob = initial_ob
     attempts = 0
@@ -779,6 +813,15 @@ async def execute_smart_peg_entry(
         order_id = peg_order['id']
         if cid in ACTIVE_SMART_PEGS:
             ACTIVE_SMART_PEGS[cid]['current_order_id'] = order_id
+        try:
+            from app.services.manual_trade_persistence import schedule_update_monitor
+            schedule_update_monitor(
+                cid,
+                fields={'amount': float(remaining_amount)},
+                config_patch={'current_order_id': str(order_id), 'total_filled': float(total_filled)},
+            )
+        except Exception:
+            pass
 
         logger.info(f"✅ [Smart Peg Entry] Order #{order_id} ACTIVE at {target_maker_price} (Queue Priority Active)")
 
@@ -913,6 +956,15 @@ async def execute_smart_peg_entry(
                                         if cid in ACTIVE_SMART_PEGS:
                                             ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
                                             ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
+                                        try:
+                                            from app.services.manual_trade_persistence import schedule_update_monitor
+                                            schedule_update_monitor(
+                                                cid,
+                                                fields={'amount': float(remaining_amount)},
+                                                config_patch={'total_filled': float(total_filled)},
+                                            )
+                                        except Exception:
+                                            pass
                                         logger.info(
                                             f"⚡ [Smart Peg Entry] Resting Partial Fill detected on #{order_id}: "
                                             f"+{chunk_filled} @ {exec_p} (Total Filled: {total_filled}/{amount})"
@@ -1256,6 +1308,15 @@ async def execute_smart_peg_entry(
                                             ACTIVE_SMART_PEGS[cid]['current_attempt'] = attempts
                                             ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
                                             ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
+                                        try:
+                                            from app.services.manual_trade_persistence import schedule_update_monitor
+                                            schedule_update_monitor(
+                                                cid,
+                                                fields={'amount': float(remaining_amount)},
+                                                config_patch={'current_order_id': str(order_id), 'total_filled': float(total_filled)},
+                                            )
+                                        except Exception:
+                                            pass
 
                                         logger.info(
                                             f"⚡ [Smart Peg Entry] {edit_channel} atomic re-peg SUCCESS in {repeg_ms}ms! ⚡ "
@@ -1512,6 +1573,15 @@ async def execute_smart_peg_entry(
                         if cid in ACTIVE_SMART_PEGS:
                             ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
                             ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount
+                        try:
+                            from app.services.manual_trade_persistence import schedule_update_monitor
+                            schedule_update_monitor(
+                                cid,
+                                fields={'amount': float(remaining_amount)},
+                                config_patch={'current_order_id': None, 'total_filled': float(total_filled)},
+                            )
+                        except Exception:
+                            pass
 
                         rem_val = _calc_order_notional_usd(exchange, symbol, remaining_amount, target_maker_price)
                         if remaining_amount <= 0 or rem_val < min_notional:
@@ -1528,5 +1598,15 @@ async def execute_smart_peg_entry(
             if cid in ACTIVE_SMART_PEGS:
                 ACTIVE_SMART_PEGS[cid]['current_order_id'] = None
 
+    try:
+        from app.services.manual_trade_persistence import schedule_mark_terminal
+        is_cancelled = bool(final_res and final_res.get('status') == 'cancelled')
+        schedule_mark_terminal(
+            cid,
+            status='cancelled' if is_cancelled else 'completed',
+            reason='smart_peg_cancelled' if is_cancelled else 'smart_peg_finished',
+        )
+    except Exception:
+        pass
     ACTIVE_SMART_PEGS.pop(cid, None)
     return final_res

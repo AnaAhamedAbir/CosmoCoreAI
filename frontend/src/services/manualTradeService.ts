@@ -48,6 +48,10 @@ export interface OrderPayload {
     auto_breakeven_enabled?: boolean;
     auto_breakeven_trigger_pct?: number;
     auto_breakeven_buffer_pct?: number;
+    anti_wick_mode?: 'instant' | 'dwell' | 'candle_close';
+    anti_wick_dwell_seconds?: number;
+    anti_wick_timeframe?: '1m' | '3m' | '5m' | '15m';
+    anti_wick_disaster_pct?: number;
   };
   use_native_tp_sl?: boolean;
   iceberg_qty?: number;
@@ -90,6 +94,27 @@ export interface FastPositionResponse {
   contract_size?: number;
   is_inverse?: boolean;
   side: 'long' | 'short' | 'none';
+  entry_price?: number;
+  mark_price?: number;
+  unrealized_pnl?: number;
+  pnl_pct?: number;
+}
+
+export interface MlLivePreviewResponse {
+  status: string;
+  symbol?: string;
+  model_id?: string;
+  model_name?: string;
+  signal?: string;
+  bullish_pct?: number;
+  bearish_pct?: number;
+  flow_bull_pct?: number | null;
+  flow_bear_pct?: number | null;
+  l2_bid_pct?: number | null;
+  l2_ask_pct?: number | null;
+  buy_ready?: boolean;
+  sell_ready?: boolean;
+  updated_at?: number;
 }
 
 export const manualTradeService = {
@@ -293,6 +318,43 @@ export const manualTradeService = {
     } catch {
       return null;
     }
-  }
+  },
+
+  getMlFilterLivePreview: async (
+    symbol: string,
+    mlModelId: string,
+    bullishThreshold: number = 0.5,
+    bearishThreshold: number = 0.5,
+    exchangeId: string = 'binance'
+  ): Promise<MlLivePreviewResponse | null> => {
+    try {
+      const response = await api.get('/trading/ml-filter-preview', {
+        params: {
+          symbol,
+          ml_model_id: mlModelId,
+          bullish_threshold: bullishThreshold,
+          bearish_threshold: bearishThreshold,
+          exchange_id: exchangeId,
+        },
+      });
+      return response.data as MlLivePreviewResponse;
+    } catch {
+      return null;
+    }
+  },
+
+  moveSlToBreakeven: async (
+    apiKeyId: number,
+    symbol: string,
+    bufferPct: number = 0.05,
+    fallbackEntryPrice: number = 0
+  ) => {
+    const response = await api.post(`/trading/breakeven/${apiKeyId}`, {
+      symbol,
+      buffer_pct: bufferPct,
+      fallback_entry_price: fallbackEntryPrice,
+    });
+    return response.data;
+  },
 };
 

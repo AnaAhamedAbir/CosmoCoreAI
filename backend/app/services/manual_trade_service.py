@@ -920,7 +920,7 @@ class ManualTradeService:
         is_futures = ':' in symbol
         if not is_futures:
              # Spot markets don't have "positions", just balances.
-             return {"amount": 0.0, "side": "none"}
+             return {"amount": 0.0, "side": "none", "entry_price": 0.0, "mark_price": 0.0, "unrealized_pnl": 0.0, "pnl_pct": 0.0}
             
         try:
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
@@ -960,7 +960,11 @@ class ManualTradeService:
                      "contracts": 0.0,
                      "contract_size": contract_size,
                      "is_inverse": meta.get('is_inverse', False),
-                     "side": "none"
+                     "side": "none",
+                     "entry_price": 0.0,
+                     "mark_price": 0.0,
+                     "unrealized_pnl": 0.0,
+                     "pnl_pct": 0.0,
                  }
                  
             # Extract position data consistently across exchanges
@@ -974,7 +978,26 @@ class ManualTradeService:
                  if pos_amt > 0: side = 'long'
                  elif pos_amt < 0: side = 'short'
 
-            mark_price = float(active_pos.get('markPrice') or active_pos.get('info', {}).get('markPrice') or 0.0)
+            info_d = active_pos.get('info') if isinstance(active_pos.get('info'), dict) else {}
+            mark_price = float(active_pos.get('markPrice') or info_d.get('markPrice') or 0.0)
+            entry_price = float(active_pos.get('entryPrice') or info_d.get('entryPrice') or 0.0)
+            unrealized_pnl = float(
+                active_pos.get('unrealizedPnl')
+                if active_pos.get('unrealizedPnl') is not None
+                else (info_d.get('unRealizedProfit') or info_d.get('unrealizedProfit') or 0.0)
+            )
+            pnl_pct = 0.0
+            if entry_price > 0 and mark_price > 0:
+                pnl_pct = (
+                    ((mark_price - entry_price) / entry_price) * 100.0
+                    if side == 'long'
+                    else (((entry_price - mark_price) / entry_price) * 100.0 if side == 'short' else 0.0)
+                )
+            elif active_pos.get('percentage') is not None:
+                try:
+                    pnl_pct = float(active_pos.get('percentage') or 0.0)
+                except (TypeError, ValueError):
+                    pnl_pct = 0.0
             
             # For Inverse contracts, convert contracts to base asset (DOGE) quantity
             base_amount = raw_contracts
@@ -989,7 +1012,11 @@ class ManualTradeService:
                  "contracts": float(raw_contracts),
                  "contract_size": float(contract_size),
                  "is_inverse": meta.get('is_inverse', False),
-                 "side": side
+                 "side": side,
+                 "entry_price": float(entry_price),
+                 "mark_price": float(mark_price),
+                 "unrealized_pnl": float(unrealized_pnl),
+                 "pnl_pct": round(float(pnl_pct), 3),
             }
 
         except HTTPException:
@@ -1340,6 +1367,135 @@ class ManualTradeService:
             return {"status": "warmed", "model_id": str(ml_model_id), "symbol": symbol}
         except Exception as e:
             logger.debug(f"ManualTrade ML warmup non-fatal warning: {e}")
+            return {"status": "warning", "detail": str(e)}
+
+    @staticmethod
+    async def get_ml_filter_live_preview(
+        symbol: str,
+        ml_model_id: str,
+        bullish_thresh: float = 0.50,
+        bearish_thresh: float = 0.50,
+        exchange_id: str = "binance",
+    ) -> dict:
+        """
+        Lightweight Pre-Trade AI Micro-Gauge preview endpoint.
+        Reuses RAM-warmed ML models/features + Redis L2 depth (~0-5ms) without blocking order flow.
+        """
+        if not symbol or not ml_model_id:
+            return {"status": "unavailable"}
+
+        try:
+            l2_bid_share = 0.50
+            has_l2 = False
+            live_ob = None
+            try:
+                from app.services.liquidity_wall_navigator import fetch_l2_depth_fast
+                live_ob = await fetch_l2_depth_fast(None, symbol, exchange_id=exchange_id, limit=10)
+                if live_ob and live_ob.get("bids") and live_ob.get("asks"):
+                    b_vol = sum(float(b[1]) for b in live_ob["bids"][:10] if float(b[0]) > 0)
+                    a_vol = sum(float(a[1]) for a in live_ob["asks"][:10] if float(a[0]) > 0)
+                    if (b_vol + a_vol) > 0:
+                        l2_bid_share = b_vol / (b_vol + a_vol)
+                        has_l2 = True
+            except Exception:
+                pass
+
+            use_ohlcv_predictor, routed_name = await asyncio.to_thread(
+                ManualTradeService._inspect_ml_filter_route, str(ml_model_id)
+            )
+            bull_t = float(bullish_thresh if bullish_thresh is not None else 0.50)
+            bear_t = float(bearish_thresh if bearish_thresh is not None else 0.50)
+
+            if use_ohlcv_predictor:
+                from app.services import ml_predictor
+
+                def _predict_fast():
+                    p_db = SessionLocal()
+                    try:
+                        return ml_predictor.predict(
+                            model_id=str(ml_model_id),
+                            symbol_override=symbol,
+                            db=p_db,
+                            fast_mode=True,
+                        )
+                    finally:
+                        p_db.close()
+
+                pred_res = await asyncio.to_thread(_predict_fast)
+                sig = str(pred_res.get("signal", "HOLD")).upper()
+                conf = float(pred_res.get("confidence", 0.5))
+                bull_prob = pred_res.get("bullish_prob")
+                bear_prob = pred_res.get("bearish_prob")
+                micro = pred_res.get("microstructure") or {}
+                flow_bull = float(micro.get("flow_bullish_score", 0.50))
+                flow_bear = float(micro.get("flow_bearish_score", 0.50))
+                if bull_prob is not None and bear_prob is not None:
+                    buy_p = float(bull_prob)
+                    sell_p = float(bear_prob)
+                    if has_l2 and (buy_p + sell_p) > 0.5:
+                        buy_p = min(0.99, max(0.01, 0.85 * buy_p + 0.15 * l2_bid_share))
+                        sell_p = min(0.99, max(0.01, 0.85 * sell_p + 0.15 * (1.0 - l2_bid_share)))
+                else:
+                    buy_p = conf if sig in ("BUY", "PUMP RISK") else (1.0 - conf if sig in ("SELL", "CRASH RISK") else 0.50)
+                    sell_p = 1.0 - buy_p
+
+                return {
+                    "status": "ok",
+                    "symbol": symbol,
+                    "model_id": str(ml_model_id),
+                    "model_name": routed_name or str(pred_res.get("algorithm", "AI Model")),
+                    "signal": sig,
+                    "bullish_pct": round(buy_p * 100.0, 1),
+                    "bearish_pct": round(sell_p * 100.0, 1),
+                    "flow_bull_pct": round(flow_bull * 100.0, 0),
+                    "flow_bear_pct": round(flow_bear * 100.0, 0),
+                    "l2_bid_pct": round(l2_bid_share * 100.0, 0),
+                    "l2_ask_pct": round((1.0 - l2_bid_share) * 100.0, 0),
+                    "buy_ready": bool(buy_p >= bull_t),
+                    "sell_ready": bool(sell_p >= bear_t),
+                    "updated_at": time.time(),
+                }
+
+            # Route B: L2 Predictor cached lookup
+            predictor_key = f"{ml_model_id}_{symbol}"
+            predictor = ManualTradeService._ML_PREDICTOR_CACHE.get(predictor_key)
+            if predictor is None:
+                from app.strategies.helpers.ml_l2_predictor import MLL2Predictor
+                predictor = await asyncio.to_thread(MLL2Predictor, str(ml_model_id))
+                if getattr(predictor, "is_loaded", False) and not isinstance(getattr(predictor, "model", None), dict):
+                    ManualTradeService._ML_PREDICTOR_CACHE[predictor_key] = predictor
+
+            raw_score = float(getattr(predictor, "last_prediction_score", 0.5) or 0.5)
+            if live_ob and live_ob.get("bids") and live_ob.get("asks") and getattr(predictor, "is_loaded", False):
+                try:
+                    mid_p = (float(live_ob["bids"][0][0]) + float(live_ob["asks"][0][0])) / 2.0
+                    if hasattr(predictor, "update_l2_memory"):
+                        predictor.update_l2_memory(live_ob)
+                    await predictor.predict(live_ob, mid_p, "buy")
+                    raw_score = float(getattr(predictor, "last_prediction_score", raw_score) or raw_score)
+                except Exception:
+                    pass
+
+            buy_p = min(0.99, max(0.01, raw_score))
+            sell_p = min(0.99, max(0.01, 1.0 - buy_p))
+            return {
+                "status": "ok",
+                "symbol": symbol,
+                "model_id": str(ml_model_id),
+                "model_name": getattr(predictor, "model_name", None) or routed_name or "L2 AI Model",
+                "signal": "BUY" if buy_p >= bull_t else ("SELL" if sell_p >= bear_t else "HOLD"),
+                "bullish_pct": round(buy_p * 100.0, 1),
+                "bearish_pct": round(sell_p * 100.0, 1),
+                "flow_bull_pct": round(l2_bid_share * 100.0, 0) if has_l2 else None,
+                "flow_bear_pct": round((1.0 - l2_bid_share) * 100.0, 0) if has_l2 else None,
+                "l2_bid_pct": round(l2_bid_share * 100.0, 0) if has_l2 else None,
+                "l2_ask_pct": round((1.0 - l2_bid_share) * 100.0, 0) if has_l2 else None,
+                "buy_ready": bool(buy_p >= bull_t),
+                "sell_ready": bool(sell_p >= bear_t),
+                "updated_at": time.time(),
+            }
+        except Exception as e:
+            logger.debug(f"ManualTrade ML preview non-fatal warning: {e}")
             return {"status": "warning", "detail": str(e)}
 
     @staticmethod
@@ -2329,6 +2485,7 @@ class ManualTradeService:
                 order_req.attached_sl.type in ('trailing', 'smart_chase', 'trailing_chase')
                 or order_req.attached_sl.mode == 'atr'
                 or getattr(order_req.attached_sl, 'auto_breakeven_enabled', False)
+                or str(getattr(order_req.attached_sl, 'anti_wick_mode', 'instant') or 'instant').lower() in ('dwell', 'candle_close')
             )
             native_tp_eligible = tp_is_limit
             native_sl_eligible = has_sl_req and not sl_is_software

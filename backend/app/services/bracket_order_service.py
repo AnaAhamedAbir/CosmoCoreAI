@@ -965,6 +965,127 @@ class BracketOrderService:
             db.close()
 
     @staticmethod
+    async def move_active_sl_to_breakeven(
+        api_key_id: int,
+        symbol: str,
+        user_id: int = 0,
+        buffer_pct: float = 0.05,
+        fallback_entry_price: float = 0.0,
+    ) -> dict:
+        """
+        1-Click move of all active Software SL monitors for `(api_key_id, symbol)`
+        to `Entry Price +/- buffer_pct%` (Fee-covered Breakeven).
+        Guards against moving SL onto the wrong side of live market price.
+        """
+        sa = str(symbol or '').strip()
+        sa_base = sa.split(':')[0].upper()
+        sa_fut = ':' in sa
+
+        def _match(meta: dict) -> bool:
+            if not meta or meta.get('cancelled'):
+                return False
+            k_id = meta.get('api_key_id')
+            if k_id is not None and api_key_id is not None and int(k_id) != int(api_key_id):
+                return False
+            sb = str(meta.get('symbol') or '').strip()
+            return ((':' in sb) == sa_fut) and (sb.split(':')[0].upper() == sa_base)
+
+        candidates = [
+            (sid, sdata)
+            for sid, sdata in list(BracketOrderService.ACTIVE_SOFTWARE_SL.items())
+            if _match(sdata)
+        ]
+        if not candidates:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No active Software SL monitor found for {symbol} to move to Breakeven."
+            )
+
+        clean_buf = max(0.0, min(2.0, float(buffer_pct if buffer_pct is not None else 0.05)))
+        first_meta = candidates[0][1]
+        ex = first_meta.get('exchange')
+        ref_sym = first_meta.get('symbol') or symbol
+        live_px = 0.0
+        if ex is not None:
+            try:
+                tkr = await BracketOrderService._fetch_ticker_fast(ex, ref_sym, require_last=False)
+                live_px = float(tkr.get('last') or tkr.get('bid') or tkr.get('ask') or 0.0)
+            except Exception:
+                live_px = 0.0
+
+        updated_ids = []
+        final_be_price = 0.0
+        used_entry = 0.0
+        for sid, sdata in candidates:
+            has_fill_entry = bool(sdata.get('entry_order_id'))
+            entry_px = (
+                float(fallback_entry_price)
+                if (not has_fill_entry and float(fallback_entry_price or 0.0) > 0)
+                else float(sdata.get('entry_price') or fallback_entry_price or 0.0)
+            )
+            if entry_px <= 0:
+                raise HTTPException(status_code=400, detail=f"Entry price unavailable for {symbol}; cannot compute Breakeven.")
+            sdata['entry_price'] = entry_px
+            opp_side = str(sdata.get('side') or 'sell').lower()
+            target_be = entry_px * (1.0 + clean_buf / 100.0) if opp_side == 'sell' else entry_px * (1.0 - clean_buf / 100.0)
+            target_be = BracketOrderService._safe_price_to_precision(sdata.get('exchange') or ex, ref_sym, target_be) or target_be
+
+            if live_px > 0:
+                if opp_side == 'sell' and live_px <= target_be:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Cannot set Breakeven (${target_be}): current price (${live_px}) is not in profit above entry yet."
+                    )
+                if opp_side == 'buy' and live_px >= target_be:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Cannot set Breakeven (${target_be}): current price (${live_px}) is not in profit below entry yet."
+                    )
+
+            curr_trig = float(sdata.get('trigger_price') or 0.0)
+            # Keep SL already tighter than BE if already moved higher/lower
+            if opp_side == 'sell' and curr_trig >= target_be:
+                final_be_price = curr_trig
+                used_entry = entry_px
+                sdata['breakeven_activated'] = True
+                updated_ids.append(sid)
+                continue
+            if opp_side == 'buy' and curr_trig > 0 and curr_trig <= target_be:
+                final_be_price = curr_trig
+                used_entry = entry_px
+                sdata['breakeven_activated'] = True
+                updated_ids.append(sid)
+                continue
+
+            sdata['breakeven_activated'] = True
+            try:
+                from app.services.manual_trade_persistence import schedule_update_monitor
+                schedule_update_monitor(sid, fields={'breakeven_activated': True})
+            except Exception:
+                pass
+            await BracketOrderService.update_software_bracket(
+                sl_id=sid,
+                new_price=target_be,
+                api_key_id=api_key_id,
+                user_id=user_id,
+                set_manual_override=True,
+                send_notify=True,
+            )
+            final_be_price = target_be
+            used_entry = entry_px
+            updated_ids.append(sid)
+
+        return {
+            "status": "success",
+            "symbol": ref_sym,
+            "entry_price": used_entry,
+            "breakeven_price": final_be_price,
+            "buffer_pct": clean_buf,
+            "updated_sl_ids": updated_ids,
+            "message": f"🛡️ SL moved to Breakeven @ ${final_be_price} (+{clean_buf:.2f}% fee buffer)",
+        }
+
+    @staticmethod
     async def update_software_bracket(
         sl_id: str,
         new_price: float,
@@ -1045,6 +1166,11 @@ class BracketOrderService:
         if set_manual_override:
             sl_meta['manual_trigger_override'] = prec_price
         try:
+            from app.services.anti_wick_guard import _reset_hold_state
+            _reset_hold_state(sl_meta)
+        except Exception:
+            pass
+        try:
             from app.services.manual_trade_persistence import schedule_update_monitor
             upd_fields = {'trigger_price': prec_price}
             if set_manual_override:
@@ -1107,7 +1233,15 @@ class BracketOrderService:
                                 order_ex = exchange
 
                         curr_mode = sl_meta.get('mode', 'SMART_CHASE')
-                        if str(curr_mode or '').strip().upper() in ('STOP', 'FIXED', 'STOP_MARKET'):
+                        aw_mode = str(sl_meta.get('anti_wick_mode') or 'instant').lower()
+                        if aw_mode in ('dwell', 'candle_close'):
+                            from app.services.anti_wick_guard import compute_anti_wick_disaster_price
+                            disaster_price = compute_anti_wick_disaster_price(
+                                target_trig_price,
+                                side,
+                                float(sl_meta.get('anti_wick_disaster_pct') or 2.0),
+                            )
+                        elif str(curr_mode or '').strip().upper() in ('STOP', 'FIXED', 'STOP_MARKET'):
                             disaster_price = target_trig_price
                         else:
                             disaster_price = (
@@ -2222,10 +2356,20 @@ class BracketOrderService:
                 max_attempts = int(BracketOrderService._get_sl_param(sl_config, 'smart_chase_max_attempts', 'smartChaseMaxAttempts', 10000))
                 chase_mode = str(BracketOrderService._get_sl_param(sl_config, 'smart_chase_mode', 'smartChaseMode', 'dynamic_bbo')).lower()
                 trigger_source = str(BracketOrderService._get_sl_param(sl_config, 'smart_chase_trigger_source', 'smartChaseTriggerSource', 'bid_ask')).lower()
+                anti_wick_mode = str(BracketOrderService._get_sl_param(sl_config, 'anti_wick_mode', 'antiWickMode', 'instant')).lower()
+                anti_wick_dwell_seconds = float(BracketOrderService._get_sl_param(sl_config, 'anti_wick_dwell_seconds', 'antiWickDwellSeconds', 3.0))
+                anti_wick_timeframe = str(BracketOrderService._get_sl_param(sl_config, 'anti_wick_timeframe', 'antiWickTimeframe', '1m')).lower()
+                anti_wick_disaster_pct = float(BracketOrderService._get_sl_param(sl_config, 'anti_wick_disaster_pct', 'antiWickDisasterPct', 2.0))
 
                 if sl_type in ['trailing', 'trailing_chase']:
                     placed_native = False
-                    if not is_trailing_chase and not auto_breakeven_enabled and is_futures and sl_mode == 'percentage':
+                    if (
+                        not is_trailing_chase
+                        and not auto_breakeven_enabled
+                        and anti_wick_mode == 'instant'
+                        and is_futures
+                        and sl_mode == 'percentage'
+                    ):
                         # Try Native Trailing Stop Market for Futures (Taker Exit)
                         try:
                             logger.info(f"🚀 Bracket Monitor: Placing Native Trailing Stop for {symbol} (Futures)")
@@ -2320,7 +2464,11 @@ class BracketOrderService:
                                 auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
                                 auto_breakeven_buffer_pct=auto_breakeven_buffer_pct,
                                 entry_order_id=entry_order_id,
-                                tp_price=resolved_tp_price
+                                tp_price=resolved_tp_price,
+                                anti_wick_mode=anti_wick_mode,
+                                anti_wick_dwell_seconds=anti_wick_dwell_seconds,
+                                anti_wick_timeframe=anti_wick_timeframe,
+                                anti_wick_disaster_pct=anti_wick_disaster_pct,
                             )
                         )
                 elif sl_type == 'smart_chase':
@@ -2330,7 +2478,8 @@ class BracketOrderService:
                     disaster_sl_order_id = None
                     if is_futures:
                         try:
-                            disaster_price = final_sl_price * (1 - (max_dev / 100.0)) if opposite_side == 'sell' else final_sl_price * (1 + (max_dev / 100.0))
+                            eff_dis_pct = max(float(max_dev), float(anti_wick_disaster_pct)) if anti_wick_mode != 'instant' else float(max_dev)
+                            disaster_price = final_sl_price * (1 - (eff_dis_pct / 100.0)) if opposite_side == 'sell' else final_sl_price * (1 + (eff_dis_pct / 100.0))
                             disaster_price_prec = BracketOrderService._safe_price_to_precision(order_ex, symbol, disaster_price)
                             disaster_params = await BracketOrderService._apply_futures_exit_params(
                                 order_ex, symbol, opposite_side, {'stopPrice': disaster_price_prec}
@@ -2349,7 +2498,7 @@ class BracketOrderService:
                     logger.info(
                         f"🚀 Bracket Monitor: Starting Smart Chase Limit SL for {symbol} | Action: {side_tag} | "
                         f"Amount: {final_amount} | Trigger: {final_sl_price}{tp_tag} | "
-                        f"Strategy: {peg_strategy.upper()} | Mode: {chase_mode.upper()}"
+                        f"Strategy: {peg_strategy.upper()} | Mode: {chase_mode.upper()} | Anti-Wick: {anti_wick_mode.upper()}"
                     )
                     asyncio.create_task(
                         BracketOrderService._smart_chase_monitor_loop(
@@ -2376,6 +2525,10 @@ class BracketOrderService:
                             auto_breakeven_buffer_pct=auto_breakeven_buffer_pct,
                             entry_order_id=entry_order_id,
                             tp_price=resolved_tp_price,
+                            anti_wick_mode=anti_wick_mode,
+                            anti_wick_dwell_seconds=anti_wick_dwell_seconds,
+                            anti_wick_timeframe=anti_wick_timeframe,
+                            anti_wick_disaster_pct=anti_wick_disaster_pct,
                         )
                     )
                 else:
@@ -2383,12 +2536,9 @@ class BracketOrderService:
                     final_sl_price = BracketOrderService._safe_price_to_precision(exchange, symbol, sl_price)
 
                     if not is_futures:
-                        # On Spot (when Native OCO was not used, e.g., Auto-Breakeven is active or TP is Market),
-                        # placing a Limit TP locks 100% of the base asset, so an exchange STOP_LOSS order would be rejected
-                        # for insufficient balance. Instead, monitor Fixed SL in software and cancel TP before market exit!
                         logger.info(
                             f"🛡️ Bracket Monitor: Starting Software Fixed SL Monitor for Spot {symbol} at {final_sl_price} "
-                            f"(Auto-Breakeven: {auto_breakeven_enabled})"
+                            f"(Auto-Breakeven: {auto_breakeven_enabled} | Anti-Wick: {anti_wick_mode.upper()})"
                         )
                         asyncio.create_task(
                             BracketOrderService._fixed_sl_auto_breakeven_loop(
@@ -2407,20 +2557,37 @@ class BracketOrderService:
                                 auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
                                 auto_breakeven_buffer_pct=auto_breakeven_buffer_pct,
                                 entry_order_id=entry_order_id,
-                                tp_price=resolved_tp_price
+                                tp_price=resolved_tp_price,
+                                anti_wick_mode=anti_wick_mode,
+                                anti_wick_dwell_seconds=anti_wick_dwell_seconds,
+                                anti_wick_timeframe=anti_wick_timeframe,
+                                anti_wick_disaster_pct=anti_wick_disaster_pct,
                             )
                         )
                     else:
+                        if anti_wick_mode in ('dwell', 'candle_close'):
+                            from app.services.anti_wick_guard import compute_anti_wick_disaster_price
+                            native_stop_px = BracketOrderService._safe_price_to_precision(
+                                order_ex,
+                                symbol,
+                                compute_anti_wick_disaster_price(final_sl_price, opposite_side, anti_wick_disaster_pct),
+                            ) or final_sl_price
+                        else:
+                            native_stop_px = final_sl_price
                         sl_params = await BracketOrderService._apply_futures_exit_params(
-                            order_ex, symbol, opposite_side, {'stopPrice': final_sl_price}
+                            order_ex, symbol, opposite_side, {'stopPrice': native_stop_px}
                         )
                         sl_res = None
                         try:
                             sl_res = await BracketOrderService._place_futures_conditional_order(
                                 order_ex, symbol, 'STOP_MARKET', opposite_side, final_amount,
-                                stop_price=final_sl_price, extra_params=sl_params
+                                stop_price=native_stop_px, extra_params=sl_params
                             )
-                            logger.info(f"✅ Bracket Monitor: SL placed! ID: {sl_res.get('id') if sl_res else 'Local'}")
+                            logger.info(
+                                f"✅ Bracket Monitor: SL placed at {native_stop_px}"
+                                f"{f' (Disaster cushion for {anti_wick_mode} @ {final_sl_price})' if anti_wick_mode != 'instant' else ''}! "
+                                f"ID: {sl_res.get('id') if sl_res else 'Local'}"
+                            )
 
                             if user_id:
                                 async def _notify_fixed_sl():
@@ -2456,9 +2623,9 @@ class BracketOrderService:
                                     )
                                 )
 
-                        # Always spawn OCO Watchdog / Software SL Fallback (and Auto-Breakeven if enabled)
+                        # Always spawn OCO Watchdog / Software SL Fallback (and Auto-Breakeven / Anti-Wick if enabled)
                         logger.info(
-                            f"🛡️ Spawning Fixed SL {'Auto-Breakeven' if auto_breakeven_enabled else 'OCO Watchdog'} loop for {symbol} "
+                            f"🛡️ Spawning Fixed SL {'Anti-Wick' if anti_wick_mode != 'instant' else ('Auto-Breakeven' if auto_breakeven_enabled else 'OCO Watchdog')} loop for {symbol} "
                             f"(SL: {sl_res.get('id') if sl_res else 'Software-Fallback'}, TP: {tp_order_id or 'None'})"
                         )
                         asyncio.create_task(
@@ -2478,7 +2645,11 @@ class BracketOrderService:
                                 auto_breakeven_trigger_pct=auto_breakeven_trigger_pct,
                                 auto_breakeven_buffer_pct=auto_breakeven_buffer_pct,
                                 entry_order_id=entry_order_id,
-                                tp_price=resolved_tp_price
+                                tp_price=resolved_tp_price,
+                                anti_wick_mode=anti_wick_mode,
+                                anti_wick_dwell_seconds=anti_wick_dwell_seconds,
+                                anti_wick_timeframe=anti_wick_timeframe,
+                                anti_wick_disaster_pct=anti_wick_disaster_pct,
                             )
                         )
 
@@ -2636,6 +2807,10 @@ class BracketOrderService:
         initial_breakeven_activated: bool = False,
         initial_manual_trigger_override: Optional[float] = None,
         initial_trigger_price: Optional[float] = None,
+        anti_wick_mode: str = 'instant',
+        anti_wick_dwell_seconds: float = 3.0,
+        anti_wick_timeframe: str = '1m',
+        anti_wick_disaster_pct: float = 2.0,
     ):
         highest_price = float(initial_highest_price) if initial_highest_price else entry_price
         lowest_price = float(initial_lowest_price) if initial_lowest_price else entry_price
@@ -2674,6 +2849,11 @@ class BracketOrderService:
             'auto_breakeven_trigger_pct': auto_breakeven_trigger_pct,
             'auto_breakeven_buffer_pct': auto_breakeven_buffer_pct,
             'breakeven_activated': bool(initial_breakeven_activated),
+            'anti_wick_mode': str(anti_wick_mode or 'instant').lower(),
+            'anti_wick_dwell_seconds': float(anti_wick_dwell_seconds or 3.0),
+            'anti_wick_timeframe': str(anti_wick_timeframe or '1m').lower(),
+            'anti_wick_disaster_pct': float(anti_wick_disaster_pct or 2.0),
+            'anti_wick_state': 'monitoring',
             'max_deviation_pct': max_deviation_pct,
             'max_attempts': max_attempts,
             'chase_delay_ms': chase_delay_ms,
@@ -2722,6 +2902,10 @@ class BracketOrderService:
                     'auto_breakeven_enabled': bool(auto_breakeven_enabled),
                     'auto_breakeven_trigger_pct': float(auto_breakeven_trigger_pct),
                     'auto_breakeven_buffer_pct': float(auto_breakeven_buffer_pct),
+                    'anti_wick_mode': str(anti_wick_mode or 'instant').lower(),
+                    'anti_wick_dwell_seconds': float(anti_wick_dwell_seconds or 3.0),
+                    'anti_wick_timeframe': str(anti_wick_timeframe or '1m').lower(),
+                    'anti_wick_disaster_pct': float(anti_wick_disaster_pct or 2.0),
                 },
             )
         except Exception:
@@ -2748,7 +2932,10 @@ class BracketOrderService:
             ut_bot = UTBotTracker(exchange.id, symbol, sensitivity=atr_multiplier, atr_period=atr_period, use_heikin_ashi=False, timeframe=atr_timeframe)
 
         while True:
-            await asyncio.sleep(0.3 if is_smart_chase_exit else 1.0)  # Ultra-responsive 300ms poll for Trailing Chase
+            aw_trail_pre = str(
+                (BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id) or {}).get('anti_wick_mode') or anti_wick_mode or 'instant'
+            ).lower() != 'instant'
+            await asyncio.sleep(0.3 if (is_smart_chase_exit or aw_trail_pre) else 1.0)  # Ultra-responsive 300ms poll for Trailing Chase & Anti-Wick
             loop_tick += 1
             # Check if monitor was cancelled by user
             sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
@@ -2794,6 +2981,14 @@ class BracketOrderService:
                 auto_breakeven_trigger_pct = float(sl_meta['auto_breakeven_trigger_pct'])
             if sl_meta.get('auto_breakeven_buffer_pct'):
                 auto_breakeven_buffer_pct = float(sl_meta['auto_breakeven_buffer_pct'])
+            if sl_meta.get('anti_wick_mode'):
+                anti_wick_mode = str(sl_meta['anti_wick_mode']).lower()
+            if sl_meta.get('anti_wick_dwell_seconds') is not None:
+                anti_wick_dwell_seconds = float(sl_meta['anti_wick_dwell_seconds'])
+            if sl_meta.get('anti_wick_timeframe'):
+                anti_wick_timeframe = str(sl_meta['anti_wick_timeframe']).lower()
+            if sl_meta.get('anti_wick_disaster_pct') is not None:
+                anti_wick_disaster_pct = float(sl_meta['anti_wick_disaster_pct'])
 
             try:
                 ticker = await BracketOrderService._fetch_ticker_fast(
@@ -2954,7 +3149,20 @@ class BracketOrderService:
                     except Exception:
                         pass
 
-                    if current_price <= trigger_price:
+                    from app.services.anti_wick_guard import evaluate_anti_wick_trigger
+                    long_aw_triggered, _ = await evaluate_anti_wick_trigger(
+                        state=sl_meta,
+                        exchange=exchange,
+                        symbol=symbol,
+                        opposite_side=opposite_side,
+                        current_price=current_price,
+                        trigger_price=trigger_price,
+                        anti_wick_mode=anti_wick_mode,
+                        dwell_seconds=anti_wick_dwell_seconds,
+                        timeframe=anti_wick_timeframe,
+                        disaster_bypass_pct=anti_wick_disaster_pct,
+                    )
+                    if long_aw_triggered:
                         if (was_tp_touched or not curr_tp_price) and await BracketOrderService._check_linked_tp_filled(
                             exchange=exchange,
                             symbol=symbol,
@@ -2998,7 +3206,20 @@ class BracketOrderService:
                     except Exception:
                         pass
 
-                    if current_price >= trigger_price:
+                    from app.services.anti_wick_guard import evaluate_anti_wick_trigger
+                    short_aw_triggered, _ = await evaluate_anti_wick_trigger(
+                        state=sl_meta,
+                        exchange=exchange,
+                        symbol=symbol,
+                        opposite_side=opposite_side,
+                        current_price=current_price,
+                        trigger_price=trigger_price,
+                        anti_wick_mode=anti_wick_mode,
+                        dwell_seconds=anti_wick_dwell_seconds,
+                        timeframe=anti_wick_timeframe,
+                        disaster_bypass_pct=anti_wick_disaster_pct,
+                    )
+                    if short_aw_triggered:
                         if (was_tp_touched or not curr_tp_price) and await BracketOrderService._check_linked_tp_filled(
                             exchange=exchange,
                             symbol=symbol,
@@ -3139,6 +3360,10 @@ class BracketOrderService:
         sl_id: Optional[str] = None,
         initial_breakeven_activated: bool = False,
         initial_manual_trigger_override: Optional[float] = None,
+        anti_wick_mode: str = 'instant',
+        anti_wick_dwell_seconds: float = 3.0,
+        anti_wick_timeframe: str = '1m',
+        anti_wick_disaster_pct: float = 2.0,
     ):
         sl_id = sl_id or str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
@@ -3161,6 +3386,11 @@ class BracketOrderService:
             'status': 'monitoring',
             'auto_breakeven_enabled': auto_breakeven_enabled,
             'breakeven_activated': bool(initial_breakeven_activated),
+            'anti_wick_mode': str(anti_wick_mode or 'instant').lower(),
+            'anti_wick_dwell_seconds': float(anti_wick_dwell_seconds or 3.0),
+            'anti_wick_timeframe': str(anti_wick_timeframe or '1m').lower(),
+            'anti_wick_disaster_pct': float(anti_wick_disaster_pct or 2.0),
+            'anti_wick_state': 'monitoring',
             'tp_order_id': str(tp_order_id) if tp_order_id else None,
             'tp_price': float(tp_price) if tp_price else None
         }
@@ -3192,6 +3422,10 @@ class BracketOrderService:
                     'auto_breakeven_enabled': bool(auto_breakeven_enabled),
                     'auto_breakeven_trigger_pct': float(auto_breakeven_trigger_pct),
                     'auto_breakeven_buffer_pct': float(auto_breakeven_buffer_pct),
+                    'anti_wick_mode': str(anti_wick_mode or 'instant').lower(),
+                    'anti_wick_dwell_seconds': float(anti_wick_dwell_seconds or 3.0),
+                    'anti_wick_timeframe': str(anti_wick_timeframe or '1m').lower(),
+                    'anti_wick_disaster_pct': float(anti_wick_disaster_pct or 2.0),
                 },
             )
         except Exception:
@@ -3199,7 +3433,8 @@ class BracketOrderService:
         logger.info(
             f"🛡️ [Fixed SL Watchdog/Breakeven] Started for {symbol} | Initial SL: {initial_sl_price} | "
             f"Native SL ID: {disaster_sl_order_id or 'Software-Fallback'} | TP ID: {tp_order_id or 'None'} | "
-            f"Auto-BE: {auto_breakeven_enabled} (+{auto_breakeven_trigger_pct}% -> +{auto_breakeven_buffer_pct}%)"
+            f"Auto-BE: {auto_breakeven_enabled} (+{auto_breakeven_trigger_pct}% -> +{auto_breakeven_buffer_pct}%) | "
+            f"Anti-Wick: {str(anti_wick_mode or 'instant').upper()}"
         )
 
         loop_tick = 0
@@ -3210,7 +3445,10 @@ class BracketOrderService:
 
         try:
             while True:
-                await asyncio.sleep(1.5)
+                aw_active_pre = str(
+                    (BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id) or {}).get('anti_wick_mode') or anti_wick_mode or 'instant'
+                ).lower() != 'instant'
+                await asyncio.sleep(0.35 if aw_active_pre else 1.5)
                 loop_tick += 1
                 sl_meta = BracketOrderService.ACTIVE_SOFTWARE_SL.get(sl_id)
                 if not sl_meta or sl_meta.get('cancelled'):
@@ -3238,9 +3476,10 @@ class BracketOrderService:
                     if sl_meta.get('disaster_sl_order_id'):
                         disaster_sl_order_id = sl_meta['disaster_sl_order_id']
 
+                    should_poll_rest = (not aw_active_pre) or (loop_tick % 4 == 1)
                     # 1. Check if TP order filled on exchange
                     curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
-                    if curr_tp_id:
+                    if curr_tp_id and should_poll_rest:
                         try:
                             tp_chk = (
                                 await BracketOrderService._fetch_futures_order_universal(exchange, curr_tp_id, symbol, is_conditional=False)
@@ -3279,7 +3518,7 @@ class BracketOrderService:
 
                     # 2. Check if native SL order filled on futures (conditional/algo order aware)
                     curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
-                    if curr_disaster:
+                    if curr_disaster and should_poll_rest:
                         try:
                             sl_chk = (
                                 await BracketOrderService._fetch_futures_order_universal(exchange, curr_disaster, symbol, is_conditional=True)
@@ -3314,7 +3553,7 @@ class BracketOrderService:
                             pass
 
                     # 3. Check if position was closed externally (after initial indexing grace period of 5 ticks / ~7.5s)
-                    if is_futures and loop_tick > 5:
+                    if is_futures and should_poll_rest and loop_tick > 5:
                         pos_open = await BracketOrderService._check_futures_position_is_open(exchange, symbol, opposite_side)
                         if not pos_open:
                             pos_closed_streak += 1
@@ -3372,11 +3611,27 @@ class BracketOrderService:
                                     )
                                 )
 
-                    # 5. If Spot (or Futures when native STOP_MARKET placement failed), check trigger condition for software market exit
+                    # 5. If Spot (or Futures when Anti-Wick software guard is active or native STOP_MARKET placement failed), check trigger condition
                     curr_disaster = sl_meta.get('disaster_sl_order_id') or disaster_sl_order_id
-                    if (not is_futures or not curr_disaster) and current_price > 0:
+                    aw_mode_curr = str(sl_meta.get('anti_wick_mode') or anti_wick_mode or 'instant').lower()
+                    aw_dwell_curr = float(sl_meta.get('anti_wick_dwell_seconds') if sl_meta.get('anti_wick_dwell_seconds') is not None else anti_wick_dwell_seconds)
+                    aw_tf_curr = str(sl_meta.get('anti_wick_timeframe') or anti_wick_timeframe or '1m').lower()
+                    aw_dis_curr = float(sl_meta.get('anti_wick_disaster_pct') if sl_meta.get('anti_wick_disaster_pct') is not None else anti_wick_disaster_pct)
+                    if (not is_futures or not curr_disaster or aw_mode_curr != 'instant') and current_price > 0:
                         current_trig = float(sl_meta.get('trigger_price') or initial_sl_price)
-                        triggered = (current_price <= current_trig) if opposite_side == 'sell' else (current_price >= current_trig)
+                        from app.services.anti_wick_guard import evaluate_anti_wick_trigger
+                        triggered, _ = await evaluate_anti_wick_trigger(
+                            state=sl_meta,
+                            exchange=exchange,
+                            symbol=symbol,
+                            opposite_side=opposite_side,
+                            current_price=current_price,
+                            trigger_price=current_trig,
+                            anti_wick_mode=aw_mode_curr,
+                            dwell_seconds=aw_dwell_curr,
+                            timeframe=aw_tf_curr,
+                            disaster_bypass_pct=aw_dis_curr,
+                        )
                         if triggered:
                             curr_amount = float(sl_meta.get('amount') if sl_meta.get('amount') is not None else amount)
                             if await BracketOrderService._check_linked_tp_filled(
@@ -3405,6 +3660,8 @@ class BracketOrderService:
                             terminal_status = 'completed'
                             terminal_reason = 'fixed_sl_market_executed'
                             try:
+                                if curr_disaster and is_futures:
+                                    await BracketOrderService._cancel_futures_order_universal(exchange, curr_disaster, symbol, is_conditional=True)
                                 curr_tp_id = sl_meta.get('tp_order_id') or tp_order_id
                                 if curr_tp_id:
                                     await BracketOrderService._cancel_futures_order_universal(exchange, curr_tp_id, symbol)
@@ -3489,6 +3746,10 @@ class BracketOrderService:
         sl_id: Optional[str] = None,
         initial_breakeven_activated: bool = False,
         initial_manual_trigger_override: Optional[float] = None,
+        anti_wick_mode: str = 'instant',
+        anti_wick_dwell_seconds: float = 3.0,
+        anti_wick_timeframe: str = '1m',
+        anti_wick_disaster_pct: float = 2.0,
     ):
         sl_id = sl_id or str(uuid.uuid4())
         BracketOrderService.ACTIVE_SOFTWARE_SL[sl_id] = {
@@ -3520,6 +3781,11 @@ class BracketOrderService:
             'auto_breakeven_trigger_pct': auto_breakeven_trigger_pct,
             'auto_breakeven_buffer_pct': auto_breakeven_buffer_pct,
             'breakeven_activated': bool(initial_breakeven_activated),
+            'anti_wick_mode': str(anti_wick_mode or 'instant').lower(),
+            'anti_wick_dwell_seconds': float(anti_wick_dwell_seconds or 3.0),
+            'anti_wick_timeframe': str(anti_wick_timeframe or '1m').lower(),
+            'anti_wick_disaster_pct': float(anti_wick_disaster_pct or 2.0),
+            'anti_wick_state': 'monitoring',
             'tp_order_id': str(tp_order_id) if tp_order_id else None,
             'tp_price': float(tp_price) if tp_price else None,
         }
@@ -3558,6 +3824,10 @@ class BracketOrderService:
                     'auto_breakeven_enabled': bool(auto_breakeven_enabled),
                     'auto_breakeven_trigger_pct': float(auto_breakeven_trigger_pct),
                     'auto_breakeven_buffer_pct': float(auto_breakeven_buffer_pct),
+                    'anti_wick_mode': str(anti_wick_mode or 'instant').lower(),
+                    'anti_wick_dwell_seconds': float(anti_wick_dwell_seconds or 3.0),
+                    'anti_wick_timeframe': str(anti_wick_timeframe or '1m').lower(),
+                    'anti_wick_disaster_pct': float(anti_wick_disaster_pct or 2.0),
                 },
             )
         except Exception:
@@ -3568,7 +3838,7 @@ class BracketOrderService:
         logger.info(
             f"🏁 Smart Chase Monitor started for {symbol} | Action: {side_tag} | Amount: {amount} | "
             f"Trigger: {sl_price} | Strategy: {peg_strategy.upper()} | Mode: {chase_mode.upper()} | "
-            f"Source: {trigger_source.upper()} | Entry: {entry_price}{tp_tag}"
+            f"Source: {trigger_source.upper()} | Anti-Wick: {str(anti_wick_mode or 'instant').upper()} | Entry: {entry_price}{tp_tag}"
         )
         sl_triggered = False
         loop_tick = 0
@@ -3631,6 +3901,14 @@ class BracketOrderService:
                 auto_breakeven_trigger_pct = float(sl_meta['auto_breakeven_trigger_pct'])
             if sl_meta.get('auto_breakeven_buffer_pct'):
                 auto_breakeven_buffer_pct = float(sl_meta['auto_breakeven_buffer_pct'])
+            if sl_meta.get('anti_wick_mode'):
+                anti_wick_mode = str(sl_meta['anti_wick_mode']).lower()
+            if sl_meta.get('anti_wick_dwell_seconds') is not None:
+                anti_wick_dwell_seconds = float(sl_meta['anti_wick_dwell_seconds'])
+            if sl_meta.get('anti_wick_timeframe'):
+                anti_wick_timeframe = str(sl_meta['anti_wick_timeframe']).lower()
+            if sl_meta.get('anti_wick_disaster_pct') is not None:
+                anti_wick_disaster_pct = float(sl_meta['anti_wick_disaster_pct'])
 
             try:
                 # ── PRIORITY 1: FETCH LIVE BBO / TICKER (Redis WS cache ~1ms, REST fallback) ──
@@ -3698,13 +3976,19 @@ class BracketOrderService:
                                 )
 
                 if current_price > 0:
-                    should_trigger_sl = False
-                    if opposite_side == 'sell': # Long position, sell when price drops to or below sl_price
-                        if current_price <= current_sl_trigger:
-                            should_trigger_sl = True
-                    else: # Short position, buy when price rises to or above sl_price
-                        if current_price >= current_sl_trigger:
-                            should_trigger_sl = True
+                    from app.services.anti_wick_guard import evaluate_anti_wick_trigger
+                    should_trigger_sl, aw_reason = await evaluate_anti_wick_trigger(
+                        state=sl_meta,
+                        exchange=exchange,
+                        symbol=symbol,
+                        opposite_side=opposite_side,
+                        current_price=current_price,
+                        trigger_price=current_sl_trigger,
+                        anti_wick_mode=anti_wick_mode,
+                        dwell_seconds=anti_wick_dwell_seconds,
+                        timeframe=anti_wick_timeframe,
+                        disaster_bypass_pct=anti_wick_disaster_pct,
+                    )
 
                     if should_trigger_sl:
                         # Pre-trigger TP & position verification (Spot + Futures):

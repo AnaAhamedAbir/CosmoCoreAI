@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle, Minus, Maximize2, GripVertical, Trash2, Target, MoveVertical, Magnet } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
+import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse, MlLivePreviewResponse } from '../../../services/manualTradeService';
 import { notificationService } from '../../../services/notification';
 import { mlModelsService } from '../../../services/mlModelsService';
 import { trainingStudioToolsService } from '../../../services/trainingStudioToolsService';
@@ -11,6 +11,21 @@ import { CustomMLModel } from '../../../types';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
 import { findBestWallsForTrade, OrderbookWall } from '../../../utils/liquidityWallMagnet';
+import {
+  calculateRiskBasedPositionSize,
+  calculateTradePnlAndRRPreview,
+  calculateDragLineDeltaUsd,
+} from '../../../utils/riskAndPnlCalculator';
+import {
+  RiskSizingSubBar,
+  LivePnlAndRRBar,
+  AntiWickSlControls,
+} from './RiskSizeAndPnlControls';
+import {
+  HudLivePositionPnlChip,
+  HudLiveAiMicroGauge,
+  HudCompactPnlStrip,
+} from './HudQuantControls';
 import {
   HudWallMagnetBar,
   FullModalLimitWallPanel,
@@ -343,8 +358,36 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     smartChaseWallMultiplier: 2.5,
     autoBreakevenEnabled: false,
     autoBreakevenTriggerPct: 1.0,
-    autoBreakevenBufferPct: 0.05
+    autoBreakevenBufferPct: 0.05,
+    antiWickMode: 'instant' as 'instant' | 'dwell' | 'candle_close',
+    antiWickDwellSeconds: 3,
+    antiWickTimeframe: '1m' as '1m' | '3m' | '5m' | '15m',
+    antiWickDisasterPct: 2.0,
   });
+  const [sizingMode, setSizingMode] = useState<'standard' | 'risk_usd' | 'risk_pct'>(() => {
+    try {
+      const saved = localStorage.getItem('cosmo_manual_risk_cfg_v1');
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (p?.sizingMode === 'standard' || p?.sizingMode === 'risk_usd' || p?.sizingMode === 'risk_pct') {
+          return p.sizingMode;
+        }
+      }
+    } catch { }
+    return 'standard';
+  });
+  const [riskAmountInput, setRiskAmountInput] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('cosmo_manual_risk_cfg_v1');
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (typeof p?.riskAmountInput === 'string' && p.riskAmountInput) return p.riskAmountInput;
+      }
+    } catch { }
+    return '10';
+  });
+  const [mlLivePreview, setMlLivePreview] = useState<MlLivePreviewResponse | null>(null);
+  const [isMovingBreakeven, setIsMovingBreakeven] = useState<boolean>(false);
   const [useNativeTpSl, setUseNativeTpSl] = useState<boolean>(false);
   const [activeBrackets, setActiveBrackets] = useState<any[]>([]);
   const [openLimitOrders, setOpenLimitOrders] = useState<any[]>([]);
@@ -671,20 +714,46 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     }
   }, [isOpen]);
 
-  // Pre-warm ML model + live features in backend RAM so BUY/SELL order execution is instant (<5ms)
+  // Pre-warm ML model + live features in backend RAM and refresh Pre-Trade AI Micro-Gauge
   React.useEffect(() => {
-    if (!isOpen || !mlFilterConfig.modelId || !activeSymbol) return;
-    if (typeof document === 'undefined' || (!document.hidden && document.visibilityState === 'visible')) {
-      manualTradeService.warmupMlFilter(activeSymbol, mlFilterConfig.modelId);
+    if (!isOpen || !mlFilterConfig.modelId || !activeSymbol) {
+      setMlLivePreview(null);
+      return;
     }
-    if (!mlFilterConfig.enabled) return;
-    const warmupInterval = setInterval(() => {
-      if (typeof document === 'undefined' || (!document.hidden && document.visibilityState === 'visible')) {
-        manualTradeService.warmupMlFilter(activeSymbol, mlFilterConfig.modelId);
+    const refreshMlPreview = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      manualTradeService.warmupMlFilter(activeSymbol, mlFilterConfig.modelId);
+      if (mlFilterConfig.enabled) {
+        manualTradeService
+          .getMlFilterLivePreview(
+            activeSymbol,
+            mlFilterConfig.modelId,
+            mlFilterConfig.bullishThreshold,
+            mlFilterConfig.bearishThreshold,
+            activePair?.exchange || 'binance'
+          )
+          .then((res) => {
+            if (res && res.status === 'ok') setMlLivePreview(res);
+          });
       }
-    }, timings.mlWarmupMs);
+    };
+    refreshMlPreview();
+    if (!mlFilterConfig.enabled) {
+      setMlLivePreview(null);
+      return;
+    }
+    const warmupInterval = setInterval(refreshMlPreview, Math.min(timings.mlWarmupMs, 3500));
     return () => clearInterval(warmupInterval);
-  }, [isOpen, mlFilterConfig.enabled, mlFilterConfig.modelId, activeSymbol, timings.mlWarmupMs]);
+  }, [
+    isOpen,
+    mlFilterConfig.enabled,
+    mlFilterConfig.modelId,
+    mlFilterConfig.bullishThreshold,
+    mlFilterConfig.bearishThreshold,
+    activeSymbol,
+    activePair?.exchange,
+    timings.mlWarmupMs
+  ]);
 
   // Poll active software brackets and open exchange orders
   const lastOpenOrdersFetchRef = React.useRef<number>(0);
@@ -1147,7 +1216,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         }
       }
 
-      const hasCustomTypedSize = !targetObj && !selectedPercent && Boolean(size) && Number(size) > 0;
+      const isRiskSizedCustom = !targetObj && sizingMode !== 'standard';
+      if (isRiskSizedCustom && riskSizing.baseAmount <= 0) {
+        toast.error(riskSizing.warning || 'Please set a valid Stop-Loss and Risk amount.');
+        return;
+      }
+
+      const hasCustomTypedSize = !targetObj && (isRiskSizedCustom || (!selectedPercent && Boolean(size) && Number(size) > 0));
       // When a specific open order / bracket is targeted, the button displays and force-executes
       // 100% of that cancelled order rather than scaling it by the HUD entry-size percentage.
       const effectivePct = targetObj
@@ -1158,12 +1233,36 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
             ? Math.max(1, Math.min(100, Number(selectedPercent.replace('%', '')) || 100))
             : 100;
       const refOrderPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
+      const forceRiskCalc = isRiskSizedCustom
+        ? calculateRiskBasedPositionSize({
+            riskValue: parseFloat(riskAmountInput) || 0,
+            riskMode: sizingMode === 'risk_pct' ? 'risk_pct' : 'risk_usd',
+            entryPrice: refOrderPrice,
+            side,
+            slConfig,
+            balance: balanceData,
+            isFutures,
+            leverage,
+            reduceOnly,
+            positionData,
+            isInverseFutures,
+            contractSize,
+          })
+        : null;
+      if (forceRiskCalc && forceRiskCalc.baseAmount <= 0) {
+        toast.error(forceRiskCalc.warning || 'Please set a valid Stop-Loss and Risk amount.');
+        return;
+      }
       const customBaseAmt = hasCustomTypedSize
-        ? (isInverseFutures && contractSize > 0
-          ? (sizeMode === 'quote'
-            ? Math.max(1, Math.floor(Number(size) / contractSize))
-            : Math.max(1, Math.round((Number(size) * refOrderPrice) / contractSize)))
-          : (sizeMode === 'quote' && refOrderPrice > 0 ? Number(size) / refOrderPrice : Number(size)))
+        ? (forceRiskCalc
+          ? (isInverseFutures && contractSize > 0
+            ? Math.max(1, Math.round((forceRiskCalc.baseAmount * refOrderPrice) / contractSize))
+            : forceRiskCalc.baseAmount)
+          : (isInverseFutures && contractSize > 0
+            ? (sizeMode === 'quote'
+              ? Math.max(1, Math.floor(Number(size) / contractSize))
+              : Math.max(1, Math.round((Number(size) * refOrderPrice) / contractSize)))
+            : (sizeMode === 'quote' && refOrderPrice > 0 ? Number(size) / refOrderPrice : Number(size))))
         : undefined;
 
       const attachedTpPayload =
@@ -1179,36 +1278,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
       const attachedSlPayload =
         slConfig.enabled && (slConfig.mode === 'atr' || (slConfig.value && Number(slConfig.value) > 0))
-          ? {
-            enabled: true,
-            type: slConfig.type,
-            mode: slConfig.mode,
-            value: Number(slConfig.value || 0),
-            atr_period: slConfig.atrPeriod,
-            atr_multiplier: slConfig.atrMultiplier,
-            atr_timeframe: slConfig.atrTimeframe,
-            timeout_mins: slConfig.timeoutMins,
-            smart_chase_deviation_pct: slConfig.smartChaseDeviationPct ?? 5.0,
-            smartChaseDeviationPct: slConfig.smartChaseDeviationPct ?? 5.0,
-            smart_chase_delay_ms: slConfig.smartChaseDelayMs ?? 1500,
-            smartChaseDelayMs: slConfig.smartChaseDelayMs ?? 1500,
-            smart_chase_max_attempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
-            smartChaseMaxAttempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
-            smart_chase_mode: slConfig.smartChaseMode || 'dynamic_bbo',
-            smartChaseMode: slConfig.smartChaseMode || 'dynamic_bbo',
-            smart_chase_trigger_source: slConfig.smartChaseTriggerSource || 'bid_ask',
-            smartChaseTriggerSource: slConfig.smartChaseTriggerSource || 'bid_ask',
-            smart_chase_peg_strategy: slConfig.smartChasePegStrategy || 'bbo',
-            smartChasePegStrategy: slConfig.smartChasePegStrategy || 'bbo',
-            smart_chase_wall_multiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
-            smartChaseWallMultiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
-            auto_breakeven_enabled: slConfig.autoBreakevenEnabled,
-            autoBreakevenEnabled: slConfig.autoBreakevenEnabled,
-            auto_breakeven_trigger_pct: slConfig.autoBreakevenTriggerPct ?? 1.0,
-            autoBreakevenTriggerPct: slConfig.autoBreakevenTriggerPct ?? 1.0,
-            auto_breakeven_buffer_pct: slConfig.autoBreakevenBufferPct ?? 0.05,
-            autoBreakevenBufferPct: slConfig.autoBreakevenBufferPct ?? 0.05
-          }
+          ? buildAttachedSlPayload()
           : undefined;
 
       const res = await manualTradeService.emergencyForceOrder({
@@ -1816,6 +1886,19 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     } catch { }
   }, [wallMagnetEnabled, smartPegStrategy, smartPegWallMultiplier, smartPegFrontRunTicks, smartPegAntiSpoof]);
 
+  // Persist Risk Sizing preference across reloads
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(
+        'cosmo_manual_risk_cfg_v1',
+        JSON.stringify({
+          sizingMode,
+          riskAmountInput,
+        })
+      );
+    } catch { }
+  }, [sizingMode, riskAmountInput]);
+
   const effectiveWalls = React.useMemo<OrderbookWall[]>(() => {
     const parentWalls = orderbookWalls || [];
     if (parentWalls.length === 0) return fetchedWalls;
@@ -1928,19 +2011,143 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   // When Native Binance OTO/OTOCO is active and Exchange Native SL is selected, keep only Fixed Stop active (auto-snap from Trailing/ATR/Auto-BE)
   React.useEffect(() => {
     if (!isNativeExchangeSlLockedToFixed || !slConfig.enabled) return;
-    if (slConfig.type === 'trailing' || (slConfig.type === 'fixed' && (slConfig.mode === 'atr' || slConfig.autoBreakevenEnabled))) {
+    if (
+      slConfig.type === 'trailing' ||
+      (slConfig.type === 'fixed' &&
+        (slConfig.mode === 'atr' || slConfig.autoBreakevenEnabled))
+    ) {
       setSlConfig(prev => ({
         ...prev,
         type: 'fixed',
         mode: prev.mode === 'atr' ? 'percentage' : prev.mode,
         value: prev.mode === 'atr' ? getSmartGapValue('percentage', false) : prev.value,
-        autoBreakevenEnabled: false
+        autoBreakevenEnabled: false,
       }));
     }
-  }, [isNativeExchangeSlLockedToFixed, slConfig.enabled, slConfig.type, slConfig.mode, slConfig.autoBreakevenEnabled, getSmartGapValue]);
+  }, [
+    isNativeExchangeSlLockedToFixed,
+    slConfig.enabled,
+    slConfig.type,
+    slConfig.mode,
+    slConfig.autoBreakevenEnabled,
+    getSmartGapValue
+  ]);
+
+  const buildAttachedSlPayload = React.useCallback((overrideValue?: number) => ({
+    ...slConfig,
+    enabled: true,
+    type: slConfig.type,
+    mode: slConfig.mode,
+    value: overrideValue !== undefined ? overrideValue : Number(slConfig.value || 0),
+    atr_period: slConfig.atrPeriod,
+    atr_multiplier: slConfig.atrMultiplier,
+    atr_timeframe: slConfig.atrTimeframe,
+    timeout_mins: slConfig.timeoutMins,
+    smart_chase_deviation_pct: slConfig.smartChaseDeviationPct ?? 5.0,
+    smartChaseDeviationPct: slConfig.smartChaseDeviationPct ?? 5.0,
+    smart_chase_delay_ms: slConfig.smartChaseDelayMs ?? 1500,
+    smartChaseDelayMs: slConfig.smartChaseDelayMs ?? 1500,
+    smart_chase_max_attempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
+    smartChaseMaxAttempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
+    smart_chase_mode: slConfig.smartChaseMode || 'dynamic_bbo',
+    smartChaseMode: slConfig.smartChaseMode || 'dynamic_bbo',
+    smart_chase_trigger_source: slConfig.smartChaseTriggerSource || 'bid_ask',
+    smartChaseTriggerSource: slConfig.smartChaseTriggerSource || 'bid_ask',
+    smart_chase_peg_strategy: slConfig.smartChasePegStrategy || 'bbo',
+    smartChasePegStrategy: slConfig.smartChasePegStrategy || 'bbo',
+    smart_chase_wall_multiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
+    smartChaseWallMultiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
+    auto_breakeven_enabled: slConfig.autoBreakevenEnabled,
+    autoBreakevenEnabled: slConfig.autoBreakevenEnabled,
+    auto_breakeven_trigger_pct: slConfig.autoBreakevenTriggerPct ?? 1.0,
+    autoBreakevenTriggerPct: slConfig.autoBreakevenTriggerPct ?? 1.0,
+    auto_breakeven_buffer_pct: slConfig.autoBreakevenBufferPct ?? 0.05,
+    autoBreakevenBufferPct: slConfig.autoBreakevenBufferPct ?? 0.05,
+    anti_wick_mode: slConfig.antiWickMode || 'instant',
+    antiWickMode: slConfig.antiWickMode || 'instant',
+    anti_wick_dwell_seconds: slConfig.antiWickDwellSeconds ?? 3,
+    antiWickDwellSeconds: slConfig.antiWickDwellSeconds ?? 3,
+    anti_wick_timeframe: slConfig.antiWickTimeframe || '1m',
+    antiWickTimeframe: slConfig.antiWickTimeframe || '1m',
+    anti_wick_disaster_pct: slConfig.antiWickDisasterPct ?? 2.0,
+    antiWickDisasterPct: slConfig.antiWickDisasterPct ?? 2.0,
+  }), [slConfig]);
+
+  const handleMoveToBreakeven = React.useCallback(async () => {
+    if (!selectedApi || !activeSymbol) return;
+    setIsMovingBreakeven(true);
+    try {
+      const res = await manualTradeService.moveSlToBreakeven(
+        Number(selectedApi),
+        activeSymbol,
+        slConfig.autoBreakevenBufferPct ?? 0.05,
+        Number(positionData?.entry_price || 0)
+      );
+      toast.success(res?.message || `🛡️ SL moved to Breakeven!`);
+      fetchActiveBrackets(true);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || err?.message || 'Could not move SL to Breakeven');
+    } finally {
+      setIsMovingBreakeven(false);
+    }
+  }, [selectedApi, activeSymbol, slConfig.autoBreakevenBufferPct, positionData?.entry_price, fetchActiveBrackets]);
+
+  const riskSizing = React.useMemo(() => {
+    const mode = sizingMode === 'risk_pct' ? 'risk_pct' : 'risk_usd';
+    const refPx = effectiveOrderPrice || effectiveCurrentPrice || Number(limitPrice) || 0;
+    return calculateRiskBasedPositionSize({
+      riskValue: parseFloat(riskAmountInput) || 0,
+      riskMode: mode,
+      entryPrice: refPx,
+      side: tradeSide,
+      slConfig,
+      balance: balanceData,
+      isFutures,
+      leverage,
+      reduceOnly,
+      positionData,
+      isInverseFutures,
+      contractSize,
+    });
+  }, [
+    sizingMode,
+    riskAmountInput,
+    effectiveOrderPrice,
+    effectiveCurrentPrice,
+    limitPrice,
+    tradeSide,
+    slConfig,
+    balanceData,
+    isFutures,
+    leverage,
+    reduceOnly,
+    positionData,
+    isInverseFutures,
+    contractSize,
+  ]);
+
+  // Keep `size` synced in Base units whenever Risk Sizing mode is active
+  React.useEffect(() => {
+    if (sizingMode === 'standard') return;
+    if (sizeMode !== 'base') {
+      setSizeMode('base');
+    }
+    if (riskSizing.baseAmount > 0) {
+      const dec = riskSizing.baseAmount < 1 ? 6 : 4;
+      const nextStr = Number(riskSizing.baseAmount.toFixed(dec)).toString();
+      setSize(nextStr);
+      setSelectedPercent(null);
+    } else {
+      setSize('');
+      setSelectedPercent(null);
+    }
+  }, [sizingMode, riskSizing.baseAmount, sizeMode]);
 
   // Derived total base amount currently configured (falls back to 100% available balance if size input is empty)
   const currentBaseAmount = React.useMemo(() => {
+    if (sizingMode !== 'standard') {
+      return riskSizing.baseAmount;
+    }
     const p = effectiveOrderPrice || effectiveCurrentPrice || Number(limitPrice) || 0;
     const raw = parseFloat(size);
     if (!isNaN(raw) && raw > 0) {
@@ -1956,7 +2163,20 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       }
     }
     return 0;
-  }, [size, sizeMode, effectiveOrderPrice, effectiveCurrentPrice, limitPrice, balanceData, selectedPercent, isFutures, tradeSide]);
+  }, [sizingMode, riskSizing.baseAmount, size, sizeMode, effectiveOrderPrice, effectiveCurrentPrice, limitPrice, balanceData, selectedPercent, isFutures, tradeSide]);
+
+  const tradePnlPreview = React.useMemo(() => {
+    const refPx = effectiveOrderPrice || effectiveCurrentPrice || Number(limitPrice) || 0;
+    return calculateTradePnlAndRRPreview({
+      baseAmount: currentBaseAmount,
+      entryPrice: refPx,
+      side: tradeSide,
+      tpConfig,
+      slConfig,
+      orderType,
+      isFutures,
+    });
+  }, [currentBaseAmount, effectiveOrderPrice, effectiveCurrentPrice, limitPrice, tradeSide, tpConfig, slConfig, orderType, isFutures]);
 
   // Derived effective iceberg visible quantity in base asset
   const effectiveIcebergQty = React.useMemo(() => {
@@ -2111,6 +2331,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   ]);
 
   const handlePercentSliderChange = React.useCallback((pctNum: number) => {
+    setSizingMode('standard');
     const clamped = Math.max(0, Math.min(100, Math.round(pctNum)));
     if (clamped === 0) {
       setSelectedPercent(null);
@@ -2499,37 +2720,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           }
         }
 
-        const attachedSlPayload = {
-          ...slConfig,
-          enabled: true,
-          type: slConfig.type,
-          mode: slConfig.mode,
-          value: dropPrice,
-          atr_period: slConfig.atrPeriod,
-          atr_multiplier: slConfig.atrMultiplier,
-          atr_timeframe: slConfig.atrTimeframe,
-          timeout_mins: slConfig.timeoutMins,
-          smart_chase_deviation_pct: slConfig.smartChaseDeviationPct ?? 5.0,
-          smartChaseDeviationPct: slConfig.smartChaseDeviationPct ?? 5.0,
-          smart_chase_delay_ms: slConfig.smartChaseDelayMs ?? 1500,
-          smartChaseDelayMs: slConfig.smartChaseDelayMs ?? 1500,
-          smart_chase_max_attempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
-          smartChaseMaxAttempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
-          smart_chase_mode: slConfig.smartChaseMode || 'dynamic_bbo',
-          smartChaseMode: slConfig.smartChaseMode || 'dynamic_bbo',
-          smart_chase_trigger_source: slConfig.smartChaseTriggerSource || 'bid_ask',
-          smartChaseTriggerSource: slConfig.smartChaseTriggerSource || 'bid_ask',
-          smart_chase_peg_strategy: slConfig.smartChasePegStrategy || 'bbo',
-          smartChasePegStrategy: slConfig.smartChasePegStrategy || 'bbo',
-          smart_chase_wall_multiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
-          smartChaseWallMultiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
-          auto_breakeven_enabled: slConfig.autoBreakevenEnabled,
-          autoBreakevenEnabled: slConfig.autoBreakevenEnabled,
-          auto_breakeven_trigger_pct: slConfig.autoBreakevenTriggerPct ?? 1.0,
-          autoBreakevenTriggerPct: slConfig.autoBreakevenTriggerPct ?? 1.0,
-          auto_breakeven_buffer_pct: slConfig.autoBreakevenBufferPct ?? 0.05,
-          autoBreakevenBufferPct: slConfig.autoBreakevenBufferPct ?? 0.05
-        };
+        const attachedSlPayload = buildAttachedSlPayload(dropPrice);
 
         const res = await manualTradeService.placeDragBracket({
           apiKeyId: Number(selectedApi),
@@ -2587,9 +2778,32 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       return;
     }
 
-    // 1. Resolve size
+    // 1. Resolve size (Risk Sizing computes exact qty for dropPrice & side; standard mode uses typed/slider qty)
     let resolvedSizeStr = size;
-    if (!resolvedSizeStr || Number(resolvedSizeStr) <= 0) {
+    let riskOverrideBaseAmt: number | null = null;
+    if (sizingMode !== 'standard') {
+      const dragRisk = calculateRiskBasedPositionSize({
+        riskValue: parseFloat(riskAmountInput) || 0,
+        riskMode: sizingMode === 'risk_pct' ? 'risk_pct' : 'risk_usd',
+        entryPrice: dropPrice,
+        side,
+        slConfig,
+        balance: balanceData,
+        isFutures,
+        leverage,
+        reduceOnly,
+        positionData,
+        isInverseFutures,
+        contractSize,
+      });
+      if (dragRisk.baseAmount <= 0) {
+        toast.error(dragRisk.warning || 'Please set a valid Stop-Loss and Risk amount.');
+        return;
+      }
+      riskOverrideBaseAmt = dragRisk.baseAmount;
+      const dec = dragRisk.baseAmount < 1 ? 6 : 4;
+      resolvedSizeStr = Number(dragRisk.baseAmount.toFixed(dec)).toString();
+    } else if (!resolvedSizeStr || Number(resolvedSizeStr) <= 0) {
       if (selectedPercent && balanceData && dropPrice > 0) {
         const recalculated = calculateSize(
           selectedPercent,
@@ -2623,18 +2837,20 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     }
 
     // 3. Convert quote/base amount
-    let baseAmount = Number(resolvedSizeStr);
+    let baseAmount = riskOverrideBaseAmt !== null ? riskOverrideBaseAmt : Number(resolvedSizeStr);
     let contractsCount: number | undefined = undefined;
 
     if (isInverseFutures) {
-      const usdVal = sizeMode === 'quote' ? Number(resolvedSizeStr) : Number(resolvedSizeStr) * dropPrice;
+      const usdVal = riskOverrideBaseAmt !== null
+        ? riskOverrideBaseAmt * dropPrice
+        : (sizeMode === 'quote' ? Number(resolvedSizeStr) : Number(resolvedSizeStr) * dropPrice);
       contractsCount = Math.max(1, Math.round(usdVal / contractSize));
       if (usdVal < (contractSize * 0.9)) {
         toast.error(`❌ Minimum order size is 1 contract ($${contractSize} USD).`);
         return;
       }
       baseAmount = (contractsCount * contractSize) / dropPrice;
-    } else if (sizeMode === 'quote') {
+    } else if (riskOverrideBaseAmt === null && sizeMode === 'quote') {
       baseAmount = Number(resolvedSizeStr) / dropPrice;
     }
 
@@ -2668,36 +2884,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           slVal = Number((dropPrice * 1.01).toFixed(4));
         }
       }
-      attachedSlPayload = {
-        enabled: true,
-        type: slConfig.type,
-        mode: slConfig.mode,
-        value: slVal,
-        atr_period: slConfig.atrPeriod,
-        atr_multiplier: slConfig.atrMultiplier,
-        atr_timeframe: slConfig.atrTimeframe,
-        timeout_mins: slConfig.timeoutMins,
-        smart_chase_deviation_pct: slConfig.smartChaseDeviationPct ?? 5.0,
-        smartChaseDeviationPct: slConfig.smartChaseDeviationPct ?? 5.0,
-        smart_chase_delay_ms: slConfig.smartChaseDelayMs ?? 1500,
-        smartChaseDelayMs: slConfig.smartChaseDelayMs ?? 1500,
-        smart_chase_max_attempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
-        smartChaseMaxAttempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
-        smart_chase_mode: slConfig.smartChaseMode || 'dynamic_bbo',
-        smartChaseMode: slConfig.smartChaseMode || 'dynamic_bbo',
-        smart_chase_trigger_source: slConfig.smartChaseTriggerSource || 'bid_ask',
-        smartChaseTriggerSource: slConfig.smartChaseTriggerSource || 'bid_ask',
-        smart_chase_peg_strategy: slConfig.smartChasePegStrategy || 'bbo',
-        smartChasePegStrategy: slConfig.smartChasePegStrategy || 'bbo',
-        smart_chase_wall_multiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
-        smartChaseWallMultiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
-        auto_breakeven_enabled: slConfig.autoBreakevenEnabled,
-        autoBreakevenEnabled: slConfig.autoBreakevenEnabled,
-        auto_breakeven_trigger_pct: slConfig.autoBreakevenTriggerPct ?? 1.0,
-        autoBreakevenTriggerPct: slConfig.autoBreakevenTriggerPct ?? 1.0,
-        auto_breakeven_buffer_pct: slConfig.autoBreakevenBufferPct ?? 0.05,
-        autoBreakevenBufferPct: slConfig.autoBreakevenBufferPct ?? 0.05
-      };
+      attachedSlPayload = buildAttachedSlPayload(slVal);
     }
 
     const isSmartPeg = orderType === 'SmartPeg';
@@ -2885,6 +3072,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     }
   }, [
     selectedApi,
+    sizingMode,
+    riskAmountInput,
     size,
     selectedPercent,
     balanceData,
@@ -3023,9 +3212,35 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       return;
     }
 
-    // Sync tradeSide and recalculate percentage-based size when clicking Buy/Sell for the opposite side (e.g. in Minimized mode)
+    // Sync tradeSide and recalculate percentage/risk-based size when clicking Buy/Sell for the opposite side
     let resolvedSizeStr = size;
-    if (side !== tradeSide || ((!resolvedSizeStr || Number(resolvedSizeStr) <= 0) && selectedPercent)) {
+    let tradeRiskOverrideBaseAmt: number | null = null;
+    if (sizingMode !== 'standard') {
+      if (side !== tradeSide) setTradeSide(side);
+      const tradeRefPx = effectiveOrderPrice || effectiveCurrentPrice || 0;
+      const tradeRisk = calculateRiskBasedPositionSize({
+        riskValue: parseFloat(riskAmountInput) || 0,
+        riskMode: sizingMode === 'risk_pct' ? 'risk_pct' : 'risk_usd',
+        entryPrice: tradeRefPx,
+        side,
+        slConfig,
+        balance: balanceData,
+        isFutures,
+        leverage,
+        reduceOnly,
+        positionData,
+        isInverseFutures,
+        contractSize,
+      });
+      if (tradeRisk.baseAmount <= 0) {
+        toast.error(tradeRisk.warning || 'Please set a valid Stop-Loss and Risk amount.');
+        return;
+      }
+      tradeRiskOverrideBaseAmt = tradeRisk.baseAmount;
+      const dec = tradeRisk.baseAmount < 1 ? 6 : 4;
+      resolvedSizeStr = Number(tradeRisk.baseAmount.toFixed(dec)).toString();
+      setSize(resolvedSizeStr);
+    } else if (side !== tradeSide || ((!resolvedSizeStr || Number(resolvedSizeStr) <= 0) && selectedPercent)) {
       if (side !== tradeSide) setTradeSide(side);
       if (selectedPercent && balanceData && effectiveOrderPrice > 0) {
         const recalculated = calculateSize(
@@ -3145,7 +3360,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     }
 
     // Convert quote amount → base amount / contracts if needed
-    let baseAmount = Number(resolvedSizeStr);
+    let baseAmount = tradeRiskOverrideBaseAmt !== null ? tradeRiskOverrideBaseAmt : Number(resolvedSizeStr);
     let contractsCount: number | undefined = undefined;
     const convPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
 
@@ -3154,14 +3369,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         toast.error('Cannot execute COIN-M trade: reference price is unavailable.');
         return;
       }
-      const usdVal = sizeMode === 'quote' ? Number(resolvedSizeStr) : Number(resolvedSizeStr) * convPrice;
+      const usdVal = tradeRiskOverrideBaseAmt !== null
+        ? tradeRiskOverrideBaseAmt * convPrice
+        : (sizeMode === 'quote' ? Number(resolvedSizeStr) : Number(resolvedSizeStr) * convPrice);
       contractsCount = Math.max(1, Math.round(usdVal / contractSize));
       if (usdVal < (contractSize * 0.9)) {
         toast.error(`❌ Minimum order size for ${activeSymbol} is 1 contract ($${contractSize} USD). Current order value is ~$${usdVal.toFixed(2)} USD.`);
         return;
       }
       baseAmount = (contractsCount * contractSize) / convPrice;
-    } else if (sizeMode === 'quote') {
+    } else if (tradeRiskOverrideBaseAmt === null && sizeMode === 'quote') {
       if (convPrice <= 0) {
         toast.error('Cannot convert: reference price is unavailable.');
         return;
@@ -3249,36 +3466,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
       if (slConfig.enabled) {
         if (slConfig.mode === 'atr' || (slConfig.value && Number(slConfig.value) > 0)) {
-          payload.attached_sl = {
-            enabled: true,
-            type: slConfig.type,
-            mode: slConfig.mode,
-            value: Number(slConfig.value || 0),
-            atr_period: slConfig.atrPeriod,
-            atr_multiplier: slConfig.atrMultiplier,
-            atr_timeframe: slConfig.atrTimeframe,
-            timeout_mins: slConfig.timeoutMins,
-            smart_chase_deviation_pct: slConfig.smartChaseDeviationPct ?? 5.0,
-            smartChaseDeviationPct: slConfig.smartChaseDeviationPct ?? 5.0,
-            smart_chase_delay_ms: slConfig.smartChaseDelayMs ?? 1500,
-            smartChaseDelayMs: slConfig.smartChaseDelayMs ?? 1500,
-            smart_chase_max_attempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
-            smartChaseMaxAttempts: slConfig.smartChaseMaxAttempts !== undefined && slConfig.smartChaseMaxAttempts !== null ? slConfig.smartChaseMaxAttempts : 10000,
-            smart_chase_mode: slConfig.smartChaseMode || 'dynamic_bbo',
-            smartChaseMode: slConfig.smartChaseMode || 'dynamic_bbo',
-            smart_chase_trigger_source: slConfig.smartChaseTriggerSource || 'bid_ask',
-            smartChaseTriggerSource: slConfig.smartChaseTriggerSource || 'bid_ask',
-            smart_chase_peg_strategy: slConfig.smartChasePegStrategy || 'bbo',
-            smartChasePegStrategy: slConfig.smartChasePegStrategy || 'bbo',
-            smart_chase_wall_multiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
-            smartChaseWallMultiplier: slConfig.smartChaseWallMultiplier ?? 2.5,
-            auto_breakeven_enabled: slConfig.autoBreakevenEnabled,
-            autoBreakevenEnabled: slConfig.autoBreakevenEnabled,
-            auto_breakeven_trigger_pct: slConfig.autoBreakevenTriggerPct ?? 1.0,
-            autoBreakevenTriggerPct: slConfig.autoBreakevenTriggerPct ?? 1.0,
-            auto_breakeven_buffer_pct: slConfig.autoBreakevenBufferPct ?? 0.05,
-            autoBreakevenBufferPct: slConfig.autoBreakevenBufferPct ?? 0.05
-          };
+          payload.attached_sl = buildAttachedSlPayload();
         }
       }
 
@@ -3734,6 +3922,20 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             SL
                           </span>
                         )}
+                        {(() => {
+                          const holdBr = activeBrackets.find(
+                            (b) => b?.anti_wick_state === 'holding_dwell' || b?.anti_wick_state === 'holding_candle'
+                          );
+                          if (!holdBr) return null;
+                          return (
+                            <span
+                              className="text-[9px] px-1 py-0.2 rounded bg-amber-500/30 border border-amber-400/60 text-amber-200 font-mono font-black leading-tight animate-pulse shrink-0"
+                              title={holdBr.anti_wick_reason || 'Anti-Wick Stop Guard actively holding against wick'}
+                            >
+                              🕯️ {Number(holdBr.anti_wick_remaining_sec || 0).toFixed(1)}s
+                            </span>
+                          );
+                        })()}
                         {mlFilterConfig.enabled && (
                           <span
                             className="text-[9px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight shrink-0"
@@ -3756,15 +3958,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           </span>
                         )}
                         {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
-                          <span
-                            className={`text-[9px] px-1 py-0.2 rounded font-mono font-black leading-tight border shrink-0 ${positionData.side.toLowerCase() === 'long'
-                              ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/50'
-                              : 'bg-rose-500/25 text-rose-300 border-rose-400/50'
-                              }`}
-                            title={`Active Position: ${positionData.side.toUpperCase()} ${positionData.amount} ${baseCurrency}`}
-                          >
-                            POS:{positionData.side.toUpperCase()}
-                          </span>
+                          <HudLivePositionPnlChip
+                            positionData={positionData}
+                            effectiveCurrentPrice={effectiveCurrentPrice}
+                            hasActiveSoftwareSl={activeBrackets.some((b) => b?.status === 'monitoring')}
+                            isBreakevenActivated={activeBrackets.some((b) => b?.status === 'monitoring' && Boolean(b?.breakeven_activated))}
+                            isMovingBe={isMovingBreakeven}
+                            onMoveToBreakeven={handleMoveToBreakeven}
+                          />
                         )}
                       </div>
 
@@ -3849,15 +4050,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     >
                       {/* Line 2A: Unit Switch + Size Input + 4 Shortcut Points (25, 50, 75, 100%) + Active % Badge */}
                       <div className="flex items-center justify-between gap-1">
-                        {/* Base / Quote Mini Toggle */}
+                        {/* Base / Quote / Risk$ / Risk% Mini Toggle */}
                         <div className="flex items-center bg-[#0a101d] rounded p-0.5 border border-white/10 shrink-0">
                           <button
                             type="button"
                             onClick={() => {
+                              setSizingMode('standard');
                               setSizeMode('base');
                               if (!selectedPercent) setSize('');
                             }}
-                            className={`px-1 py-0.2 rounded text-[9px] font-extrabold transition-all cursor-pointer leading-tight ${sizeMode === 'base'
+                            className={`px-1 py-0.2 rounded text-[9px] font-extrabold transition-all cursor-pointer leading-tight ${sizingMode === 'standard' && sizeMode === 'base'
                               ? 'bg-cyan-500 text-slate-950'
                               : 'text-gray-400 hover:text-white'
                               }`}
@@ -3867,29 +4069,73 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           <button
                             type="button"
                             onClick={() => {
+                              setSizingMode('standard');
                               setSizeMode('quote');
                               if (!selectedPercent) setSize('');
                             }}
-                            className={`px-1 py-0.2 rounded text-[9px] font-extrabold transition-all cursor-pointer leading-tight ${sizeMode === 'quote'
+                            className={`px-1 py-0.2 rounded text-[9px] font-extrabold transition-all cursor-pointer leading-tight ${sizingMode === 'standard' && sizeMode === 'quote'
                               ? 'bg-amber-400 text-slate-950'
                               : 'text-gray-400 hover:text-white'
                               }`}
                           >
                             {quoteCurrency}
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSizingMode('risk_usd');
+                              setSelectedPercent(null);
+                              if (!riskAmountInput || Number(riskAmountInput) <= 0) setRiskAmountInput('10');
+                            }}
+                            className={`px-1 py-0.2 rounded text-[9px] font-extrabold transition-all cursor-pointer leading-tight ${sizingMode === 'risk_usd'
+                              ? 'bg-emerald-400 text-slate-950'
+                              : 'text-gray-400 hover:text-emerald-300'
+                              }`}
+                            title="Risk-Based Auto Position Sizing ($ Max Loss)"
+                          >
+                            R$
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSizingMode('risk_pct');
+                              setSelectedPercent(null);
+                              if (!riskAmountInput || Number(riskAmountInput) <= 0 || Number(riskAmountInput) > 25) setRiskAmountInput('1');
+                            }}
+                            className={`px-1 py-0.2 rounded text-[9px] font-extrabold transition-all cursor-pointer leading-tight ${sizingMode === 'risk_pct'
+                              ? 'bg-emerald-400 text-slate-950'
+                              : 'text-gray-400 hover:text-emerald-300'
+                              }`}
+                            title="Risk-Based Auto Position Sizing (% of Balance)"
+                          >
+                            R%
+                          </button>
                         </div>
 
-                        {/* Compact Size Input */}
-                        <input
-                          type="number"
-                          value={size}
-                          onChange={(e) => {
-                            setSize(e.target.value);
-                            setSelectedPercent(null);
-                          }}
-                          placeholder="0.00"
-                          className="w-[74px] bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded py-0.5 px-1.5 text-white font-mono text-[11px] font-bold focus:outline-none transition-colors"
-                        />
+                        {/* Compact Size or Risk Input */}
+                        {sizingMode === 'standard' ? (
+                          <input
+                            type="number"
+                            value={size}
+                            onChange={(e) => {
+                              setSize(e.target.value);
+                              setSelectedPercent(null);
+                            }}
+                            placeholder="0.00"
+                            className="w-[74px] bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded py-0.5 px-1.5 text-white font-mono text-[11px] font-bold focus:outline-none transition-colors"
+                          />
+                        ) : (
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            value={riskAmountInput}
+                            onChange={(e) => setRiskAmountInput(e.target.value)}
+                            placeholder={sizingMode === 'risk_usd' ? '$10' : '1%'}
+                            className="w-[62px] bg-[#0a101d]/90 border border-emerald-500/40 focus:border-emerald-400 rounded py-0.5 px-1.5 text-emerald-200 font-mono text-[11px] font-bold focus:outline-none transition-colors"
+                            title={sizingMode === 'risk_usd' ? 'Max USD Loss if SL hits' : 'Max % Wallet Balance Risk if SL hits'}
+                          />
+                        )}
 
                         {/* 4 Shortcut Point Buttons: 25%, 50%, 75%, 100% */}
                         <div className="flex items-center gap-1 flex-1 justify-end">
@@ -3963,6 +4209,19 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           title={`Order Size: ${sliderPercentValue}%`}
                         />
                       </div>
+
+                      {sizingMode !== 'standard' && (
+                        <RiskSizingSubBar
+                          sizeMode={sizingMode}
+                          riskInput={riskAmountInput}
+                          onSelectRiskPreset={setRiskAmountInput}
+                          riskCalc={riskSizing}
+                          baseCurrency={baseCurrency}
+                          quoteCurrency={quoteCurrency}
+                          formatDisplayPrice={formatDisplayPrice}
+                          compact
+                        />
+                      )}
                     </div>
 
                     {/* Row 2.5: Compact AI ML Filter & Model Selector Bar in Minimized HUD */}
@@ -4056,6 +4315,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         <RefreshCw className={`w-2.5 h-2.5 ${isLoadingMlModels ? 'animate-spin text-blue-400' : ''}`} />
                       </button>
                     </div>
+
+                    {mlFilterConfig.enabled && mlLivePreview && (
+                      <HudLiveAiMicroGauge
+                        preview={mlLivePreview}
+                        tradeSide={tradeSide}
+                        bullishThreshold={mlFilterConfig.bullishThreshold}
+                        bearishThreshold={mlFilterConfig.bearishThreshold}
+                        compact
+                      />
+                    )}
+
+                    <HudCompactPnlStrip preview={tradePnlPreview} />
 
                     {/* Row 3: Synchronized Execution Row (Side Selector Toggle + Dedicated Action Button) */}
                     <div
@@ -4992,6 +5263,19 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                             {activeSoftwareSl.breakeven_activated ? '🛡️ BE Active' : '🛡️ Auto-BE'}
                                           </span>
                                         )}
+                                        {activeSoftwareSl.anti_wick_mode && activeSoftwareSl.anti_wick_mode !== 'instant' && (
+                                          <span className={`text-[9px] font-mono px-1 py-0.2 rounded font-bold border ${
+                                            activeSoftwareSl.anti_wick_state === 'holding_dwell' || activeSoftwareSl.anti_wick_state === 'holding_candle'
+                                              ? 'bg-amber-500/30 text-amber-200 border-amber-400/60 animate-pulse'
+                                              : 'bg-indigo-500/20 text-indigo-300 border-indigo-400/35'
+                                          }`}>
+                                            {activeSoftwareSl.anti_wick_state === 'holding_dwell' || activeSoftwareSl.anti_wick_state === 'holding_candle'
+                                              ? `🕯️ Hold ${Number(activeSoftwareSl.anti_wick_remaining_sec || 0).toFixed(1)}s`
+                                              : activeSoftwareSl.anti_wick_mode === 'dwell'
+                                                ? `⏱️ ${activeSoftwareSl.anti_wick_dwell_seconds || 3}s Guard`
+                                                : `🕯️ ${activeSoftwareSl.anti_wick_timeframe || '1m'} Close`}
+                                          </span>
+                                        )}
                                       </div>
                                       <span className="text-[11px] text-gray-300 font-mono">
                                         SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
@@ -5310,15 +5594,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">
                               Order Size
                             </label>
-                            {/* Base / Quote toggle */}
+                            {/* Base / Quote / Risk $ / Risk % toggle */}
                             <div className="flex items-center gap-0.5 bg-[#0a101d] rounded p-0.5 border border-white/10">
                               <button
                                 type="button"
                                 onClick={() => {
+                                  setSizingMode('standard');
                                   setSizeMode('base');
                                   if (!selectedPercent) setSize('');
                                 }}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizeMode === 'base'
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'standard' && sizeMode === 'base'
                                   ? 'bg-cyan-500 text-slate-950 shadow'
                                   : 'text-gray-400 hover:text-white'
                                   }`}
@@ -5328,15 +5613,46 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               <button
                                 type="button"
                                 onClick={() => {
+                                  setSizingMode('standard');
                                   setSizeMode('quote');
                                   if (!selectedPercent) setSize('');
                                 }}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizeMode === 'quote'
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'standard' && sizeMode === 'quote'
                                   ? 'bg-amber-400 text-slate-950 shadow'
                                   : 'text-gray-400 hover:text-white'
                                   }`}
                               >
                                 {quoteCurrency}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSizingMode('risk_usd');
+                                  setSelectedPercent(null);
+                                  if (!riskAmountInput || Number(riskAmountInput) <= 0) setRiskAmountInput('10');
+                                }}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'risk_usd'
+                                  ? 'bg-emerald-400 text-slate-950 shadow'
+                                  : 'text-gray-400 hover:text-emerald-300'
+                                  }`}
+                                title="Auto-compute Position Size from max USD ($) risk to SL"
+                              >
+                                RISK $
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSizingMode('risk_pct');
+                                  setSelectedPercent(null);
+                                  if (!riskAmountInput || Number(riskAmountInput) <= 0 || Number(riskAmountInput) > 25) setRiskAmountInput('1');
+                                }}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'risk_pct'
+                                  ? 'bg-emerald-400 text-slate-950 shadow'
+                                  : 'text-gray-400 hover:text-emerald-300'
+                                  }`}
+                                title="Auto-compute Position Size from % wallet balance risk to SL"
+                              >
+                                RISK %
                               </button>
                             </div>
                           </div>
@@ -5405,24 +5721,54 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
                         {/* Input field */}
                         <div className="relative">
-                          <input
-                            type="number"
-                            value={size}
-                            onChange={(e) => {
-                              setSize(e.target.value);
-                              setSelectedPercent(null);
-                            }}
-                            placeholder={isInverseFutures ? `Min 1 Cont ($${contractSize})` : "0.00"}
-                            className={`w-full bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-3 ${sizeMode === 'quote' ? 'pl-7' : 'pl-12'} text-white font-mono font-bold text-[13px] focus:outline-none transition-colors`}
-                          />
-                          {/* Currency symbol badge */}
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11.5px] font-mono font-bold text-cyan-400/80 pointer-events-none">
-                            {sizeMode === 'quote' ? '$' : baseCurrency.slice(0, 4)}
-                          </span>
+                          {sizingMode === 'standard' ? (
+                            <>
+                              <input
+                                type="number"
+                                value={size}
+                                onChange={(e) => {
+                                  setSize(e.target.value);
+                                  setSelectedPercent(null);
+                                }}
+                                placeholder={isInverseFutures ? `Min 1 Cont ($${contractSize})` : "0.00"}
+                                className={`w-full bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-3 ${sizeMode === 'quote' ? 'pl-7' : 'pl-12'} text-white font-mono font-bold text-[13px] focus:outline-none transition-colors`}
+                              />
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11.5px] font-mono font-bold text-cyan-400/80 pointer-events-none">
+                                {sizeMode === 'quote' ? '$' : baseCurrency.slice(0, 4)}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={riskAmountInput}
+                                onChange={(e) => setRiskAmountInput(e.target.value)}
+                                placeholder={sizingMode === 'risk_usd' ? 'Max Loss in $ (e.g. 10)' : 'Max Risk % (e.g. 1)'}
+                                className="w-full bg-[#0a101d]/90 border border-emerald-500/40 focus:border-emerald-400 rounded-lg py-1.5 px-3 pl-14 text-emerald-200 font-mono font-bold text-[13px] focus:outline-none transition-colors"
+                              />
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] font-mono font-bold text-emerald-400 pointer-events-none">
+                                {sizingMode === 'risk_usd' ? 'RISK$' : 'RISK%'}
+                              </span>
+                            </>
+                          )}
                         </div>
 
+                        {sizingMode !== 'standard' && (
+                          <RiskSizingSubBar
+                            sizeMode={sizingMode}
+                            riskInput={riskAmountInput}
+                            onSelectRiskPreset={setRiskAmountInput}
+                            riskCalc={riskSizing}
+                            baseCurrency={baseCurrency}
+                            quoteCurrency={quoteCurrency}
+                            formatDisplayPrice={formatDisplayPrice}
+                          />
+                        )}
+
                         {/* Live conversion estimate */}
-                        {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
+                        {sizingMode === 'standard' && size && Number(size) > 0 && effectiveOrderPrice > 0 && (
                           <div className="flex items-center gap-1.5 px-1 flex-wrap font-mono">
                             <span className="text-[11px] text-gray-500">≈</span>
                             {sizeMode === 'quote' ? (
@@ -5445,7 +5791,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         {/* % quick-fill buttons */}
                         <div className="flex justify-between gap-1.5">
                           {['25%', '50%', '75%', '100%'].map(pct => {
-                            const isSelected = selectedPercent === pct;
+                            const isSelected = sizingMode === 'standard' && selectedPercent === pct;
                             return (
                               <button
                                 key={pct}
@@ -5455,6 +5801,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-cyan-500/40 text-gray-400 hover:text-white'
                                   }`}
                                 onClick={() => {
+                                  setSizingMode('standard');
                                   setSelectedPercent(pct);
                                   if (balanceData && effectiveOrderPrice > 0) {
                                     const newSize = calculateSize(
@@ -5813,6 +6160,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             </select>
                           )}
                         </div>
+
+                        {mlFilterConfig.enabled && mlLivePreview && (
+                          <HudLiveAiMicroGauge
+                            preview={mlLivePreview}
+                            tradeSide={tradeSide}
+                            bullishThreshold={mlFilterConfig.bullishThreshold}
+                            bearishThreshold={mlFilterConfig.bearishThreshold}
+                            compact={false}
+                          />
+                        )}
 
                         <AnimatePresence>
                           {mlFilterConfig.enabled && (
@@ -6820,6 +7177,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   )}
                                 </AnimatePresence>
                               </div>
+
+                              <AntiWickSlControls
+                                mode={slConfig.antiWickMode}
+                                setMode={(m) => setSlConfig({ ...slConfig, antiWickMode: m })}
+                                dwellSeconds={slConfig.antiWickDwellSeconds}
+                                setDwellSeconds={(s) => setSlConfig({ ...slConfig, antiWickDwellSeconds: s })}
+                                timeframe={slConfig.antiWickTimeframe}
+                                setTimeframe={(tf) => setSlConfig({ ...slConfig, antiWickTimeframe: tf })}
+                                disasterPct={slConfig.antiWickDisasterPct}
+                                setDisasterPct={(pct) => setSlConfig({ ...slConfig, antiWickDisasterPct: pct })}
+                                isLockedByNativeSl={false}
+                              />
                             </MotionDiv>
                           )}
                         </AnimatePresence>
@@ -6924,6 +7293,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         </MotionDiv>
                       )}
                     </AnimatePresence>
+
+                    {/* Live Dollar PnL, R:R & Maker Fee Savings Preview */}
+                    <LivePnlAndRRBar
+                      preview={tradePnlPreview}
+                      orderType={orderType}
+                      isFutures={isFutures}
+                    />
 
                     {/* Action Button (Click to Execute or Drag onto Chart) */}
                     <button
@@ -7048,15 +7424,27 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       : 'SL'}{' '}
             @ ${formatDisplayPrice(activeDragLine.currentPrice)}
           </span>
-          {effectiveCurrentPrice > 0 && activeDragLine.currentPrice > 0 && (
-            <span
-              className={`text-[10px] font-extrabold ${activeDragLine.currentPrice >= effectiveCurrentPrice ? 'text-emerald-400' : 'text-rose-400'
-                }`}
-            >
-              ({(((activeDragLine.currentPrice - effectiveCurrentPrice) / effectiveCurrentPrice) * 100) >= 0 ? '+' : ''}
-              {(((activeDragLine.currentPrice - effectiveCurrentPrice) / effectiveCurrentPrice) * 100).toFixed(2)}%)
-            </span>
-          )}
+          {effectiveCurrentPrice > 0 && activeDragLine.currentPrice > 0 && (() => {
+            const dragPct = ((activeDragLine.currentPrice - effectiveCurrentPrice) / effectiveCurrentPrice) * 100;
+            const refEntry = Number(positionData?.entry_price || effectiveOrderPrice || effectiveCurrentPrice || 0);
+            const dragAmt = positionData && positionData.amount > 0 ? positionData.amount : currentBaseAmount;
+            const dragUsd = calculateDragLineDeltaUsd({
+              dragType: activeDragLine.type,
+              dropPrice: activeDragLine.currentPrice,
+              refEntryPrice: refEntry,
+              baseAmount: dragAmt,
+              tradeSide,
+            });
+            return (
+              <span
+                className={`text-[10px] font-extrabold ${activeDragLine.currentPrice >= effectiveCurrentPrice ? 'text-emerald-400' : 'text-rose-400'}`}
+              >
+                ({dragPct >= 0 ? '+' : ''}
+                {dragPct.toFixed(2)}%
+                {dragUsd ? ` • ${dragUsd.isProfit ? '+' : '-'}$${dragUsd.usd.toFixed(2)}` : ''})
+              </span>
+            );
+          })()}
           {typeof window !== 'undefined' && (window as any)._cosmoLastMagnetSnap?.wall && (
             <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-amber-500/30 border border-amber-300/60 text-amber-200 font-black uppercase">
               🧲 WALL

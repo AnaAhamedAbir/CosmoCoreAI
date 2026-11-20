@@ -67,6 +67,10 @@ class AttachedSLConfig(BaseModel):
     auto_breakeven_enabled: Optional[bool] = False
     auto_breakeven_trigger_pct: Optional[float] = 1.0  # Trigger when profit reaches +X%
     auto_breakeven_buffer_pct: Optional[float] = 0.05  # Extra cushion to cover round-trip exchange fees
+    anti_wick_mode: Optional[str] = 'instant'  # 'instant' | 'dwell' | 'candle_close'
+    anti_wick_dwell_seconds: Optional[float] = 3.0
+    anti_wick_timeframe: Optional[str] = '1m'  # '1m' | '3m' | '5m' | '15m'
+    anti_wick_disaster_pct: Optional[float] = 2.0  # Hard flash-crash bypass beyond SL %
     timeout_mins: Optional[float] = 0
 
 class OrderRequest(BaseModel):
@@ -189,6 +193,12 @@ class MLFilterWarmupRequest(BaseModel):
     ml_model_id: str
 
 
+class MoveBreakevenRequest(BaseModel):
+    symbol: str
+    buffer_pct: Optional[float] = 0.05
+    fallback_entry_price: Optional[float] = 0.0
+
+
 @router.post("/ml-filter-warmup")
 async def warmup_ml_filter_endpoint(
     req: MLFilterWarmupRequest,
@@ -199,6 +209,52 @@ async def warmup_ml_filter_endpoint(
     from app.services.manual_trade_service import ManualTradeService
     background_tasks.add_task(ManualTradeService.warmup_ml_filter, req.symbol, req.ml_model_id)
     return {"status": "warming_up", "symbol": req.symbol, "ml_model_id": req.ml_model_id}
+
+
+@router.get("/ml-filter-preview")
+async def get_ml_filter_live_preview(
+    symbol: str,
+    ml_model_id: str,
+    bullish_threshold: float = 0.50,
+    bearish_threshold: float = 0.50,
+    exchange_id: str = "binance",
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """Pre-trade live AI Micro-Gauge score (Bullish %, Bearish %, Tick Flow %, L2 Bid Imbalance %)."""
+    from app.services.manual_trade_service import ManualTradeService
+    return await ManualTradeService.get_ml_filter_live_preview(
+        symbol=symbol,
+        ml_model_id=ml_model_id,
+        bullish_thresh=bullish_threshold,
+        bearish_thresh=bearish_threshold,
+        exchange_id=exchange_id,
+    )
+
+
+@router.post("/breakeven/{api_key_id}")
+async def move_sl_to_breakeven_endpoint(
+    api_key_id: int,
+    req: MoveBreakevenRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """1-Click move active Software SL monitor to Entry +/- fee buffer Breakeven."""
+    api_key_record = db.query(models.ApiKey).filter(
+        models.ApiKey.id == api_key_id,
+        models.ApiKey.user_id == current_user.id,
+        models.ApiKey.is_enabled == True,
+    ).first()
+    if not api_key_record:
+        raise HTTPException(status_code=404, detail="API Key not found or inactive")
+
+    from app.services.bracket_order_service import BracketOrderService
+    return await BracketOrderService.move_active_sl_to_breakeven(
+        api_key_id=api_key_id,
+        symbol=req.symbol,
+        user_id=current_user.id,
+        buffer_pct=float(req.buffer_pct if req.buffer_pct is not None else 0.05),
+        fallback_entry_price=float(req.fallback_entry_price or 0.0),
+    )
 
 class EditOrderRequest(BaseModel):
     symbol: str
@@ -1050,6 +1106,10 @@ async def place_drag_bracket_endpoint(
                     sl_meta['auto_breakeven_enabled'] = bool(BracketOrderService._get_sl_param(req.sl_config, 'auto_breakeven_enabled', 'autoBreakevenEnabled', sl_meta.get('auto_breakeven_enabled', False)))
                     sl_meta['auto_breakeven_trigger_pct'] = float(BracketOrderService._get_sl_param(req.sl_config, 'auto_breakeven_trigger_pct', 'autoBreakevenTriggerPct', sl_meta.get('auto_breakeven_trigger_pct', 1.0)))
                     sl_meta['auto_breakeven_buffer_pct'] = float(BracketOrderService._get_sl_param(req.sl_config, 'auto_breakeven_buffer_pct', 'autoBreakevenBufferPct', sl_meta.get('auto_breakeven_buffer_pct', 0.05)))
+                    sl_meta['anti_wick_mode'] = str(BracketOrderService._get_sl_param(req.sl_config, 'anti_wick_mode', 'antiWickMode', sl_meta.get('anti_wick_mode', 'instant'))).lower()
+                    sl_meta['anti_wick_dwell_seconds'] = float(BracketOrderService._get_sl_param(req.sl_config, 'anti_wick_dwell_seconds', 'antiWickDwellSeconds', sl_meta.get('anti_wick_dwell_seconds', 3.0)))
+                    sl_meta['anti_wick_timeframe'] = str(BracketOrderService._get_sl_param(req.sl_config, 'anti_wick_timeframe', 'antiWickTimeframe', sl_meta.get('anti_wick_timeframe', '1m'))).lower()
+                    sl_meta['anti_wick_disaster_pct'] = float(BracketOrderService._get_sl_param(req.sl_config, 'anti_wick_disaster_pct', 'antiWickDisasterPct', sl_meta.get('anti_wick_disaster_pct', 2.0)))
 
                 await BracketOrderService.update_software_bracket(
                     sl_id=target_sl_id,
@@ -1079,6 +1139,7 @@ async def place_drag_bracket_endpoint(
                         'max_attempts', 'chase_delay_ms', 'max_deviation_pct', 'chase_mode',
                         'trigger_source', 'peg_strategy', 'wall_multiplier', 'auto_breakeven_enabled',
                         'auto_breakeven_trigger_pct', 'auto_breakeven_buffer_pct',
+                        'anti_wick_mode', 'anti_wick_dwell_seconds', 'anti_wick_timeframe', 'anti_wick_disaster_pct',
                     ):
                         if ck in sl_meta:
                             drag_cfg_patch[ck] = sl_meta[ck]
@@ -1134,12 +1195,13 @@ async def place_drag_bracket_endpoint(
                 if 'smart_chase_delay_ms' not in sl_cfg and 'smartChaseDelayMs' not in sl_cfg:
                     sl_cfg['smart_chase_delay_ms'] = 1500
 
+                resolved_avg_entry = float(pos_info.get('entry_price') or 0.0) or current_px
                 await BracketOrderService._spawn_bracket_for_amount(
                     exchange=exchange,
                     symbol=req.symbol,
                     side=entry_side,
                     filled_amount=final_amount,
-                    average_price=current_px,
+                    average_price=resolved_avg_entry,
                     is_futures=is_futures,
                     tp_config=None,
                     sl_config=sl_cfg,
@@ -1434,6 +1496,13 @@ async def get_active_software_brackets(
                     'wall_multiplier': float(data.get('wall_multiplier', 2.5)),
                     'auto_breakeven_enabled': bool(data.get('auto_breakeven_enabled', False)),
                     'breakeven_activated': bool(data.get('breakeven_activated', False)),
+                    'anti_wick_mode': str(data.get('anti_wick_mode') or 'instant'),
+                    'anti_wick_dwell_seconds': float(data.get('anti_wick_dwell_seconds') or 3.0),
+                    'anti_wick_timeframe': str(data.get('anti_wick_timeframe') or '1m'),
+                    'anti_wick_disaster_pct': float(data.get('anti_wick_disaster_pct') or 2.0),
+                    'anti_wick_state': data.get('anti_wick_state') or 'monitoring',
+                    'anti_wick_remaining_sec': float(data.get('anti_wick_remaining_sec') or 0.0),
+                    'anti_wick_reason': data.get('anti_wick_reason'),
                     'max_deviation_pct': float(data.get('max_deviation_pct', 1.0)),
                     'current_attempt': data.get('current_attempt', 0),
                     'max_attempts': data.get('max_attempts', 0),

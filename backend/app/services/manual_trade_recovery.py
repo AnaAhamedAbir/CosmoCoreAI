@@ -353,6 +353,10 @@ async def _recover_software_sl_or_chase(
                 sl_id=mid,
                 initial_breakeven_activated=bool(row.breakeven_activated),
                 initial_manual_trigger_override=row.manual_trigger_override,
+                anti_wick_mode=str(cfg.get("anti_wick_mode", "instant")),
+                anti_wick_dwell_seconds=float(cfg.get("anti_wick_dwell_seconds", 3.0)),
+                anti_wick_timeframe=str(cfg.get("anti_wick_timeframe", "1m")),
+                anti_wick_disaster_pct=float(cfg.get("anti_wick_disaster_pct", 2.0)),
             )
         )
     elif sl_type in ("trailing", "trailing_chase"):
@@ -394,6 +398,10 @@ async def _recover_software_sl_or_chase(
                 initial_trigger_price=row.trigger_price,
                 initial_breakeven_activated=bool(row.breakeven_activated),
                 initial_manual_trigger_override=row.manual_trigger_override,
+                anti_wick_mode=str(cfg.get("anti_wick_mode", "instant")),
+                anti_wick_dwell_seconds=float(cfg.get("anti_wick_dwell_seconds", 3.0)),
+                anti_wick_timeframe=str(cfg.get("anti_wick_timeframe", "1m")),
+                anti_wick_disaster_pct=float(cfg.get("anti_wick_disaster_pct", 2.0)),
             )
         )
     else:
@@ -419,6 +427,10 @@ async def _recover_software_sl_or_chase(
                 sl_id=mid,
                 initial_breakeven_activated=bool(row.breakeven_activated),
                 initial_manual_trigger_override=row.manual_trigger_override,
+                anti_wick_mode=str(cfg.get("anti_wick_mode", "instant")),
+                anti_wick_dwell_seconds=float(cfg.get("anti_wick_dwell_seconds", 3.0)),
+                anti_wick_timeframe=str(cfg.get("anti_wick_timeframe", "1m")),
+                anti_wick_disaster_pct=float(cfg.get("anti_wick_disaster_pct", 2.0)),
             )
         )
 

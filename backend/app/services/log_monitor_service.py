@@ -250,8 +250,12 @@ IGNORE_PATTERNS = [
 # Patterns that look like errors but should be downgraded to WARNING
 # These are transient network events that do NOT require human intervention.
 WARNING_OVERRIDE_PATTERNS = [
-    # ── Benign Binance Data Fetch Errors ──────────────────────────────────────
+    # ── Benign Binance Data Fetch / Transient WS Stream Resync Errors ─────────
     re.compile(r'Error fetching OHLCV for', re.IGNORECASE),
+    re.compile(
+        r'(?<!Persistent )Error watching (?:orderbook|trades)\b.*?(?:reconnecting|checksum|timed?\s*out|connection\s+closed|network|1006|\s=\s*False)',
+        re.IGNORECASE,
+    ),
     re.compile(r'Error calculating Anchored VWAP', re.IGNORECASE),
     re.compile(r'Error calculating TPO', re.IGNORECASE),
     re.compile(r'Error calculating Footprint', re.IGNORECASE),

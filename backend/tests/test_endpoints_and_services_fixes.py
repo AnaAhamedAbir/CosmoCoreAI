@@ -1643,6 +1643,75 @@ class TestEndpointsAndServicesFixes(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(spawned_kwargs.get("reduce_only"))
         self.assertNotIn(":", spawned_kwargs.get("peg_id", ""))
 
+    # ------------------------------------------------------------------
+    # Fix 15: Transient stream errors log as WARNING & do not trigger Telegram ERROR alerts
+    # ------------------------------------------------------------------
+    async def test_market_data_streamer_transient_errors_warn_and_escalate_only_when_persistent(self):
+        from app.services.log_monitor_service import classify_log_line
+
+        with self.assertLogs("app.services.market_data_streamer", level="WARNING") as cm:
+            for attempt in range(1, 5):
+                fatal = MarketDataStreamer._log_stream_error(
+                    "orderbook",
+                    "DOGE/USDC:USDC",
+                    "binance",
+                    Exception("binance DOGE/USDC:USDC  = False"),
+                    attempt,
+                )
+                self.assertFalse(fatal)
+
+            fatal_5 = MarketDataStreamer._log_stream_error(
+                "orderbook",
+                "DOGE/USDC:USDC",
+                "binance",
+                Exception("binance DOGE/USDC:USDC  = False"),
+                5,
+            )
+            self.assertFalse(fatal_5)
+
+            fatal_bad = MarketDataStreamer._log_stream_error(
+                "orderbook",
+                "BAD/PAIR",
+                "binance",
+                Exception("binance does not have market symbol BAD/PAIR"),
+                1,
+            )
+            self.assertTrue(fatal_bad)
+
+        levels = [r.levelname for r in cm.records]
+        self.assertEqual(levels, ["WARNING", "WARNING", "WARNING", "WARNING", "ERROR", "ERROR"])
+
+        # Legacy/transient CCXT orderbook error lines in Docker logs downgrade to WARNING
+        self.assertEqual(
+            classify_log_line(
+                "2026-11-20T12:34:35.082801466Z ERROR:app.services.market_data_streamer:"
+                "Error watching orderbook DOGE/USDC:USDC on binance: binance DOGE/USDC:USDC  = False"
+            ),
+            "WARNING",
+        )
+        self.assertEqual(
+            classify_log_line(
+                "2026-11-20T12:34:35.082130143Z ERROR:app.services.market_data_streamer:"
+                "Error watching orderbook BTC/USD1:USD1 on binance: binance BTC/USD1:USD1  = False"
+            ),
+            "WARNING",
+        )
+        # Persistent failures and invalid symbol errors still surface as ERROR alerts
+        self.assertEqual(
+            classify_log_line(
+                "2026-11-20T12:34:35.082Z ERROR:app.services.market_data_streamer:"
+                "Persistent error watching orderbook DOGE/USDC:USDC on binance (5 consecutive failures): timeout"
+            ),
+            "ERROR",
+        )
+        self.assertEqual(
+            classify_log_line(
+                "2026-11-20T12:34:35.082Z ERROR:app.services.market_data_streamer:"
+                "Invalid symbol BAD/PAIR for exchange binance"
+            ),
+            "ERROR",
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

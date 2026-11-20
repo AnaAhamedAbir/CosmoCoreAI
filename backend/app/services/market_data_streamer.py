@@ -139,6 +139,45 @@ class MarketDataStreamer:
             
         return limit
 
+    @staticmethod
+    def _is_invalid_symbol_error(err: Exception) -> bool:
+        msg = str(err).lower()
+        return "does not have market symbol" in msg or "bad symbol" in msg
+
+    @classmethod
+    def _log_stream_error(
+        cls,
+        stream_type: str,
+        symbol: str,
+        exchange_id: str,
+        err: Exception,
+        consecutive_errors: int,
+    ) -> bool:
+        """
+        Logs a stream error with appropriate severity and returns True if fatal (invalid symbol).
+        Transient WS/CCXT resync errors log at WARNING while auto-reconnecting; only persistent
+        failures (>= 5 consecutive errors) escalate to ERROR.
+        """
+        err_msg = str(err)
+        err_lower = err_msg.lower()
+        if cls._is_invalid_symbol_error(err):
+            logger.error(f"Invalid symbol {symbol} for exchange {exchange_id}: {err_msg}")
+            return True
+
+        if "1006" in err_msg or "closed by remote server" in err_lower or "connection closed" in err_lower:
+            logger.warning(f"Connection closed for {stream_type} {symbol} on {exchange_id}, reconnecting... ({err_msg})")
+        elif consecutive_errors < 5:
+            logger.warning(
+                f"Transient error watching {stream_type} {symbol} on {exchange_id} "
+                f"(attempt {consecutive_errors}, reconnecting): {err_msg}"
+            )
+        else:
+            logger.error(
+                f"Persistent error watching {stream_type} {symbol} on {exchange_id} "
+                f"({consecutive_errors} consecutive failures): {err_msg}"
+            )
+        return False
+
     async def _stream_order_book(self, exchange_id: str, symbol: str, stream_key: str):
         logger.info(f"🚀 Starting background CCXT stream for {stream_key}")
         redis = redis_manager.get_redis()
@@ -151,12 +190,14 @@ class MarketDataStreamer:
             self._active_streams.discard(stream_key)
             return
 
+        consecutive_errors = 0
         while stream_key in self._active_streams:
             try:
                 depth_limit = self._normalize_order_book_limit(exchange_id, 50)
                 
                 # CCXT watch_order_book handles the WS connection gracefully behind the scenes
                 orderbook = await exchange.watch_order_book(symbol.upper(), limit=depth_limit)
+                consecutive_errors = 0
 
                 raw_bids = orderbook.get('bids', [])
                 raw_asks = orderbook.get('asks', [])
@@ -230,18 +271,13 @@ class MarketDataStreamer:
                     logger.debug(f"LiquidityAbsorption orderbook hook err: {abs_err}")
                 
             except Exception as e:
-                err_msg = str(e)
-                if "1006" in err_msg or "closed by remote server" in err_msg or "Connection closed" in err_msg:
-                    logger.warning(f"Connection closed for orderbook {symbol} on {exchange_id}, reconnecting... ({err_msg})")
-                else:
-                    logger.error(f"Error watching orderbook {symbol} on {exchange_id}: {e}")
-                    
-                if "does not have market symbol" in str(e).lower() or "bad symbol" in str(e).lower():
-                    logger.error(f"Invalid symbol {symbol} for exchange {exchange_id}")
+                consecutive_errors += 1
+                is_fatal = self._log_stream_error("orderbook", symbol, exchange_id, e, consecutive_errors)
+                if is_fatal:
                     if redis:
                         await redis.publish(channel, json.dumps({"error": f"Invalid symbol {symbol} or exchange error"}))
                     break
-                    
+
                 await asyncio.sleep(5) # Backoff before reconnecting
                 
         # Cleanup
@@ -259,9 +295,11 @@ class MarketDataStreamer:
             logger.error(f"Failed to initialize exchange {exchange_id} for {symbol} trades: {e}")
             return
 
+        consecutive_errors = 0
         while stream_key in self._active_streams:
             try:
                 trades = await exchange.watch_trades(symbol.upper())
+                consecutive_errors = 0
                 
                 if trades:
                     recent_volume = sum([float(t.get('amount', 0)) for t in trades])
@@ -314,11 +352,9 @@ class MarketDataStreamer:
                     except Exception as abs_err:
                         logger.debug(f"LiquidityAbsorption trades hook err: {abs_err}")
             except Exception as e:
-                err_msg = str(e)
-                if "1006" in err_msg or "closed by remote server" in err_msg or "Connection closed" in err_msg:
-                    logger.warning(f"Connection closed for trades {symbol} on {exchange_id}, reconnecting... ({err_msg})")
-                else:
-                    logger.error(f"Error watching trades {symbol} on {exchange_id}: {e}")
+                consecutive_errors += 1
+                if self._log_stream_error("trades", symbol, exchange_id, e, consecutive_errors):
+                    break
                 await asyncio.sleep(5)
 
     async def _stream_bbo(self, exchange_id: str, symbol: str, stream_key: str):

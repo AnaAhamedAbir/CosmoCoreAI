@@ -248,7 +248,11 @@ async def evaluate_anti_wick_trigger(
             closed_close_px: Optional[float] = None
             if exchange is not None and hasattr(exchange, "fetch_ohlcv"):
                 try:
-                    ohlcv = await exchange.fetch_ohlcv(symbol, timeframe=clean_tf, limit=3)
+                    import asyncio as _asyncio
+                    ohlcv = await _asyncio.wait_for(
+                        exchange.fetch_ohlcv(symbol, timeframe=clean_tf, limit=3),
+                        timeout=0.60,
+                    )
                     if ohlcv:
                         # Prefer the candle matching prev_breach_bucket timestamp, else second-to-last bar
                         target_open_ms = prev_breach_bucket * tf_sec * 1000

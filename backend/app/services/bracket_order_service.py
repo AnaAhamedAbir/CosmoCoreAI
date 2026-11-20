@@ -3011,8 +3011,9 @@ class BracketOrderService:
                     elif opposite_side == 'buy' and min(last_price, best_bid, best_ask) <= curr_tp_price * 1.002:
                         was_tp_touched = True
 
-                # Security Check: Ensure linked TP or Futures position hasn't closed (adaptive check so SL trigger isn't delayed)
-                if was_tp_touched or not curr_tp_price or loop_tick % 4 == 0:
+                # Security Check: Ensure linked TP or Futures position hasn't closed (keep REST cadence ~3.6-4.0s even at 0.3s loop)
+                trail_rest_mod = 12 if (is_smart_chase_exit or aw_trail_pre) else 4
+                if was_tp_touched or not curr_tp_price or loop_tick % trail_rest_mod == 0:
                     tp_filled = await BracketOrderService._check_linked_tp_filled(
                         exchange=exchange,
                         symbol=symbol,
@@ -3029,7 +3030,7 @@ class BracketOrderService:
                     if tp_filled:
                         break
 
-                if is_futures and loop_tick > 5 and loop_tick % 4 == 0:
+                if is_futures and loop_tick > 5 and loop_tick % trail_rest_mod == 0:
                     try:
                         pos_open = await BracketOrderService._check_futures_position_is_open(exchange, symbol, opposite_side)
                         if not pos_open:

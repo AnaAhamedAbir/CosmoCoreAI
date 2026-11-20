@@ -1369,6 +1369,8 @@ class ManualTradeService:
             logger.debug(f"ManualTrade ML warmup non-fatal warning: {e}")
             return {"status": "warning", "detail": str(e)}
 
+    _ML_PREVIEW_CACHE: Dict[Tuple[str, str], Tuple[float, dict]] = {}
+
     @staticmethod
     async def get_ml_filter_live_preview(
         symbol: str,
@@ -1384,13 +1386,24 @@ class ManualTradeService:
         if not symbol or not ml_model_id:
             return {"status": "unavailable"}
 
+        cache_k = (str(symbol).strip().upper(), str(ml_model_id))
+        now_p = time.time()
+        cached_p = ManualTradeService._ML_PREVIEW_CACHE.get(cache_k)
+        if cached_p and (now_p - cached_p[0]) < 1.2:
+            res_copy = dict(cached_p[1])
+            bull_p = float(res_copy.get("bullish_pct") or 50.0) / 100.0
+            bear_p = float(res_copy.get("bearish_pct") or 50.0) / 100.0
+            res_copy["buy_ready"] = bool(bull_p >= float(bullish_thresh if bullish_thresh is not None else 0.50))
+            res_copy["sell_ready"] = bool(bear_p >= float(bearish_thresh if bearish_thresh is not None else 0.50))
+            return res_copy
+
         try:
             l2_bid_share = 0.50
             has_l2 = False
             live_ob = None
             try:
                 from app.services.liquidity_wall_navigator import fetch_l2_depth_fast
-                live_ob = await fetch_l2_depth_fast(None, symbol, exchange_id=exchange_id, limit=10)
+                live_ob = await fetch_l2_depth_fast(None, symbol, exchange_id_hint=exchange_id, limit=10)
                 if live_ob and live_ob.get("bids") and live_ob.get("asks"):
                     b_vol = sum(float(b[1]) for b in live_ob["bids"][:10] if float(b[0]) > 0)
                     a_vol = sum(float(a[1]) for a in live_ob["asks"][:10] if float(a[0]) > 0)
@@ -1439,7 +1452,7 @@ class ManualTradeService:
                     buy_p = conf if sig in ("BUY", "PUMP RISK") else (1.0 - conf if sig in ("SELL", "CRASH RISK") else 0.50)
                     sell_p = 1.0 - buy_p
 
-                return {
+                out_res = {
                     "status": "ok",
                     "symbol": symbol,
                     "model_id": str(ml_model_id),
@@ -1455,6 +1468,8 @@ class ManualTradeService:
                     "sell_ready": bool(sell_p >= bear_t),
                     "updated_at": time.time(),
                 }
+                ManualTradeService._ML_PREVIEW_CACHE[cache_k] = (out_res["updated_at"], out_res)
+                return out_res
 
             # Route B: L2 Predictor cached lookup
             predictor_key = f"{ml_model_id}_{symbol}"
@@ -1478,7 +1493,7 @@ class ManualTradeService:
 
             buy_p = min(0.99, max(0.01, raw_score))
             sell_p = min(0.99, max(0.01, 1.0 - buy_p))
-            return {
+            out_res = {
                 "status": "ok",
                 "symbol": symbol,
                 "model_id": str(ml_model_id),
@@ -1494,6 +1509,8 @@ class ManualTradeService:
                 "sell_ready": bool(sell_p >= bear_t),
                 "updated_at": time.time(),
             }
+            ManualTradeService._ML_PREVIEW_CACHE[cache_k] = (out_res["updated_at"], out_res)
+            return out_res
         except Exception as e:
             logger.debug(f"ManualTrade ML preview non-fatal warning: {e}")
             return {"status": "warning", "detail": str(e)}

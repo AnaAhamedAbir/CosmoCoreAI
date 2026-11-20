@@ -722,8 +722,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     }
     const refreshMlPreview = () => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      manualTradeService.warmupMlFilter(activeSymbol, mlFilterConfig.modelId);
       if (mlFilterConfig.enabled) {
+        // Live preview reuses and warms the exact same RAM feature cache without gc.collect() spikes
         manualTradeService
           .getMlFilterLivePreview(
             activeSymbol,
@@ -735,6 +735,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           .then((res) => {
             if (res && res.status === 'ok') setMlLivePreview(res);
           });
+      } else {
+        manualTradeService.warmupMlFilter(activeSymbol, mlFilterConfig.modelId);
       }
     };
     refreshMlPreview();
@@ -742,7 +744,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       setMlLivePreview(null);
       return;
     }
-    const warmupInterval = setInterval(refreshMlPreview, Math.min(timings.mlWarmupMs, 3500));
+    const warmupInterval = setInterval(refreshMlPreview, timings.mlWarmupMs);
     return () => clearInterval(warmupInterval);
   }, [
     isOpen,

@@ -289,13 +289,23 @@ async def execute_smart_peg_entry(
     preloaded_balance: Optional[Dict[str, Any]] = None,
     skip_exchange_upgrade: bool = False,
     initial_benchmark_override: Optional[float] = None,
+    peg_strategy: str = 'bbo',
+    wall_multiplier: float = 2.5,
+    wall_front_run_ticks: int = 1,
+    anti_spoof_guard: bool = True,
 ) -> Optional[Dict[str, Any]]:
     """
-    Executes a continuous Dynamic BBO Maker Peg Entry.
-    Shadows Best Bid (Buy) or Best Ask (Sell) at top-of-book until fully filled,
-    then automatically spawns Attached TP / SL brackets.
+    Executes a continuous Dynamic BBO / Wall-Aware Maker Peg Entry.
+    Shadows Best Bid (Buy) or Best Ask (Sell) — or front-runs L2 liquidity walls
+    with Anti-Spoof guard — until fully filled, then spawns Attached TP / SL brackets.
     """
     t_peg_start = time.perf_counter()
+    eff_peg_strategy = str(peg_strategy or 'bbo').lower()
+    if eff_peg_strategy not in ('bbo', 'inside_spread', 'wall_aware'):
+        eff_peg_strategy = 'bbo'
+    eff_wall_mult = max(1.1, float(wall_multiplier or 2.5))
+    eff_front_run_ticks = max(1, int(wall_front_run_ticks or 1))
+    eff_anti_spoof = bool(anti_spoof_guard)
 
     # ── STEP 0: Upgrade to dedicated unthrottled order exchange pool instance (purpose='order') ──
     if api_key_record and not skip_exchange_upgrade:
@@ -424,9 +434,21 @@ async def execute_smart_peg_entry(
 
         return remaining_amount
 
+    async def _fetch_peg_ob() -> Optional[Dict[str, Any]]:
+        if eff_peg_strategy == 'wall_aware':
+            try:
+                from app.services.liquidity_wall_navigator import fetch_l2_depth_fast
+                l2_ob = await fetch_l2_depth_fast(exchange, symbol, limit=50)
+                if l2_ob and l2_ob.get('bids') and l2_ob.get('asks'):
+                    return l2_ob
+            except Exception:
+                pass
+        return await _fetch_bbo_fast(exchange, symbol)
+
     # Reuse preloaded BBO / RAM-cached wallet balance for 0ms overhead -> 1-RTT initial placement
     has_preloaded_ob = bool(
         isinstance(preloaded_ob, dict) and preloaded_ob.get('bids') and preloaded_ob.get('asks')
+        and (eff_peg_strategy != 'wall_aware' or len(preloaded_ob.get('bids', [])) >= 3)
     )
     initial_ob = preloaded_ob if has_preloaded_ob else None
     cached_bal = preloaded_balance if (isinstance(preloaded_balance, dict) and preloaded_balance) else None
@@ -443,7 +465,7 @@ async def execute_smart_peg_entry(
 
     try:
         if initial_ob is None:
-            initial_ob = await _fetch_bbo_fast(exchange, symbol)
+            initial_ob = await _fetch_peg_ob()
     except Exception as ob_err:
         logger.error(f"❌ [Smart Peg Entry] Failed to fetch initial data: {ob_err}")
         return None
@@ -509,6 +531,11 @@ async def execute_smart_peg_entry(
         'filled_amount': 0.0,
         'initial_price': initial_benchmark_price,
         'anchor_price': float(anchor_price) if (anchor_price and float(anchor_price) > 0) else None,
+        'peg_strategy': eff_peg_strategy,
+        'wall_multiplier': eff_wall_mult,
+        'wall_front_run_ticks': eff_front_run_ticks,
+        'anti_spoof_guard': eff_anti_spoof,
+        'tracked_wall': None,
         'status': 'pegging',
         'current_attempt': 0,
         'max_attempts': max_attempts,
@@ -543,12 +570,17 @@ async def execute_smart_peg_entry(
                 'contract_size': float(contract_size),
                 'is_inverse': bool(is_inverse),
                 'anchor_price': float(anchor_price) if (anchor_price and float(anchor_price) > 0) else None,
+                'peg_strategy': eff_peg_strategy,
+                'wall_multiplier': eff_wall_mult,
+                'wall_front_run_ticks': eff_front_run_ticks,
+                'anti_spoof_guard': eff_anti_spoof,
             },
         )
     except Exception:
         pass
 
     cached_ob = initial_ob
+    tracked_wall: Optional[Dict[str, Any]] = None
     attempts = 0
     total_filled = 0.0
     accumulated_cost = 0.0
@@ -578,7 +610,7 @@ async def execute_smart_peg_entry(
             cached_ob = None
         else:
             try:
-                ob = await _fetch_bbo_fast(exchange, symbol)
+                ob = await _fetch_peg_ob()
             except Exception as ob_e:
                 logger.warning(f"⚠️ [Smart Peg Entry] Could not fetch orderbook: {ob_e}")
 
@@ -590,33 +622,57 @@ async def execute_smart_peg_entry(
         best_ask = float(ob['asks'][0][0])
         tick = _get_market_tick(exchange, symbol, best_bid)
 
-        # 2. Determine Best Maker Price
-        # BUY Entry: place at best_bid (if best_bid >= best_ask, place at best_ask - tick)
-        # SELL Entry: place at best_ask (if best_ask <= best_bid, place at best_bid + tick)
-        if side.lower() == "buy":
-            target_maker_price = best_bid
-            if target_maker_price >= best_ask:
-                target_maker_price = best_ask - tick
-            if anchor_price and float(anchor_price) > 0:
-                target_maker_price = min(target_maker_price, float(anchor_price))
+        # 2. Determine Best Maker Price (BBO / Inside-Spread / Wall-Aware Front-Run)
+        if eff_peg_strategy in ('inside_spread', 'wall_aware'):
+            from app.services.liquidity_wall_navigator import compute_smart_peg_entry_price
+            drift_bound = None
+            if max_chase_deviation_pct and max_chase_deviation_pct > 0:
+                drift_bound = (
+                    initial_benchmark_price * (1 + (max_chase_deviation_pct / 100.0))
+                    if side.lower() == "buy"
+                    else initial_benchmark_price * (1 - (max_chase_deviation_pct / 100.0))
+                )
+            target_maker_price, tracked_wall = compute_smart_peg_entry_price(
+                side=side,
+                ob=ob,
+                tick=tick,
+                peg_strategy=eff_peg_strategy,
+                wall_multiplier=eff_wall_mult,
+                front_run_ticks=eff_front_run_ticks,
+                anchor_price=anchor_price,
+                max_drift_bound=drift_bound,
+                exchange=exchange,
+                symbol=symbol,
+            )
+            if cid in ACTIVE_SMART_PEGS:
+                ACTIVE_SMART_PEGS[cid]['tracked_wall'] = tracked_wall
         else:
-            target_maker_price = best_ask
-            if target_maker_price <= best_bid:
-                target_maker_price = best_bid + tick
-            if anchor_price and float(anchor_price) > 0:
-                target_maker_price = max(target_maker_price, float(anchor_price))
+            # BUY Entry: place at best_bid (if best_bid >= best_ask, place at best_ask - tick)
+            # SELL Entry: place at best_ask (if best_ask <= best_bid, place at best_bid + tick)
+            if side.lower() == "buy":
+                target_maker_price = best_bid
+                if target_maker_price >= best_ask:
+                    target_maker_price = best_ask - tick
+                if anchor_price and float(anchor_price) > 0:
+                    target_maker_price = min(target_maker_price, float(anchor_price))
+            else:
+                target_maker_price = best_ask
+                if target_maker_price <= best_bid:
+                    target_maker_price = best_bid + tick
+                if anchor_price and float(anchor_price) > 0:
+                    target_maker_price = max(target_maker_price, float(anchor_price))
 
-        if hasattr(exchange, 'price_to_precision'):
-            try:
-                target_maker_price = float(exchange.price_to_precision(symbol, target_maker_price))
-            except Exception:
-                pass
+            if hasattr(exchange, 'price_to_precision'):
+                try:
+                    target_maker_price = float(exchange.price_to_precision(symbol, target_maker_price))
+                except Exception:
+                    pass
 
-        # Precision sanity check against spread
-        if side.lower() == "buy" and target_maker_price >= best_ask:
-            target_maker_price = float(exchange.price_to_precision(symbol, best_ask - tick)) if hasattr(exchange, 'price_to_precision') else (best_ask - tick)
-        elif side.lower() == "sell" and target_maker_price <= best_bid:
-            target_maker_price = float(exchange.price_to_precision(symbol, best_bid + tick)) if hasattr(exchange, 'price_to_precision') else (best_bid + tick)
+            # Precision sanity check against spread
+            if side.lower() == "buy" and target_maker_price >= best_ask:
+                target_maker_price = float(exchange.price_to_precision(symbol, best_ask - tick)) if hasattr(exchange, 'price_to_precision') else (best_ask - tick)
+            elif side.lower() == "sell" and target_maker_price <= best_bid:
+                target_maker_price = float(exchange.price_to_precision(symbol, best_bid + tick)) if hasattr(exchange, 'price_to_precision') else (best_bid + tick)
 
         # 3. Check Price Cap Deviation Guard
         if max_chase_deviation_pct and max_chase_deviation_pct > 0:
@@ -871,6 +927,11 @@ async def execute_smart_peg_entry(
                 t_placed = time.perf_counter()
                 t_base = start_time if (start_time and start_time > 0) else t_peg_start
                 first_order_latency_ms = max(1, int((t_placed - t_base) * 1000))
+                peg_mode_label = (
+                    f"Dynamic Wall-Aware Peg (+{eff_front_run_ticks}t)"
+                    if eff_peg_strategy == 'wall_aware'
+                    else ("Dynamic Inside-Spread Peg" if eff_peg_strategy == 'inside_spread' else None)
+                )
                 asyncio.create_task(
                     _send_trade_fired_notification(
                         user_id=user_id,
@@ -890,7 +951,8 @@ async def execute_smart_peg_entry(
                         contract_size=contract_size,
                         is_inverse=is_inverse,
                         ai_filter_info=ai_filter_info,
-                        anchor_price=anchor_price
+                        anchor_price=anchor_price,
+                        execution_mode_label=peg_mode_label,
                     )
                 )
             except Exception as notify_first_err:
@@ -987,46 +1049,83 @@ async def execute_smart_peg_entry(
                                                 )
                                             )
 
-                    # PRIORITY A: Fetch live BBO from Redis FIRST (~1ms) without ever blocking on REST fetch_order!
+                    # PRIORITY A: Fetch live BBO / L2 depth from Redis FIRST (~1ms) without ever blocking on REST fetch_order!
                     latest_ob = None
                     try:
-                        latest_ob = await _fetch_bbo_fast(exchange, symbol)
+                        latest_ob = await _fetch_peg_ob()
                     except Exception as ob_p_err:
                         logger.debug(f"Entry BBO poll non-fatal error: {ob_p_err}")
 
-                    # Verify if we are still top of book
+                    # Verify if we are still at optimal maker / wall front-run price
                     repeg_handled = False
                     try:
                         if latest_ob and latest_ob.get('bids') and latest_ob.get('asks') and len(latest_ob['bids']) > 0 and len(latest_ob['asks']) > 0:
                             l_best_bid = float(latest_ob['bids'][0][0])
                             l_best_ask = float(latest_ob['asks'][0][0])
                             l_tick = _get_market_tick(exchange, symbol, l_best_bid)
+                            next_tracked_wall = tracked_wall
+                            spoof_triggered = False
 
-                            if side.lower() == "buy":
-                                new_maker = l_best_bid
-                                if new_maker >= l_best_ask:
-                                    new_maker = l_best_ask - l_tick
-                                if anchor_price and float(anchor_price) > 0:
-                                    new_maker = min(new_maker, float(anchor_price))
+                            if eff_peg_strategy in ('inside_spread', 'wall_aware'):
+                                from app.services.liquidity_wall_navigator import (
+                                    compute_smart_peg_entry_price,
+                                    evaluate_wall_spoof_event,
+                                )
+                                if eff_peg_strategy == 'wall_aware' and eff_anti_spoof and tracked_wall:
+                                    is_spoofed, _, spoof_reason = evaluate_wall_spoof_event(tracked_wall, latest_ob)
+                                    if is_spoofed:
+                                        spoof_triggered = True
+                                        logger.warning(f"🛡️ [Smart Peg Anti-Spoof] {spoof_reason} — Re-evaluating wall!")
+                                drift_bound = None
+                                if max_chase_deviation_pct and max_chase_deviation_pct > 0:
+                                    drift_bound = (
+                                        initial_benchmark_price * (1 + (max_chase_deviation_pct / 100.0))
+                                        if side.lower() == "buy"
+                                        else initial_benchmark_price * (1 - (max_chase_deviation_pct / 100.0))
+                                    )
+                                new_maker, next_tracked_wall = compute_smart_peg_entry_price(
+                                    side=side,
+                                    ob=latest_ob,
+                                    tick=l_tick,
+                                    peg_strategy=eff_peg_strategy,
+                                    wall_multiplier=eff_wall_mult,
+                                    front_run_ticks=eff_front_run_ticks,
+                                    anchor_price=anchor_price,
+                                    max_drift_bound=drift_bound,
+                                    exchange=exchange,
+                                    symbol=symbol,
+                                )
                             else:
-                                new_maker = l_best_ask
-                                if new_maker <= l_best_bid:
-                                    new_maker = l_best_bid + l_tick
-                                if anchor_price and float(anchor_price) > 0:
-                                    new_maker = max(new_maker, float(anchor_price))
+                                if side.lower() == "buy":
+                                    new_maker = l_best_bid
+                                    if new_maker >= l_best_ask:
+                                        new_maker = l_best_ask - l_tick
+                                    if anchor_price and float(anchor_price) > 0:
+                                        new_maker = min(new_maker, float(anchor_price))
+                                else:
+                                    new_maker = l_best_ask
+                                    if new_maker <= l_best_bid:
+                                        new_maker = l_best_bid + l_tick
+                                    if anchor_price and float(anchor_price) > 0:
+                                        new_maker = max(new_maker, float(anchor_price))
 
-                            if hasattr(exchange, 'price_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
-                                try:
-                                    new_maker = float(exchange.price_to_precision(symbol, new_maker))
-                                except Exception:
-                                    pass
+                                if hasattr(exchange, 'price_to_precision') and getattr(exchange, 'markets', None) and symbol in exchange.markets:
+                                    try:
+                                        new_maker = float(exchange.price_to_precision(symbol, new_maker))
+                                    except Exception:
+                                        pass
 
-                            # Instant BBO shadow re-peg:
-                            # - Outbid: 1 poll (<=40ms detection!)
+                            # Instant BBO / Wall-Front-Run shadow re-peg:
+                            # - Outbid or Spoof-Pull: 1 poll (<=40ms detection!)
                             # - Retreat: 1 poll in urgent_mode, 2 polls (<=80ms) standard
+                            if new_maker == target_maker_price:
+                                if eff_peg_strategy == 'wall_aware' and next_tracked_wall != tracked_wall:
+                                    tracked_wall = next_tracked_wall
+                                    if cid in ACTIVE_SMART_PEGS:
+                                        ACTIVE_SMART_PEGS[cid]['tracked_wall'] = tracked_wall
                             if new_maker != target_maker_price:
                                 is_outbid = (new_maker > target_maker_price) if side.lower() == "buy" else (new_maker < target_maker_price)
-                                min_polls_required = 1 if (is_outbid or urgent_mode) else 2
+                                min_polls_required = 1 if (is_outbid or urgent_mode or spoof_triggered) else 2
                                 if poll_count >= min_polls_required:
                                     # Adaptive anti-ping-pong pacing: 0ms for normal fills (<=5 re-pegs/10s),
                                     # enforces a small gap between re-pegs on flickery books so Binance UID rate limits aren't hit.
@@ -1268,6 +1367,7 @@ async def execute_smart_peg_entry(
                                         order_id = str(edit_res.get('id'))
                                         order_already_cancelled = False
                                         target_maker_price = new_maker
+                                        tracked_wall = next_tracked_wall
                                         attempts += 1
 
                                         # Check if there was a partial fill on the cancelled order during atomic cancelReplace / parallel cancel
@@ -1305,6 +1405,7 @@ async def execute_smart_peg_entry(
                                         if cid in ACTIVE_SMART_PEGS:
                                             ACTIVE_SMART_PEGS[cid]['current_order_id'] = order_id
                                             ACTIVE_SMART_PEGS[cid]['current_maker_price'] = target_maker_price
+                                            ACTIVE_SMART_PEGS[cid]['tracked_wall'] = tracked_wall
                                             ACTIVE_SMART_PEGS[cid]['current_attempt'] = attempts
                                             ACTIVE_SMART_PEGS[cid]['filled_amount'] = total_filled
                                             ACTIVE_SMART_PEGS[cid]['amount'] = remaining_amount

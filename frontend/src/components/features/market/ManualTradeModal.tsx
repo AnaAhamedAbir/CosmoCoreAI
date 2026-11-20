@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle, Minus, Maximize2, GripVertical, Trash2, Target, MoveVertical } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle, Minus, Maximize2, GripVertical, Trash2, Target, MoveVertical, Magnet } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse } from '../../../services/manualTradeService';
 import { notificationService } from '../../../services/notification';
@@ -10,6 +10,13 @@ import { trainingStudioToolsService } from '../../../services/trainingStudioTool
 import { CustomMLModel } from '../../../types';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
+import { findBestWallsForTrade, OrderbookWall } from '../../../utils/liquidityWallMagnet';
+import {
+  HudWallMagnetBar,
+  FullModalLimitWallPanel,
+  SmartPegWallStrategyPanel,
+  TakeProfitWallSnapButton,
+} from './LiquidityWallMagnetControls';
 
 const MotionButton = motion.button as any;
 const MotionDiv = motion.div as any;
@@ -29,6 +36,7 @@ interface ManualTradeModalProps {
   currentPrice: number;
   activePairId?: string;
   availablePairs?: AvailablePair[];
+  orderbookWalls?: OrderbookWall[];
   onSelectPair?: (pair: AvailablePair) => void;
   onApiKeyChange?: (apiKeyId: string) => void;
   clickedPrice?: number | null;
@@ -46,6 +54,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   currentPrice,
   activePairId,
   availablePairs,
+  orderbookWalls,
   onSelectPair,
   onApiKeyChange,
   clickedPrice,
@@ -175,6 +184,62 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
   const [orderType, setOrderType] = useState<'Market' | 'Limit' | 'SmartPeg'>('Limit');
   const [smartPegMaxDev, setSmartPegMaxDev] = useState<number>(5.0);
+  const [smartPegAnchorPrice, setSmartPegAnchorPrice] = useState<string>('');
+  const [smartPegStrategy, setSmartPegStrategy] = useState<'bbo' | 'inside_spread' | 'wall_aware'>(() => {
+    try {
+      const saved = localStorage.getItem('cosmo_manual_wall_magnet_cfg_v1');
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (p?.pegStrategy === 'bbo' || p?.pegStrategy === 'inside_spread' || p?.pegStrategy === 'wall_aware') {
+          return p.pegStrategy;
+        }
+      }
+    } catch { }
+    return 'bbo';
+  });
+  const [smartPegWallMultiplier, setSmartPegWallMultiplier] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('cosmo_manual_wall_magnet_cfg_v1');
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (typeof p?.wallMultiplier === 'number' && p.wallMultiplier >= 1.1) return p.wallMultiplier;
+      }
+    } catch { }
+    return 2.5;
+  });
+  const [smartPegFrontRunTicks, setSmartPegFrontRunTicks] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('cosmo_manual_wall_magnet_cfg_v1');
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (typeof p?.frontRunTicks === 'number' && p.frontRunTicks >= 1) return p.frontRunTicks;
+      }
+    } catch { }
+    return 1;
+  });
+  const [smartPegAntiSpoof, setSmartPegAntiSpoof] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('cosmo_manual_wall_magnet_cfg_v1');
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (typeof p?.antiSpoof === 'boolean') return p.antiSpoof;
+      }
+    } catch { }
+    return true;
+  });
+  const [wallMagnetEnabled, setWallMagnetEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('cosmo_manual_wall_magnet_cfg_v1');
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (typeof p?.wallMagnetEnabled === 'boolean') return p.wallMagnetEnabled;
+      }
+    } catch { }
+    return false;
+  });
+  const [fetchedWalls, setFetchedWalls] = useState<OrderbookWall[]>([]);
+  const [isFetchingWalls, setIsFetchingWalls] = useState<boolean>(false);
+  const [isShiftPressed, setIsShiftPressed] = useState<boolean>(false);
   const [size, setSize] = useState<string>('');
   const [selectedPercent, setSelectedPercent] = useState<string | null>('100%');
   const [leverage, setLeverage] = useState<number>(10);
@@ -1246,6 +1311,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   React.useEffect(() => {
     setSize('');
     setSizeMode('base');
+    setSmartPegAnchorPrice('');
+    setFetchedWalls([]);
     setBalanceData(readCachedBalance(selectedApi, activeSymbol));
     setIcebergCustomQty('250');
   }, [activeSymbol, selectedApi, readCachedBalance]);
@@ -1687,6 +1754,124 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     return effectiveCurrentPrice;
   }, [orderType, isAutoLimit, limitPrice, effectiveCurrentPrice]);
 
+  // Liquidity-Wall Magnet & Front-Run Live Sync
+  const activeExchangeId = React.useMemo(() => {
+    const keyEx = apiKeys.find(k => k.id.toString() === selectedApi)?.exchange;
+    return activePair?.exchange || keyEx || 'binance';
+  }, [apiKeys, selectedApi, activePair?.exchange]);
+
+  const fetchNearestWalls = React.useCallback(async () => {
+    if (!activeSymbol) return;
+    setIsFetchingWalls(true);
+    try {
+      const res = await manualTradeService.getNearestWalls(
+        activeSymbol,
+        activeExchangeId,
+        smartPegWallMultiplier,
+        smartPegFrontRunTicks,
+        selectedApi ? Number(selectedApi) : undefined
+      );
+      if (res) {
+        const merged: OrderbookWall[] = [
+          ...(Array.isArray(res.buy_walls) ? res.buy_walls : []),
+          ...(Array.isArray(res.sell_walls) ? res.sell_walls : []),
+        ];
+        setFetchedWalls(merged);
+      }
+    } catch {
+      // ignore silently
+    } finally {
+      setIsFetchingWalls(false);
+    }
+  }, [activeSymbol, activeExchangeId, smartPegWallMultiplier, smartPegFrontRunTicks, selectedApi]);
+
+  // Auto-fetch walls if modal is open and parent orderbookWalls lacks either buy or sell side
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const hasBuy = Boolean(orderbookWalls?.some((w) => w.type === 'buy'));
+    const hasSell = Boolean(orderbookWalls?.some((w) => w.type === 'sell'));
+    if (hasBuy && hasSell) return;
+    fetchNearestWalls();
+    const tId = setInterval(() => {
+      if (typeof document === 'undefined' || !document.hidden) {
+        fetchNearestWalls();
+      }
+    }, 3500);
+    return () => clearInterval(tId);
+  }, [isOpen, orderbookWalls, fetchNearestWalls]);
+
+  // Persist Wall Magnet & SmartPeg strategy preferences across reloads
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(
+        'cosmo_manual_wall_magnet_cfg_v1',
+        JSON.stringify({
+          wallMagnetEnabled,
+          pegStrategy: smartPegStrategy,
+          wallMultiplier: smartPegWallMultiplier,
+          frontRunTicks: smartPegFrontRunTicks,
+          antiSpoof: smartPegAntiSpoof,
+        })
+      );
+    } catch { }
+  }, [wallMagnetEnabled, smartPegStrategy, smartPegWallMultiplier, smartPegFrontRunTicks, smartPegAntiSpoof]);
+
+  const effectiveWalls = React.useMemo<OrderbookWall[]>(() => {
+    const parentWalls = orderbookWalls || [];
+    if (parentWalls.length === 0) return fetchedWalls;
+    const hasBuy = parentWalls.some((w) => w.type === 'buy');
+    const hasSell = parentWalls.some((w) => w.type === 'sell');
+    if (hasBuy && hasSell) return parentWalls;
+    const supplemented = [...parentWalls];
+    for (const fw of fetchedWalls) {
+      if ((fw.type === 'buy' && !hasBuy) || (fw.type === 'sell' && !hasSell)) {
+        supplemented.push(fw);
+      }
+    }
+    return supplemented;
+  }, [orderbookWalls, fetchedWalls]);
+
+  const wallTargets = React.useMemo(
+    () => findBestWallsForTrade(effectiveWalls, effectiveCurrentPrice, smartPegFrontRunTicks),
+    [effectiveWalls, effectiveCurrentPrice, smartPegFrontRunTicks]
+  );
+
+  // Track Shift key during drag for temporary Wall Magnet override
+  React.useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setIsShiftPressed(true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setIsShiftPressed(false);
+    };
+    const onBlur = () => setIsShiftPressed(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [isOpen]);
+
+  // Sync Drag-to-Chart Wall Magnet config for OrderFlowChart ghost lines
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isOpen) {
+      delete (window as any)._cosmoWallMagnetConfig;
+      return;
+    }
+    (window as any)._cosmoWallMagnetConfig = {
+      active: Boolean(wallMagnetEnabled || isShiftPressed),
+      frontRunTicks: smartPegFrontRunTicks,
+    };
+    return () => {
+      delete (window as any)._cosmoWallMagnetConfig;
+    };
+  }, [isOpen, wallMagnetEnabled, isShiftPressed, smartPegFrontRunTicks]);
+
   // Smart default value calculator when user switches TP/SL mode (% <-> $ <-> Absolute)
   const getSmartGapValue = React.useCallback((
     targetMode: 'percentage' | 'price' | 'absolute',
@@ -2032,6 +2217,61 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     slConfig.mode,
     getSmartGapValue
   ]);
+
+  const handleSnapLimitToWall = React.useCallback((wall: OrderbookWall, frontRunPrice: number, side: 'Buy' | 'Sell') => {
+    handleSideChange(side);
+    if (orderType === 'SmartPeg') {
+      setSmartPegStrategy('wall_aware');
+      setSmartPegAnchorPrice(frontRunPrice.toString());
+      toast.success(
+        `⚓ SmartPeg Wall-Aware capped at ${wall.type.toUpperCase()} Wall Front-Run @ $${formatDisplayPrice(frontRunPrice)}`,
+        { duration: 2200 }
+      );
+    } else {
+      setOrderType('Limit');
+      setIsAutoLimit(false);
+      setLimitPrice(frontRunPrice.toString());
+      toast.success(
+        `🧲 Snapped ${side} Limit front-running ${wall.type.toUpperCase()} Wall @ $${formatDisplayPrice(frontRunPrice)}`,
+        { duration: 2200 }
+      );
+    }
+  }, [handleSideChange, orderType]);
+
+  const handleClearPinnedPrice = React.useCallback(() => {
+    if (orderType === 'SmartPeg') {
+      setSmartPegAnchorPrice('');
+      toast('SmartPeg Wall Anchor cleared (Free BBO/Wall Chase)', { icon: '⚓', duration: 1800 });
+    } else {
+      setIsAutoLimit(true);
+      toast('Reset to Auto Best Limit (BBO)', { icon: '⚡', duration: 1800 });
+    }
+  }, [orderType]);
+
+  const handleSnapTpToWall = React.useCallback((frontRunPrice: number, wall: OrderbookWall) => {
+    setTpConfig(prev => ({
+      ...prev,
+      enabled: true,
+      mode: 'absolute',
+      value: frontRunPrice.toString(),
+    }));
+    toast.success(
+      `🎯 TP snapped before ${wall.type.toUpperCase()} Wall @ $${formatDisplayPrice(frontRunPrice)}`,
+      { duration: 2200 }
+    );
+  }, []);
+
+  const handleCyclePegStrategy = React.useCallback(() => {
+    setSmartPegStrategy(prev => {
+      const next: 'bbo' | 'inside_spread' | 'wall_aware' =
+        prev === 'bbo' ? 'inside_spread' : prev === 'inside_spread' ? 'wall_aware' : 'bbo';
+      toast(
+        `Smart Peg Strategy: ${next === 'wall_aware' ? '🧱 Wall-Aware' : next === 'inside_spread' ? '🎯 Inside-Spread' : '⚡ Top BBO'}`,
+        { duration: 1800 }
+      );
+      return next;
+    });
+  }, []);
 
   const lastTriggerRef = React.useRef<number>(0);
 
@@ -2524,6 +2764,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       if (isSmartPeg) {
         paramsPayload.maxChaseDeviationPct = smartPegMaxDev;
         paramsPayload.pegAnchorPrice = dropPrice;
+        paramsPayload.pegStrategy = smartPegStrategy;
+        paramsPayload.wallMultiplier = smartPegWallMultiplier;
+        paramsPayload.wallFrontRunTicks = smartPegFrontRunTicks;
+        paramsPayload.antiSpoofGuard = smartPegAntiSpoof;
       } else {
         paramsPayload.autoBestLimit = false;
       }
@@ -2657,6 +2901,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     slConfig,
     orderType,
     smartPegMaxDev,
+    smartPegStrategy,
+    smartPegWallMultiplier,
+    smartPegFrontRunTicks,
+    smartPegAntiSpoof,
     isNativeTpSlSupported,
     useNativeTpSl,
     apiKeys,
@@ -2963,6 +3211,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       }
       if (orderType === 'SmartPeg') {
         paramsPayload.maxChaseDeviationPct = smartPegMaxDev;
+        paramsPayload.pegStrategy = smartPegStrategy;
+        paramsPayload.wallMultiplier = smartPegWallMultiplier;
+        paramsPayload.wallFrontRunTicks = smartPegFrontRunTicks;
+        paramsPayload.antiSpoofGuard = smartPegAntiSpoof;
+        if (smartPegAnchorPrice && Number(smartPegAnchorPrice) > 0) {
+          paramsPayload.pegAnchorPrice = Number(smartPegAnchorPrice);
+        }
       }
 
       // BUG-09 fix: Use the actual selected API key's exchange instead of hardcoded 'binance'
@@ -3444,7 +3699,30 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             }`}
                           title="Click to switch Order Type: Limit ➔ Market ➔ Smart Peg"
                         >
-                          {orderType === 'SmartPeg' ? '⚡PEG' : orderType === 'Market' ? 'MKT' : 'LMT'}
+                          {orderType === 'SmartPeg' ? (smartPegStrategy === 'wall_aware' ? '🧱PEG' : '⚡PEG') : orderType === 'Market' ? 'MKT' : 'LMT'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setWallMagnetEnabled(prev => {
+                              const next = !prev;
+                              if (next && effectiveWalls.length === 0) {
+                                fetchNearestWalls();
+                              }
+                              return next;
+                            });
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-black uppercase leading-tight shrink-0 pointer-events-auto cursor-pointer transition-all active:scale-95 border flex items-center gap-0.5 ${
+                            wallMagnetEnabled || (orderType === 'SmartPeg' && smartPegStrategy === 'wall_aware')
+                              ? 'bg-amber-500/25 border-amber-400/60 text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.35)]'
+                              : 'bg-white/[0.04] hover:bg-white/[0.1] border-white/10 text-gray-400 hover:text-amber-200'
+                          }`}
+                          title="Toggle Liquidity-Wall Magnet & 1-Click Front-Run Snap (Hold Shift while dragging onto chart to snap)"
+                        >
+                          <Magnet className="w-2.5 h-2.5" />
+                          <span>WALL</span>
                         </button>
                         {tpConfig.enabled && (
                           <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold leading-tight shrink-0">
@@ -3541,6 +3819,26 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         </button>
                       </div>
                     </div>
+
+                    {/* Row 1.5: Optional Compact Liquidity-Wall Magnet Quick Snap Bar */}
+                    {wallMagnetEnabled && (
+                      <HudWallMagnetBar
+                        wallTargets={wallTargets}
+                        frontRunTicks={smartPegFrontRunTicks}
+                        orderType={orderType}
+                        isAutoLimit={isAutoLimit}
+                        limitPrice={limitPrice}
+                        smartPegAnchorPrice={smartPegAnchorPrice}
+                        smartPegStrategy={smartPegStrategy}
+                        smartPegAntiSpoof={smartPegAntiSpoof}
+                        isFetchingWalls={isFetchingWalls}
+                        formatDisplayPrice={formatDisplayPrice}
+                        onSnapLimitToWall={handleSnapLimitToWall}
+                        onClearPinnedPrice={handleClearPinnedPrice}
+                        onCyclePegStrategy={handleCyclePegStrategy}
+                        onRefreshWalls={fetchNearestWalls}
+                      />
+                    )}
 
                     {/* Row 2: Ultra-Compact Order Size + 25/50/75/100% Shortcuts + 0-100% Slide Bar */}
                     <div
@@ -4557,6 +4855,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                                   Smart Peg Entry Active
                                 </span>
+                                {activePeg.peg_strategy === 'wall_aware' && (
+                                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-orange-500/25 text-orange-200 border border-orange-400/45 font-bold">
+                                    🧱 Wall Front-Run
+                                  </span>
+                                )}
+                                {activePeg.peg_strategy === 'inside_spread' && (
+                                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 font-bold">
+                                    🎯 Inside-Spread
+                                  </span>
+                                )}
                               </div>
                               <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
                                 Attempt {activePeg.current_attempt || 1}/{activePeg.max_attempts ? activePeg.max_attempts : '∞'}
@@ -4578,6 +4886,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 <span className="text-gray-400">Target Size / Filled:</span>
                                 <span className="text-gray-200 font-semibold">{activePeg.filled_amount || 0} / {activePeg.amount}</span>
                               </div>
+                              {activePeg.tracked_wall?.price && (
+                                <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[10px]">
+                                  <span className="text-amber-300/90">🧱 Shadowing Whale Wall:</span>
+                                  <span className="text-amber-200 font-bold">
+                                    ${formatDisplayPrice(activePeg.tracked_wall.price)} ({Number(activePeg.tracked_wall.size || 0).toLocaleString()})
+                                  </span>
+                                </div>
+                              )}
                             </div>
 
                             <button
@@ -4909,10 +5225,23 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 onChange={(e) => setSmartPegMaxDev(parseFloat(e.target.value))}
                                 className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
                               />
-                              <p className="text-[9px] text-gray-500">
+                              <span className="text-[9px] text-gray-500">
                                 {smartPegMaxDev === 0 ? 'Chases continuously until filled.' : 'Stops chasing if price drifts too far away from initial entry.'}
-                              </p>
+                              </span>
                             </div>
+                            <SmartPegWallStrategyPanel
+                              pegStrategy={smartPegStrategy}
+                              setPegStrategy={setSmartPegStrategy}
+                              wallMultiplier={smartPegWallMultiplier}
+                              setWallMultiplier={setSmartPegWallMultiplier}
+                              frontRunTicks={smartPegFrontRunTicks}
+                              setFrontRunTicks={setSmartPegFrontRunTicks}
+                              antiSpoofGuard={smartPegAntiSpoof}
+                              setAntiSpoofGuard={setSmartPegAntiSpoof}
+                              wallTargets={wallTargets}
+                              tradeSide={tradeSide}
+                              formatDisplayPrice={formatDisplayPrice}
+                            />
                           </MotionDiv>
                         )}
                       </AnimatePresence>
@@ -4924,7 +5253,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
-                            className="overflow-hidden"
+                            className="overflow-hidden space-y-2"
                           >
                             {/* Switch: Auto Best Limit */}
                             <div
@@ -4956,6 +5285,19 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 />
                               </div>
                             </div>
+
+                            <FullModalLimitWallPanel
+                              wallTargets={wallTargets}
+                              frontRunTicks={smartPegFrontRunTicks}
+                              setFrontRunTicks={setSmartPegFrontRunTicks}
+                              wallMagnetEnabled={wallMagnetEnabled}
+                              setWallMagnetEnabled={setWallMagnetEnabled}
+                              isFetchingWalls={isFetchingWalls}
+                              currentPrice={effectiveCurrentPrice}
+                              formatDisplayPrice={formatDisplayPrice}
+                              onSnapLimitToWall={handleSnapLimitToWall}
+                              onRefreshWalls={fetchNearestWalls}
+                            />
                           </MotionDiv>
                         )}
                       </AnimatePresence>
@@ -5834,6 +6176,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   </div>
                                 </div>
                               </div>
+
+                              <TakeProfitWallSnapButton
+                                tradeSide={tradeSide}
+                                wallTargets={wallTargets}
+                                frontRunTicks={smartPegFrontRunTicks}
+                                formatDisplayPrice={formatDisplayPrice}
+                                onSnapTpToWall={handleSnapTpToWall}
+                              />
                             </MotionDiv>
                           )}
                         </AnimatePresence>
@@ -6705,6 +7055,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
             >
               ({(((activeDragLine.currentPrice - effectiveCurrentPrice) / effectiveCurrentPrice) * 100) >= 0 ? '+' : ''}
               {(((activeDragLine.currentPrice - effectiveCurrentPrice) / effectiveCurrentPrice) * 100).toFixed(2)}%)
+            </span>
+          )}
+          {typeof window !== 'undefined' && (window as any)._cosmoLastMagnetSnap?.wall && (
+            <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-amber-500/30 border border-amber-300/60 text-amber-200 font-black uppercase">
+              🧲 WALL
             </span>
           )}
         </div>,

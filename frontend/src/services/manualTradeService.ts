@@ -13,6 +13,11 @@ export interface OrderPayload {
     marginMode?: 'cross' | 'isolated';
     reduceOnly?: boolean;
     maxChaseDeviationPct?: number;
+    pegAnchorPrice?: number;
+    pegStrategy?: 'bbo' | 'inside_spread' | 'wall_aware';
+    wallMultiplier?: number;
+    wallFrontRunTicks?: number;
+    antiSpoofGuard?: boolean;
     contracts?: number;
     positionSide?: string;
   };
@@ -265,6 +270,29 @@ export const manualTradeService = {
       symbol
     });
     return response.data;
+  },
+
+  getNearestWalls: async (
+    symbol: string,
+    exchangeId: string = 'binance',
+    wallMultiplier: number = 2.5,
+    frontRunTicks: number = 1,
+    apiKeyId?: number
+  ) => {
+    try {
+      const response = await api.get('/trading/nearest-walls', {
+        params: {
+          symbol,
+          exchange_id: exchangeId,
+          wall_multiplier: wallMultiplier,
+          front_run_ticks: frontRunTicks,
+          ...(apiKeyId ? { api_key_id: apiKeyId } : {}),
+        },
+      });
+      return response.data;
+    } catch {
+      return null;
+    }
   }
 };
 

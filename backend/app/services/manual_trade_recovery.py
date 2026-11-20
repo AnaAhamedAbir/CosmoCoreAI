@@ -614,6 +614,10 @@ async def _recover_smart_peg(
             anchor_price=cfg.get("anchor_price"),
             initial_benchmark_override=float(row.entry_price or 0.0) or None,
             skip_exchange_upgrade=True,
+            peg_strategy=str(cfg.get("peg_strategy", "bbo")),
+            wall_multiplier=float(cfg.get("wall_multiplier", 2.5)),
+            wall_front_run_ticks=int(cfg.get("wall_front_run_ticks", 1)),
+            anti_spoof_guard=bool(cfg.get("anti_spoof_guard", True)),
         )
     )
     logger.info(f"🔄 [AutoRecovery] Resumed Smart Peg Entry {cid} ({symbol}, rem={remaining_amt})")

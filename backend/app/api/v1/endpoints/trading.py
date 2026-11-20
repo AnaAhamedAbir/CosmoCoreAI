@@ -1492,6 +1492,8 @@ async def get_active_software_brackets(
                         'max_attempts': pdata.get('max_attempts', 0),
                         'current_maker_price': pdata.get('current_maker_price', 0.0),
                         'anchor_price': pdata.get('anchor_price'),
+                        'peg_strategy': pdata.get('peg_strategy', 'bbo'),
+                        'tracked_wall': pdata.get('tracked_wall'),
                         'started_at': pdata.get('started_at')
                     })
         except Exception as peg_e:
@@ -1864,3 +1866,90 @@ async def execute_sor_order(
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/nearest-walls")
+async def get_nearest_liquidity_walls(
+    symbol: str = Query(..., description="Trading pair e.g. DOGE/USDT or BTC/USDT:USDT"),
+    exchange_id: str = Query("binance", description="Exchange ID e.g. binance"),
+    wall_multiplier: float = Query(2.5, ge=1.1, le=10.0),
+    front_run_ticks: int = Query(1, ge=1, le=10),
+    api_key_id: Optional[int] = Query(None, description="Optional API key ID for instant REST fallback when Redis stream is cold"),
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """
+    Ultra-fast (~1ms Redis) L2 Liquidity Wall Navigator endpoint.
+    Returns nearest Buy Support & Sell Resistance walls and 1-tick front-run prices
+    for ManualTradeModal Limit Snap, TP Front-Run, and Drag-to-Chart Wall Magnet.
+    """
+    try:
+        from app.services.liquidity_wall_navigator import (
+            fetch_l2_depth_fast,
+            find_nearest_wall_targets,
+        )
+
+        ob = await fetch_l2_depth_fast(
+            exchange=None,
+            symbol=symbol,
+            limit=20,
+            max_age_seconds=5.0,
+            exchange_id_hint=exchange_id,
+        )
+        exchange_inst = None
+        if not ob and api_key_id:
+            try:
+                api_rec = db.query(models.ApiKey).filter(
+                    models.ApiKey.id == api_key_id,
+                    models.ApiKey.user_id == current_user.id,
+                    models.ApiKey.is_enabled == True,
+                ).first()
+                if api_rec:
+                    from app.services.manual_trade_service import ManualTradeService
+                    exchange_inst = await ManualTradeService._get_exchange(api_rec, ':' in symbol)
+                    ob = await fetch_l2_depth_fast(
+                        exchange=exchange_inst,
+                        symbol=symbol,
+                        limit=20,
+                        max_age_seconds=5.0,
+                        exchange_id_hint=api_rec.exchange or exchange_id,
+                    )
+            except Exception:
+                exchange_inst = None
+
+        if not ob:
+            # Ensure background MarketDataStreamer starts warming this symbol and return empty safely
+            try:
+                from app.services.market_data_streamer import market_data_streamer
+                asyncio.create_task(market_data_streamer.start_streaming(exchange_id.lower(), symbol))
+            except Exception:
+                pass
+            return {
+                "symbol": symbol,
+                "exchange": exchange_id,
+                "best_bid": 0.0,
+                "best_ask": 0.0,
+                "tick": 0.0,
+                "nearest_buy_wall": None,
+                "nearest_sell_wall": None,
+                "buy_front_run_price": None,
+                "sell_front_run_price": None,
+                "buy_walls": [],
+                "sell_walls": [],
+            }
+
+        res = find_nearest_wall_targets(
+            ob=ob,
+            wall_multiplier=wall_multiplier,
+            front_run_ticks=front_run_ticks,
+            exchange=exchange_inst,
+            symbol=symbol,
+        )
+        return {
+            "symbol": symbol,
+            "exchange": exchange_id,
+            **res,
+        }
+    except Exception as e:
+        logger.debug(f"Nearest walls lookup notice for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=f"Wall Navigator Error: {str(e)}")

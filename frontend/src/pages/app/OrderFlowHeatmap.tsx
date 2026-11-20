@@ -51,6 +51,7 @@ import { ForexWallHunterModal } from '../../components/features/market/ForexWall
 import { OrderBookFloatingModal } from '../../components/features/market/OrderBookFloatingModal';
 import { TechnicalIndicatorModal } from '../../components/features/market/TechnicalIndicators/TechnicalIndicatorModal';
 import { ManualTradeModal, AvailablePair } from '../../components/features/market/ManualTradeModal';
+import { snapPriceToWallMagnet, formatWallSizeCompact, OrderbookWall } from '../../utils/liquidityWallMagnet';
 import { FloatingTVChartButton } from '../../components/features/market/FloatingTVChartButton';
 import { AetherFlowRenderer } from '../../components/features/market/AetherFlowRenderer';
 import { useAetherFlowData } from '../../hooks/useAetherFlowData';
@@ -823,6 +824,9 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         (window as any)._handleQuickTradeDragEnd = handleQuickTradeDragEnd;
 
         const clearChartBracketGhostLine = () => {
+            if (typeof window !== 'undefined') {
+                (window as any)._cosmoLastMagnetSnap = null;
+            }
             if (chartBracketGhostLineRef.current && candlestickSeriesRef.current) {
                 try { candlestickSeriesRef.current.removePriceLine(chartBracketGhostLineRef.current); } catch {}
                 chartBracketGhostLineRef.current = null;
@@ -870,20 +874,46 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             return { inChart: true, price };
         };
 
+        const resolveMagnetPrice = (type: any, rawPrice: number): { price: number; snappedWall: OrderbookWall | null } => {
+            const magnetCfg = typeof window !== 'undefined' ? (window as any)._cosmoWallMagnetConfig : null;
+            if (!magnetCfg?.active) {
+                return { price: rawPrice, snappedWall: null };
+            }
+            const liveRef = smcDataRef.current?.currentPrice || currentPrice || 0;
+            const liveWalls = smcDataRef.current?.walls || [];
+            const snapped = snapPriceToWallMagnet(
+                rawPrice,
+                type,
+                liveWalls,
+                liveRef,
+                Number(magnetCfg.frontRunTicks || 1),
+                0.75
+            );
+            return { price: snapped.price, snappedWall: snapped.snappedWall };
+        };
+
         const handleChartDragBracketMove = (type: any, clientX: number, clientY: number): number | null => {
-            const { inChart, price } = resolveChartBracketPrice(clientX, clientY);
-            if (!inChart || price === null) {
+            const { inChart, price: rawPrice } = resolveChartBracketPrice(clientX, clientY);
+            if (!inChart || rawPrice === null) {
                 clearChartBracketGhostLine();
                 return null;
             }
 
+            const { price, snappedWall } = resolveMagnetPrice(type, rawPrice);
+            if (typeof window !== 'undefined') {
+                (window as any)._cosmoLastMagnetSnap = snappedWall ? { price, wall: snappedWall } : null;
+            }
             const formattedPrice = price < 1 ? price.toFixed(6) : price.toFixed(4);
             const liveRefPrice = smcDataRef.current?.currentPrice || currentPrice || 0;
 
             let color = '#22c55e';
             let title = '';
 
-            if (type === 'tp') {
+            if (snappedWall) {
+                const szLbl = formatWallSizeCompact(snappedWall.size);
+                color = type === 'sl' ? '#ef4444' : snappedWall.type === 'buy' ? '#10b981' : '#f59e0b';
+                title = `🧲 WALL FRONT-RUN ${String(type).toUpperCase()} (${formattedPrice})${szLbl ? ` • Wall ${szLbl}` : ''}`;
+            } else if (type === 'tp') {
                 color = '#22c55e';
                 const isDipBuyTP = liveRefPrice > 0 && price < liveRefPrice;
                 title = isDipBuyTP ? `🎯 DROP TO SET DIP BUY-BACK TP (${formattedPrice})` : `🎯 DROP TO SET TP (${formattedPrice})`;
@@ -910,12 +940,15 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 title = `DROP ORDER (${formattedPrice})`;
             }
 
+            const lineWidth = snappedWall ? 2 : 1;
+            const lineStyle = snappedWall ? LineStyle.Dashed : LineStyle.Solid;
+
             if (!chartBracketGhostLineRef.current) {
                 chartBracketGhostLineRef.current = candlestickSeriesRef.current?.createPriceLine({
                     price: price,
                     color: color,
-                    lineWidth: 1,
-                    lineStyle: LineStyle.Solid,
+                    lineWidth,
+                    lineStyle,
                     axisLabelVisible: true,
                     title: title,
                 });
@@ -924,8 +957,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     price: price,
                     color: color,
                     title: title,
-                    lineWidth: 1,
-                    lineStyle: LineStyle.Solid,
+                    lineWidth,
+                    lineStyle,
                 });
             }
             return price;
@@ -934,7 +967,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         const handleChartDragBracketEnd = (type: any, clientX: number, clientY: number): { inChart: boolean; price: number | null } => {
             clearChartBracketGhostLine();
 
-            return resolveChartBracketPrice(clientX, clientY);
+            const raw = resolveChartBracketPrice(clientX, clientY);
+            if (!raw.inChart || raw.price === null) return raw;
+            const { price } = resolveMagnetPrice(type, raw.price);
+            return { inChart: true, price };
         };
 
         const registryKey = chartId || 'main';
@@ -4548,6 +4584,7 @@ const OrderFlowChartPanel = React.memo<{
     showBidAsk?: boolean;
     renderFloatingTools?: React.ReactNode;
     onFullscreenChange?: (isFullscreen: boolean) => void;
+    onWallsChange?: (chartId: string, walls: OrderbookWall[]) => void;
 }>(({ 
     config, 
     isMain, 
@@ -4583,7 +4620,8 @@ const OrderFlowChartPanel = React.memo<{
     showCrosshairAIPredict = false,
     showBidAsk = false,
     renderFloatingTools,
-    onFullscreenChange
+    onFullscreenChange,
+    onWallsChange
 }) => {
     const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -4662,6 +4700,10 @@ const OrderFlowChartPanel = React.memo<{
         });
         return newWalls;
     }, [walls, bids, asks, volumeThreshold, volumeMode]);
+
+    useEffect(() => {
+        onWallsChange?.(config.id, filteredWalls);
+    }, [config.id, filteredWalls, onWallsChange]);
 
     const handlePanelIndicatorChange = useCallback((nextSettings: IndicatorSettings) => {
         onIndicatorSettingsChange(config.id, nextSettings);
@@ -5118,6 +5160,17 @@ const OrderFlowHeatmap: React.FC = () => {
 
     // Isolate ManualTradeModal from high-frequency parent price churn on mobile/tablet thermal guard
     const [isManualTradeOpen, setIsManualTradeOpen] = useState(false);
+    const chartWallsMapRef = useRef<Record<string, OrderbookWall[]>>({});
+    const [chartWallsTick, setChartWallsTick] = useState(0);
+    const lastWallsFlushRef = useRef<number>(0);
+    const handleChartWallsChange = useCallback((chartId: string, chartWalls: OrderbookWall[]) => {
+        chartWallsMapRef.current[chartId] = chartWalls;
+        const now = Date.now();
+        if (now - lastWallsFlushRef.current >= 450) {
+            lastWallsFlushRef.current = now;
+            setChartWallsTick(t => t + 1);
+        }
+    }, []);
     const modalThrottleMs = deviceProfile.timings.modalPriceThrottleMs;
     const rawModalPrice = chartPrices[activeChart?.id || 'main'] || (activeChart?.isMain ? currentPrice : (chartPrices[activeChart?.id || ''] || currentPrice));
     const [throttledModalPrice, setThrottledModalPrice] = useState<number>(rawModalPrice);
@@ -5164,6 +5217,13 @@ const OrderFlowHeatmap: React.FC = () => {
 
     const modalCurrentPrice = (deviceProfile.isThermalGuardActive && modalThrottleMs > 0) ? throttledModalPrice : rawModalPrice;
     const modalAvailablePairs = (deviceProfile.isThermalGuardActive && modalThrottleMs > 0) ? throttledModalAvailablePairs : availablePairs;
+    const modalOrderbookWalls: OrderbookWall[] = useMemo(() => {
+        if (!isManualTradeOpen) return [];
+        const targetId = activeChart?.id || activeChartId || 'main';
+        const perChart = chartWallsMapRef.current[targetId];
+        if (perChart && perChart.length > 0) return perChart;
+        return (targetId === 'main' ? walls : []) as OrderbookWall[];
+    }, [isManualTradeOpen, activeChart?.id, activeChartId, walls, chartWallsTick]);
 
     const activeChartIdRef = useRef<string>(activeChartId);
     activeChartIdRef.current = activeChartId;
@@ -5384,6 +5444,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                         activePairId={activeChart?.id || activeChartId}
                                         currentPrice={modalCurrentPrice}
                                         availablePairs={modalAvailablePairs}
+                                        orderbookWalls={modalOrderbookWalls}
                                         onSelectPair={handleModalSelectPair}
                                         onApiKeyChange={setSelectedApiKeyId}
                                         clickedPrice={manualTradePrice}
@@ -5672,6 +5733,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                 showBidAsk={showBidAsk}
                                 renderFloatingTools={hasFullscreenChart ? floatingToolsNode : undefined}
                                 onFullscreenChange={setHasFullscreenChart}
+                                onWallsChange={handleChartWallsChange}
                             />
                         );
                     })}

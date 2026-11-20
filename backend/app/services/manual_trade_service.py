@@ -2216,6 +2216,29 @@ class ManualTradeService:
                 if isinstance(order_req.params, dict) and order_req.params.get('reduceOnly'):
                     is_reduce_only = True
 
+                peg_strategy = 'bbo'
+                wall_multiplier = 2.5
+                wall_front_run_ticks = 1
+                anti_spoof_guard = True
+                if isinstance(order_req.params, dict):
+                    peg_strategy = str(
+                        order_req.params.get('pegStrategy')
+                        or order_req.params.get('peg_strategy')
+                        or 'bbo'
+                    ).lower()
+                    if order_req.params.get('wallMultiplier') is not None:
+                        wall_multiplier = float(order_req.params.get('wallMultiplier'))
+                    elif order_req.params.get('wall_multiplier') is not None:
+                        wall_multiplier = float(order_req.params.get('wall_multiplier'))
+                    if order_req.params.get('wallFrontRunTicks') is not None:
+                        wall_front_run_ticks = int(order_req.params.get('wallFrontRunTicks'))
+                    elif order_req.params.get('wall_front_run_ticks') is not None:
+                        wall_front_run_ticks = int(order_req.params.get('wall_front_run_ticks'))
+                    if order_req.params.get('antiSpoofGuard') is not None:
+                        anti_spoof_guard = bool(order_req.params.get('antiSpoofGuard'))
+                    elif order_req.params.get('anti_spoof_guard') is not None:
+                        anti_spoof_guard = bool(order_req.params.get('anti_spoof_guard'))
+
                 t_origin = start_time if start_time > 0 else t_req_origin
                 asyncio.create_task(
                     execute_smart_peg_entry(
@@ -2240,11 +2263,16 @@ class ManualTradeService:
                         anchor_price=peg_anchor_price,
                         preloaded_balance=bal if bal else None,
                         skip_exchange_upgrade=True,
+                        peg_strategy=peg_strategy,
+                        wall_multiplier=wall_multiplier,
+                        wall_front_run_ticks=wall_front_run_ticks,
+                        anti_spoof_guard=anti_spoof_guard,
                     )
                 )
 
                 ManualTradeService.invalidate_open_orders_cache(api_key_record.id, order_req.symbol)
                 anchor_suffix = f" (Anchor: ${peg_anchor_price:,.4f})" if peg_anchor_price else ""
+                strat_tag = " [Wall-Aware]" if peg_strategy == 'wall_aware' else (" [Inside-Spread]" if peg_strategy == 'inside_spread' else "")
                 return {
                     "id": peg_cid,
                     "symbol": order_req.symbol,
@@ -2252,9 +2280,10 @@ class ManualTradeService:
                     "side": order_req.side.lower(),
                     "amount": order_req.amount,
                     "type": "smart_peg",
+                    "peg_strategy": peg_strategy,
                     "anchor_price": peg_anchor_price,
                     "ai_filter_info": ai_filter_info,
-                    "message": f"⚡ Smart Peg Entry initiated for {order_req.symbol} ({order_req.side.upper()}){anchor_suffix}"
+                    "message": f"⚡ Smart Peg Entry{strat_tag} initiated for {order_req.symbol} ({order_req.side.upper()}){anchor_suffix}"
                 }
 
             # Execute Trade (Try WebSocket First, Fallback to REST)

@@ -1,5 +1,5 @@
 from typing import List, Any, Dict
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect # ✅ WebSocket ইম্পোর্ট যোগ করা হয়েছে
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from redis import asyncio as aioredis # ✅ Async Redis ইম্পোর্ট (pip install redis)
@@ -10,6 +10,7 @@ from datetime import datetime
 
 from app import models, schemas
 from app.api import deps
+from app.core.ws_auth import authenticate_websocket, verify_bot_ownership
 from app.db.session import SessionLocal 
 from app.tasks import run_live_bot_task
 from app import utils
@@ -264,6 +265,8 @@ async def control_bot(
     if action == "start":
         if bot.status == "active":
             raise HTTPException(status_code=400, detail="Bot is already running")
+        from app.core.quotas import check_bot_quota
+        check_bot_quota(db, current_user)
             
         # ✅ BotManager Call
         result = await request.app.state.bot_manager.start_bot(bot_id, db)
@@ -334,12 +337,25 @@ def get_bot_trades(
 @router.websocket("/{bot_id}/ws/logs")
 async def websocket_bot_logs(
     websocket: WebSocket, 
-    bot_id: int
+    bot_id: int,
+    token: str = Query(None),
 ):
     """
     Real-time logs for a specific bot via WebSocket & Redis Pub/Sub.
-    URL: ws://localhost:8000/api/v1/bots/{bot_id}/ws/logs
+    URL: ws://localhost:8000/api/v1/bots/{bot_id}/ws/logs?token=<jwt>
     """
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db, query_token=token)
+        if not user:
+            return
+        bot = verify_bot_ownership(db, bot_id, user, models.Bot, owner_field="owner_id")
+        if not bot:
+            await websocket.close(code=4003, reason="Bot not found or access denied")
+            return
+    finally:
+        db.close()
+
     await websocket.accept()
     
     # ✅ Use Global Redis Pool from app.state
@@ -520,12 +536,25 @@ async def panic_stop(
 @router.websocket("/{bot_id}/ws/status")
 async def websocket_bot_status(
     websocket: WebSocket, 
-    bot_id: int
+    bot_id: int,
+    token: str = Query(None),
 ):
     """
     Real-time status updates (PnL, Price, Active State).
-    URL: ws://localhost:8000/api/v1/bots/{bot_id}/ws/status
+    URL: ws://localhost:8000/api/v1/bots/{bot_id}/ws/status?token=<jwt>
     """
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db, query_token=token)
+        if not user:
+            return
+        bot = verify_bot_ownership(db, bot_id, user, models.Bot, owner_field="owner_id")
+        if not bot:
+            await websocket.close(code=4003, reason="Bot not found or access denied")
+            return
+    finally:
+        db.close()
+
     await websocket.accept()
     
     if not hasattr(websocket.app.state, "redis") or websocket.app.state.redis is None:

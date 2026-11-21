@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { IChartApi, ISeriesApi } from 'lightweight-charts';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 interface MLPredictionCloudRendererProps {
     chart: IChartApi | null;
@@ -172,11 +173,13 @@ export const MLPredictionCloudRenderer: React.FC<MLPredictionCloudRendererProps>
         let reconnectTimeout: ReturnType<typeof setTimeout>;
         let isCleaningUp = false;
 
-        const connectWebSocket = () => {
+        const connectWebSocket = async () => {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsHost = import.meta.env.VITE_WS_URL ? import.meta.env.VITE_WS_URL.replace(/^https?:\/\//, '') : window.location.host;
-            const wsUrl = `${wsProtocol}//${wsHost}/api/v1/ml-models/ws/inference/${modelId}/${exchange}/${symbol}`;
-            
+            const rawWsUrl = `${wsProtocol}//${wsHost}/api/v1/ml-models/ws/inference/${modelId}/${exchange}/${symbol}`;
+            const wsUrl = await buildAuthenticatedWsUrl(rawWsUrl);
+            if (!wsUrl || isCleaningUp) return;
+
             const ws = new WebSocket(wsUrl);
             wsRef.current = ws;
 

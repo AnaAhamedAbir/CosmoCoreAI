@@ -7,6 +7,13 @@ import os
 from app import models, schemas
 from app.api import deps
 from app.constants import STANDARD_STRATEGY_PARAMS, STRATEGY_CATALOG
+from app.core.storage_isolation import (
+    sanitize_filename,
+    sanitize_identifier,
+    get_user_scoped_dir,
+    resolve_user_file_path,
+    ensure_within_directory,
+)
 from app.strategy_parser import parse_strategy_params, compile_visual_to_python
 
 class AIServiceProxy:
@@ -59,20 +66,23 @@ def generate_param_config(key, default_val):
 
 @router.post("/upload")
 async def upload_strategy(file: UploadFile = File(...), current_user: models.User = Depends(deps.get_current_user)):
-    if not file.filename.endswith(".py"):
-        raise HTTPException(status_code=400, detail="Only .py files are allowed")
+    try:
+        safe_filename = sanitize_filename(file.filename or "", allowed_extensions=(".py",))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-    file_location = f"{UPLOAD_DIR}/{file.filename}"
+    user_dir = get_user_scoped_dir(UPLOAD_DIR, current_user.id)
+    file_location = ensure_within_directory(user_dir, os.path.join(user_dir, safe_filename))
     try:
         with open(file_location, "wb+") as file_object:
             shutil.copyfileobj(file.file, file_object)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not save file: {str(e)}")
     
-    return {"filename": file.filename, "message": "Strategy uploaded successfully."}
+    return {"filename": safe_filename, "message": "Strategy uploaded successfully."}
 
 @router.get("/standard-params")
-def get_standard_strategy_params():
+def get_standard_strategy_params(current_user: models.User = Depends(deps.get_current_user)):
     return STANDARD_STRATEGY_PARAMS
 
 @router.get("/catalog")
@@ -102,8 +112,18 @@ def get_all_strategies(current_user: models.User = Depends(deps.get_current_user
 @router.get("/source/{strategy_name}")
 def get_strategy_source(strategy_name: str, current_user: models.User = Depends(deps.get_current_user)):
     try:
-        filename = f"{strategy_name}.py" if not strategy_name.endswith(".py") else strategy_name
-        file_path = f"{UPLOAD_DIR}/{filename}"
+        try:
+            safe_stem = sanitize_identifier(strategy_name.removesuffix(".py"))
+            filename = f"{safe_stem}.py"
+            file_path = resolve_user_file_path(
+                UPLOAD_DIR,
+                current_user.id,
+                filename,
+                fallback_shared=True,
+                allowed_extensions=(".py",),
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid strategy name")
         
         # ১. স্ট্র্যাটেজি ম্যাপ থেকে লোড করা (Standard/Library Strategies)
         if not os.path.exists(file_path):
@@ -169,9 +189,13 @@ async def build_strategy(config: StrategyConfig, current_user: models.User = Dep
     """
     Builds a strategy python file from frontend configuration
     """
-    clean_name = config.name.replace(" ", "")
+    try:
+        clean_name = sanitize_identifier(config.name.replace(" ", ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     filename = f"{clean_name}.py"
-    file_path = f"{UPLOAD_DIR}/{filename}"
+    user_dir = get_user_scoped_dir(UPLOAD_DIR, current_user.id)
+    file_path = ensure_within_directory(user_dir, os.path.join(user_dir, filename))
     
     # 1. কোড টেমপ্লেট জেনারেট করা
     code = f"""import backtrader as bt
@@ -232,7 +256,10 @@ class {clean_name}(BaseStrategy):
 # --- Visual Strategy Builder Endpoints ---
 
 @router.post("/visual/compile")
-async def compile_visual_strategy(config: VisualStrategyConfig):
+async def compile_visual_strategy(
+    config: VisualStrategyConfig,
+    current_user: models.User = Depends(deps.get_current_user),
+):
     """
     Compiles a visual strategy configuration into Python code.
     """
@@ -251,7 +278,10 @@ async def save_visual_strategy(name: str, config: VisualStrategyConfig, current_
     1. Compiles and saves as .py file
     2. Saves the visual configuration as .json file
     """
-    clean_name = name.replace(" ", "_")
+    try:
+        clean_name = sanitize_identifier(name.replace(" ", "_"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     
     # 1. Compile Code
     try:
@@ -260,8 +290,10 @@ async def save_visual_strategy(name: str, config: VisualStrategyConfig, current_
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Compilation failed: {e}")
 
+    user_dir = get_user_scoped_dir(UPLOAD_DIR, current_user.id)
+
     # 2. Save .py file
-    py_path = f"{UPLOAD_DIR}/{clean_name}.py"
+    py_path = ensure_within_directory(user_dir, os.path.join(user_dir, f"{clean_name}.py"))
     try:
         with open(py_path, "w") as f:
             f.write(code)
@@ -269,7 +301,7 @@ async def save_visual_strategy(name: str, config: VisualStrategyConfig, current_
         raise HTTPException(status_code=500, detail=f"Failed to save Python file: {e}")
 
     # 3. Save .json file (Visual Config)
-    json_path = f"{UPLOAD_DIR}/{clean_name}.json"
+    json_path = ensure_within_directory(user_dir, os.path.join(user_dir, f"{clean_name}.json"))
     try:
         with open(json_path, "w") as f:
             json.dump(config_dict, f, indent=4)
@@ -283,8 +315,17 @@ async def get_visual_strategy(name: str, current_user: models.User = Depends(dep
     """
     Retrieves the visual configuration for a stored strategy.
     """
-    clean_name = name.replace(".py", "").replace(".json", "")
-    json_path = f"{UPLOAD_DIR}/{clean_name}.json"
+    try:
+        clean_name = sanitize_identifier(name.replace(".py", "").replace(".json", ""))
+        json_path = resolve_user_file_path(
+            UPLOAD_DIR,
+            current_user.id,
+            f"{clean_name}.json",
+            fallback_shared=True,
+            allowed_extensions=(".json",),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     
     if not os.path.exists(json_path):
         raise HTTPException(status_code=404, detail="Visual configuration not found")
@@ -297,7 +338,10 @@ async def get_visual_strategy(name: str, current_user: models.User = Depends(dep
         raise HTTPException(status_code=500, detail=f"Failed to load configuration: {e}")
 
 @router.post("/visual/validate")
-async def validate_visual_strategy(config: VisualStrategyConfig):
+async def validate_visual_strategy(
+    config: VisualStrategyConfig,
+    current_user: models.User = Depends(deps.get_current_user),
+):
     """
     Validates the strategy logic by dry-run compilation and basic syntax checks.
     """
@@ -316,10 +360,15 @@ async def validate_visual_strategy(config: VisualStrategyConfig):
         return {"valid": False, "message": f"Validation Error: {str(e)}"}
 
 @router.post("/visual/generate")
-async def generate_visual_strategy_endpoint(request: GenerateRequest):
+async def generate_visual_strategy_endpoint(
+    request: GenerateRequest,
+    current_user: models.User = Depends(deps.get_current_user),
+):
     """
     Generates a visual strategy layout from a text prompt using AI.
     """
+    from app.core.quotas import check_and_increment_ai_quota
+    check_and_increment_ai_quota(current_user)
     try:
         data = ai_service.generate_visual_strategy(request.prompt)
         return data
@@ -327,10 +376,15 @@ async def generate_visual_strategy_endpoint(request: GenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/generate", response_model=AIStrategyConfig)
-async def generate_strategy_config_endpoint(request: GenerateRequest):
+async def generate_strategy_config_endpoint(
+    request: GenerateRequest,
+    current_user: models.User = Depends(deps.get_current_user),
+):
     """
     Generates a trading strategy configuration from a natural language prompt.
     """
+    from app.core.quotas import check_and_increment_ai_quota
+    check_and_increment_ai_quota(current_user)
     try:
         config = ai_service.generate_strategy_config(request.prompt)
         return config

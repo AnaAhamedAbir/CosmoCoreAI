@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 export type AlertSeverity = 'CRITICAL' | 'ERROR' | 'WARNING';
 
@@ -24,11 +25,6 @@ export interface SystemAlert {
 }
 
 const MAX_ALERTS = 50;
-
-const WS_URL = (() => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/ws/system-alerts`;
-})();
 
 export function useSystemAlerts() {
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
@@ -46,10 +42,13 @@ export function useSystemAlerts() {
 
     let ws: WebSocket;
 
-    const connect = () => {
+    const connect = async () => {
       if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-      ws = new WebSocket(WS_URL);
+      const wsUrl = await buildAuthenticatedWsUrl('/ws/system-alerts');
+      if (!wsUrl || !mountedRef.current) return;
+
+      ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {

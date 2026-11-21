@@ -17,7 +17,9 @@ class User(Base):
     
     # New Fields
     is_pro = Column(Boolean, default=False)
+    plan_tier = Column(String, default="free") # free, pro, enterprise
     is_superuser = Column(Boolean, default=False) # এডমিন অ্যাক্সেসের জন্য এটি জরুরি
+    is_email_verified = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Financials
@@ -26,6 +28,8 @@ class User(Base):
     # Security
     allowed_ips = Column(JSON, default=[])
     is_ip_whitelist_enabled = Column(Boolean, default=False)
+    totp_secret_encrypted = Column(String, nullable=True)
+    is_2fa_enabled = Column(Boolean, default=False)
     
     # Profile
     avatar_url = Column(String, nullable=True)

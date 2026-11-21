@@ -80,6 +80,16 @@ def get_rolling_correlation(
 # If api_router includes this with prefix="/analytics", then url is /api/v1/analytics/ws/correlation
 @router.websocket("/ws/correlation")
 async def websocket_endpoint(websocket: WebSocket):
+    from app.core.ws_auth import authenticate_websocket
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db)
+        if not user:
+            return
+    finally:
+        db.close()
+
     from app.services.market_analysis_service import market_analysis_service
     await manager.connect(websocket, "correlation_feed")
     try:

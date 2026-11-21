@@ -45,6 +45,8 @@ def start_training_job(
     """
     Start a new Auto-ML training job.
     """
+    from app.core.quotas import check_ml_training_access
+    check_ml_training_access(current_user)
     job_id = f"train_{int(time.time() * 1000)}"
     
     job = models.ModelTrainingJob(
@@ -317,11 +319,21 @@ def suggest_l2_features(
     return result
 
 @router.websocket("/ws/training-visualizer")
-async def websocket_training_visualizer(websocket: WebSocket):
+async def websocket_training_visualizer(websocket: WebSocket, token: Optional[str] = None):
     """
     WebSocket endpoint for the Dataset Visualizer.
     Streams live ticks from the scraper and final merged dataset.
     """
+    from app.core.ws_auth import authenticate_websocket
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db, query_token=token)
+        if not user:
+            return
+    finally:
+        db.close()
+
     await manager.connect(websocket, channel_id="training_visualizer")
     try:
         while True:

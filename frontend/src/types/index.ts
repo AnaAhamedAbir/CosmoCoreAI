@@ -654,6 +654,7 @@ export enum AppView {
   TASK_MANAGER = 'Task Manager',
   EVENT_DRIVEN = 'Event Driven Simulator',
   SETTINGS = 'Settings',
+  OWNER_ADMIN = 'Owner Admin Console',
 
   // OmniTrade Views
   OMNI_DASHBOARD = 'Omni Dashboard',

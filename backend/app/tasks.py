@@ -103,15 +103,23 @@ def sync_sentiment_analysis_heavy(symbol: str, enable_ner: bool, model: str):
         asyncio.set_event_loop(loop)
     return loop.run_until_complete(service.get_composite_sentiment(symbol, enable_ner, model))
 
-def publish_task_status(task_type, task_id, status, progress, data=None):
+def publish_task_status(task_type, task_id, status, progress, data=None, user_id=None):
     try:
         r = utils.get_redis_client()
+        resolved_uid = user_id
+        if resolved_uid is None and task_id:
+            try:
+                from app.core.task_ownership import get_task_owner
+                resolved_uid = get_task_owner(task_id)
+            except Exception:
+                resolved_uid = None
         message = {
             "task_type": task_type,
             "task_id": task_id,
             "status": status,
             "progress": progress,
-            "data": data
+            "data": data,
+            "user_id": resolved_uid,
         }
         r.publish("task_updates", json.dumps(message, default=str))
     except Exception as e:

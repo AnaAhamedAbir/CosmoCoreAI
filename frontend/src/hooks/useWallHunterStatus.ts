@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 export interface WallHunterStatusData {
     status: string;
@@ -51,13 +52,12 @@ export const useWallHunterStatus = (botId: number | string | null, enabled: bool
 
         let isSubscribed = true;
         let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/api/v1/bots/${botId}/ws/status`;
 
-        const connect = () => {
+        const connect = async () => {
             if (!isSubscribed) return;
             try {
+                const wsUrl = await buildAuthenticatedWsUrl(`/api/v1/bots/${botId}/ws/status`);
+                if (!wsUrl || !isSubscribed) return;
                 const ws = new WebSocket(wsUrl);
                 wsRef.current = ws;
 

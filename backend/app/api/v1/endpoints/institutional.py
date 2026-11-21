@@ -1,6 +1,8 @@
 from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from app import models
+from app.api import deps
 from app.db.session import get_db
 from app.models.institutional import InstitutionalFund
 from app.schemas import institutional as schemas
@@ -13,7 +15,8 @@ service = InstitutionalService()
 def read_funds(
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(deps.get_current_user),
 ) -> Any:
     """
     Retrieve all tracked Institutional Funds (Gurus).
@@ -22,7 +25,10 @@ def read_funds(
     return funds
 
 @router.get("/movers", response_model=List[schemas.TopMover])
-def read_top_movers(db: Session = Depends(get_db)) -> Any:
+def read_top_movers(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+) -> Any:
     """
     Get top stocks bought/sold (held) across all funds by value.
     """
@@ -31,7 +37,8 @@ def read_top_movers(db: Session = Depends(get_db)) -> Any:
 @router.get("/{fund_id}", response_model=schemas.InstitutionalFund)
 def read_fund(
     fund_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(deps.get_current_user),
 ) -> Any:
     """
     Get a specific fund by ID.
@@ -44,7 +51,8 @@ def read_fund(
 @router.get("/{fund_id}/stats", response_model=schemas.PortfolioStats)
 def read_fund_stats(
     fund_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(deps.get_current_user),
 ) -> Any:
     """
     Get portfolio statistics (e.g., sector allocation, top holdings) for a fund.
@@ -57,7 +65,8 @@ def read_fund_stats(
 
 @router.post("/sync")
 def sync_gurus_manual(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
 ) -> Any:
     """
     Trigger manual sync of Guru data (Admin only usually).

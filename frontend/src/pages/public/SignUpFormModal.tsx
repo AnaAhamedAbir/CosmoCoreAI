@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Button from '@/components/common/Button';
-import { registerUser } from '@/services/auth';
+import { registerUser, verifyEmailCode, resendVerificationCode, loginUser } from '@/services/auth';
+import apiClient from '@/services/client';
 import { Logo, GoogleLogo, GithubLogo, AppleLogo, UserCircleIcon, KeyIcon } from '@/constants';
 
 const MailIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
@@ -46,6 +47,8 @@ const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister, 
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [pendingVerification, setPendingVerification] = useState(false);
+    const [verificationCode, setVerificationCode] = useState('');
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -64,16 +67,32 @@ const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister, 
         setError(null);
 
         try {
-            await registerUser({
-                full_name: fullName,
-                email: email,
-                password: password
-            });
-            console.log('Registration Successful!');
-            onRegister();
+            if (!pendingVerification) {
+                const regResp = await registerUser({
+                    full_name: fullName,
+                    email: email,
+                    password: password
+                });
+                if (regResp?.email_verification_required) {
+                    setPendingVerification(true);
+                } else {
+                    const data = await loginUser({ email, password });
+                    sessionStorage.setItem('accessToken', data.access_token);
+                    sessionStorage.setItem('refreshToken', data.refresh_token);
+                    apiClient.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`;
+                    onRegister();
+                }
+            } else {
+                await verifyEmailCode(email, verificationCode);
+                const data = await loginUser({ email, password });
+                sessionStorage.setItem('accessToken', data.access_token);
+                sessionStorage.setItem('refreshToken', data.refresh_token);
+                apiClient.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`;
+                onRegister();
+            }
         } catch (err: any) {
             console.error(err);
-            const errMsg = err.response?.data?.detail || 'Registration failed. Please try again.';
+            const errMsg = err.response?.data?.message || err.response?.data?.detail || 'Registration failed. Please try again.';
             setError(errMsg);
         } finally {
             setIsLoading(false);
@@ -179,30 +198,67 @@ const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister, 
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-4">
-                        <InputField
-                            id="fullName"
-                            type="text"
-                            placeholder="Designation (Full Name)"
-                            value={fullName}
-                            onChange={(e) => setFullName(e.target.value)}
-                            icon={<UserCircleIcon />}
-                        />
-                        <InputField
-                            id="email"
-                            type="email"
-                            placeholder="Commlink (Email Address)"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            icon={<MailIcon />}
-                        />
-                        <InputField
-                            id="password"
-                            type="password"
-                            placeholder="Passcode Security"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            icon={<KeyIcon />}
-                        />
+                        {!pendingVerification ? (
+                            <>
+                                <InputField
+                                    id="fullName"
+                                    type="text"
+                                    placeholder="Designation (Full Name)"
+                                    value={fullName}
+                                    onChange={(e) => setFullName(e.target.value)}
+                                    icon={<UserCircleIcon />}
+                                />
+                                <InputField
+                                    id="email"
+                                    type="email"
+                                    placeholder="Commlink (Email Address)"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    icon={<MailIcon />}
+                                />
+                                <InputField
+                                    id="password"
+                                    type="password"
+                                    placeholder="Passcode Security"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    icon={<KeyIcon />}
+                                />
+                            </>
+                        ) : (
+                            <div className="space-y-3">
+                                <p className="text-xs text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-3">
+                                    Account created! Enter the 6-digit verification code sent to <strong>{email}</strong> to verify and enter.
+                                </p>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={6}
+                                    value={verificationCode}
+                                    onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                                    required
+                                    autoFocus
+                                    className="w-full bg-[#0D1117] border border-cyan-500/40 rounded-xl py-2.5 px-4 text-center font-mono tracking-[0.4em] text-sm text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500 outline-none"
+                                    placeholder="6-DIGIT OTP"
+                                />
+                                <div className="flex justify-between items-center text-xs">
+                                    <button
+                                        type="button"
+                                        onClick={() => resendVerificationCode(email)}
+                                        className="text-cyan-400 hover:text-cyan-300 underline"
+                                    >
+                                        Resend Code
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={onSwitchToLogin || onClose}
+                                        className="text-slate-400 hover:text-white"
+                                    >
+                                        Go to Login
+                                    </button>
+                                </div>
+                            </div>
+                        )}
 
                         <div className="pt-1">
                             <button 
@@ -219,7 +275,7 @@ const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister, 
                                         </svg>
                                         Establishing Uplink...
                                     </span>
-                                ) : 'Initialize Access Sequence'}
+                                ) : (pendingVerification ? 'Verify Email & Enter' : 'Initialize Access Sequence')}
                             </button>
                         </div>
                     </form>

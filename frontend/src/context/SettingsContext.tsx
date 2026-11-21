@@ -21,6 +21,11 @@ export interface UserProfile {
     username: string;
     timezone: string;
     currency: string;
+    is_pro?: boolean;
+    plan_tier?: string;
+    is_superuser?: boolean;
+    is_email_verified?: boolean;
+    is_2fa_enabled?: boolean;
     allowed_ips?: string[];
     is_ip_whitelist_enabled?: boolean;
     avatar_url?: string;
@@ -82,12 +87,19 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
             }
 
             if (userData) {
+                const twoFaActive = Boolean(userData.is_2fa_enabled);
+                set2faEnabled(twoFaActive);
                 setUserProfile({
                     fullName: userData.full_name || 'Trader',
                     email: userData.email,
                     username: userData.email.split('@')[0],
                     timezone: 'UTC',
                     currency: 'USD',
+                    is_pro: Boolean(userData.is_pro),
+                    plan_tier: userData.plan_tier || (userData.is_pro ? 'pro' : 'free'),
+                    is_superuser: Boolean(userData.is_superuser),
+                    is_email_verified: Boolean(userData.is_email_verified),
+                    is_2fa_enabled: twoFaActive,
                     allowed_ips: userData.allowed_ips || [],
                     is_ip_whitelist_enabled: userData.is_ip_whitelist_enabled || false,
                     avatar_url: userData.avatar_url
@@ -101,6 +113,33 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     useEffect(() => {
         loadUserData();
+
+        const handleRefresh = () => {
+            void loadUserData();
+        };
+        const handleReset = () => {
+            setApiKeys([]);
+            set2faEnabled(false);
+            setUserProfile({
+                fullName: 'Loading...',
+                email: '...',
+                username: '...',
+                timezone: 'UTC',
+                currency: 'USD',
+                is_pro: false,
+                plan_tier: 'free',
+                is_superuser: false,
+                is_email_verified: false,
+                is_2fa_enabled: false,
+            });
+        };
+
+        window.addEventListener('app:settings-refresh', handleRefresh);
+        window.addEventListener('app:settings-reset', handleReset);
+        return () => {
+            window.removeEventListener('app:settings-refresh', handleRefresh);
+            window.removeEventListener('app:settings-reset', handleReset);
+        };
     }, [loadUserData]);
 
     const saveApiKeyToBackend = async (data: { exchange: string; name: string; apiKey: string; secretKey: string; passphrase?: string }) => {
@@ -124,7 +163,8 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         } catch (error: any) {
             console.error(error);
-            showToast('Failed to save API keys.', 'error');
+            const detail = error?.response?.data?.message || error?.response?.data?.detail || 'Failed to save API keys.';
+            showToast(detail, 'error');
         } finally {
             setIsLoading(false);
         }

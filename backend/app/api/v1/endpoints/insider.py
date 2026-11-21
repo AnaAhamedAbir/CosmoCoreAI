@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Any
+from app import models
 from app.api import deps
 from app.services import insider_service
 from app.schemas.insider import InsiderFilingCreate, InsiderFiling
@@ -10,7 +11,7 @@ router = APIRouter()
 @router.get("/", response_model=List[Any])
 def read_filings(
     db: Session = Depends(deps.get_db),
-    # current_user: models.User = Depends(deps.get_current_active_user) # যদি ইউজার অথেন্টিকেশন চাও
+    current_user: models.User = Depends(deps.get_current_user),
 ):
     """
     Get all insider filings (Live + Manual)
@@ -23,6 +24,7 @@ def create_filing(
     *,
     db: Session = Depends(deps.get_db),
     filing_in: InsiderFilingCreate,
+    current_user: models.User = Depends(deps.get_current_active_superuser),
 ):
     """
     Create a manual insider filing record

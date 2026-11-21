@@ -315,7 +315,14 @@ async def edit_order(
         
         from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
         if order_id in ACTIVE_SMART_CHASES:
-            _update_smart_chase_target(ACTIVE_SMART_CHASES[order_id], request.new_price, request.side)
+            chase_meta = ACTIVE_SMART_CHASES[order_id]
+            chase_uid = chase_meta.get('user_id')
+            chase_api = chase_meta.get('api_key_id')
+            if (chase_uid is not None and int(chase_uid) != int(current_user.id)) or (
+                chase_api is not None and int(chase_api) != int(api_key_id)
+            ):
+                raise HTTPException(status_code=403, detail="Not authorized to modify this Smart Chase order")
+            _update_smart_chase_target(chase_meta, request.new_price, request.side)
             try:
                 from app.services.manual_trade_persistence import schedule_update_monitor
                 schedule_update_monitor(
@@ -417,7 +424,14 @@ async def update_software_bracket_endpoint(
         
         from app.services.manual_smart_chase_executor import ACTIVE_SMART_CHASES
         if sl_id in ACTIVE_SMART_CHASES:
-            _update_smart_chase_target(ACTIVE_SMART_CHASES[sl_id], req.new_price, req.side)
+            chase_meta = ACTIVE_SMART_CHASES[sl_id]
+            chase_uid = chase_meta.get('user_id')
+            chase_api = chase_meta.get('api_key_id')
+            if (chase_uid is not None and int(chase_uid) != int(current_user.id)) or (
+                chase_api is not None and int(chase_api) != int(api_key_id)
+            ):
+                raise HTTPException(status_code=403, detail="Not authorized to modify this Smart Chase bracket")
+            _update_smart_chase_target(chase_meta, req.new_price, req.side)
             try:
                 from app.services.manual_trade_persistence import schedule_update_monitor
                 schedule_update_monitor(

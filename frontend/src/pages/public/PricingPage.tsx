@@ -64,7 +64,7 @@ const FAQS = [
     { q: "What exchanges do you support?", a: "We currently support Binance, Coinbase, Kraken, and KuCoin. More integrations are added monthly." },
 ];
 
-const PricingPage: React.FC = () => {
+const PricingPage: React.FC<{ onSelectPlan?: () => void }> = ({ onSelectPlan }) => {
     const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
     const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
@@ -145,12 +145,20 @@ const PricingPage: React.FC = () => {
                             </div>
 
                             {tier.isFeatured ? (
-                                <button className="w-full py-4 rounded-xl font-bold bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all hover:scale-[1.02] mb-10 relative overflow-hidden group/btn">
+                                <button
+                                    type="button"
+                                    onClick={onSelectPlan}
+                                    className="w-full py-4 rounded-xl font-bold bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all hover:scale-[1.02] mb-10 relative overflow-hidden group/btn"
+                                >
                                     <span className="absolute inset-0 bg-white/10 opacity-0 group-hover/btn:opacity-100 transition-opacity" />
                                     {tier.cta}
                                 </button>
                             ) : (
-                                <button className="w-full py-4 rounded-xl font-bold bg-[#0D1117] border border-white/10 text-white hover:bg-white/5 hover:border-cyan-500/30 transition-all mb-10 shadow-[0_0_15px_rgba(0,0,0,0.5)] text-sm">
+                                <button
+                                    type="button"
+                                    onClick={tier.name === 'Enterprise' ? () => { window.location.href = 'mailto:support@cosmoquant.ai?subject=Enterprise%20Plan%20Inquiry'; } : onSelectPlan}
+                                    className="w-full py-4 rounded-xl font-bold bg-[#0D1117] border border-white/10 text-white hover:bg-white/5 hover:border-cyan-500/30 transition-all mb-10 shadow-[0_0_15px_rgba(0,0,0,0.5)] text-sm"
+                                >
                                     {tier.cta}
                                 </button>
                             )}

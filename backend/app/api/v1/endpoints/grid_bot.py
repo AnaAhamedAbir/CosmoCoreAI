@@ -26,7 +26,7 @@ _local_bot_instances: Dict[int, Any] = {}
 def get_real_api_credentials_by_id(db: Session, user_id: int, api_key_id: int):
     api_key_entry = db.query(models.ApiKey).filter(
         models.ApiKey.id == api_key_id,
-        models.ApiKey.owner_id == user_id
+        models.ApiKey.user_id == user_id
     ).first()
     
     if not api_key_entry:
@@ -168,6 +168,9 @@ async def start_grid_bot(
         bot = db.query(GridBot).filter(GridBot.id == bot_id, GridBot.user_id == current_user.id).first()
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
+
+        from app.core.quotas import check_bot_quota
+        check_bot_quota(db, current_user)
         
         # 2. Key Permission Check
         if not bot.is_paper_trading:
@@ -398,30 +401,17 @@ async def websocket_grid_logs(
     token: str = Query(None),
     db: Session = Depends(deps.get_db)
 ):
-    await websocket.accept()
-    
-    user_id = None
-    if token:
-        from app.core import security
-        from app import crud
-        payload = security.verify_token(token)
-        if payload:
-            email = payload.get("sub")
-            if email:
-                user = crud.get_user_by_email(db, email=email)
-                if user:
-                    user_id = user.id
-    
-    if not user_id:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+    from app.core.ws_auth import authenticate_websocket, verify_bot_ownership
+    user = await authenticate_websocket(websocket, db, query_token=token)
+    if not user:
         return
 
-    # Helper: Check ownership
-    bot = db.query(GridBot).filter(GridBot.id == bot_id, GridBot.user_id == user_id).first()
+    bot = verify_bot_ownership(db, bot_id, user, GridBot, owner_field="user_id")
     if not bot:
-        await websocket.send_text("Bot not found or access denied")
-        await websocket.close()
+        await websocket.close(code=4003, reason="Bot not found or access denied")
         return
+
+    await websocket.accept()
 
     # redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     redis = redis_manager.get_redis() # ✅ Shared

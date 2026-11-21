@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-
-// WebSocket URL Configuration
-// Adjust the port if necessary. In production this should be environment driven.
-const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const WS_URL = `${wsProtocol}//${window.location.host}/ws/backtest`;
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 interface SocketMessage {
     type: 'BACKTEST' | 'DOWNLOAD' | 'OPTIMIZE' | 'BATCH' | 'Task';
@@ -22,7 +18,7 @@ export const useBacktestSocket = () => {
     const isUnmountedRef = useRef(false);
 
     // Connection Logic
-    const connect = useCallback(() => {
+    const connect = useCallback(async () => {
         if (isUnmountedRef.current) return;
         // Prevent multiple connections
         if (
@@ -33,8 +29,11 @@ export const useBacktestSocket = () => {
             return;
         }
 
+        const wsUrl = await buildAuthenticatedWsUrl('/ws/backtest');
+        if (!wsUrl || isUnmountedRef.current) return;
+
         console.log("🔌 Connecting to Backtest WebSocket...");
-        const ws = new WebSocket(WS_URL);
+        const ws = new WebSocket(wsUrl);
         socketRef.current = ws;
 
         ws.onopen = () => {

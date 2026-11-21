@@ -13,7 +13,10 @@ class AIServiceProxy:
         return getattr(ai_service, name)
 
 ai_service = AIServiceProxy()
+from app import models
 from app.api import deps
+from app.core.config import settings
+from app.core.network import get_real_client_ip
 from app.services.market_service import MarketService
 from app.services.sentiment_service import sentiment_service
 from app.services.websocket_manager import manager
@@ -103,7 +106,12 @@ async def get_sentiment_analysis(symbol: str = "BTC/USDT", enable_ner: bool = Fa
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/summary")
-async def generate_sentiment_summary(request: SummaryRequest):
+async def generate_sentiment_summary(
+    request: SummaryRequest,
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    from app.core.quotas import check_and_increment_ai_quota
+    check_and_increment_ai_quota(current_user)
     try:
         summary = await ai_service.generate_market_sentiment_summary(
             headlines=request.headlines,
@@ -115,7 +123,12 @@ async def generate_sentiment_summary(request: SummaryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/verify-news")
-async def verify_news_credibility(request: VerifyNewsRequest):
+async def verify_news_credibility(
+    request: VerifyNewsRequest,
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    from app.core.quotas import check_and_increment_ai_quota
+    check_and_increment_ai_quota(current_user)
     try:
         result = await ai_service.analyze_news_credibility(news_content=request.content)
         return result
@@ -245,10 +258,15 @@ async def get_macro_economics():
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/macro-summary")
-async def generate_macro_summary(request: MacroSummaryRequest):
+async def generate_macro_summary(
+    request: MacroSummaryRequest,
+    current_user: models.User = Depends(deps.get_current_user),
+):
     """
     Generate an AI-powered overview of macro-economic data.
     """
+    from app.core.quotas import check_and_increment_ai_quota
+    check_and_increment_ai_quota(current_user)
     try:
         summary = await ai_service.generate_macro_overview(macro_data=request.data, language=request.language)
         return {"summary": summary}
@@ -257,10 +275,15 @@ async def generate_macro_summary(request: MacroSummaryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/comprehensive-report")
-async def generate_comprehensive_report_endpoint(request: ComprehensiveReportRequest):
+async def generate_comprehensive_report_endpoint(
+    request: ComprehensiveReportRequest,
+    current_user: models.User = Depends(deps.get_current_user),
+):
     """
     Generate a comprehensive 5-point market narrative report using AI.
     """
+    from app.core.quotas import check_and_increment_ai_quota
+    check_and_increment_ai_quota(current_user)
     try:
         report = await ai_service.generate_comprehensive_report(
             headlines=request.headlines,
@@ -385,13 +408,15 @@ async def websocket_sentiment(websocket: WebSocket, symbol: str):
 
 # --- Helper Function ---
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0]
-    return request.client.host
+    return get_real_client_ip(request, trust_proxy_headers=settings.TRUST_PROXY_HEADERS)
 
 @router.post("/poll", status_code=status.HTTP_201_CREATED)
-async def submit_sentiment_poll(request: Request, poll: SentimentPollCreate, db: Session = Depends(deps.get_db)):
+async def submit_sentiment_poll(
+    request: Request,
+    poll: SentimentPollCreate,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
     """
     Submit a user's sentiment vote.
     """
@@ -399,7 +424,7 @@ async def submit_sentiment_poll(request: Request, poll: SentimentPollCreate, db:
         ip_address = get_client_ip(request)
         return await sentiment_service.cast_vote(
             db=db,
-            user_id=poll.user_id,
+            user_id=current_user.id,
             ip_address=ip_address,
             symbol=poll.symbol,
             vote_type=poll.vote_type

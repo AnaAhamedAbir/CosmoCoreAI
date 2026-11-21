@@ -8,6 +8,7 @@ import OrderBookWidget from '@/components/features/simulation/OrderBookWidget';
 import LogConsole, { LogMessage } from '@/components/features/simulation/LogConsole';
 import { CandlestickData, Time, SeriesMarker } from 'lightweight-charts';
 import { useMarketStore } from '@/store/marketStore';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 const EventDrivenSimulator: React.FC = () => {
     const [isRunning, setIsRunning] = useState(false);
@@ -42,12 +43,13 @@ const EventDrivenSimulator: React.FC = () => {
     const socketRef = useRef<WebSocket | null>(null);
 
     // WebSocket Connection Logic
-    const connect = useCallback(() => {
+    const connect = useCallback(async () => {
         if (socketRef.current?.readyState === WebSocket.OPEN) return;
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsParams = isRunning ? `?symbol=${symbol}` : "";
-        const ws = new WebSocket(`${protocol}//${window.location.host}/api/v1/simulation/ws/simulation${wsParams}`);
+        const wsUrl = await buildAuthenticatedWsUrl(`/api/v1/simulation/ws/simulation${wsParams}`);
+        if (!wsUrl) return;
+        const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
             addLog("System: Connected to Simulation Server", 'INFO');

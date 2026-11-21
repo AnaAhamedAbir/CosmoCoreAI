@@ -10,6 +10,7 @@ import MarketStatusWidget from '@/components/features/market/MarketStatusWidget'
 import EconomicCalendarWidget from '@/components/features/market/EconomicCalendarWidget';
 import { useMarketStore } from '@/store/marketStore';
 import { isThermalGuardActive } from '@/utils/deviceProfile';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 // Icons for the dashboard
 const TrendingUpIcon = ({ className }: { className?: string }) => (
@@ -195,36 +196,37 @@ const Dashboard: React.FC = () => {
 
     // Websocket Connection
     useEffect(() => {
-        const token = sessionStorage.getItem('accessToken') || localStorage.getItem('accessToken');
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = token
-            ? `${protocol}//${window.location.host}/api/v1/dashboard/ws?token=${token}`
-            : null;
+        let cancelled = false;
+        let ws: WebSocket | null = null;
 
-        if (!wsUrl) return; // No token = no WS
+        (async () => {
+            const wsUrl = await buildAuthenticatedWsUrl('/api/v1/dashboard/ws');
+            if (!wsUrl || cancelled) return;
 
-        const ws = new WebSocket(wsUrl);
+            ws = new WebSocket(wsUrl);
 
-        ws.onopen = () => {
-            console.log('Connected to Dashboard WS');
-        };
+            ws.onopen = () => {
+                console.log('Connected to Dashboard WS');
+            };
 
-        ws.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-                if (message.type === 'DASHBOARD_UPDATE' && message.data) {
-                    setDashboardData(prev => prev ? {
-                        ...prev,
-                        ...message.data
-                    } : null);
+            ws.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    if (message.type === 'DASHBOARD_UPDATE' && message.data) {
+                        setDashboardData(prev => prev ? {
+                            ...prev,
+                            ...message.data
+                        } : null);
+                    }
+                } catch (err) {
+                    console.error("WS Message Error", err);
                 }
-            } catch (err) {
-                console.error("WS Message Error", err);
-            }
-        };
+            };
+        })();
 
         return () => {
-            if (ws.readyState === WebSocket.OPEN) {
+            cancelled = true;
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
                 ws.close();
             }
         };

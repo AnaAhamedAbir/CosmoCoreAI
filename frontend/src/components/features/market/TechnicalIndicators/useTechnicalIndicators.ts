@@ -37,7 +37,7 @@ export const useTechnicalIndicators = (symbol: string, isModalOpen: boolean) => 
     let reconnectTimer: NodeJS.Timeout;
 
     const connect = () => {
-      const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
+      const host = window.location.host;
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const formattedSymbol = symbol.replace('/', '-');
       const wsUrl = `${protocol}//${host}/api/v1/indicators/ws/stream/${formattedSymbol}`;

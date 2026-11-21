@@ -1,12 +1,23 @@
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from typing import Optional
+from app.core.ws_auth import authenticate_websocket
+from app.db.session import SessionLocal
 from app.services.event_driven.engine import EventDrivenEngine
 import asyncio
 
 router = APIRouter()
 
 @router.websocket("/ws/simulation")
-async def websocket_simulation(websocket: WebSocket):
+async def websocket_simulation(websocket: WebSocket, token: Optional[str] = Query(None)):
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db, query_token=token)
+        if not user:
+            return
+    finally:
+        db.close()
+
     await websocket.accept()
     
     engine = None

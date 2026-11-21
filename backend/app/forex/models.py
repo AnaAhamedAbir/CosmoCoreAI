@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, JSON, ForeignKey
 from sqlalchemy.sql import func
 from app.db.base_class import Base
 
@@ -6,6 +6,7 @@ class ForexBot(Base):
     __tablename__ = "forex_bots"
     
     id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     name = Column(String, index=True)
     pair = Column(String, index=True) # e.g., 'EUR/USD'
     strategy = Column(String) # e.g., 'LondonScalper'

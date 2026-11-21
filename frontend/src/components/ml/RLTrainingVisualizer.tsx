@@ -5,6 +5,7 @@ import { BrainCircuit, X, Activity, DollarSign, Target, GitCommit } from 'lucide
 import { createChart, IChartApi, ISeriesApi, LineSeries } from 'lightweight-charts';
 import { LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { useTheme } from '@/context/ThemeContext';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 interface RLStepData {
     step: number;
@@ -274,97 +275,104 @@ export const RLTrainingVisualizer: React.FC<RLTrainingVisualizerProps> = ({
         setTradeStats({ buy: 0, sell: 0, win: 0, loss: 0 });
         setStatus('connecting');
 
+        let cancelled = false;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const baseUrl = import.meta.env.VITE_WS_URL || `${protocol}//${window.location.host}`;
-        const wsUrl = baseUrl.endsWith('/ws') ? `${baseUrl}/backtest` : `${baseUrl}/ws/backtest`;
-        
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+        const rawWsUrl = baseUrl.endsWith('/ws') ? `${baseUrl}/backtest` : `${baseUrl}/ws/backtest`;
 
-        ws.onopen = () => {
-            console.log("Connected to task updates channel");
-            setStatus('training');
-        };
+        (async () => {
+            const wsUrl = await buildAuthenticatedWsUrl(rawWsUrl);
+            if (!wsUrl || cancelled) return;
 
-        ws.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-                if (message.type === 'RL_TRAINING_STEP' && message.task_id === jobId) {
-                    const data: RLStepData = message.payload;
-                    
-                    // Fix continuous action mapping (e.g., SAC, DDPG, TD3)
-                    const isContinuous = ['SAC-RL', 'DDPG-RL', 'TD3-RL', 'CQL'].includes(algorithm);
-                    if (isContinuous) {
-                        let actionVal = data.action;
-                        if (actionVal < -0.33) data.action = 2; // SELL
-                        else if (actionVal > 0.33) data.action = 1; // BUY
-                        else data.action = 0; // HOLD
-                    }
+            const ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
 
-                    setProgress(message.progress || 0);
-                    setLatestStep(data);
-                    
-                    if (message.features && message.features.length > 0 && features.length === 0) {
-                        setFeatures(message.features);
-                    }
-                    
-                    if (data.stats) {
-                        setTradeStats({
-                            buy: data.stats.buy_count || 0,
-                            sell: data.stats.sell_count || 0,
-                            win: data.stats.profitable_count || 0,
-                            loss: data.stats.loss_count || 0
-                        });
-                    }
-                    
-                    // Update Charts
-                    setEquityData(prev => {
-                        const next = [...prev, { step: data.step, value: data.net_worth }];
-                        if (next.length > 100) next.shift();
-                        return next;
-                    });
-                    
-                    setRewardData(prev => {
-                        const next = [...prev, { step: data.step, value: data.reward }];
-                        if (next.length > 50) next.shift();
-                        return next;
-                    });
+            ws.onopen = () => {
+                console.log("Connected to task updates channel");
+                setStatus('training');
+            };
 
-                    // Update Price Chart
-                    if (lineSeriesRef.current && data.price) {
-                        lastTimeRef.current += 60;
-                        lineSeriesRef.current.update({ time: lastTimeRef.current as any, value: data.price });
-                    }
+            ws.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    if (message.type === 'RL_TRAINING_STEP' && message.task_id === jobId) {
+                        const data: RLStepData = message.payload;
+                        
+                        // Fix continuous action mapping (e.g., SAC, DDPG, TD3)
+                        const isContinuous = ['SAC-RL', 'DDPG-RL', 'TD3-RL', 'CQL'].includes(algorithm);
+                        if (isContinuous) {
+                            let actionVal = data.action;
+                            if (actionVal < -0.33) data.action = 2; // SELL
+                            else if (actionVal > 0.33) data.action = 1; // BUY
+                            else data.action = 0; // HOLD
+                        }
 
-                    // Log actions
-                    if (data.action !== 0) {
-                        setTradeLog(prev => {
-                            const t = { step: data.step, action: data.action, price: data.price, pnl: 0 };
-                            const next = [t, ...prev];
-                            if (next.length > 20) next.pop();
+                        setProgress(message.progress || 0);
+                        setLatestStep(data);
+                        
+                        if (message.features && message.features.length > 0 && features.length === 0) {
+                            setFeatures(message.features);
+                        }
+                        
+                        if (data.stats) {
+                            setTradeStats({
+                                buy: data.stats.buy_count || 0,
+                                sell: data.stats.sell_count || 0,
+                                win: data.stats.profitable_count || 0,
+                                loss: data.stats.loss_count || 0
+                            });
+                        }
+                        
+                        // Update Charts
+                        setEquityData(prev => {
+                            const next = [...prev, { step: data.step, value: data.net_worth }];
+                            if (next.length > 100) next.shift();
                             return next;
                         });
-                    }
+                        
+                        setRewardData(prev => {
+                            const next = [...prev, { step: data.step, value: data.reward }];
+                            if (next.length > 50) next.shift();
+                            return next;
+                        });
 
-                    if (message.status === 'completed') {
-                        setStatus('completed');
-                        setProgress(100);
-                    } else if (message.status === 'failed') {
-                        setStatus('failed');
+                        // Update Price Chart
+                        if (lineSeriesRef.current && data.price) {
+                            lastTimeRef.current += 60;
+                            lineSeriesRef.current.update({ time: lastTimeRef.current as any, value: data.price });
+                        }
+
+                        // Log actions
+                        if (data.action !== 0) {
+                            setTradeLog(prev => {
+                                const t = { step: data.step, action: data.action, price: data.price, pnl: 0 };
+                                const next = [t, ...prev];
+                                if (next.length > 20) next.pop();
+                                return next;
+                            });
+                        }
+
+                        if (message.status === 'completed') {
+                            setStatus('completed');
+                            setProgress(100);
+                        } else if (message.status === 'failed') {
+                            setStatus('failed');
+                        }
                     }
+                } catch (err) {
+                    console.error("Failed to parse RL step message", err);
                 }
-            } catch (err) {
-                console.error("Failed to parse RL step message", err);
-            }
-        };
+            };
 
-        ws.onclose = () => {
-            if (status === 'training') setStatus('completed');
-        };
+            ws.onclose = () => {
+                if (status === 'training') setStatus('completed');
+            };
+        })();
 
         return () => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.close();
+            cancelled = true;
+            if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+                wsRef.current.close();
             }
         };
     }, [isOpen, jobId]);

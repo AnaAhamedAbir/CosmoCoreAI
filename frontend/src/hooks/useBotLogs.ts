@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 export interface BotLog {
     time: string;
@@ -23,13 +24,11 @@ export const useBotLogs = (botId: number | null) => {
         }
 
         let isSubscribed = true;
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        // The endpoint defined in bots.py for historical + live logs
-        const wsUrl = `${protocol}//${host}/api/v1/bots/${botId}/ws/logs`;
 
-        const connect = () => {
+        const connect = async () => {
             try {
+                const wsUrl = await buildAuthenticatedWsUrl(`/api/v1/bots/${botId}/ws/logs`);
+                if (!wsUrl || !isSubscribed) return;
                 const ws = new WebSocket(wsUrl);
                 wsRef.current = ws;
 

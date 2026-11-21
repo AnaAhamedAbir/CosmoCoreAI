@@ -1,51 +1,50 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from fastapi.security import OAuth2PasswordBearer
 from celery.result import AsyncResult
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
+import pandas as pd
 from app import models, schemas
 from app.api import deps
+from app.core.storage_isolation import sanitize_filename, ensure_within_directory
+from app.core.task_ownership import register_task_owner, verify_task_access
+from app.core.quotas import check_and_increment_backtest_quota
+from app.core.rate_limiter import rate_limit_by_ip
 from app.tasks import run_backtest_task, run_optimization_task, download_candles_task, download_trades_task, run_batch_backtest_task, run_walk_forward_task, publish_task_status
 from app.celery_app import celery_app
 from app import utils
 
 router = APIRouter()
 
-_oauth2_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
-
-
-def get_optional_user_id(
-    db: Session = Depends(deps.get_db),
-    token: Optional[str] = Depends(_oauth2_optional),
-) -> Optional[int]:
-    """Resolve authenticated user_id if a valid Bearer token is present, otherwise return None."""
-    if not token:
-        return None
-    try:
-        from app.core import security
-        from app import crud
-
-        payload = security.verify_token(token)
-        email = payload.get("sub") if payload else None
-        if not email:
-            return None
-        user = crud.get_user_by_email(db, email=email)
-        return user.id if user else None
-    except Exception:
-        return None
-
-
 REPORTS_DIR = "app/reports"
 DATA_FEED_DIR = "app/data_feeds"
 
-@router.post("/run")
+
+def _assert_task_owner(task_id: str, current_user: models.User) -> None:
+    if not verify_task_access(task_id, current_user.id, bool(current_user.is_superuser)):
+        raise HTTPException(status_code=403, detail="Not authorized to access this task")
+
+
+def _safe_custom_data_file(custom_data_file: Optional[str]) -> Optional[str]:
+    if not custom_data_file:
+        return None
+    try:
+        return sanitize_filename(custom_data_file)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post(
+    "/run",
+    dependencies=[Depends(rate_limit_by_ip("backtest_run", max_requests=20, window_seconds=60))],
+)
 def run_backtest(
     request: schemas.BacktestRequest,
-    user_id: Optional[int] = Depends(get_optional_user_id),
+    current_user: models.User = Depends(deps.get_current_user),
 ):
-    uid = user_id if isinstance(user_id, int) else None
+    check_and_increment_backtest_quota(current_user)
+    safe_data_file = _safe_custom_data_file(request.custom_data_file)
     task = run_backtest_task.apply_async(kwargs=dict(
         symbol=request.symbol,
         timeframe=request.timeframe,
@@ -54,7 +53,7 @@ def run_backtest(
         params=request.params,
         start_date=request.start_date,
         end_date=request.end_date,
-        custom_data_file=request.custom_data_file,
+        custom_data_file=safe_data_file,
         commission=request.commission,
         slippage=request.slippage,
         leverage=request.leverage, # ✅ Pass Leverage
@@ -63,17 +62,18 @@ def run_backtest(
         take_profit=request.take_profit,
         trailing_stop=request.trailing_stop,
         indicator_id=request.indicator_id, # ✅ Pass Indicator ID
-        user_id=uid,
+        user_id=current_user.id,
     ), queue="heavy")
+    register_task_owner(task.id, current_user.id)
     return {"task_id": task.id, "status": "Processing"}
 
 
 @router.post("/walk-forward")
 def run_walk_forward(
     request: schemas.WalkForwardRequest,
-    user_id: Optional[int] = Depends(get_optional_user_id),
+    current_user: models.User = Depends(deps.get_current_user),
 ):
-    uid = user_id if isinstance(user_id, int) else None
+    check_and_increment_backtest_quota(current_user)
     # প্যারামিটার ডিকশনারিতে কনভার্ট করা
     params_dict = {}
     for k, v in request.params.items():
@@ -98,17 +98,19 @@ def run_walk_forward(
         leverage=request.leverage,
         opt_target=getattr(request, 'opt_target', 'profit'), # ✅ Pass
         min_trades=getattr(request, 'min_trades', 2),  # ✅ ফিক্স: ডিফল্ট ৫ থেকে কমিয়ে ২ করা হলো
-        user_id=uid,
+        user_id=current_user.id,
     ), queue="heavy")
+    register_task_owner(task.id, current_user.id)
     
     return {"task_id": task.id, "status": "Processing WFA"}
 
 @router.post("/batch")
 def run_batch_backtest(
     request: schemas.BatchBacktestRequest,
-    user_id: Optional[int] = Depends(get_optional_user_id),
+    current_user: models.User = Depends(deps.get_current_user),
 ):
-    uid = user_id if isinstance(user_id, int) else None
+    check_and_increment_backtest_quota(current_user)
+    safe_data_file = _safe_custom_data_file(getattr(request, 'custom_data_file', None))
     task = run_batch_backtest_task.apply_async(kwargs=dict(
         symbol=request.symbol,
         timeframe=request.timeframe,
@@ -121,24 +123,29 @@ def run_batch_backtest(
         end_date=request.end_date,
         
         # ✅ File support (custom_data_file)
-        custom_data_file=getattr(request, 'custom_data_file', None),
+        custom_data_file=safe_data_file,
         
         commission=request.commission,
         slippage=request.slippage,
-        user_id=uid,
+        user_id=current_user.id,
     ), queue="heavy")
+    register_task_owner(task.id, current_user.id)
     return {"task_id": task.id, "status": "Processing"}
 
 # Keeping the redundant synchronous-looking endpoint name from main.py if needed, but mapped to batch task
 @router.post("/batch-run")
 def run_batch_backtest_alias(
     request: schemas.BatchBacktestRequest,
-    user_id: Optional[int] = Depends(get_optional_user_id),
+    current_user: models.User = Depends(deps.get_current_user),
 ):
-    return run_batch_backtest(request, user_id=user_id)
+    return run_batch_backtest(request, current_user=current_user)
 
 @router.get("/status/{task_id}")
-def get_backtest_status(task_id: str):
+def get_backtest_status(
+    task_id: str,
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    _assert_task_owner(task_id, current_user)
     task_result = AsyncResult(task_id)
     
     if task_result.state == 'PENDING':
@@ -165,9 +172,9 @@ def get_backtest_status(task_id: str):
 @router.post("/optimize")
 def run_optimization(
     request: schemas.OptimizationRequest,
-    user_id: Optional[int] = Depends(get_optional_user_id),
+    current_user: models.User = Depends(deps.get_current_user),
 ):
-    uid = user_id if isinstance(user_id, int) else None
+    check_and_increment_backtest_quota(current_user)
     params_dict = {}
     for k, v in request.params.items():
         params_dict[k] = v.model_dump() if hasattr(v, 'model_dump') else v
@@ -186,13 +193,18 @@ def run_optimization(
         commission=request.commission,
         slippage=request.slippage,
         leverage=request.leverage, # ✅ Pass Leverage
-        user_id=uid,
+        user_id=current_user.id,
     ), queue="heavy")
+    register_task_owner(task.id, current_user.id)
     
     return {"task_id": task.id, "status": "Processing"}
 
 @router.post("/revoke/{task_id}")
-def revoke_task(task_id: str):
+def revoke_task(
+    task_id: str,
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    _assert_task_owner(task_id, current_user)
     # ১. টাস্ক টার্মিনেট করা
     celery_app.control.revoke(task_id, terminate=True)
     
@@ -203,10 +215,10 @@ def revoke_task(task_id: str):
 
         # ✅ ৩. ফিক্স: সকেটে ফোর্সফুলি 'REVOKED' মেসেজ পাঠানো
         # যেহেতু ওয়ার্কার মরে গেছে, তাই এখান থেকেই ফ্রন্টএন্ডকে জানাতে হবে।
-        publish_task_status('BATCH', task_id, 'REVOKED', 0, {"status": "Stopped by User"})
+        publish_task_status('BATCH', task_id, 'REVOKED', 0, {"status": "Stopped by User"}, user_id=current_user.id)
         
         # অপটিমাইজেশন বা অন্য টাস্কের জন্যও জেনেরিক মেসেজ পাঠাতে পারেন
-        publish_task_status('Task', task_id, 'REVOKED', 0, {"status": "Stopped by User"})
+        publish_task_status('Task', task_id, 'REVOKED', 0, {"status": "Stopped by User"}, user_id=current_user.id)
 
     except Exception as e:
         print(f"⚠️ Redis/Publish Error in revoke: {e}")
@@ -215,7 +227,10 @@ def revoke_task(task_id: str):
 
 # Data Download endpoints - logic moved here
 @router.post("/download/candles")
-def start_candle_download(request: schemas.DownloadRequest):
+def start_candle_download(
+    request: schemas.DownloadRequest,
+    current_user: models.User = Depends(deps.get_current_user),
+):
     task = download_candles_task.delay(
         exchange_id=request.exchange,
         symbol=request.symbol,
@@ -223,20 +238,29 @@ def start_candle_download(request: schemas.DownloadRequest):
         start_date=request.start_date,
         end_date=request.end_date 
     )
+    register_task_owner(task.id, current_user.id)
     return {"task_id": task.id, "status": "Started"}
 
 @router.post("/download/trades")
-def start_trade_download(request: schemas.DownloadRequest):
+def start_trade_download(
+    request: schemas.DownloadRequest,
+    current_user: models.User = Depends(deps.get_current_user),
+):
     task = download_trades_task.delay(
         exchange_id=request.exchange,
         symbol=request.symbol,
         start_date=request.start_date,
         end_date=request.end_date
     )
+    register_task_owner(task.id, current_user.id)
     return {"task_id": task.id, "status": "Started"}
 
 @router.get("/download/status/{task_id}")
-def get_download_status(task_id: str):
+def get_download_status(
+    task_id: str,
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    _assert_task_owner(task_id, current_user)
     task_result = AsyncResult(task_id)
     
     if task_result.state == 'PENDING':
@@ -265,7 +289,7 @@ def get_download_status(task_id: str):
     return {"status": task_result.state}
 
 @router.get("/trade-files")
-def list_trade_files():
+def list_trade_files(current_user: models.User = Depends(deps.get_current_user)):
     target_dir = DATA_FEED_DIR
     if not os.path.exists(target_dir):
         return []
@@ -273,24 +297,30 @@ def list_trade_files():
     return files
 
 @router.delete("/trade-files/{filename}")
-def delete_trade_file(filename: str):
-    target_dir = DATA_FEED_DIR
-    file_path = os.path.join(target_dir, filename)
-    
-    if not filename.endswith(".csv") or "/" in filename or "\\" in filename:
+def delete_trade_file(
+    filename: str,
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
+    try:
+        safe_name = sanitize_filename(filename, allowed_extensions=(".csv",))
+        file_path = ensure_within_directory(DATA_FEED_DIR, os.path.join(DATA_FEED_DIR, safe_name))
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid filename")
         
     if os.path.exists(file_path):
         try:
             os.remove(file_path)
-            return {"success": True, "message": f"File {filename} deleted successfully"}
+            return {"success": True, "message": f"File {safe_name} deleted successfully"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     else:
         raise HTTPException(status_code=404, detail="File not found")
 
 @router.post("/convert-data")
-async def run_data_conversion(request: schemas.ConversionRequest):
+async def run_data_conversion(
+    request: schemas.ConversionRequest,
+    current_user: models.User = Depends(deps.get_current_user),
+):
     try:
         target_dir = DATA_FEED_DIR 
         if not os.path.exists(target_dir):
@@ -301,17 +331,21 @@ async def run_data_conversion(request: schemas.ConversionRequest):
         if file_to_convert == "all":
              files = [f for f in os.listdir(target_dir) if f.startswith("trades_") and f.endswith(".csv")]
         else:
-             file_path = os.path.join(target_dir, file_to_convert)
+             try:
+                 safe_name = sanitize_filename(file_to_convert, allowed_extensions=(".csv",))
+                 file_path = ensure_within_directory(target_dir, os.path.join(target_dir, safe_name))
+             except ValueError:
+                 raise HTTPException(status_code=400, detail="Invalid filename")
              if not os.path.exists(file_path):
-                 raise HTTPException(status_code=404, detail=f"File '{file_to_convert}' not found.")
-             files = [file_to_convert]
+                 raise HTTPException(status_code=404, detail=f"File '{safe_name}' not found.")
+             files = [safe_name]
 
         converted_count = 0
         tf_map = {'1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min', '1h': '1h', '4h': '4h', '1d': '1D'}
         pandas_tf = tf_map.get(request.timeframe, '1min') 
         
         for trade_file in files:
-            file_path = os.path.join(target_dir, trade_file)
+            file_path = ensure_within_directory(target_dir, os.path.join(target_dir, trade_file))
             try:
                 df = pd.read_csv(file_path, usecols=['datetime', 'price', 'amount'])
                 df['datetime'] = pd.to_datetime(df['datetime'])
@@ -325,32 +359,52 @@ async def run_data_conversion(request: schemas.ConversionRequest):
             volume.name = 'volume' 
 
             candles = pd.concat([ohlc, volume], axis=1)
-            # Add saving logic if needed or return summary. 
-            # In main.py it was cut off in view, I'll assuming saving was intended or just printing?
-            # main.py code ended with: "candles = pd.concat([ohlc, volume], axis=1)"
-            # It should probably save it. I'll add a placeholder save or just increment count.
-            # Assuming it saves to new CSV.
             output_filename = f"candles_{request.timeframe}_{trade_file}"
-            candles.to_csv(os.path.join(target_dir, output_filename))
+            candles.to_csv(ensure_within_directory(target_dir, os.path.join(target_dir, output_filename)))
             converted_count += 1
             
         return {"success": True, "converted": converted_count, "message": "Conversion completed"}
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/report/download/{filename}")
-def download_report(filename: str):
-    file_path = os.path.join(REPORTS_DIR, filename)
-    
+def download_report(
+    filename: str,
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    try:
+        safe_name = sanitize_filename(filename, allowed_extensions=(".pdf", ".html"))
+        file_path = ensure_within_directory(REPORTS_DIR, os.path.join(REPORTS_DIR, safe_name))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid report filename")
+
+    if not current_user.is_superuser:
+        # Enforce task ownership if task_id is embedded in report_<symbol>_<tf>_<task_id>.<ext>
+        stem = os.path.splitext(safe_name)[0]
+        parts = stem.split("_")
+        if parts:
+            maybe_task_id = parts[-1]
+            if not verify_task_access(maybe_task_id, current_user.id, False):
+                raise HTTPException(status_code=403, detail="Not authorized to download this report")
+
     if os.path.exists(file_path):
-        media_type = "application/pdf" if filename.endswith(".pdf") else "text/html"
-        return FileResponse(file_path, media_type=media_type, filename=filename)
+        media_type = "application/pdf" if safe_name.endswith(".pdf") else "text/html"
+        return FileResponse(file_path, media_type=media_type, filename=safe_name)
     else:
         raise HTTPException(status_code=404, detail="Report file not found")
 
 @router.get("/download-report/{task_id}")
-def download_backtest_report(task_id: str, format: str = "pdf"):
+def download_backtest_report(
+    task_id: str,
+    format: str = "pdf",
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    _assert_task_owner(task_id, current_user)
+    if format not in ("pdf", "html"):
+        raise HTTPException(status_code=400, detail="Unsupported report format")
     # ১. টাস্ক রেজাল্ট চেক করা
     task_result = AsyncResult(task_id)
     

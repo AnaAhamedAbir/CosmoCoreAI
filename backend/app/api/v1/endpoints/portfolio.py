@@ -454,6 +454,16 @@ async def get_fee(
 
 @router.websocket("/ws/prices")
 async def portfolio_websocket_prices(websocket: WebSocket):
+    from app.core.ws_auth import authenticate_websocket
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db)
+        if not user:
+            return
+    finally:
+        db.close()
+
     await manager.connect(websocket, "portfolio_prices")
     try:
         # Start the price service if not already running

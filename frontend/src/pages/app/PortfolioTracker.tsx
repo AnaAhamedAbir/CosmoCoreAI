@@ -8,6 +8,7 @@ import { useToast } from '@/context/ToastContext';
 import { ResponsiveContainer, AreaChart, Area, Tooltip, PieChart, Pie, Cell } from 'recharts';
 import type { Asset, Exchange } from '@/types';
 import { portfolioService } from '@/services/portfolioService';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 const STABLE_COINS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'FDUSD', 'TUSD']);
 
@@ -336,40 +337,47 @@ const PortfolioTracker: React.FC = () => {
         const parsedSubs: Record<string, string[]> = JSON.parse(subscriptionKey);
         if (Object.keys(parsedSubs).length === 0) return;
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/api/v1/portfolio/ws/prices`;
+        let cancelled = false;
+        let socket: WebSocket | null = null;
 
-        const socket = new WebSocket(wsUrl);
+        (async () => {
+            const wsUrl = await buildAuthenticatedWsUrl('/api/v1/portfolio/ws/prices');
+            if (!wsUrl || cancelled) return;
 
-        socket.onopen = () => {
-            socket.send(JSON.stringify({ action: 'subscribe', exchanges: parsedSubs }));
-        };
+            socket = new WebSocket(wsUrl);
 
-        socket.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.type === 'portfolio_price_update' && data.prices) {
-                    const priceUpdates = data.prices as Record<string, { price?: number }>;
-                    const nextOverrides: Record<string, number> = {};
-                    Object.entries(priceUpdates).forEach(([pairOrSym, info]) => {
-                        if (typeof info?.price === 'number' && info.price > 0) {
-                            const baseSym = pairOrSym.includes('/') ? pairOrSym.split('/')[0] : pairOrSym;
-                            nextOverrides[baseSym] = info.price;
+            socket.onopen = () => {
+                socket?.send(JSON.stringify({ action: 'subscribe', exchanges: parsedSubs }));
+            };
+
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'portfolio_price_update' && data.prices) {
+                        const priceUpdates = data.prices as Record<string, { price?: number }>;
+                        const nextOverrides: Record<string, number> = {};
+                        Object.entries(priceUpdates).forEach(([pairOrSym, info]) => {
+                            if (typeof info?.price === 'number' && info.price > 0) {
+                                const baseSym = pairOrSym.includes('/') ? pairOrSym.split('/')[0] : pairOrSym;
+                                nextOverrides[baseSym] = info.price;
+                            }
+                        });
+                        if (Object.keys(nextOverrides).length > 0) {
+                            setLivePrices(prev => ({ ...prev, ...nextOverrides }));
                         }
-                    });
-                    if (Object.keys(nextOverrides).length > 0) {
-                        setLivePrices(prev => ({ ...prev, ...nextOverrides }));
                     }
+                } catch (err) {
+                    console.error('WS Message Parse Error:', err);
                 }
-            } catch (err) {
-                console.error('WS Message Parse Error:', err);
-            }
+            };
+
+            socket.onerror = (err) => console.error('WS Error:', err);
+        })();
+
+        return () => {
+            cancelled = true;
+            socket?.close();
         };
-
-        socket.onerror = (err) => console.error('WS Error:', err);
-
-        return () => socket.close();
     }, [subscriptionKey]);
 
     const refreshPortfolio = useCallback(async (force = true) => {

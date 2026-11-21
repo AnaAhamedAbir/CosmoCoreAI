@@ -53,6 +53,7 @@ const GridBot = React.lazy(() => import('./GridBot'));
 const LeadLagBot = React.lazy(() => import('./LeadLagBot'));
 const MarketDepthWidget = React.lazy(() => import('./MarketDepth/MarketDepthWidget'));
 const EventDrivenSimulator = React.lazy(() => import('./EventDrivenSimulator'));
+const OwnerAdminConsole = React.lazy(() => import('./OwnerAdminConsole'));
 
 const ForexDashboard = React.lazy(() => import('./forex/ForexDashboard'));
 const ForexBotLab = React.lazy(() => import('./forex/ForexBotLab'));
@@ -254,9 +255,17 @@ const Sidebar: React.FC<{
                 items: [
                     { view: AppView.EDUCATION_HUB, icon: <EducationIcon />, label: 'Academy' },
                 ]
-            }
+            },
+            ...(userProfile.is_superuser
+                ? [{
+                    title: 'Owner Command',
+                    items: [
+                        { view: AppView.OWNER_ADMIN, icon: <Shield className="w-5 h-5" />, label: 'Owner Admin' },
+                    ]
+                }]
+                : []),
         ];
-    }, [activeMarket]);
+    }, [activeMarket, userProfile.is_superuser]);
 
     return (
         <aside className={`${isCollapsed ? 'w-20' : 'w-72'} bg-[#F8FAFC] dark:bg-[#000000] border-r border-gray-200 dark:border-white/5 flex flex-col h-full max-h-full flex-shrink-0 transition-all duration-[350ms] ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width] shadow-[5px_0_20px_rgba(0,0,0,0.05)] z-30 relative group`}>
@@ -357,7 +366,13 @@ const Sidebar: React.FC<{
                                     <h3 className="font-bold text-lg text-slate-900 dark:text-white truncate">{userProfile.fullName || 'User'}</h3>
                                     <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5 mt-0.5">
                                         <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
-                                        Pro Trader Plan
+                                        {userProfile.is_superuser
+                                            ? 'Platform Owner'
+                                            : userProfile.plan_tier === 'enterprise'
+                                                ? 'Enterprise Plan'
+                                                : userProfile.plan_tier === 'pro' || userProfile.is_pro
+                                                    ? 'Pro Trader Plan'
+                                                    : 'Hobbyist (Free)'}
                                     </p>
                                 </div>
                             </div>
@@ -365,13 +380,18 @@ const Sidebar: React.FC<{
 
                         {/* Drawer Menu Items */}
                         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1">
+                            {userProfile.is_superuser && (
+                                <DropdownMenuItem icon={<Shield className="w-5 h-5 text-violet-500" />} label="Owner Admin Console" onClick={() => { navigate(getPathFromView(AppView.OWNER_ADMIN)); setIsProfileOpen(false); }} />
+                            )}
                             <DropdownMenuItem icon={<UserCircleIcon />} label="Profile Settings" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/profile'); setIsProfileOpen(false); }} />
                             <DropdownMenuItem icon={<CreditCardIcon />} label="Billing & Subscription" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }} />
                             <DropdownMenuItem icon={<Shield className="w-5 h-5" />} label="Security" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/security'); setIsProfileOpen(false); }} />
                             <DropdownMenuItem icon={<KeyIcon />} label="API Keys" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/api-keys'); setIsProfileOpen(false); }} />
                             <DropdownMenuItem icon={<Bell className="w-5 h-5" />} label="Notifications" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/notifications'); setIsProfileOpen(false); }} />
                             <DropdownMenuItem icon={<Palette className="w-5 h-5" />} label="Appearance" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/appearance'); setIsProfileOpen(false); }} />
-                            <DropdownMenuItem icon={<Database className="w-5 h-5" />} label="Data Management" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/data'); setIsProfileOpen(false); }} />
+                            {userProfile.is_superuser && (
+                                <DropdownMenuItem icon={<Database className="w-5 h-5" />} label="Data Management" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/data'); setIsProfileOpen(false); }} />
+                            )}
                         </div>
 
                         {/* Logout Footer */}
@@ -404,7 +424,13 @@ const Sidebar: React.FC<{
                         <p className="font-bold text-sm text-slate-900 dark:text-white truncate group-hover:text-brand-primary transition-colors">{userProfile.fullName}</p>
                         <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate font-medium flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-brand-warning"></span>
-                            Pro Trader Plan
+                            {userProfile.is_superuser
+                                ? 'Platform Owner'
+                                : userProfile.plan_tier === 'enterprise'
+                                    ? 'Enterprise Plan'
+                                    : userProfile.plan_tier === 'pro' || userProfile.is_pro
+                                        ? 'Pro Trader Plan'
+                                        : 'Hobbyist (Free)'}
                         </p>
                     </div>
                     {!isCollapsed && (
@@ -437,6 +463,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
     };
     const activeSettingsSection = getDynamicSection('/settings');
     const retrainModelIdParam = getDynamicSection('/model-training-studio');
+    const { userProfile } = useSettings();
 
     const [walletAddress, setWalletAddress] = useState<string | null>(null);
     const [isAssistantOpen, setIsAssistantOpen] = useState(false);
@@ -578,6 +605,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
             case AppView.TASK_MANAGER: return <TaskManager />;
             case AppView.MARKET_DEPTH: return <MarketDepthWidget />;
             case AppView.SETTINGS: return <Settings initialSection={activeSettingsSection} />;
+            case AppView.OWNER_ADMIN: return <OwnerAdminConsole />;
             
             // TradFi Routes
             case AppView.FOREX_DASHBOARD: return <ForexDashboard />;
@@ -616,10 +644,10 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                     {viewToRender}
                                 </h1>
 
-                                {/* Center — Market Switcher & System Alert Monitor Widget */}
+                                {/* Center — Market Switcher & Owner System Alert Monitor Widget */}
                                 <div className="flex items-center justify-center gap-4 laptop:gap-2 shrink-0">
                                     <MarketSwitcher />
-                                    <SystemAlertWidget />
+                                    {userProfile.is_superuser && <SystemAlertWidget />}
                                     <SystemNotificationWidget />
                                 </div>
 

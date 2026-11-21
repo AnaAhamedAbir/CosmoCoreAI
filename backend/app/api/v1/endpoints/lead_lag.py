@@ -80,6 +80,9 @@ async def start_bot(
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
 
+    from app.core.quotas import check_bot_quota
+    check_bot_quota(db, current_user)
+
     if not bot.is_paper_trading and not bot.api_key_id:
         raise HTTPException(status_code=400, detail="API Key required for real trading.")
 
@@ -128,6 +131,9 @@ async def get_logs(
     bot = get_lead_lag_bot(db=db, bot_id=bot_id, user_id=current_user.id)
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
+
+    from app.core.quotas import check_bot_quota
+    check_bot_quota(db, current_user)
         
     logs = get_trade_logs(db=db, bot_id=bot_id, skip=skip, limit=limit)
     return logs

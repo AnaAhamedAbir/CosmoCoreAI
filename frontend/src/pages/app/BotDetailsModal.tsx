@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ActiveBot } from '@/types';
 import { useTheme } from '@/context/ThemeContext';
 import { X, Play, Pause, RefreshCw, Terminal, Activity, AlertTriangle, CheckCircle, Info, Filter, Download, Trash2, Lock } from 'lucide-react';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 // --- Types for Smart Logger ---
 type LogLevel = 'INFO' | 'TRADE' | 'ERROR' | 'SYSTEM' | 'WARNING' | 'SUCCESS';
@@ -84,47 +85,55 @@ const BotDetailsModal: React.FC<BotDetailsModalProps> = ({ bot, onClose }) => {
     // WebSocket Connection
     useEffect(() => {
         if (activeTab === 'logs') {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host; // Use dynamic host
-            const wsUrl = `${protocol}//${host}/api/v1/bots/${bot.id}/ws/logs`;
+            let cancelled = false;
+            (async () => {
+                const wsUrl = await buildAuthenticatedWsUrl(`/api/v1/bots/${bot.id}/ws/logs`);
+                if (!wsUrl || cancelled) return;
 
-            const ws = new WebSocket(wsUrl);
-            wsRef.current = ws;
+                const ws = new WebSocket(wsUrl);
+                wsRef.current = ws;
 
-            ws.onopen = () => {
-                setConnectionStatus('Connected');
-                addLog('SYSTEM', 'Connected to real-time log stream...');
-            };
+                ws.onopen = () => {
+                    setConnectionStatus('Connected');
+                    addLog('SYSTEM', 'Connected to real-time log stream...');
+                };
 
-            ws.onmessage = (event) => {
-                try {
-                    // Calculating Latency (Pseudo)
-                    const start = performance.now();
-                    const data = JSON.parse(event.data);
+                ws.onmessage = (event) => {
+                    try {
+                        // Calculating Latency (Pseudo)
+                        const start = performance.now();
+                        const data = JSON.parse(event.data);
 
-                    // Backend থেকে যদি সাধারণ স্ট্রিং আসে, সেটাকে SmartLogEntry তে কনভার্ট করা
-                    const newLog: SmartLogEntry = {
-                        id: Math.random().toString(36).substr(2, 9),
-                        timestamp: data.time || new Date().toLocaleTimeString(),
-                        level: data.type || 'INFO',
-                        message: data.message || JSON.stringify(data),
-                        metadata: data.metadata
-                    };
+                        // Backend থেকে যদি সাধারণ স্ট্রিং আসে, সেটাকে SmartLogEntry তে কনভার্ট করা
+                        const newLog: SmartLogEntry = {
+                            id: Math.random().toString(36).substr(2, 9),
+                            timestamp: data.time || new Date().toLocaleTimeString(),
+                            level: data.type || 'INFO',
+                            message: data.message || JSON.stringify(data),
+                            metadata: data.metadata
+                        };
 
-                    setLogs(prev => [...prev, newLog]);
-                    setLatency(Math.round(performance.now() - start));
-                } catch (e) {
-                    // Fallback for plain text
-                    addLog('INFO', event.data);
+                        setLogs(prev => [...prev, newLog]);
+                        setLatency(Math.round(performance.now() - start));
+                    } catch (e) {
+                        // Fallback for plain text
+                        addLog('INFO', event.data);
+                    }
+                };
+
+                ws.onclose = () => {
+                    setConnectionStatus('Disconnected');
+                    addLog('ERROR', 'Connection lost. Reconnecting...');
+                };
+            })();
+
+            return () => {
+                cancelled = true;
+                if (wsRef.current) {
+                    wsRef.current.close();
+                    wsRef.current = null;
                 }
             };
-
-            ws.onclose = () => {
-                setConnectionStatus('Disconnected');
-                addLog('ERROR', 'Connection lost. Reconnecting...');
-            };
-
-            return () => ws.close();
         }
     }, [activeTab, bot.id]);
 

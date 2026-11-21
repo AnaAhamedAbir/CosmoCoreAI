@@ -61,8 +61,19 @@ class ConnectionManager:
                 except Exception:
                     self.disconnect(connection, symbol)
 
-    async def broadcast_status(self, task_type: str, task_id: str, status: str, progress: int, data: dict = None, features: list = None):
-        """Unified method to broadcast task status to 'backtest' channel"""
+    async def broadcast_status(
+        self,
+        task_type: str,
+        task_id: str,
+        status: str,
+        progress: int,
+        data: dict = None,
+        features: list = None,
+        user_id: int = None,
+    ):
+        """Unified method to broadcast task status to the owning user's channel (fallback: 'backtest')."""
+        from app.core.task_ownership import resolve_user_channel
+
         message = {
             "type": task_type,      # 'BACKTEST', 'DOWNLOAD', 'OPTIMIZE'
             "task_id": task_id,
@@ -71,9 +82,9 @@ class ConnectionManager:
             "payload": data,        # Result data (optional)
             "features": features or []
         }
-        
-        # Broadcast to 'backtest' channel which frontend will listen to
-        await self.broadcast(message, "backtest")
+
+        target_channel = resolve_user_channel(user_id)
+        await self.broadcast(message, target_channel)
 
     # ✅ Unified Market Data Broadcast
     async def broadcast_market_data(self, symbol: str, data_type: str, data: dict):

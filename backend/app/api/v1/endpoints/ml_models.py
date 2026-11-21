@@ -14,7 +14,9 @@ from app.services.live_inference_engine import inference_engine
 
 from app import crud, models, schemas
 from app.api import deps
-from app.db.session import get_db
+from app.core.storage_isolation import sanitize_filename, get_user_scoped_dir, ensure_within_directory
+from app.core.ws_auth import authenticate_websocket
+from app.db.session import get_db, SessionLocal
 from scripts.sync_models import sync_directory
 
 router = APIRouter()
@@ -231,17 +233,23 @@ async def create_custom_model(
     model_id = f"model_{timestamp}"
     version_id = f"v{version}-{timestamp}"
     
-    # Save file
-    version_dir = os.path.join(UPLOAD_DIR, f"v_{version_id}")
-    os.makedirs(version_dir, exist_ok=True)
-    file_path = os.path.join(version_dir, f"{version_id}_{file.filename}")
+    # Save file strictly inside user-scoped directory with sanitized filename
+    try:
+        safe_model_filename = sanitize_filename(file.filename or "model.bin")
+        user_dir = get_user_scoped_dir(UPLOAD_DIR, current_user.id)
+        version_dir = ensure_within_directory(user_dir, os.path.join(user_dir, f"v_{version_id}"))
+        os.makedirs(version_dir, exist_ok=True)
+        file_path = ensure_within_directory(version_dir, os.path.join(version_dir, f"{version_id}_{safe_model_filename}"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     # Save metadata file if provided
     saved_metadata_path = None
     if metadata_file and metadata_file.filename:
-        metadata_path = os.path.join(version_dir, "metadata.json")
+        metadata_path = ensure_within_directory(version_dir, os.path.join(version_dir, "metadata.json"))
         with open(metadata_path, "wb") as buffer:
             shutil.copyfileobj(metadata_file.file, buffer)
         saved_metadata_path = metadata_path
@@ -294,16 +302,19 @@ async def upload_model_folder(
 
     timestamp = int(time.time() * 1000)
     job_id = f"job_custom_{timestamp}"
-    dir_path = os.path.join(UPLOAD_DIR, job_id)
+    user_dir = get_user_scoped_dir(UPLOAD_DIR, current_user.id)
+    dir_path = ensure_within_directory(user_dir, os.path.join(user_dir, job_id))
     os.makedirs(dir_path, exist_ok=True)
 
     # Save all files to the new directory
     for file in files:
         if not file.filename:
             continue
-        # Only take the basename to flatten the folder structure as discussed
-        filename = os.path.basename(file.filename)
-        file_path = os.path.join(dir_path, filename)
+        try:
+            filename = sanitize_filename(os.path.basename(file.filename))
+            file_path = ensure_within_directory(dir_path, os.path.join(dir_path, filename))
+        except ValueError:
+            continue
         
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -339,17 +350,23 @@ async def upload_new_version(
     timestamp = int(time.time() * 1000)
     version_id = f"v{version}-{timestamp}"
     
-    # Save file
-    version_dir = os.path.join(UPLOAD_DIR, f"v_{version_id}")
-    os.makedirs(version_dir, exist_ok=True)
-    file_path = os.path.join(version_dir, f"{version_id}_{file.filename}")
+    # Save file strictly inside user-scoped directory with sanitized filename
+    try:
+        safe_model_filename = sanitize_filename(file.filename or "model.bin")
+        user_dir = get_user_scoped_dir(UPLOAD_DIR, current_user.id)
+        version_dir = ensure_within_directory(user_dir, os.path.join(user_dir, f"v_{version_id}"))
+        os.makedirs(version_dir, exist_ok=True)
+        file_path = ensure_within_directory(version_dir, os.path.join(version_dir, f"{version_id}_{safe_model_filename}"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     # Save metadata file if provided
     saved_metadata_path = None
     if metadata_file and metadata_file.filename:
-        metadata_path = os.path.join(version_dir, "metadata.json")
+        metadata_path = ensure_within_directory(version_dir, os.path.join(version_dir, "metadata.json"))
         with open(metadata_path, "wb") as buffer:
             shutil.copyfileobj(metadata_file.file, buffer)
         saved_metadata_path = metadata_path
@@ -665,6 +682,22 @@ def download_model_dataset(
 
 @router.websocket("/ws/inference/{model_id}/{exchange_id}/{symbol:path}")
 async def ml_inference_stream(websocket: WebSocket, model_id: str, exchange_id: str, symbol: str):
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db)
+        if not user:
+            return
+        if not user.is_superuser:
+            owned_model = db.query(models.CustomMLModel).filter(
+                models.CustomMLModel.id == model_id,
+                models.CustomMLModel.user_id == user.id,
+            ).first()
+            if not owned_model:
+                await websocket.close(code=4003, reason="Model access denied")
+                return
+    finally:
+        db.close()
+
     await websocket.accept()
     
     if not inference_engine.load_model(model_id):

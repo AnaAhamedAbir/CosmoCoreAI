@@ -5,6 +5,7 @@ import api from '../../services/api';
 import toast from 'react-hot-toast';
 import { useMarketStore } from '@/store/marketStore';
 import { useTheme } from '@/context/ThemeContext';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 // Reusable Components
 const GlassCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
@@ -505,27 +506,27 @@ const GridBot = () => {
     useEffect(() => {
         if (!selectedBotId) return;
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        // Connect to Bot Logs WS
-        const wsUrl = `${protocol}//${host}/api/v1/grid-bot/ws/logs/${selectedBotId}`;
-        const token = sessionStorage.getItem('accessToken') || localStorage.getItem('accessToken');
-        const url = token ? `${wsUrl}?token=${token}` : wsUrl;
-
+        let cancelled = false;
         let ws: WebSocket | null = null;
-        try {
-            ws = new WebSocket(url);
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    setLogs(prev => [data, ...prev].slice(0, 50));
-                } catch (e) { }
-            };
-        } catch (e) {
-            console.error("WS Connection failed", e);
-        }
+
+        (async () => {
+            const url = await buildAuthenticatedWsUrl(`/api/v1/grid-bot/ws/logs/${selectedBotId}`);
+            if (!url || cancelled) return;
+            try {
+                ws = new WebSocket(url);
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        setLogs(prev => [data, ...prev].slice(0, 50));
+                    } catch (e) { }
+                };
+            } catch (e) {
+                console.error("WS Connection failed", e);
+            }
+        })();
 
         return () => {
+            cancelled = true;
             if (ws) ws.close();
         };
     }, [selectedBotId]);

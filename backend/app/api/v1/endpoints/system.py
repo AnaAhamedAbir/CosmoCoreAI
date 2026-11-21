@@ -35,9 +35,12 @@ class HealthResponse(BaseModel):
     timestamp: str
 
 @router.get("/kill-switch", response_model=KillSwitchSchema)
-def get_kill_switch_status():
+def get_kill_switch_status(
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
     """
     Get the current status of the Global Admin Kill Switch.
+    Requires Superuser/Owner privileges.
     """
     r = get_redis_client()
     status = r.get("global_kill_switch")
@@ -45,18 +48,25 @@ def get_kill_switch_status():
     return {"active": is_active}
 
 @router.post("/kill-switch", response_model=KillSwitchSchema)
-def toggle_kill_switch(payload: KillSwitchSchema):
+def toggle_kill_switch(
+    payload: KillSwitchSchema,
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
     """
     Toggle the Global Admin Kill Switch.
+    Requires Superuser/Owner privileges.
     """
     r = get_redis_client()
     r.set("global_kill_switch", "true" if payload.active else "false")
     return {"active": payload.active}
 
 @router.get("/auto-archiver", response_model=AutoArchiverSwitchSchema)
-def get_auto_archiver_status():
+def get_auto_archiver_status(
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
     """
     Get the current status of the Auto-Archiver feature.
+    Requires Superuser/Owner privileges.
     """
     r = get_redis_client()
     status = r.get("global_auto_archiver_enabled")
@@ -65,9 +75,13 @@ def get_auto_archiver_status():
     return {"active": is_active}
 
 @router.post("/auto-archiver", response_model=AutoArchiverSwitchSchema)
-def toggle_auto_archiver(payload: AutoArchiverSwitchSchema):
+def toggle_auto_archiver(
+    payload: AutoArchiverSwitchSchema,
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
     """
     Toggle the Auto-Archiver feature.
+    Requires Superuser/Owner privileges.
     """
     r = get_redis_client()
     r.set("global_auto_archiver_enabled", "true" if payload.active else "false")
@@ -121,7 +135,7 @@ def prune_database_manually(
 
 @router.delete("/prune-l2-data", response_model=PruneResponse)
 def prune_l2_database_manually(
-    current_user: models.User = Depends(deps.get_current_active_user)
+    current_user: models.User = Depends(deps.get_current_active_superuser)
 ):
     """
     Manually trigger L2 orderbook data pruning.
@@ -174,7 +188,7 @@ async def ping_server():
 @router.get("/hardware-telemetry")
 async def get_vps_hardware_telemetry(
     refresh: bool = False,
-    current_user: models.User = Depends(deps.get_current_active_user)
+    current_user: models.User = Depends(deps.get_current_active_superuser)
 ):
     """Return live VPS host CPU, RAM, disk/ROM, uptime, temperature, and Binance network latency."""
     try:

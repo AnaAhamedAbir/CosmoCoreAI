@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActiveBot } from '@/types';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 interface BotStatusUpdate {
     id: string;
@@ -65,11 +66,11 @@ export const useBotStatus = (bot: ActiveBot) => {
             return;
         }
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const finalUrl = `${protocol}//${host}/api/v1/bots/${bot.id}/ws/status`;
+        let isCancelled = false;
 
-        const connect = () => {
+        const connect = async () => {
+            const finalUrl = await buildAuthenticatedWsUrl(`/api/v1/bots/${bot.id}/ws/status`);
+            if (!finalUrl || isCancelled) return;
             const ws = new WebSocket(finalUrl);
             wsRef.current = ws;
 
@@ -110,6 +111,7 @@ export const useBotStatus = (bot: ActiveBot) => {
         connect();
 
         return () => {
+            isCancelled = true;
             if (wsRef.current) {
                 wsRef.current.close();
             }

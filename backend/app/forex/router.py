@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
-from typing import List, Any
+from typing import List, Any, Optional
 import logging
 
+from app import models as app_models
+from app.api import deps
 from app.api.deps import get_db
+from app.core.ws_auth import authenticate_websocket
+from app.core.quotas import check_bot_quota
 from app.forex import models, schemas
 from app.forex.services.engine import ForexAlgoEngine
 from app.forex.services.broker import OandaBrokerService
@@ -16,7 +20,15 @@ engine = ForexAlgoEngine()
 from app.forex.services.ws_manager import forex_ws_manager
 
 @router.websocket("/ws/market-data")
-async def websocket_endpoint(websocket: WebSocket, broker: str = "Exness"):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    broker: str = "Exness",
+    token: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    user = await authenticate_websocket(websocket, db, query_token=token)
+    if not user:
+        return
     await forex_ws_manager.connect(websocket, broker)
     try:
         while True:
@@ -28,13 +40,18 @@ async def websocket_endpoint(websocket: WebSocket, broker: str = "Exness"):
 
 
 @router.get("/dashboard", response_model=schemas.DashboardMetricsResponse)
-async def get_dashboard_metrics(db: Session = Depends(get_db)) -> Any:
+async def get_dashboard_metrics(
+    db: Session = Depends(get_db),
+    current_user: app_models.User = Depends(deps.get_current_user),
+) -> Any:
     """
     Get high-level metrics for the Forex Dashboard.
     """
-    # In a real app, these would be calculated by aggregating ForexTrade models and querying the broker for live equity.
-    active_bots = db.query(models.ForexBot).filter(models.ForexBot.status == "active").count()
-    total_bots = db.query(models.ForexBot).count()
+    q = db.query(models.ForexBot)
+    if not current_user.is_superuser:
+        q = q.filter(models.ForexBot.owner_id == current_user.id)
+    active_bots = q.filter(models.ForexBot.status == "active").count()
+    total_bots = q.count()
     
     return {
         "floating_pnl": 4250.00,
@@ -47,12 +64,18 @@ async def get_dashboard_metrics(db: Session = Depends(get_db)) -> Any:
     }
 
 @router.post("/bots", response_model=schemas.ForexBotResponse)
-def create_bot(bot_in: schemas.ForexBotCreate, db: Session = Depends(get_db)) -> Any:
+def create_bot(
+    bot_in: schemas.ForexBotCreate,
+    db: Session = Depends(get_db),
+    current_user: app_models.User = Depends(deps.get_current_user),
+) -> Any:
     """
     Deploy a new automated Forex Bot.
     """
+    check_bot_quota(db, current_user)
     bot_data = bot_in.dict()
     bot_data["status"] = "active" # Always start as active when deployed
+    bot_data["owner_id"] = current_user.id
     db_bot = models.ForexBot(**bot_data)
     db.add(db_bot)
     db.commit()
@@ -61,23 +84,44 @@ def create_bot(bot_in: schemas.ForexBotCreate, db: Session = Depends(get_db)) ->
     return db_bot
 
 @router.get("/bots", response_model=List[schemas.ForexBotResponse])
-def list_bots(db: Session = Depends(get_db)) -> Any:
+def list_bots(
+    db: Session = Depends(get_db),
+    current_user: app_models.User = Depends(deps.get_current_user),
+) -> Any:
     """
-    List all deployed Forex bots.
+    List deployed Forex bots belonging to the current user.
     """
-    return db.query(models.ForexBot).order_by(models.ForexBot.id.desc()).all()
+    q = db.query(models.ForexBot)
+    if not current_user.is_superuser:
+        q = q.filter(models.ForexBot.owner_id == current_user.id)
+    return q.order_by(models.ForexBot.id.desc()).all()
+
+def _get_owned_forex_bot(db: Session, bot_id: int, current_user: app_models.User) -> models.ForexBot:
+    q = db.query(models.ForexBot).filter(models.ForexBot.id == bot_id)
+    if not current_user.is_superuser:
+        q = q.filter(models.ForexBot.owner_id == current_user.id)
+    bot = q.first()
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    return bot
 
 @router.patch("/bots/{bot_id}/status", response_model=schemas.ForexBotResponse)
-def update_bot_status(bot_id: int, status_update: schemas.ForexBotStatusUpdate, db: Session = Depends(get_db)) -> Any:
+def update_bot_status(
+    bot_id: int,
+    status_update: schemas.ForexBotStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: app_models.User = Depends(deps.get_current_user),
+) -> Any:
     """
     Update the status of a deployed bot (e.g., stop, start).
     """
-    bot = db.query(models.ForexBot).filter(models.ForexBot.id == bot_id).first()
-    if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+    bot = _get_owned_forex_bot(db, bot_id, current_user)
         
     if status_update.status not in ["active", "stopped", "paused"]:
         raise HTTPException(status_code=400, detail="Invalid status")
+
+    if status_update.status == "active" and bot.status != "active":
+        check_bot_quota(db, current_user)
         
     bot.status = status_update.status
     db.commit()
@@ -85,13 +129,16 @@ def update_bot_status(bot_id: int, status_update: schemas.ForexBotStatusUpdate, 
     return bot
 
 @router.patch("/bots/{bot_id}", response_model=schemas.ForexBotResponse)
-def update_bot_settings(bot_id: int, settings_update: schemas.ForexBotSettingsUpdate, db: Session = Depends(get_db)) -> Any:
+def update_bot_settings(
+    bot_id: int,
+    settings_update: schemas.ForexBotSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: app_models.User = Depends(deps.get_current_user),
+) -> Any:
     """
     Update the settings of a deployed bot.
     """
-    bot = db.query(models.ForexBot).filter(models.ForexBot.id == bot_id).first()
-    if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+    bot = _get_owned_forex_bot(db, bot_id, current_user)
         
     update_data = settings_update.dict(exclude_unset=True)
     for key, value in update_data.items():
@@ -102,24 +149,32 @@ def update_bot_settings(bot_id: int, settings_update: schemas.ForexBotSettingsUp
     return bot
 
 @router.delete("/bots/{bot_id}")
-def delete_bot(bot_id: int, db: Session = Depends(get_db)) -> Any:
+def delete_bot(
+    bot_id: int,
+    db: Session = Depends(get_db),
+    current_user: app_models.User = Depends(deps.get_current_user),
+) -> Any:
     """
     Delete a deployed bot permanently.
     """
-    bot = db.query(models.ForexBot).filter(models.ForexBot.id == bot_id).first()
-    if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+    bot = _get_owned_forex_bot(db, bot_id, current_user)
         
     db.delete(bot)
     db.commit()
     return {"message": "Bot deleted successfully"}
 
 @router.post("/bots/emergency-stop")
-def emergency_stop_all(db: Session = Depends(get_db)) -> Any:
+def emergency_stop_all(
+    db: Session = Depends(get_db),
+    current_user: app_models.User = Depends(deps.get_current_user),
+) -> Any:
     """
-    Global Kill Switch: Immediately stops ALL active algorithms.
+    Stop active Forex bots owned by the current user (or all for Superuser).
     """
-    active_bots = db.query(models.ForexBot).filter(models.ForexBot.status == "active").all()
+    q = db.query(models.ForexBot).filter(models.ForexBot.status == "active")
+    if not current_user.is_superuser:
+        q = q.filter(models.ForexBot.owner_id == current_user.id)
+    active_bots = q.all()
     count = 0
     for bot in active_bots:
         bot.status = "stopped"
@@ -129,13 +184,16 @@ def emergency_stop_all(db: Session = Depends(get_db)) -> Any:
     return {"message": f"Emergency stop executed successfully. {count} bots halted."}
 
 @router.post("/execute_test_signal")
-async def execute_test_signal(bot_id: int, signal: str, db: Session = Depends(get_db)) -> Any:
+async def execute_test_signal(
+    bot_id: int,
+    signal: str,
+    db: Session = Depends(get_db),
+    current_user: app_models.User = Depends(deps.get_current_user),
+) -> Any:
     """
     Manually trigger a signal for a bot to test execution.
     """
-    bot = db.query(models.ForexBot).filter(models.ForexBot.id == bot_id).first()
-    if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+    bot = _get_owned_forex_bot(db, bot_id, current_user)
         
     bot_config = {
         "name": bot.name,

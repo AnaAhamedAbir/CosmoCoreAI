@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from app import models
 from app.api import deps
 from app.models.token_unlock import TokenUnlockEvent
 from app.schemas.token_unlock import TokenUnlockResponse, TokenUnlockCreate
@@ -18,6 +19,7 @@ def read_unlocks(
     db: Session = Depends(deps.get_db),
     skip: int = 0,
     limit: int = 100,
+    current_user: models.User = Depends(deps.get_current_user),
 ):
     """Retrieve token unlock events."""
     unlocks = db.query(TokenUnlockEvent).order_by(TokenUnlockEvent.unlock_date).offset(skip).limit(limit).all()
@@ -27,8 +29,9 @@ def read_unlocks(
 async def sync_token_unlock(
     symbol: str,
     db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
 ):
-    """Trigger manual sync for a token's unlock data."""
+    """Trigger manual sync for a token's unlock data (Owner/Superuser only)."""
     service = TokenUnlockService(db)
     try:
         event = await service.sync_token(symbol)
@@ -41,7 +44,8 @@ async def sync_token_unlock(
 @router.get("/{id}/analysis", response_model=TokenUnlockResponse)
 async def get_unlock_analysis(
     id: int,
-    db: Session = Depends(deps.get_db)
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
 ):
     """Get or generate AI analysis for a specific event."""
     event = db.query(TokenUnlockEvent).filter(TokenUnlockEvent.id == id).first()

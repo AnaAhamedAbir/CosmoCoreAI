@@ -59,7 +59,7 @@ app.add_exception_handler(Exception, general_exception_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -119,11 +119,9 @@ async def subscribe_to_redis_logs():
                     if target_channel and target_channel.startswith("logs_") and target_channel != "logs_backend":
                          await manager.broadcast_to_symbol(target_channel, log_data)
                     
-                    # 2. Backend System Logs Forwarding
+                    # 2. Backend System Logs Forwarding (Admin-only isolated channel)
                     elif target_channel == "logs_backend":
-                        for channel in list(manager.active_connections.keys()):
-                            if channel.startswith("logs_"): 
-                                await manager.broadcast_to_symbol(channel, log_data)
+                        await manager.broadcast_to_symbol("logs_admin", log_data)
 
                 except Exception as e:
                     print(f"Log Forward Error: {e}")
@@ -150,7 +148,8 @@ async def subscribe_to_task_updates():
                         status=data.get("status"),
                         progress=data.get("progress"),
                         data=data.get("data"),
-                        features=data.get("features", [])
+                        features=data.get("features", []),
+                        user_id=data.get("user_id"),
                     )
                 except Exception as e:
                     print(f"Task Update Forward Error: {e}")
@@ -581,19 +580,48 @@ async def startup_event():
         return
     _startup_has_run = True
 
+    # Validate production secrets before serving traffic
+    settings.validate_production_secrets()
+
     # Set custom asyncio exception handler
     loop = asyncio.get_event_loop()
     loop.set_exception_handler(custom_asyncio_exception_handler)
 
-    # 0. Schema Auto-Patch
+    # 0. Schema Auto-Patch (runs BEFORE owner bootstrap so newly added columns exist)
     try:
         from app.db.session import engine
         from sqlalchemy import text
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE notification_settings ADD COLUMN IF NOT EXISTS alert_active_config_dump BOOLEAN DEFAULT TRUE;"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_email_verified BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_tier VARCHAR DEFAULT 'free';"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret_encrypted VARCHAR;"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_2fa_enabled BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE forex_bots ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id);"))
+        from app.models.saas_admin import AdminAuditLog, Subscription, PaymentTransaction
+        for _tbl in (AdminAuditLog.__table__, Subscription.__table__, PaymentTransaction.__table__):
+            _tbl.create(bind=engine, checkfirst=True)
         print("✅ Database schema auto-patched successfully.")
     except Exception as e:
         print(f"⚠️ Database schema patch failed (safe to ignore if exists): {e}")
+
+    # Optional automatic Sole Owner bootstrap from environment
+    if settings.OWNER_EMAIL and settings.OWNER_PASSWORD:
+        try:
+            from app.db.session import SessionLocal as _OwnerSessionLocal
+            from app.core.owner_bootstrap import ensure_sole_owner
+            _odb = _OwnerSessionLocal()
+            try:
+                ensure_sole_owner(
+                    db=_odb,
+                    email=settings.OWNER_EMAIL,
+                    password=settings.OWNER_PASSWORD,
+                    full_name=settings.OWNER_FULL_NAME,
+                )
+            finally:
+                _odb.close()
+        except Exception as _owner_err:
+            logger.warning(f"⚠️ Sole Owner bootstrap skipped: {_owner_err}")
 
     # 1. Initialize Redis Pool
     await redis_manager.init_redis()
@@ -936,6 +964,26 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
 
 @app.websocket("/ws/logs/{bot_id}")
 async def websocket_logs(websocket: WebSocket, bot_id: str):
+    from app.core.ws_auth import authenticate_websocket, verify_bot_ownership
+    from app.db.session import SessionLocal
+    from app import models
+
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db)
+        if not user:
+            return
+        if bot_id.isdigit():
+            bot = verify_bot_ownership(db, int(bot_id), user, models.Bot, owner_field="owner_id")
+            if not bot:
+                await websocket.close(code=4003, reason="Bot access denied")
+                return
+        elif not user.is_superuser:
+            await websocket.close(code=4003, reason="Superuser privileges required")
+            return
+    finally:
+        db.close()
+
     channel_id = f"logs_{bot_id}"
     await manager.connect(websocket, channel_id)
     try:
@@ -945,6 +993,17 @@ async def websocket_logs(websocket: WebSocket, bot_id: str):
 
 @app.websocket("/ws")
 async def websocket_general(websocket: WebSocket):
+    from app.core.ws_auth import authenticate_websocket
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db)
+        if not user:
+            return
+    finally:
+        db.close()
+
     await manager.connect(websocket, "general")
     try:
         while True: await websocket.receive_text()
@@ -953,14 +1012,47 @@ async def websocket_general(websocket: WebSocket):
 
 @app.websocket("/ws/backtest")
 async def websocket_backtest(websocket: WebSocket):
-    await manager.connect(websocket, "backtest")
+    from app.core.ws_auth import authenticate_websocket
+    from app.core.task_ownership import resolve_user_channel
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db)
+        if not user:
+            return
+        channel_id = resolve_user_channel(user.id)
+    finally:
+        db.close()
+
+    await manager.connect(websocket, channel_id)
     try:
         while True: await websocket.receive_text()
     except WebSocketDisconnect:
-        manager.disconnect(websocket, "backtest")
+        manager.disconnect(websocket, channel_id)
 
 @app.websocket("/ws/status/{bot_id}")
 async def websocket_status(websocket: WebSocket, bot_id: str):
+    from app.core.ws_auth import authenticate_websocket, verify_bot_ownership
+    from app.db.session import SessionLocal
+    from app import models
+
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db)
+        if not user:
+            return
+        if bot_id.isdigit():
+            bot = verify_bot_ownership(db, int(bot_id), user, models.Bot, owner_field="owner_id")
+            if not bot:
+                await websocket.close(code=4003, reason="Bot access denied")
+                return
+        elif not user.is_superuser:
+            await websocket.close(code=4003, reason="Superuser privileges required")
+            return
+    finally:
+        db.close()
+
     channel_id = f"status_{bot_id}"
     await manager.connect(websocket, channel_id)
     try:
@@ -987,9 +1079,18 @@ async def websocket_block_trades(websocket: WebSocket):
 
 @app.websocket("/ws/system-alerts")
 async def websocket_system_alerts(websocket: WebSocket):
-    """Live Docker log alert stream. Frontend connects here to receive real-time
-    ERROR and CRITICAL alerts from all backend containers.
-    WARNING-level events are intentionally suppressed — only actionable issues appear."""
+    """Live Docker log alert stream (Owner/Superuser only)."""
+    from app.core.ws_auth import authenticate_websocket
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db, require_superuser=True)
+        if not user:
+            return
+    finally:
+        db.close()
+
     await manager.connect(websocket, "system_alerts")
     try:
         while True: await websocket.receive_text()
@@ -998,8 +1099,18 @@ async def websocket_system_alerts(websocket: WebSocket):
 
 @app.websocket("/ws/container-logs")
 async def websocket_container_logs(websocket: WebSocket):
-    """Live container log stream. Frontend connects here to receive all raw
-    log lines from all backend containers, updated every 10 seconds."""
+    """Live container log stream (Owner/Superuser only)."""
+    from app.core.ws_auth import authenticate_websocket
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db, require_superuser=True)
+        if not user:
+            return
+    finally:
+        db.close()
+
     await manager.connect(websocket, "container_logs")
     try:
         while True: await websocket.receive_text()

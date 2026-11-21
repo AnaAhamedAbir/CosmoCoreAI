@@ -9,18 +9,51 @@ export const registerUser = async (userData: any) => {
 };
 
 // লগইন (পাথ আপডেট করা হয়েছে)
-export const loginUser = async (credentials: any) => {
+export const loginUser = async (credentials: { email: string; password: string; otpCode?: string }) => {
   const formData = new URLSearchParams();
   formData.append('username', credentials.email);
   formData.append('password', credentials.password);
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+  if (credentials.otpCode) {
+    headers['X-2FA-Code'] = credentials.otpCode.trim();
+  }
+
   // আগে ছিল: '/login'
   // এখন হবে: '/v1/auth/login'
-  const response = await apiClient.post('/auth/login', formData, {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }
-  });
+  const response = await apiClient.post('/auth/login', formData, { headers });
+  return response.data;
+};
+
+export const verifyEmailCode = async (email: string, code: string) => {
+  const response = await apiClient.post('/auth/verify-email', { email, code });
+  return response.data;
+};
+
+export const resendVerificationCode = async (email: string) => {
+  const response = await apiClient.post('/auth/resend-verification', { email });
+  return response.data;
+};
+
+export const setup2fa = async (): Promise<{ secret: string; otpauth_uri: string }> => {
+  const response = await apiClient.post('/auth/2fa/setup');
+  return response.data;
+};
+
+export const enable2fa = async (code: string) => {
+  const response = await apiClient.post('/auth/2fa/enable', { code });
+  return response.data;
+};
+
+export const disable2fa = async (code: string, password: string) => {
+  const response = await apiClient.post('/auth/2fa/disable', { code, password });
+  return response.data;
+};
+
+export const fetchMyPlanUsage = async () => {
+  const response = await apiClient.get('/users/me/usage');
   return response.data;
 };
 
@@ -64,5 +97,10 @@ export const uploadUserAvatar = async (file: File) => {
       'Content-Type': 'multipart/form-data'
     }
   });
+  return response.data;
+};
+
+export const updateMyProfile = async (data: { full_name?: string }) => {
+  const response = await apiClient.put('/users/me', data);
   return response.data;
 };

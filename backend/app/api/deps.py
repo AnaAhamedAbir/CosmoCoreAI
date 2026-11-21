@@ -38,6 +38,11 @@ def get_current_user(
     user = crud.get_user_by_email(db, email=email)
     if user is None:
         raise credentials_exception
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive or suspended user",
+        )
     return user
 
 def get_current_active_user(

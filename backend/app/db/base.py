@@ -5,6 +5,7 @@ from app.models.insider import InsiderFiling
 from app.models.institutional import InstitutionalFund, FundHolding
 from app.models.system_notification import SystemNotification, SystemNotificationUserState
 from app.models.manual_trade_monitor import ManualTradeMonitor
+from app.models.saas_admin import AdminAuditLog, Subscription, PaymentTransaction
 
 # Forex specific models (isolated domain)
 from app.forex.models import ForexBot, ForexTrade

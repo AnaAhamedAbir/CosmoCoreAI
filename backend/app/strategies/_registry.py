@@ -315,6 +315,22 @@ def load_custom_strategies():
                     custom_strategies[module_name] = cls
         except Exception:
             continue
+
+    # Also load user-scoped custom strategies under app/strategies/custom/user_<id>/
+    for entry in os.listdir(custom_dir):
+        sub_dir = os.path.join(custom_dir, entry)
+        if not (os.path.isdir(sub_dir) and entry.startswith("user_")):
+            continue
+        for _, module_name, _ in pkgutil.iter_modules([sub_dir]):
+            try:
+                full_module_name = f"app.strategies.custom.{entry}.{module_name}"
+                module = importlib.import_module(full_module_name)
+                for name, cls in inspect.getmembers(module, inspect.isclass):
+                    if issubclass(cls, bt.Strategy) and cls is not BaseStrategy and cls.__module__ == full_module_name:
+                        custom_strategies.setdefault(module_name, cls)
+                        custom_strategies[f"{entry}/{module_name}"] = cls
+            except Exception:
+                continue
     return custom_strategies
 
 try:

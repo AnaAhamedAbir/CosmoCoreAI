@@ -14,6 +14,7 @@ import {
     CheckCircle2
 } from 'lucide-react';
 import { isThermalGuardActive } from '@/utils/deviceProfile';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 interface LogEntry {
     time: string;
@@ -43,15 +44,7 @@ const BotLogViewer: React.FC<BotLogViewerProps> = ({ botId, botName, className =
 
     // WebSocket Connection
     useEffect(() => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host; // Use dynamic host
-        const wsUrl = `${protocol}//${host}/ws/logs/${botId}`;
-
-        console.log("Connecting into the Matrix...", wsUrl);
-
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-
+        let cancelled = false;
         const maxEntries = isThermalGuardActive() ? 300 : 500;
         const appendBufferedLogs = () => {
             flushTimerRef.current = null;
@@ -64,52 +57,63 @@ const BotLogViewer: React.FC<BotLogViewerProps> = ({ botId, botName, className =
             });
         };
 
-        ws.onopen = () => {
-            setConnectionStatus("Connected");
-            addSystemLog("UPLINK ESTABLISHED. CONNECTED TO NEURAL NETWORK.");
-        };
+        (async () => {
+            const wsUrl = await buildAuthenticatedWsUrl(`/ws/logs/${botId}`);
+            if (!wsUrl || cancelled) return;
 
-        ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (isThermalGuardActive()) {
-                    pendingLogsRef.current.push(data);
-                    if (pendingLogsRef.current.length > maxEntries) {
-                        pendingLogsRef.current = pendingLogsRef.current.slice(-maxEntries);
+            console.log("Connecting into the Matrix...", wsUrl);
+            const ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
+
+            ws.onopen = () => {
+                setConnectionStatus("Connected");
+                addSystemLog("UPLINK ESTABLISHED. CONNECTED TO NEURAL NETWORK.");
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (isThermalGuardActive()) {
+                        pendingLogsRef.current.push(data);
+                        if (pendingLogsRef.current.length > maxEntries) {
+                            pendingLogsRef.current = pendingLogsRef.current.slice(-maxEntries);
+                        }
+                        if (!flushTimerRef.current) {
+                            flushTimerRef.current = setTimeout(appendBufferedLogs, 250);
+                        }
+                    } else {
+                        setLogs(prev => {
+                            const combined = [...prev, data];
+                            return combined.length > maxEntries ? combined.slice(-maxEntries) : combined;
+                        });
                     }
-                    if (!flushTimerRef.current) {
-                        flushTimerRef.current = setTimeout(appendBufferedLogs, 250);
-                    }
-                } else {
-                    setLogs(prev => {
-                        const combined = [...prev, data];
-                        return combined.length > maxEntries ? combined.slice(-maxEntries) : combined;
-                    });
+                } catch (e) {
+                    console.error("Data corruption detected", e);
                 }
-            } catch (e) {
-                console.error("Data corruption detected", e);
-            }
-        };
+            };
 
-        ws.onerror = () => {
-            setConnectionStatus("Disconnected");
-            addSystemLog("CONNECTION FAILURE. RETRYING...", "ERROR");
-        };
+            ws.onerror = () => {
+                setConnectionStatus("Disconnected");
+                addSystemLog("CONNECTION FAILURE. RETRYING...", "ERROR");
+            };
 
-        ws.onclose = () => {
-            setConnectionStatus("Disconnected");
-            addSystemLog("UPLINK TERMINATED.");
-        };
+            ws.onclose = () => {
+                setConnectionStatus("Disconnected");
+                addSystemLog("UPLINK TERMINATED.");
+            };
+        })();
 
         return () => {
+            cancelled = true;
             if (flushTimerRef.current) {
                 clearTimeout(flushTimerRef.current);
                 flushTimerRef.current = null;
             }
             pendingLogsRef.current = [];
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.close();
+            if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+                wsRef.current.close();
             }
+            wsRef.current = null;
         };
     }, [botId]);
 

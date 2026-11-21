@@ -91,3 +91,8 @@ api_router.include_router(sys_notifications.router, prefix="/sys-notifications",
 # Forex Automated Trading Router (Isolated Domain)
 from app.forex import router as forex_router
 api_router.include_router(forex_router.router, prefix="/forex", tags=["forex"])
+
+# Sole-Owner Admin & SaaS Billing Routers
+from app.api.v1.endpoints import admin as admin_endpoints, billing as billing_endpoints
+api_router.include_router(admin_endpoints.router, prefix="/admin", tags=["owner-admin"])
+api_router.include_router(billing_endpoints.router, prefix="/billing", tags=["billing"])

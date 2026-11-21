@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Button from '@/components/common/Button';
-import { loginUser } from '@/services/auth';
+import { loginUser, verifyEmailCode, resendVerificationCode } from '@/services/auth';
 import apiClient from '@/services/client';
 import { Logo, GoogleLogo, GithubLogo } from '@/constants';
 
@@ -17,6 +17,10 @@ const LoginFormModal: React.FC<LoginFormModalProps> = ({ onClose, onLoginSuccess
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
+    const [requires2fa, setRequires2fa] = useState(false);
+    const [otpCode, setOtpCode] = useState('');
+    const [requiresEmailVerify, setRequiresEmailVerify] = useState(false);
+    const [verifyCode, setVerifyCode] = useState('');
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -35,9 +39,16 @@ const LoginFormModal: React.FC<LoginFormModalProps> = ({ onClose, onLoginSuccess
         setError(null);
 
         try {
+            if (requiresEmailVerify) {
+                await verifyEmailCode(email, verifyCode);
+                setRequiresEmailVerify(false);
+                setVerifyCode('');
+            }
+
             const data = await loginUser({
                 email: email,
-                password: password
+                password: password,
+                otpCode: requires2fa ? otpCode : undefined,
             });
 
             const storage = rememberMe ? localStorage : sessionStorage;
@@ -49,11 +60,22 @@ const LoginFormModal: React.FC<LoginFormModalProps> = ({ onClose, onLoginSuccess
             onLoginSuccess();
         } catch (err: any) {
             console.error(err);
-            let errMsg = err.response?.data?.detail || 'Invalid email or password.';
+            let errMsg = err.response?.data?.message || err.response?.data?.detail || 'Invalid email or password.';
             if (typeof errMsg !== 'string') {
                 errMsg = JSON.stringify(errMsg);
             }
-            setError(errMsg);
+            if (errMsg === '2FA_REQUIRED') {
+                setRequires2fa(true);
+                setError('Enter the 6-digit code from your Authenticator app.');
+            } else if (errMsg === 'INVALID_2FA_CODE') {
+                setRequires2fa(true);
+                setError('Invalid 2FA code. Please try again.');
+            } else if (errMsg.startsWith('EMAIL_NOT_VERIFIED')) {
+                setRequiresEmailVerify(true);
+                setError('Please enter the 6-digit verification code sent to your email.');
+            } else {
+                setError(errMsg);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -160,6 +182,45 @@ const LoginFormModal: React.FC<LoginFormModalProps> = ({ onClose, onLoginSuccess
                                 }
                             </button>
                         </div>
+
+                        {requires2fa && (
+                            <div className="relative group">
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={6}
+                                    value={otpCode}
+                                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                                    required
+                                    autoFocus
+                                    className="w-full bg-[#0D1117] border border-cyan-500/40 rounded-xl py-2.5 px-4 text-center font-mono tracking-[0.4em] text-sm text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500 outline-none"
+                                    placeholder="2FA CODE (6 DIGITS)"
+                                />
+                            </div>
+                        )}
+
+                        {requiresEmailVerify && (
+                            <div className="space-y-2">
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={6}
+                                    value={verifyCode}
+                                    onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, ''))}
+                                    required
+                                    autoFocus
+                                    className="w-full bg-[#0D1117] border border-cyan-500/40 rounded-xl py-2.5 px-4 text-center font-mono tracking-[0.4em] text-sm text-white placeholder-slate-500 focus:ring-1 focus:ring-cyan-500 outline-none"
+                                    placeholder="EMAIL OTP (6 DIGITS)"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => resendVerificationCode(email)}
+                                    className="text-xs text-cyan-400 hover:text-cyan-300 underline"
+                                >
+                                    Resend verification code
+                                </button>
+                            </div>
+                        )}
 
                         <div className="flex justify-between items-center text-sm px-1">
                             <label className="flex items-center space-x-2.5 cursor-pointer">

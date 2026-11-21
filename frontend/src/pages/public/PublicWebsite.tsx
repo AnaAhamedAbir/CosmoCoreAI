@@ -214,7 +214,7 @@ const PublicWebsite: React.FC<PublicWebsiteProps> = ({ onLogin, onSignUp }) => {
     const renderContent = () => {
         switch (currentView) {
             case 'Services': return <ServicesPage />;
-            case 'Pricing': return <PricingPage />;
+            case 'Pricing': return <PricingPage onSelectPlan={onSignUp} />;
             case 'Blog': return <BlogPage />;
             case 'Portfolio': return <PortfolioPage onSignUp={onSignUp} />;
             case 'Home':

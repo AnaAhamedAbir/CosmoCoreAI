@@ -12,6 +12,7 @@ import { useSystemAlerts, type SystemAlert, type AlertSeverity } from '@/hooks/u
 import { useTheme } from '@/context/ThemeContext';
 import DeviceTelemetryPanel from '@/components/common/DeviceTelemetryPanel';
 import { isThermalGuardActive } from '@/utils/deviceProfile';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -414,13 +415,10 @@ const SystemAlertWidget: React.FC = () => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const url = (() => {
-      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      return `${proto}//${window.location.host}/ws/container-logs`;
-    })();
-
-    const connect = () => {
+    const connect = async () => {
       if (!alive || logWsRef.current?.readyState === WebSocket.OPEN) return;
+      const url = await buildAuthenticatedWsUrl('/ws/container-logs');
+      if (!url || !alive) return;
       const ws = new WebSocket(url);
       logWsRef.current = ws;
 

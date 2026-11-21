@@ -43,6 +43,7 @@ export const getPathFromView = (view: AppView): string => {
     [AppView.EVENT_DRIVEN]: '/event-driven-simulator',
     [AppView.MARKET_DEPTH]: '/market-depth',
     [AppView.ORDER_FLOW_HEATMAP]: '/level2-wallhunter-bot',
+    [AppView.OWNER_ADMIN]: '/admin',
 
     // TradFi Routes
     [AppView.FOREX_DASHBOARD]: '/forex-dashboard',

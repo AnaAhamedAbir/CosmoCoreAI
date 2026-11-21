@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 
-const WEBSOCKET_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/api/v1/advanced_liquidation/ws/god-mode';
+const WEBSOCKET_URL = (() => {
+    if (import.meta.env.VITE_WS_URL) {
+        return `${String(import.meta.env.VITE_WS_URL).replace(/\/+$/, '')}/advanced_liquidation/ws/god-mode`;
+    }
+    if (typeof window !== 'undefined') {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${protocol}//${window.location.host}/api/v1/advanced_liquidation/ws/god-mode`;
+    }
+    return 'ws://localhost:8000/api/v1/advanced_liquidation/ws/god-mode';
+})();
 
 export interface GodModeState {
     symbol: string;

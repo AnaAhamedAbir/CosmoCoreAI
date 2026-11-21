@@ -115,6 +115,7 @@ function App() {
 
     // Instantly reset scroll to top of public page
     window.scrollTo({ top: 0, behavior: 'instant' });
+    window.dispatchEvent(new CustomEvent('app:settings-reset'));
 
     setAppState(AppState.PUBLIC);
   }, [navigate]);
@@ -222,6 +223,7 @@ function App() {
 
   // লগইন বা সাইনআপ সফল হওয়ার পর (API কল সাকসেস হলে)
   const handleAuthSuccess = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('app:settings-refresh'));
     setAppState(AppState.LOGGING_IN_TRANSITION);
   }, []);
 

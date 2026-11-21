@@ -3,14 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { createChart, IChartApi, ISeriesApi, Time, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
 import { X, Maximize2, Minimize2, Activity } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 interface DatasetVisualizerModalProps {
     isOpen: boolean;
     onClose: () => void;
     symbol: string;
 }
-
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/api/v1';
 
 export const DatasetVisualizerModal: React.FC<DatasetVisualizerModalProps> = ({
     isOpen,
@@ -152,9 +151,17 @@ export const DatasetVisualizerModal: React.FC<DatasetVisualizerModalProps> = ({
             return;
         }
 
-        const connectWs = () => {
+        const connectWs = async () => {
             setConnectionStatus('connecting');
-            const ws = new WebSocket(`${WS_URL}/model-training/ws/training-visualizer`);
+            const baseOverride = import.meta.env.VITE_WS_URL
+                ? String(import.meta.env.VITE_WS_URL).replace(/\/api\/v1\/?$/, '')
+                : undefined;
+            const wsUrl = await buildAuthenticatedWsUrl('/api/v1/model-training/ws/training-visualizer', baseOverride);
+            if (!wsUrl) {
+                setConnectionStatus('disconnected');
+                return;
+            }
+            const ws = new WebSocket(wsUrl);
             
             ws.onopen = () => {
                 setConnectionStatus('connected');

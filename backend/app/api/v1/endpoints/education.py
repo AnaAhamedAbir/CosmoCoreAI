@@ -21,13 +21,19 @@ def read_education(
     return query.order_by(models.EducationResource.published_at.desc()).limit(50).all()
 
 @router.post("/refresh-news")
-async def refresh_news(db: Session = Depends(deps.get_db)):
+async def refresh_news(
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
     from app.services.news_service import news_service
     count = await news_service.fetch_and_process_latest_news()
     return {"message": f"Fetched {count} new articles"}
 
 @router.post("/init", response_model=dict)
-def init_academy_content(db: Session = Depends(deps.get_db)):
+def init_academy_content(
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
     """
     Frontend থেকে কল করলে এই ফাংশন ডাটাবেসে কোর্স কারিকুলাম লোড করে দেবে।
     """

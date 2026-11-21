@@ -9,6 +9,7 @@ import { Play, Square, Settings, RefreshCw, Terminal, Activity, Zap, Key, AlertT
 import { Combobox, ComboboxInput, ComboboxButton, ComboboxOptions, ComboboxOption } from '@headlessui/react';
 import api from '../../services/api';
 import { useMarketStore } from '@/store/marketStore';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 interface LogEntry {
     id: number;
@@ -186,14 +187,10 @@ const ArbitrageBot = () => {
 
     // 4. WebSocket Integration
     useEffect(() => {
-        // Construct WS URL relative to current host
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.hostname}:8000/api/v1/arbitrage/ws/logs`;
-        // NOTE: Port 8000 is typical for backend dev. Adjust if using proxy.
-
-        const connectWs = () => {
-            const token = sessionStorage.getItem('accessToken') || localStorage.getItem('accessToken');
-            const wsUrlWithToken = token ? `${wsUrl}?token=${token}` : wsUrl;
+        let cancelled = false;
+        const connectWs = async () => {
+            const wsUrlWithToken = await buildAuthenticatedWsUrl('/api/v1/arbitrage/ws/logs');
+            if (!wsUrlWithToken || cancelled) return;
             wsRef.current = new WebSocket(wsUrlWithToken);
 
             wsRef.current.onopen = () => {

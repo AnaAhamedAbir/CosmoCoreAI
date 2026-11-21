@@ -48,6 +48,10 @@ async def start_arbitrage_bot(
     Start the Arbitrage Engine & Save Config to DB.
     """
     user_id = current_user.id
+
+    if user_id not in running_arbitrage_bots:
+        from app.core.quotas import check_bot_quota
+        check_bot_quota(db, current_user)
     
     # 1. Check & Stop existing bot if running
     if user_id in running_arbitrage_bots:
@@ -122,25 +126,13 @@ async def websocket_arbitrage_logs(
     token: str = Query(None), 
     db: Session = Depends(deps.get_db)
 ):
-    await websocket.accept()
-    
-    user_id = None
-    if token:
-        from app.core import security
-        from app import crud
-        payload = security.verify_token(token)
-        if payload:
-            email = payload.get("sub")
-            if email:
-                user = crud.get_user_by_email(db, email=email)
-                if user:
-                    user_id = user.id
-    
-    if not user_id:
-        # Invalid token or no token
-        print("WS Auth Failed")
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+    from app.core.ws_auth import authenticate_websocket
+    user = await authenticate_websocket(websocket, db, query_token=token)
+    if not user:
         return
+
+    await websocket.accept()
+    user_id = user.id
 
     # redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     redis = redis_manager.get_redis() # ✅ Shared

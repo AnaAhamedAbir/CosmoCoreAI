@@ -14,6 +14,11 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     is_active: bool
     is_pro: bool
+    plan_tier: str = "free"
+    is_superuser: bool = False
+    is_email_verified: bool = False
+    is_2fa_enabled: bool = False
+    email_verification_required: bool = False
     created_at: Optional[datetime] = None
     allowed_ips: Optional[List[str]] = []
     is_ip_whitelist_enabled: Optional[bool] = False
@@ -25,6 +30,10 @@ class UserResponse(BaseModel):
 class UserSecurityUpdate(BaseModel):
     allowed_ips: Optional[List[str]] = None
     is_ip_whitelist_enabled: Optional[bool] = None
+
+
+class UserProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -41,6 +50,29 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
+
+
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class TwoFactorSetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    code: str
+
+
+class TwoFactorDisableRequest(BaseModel):
+    code: str
+    password: str
 
 # --- API Key Schemas ---
 class ApiKeyCreate(BaseModel):

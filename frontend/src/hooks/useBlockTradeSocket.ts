@@ -15,14 +15,7 @@ export const useBlockTradeSocket = () => {
 
         // Correct WS URL based on environment
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        let host = window.location.host;
-        
-        // In development (localhost:5173), point to backend port :8000
-        // unless Vite proxy is configured
-        if (host.includes('localhost:5173') || host.includes('127.0.0.1:5173')) {
-            host = host.replace('5173', '8000');
-        }
-        
+        const host = window.location.host;
         const wsUrl = `${wsProtocol}//${host}/ws/block_trades`;
 
         const connect = () => {

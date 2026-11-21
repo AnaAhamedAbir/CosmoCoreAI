@@ -7,6 +7,7 @@ import shutil
 import os
 from app.services.exchange_balance_service import fetch_all_exchange_balances, sync_user_balance
 from app.core.redis import redis_manager
+from app.core.quotas import check_exchange_quota, get_user_quota_summary
 from app.services.exchange_pool import invalidate as invalidate_exchange_pool
 
 router = APIRouter()
@@ -53,6 +54,7 @@ async def add_api_key(
     current_user: models.User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db)
 ):
+    check_exchange_quota(db, current_user)
     created = crud.create_user_api_key(db=db, api_key=api_key_data, user_id=current_user.id)
     redis = redis_manager.get_redis()
     if redis:
@@ -129,6 +131,32 @@ async def sync_balance(
 @router.get("/me", response_model=schemas.UserResponse)
 def read_users_me(current_user: models.User = Depends(deps.get_current_user)):
     return current_user
+
+
+@router.put("/me", response_model=schemas.UserResponse)
+def update_users_me(
+    profile_update: schemas.UserProfileUpdate,
+    current_user: models.User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db),
+):
+    """Persist editable profile fields for the authenticated user."""
+    if profile_update.full_name is not None:
+        cleaned = profile_update.full_name.strip()
+        if not cleaned:
+            raise HTTPException(status_code=400, detail="Full name cannot be empty")
+        current_user.full_name = cleaned
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.get("/me/usage")
+def read_my_plan_usage(
+    current_user: models.User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db),
+):
+    """Return current user's effective SaaS plan tier, usage counters, and limits."""
+    return get_user_quota_summary(db, current_user)
 
 @router.put("/me/security", response_model=schemas.UserResponse)
 def update_user_security(

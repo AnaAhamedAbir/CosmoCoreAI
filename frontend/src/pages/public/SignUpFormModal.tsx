@@ -47,6 +47,7 @@ const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister, 
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [acceptedTerms, setAcceptedTerms] = useState(true);
     const [pendingVerification, setPendingVerification] = useState(false);
     const [verificationCode, setVerificationCode] = useState('');
 
@@ -63,6 +64,10 @@ const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister, 
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!pendingVerification && !acceptedTerms) {
+            setError('Please accept the Terms of Service, Privacy Policy, and Trading Risk Disclaimer.');
+            return;
+        }
         setIsLoading(true);
         setError(null);
 
@@ -224,6 +229,19 @@ const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister, 
                                     onChange={(e) => setPassword(e.target.value)}
                                     icon={<KeyIcon />}
                                 />
+                                <label className="flex items-start gap-2.5 text-xs text-slate-400 cursor-pointer pt-1">
+                                    <input
+                                        type="checkbox"
+                                        checked={acceptedTerms}
+                                        onChange={(e) => setAcceptedTerms(e.target.checked)}
+                                        className="mt-0.5 w-3.5 h-3.5 rounded border-white/20 bg-transparent text-cyan-500 focus:ring-cyan-500/50"
+                                    />
+                                    <span>
+                                        I accept the <span className="text-cyan-400">Terms of Service</span>,{' '}
+                                        <span className="text-cyan-400">Privacy Policy</span>, and{' '}
+                                        <span className="text-cyan-400">Algorithmic Trading Risk Disclaimer</span>.
+                                    </span>
+                                </label>
                             </>
                         ) : (
                             <div className="space-y-3">
@@ -297,7 +315,12 @@ const SignUpFormModal: React.FC<SignUpFormModalProps> = ({ onClose, onRegister, 
                             { Icon: GithubLogo, id: 'github' },
                             { Icon: AppleLogo, id: 'apple' }
                         ].map((provider) => (
-                            <button key={provider.id} className="flex items-center justify-center py-2 border border-white/10 bg-white/5 rounded-xl hover:bg-white/10 hover:border-cyan-500/30 transition-all group">
+                            <button
+                                type="button"
+                                key={provider.id}
+                                onClick={() => setError('OAuth SSO will be enabled soon. Please register with your email above.')}
+                                className="flex items-center justify-center py-2 border border-white/10 bg-white/5 rounded-xl hover:bg-white/10 hover:border-cyan-500/30 transition-all group"
+                            >
                                 <provider.Icon className={`w-4 h-4 ${provider.id === 'google' ? 'grayscale group-hover:grayscale-0' : 'text-slate-400 group-hover:text-white'} transition-all`} />
                             </button>
                         ))}

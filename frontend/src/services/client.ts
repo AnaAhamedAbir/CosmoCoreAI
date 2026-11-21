@@ -22,6 +22,17 @@ apiClient.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config;
 
+        if (error.response?.status === 503 && error.response?.data?.maintenance_mode) {
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                    new CustomEvent('app:maintenance', {
+                        detail: { message: error.response?.data?.detail || 'Scheduled maintenance in progress.' },
+                    })
+                );
+            }
+            return Promise.reject(error);
+        }
+
         if (error.response?.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true;
 

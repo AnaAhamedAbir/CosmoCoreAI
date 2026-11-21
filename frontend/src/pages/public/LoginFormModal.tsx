@@ -267,10 +267,18 @@ const LoginFormModal: React.FC<LoginFormModalProps> = ({ onClose, onLoginSuccess
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                        <button className="flex items-center justify-center py-2.5 border border-white/10 bg-white/5 rounded-xl hover:bg-white/10 hover:border-cyan-500/30 transition-all group">
+                        <button
+                            type="button"
+                            onClick={() => setError('OAuth SSO will be enabled soon. Please sign in with your email and password.')}
+                            className="flex items-center justify-center py-2.5 border border-white/10 bg-white/5 rounded-xl hover:bg-white/10 hover:border-cyan-500/30 transition-all group"
+                        >
                             <GoogleLogo className="w-4 h-4 grayscale group-hover:grayscale-0 transition-all" />
                         </button>
-                        <button className="flex items-center justify-center py-2.5 border border-white/10 bg-white/5 rounded-xl hover:bg-white/10 hover:border-cyan-500/30 transition-all group">
+                        <button
+                            type="button"
+                            onClick={() => setError('OAuth SSO will be enabled soon. Please sign in with your email and password.')}
+                            className="flex items-center justify-center py-2.5 border border-white/10 bg-white/5 rounded-xl hover:bg-white/10 hover:border-cyan-500/30 transition-all group"
+                        >
                             <GithubLogo className="w-4 h-4 text-slate-400 group-hover:text-white transition-all" />
                         </button>
                     </div>

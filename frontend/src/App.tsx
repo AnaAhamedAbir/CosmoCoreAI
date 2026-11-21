@@ -11,6 +11,7 @@ import ResetPasswordScreen from '@/pages/public/ResetPasswordScreen';
 import { AppView } from '@/types';
 import { Toaster } from 'react-hot-toast';
 import { syncThermalDocumentClass } from '@/utils/deviceProfile';
+import MaintenanceOverlay from '@/components/common/MaintenanceOverlay';
 
 // AppState Enum আপডেট
 enum AppState {
@@ -46,6 +47,7 @@ function App() {
     return AppState.PUBLIC;
   });
   const [resetToken, setResetToken] = useState<string | null>(null);
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
 
   // Sync dynamic viewport height (--app-height) for tablet/mobile Chrome (e.g., Redmi Pad 2 Pro)
   useEffect(() => {
@@ -121,6 +123,12 @@ function App() {
   }, [navigate]);
 
   useEffect(() => {
+    const handleMaintenance = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail;
+      setMaintenanceMessage(detail?.message || 'Platform is currently undergoing scheduled maintenance.');
+    };
+    window.addEventListener('app:maintenance', handleMaintenance);
+
     const handleAppLogout = () => {
       handleLogout();
     };
@@ -186,6 +194,7 @@ function App() {
     }
 
     return () => {
+      window.removeEventListener('app:maintenance', handleMaintenance);
       window.removeEventListener('app:logout', handleAppLogout);
       window.removeEventListener('storage', handleStorageEvent);
     };
@@ -285,6 +294,21 @@ function App() {
       {/* 4. Reset Password Screen */}
       {isResetScreen && (
         <ResetPasswordScreen token={resetToken!} onResetSuccess={handleResetSuccess} />
+      )}
+
+      {/* 5. Scheduled Maintenance Overlay (dismissible by Owner login or Retry) */}
+      {maintenanceMessage && (
+        <MaintenanceOverlay
+          message={maintenanceMessage}
+          onRetry={() => {
+            setMaintenanceMessage(null);
+            window.dispatchEvent(new CustomEvent('app:settings-refresh'));
+          }}
+          onOwnerLogin={() => {
+            setMaintenanceMessage(null);
+            setAppState(AppState.SHOW_LOGIN_MODAL);
+          }}
+        />
       )}
     </div>
   );

@@ -7,8 +7,9 @@ import ServicesPage from './ServicesPage';
 import PricingPage from './PricingPage';
 import BlogPage from './BlogPage';
 import PortfolioPage from './PortfolioPage';
+import LegalPage, { type LegalDocType } from './LegalPage';
 
-type PublicView = 'Home' | 'Services' | 'Pricing' | 'Portfolio' | 'Blog';
+type PublicView = 'Home' | 'Services' | 'Pricing' | 'Portfolio' | 'Blog' | 'Legal';
 
 interface PublicWebsiteProps {
     onLogin: () => void;
@@ -127,7 +128,23 @@ const PublicHeader: React.FC<{
     );
 };
 
-const PublicFooter: React.FC = () => (
+const PublicFooter: React.FC<{
+    onOpenLegal: (doc: LegalDocType) => void;
+    onNavigateView: (view: PublicView) => void;
+}> = ({ onOpenLegal, onNavigateView }) => {
+    const [newsletterEmail, setNewsletterEmail] = useState('');
+    const [newsletterMsg, setNewsletterMsg] = useState<string | null>(null);
+
+    const handleSubscribe = () => {
+        if (!newsletterEmail.includes('@')) {
+            setNewsletterMsg('Please enter a valid email address.');
+            return;
+        }
+        setNewsletterMsg('Subscribed! Launch updates will arrive in your inbox.');
+        setNewsletterEmail('');
+    };
+
+    return (
     <footer className="relative bg-transparent border-t border-white/5 pt-16 pb-8 overflow-hidden">
         {/* Background glow */}
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-[120px] pointer-events-none" />
@@ -158,16 +175,49 @@ const PublicFooter: React.FC = () => (
                 <div>
                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Platform</h3>
                     <ul className="space-y-2.5">
-                        {['AI Foundry', 'Backtester', 'Bot Lab', 'Portfolio'].map(item => (
-                            <li key={item}><a href="#" className="text-sm text-slate-400 hover:text-cyan-400 transition-colors">{item}</a></li>
+                        {([
+                            { label: 'AI Foundry', view: 'Services' as PublicView },
+                            { label: 'Backtester', view: 'Services' as PublicView },
+                            { label: 'Bot Lab', view: 'Services' as PublicView },
+                            { label: 'Portfolio', view: 'Portfolio' as PublicView },
+                        ]).map(item => (
+                            <li key={item.label}>
+                                <button
+                                    type="button"
+                                    onClick={() => { onNavigateView(item.view); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                                    className="text-sm text-slate-400 hover:text-cyan-400 transition-colors"
+                                >
+                                    {item.label}
+                                </button>
+                            </li>
                         ))}
                     </ul>
                 </div>
                 <div>
                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Resources</h3>
                     <ul className="space-y-2.5">
-                        {['Documentation', 'API Reference', 'Blog', 'Community'].map(item => (
-                            <li key={item}><a href="#" className="text-sm text-slate-400 hover:text-cyan-400 transition-colors">{item}</a></li>
+                        {([
+                            { label: 'Services & Engines', view: 'Services' as PublicView },
+                            { label: 'Pricing Plans', view: 'Pricing' as PublicView },
+                            { label: 'Research Blog', view: 'Blog' as PublicView },
+                            { label: 'Risk Disclaimer', doc: 'risk' as LegalDocType },
+                        ]).map(item => (
+                            <li key={item.label}>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if ('doc' in item && item.doc) {
+                                            onOpenLegal(item.doc);
+                                        } else if ('view' in item && item.view) {
+                                            onNavigateView(item.view);
+                                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                                        }
+                                    }}
+                                    className="text-sm text-slate-400 hover:text-cyan-400 transition-colors"
+                                >
+                                    {item.label}
+                                </button>
+                            </li>
                         ))}
                     </ul>
                 </div>
@@ -177,32 +227,42 @@ const PublicFooter: React.FC = () => (
                     <div className="flex flex-col gap-2">
                         <input
                             type="email"
+                            value={newsletterEmail}
+                            onChange={(e) => setNewsletterEmail(e.target.value)}
                             placeholder="Enter your email"
                             className="bg-white/5 border border-white/10 focus:border-cyan-500/50 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 outline-none transition-all"
                         />
-                        <button className="py-2.5 text-sm font-semibold rounded-xl bg-gradient-to-r from-cyan-500/20 to-violet-500/20 border border-cyan-500/30 text-cyan-400 hover:bg-gradient-to-r hover:from-cyan-500/30 hover:to-violet-500/30 transition-all">
+                        <button
+                            type="button"
+                            onClick={handleSubscribe}
+                            className="py-2.5 text-sm font-semibold rounded-xl bg-gradient-to-r from-cyan-500/20 to-violet-500/20 border border-cyan-500/30 text-cyan-400 hover:bg-gradient-to-r hover:from-cyan-500/30 hover:to-violet-500/30 transition-all"
+                        >
                             Subscribe
                         </button>
+                        {newsletterMsg && <p className="text-[11px] text-cyan-400">{newsletterMsg}</p>}
                     </div>
                 </div>
             </div>
             <div className="border-t border-white/5 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
                 <p className="text-xs text-slate-600">© {new Date().getFullYear()} CosmoQuantAI. All rights reserved.</p>
-                <div className="flex gap-6 text-xs text-slate-600">
-                    <a href="#" className="hover:text-cyan-400 transition-colors">Privacy Policy</a>
-                    <a href="#" className="hover:text-cyan-400 transition-colors">Terms of Service</a>
-                    <a href="#" className="hover:text-cyan-400 transition-colors">Cookie Policy</a>
+                <div className="flex flex-wrap gap-6 text-xs text-slate-500">
+                    <button type="button" onClick={() => onOpenLegal('privacy')} className="hover:text-cyan-400 transition-colors">Privacy Policy</button>
+                    <button type="button" onClick={() => onOpenLegal('terms')} className="hover:text-cyan-400 transition-colors">Terms of Service</button>
+                    <button type="button" onClick={() => onOpenLegal('risk')} className="hover:text-cyan-400 transition-colors">Risk Disclaimer</button>
+                    <button type="button" onClick={() => onOpenLegal('cookies')} className="hover:text-cyan-400 transition-colors">Cookie Policy</button>
                 </div>
             </div>
         </div>
     </footer>
-);
+    );
+};
 
 
 let hasWarpedIn = false;
 
 const PublicWebsite: React.FC<PublicWebsiteProps> = ({ onLogin, onSignUp }) => {
     const [currentView, setCurrentView] = useState<PublicView>('Home');
+    const [legalDoc, setLegalDoc] = useState<LegalDocType>('terms');
     const [shouldWarp] = useState(() => {
         if (!hasWarpedIn && typeof window !== 'undefined') {
             hasWarpedIn = true;
@@ -211,12 +271,19 @@ const PublicWebsite: React.FC<PublicWebsiteProps> = ({ onLogin, onSignUp }) => {
         return false;
     });
 
+    const openLegal = (doc: LegalDocType) => {
+        setLegalDoc(doc);
+        setCurrentView('Legal');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
     const renderContent = () => {
         switch (currentView) {
             case 'Services': return <ServicesPage />;
             case 'Pricing': return <PricingPage onSelectPlan={onSignUp} />;
             case 'Blog': return <BlogPage />;
             case 'Portfolio': return <PortfolioPage onSignUp={onSignUp} />;
+            case 'Legal': return <LegalPage docType={legalDoc} onSelectDoc={setLegalDoc} onBack={() => setCurrentView('Home')} />;
             case 'Home':
             default:
                 return <HomePage onLogin={onLogin} onSignUp={onSignUp} />;
@@ -231,7 +298,9 @@ const PublicWebsite: React.FC<PublicWebsiteProps> = ({ onLogin, onSignUp }) => {
                 <main className="flex-grow pt-20 relative z-10">
                     {renderContent()}
                 </main>
-                {currentView === 'Home' && <PublicFooter />}
+                {(currentView === 'Home' || currentView === 'Pricing' || currentView === 'Legal') && (
+                    <PublicFooter onOpenLegal={openLegal} onNavigateView={setCurrentView} />
+                )}
             </div>
         </div>
     );

@@ -24,6 +24,8 @@ def is_maintenance_exempt_path(path: str) -> bool:
         f"{api}/admin",
         f"{api}/billing/webhook",
         f"{api}/system/health",
+        f"{api}/system/update-status",
+        f"{api}/system/ping",
         f"{api}/users/me",
     )
     return path.endswith("/openapi.json") or any(path.startswith(prefix) for prefix in exempt_prefixes)

@@ -100,14 +100,15 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 যখনই আপনি আমাকে (AI-কে) দিয়ে নতুন কোনো ফিচার বা পরিবর্তন বানিয়ে GitHub-এ পুশ করাবেন, সার্ভারে সেই আপডেট লাইভ করতে **কখনোই `docker compose down` দেবেন না** এবং সাধারণ কোড আপডেটে ৪০ মিনিটের পুরো `--build`-ও লাগবে না! শুধু VPS-এ ঢুকে নিচের কমান্ডগুলো চালাবেন:
 
-### নিয়মিত আল্ট্রা-ফাস্ট আপডেট (সময়: মাত্র ৩০–৪৫ সেকেন্ড):
+### নিয়মিত আল্ট্রা-ফাস্ট ও নিরাপদ আপডেট (১ লাইনে — কন্টাবো VPS-ও ফ্রিজ হবে না):
 ```bash
-cd ~/CosmoCoreAI
-git pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --no-deps frontend
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build --force-recreate backend celery_worker_default celery_worker_heavy celery_beat telegram_bot
+cd ~/CosmoCoreAI && bash scripts/safe_update.sh
 ```
-*(এতে ৪০ মিনিটের Python/TA-Lib ইমেজ রিবিল্ড না হয়েই মাত্র কয়েক সেকেন্ডে `.env`, নতুন ব্যাকএন্ড কোড, `alembic upgrade head` এবং চলমান বট/ম্যানুয়াল ট্রেড `AutoRecovery` চালু হয়ে যাবে; আর কোনো ইউজারের ডেটাও মুছবে না।)*
+**এই স্ক্রিপ্টটি যা যা করে:**
+1. আপডেট শুরুর সাথে সাথেই সব ইউজারের স্ক্রিনে **"🚀 Version update in progress..."** ব্যানার অটোমেটিক দেখিয়ে দেয়।
+2. `git pull` করে শুধু Frontend রিবিল্ড করে (~৩ সেকেন্ড)।
+3. Contabo VPS-এ যেন CPU/RAM জ্যাম হয়ে SSH ডিসকানেক্ট না হয়, সেজন্য `backend` ও Worker-গুলোকে একসাথে রিস্টার্ট না করে **একটির পর একটি** রোলিং আপডেট করে।
+4. `backend` পুরোপুরি রেডি হওয়ার সাথে সাথেই ব্যানার সরিয়ে ইউজারদের স্ক্রিন অটো-রিফ্রেশ করে দেয়!
 
 ### কখন শুধু একবার ফুল `--build` লাগবে?
 শুধুমাত্র যদি কোনো দিন `backend/Dockerfile` বা `requirements-advanced-rl.txt` / `requirements-nextgen.txt` পরিবর্তন করা হয়—তখন শুধু নিচের ফুল বিল্ড কমান্ডটি চালাবেন:

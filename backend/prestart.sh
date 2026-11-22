@@ -34,8 +34,18 @@ END
 
 alembic upgrade head
 
-# Install any missing requirements quietly (allows docker-compose up to work without --build)
-PIP_ROOT_USER_ACTION=ignore PYTHONWARNINGS="ignore" pip install -q -r requirements.txt
+# Install requirements ONLY when requirements.txt checksum changed (saves CPU/RAM/time on restarts)
+REQ_HASH=$(sha256sum requirements.txt | awk '{print $1}')
+PREV_HASH=""
+if [ -f .last_req_sha256 ]; then
+    PREV_HASH=$(cat .last_req_sha256)
+fi
+if [ "$REQ_HASH" != "$PREV_HASH" ]; then
+    PIP_ROOT_USER_ACTION=ignore PYTHONWARNINGS="ignore" pip install -q -r requirements.txt
+    echo "$REQ_HASH" > .last_req_sha256
+else
+    echo "✅ requirements.txt unchanged — skipping pip install."
+fi
 
 # Automatically sync any models in the uploads/models folder to the database
 python -m scripts.sync_models

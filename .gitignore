@@ -101,3 +101,4 @@ data/
 # Local untracked secret overrides (never commit)
 .env.local
 **/.env.local
+backend/.last_req_sha256

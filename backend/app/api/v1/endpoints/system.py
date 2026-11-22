@@ -17,6 +17,12 @@ router = APIRouter()
 class KillSwitchSchema(BaseModel):
     active: bool
 
+
+class UpdateStatusSchema(BaseModel):
+    updating: bool
+    message: Optional[str] = None
+    version: Optional[str] = None
+
 class AutoArchiverSwitchSchema(BaseModel):
     active: bool
 
@@ -183,6 +189,47 @@ async def health_check(
 async def ping_server():
     """Lightweight ping endpoint for measuring pure Device-to-VPS network RTT."""
     return {"ok": True, "ts": datetime.now(pytz.utc).isoformat()}
+
+
+@router.get("/update-status")
+def get_version_update_status():
+    """Return whether a rolling server/version update is currently in progress."""
+    try:
+        r = get_redis_client()
+        raw_flag = r.get("cosmo_version_update_in_progress")
+        updating = raw_flag in ("true", b"true", "1", b"1")
+        raw_msg = r.get("cosmo_version_update_message")
+        raw_ver = r.get("cosmo_app_version")
+        if isinstance(raw_msg, bytes):
+            raw_msg = raw_msg.decode("utf-8", errors="ignore")
+        if isinstance(raw_ver, bytes):
+            raw_ver = raw_ver.decode("utf-8", errors="ignore")
+        return {
+            "updating": updating,
+            "message": raw_msg or "Version update in progress...",
+            "version": raw_ver or "live",
+        }
+    except Exception:
+        return {
+            "updating": False,
+            "message": "",
+            "version": "live",
+        }
+
+
+@router.post("/update-status")
+def set_version_update_status(
+    payload: UpdateStatusSchema,
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
+    """Toggle version-update banner manually (Owner only)."""
+    r = get_redis_client()
+    r.set("cosmo_version_update_in_progress", "true" if payload.updating else "false", ex=1800 if payload.updating else None)
+    if payload.message is not None:
+        r.set("cosmo_version_update_message", payload.message)
+    if payload.version is not None:
+        r.set("cosmo_app_version", payload.version)
+    return {"updating": payload.updating, "message": payload.message, "version": payload.version}
 
 
 @router.get("/hardware-telemetry")

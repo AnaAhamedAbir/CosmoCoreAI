@@ -12,6 +12,7 @@ import { AppView } from '@/types';
 import { Toaster } from 'react-hot-toast';
 import { syncThermalDocumentClass } from '@/utils/deviceProfile';
 import MaintenanceOverlay from '@/components/common/MaintenanceOverlay';
+import VersionUpdateBanner from '@/components/common/VersionUpdateBanner';
 
 // AppState Enum আপডেট
 enum AppState {
@@ -249,6 +250,7 @@ function App() {
           style: { zIndex: 999999 } 
         }} 
       />
+      <VersionUpdateBanner />
       
       {/* 1. Public Landing Page & Modals (preserved across transitions so it never re-animates on logout) */}
       <div className={isDashboardActive || isTransitioning || isResetScreen ? "hidden" : "contents"}>

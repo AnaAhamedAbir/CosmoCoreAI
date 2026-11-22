@@ -11,6 +11,7 @@ import { ToastProvider } from '@/context/ToastContext';
 import { SettingsProvider } from '@/context/SettingsContext';
 import { ChakraProvider } from '@chakra-ui/react';
 import '@/hooks/usePwaInstall';
+import '@/services/client';
 
 const queryClient = new QueryClient();
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Card from "@/components/common/Card";
 import Button from "@/components/common/Button";
 import { ExternalLink, RefreshCw, Wallet, Radio, Anchor, Zap } from 'lucide-react';
-import axios from 'axios';
+import apiClient from '@/services/client';
 
 interface WhaleAlert {
     hash: string;
@@ -29,11 +29,11 @@ export const WhaleActivityWidget: React.FC = () => {
 
     const fetchData = async () => {
         try {
-            const tRes = await axios.get(`${API_URL}/whale-alerts/threshold`);
+            const tRes = await apiClient.get('/whale-alerts/threshold');
             if (tRes.data.threshold) {
                 setThreshold(tRes.data.threshold / 1_000_000);
             }
-            const aRes = await axios.get(`${API_URL}/whale-alerts/recent`);
+            const aRes = await apiClient.get('/whale-alerts/recent');
             setAlerts(aRes.data);
         } catch (error) {
             console.error("Failed to fetch whale data", error);
@@ -43,7 +43,7 @@ export const WhaleActivityWidget: React.FC = () => {
     const handleUpdateThreshold = async () => {
         setUpdating(true);
         try {
-            await axios.post(`${API_URL}/whale-alerts/threshold`, {
+            await apiClient.post('/whale-alerts/threshold', {
                 amount_usd: threshold * 1_000_000
             });
             await fetchData();

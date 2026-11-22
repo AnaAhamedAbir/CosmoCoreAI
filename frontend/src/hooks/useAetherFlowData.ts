@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import apiClient from '@/services/client';
 import { AetherFlowData } from '../components/features/market/AetherFlowRenderer';
 
 export const useAetherFlowData = (symbol: string, exchange: string, interval: string, enabled: boolean) => {
@@ -20,7 +20,7 @@ export const useAetherFlowData = (symbol: string, exchange: string, interval: st
             try {
                 // Ensure symbol is formatted correctly (e.g. BTC/USDT)
                 const formattedSymbol = symbol.includes('/') ? symbol : `${symbol.substring(0, symbol.length-4)}/${symbol.substring(symbol.length-4)}`;
-                const response = await axios.get<AetherFlowData>(`/api/v1/market-data/aether-flow`, {
+                const response = await apiClient.get<AetherFlowData>(`/market-data/aether-flow`, {
                     params: {
                         symbol: formattedSymbol,
                         exchange: exchange,

@@ -1,6 +1,4 @@
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || '/api/v1';
+import apiClient from './client';
 
 export interface FearAndGreedData {
     value: number;
@@ -12,7 +10,7 @@ export interface FearAndGreedData {
 
 export const getFearAndGreedIndex = async (): Promise<FearAndGreedData> => {
     try {
-        const response = await axios.get(`${API_URL}/fng/latest`);
+        const response = await apiClient.get('/fng/latest');
         return response.data;
     } catch (error) {
         console.error('Error fetching Fear & Greed Index:', error);

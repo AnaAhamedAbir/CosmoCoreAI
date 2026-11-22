@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import apiClient from '@/services/client';
 
 interface WhaleAlert {
     symbol: string;
@@ -16,11 +17,9 @@ const WhaleMovementWidget: React.FC<{ limit?: number }> = ({ limit = 5 }) => {
     useEffect(() => {
         const fetchAlerts = async () => {
             try {
-                // Use relative path via Vite Proxy
-                const response = await fetch(`/api/v1/whale-alerts/recent?limit=${limit}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    setAlerts(data);
+                const response = await apiClient.get(`/whale-alerts/recent?limit=${limit}`);
+                if (Array.isArray(response.data)) {
+                    setAlerts(response.data);
                 }
             } catch (error) {
                 console.error("Failed to fetch whale alerts", error);

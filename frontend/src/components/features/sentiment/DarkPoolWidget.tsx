@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Card from "@/components/common/Card";
 import { Shield, TrendingUp, TrendingDown, Activity, Zap, Layers } from 'lucide-react';
-import axios from 'axios';
+import apiClient from '@/services/client';
 import { ResponsiveContainer, BarChart, Bar, Cell, Tooltip } from 'recharts';
 import { useTheme } from '@/context/ThemeContext';
 
@@ -47,7 +47,7 @@ export const DarkPoolWidget: React.FC<DarkPoolWidgetProps> = ({ symbol = 'BTC' }
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const res = await axios.get(`${API_URL}/sentiment/dark-pool/${symbol}`);
+                const res = await apiClient.get(`/sentiment/dark-pool/${symbol}`);
                 setData(res.data);
             } catch (error) {
                 console.error("Failed to fetch dark pool data", error);

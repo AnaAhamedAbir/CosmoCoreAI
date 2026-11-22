@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BtcLogo, EthLogo, SolLogo, BinanceLogo, AptosLogo, SeiLogo, SuiLogo, UsdtLogo } from '@/constants';
 import { getThermalProfile, isThermalGuardActive } from '@/utils/deviceProfile';
+import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 interface TickerItemProps {
     coin: any;
@@ -130,12 +131,15 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
             }
         };
 
-        const connect = () => {
+        const connect = async () => {
             if (isUnmounted) return;
-            // Robust WebSocket URL construction
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            // Robust WebSocket URL construction: Use window.location.host to leverage the Vite proxy (port 3000)
-            const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+            const token = sessionStorage.getItem('accessToken') || localStorage.getItem('accessToken');
+            if (!token) {
+                retryTimeout = setTimeout(connect, 3000);
+                return;
+            }
+            const wsUrl = await buildAuthenticatedWsUrl('/ws');
+            if (isUnmounted) return;
 
             socket = new WebSocket(wsUrl);
 

@@ -96,12 +96,21 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 ---
 
-## ধাপ ৬: ভবিষ্যতে নতুন আপডেট সার্ভারে তুলবেন কীভাবে?
+## ধাপ ৬: ভবিষ্যতে নতুন আপডেট সার্ভারে তুলবেন কীভাবে? (৪০ মিনিটের বদলে ৩০–৪৫ সেকেন্ড!)
 
-যখনই আপনি আমাকে (AI-কে) দিয়ে নতুন কোনো ফিচার বা পরিবর্তন বানিয়ে GitHub-এ পুশ করাবেন, সার্ভারে সেই আপডেট লাইভ করতে শুধু VPS-এ ঢুকে এই ২ লাইন কপি-পেস্ট করবেন:
+যখনই আপনি আমাকে (AI-কে) দিয়ে নতুন কোনো ফিচার বা পরিবর্তন বানিয়ে GitHub-এ পুশ করাবেন, সার্ভারে সেই আপডেট লাইভ করতে **কখনোই `docker compose down` দেবেন না** এবং সাধারণ কোড আপডেটে ৪০ মিনিটের পুরো `--build`-ও লাগবে না! শুধু VPS-এ ঢুকে নিচের কমান্ডগুলো চালাবেন:
 
+### নিয়মিত আল্ট্রা-ফাস্ট আপডেট (সময়: মাত্র ৩০–৪৫ সেকেন্ড):
 ```bash
 cd ~/CosmoCoreAI
-git pull && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+git pull
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --no-deps frontend
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build --force-recreate backend celery_worker_default celery_worker_heavy celery_beat telegram_bot
 ```
-*(এতে কোনো ইউজারের ডেটা বা ডেটাবেস মুছবে না; শুধু নতুন আপডেট লাইভ হয়ে যাবে।)*
+*(এতে ৪০ মিনিটের Python/TA-Lib ইমেজ রিবিল্ড না হয়েই মাত্র কয়েক সেকেন্ডে `.env`, নতুন ব্যাকএন্ড কোড, `alembic upgrade head` এবং চলমান বট/ম্যানুয়াল ট্রেড `AutoRecovery` চালু হয়ে যাবে; আর কোনো ইউজারের ডেটাও মুছবে না।)*
+
+### কখন শুধু একবার ফুল `--build` লাগবে?
+শুধুমাত্র যদি কোনো দিন `backend/Dockerfile` বা `requirements-advanced-rl.txt` / `requirements-nextgen.txt` পরিবর্তন করা হয়—তখন শুধু নিচের ফুল বিল্ড কমান্ডটি চালাবেন:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```

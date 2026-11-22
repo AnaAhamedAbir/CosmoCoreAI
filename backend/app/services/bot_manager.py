@@ -30,13 +30,13 @@ class BotManager:
         logger.debug("✅ BotManager Service Started")
 
     async def stop_service(self):
-        """Called on app shutdown"""
+        """Called on app shutdown — preserves DB 'active' state so bots auto-resume after rolling updates."""
         self.is_running = False
-        logger.info("🛑 Stopping All Bots...")
+        logger.info("🛑 Gracefully suspending active bots for server shutdown/restart...")
         
-        # Stop all bots
+        # Stop in-memory bot loops without marking DB status inactive or canceling open exchange orders
         for bot_id in list(self.active_bots.keys()):
-            await self.stop_bot(bot_id)
+            await self.stop_bot(bot_id, persist_inactive=False, cancel_exchange_orders=False)
             
         # Stop all streams
         for stream in self.streams.values():
@@ -44,6 +44,37 @@ class BotManager:
             
         self.active_bots.clear()
         self.streams.clear()
+
+    async def recover_active_bots_on_startup(self, startup_delay_seconds: float = 2.5) -> int:
+        """Automatically resume all bots that were 'active' in DB prior to a container update/restart."""
+        if startup_delay_seconds > 0:
+            await asyncio.sleep(startup_delay_seconds)
+
+        local_db = SessionLocal()
+        resumed = 0
+        try:
+            active_rows = (
+                local_db.query(models.Bot)
+                .outerjoin(models.User, models.Bot.owner_id == models.User.id)
+                .filter(models.Bot.status == "active")
+                .all()
+            )
+            for bot in active_rows:
+                if bot.id in self.active_bots:
+                    continue
+                try:
+                    res = await self.start_bot(bot.id)
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        resumed += 1
+                except Exception as exc:
+                    logger.warning(f"⚠️ [AutoResume] Could not auto-resume bot #{bot.id}: {exc}")
+            if resumed > 0:
+                logger.info(f"⚡ [AutoResume] Automatically resumed {resumed} active trading bots after restart.")
+        except Exception as outer_exc:
+            logger.warning(f"⚠️ [AutoResume] Bot recovery scan failed: {outer_exc}")
+        finally:
+            local_db.close()
+        return resumed
 
     async def start_bot(self, bot_id: int, db: Session = None):
         """Start a specific bot."""
@@ -591,7 +622,14 @@ class BotManager:
         finally:
             if not db: local_db.close() # Close if we created it
 
-    async def stop_bot(self, bot_id: int, db: Session = None, liquidate_positions: bool = False):
+    async def stop_bot(
+        self,
+        bot_id: int,
+        db: Session = None,
+        liquidate_positions: bool = False,
+        persist_inactive: bool = True,
+        cancel_exchange_orders: bool = True,
+    ):
         """Stop a specific bot."""
         # 1. Prepare DB Session
         local_db = db or SessionLocal()
@@ -626,7 +664,7 @@ class BotManager:
                         if not target_exchange and hasattr(bot_instance, 'engine'):
                             target_exchange = getattr(bot_instance.engine, 'exchange', None)
                         
-                        if target_exchange and getattr(target_exchange, "apiKey", None):
+                        if cancel_exchange_orders and target_exchange and getattr(target_exchange, "apiKey", None):
                             try:
                                 target_symbol = getattr(bot_instance, 'symbol', getattr(bot_instance, 'bot', None) and getattr(bot_instance.bot, 'market', None))
                                 if target_symbol:
@@ -652,27 +690,28 @@ class BotManager:
             else:
                 logger.warning(f"⚠️ Bot {bot_id} not found in memory. Checking DB for zombie state...")
 
-            # 3. Update DB Status (Always, to ensure consistency)
-            bot = local_db.query(models.Bot).filter(models.Bot.id == bot_id).first()
-            if bot:
-                if bot.status == "active":
-                    logger.info(f"🧹 Cleaning up zombie bot {bot_id} (active in DB -> inactive)")
-                bot.status = "inactive"
-                local_db.commit()
-                if bot.strategy == "wall_hunter" and bot.owner_id:
-                    try:
-                        from app.services.system_notification_service import SystemNotificationService
-                        await SystemNotificationService.emit(
-                            user_id=bot.owner_id,
-                            category="wallhunter",
-                            title=f"WallHunter Bot #{bot.id} Stopped",
-                            message=f"Pair: {bot.market}\nExchange: {bot.exchange or 'binance'}\nBot has been stopped.",
-                            event_type="bot_stopped",
-                            severity="warning",
-                            meta={"bot_id": bot.id, "symbol": bot.market, "exchange": bot.exchange},
-                        )
-                    except Exception:
-                        pass
+            # 3. Update DB Status (Only when explicitly stopped by user/admin, not during rolling server restart)
+            if persist_inactive:
+                bot = local_db.query(models.Bot).filter(models.Bot.id == bot_id).first()
+                if bot:
+                    if bot.status == "active":
+                        logger.info(f"🧹 Cleaning up zombie bot {bot_id} (active in DB -> inactive)")
+                    bot.status = "inactive"
+                    local_db.commit()
+                    if bot.strategy == "wall_hunter" and bot.owner_id:
+                        try:
+                            from app.services.system_notification_service import SystemNotificationService
+                            await SystemNotificationService.emit(
+                                user_id=bot.owner_id,
+                                category="wallhunter",
+                                title=f"WallHunter Bot #{bot.id} Stopped",
+                                message=f"Pair: {bot.market}\nExchange: {bot.exchange or 'binance'}\nBot has been stopped.",
+                                event_type="bot_stopped",
+                                severity="warning",
+                                meta={"bot_id": bot.id, "symbol": bot.market, "exchange": bot.exchange},
+                            )
+                        except Exception:
+                            pass
 
             return {"status": "success", "message": f"Bot {bot_id} stopped (or was already stopped)"}
 

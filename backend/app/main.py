@@ -884,7 +884,7 @@ async def startup_event():
     running_tasks.add(pnl_task)
     pnl_task.add_done_callback(running_tasks.discard)
 
-    # Task O: Auto-Resume Interrupted Manual Trade SL / Bracket Monitors
+    # Task O: Auto-Resume Interrupted Manual Trade SL / Bracket Monitors & Active Trading Bots
     try:
         from app.services.manual_trade_recovery import recover_manual_trade_monitors
         recovery_task = asyncio.create_task(recover_manual_trade_monitors(startup_delay_seconds=0.5))
@@ -892,6 +892,13 @@ async def startup_event():
         recovery_task.add_done_callback(running_tasks.discard)
     except Exception as _rec_err:
         logger.warning(f"⚠️ Failed to schedule manual trade auto-recovery: {_rec_err}")
+
+    try:
+        bot_resume_task = asyncio.create_task(bot_manager.recover_active_bots_on_startup(startup_delay_seconds=2.5))
+        running_tasks.add(bot_resume_task)
+        bot_resume_task.add_done_callback(running_tasks.discard)
+    except Exception as _bot_rec_err:
+        logger.warning(f"⚠️ Failed to schedule active bot auto-recovery: {_bot_rec_err}")
 
     # Task P: Solo-Founder Subscription Expiry Autopilot (runs hourly)
     async def subscription_expiry_autopilot_loop():

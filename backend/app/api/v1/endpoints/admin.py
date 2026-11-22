@@ -595,3 +595,90 @@ def trigger_autopilot_sweep(
         details=summary,
     )
     return summary
+
+
+@router.get("/backup/export")
+def export_platform_backup(
+    request: Request,
+    db: Session = Depends(deps.get_db),
+    current_owner: models.User = Depends(deps.get_current_active_superuser),
+) -> Dict[str, Any]:
+    """1-Click downloadable JSON backup snapshot of users, subscriptions, payments, bots, and settings."""
+    from datetime import datetime, timezone
+
+    users_list = db.query(models.User).order_by(models.User.id.asc()).all()
+    subs_list = db.query(Subscription).order_by(Subscription.id.asc()).all()
+    txs_list = db.query(PaymentTransaction).order_by(PaymentTransaction.id.asc()).all()
+    bots_list = db.query(models.Bot).order_by(models.Bot.id.asc()).all()
+
+    record_admin_action(
+        db=db,
+        admin_id=current_owner.id,
+        action="DATABASE_BACKUP_EXPORTED",
+        target_type="system",
+        target_id="full_json_snapshot",
+        request=request,
+        details={"users": len(users_list), "subscriptions": len(subs_list), "payments": len(txs_list)},
+    )
+
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "platform_config": get_platform_config(),
+        "users": [
+            {
+                "id": u.id,
+                "email": u.email,
+                "full_name": u.full_name,
+                "is_active": bool(u.is_active),
+                "is_pro": bool(u.is_pro),
+                "is_superuser": bool(u.is_superuser),
+                "plan_tier": getattr(u, "plan_tier", "free"),
+                "is_email_verified": bool(getattr(u, "is_email_verified", False)),
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+            }
+            for u in users_list
+        ],
+        "subscriptions": [
+            {
+                "id": s.id,
+                "user_id": s.user_id,
+                "plan_tier": s.plan_tier,
+                "billing_cycle": s.billing_cycle,
+                "status": s.status,
+                "provider": s.provider,
+                "current_period_end": s.current_period_end.isoformat() if s.current_period_end else None,
+            }
+            for s in subs_list
+        ],
+        "payments": [
+            {
+                "id": t.id,
+                "user_id": t.user_id,
+                "provider": t.provider,
+                "provider_payment_id": t.provider_payment_id,
+                "amount_usd": t.amount_usd,
+                "currency": t.currency,
+                "plan_tier": t.plan_tier,
+                "billing_cycle": t.billing_cycle,
+                "status": t.status,
+                "raw_payload": t.raw_payload,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+            }
+            for t in txs_list
+        ],
+        "bots": [
+            {
+                "id": b.id,
+                "owner_id": b.owner_id,
+                "name": b.name,
+                "exchange": b.exchange,
+                "market": b.market,
+                "strategy": b.strategy,
+                "timeframe": b.timeframe,
+                "status": b.status,
+                "is_paper_trading": bool(b.is_paper_trading),
+                "config": b.config,
+            }
+            for b in bots_list
+        ],
+    }

@@ -181,6 +181,10 @@ export const adminService = {
     const res = await apiClient.post('/admin/autopilot/run-sweep');
     return res.data;
   },
+  exportBackupSnapshot: async (): Promise<Record<string, any>> => {
+    const res = await apiClient.get('/admin/backup/export');
+    return res.data;
+  },
 };
 
 export const billingService = {

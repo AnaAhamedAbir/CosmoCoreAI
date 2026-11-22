@@ -207,6 +207,7 @@ class TestBangladeshBillingAndAutopilot(unittest.TestCase):
     def test_phase5_python_files_parse_cleanly(self):
         for rel in (
             "app/services/autopilot_service.py",
+            "app/services/bot_manager.py",
             "app/api/v1/endpoints/admin.py",
             "app/api/v1/endpoints/billing.py",
             "app/main.py",

@@ -31,6 +31,7 @@ import {
   CalendarPlus,
   Megaphone,
   Sparkles,
+  Download,
 } from 'lucide-react';
 
 type AdminTab = 'overview' | 'payments' | 'users' | 'nocode' | 'bots' | 'audit';
@@ -219,6 +220,28 @@ const OwnerAdminConsole: React.FC = () => {
     }
   };
 
+  const handleDownloadBackup = async () => {
+    setBusyId('backup_export');
+    try {
+      const snapshot = await adminService.exportBackupSnapshot();
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `cosmoquant_backup_${dateStr}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Full platform backup downloaded to your computer!', 'success');
+    } catch (err: any) {
+      showToast(err?.response?.data?.detail || 'Failed to export database backup', 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleForceStopBot = async (botId: number) => {
     setBusyId(`bot_${botId}`);
     try {
@@ -275,6 +298,16 @@ const OwnerAdminConsole: React.FC = () => {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            onClick={handleDownloadBackup}
+            disabled={busyId === 'backup_export'}
+          >
+            <span className="flex items-center gap-1.5 text-xs">
+              <Download className="w-4 h-4 text-emerald-400" />
+              {busyId === 'backup_export' ? 'Exporting...' : 'Download DB Backup'}
+            </span>
+          </Button>
           <Button
             variant="secondary"
             onClick={handleRunAutopilotSweep}

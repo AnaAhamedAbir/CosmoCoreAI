@@ -1,59 +1,107 @@
-# CosmoQuantAI প্রোডাকশন SaaS ডিপ্লয়মেন্ট গাইড
+# CosmoQuantAI — One-Man Army SaaS ডিপ্লয়মেন্ট ও পরিচালনা গাইড (নন-কোডার সংস্করণ)
 
-এই গাইডটি অনুসরণ করে আপনি যেকোনো Ubuntu/Debian VPS সার্ভারে আপনার প্রোজেক্টটি সম্পূর্ণ প্রোডাকশন SaaS হিসেবে লাইভ করতে পারবেন।
-
----
-
-## ১. লঞ্চের আগে `.env` চেকলিস্ট (`ENVIRONMENT=production` করার আগে)
-
-ডোমেইন কেনার পর আপনার সার্ভারের `.env` এবং `backend/.env` ফাইলে নিচের মানগুলো প্রোডাকশন অনুযায়ী আপডেট করুন:
-
-- **প্রোডাকশন মোড ও সিক্রেট কী:**
-  - `ENVIRONMENT=production`
-  - `SECRET_KEY` — অন্তত ৩২+ অক্ষরের নতুন র‍্যান্ডম কী দিন (তৈরি করার কমান্ড: `openssl rand -hex 32`)
-  - `ENCRYPTION_KEY` — নতুন Fernet কী দিন (তৈরি করার কমান্ড: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)
-- **ডোমেইন ও CORS:**
-  - `FRONTEND_URL=https://yourdomain.com`
-  - `BACKEND_CORS_ORIGINS=["https://yourdomain.com","https://www.yourdomain.com"]`
-- **ইমেইল সার্ভার (OTP ও পাসওয়ার্ড রিসেটের জন্য):**
-  - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` (যেমন Resend, Brevo, বা Gmail App Password)
-- **পেমেন্ট গেটওয়ে (কার্ড ও ক্রিপ্টো সাবস্ক্রিপশনের জন্য):**
-  - Stripe (Card): `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PRO_MONTHLY`, `STRIPE_PRICE_ID_PRO_YEARLY`
-  - NOWPayments (Crypto): `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET`
-  - Stripe Webhook URL: `https://yourdomain.com/api/v1/billing/webhook/stripe`
-  - NOWPayments IPN Callback URL: `https://yourdomain.com/api/v1/billing/webhook/nowpayments`
+এই গাইডটি এমনভাবে লেখা হয়েছে যেন আপনি **কোনো কোডিং জ্ঞান বা ডেভেলপার টিম ছাড়াই** একাই একটি VPS সার্ভার কিনে প্রোজেক্টটি লাইভ করতে পারেন এবং প্রতিদিন মাত্র ১৫–২০ মিনিটে ১০,০০০+ ইউজার পরিচালনা করতে পারেন।
 
 ---
 
-## ২. VPS সার্ভারে Git থেকে ক্লোন করে প্রোডাকশন স্ট্যাক চালু করা
+## ধাপ ১: কোন VPS সার্ভার ও ডোমেইন কিনবেন?
 
-সার্ভারে Docker ও Docker Compose ইন্সটল থাকলে নিচের কমান্ডগুলো চালান:
+1. **ডোমেইন (Domain):** Namecheap, Porkbun বা Cloudflare থেকে আপনার পছন্দের ডোমেইন কিনুন (যেমন: `cosmoquant.ai` বা `cosmocoreai.com`)।
+2. **VPS সার্ভার (Ubuntu 22.04 বা 24.04 LTS):**
+   - **শুরুতে (১ – ১,০০০ ইউজার):** Hetzner Cloud (`CPX31` / `CAX31`), Contabo, বা DigitalOcean — **4 vCPU, 8GB–16GB RAM, 160GB NVMe SSD**।
+   - **মাঝারি (১,০০০ – ৫,০০০ ইউজার):** **8 vCPU, 32GB RAM, 240GB NVMe SSD**।
+   - **বড় স্কেল (৫,০০০ – ১০,০০০+ ইউজার):** **16 vCPU, 64GB RAM** (Hetzner-এ মাসে মাত্র €40–€60 খরচে পাওয়া যায়)।
 
+---
+
+## ধাপ ২: Cloudflare দিয়ে ডোমেইন ও ফ্রি HTTPS/SSL সেটআপ (কোড ছাড়াই ৫ মিনিটে)
+
+1. ফ্রিতে [Cloudflare.com](https://www.cloudflare.com)-এ একাউন্ট খুলে আপনার ডোমেইনটি যুক্ত করুন।
+2. Cloudflare-এর **DNS -> Records**-এ গিয়ে ২টি রেকর্ড যোগ করুন:
+   - Type: `A` | Name: `@` | IPv4 address: `আপনার_VPS_এর_IP` | Proxy status: **Proxied (Orange Cloud অন)**
+   - Type: `A` | Name: `www` | IPv4 address: `আপনার_VPS_এর_IP` | Proxy status: **Proxied (Orange Cloud অন)**
+3. Cloudflare-এর **SSL/TLS -> Overview**-এ গিয়ে মোডটি **`Flexible`** (অথবা অরিজিন সার্টিফিকেট দিলে `Full`) সিলেক্ট করুন।
+   - ব্যস! আপনাকে সার্ভারে কোনো জটিল SSL কমান্ড চালাতে হবে না—Cloudflare নিজেই আপনার সাইটে তালা চিহ্ন (`https://`) ও DDoS হ্যাকার প্রোটেকশন দিয়ে দেবে।
+
+---
+
+## ধাপ ৩: নতুন VPS সার্ভারে প্রথমবার প্রোজেক্ট চালু করা (কপি-পেস্ট কমান্ড)
+
+VPS কেনার পর আপনার ইমেইলে একটি IP Address ও `root` পাসওয়ার্ড পাবেন। আপনার কম্পিউটারের PowerShell খুলে `ssh root@আপনার_VPS_IP` লিখে পাসওয়ার্ড দিয়ে লগইন করুন। এরপর নিচের ৪টি কমান্ড পরপর কপি-পেস্ট করুন:
+
+### ১) সার্ভারে Docker ইন্সটল করা (জীবনে একবারই):
+```bash
+curl -fsSL https://get.docker.com | sh
+```
+
+### ২) আপনার প্রাইভেট GitHub থেকে প্রোজেক্ট ডাউনলোড করা:
 ```bash
 git clone https://github.com/AnaAhamedAbir/CosmoCoreAI.git
 cd CosmoCoreAI
+```
+*(GitHub ইউজারনেম ও Personal Access Token চাইলে দেবেন।)*
+
+### ৩) ডোমেইন নাম `.env` ফাইলে বসানো:
+চাইলে লোকাল কম্পিউটার থেকেই `.env` ও `backend/.env` ফাইলে নিচের ৩টি লাইন আপনার আসল ডোমেইন দিয়ে Git-এ পুশ করে দিতে পারেন, অথবা সার্ভারে `nano .env` দিয়ে বসাতে পারেন:
+```env
+ENVIRONMENT=production
+FRONTEND_URL=https://yourdomain.com
+BACKEND_CORS_ORIGINS=["https://yourdomain.com","https://www.yourdomain.com"]
+```
+*(সিকিউরিটির জন্য আমাদের নতুন `SECRET_KEY`, `ENCRYPTION_KEY`, এবং আপনার `OWNER_EMAIL` ও `OWNER_PASSWORD` ইতিমধ্যেই `.env`-এ সেট করা আছে!)*
+
+### ৪) প্রোডাকশন সার্ভার চালু করা (১ কমান্ডে):
+```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
-
-> **নোট:** `docker-compose.prod.yml` ব্যবহার করলে `8000` (Backend) ও `2026` (Frontend) পোর্ট সরাসরি পাবলিক ইন্টারনেটে বন্ধ থাকে এবং সব ট্রাফিক নিরাপদভাবে `nginx` (`80`/`443`)-এর মাধ্যমে যায়।
-
----
-
-## ৩. Sole-Owner (মালিক) হিসেবে অটো-লগইন ও অ্যাডমিন কন্ট্রোল
-
-- সার্ভার প্রথমবার চালু হলেই ব্যাকএন্ড অটোমেটিক Alembic ডেটাবেস মাইগ্রেশন (`g7b8c9d0e1f2`) রান করবে এবং `.env`-এর `OWNER_EMAIL` ও `OWNER_PASSWORD` থেকে আপনার **Sole Owner (`is_superuser=True`)** অ্যাকাউন্ট তৈরি বা ভেরিফাই করে নেবে।
-- কোনো আলাদা রেজিস্ট্রেশন ছাড়াই সরাসরি `https://yourdomain.com`-এর **Log In** বাটন থেকে আপনার ইমেইল ও পাসওয়ার্ড দিয়ে লগইন করতে পারবেন।
-- লগইন করার পর সাইডবার (`Owner Command` -> **Owner Admin**) অথবা প্রোফাইল মেনু থেকে `/admin` (**Owner Admin Console**)-এ ঢুকে সব ইউজার, প্ল্যান, লাইভ বট, Kill Switch, Maintenance Mode ও Audit Log নিয়ন্ত্রণ করতে পারবেন।
+- এই কমান্ড দিলে ৫–৮ মিনিটের মধ্যে ডেটাবেস, Redis, AI/Backtest Worker, Telegram Bot, Backend ও Nginx নিজে থেকে চালু হয়ে যাবে এবং আপনার ডোমেইনে সাইট লাইভ হয়ে যাবে!
+- সার্ভার রিবুট হলেও `restart: always` থাকায় সব কন্টেইনার অটোমেটিক চালু হবে।
 
 ---
 
-## ৪. ডোমেইনে SSL / HTTPS চালু করা
+## ধাপ ৪: লগইন করার পর প্রথম দিন `/admin` প্যানেলে যা যা সেট করবেন (Zero-Code)
 
-### পদ্ধতি ক: Cloudflare ব্যবহার করলে (সবচেয়ে সহজ)
-1. আপনার ডোমেইনের DNS-এ VPS-এর IP দিয়ে একটি `A` রেকর্ড যোগ করুন এবং Cloudflare Proxy (**Orange Cloud**) অন রাখুন।
-2. Cloudflare Dashboard থেকে **SSL/TLS Mode** `Flexible` অথবা `Full` সিলেক্ট করুন।
-3. `nginx/nginx.prod.conf` আগে থেকেই পোর্ট `80` এবং `X-Forwarded-Proto` প্রক্সি হেডারসহ প্রস্তুত আছে, তাই বাড়তি কনফিগ ছাড়াই `https://` চালু হয়ে যাবে।
+১. আপনার ওয়েবসাইটে (`https://yourdomain.com`) ঢুকে **Log In** বাটনে ক্লিক করুন।
+২. আপনার `.env`-এ দেওয়া ইমেইল (`abir.ahamed.01931645993@gmail.com`) ও পাসওয়ার্ড দিয়ে সরাসরি লগইন করুন (কোনো সাইন-আপ করা লাগবে না)।
+৩. বাম পাশের সাইডবারে **`Owner Command -> Owner Admin`** (`/admin`)-এ ক্লিক করুন।
+৪. **`No-Code Settings & Notice`** ট্যাবে যান এবং কোডে হাত না দিয়েই নিচের তথ্যগুলো বসিয়ে **Save All No-Code Settings** চাপুন:
+   - আপনার আসল **bKash / Nagad / Rocket নাম্বার**
+   - আপনার **Binance Pay ID / USDT TRC20 Address**
+   - **Pro Monthly ও Yearly দাম (BDT ৳ এবং USD $)**
+   - আপনার **Support Telegram Group বা WhatsApp লিংক** (যাতে ইউজাররা সমস্যায় পড়লে ১ ক্লিকে আপনার সাথে যোগাযোগ করতে পারে)
+   - চাইলে **Global Dashboard Announcement Banner** অন করে স্বাগতম বার্তা বা অফার লিখে দিন।
 
-### পদ্ধতি খ: সরাসরি Let's Encrypt SSL ব্যবহার করলে
-1. সার্ভার থেকে ডোমেইনের জন্য সার্টিফিকেট ইস্যু করে `./certbot/conf` ফোল্ডারে রাখুন।
-2. এরপর `nginx/nginx.prod.conf` ফাইলের নিচের দিকে থাকা পোর্ট `443 ssl http2` সার্ভার ব্লকটি আনকমেন্ট করে `docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx` চালান।
+---
+
+## ধাপ ৫: One-Man Army রুটিন — প্রতিদিন মাত্র ১৫ মিনিটে কীভাবে ১০,০০০ ইউজার সামলাবেন?
+
+আপনাকে প্রতিদিন কোনো কোড দেখতে হবে না। শুধু মোবাইল বা পিসি থেকে `/admin`-এ ঢুকে ৩টি কাজ করবেন:
+
+### ১) পেমেন্ট অ্যাপ্রুভ করা (৫–১০ মিনিট):
+- ইউজাররা বিকাশ/নগদ/Binance Pay-তে টাকা পাঠিয়ে সাইটে `TrxID` সাবমিট করলে আপনার `/admin`-এর উপরে হলুদ নোটিফিকেশন ব্যানার ও **`Payments (Pending)`** ট্যাবে সংখ্যা দেখাবে।
+- আপনি আপনার ফোনের বিকাশ/নগদ মেসেজ বা Binance অ্যাপে `TrxID` মিলিয়ে শুধু **`Approve (+30d)`** বাটনে ১টি ক্লিক করবেন।
+- সফটওয়্যার নিজে থেকে ইউজারকে ৩০ দিনের জন্য `Pro` করে দেবে, আর ৩০ দিন শেষ হলে অটোমেটিক তাকে `Free` করে অতিরিক্ত বট বন্ধ করে দেবে (**Auto-Expiry Autopilot** প্রতি ঘণ্টায় নিজে নিজে চলে)!
+
+### ২) ইউজার সাপোর্ট দেওয়া (৫ মিনিট):
+- কোনো ইউজার পাসওয়ার্ড ভুলে গেলে বা 2FA ফোন হারালে **`Users & Support`** ট্যাবে গিয়ে তার ইমেইল সার্চ করুন:
+  - **`Reset Pass`** চাপলে স্ক্রিনেই নতুন পাসওয়ার্ড তৈরি হবে—কপি করে ইউজারকে দিয়ে দিন।
+  - **`Reset 2FA`** চাপলে ১ ক্লিকে তার 2FA বন্ধ হয়ে যাবে।
+  - **`+30d Pro`** চাপলে ১ ক্লিকে ৩০ দিন মেয়াদ বেড়ে যাবে।
+  - কোনো ইউজার নিয়ম ভাঙলে **`Suspend`** চাপলে সাথে সাথে তার একাউন্ট ব্লক হয়ে যাবে।
+
+### ৩) জরুরি পরিস্থিতি সামলানো (১ ক্লিকে):
+- এক্সচেঞ্জে বড় সমস্যা বা সার্ভার মেইনটেন্যান্সের প্রয়োজন হলে `/admin -> Overview & Switches` থেকে:
+  - **`Enable Maintenance`** অন করলে সাধারণ ইউজারদের সামনে সুন্দর মেইনটেন্যান্স স্ক্রিন দেখাবে (কিন্তু আপনি কাজ করতে পারবেন)।
+  - **`Activate Kill Switch`** অন করলে পুরো প্ল্যাটফর্মের সব লাইভ ট্রেডিং বট তাৎক্ষণিক থেমে যাবে।
+
+---
+
+## ধাপ ৬: ভবিষ্যতে নতুন আপডেট সার্ভারে তুলবেন কীভাবে?
+
+যখনই আপনি আমাকে (AI-কে) দিয়ে নতুন কোনো ফিচার বা পরিবর্তন বানিয়ে GitHub-এ পুশ করাবেন, সার্ভারে সেই আপডেট লাইভ করতে শুধু VPS-এ ঢুকে এই ২ লাইন কপি-পেস্ট করবেন:
+
+```bash
+cd ~/CosmoCoreAI
+git pull && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+*(এতে কোনো ইউজারের ডেটা বা ডেটাবেস মুছবে না; শুধু নতুন আপডেট লাইভ হয়ে যাবে।)*

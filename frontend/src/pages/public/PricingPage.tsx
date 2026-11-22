@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Button from '@/components/common/Button';
 import { CheckCircleIcon } from '@/constants';
+import { billingService, type PlatformNoCodeConfig } from '@/services/adminService';
 
 type BillingCycle = 'monthly' | 'yearly';
 
@@ -67,6 +68,22 @@ const FAQS = [
 const PricingPage: React.FC<{ onSelectPlan?: () => void }> = ({ onSelectPlan }) => {
     const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
     const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
+    const [publicCfg, setPublicCfg] = useState<PlatformNoCodeConfig | null>(null);
+
+    useEffect(() => {
+        billingService.getPublicConfig().then(setPublicCfg).catch(() => {});
+    }, []);
+
+    const dynamicTiers = PRICING_TIERS.map((t) => {
+        if (t.name !== 'Pro Trader' || !publicCfg) return t;
+        const monthlyUsd = publicCfg.pro_monthly_usd || 49;
+        const yearlyMonthlyEq = Math.round((publicCfg.pro_yearly_usd || 468) / 12);
+        return {
+            ...t,
+            monthlyPrice: `$${monthlyUsd}`,
+            yearlyPrice: `$${yearlyMonthlyEq}`,
+        };
+    });
 
     return (
         <div className="bg-transparent min-h-screen font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
@@ -113,7 +130,7 @@ const PricingPage: React.FC<{ onSelectPlan?: () => void }> = ({ onSelectPlan }) 
             {/* Pricing Cards */}
             <div className="container mx-auto px-4 sm:px-6 lg:px-8 pb-24 relative z-10">
                 <div className="grid lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
-                    {PRICING_TIERS.map((tier, index) => (
+                    {dynamicTiers.map((tier, index) => (
                         <div 
                             key={tier.name} 
                             className={`relative bg-[#070F20]/60 backdrop-blur-2xl border rounded-[2rem] p-8 md:p-10 flex flex-col transition-all duration-500 hover:-translate-y-2 hover:bg-[#070F20]/80 group ${tier.highlightColor} ${tier.isFeatured ? 'z-10 lg:scale-105' : ''}`}
@@ -141,6 +158,14 @@ const PricingPage: React.FC<{ onSelectPlan?: () => void }> = ({ onSelectPlan }) 
                                 </div>
                                 {billingCycle === 'yearly' && tier.monthlyPrice !== 'Custom' && tier.monthlyPrice !== '$0' && (
                                     <p className="text-xs text-cyan-400 mt-2 font-mono font-bold tracking-wider">Billed ${parseInt(tier.yearlyPrice.replace('$','')) * 12} yearly</p>
+                                )}
+                                {tier.name === 'Pro Trader' && (
+                                    <p className="text-xs text-emerald-400 mt-2 font-mono font-semibold">
+                                        {billingCycle === 'monthly'
+                                            ? `৳${(publicCfg?.pro_monthly_bdt ?? 5500).toLocaleString()} BDT / mo`
+                                            : `৳${(publicCfg?.pro_yearly_bdt ?? 52000).toLocaleString()} BDT / yr`}{' '}
+                                        • bKash / Nagad / Binance Pay / Card
+                                    </p>
                                 )}
                             </div>
 

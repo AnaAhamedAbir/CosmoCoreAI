@@ -17,6 +17,16 @@ from app.api import deps
 from app.core.audit import record_admin_action
 from app.core.plans import resolve_user_plan_tier
 from app.models.saas_admin import AdminAuditLog, Subscription, PaymentTransaction
+from app.services.autopilot_service import (
+    admin_reset_user_2fa,
+    admin_reset_user_password,
+    approve_manual_payment,
+    extend_user_subscription_days,
+    get_platform_config,
+    reject_manual_payment,
+    run_subscription_expiry_sweep,
+    update_platform_config,
+)
 from app.services.billing_service import apply_plan_change, PLAN_PRICING_USD
 
 router = APIRouter()
@@ -36,6 +46,35 @@ class UpdateUserPlanRequest(BaseModel):
 class MaintenanceSwitchRequest(BaseModel):
     active: bool
     message: Optional[str] = None
+
+
+class PaymentDecisionRequest(BaseModel):
+    note: Optional[str] = None
+
+
+class AdminPasswordResetRequest(BaseModel):
+    new_password: Optional[str] = None
+
+
+class ExtendSubscriptionRequest(BaseModel):
+    days: int = 30
+    plan_tier: str = "pro"
+
+
+class PlatformConfigUpdateRequest(BaseModel):
+    bkash_number: Optional[str] = None
+    nagad_number: Optional[str] = None
+    rocket_number: Optional[str] = None
+    binance_pay_id: Optional[str] = None
+    pro_monthly_usd: Optional[float] = None
+    pro_monthly_bdt: Optional[float] = None
+    pro_yearly_usd: Optional[float] = None
+    pro_yearly_bdt: Optional[float] = None
+    usd_to_bdt_rate: Optional[float] = None
+    support_url: Optional[str] = None
+    announcement_active: Optional[bool] = None
+    announcement_message: Optional[str] = None
+    announcement_type: Optional[str] = None
 
 
 def _get_redis_flag(key: str) -> bool:
@@ -78,6 +117,11 @@ def get_admin_overview(
         .scalar()
         or 0.0
     )
+    pending_payments = (
+        db.query(PaymentTransaction)
+        .filter(PaymentTransaction.status == "pending_approval")
+        .count()
+    )
 
     estimated_mrr_usd = float(pro_users) * PLAN_PRICING_USD["pro"]["monthly"]
 
@@ -106,6 +150,7 @@ def get_admin_overview(
         "revenue": {
             "total_collected_usd": round(float(total_paid_usd), 2),
             "estimated_mrr_usd": round(estimated_mrr_usd, 2),
+            "pending_payments": pending_payments,
         },
     }
 
@@ -144,6 +189,7 @@ def list_all_users(
             "plan_tier": resolve_user_plan_tier(u),
             "subscription_status": sub.status if sub else "free",
             "subscription_provider": sub.provider if sub else "none",
+            "subscription_expires_at": sub.current_period_end.isoformat() if sub and sub.current_period_end else None,
             "bot_count": bot_count,
             "active_bot_count": active_bot_count,
             "api_key_count": key_count,
@@ -338,3 +384,214 @@ def get_admin_audit_logs(
         }
         for log in logs
     ]
+
+
+@router.get("/payments")
+def list_payment_requests(
+    status_filter: Optional[str] = Query(default=None),
+    limit: int = 100,
+    db: Session = Depends(deps.get_db),
+    current_owner: models.User = Depends(deps.get_current_active_superuser),
+) -> List[Dict[str, Any]]:
+    """List manual (bKash/Nagad/Rocket/Binance Pay) & gateway payment transactions for Owner review."""
+    q = db.query(PaymentTransaction, models.User.email, models.User.full_name).outerjoin(
+        models.User, PaymentTransaction.user_id == models.User.id
+    )
+    if status_filter:
+        q = q.filter(PaymentTransaction.status == status_filter)
+    rows = q.order_by(PaymentTransaction.created_at.desc()).limit(min(limit, 250)).all()
+
+    return [
+        {
+            "id": tx.id,
+            "user_id": tx.user_id,
+            "user_email": email or (tx.raw_payload or {}).get("user_email") or "unknown",
+            "user_name": full_name or (tx.raw_payload or {}).get("user_name") or "Trader",
+            "provider": tx.provider,
+            "amount_usd": tx.amount_usd,
+            "amount_bdt": (tx.raw_payload or {}).get("amount_bdt"),
+            "currency": tx.currency,
+            "plan_tier": tx.plan_tier,
+            "billing_cycle": tx.billing_cycle,
+            "status": tx.status,
+            "trx_id": (tx.raw_payload or {}).get("trx_id") or tx.provider_payment_id,
+            "sender_account": (tx.raw_payload or {}).get("sender_account") or "",
+            "note": (tx.raw_payload or {}).get("note") or "",
+            "created_at": tx.created_at.isoformat() if tx.created_at else None,
+        }
+        for tx, email, full_name in rows
+    ]
+
+
+@router.post("/payments/{tx_id}/approve")
+def approve_payment_request(
+    tx_id: int,
+    request: Request,
+    payload: Optional[PaymentDecisionRequest] = None,
+    db: Session = Depends(deps.get_db),
+    current_owner: models.User = Depends(deps.get_current_active_superuser),
+) -> Dict[str, Any]:
+    """1-Click Owner approval for a bKash / Nagad / Rocket / Binance Pay payment."""
+    res = approve_manual_payment(db=db, tx_id=tx_id, admin_note=payload.note if payload else None)
+    record_admin_action(
+        db=db,
+        admin_id=current_owner.id,
+        action="PAYMENT_APPROVED",
+        target_type="payment_transaction",
+        target_id=tx_id,
+        request=request,
+        details=res,
+    )
+    return res
+
+
+@router.post("/payments/{tx_id}/reject")
+def reject_payment_request(
+    tx_id: int,
+    request: Request,
+    payload: Optional[PaymentDecisionRequest] = None,
+    db: Session = Depends(deps.get_db),
+    current_owner: models.User = Depends(deps.get_current_active_superuser),
+) -> Dict[str, Any]:
+    """1-Click Owner rejection for an invalid TrxID submission."""
+    res = reject_manual_payment(db=db, tx_id=tx_id, reason=payload.note if payload else None)
+    record_admin_action(
+        db=db,
+        admin_id=current_owner.id,
+        action="PAYMENT_REJECTED",
+        target_type="payment_transaction",
+        target_id=tx_id,
+        request=request,
+        details=res,
+    )
+    return res
+
+
+@router.get("/platform-config")
+def get_admin_platform_config(
+    current_owner: models.User = Depends(deps.get_current_active_superuser),
+) -> Dict[str, Any]:
+    """Get no-code platform settings (payment numbers, BDT prices, global announcement banner)."""
+    return get_platform_config()
+
+
+@router.put("/platform-config")
+def save_admin_platform_config(
+    payload: PlatformConfigUpdateRequest,
+    request: Request,
+    db: Session = Depends(deps.get_db),
+    current_owner: models.User = Depends(deps.get_current_active_superuser),
+) -> Dict[str, Any]:
+    """Save no-code platform settings directly from the Owner Admin Console UI."""
+    updated = update_platform_config(payload.model_dump(exclude_none=True))
+    record_admin_action(
+        db=db,
+        admin_id=current_owner.id,
+        action="PLATFORM_CONFIG_UPDATED",
+        target_type="system",
+        target_id="platform_config",
+        request=request,
+        details={"announcement_active": updated.get("announcement_active")},
+    )
+    return updated
+
+
+@router.post("/users/{user_id}/reset-2fa")
+def reset_customer_2fa(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(deps.get_db),
+    current_owner: models.User = Depends(deps.get_current_active_superuser),
+) -> Dict[str, Any]:
+    """1-Click customer support: disable 2FA for a user who lost their phone."""
+    target = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    res = admin_reset_user_2fa(db, target)
+    record_admin_action(
+        db=db,
+        admin_id=current_owner.id,
+        action="USER_2FA_RESET",
+        target_type="user",
+        target_id=target.id,
+        request=request,
+        details={"email": target.email},
+    )
+    return res
+
+
+@router.post("/users/{user_id}/reset-password")
+def reset_customer_password(
+    user_id: int,
+    request: Request,
+    payload: Optional[AdminPasswordResetRequest] = None,
+    db: Session = Depends(deps.get_db),
+    current_owner: models.User = Depends(deps.get_current_active_superuser),
+) -> Dict[str, Any]:
+    """1-Click customer support: set or generate a temporary password for a customer."""
+    target = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.is_superuser and target.id != current_owner.id:
+        raise HTTPException(status_code=400, detail="Cannot reset another superuser password")
+    res = admin_reset_user_password(db, target, payload.new_password if payload else None)
+    record_admin_action(
+        db=db,
+        admin_id=current_owner.id,
+        action="USER_PASSWORD_RESET",
+        target_type="user",
+        target_id=target.id,
+        request=request,
+        details={"email": target.email},
+    )
+    return res
+
+
+@router.post("/users/{user_id}/extend-subscription")
+def extend_customer_subscription(
+    user_id: int,
+    payload: ExtendSubscriptionRequest,
+    request: Request,
+    db: Session = Depends(deps.get_db),
+    current_owner: models.User = Depends(deps.get_current_active_superuser),
+) -> Dict[str, Any]:
+    """1-Click customer support: add +30 days (or custom days) of Pro access to a customer."""
+    target = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    sub = extend_user_subscription_days(db, target, days=payload.days, plan_tier=payload.plan_tier)
+    record_admin_action(
+        db=db,
+        admin_id=current_owner.id,
+        action="USER_SUBSCRIPTION_EXTENDED",
+        target_type="user",
+        target_id=target.id,
+        request=request,
+        details={"email": target.email, "days": payload.days, "plan_tier": sub.plan_tier},
+    )
+    return {
+        "user_id": target.id,
+        "email": target.email,
+        "plan_tier": sub.plan_tier,
+        "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+    }
+
+
+@router.post("/autopilot/run-sweep")
+def trigger_autopilot_sweep(
+    request: Request,
+    db: Session = Depends(deps.get_db),
+    current_owner: models.User = Depends(deps.get_current_active_superuser),
+) -> Dict[str, Any]:
+    """Manually run subscription expiry downgrade + excess bot shutdown sweep from `/admin`."""
+    summary = run_subscription_expiry_sweep(db)
+    record_admin_action(
+        db=db,
+        admin_id=current_owner.id,
+        action="AUTOPILOT_SWEEP_RUN",
+        target_type="system",
+        target_id="subscription_expiry_sweep",
+        request=request,
+        details=summary,
+    )
+    return summary

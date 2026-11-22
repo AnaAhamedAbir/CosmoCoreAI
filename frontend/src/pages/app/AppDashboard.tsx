@@ -14,6 +14,7 @@ import PanicButton from '@/components/common/PanicButton';
 import SystemAlertWidget from '@/components/common/SystemAlertWidget';
 import SystemNotificationWidget from '@/components/common/SystemNotificationWidget';
 import MarketSwitcher from '@/components/common/MarketSwitcher';
+import GlobalAnnouncementBar from '@/components/common/GlobalAnnouncementBar';
 import { useSettings } from '@/context/SettingsContext';
 import { useMarketStore } from '@/store/marketStore';
 
@@ -638,6 +639,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                     />
                     <div className="flex-1 min-w-0 min-h-0 h-full flex flex-col overflow-hidden relative z-0">
                         <header className="relative z-50 flex-shrink-0 bg-white/80 dark:bg-[#000000]/80 backdrop-blur-md border-b border-gray-200 dark:border-[#1A1A1A]/50">
+                            <GlobalAnnouncementBar />
                             <div className="flex items-center justify-between gap-2 px-8 laptop:px-4 h-16 laptop:h-12 min-w-0">
                                 {/* Left — Page Title */}
                                 <h1 className="text-xl laptop:text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2 truncate min-w-0 shrink">

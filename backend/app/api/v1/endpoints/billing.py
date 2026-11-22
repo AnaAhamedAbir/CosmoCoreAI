@@ -5,7 +5,7 @@ SaaS Billing, Subscription Status & Payment Webhooks API
 
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from app.api import deps
 from app.core.config import settings
 from app.core.plans import PLAN_CATALOG, resolve_user_plan_tier
 from app.models.saas_admin import Subscription, PaymentTransaction
+from app.services.autopilot_service import get_platform_config, submit_manual_payment
 from app.services.billing_service import (
     apply_plan_change,
     create_checkout_session,
@@ -31,6 +32,21 @@ class CheckoutRequest(BaseModel):
     provider: str = "stripe"          # "stripe" | "nowpayments"
     plan_tier: str = "pro"            # "pro" | "enterprise"
     billing_cycle: str = "monthly"    # "monthly" | "yearly"
+
+
+class ManualPaymentRequest(BaseModel):
+    provider: str = "bkash"           # "bkash" | "nagad" | "rocket" | "binance_pay"
+    trx_id: str
+    sender_account: str
+    plan_tier: str = "pro"
+    billing_cycle: str = "monthly"
+    note: Optional[str] = None
+
+
+@router.get("/public-config")
+def get_public_billing_and_banner_config() -> Dict[str, Any]:
+    """Return dynamic no-code platform payment numbers, BDT pricing, support link, and global banner."""
+    return get_platform_config()
 
 
 @router.get("/plans")
@@ -70,6 +86,7 @@ def get_my_subscription(
     return {
         "plan_tier": resolve_user_plan_tier(current_user),
         "providers": get_configured_providers(),
+        "local_config": get_platform_config(),
         "subscription": {
             "status": sub.status,
             "provider": sub.provider,
@@ -85,10 +102,41 @@ def get_my_subscription(
                 "plan_tier": t.plan_tier,
                 "billing_cycle": t.billing_cycle,
                 "status": t.status,
+                "trx_id": (t.raw_payload or {}).get("trx_id"),
+                "sender_account": (t.raw_payload or {}).get("sender_account"),
+                "amount_bdt": (t.raw_payload or {}).get("amount_bdt"),
                 "created_at": t.created_at.isoformat() if t.created_at else None,
             }
             for t in txs
         ],
+    }
+
+
+@router.post("/manual-submit")
+def submit_local_or_binance_payment(
+    payload: ManualPaymentRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+) -> Dict[str, Any]:
+    """Submit a bKash / Nagad / Rocket / Binance Pay TrxID for 1-click Owner approval."""
+    if current_user.is_superuser:
+        raise HTTPException(status_code=400, detail="Platform Owner already has unlimited access")
+
+    tx = submit_manual_payment(
+        db=db,
+        user=current_user,
+        provider=payload.provider,
+        trx_id=payload.trx_id,
+        sender_account=payload.sender_account,
+        plan_tier=payload.plan_tier,
+        billing_cycle=payload.billing_cycle,
+        note=payload.note,
+    )
+    return {
+        "id": tx.id,
+        "status": tx.status,
+        "provider": tx.provider,
+        "message": "Payment submitted! Your Pro plan will activate as soon as the Owner verifies your TrxID.",
     }
 
 

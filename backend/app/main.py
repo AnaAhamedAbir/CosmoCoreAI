@@ -893,6 +893,29 @@ async def startup_event():
     except Exception as _rec_err:
         logger.warning(f"⚠️ Failed to schedule manual trade auto-recovery: {_rec_err}")
 
+    # Task P: Solo-Founder Subscription Expiry Autopilot (runs hourly)
+    async def subscription_expiry_autopilot_loop():
+        from app.db.session import SessionLocal as _AutopilotSessionLocal
+        from app.services.autopilot_service import run_subscription_expiry_sweep
+        while True:
+            try:
+                _adb = _AutopilotSessionLocal()
+                try:
+                    summary = run_subscription_expiry_sweep(_adb)
+                    if summary.get("expired_subscriptions_downgraded", 0) > 0:
+                        logger.info(f"⚡ [Autopilot] Subscription expiry sweep: {summary}")
+                finally:
+                    _adb.close()
+            except asyncio.CancelledError:
+                break
+            except Exception as _auto_err:
+                logger.debug(f"[Autopilot] Sweep error (non-fatal): {_auto_err}")
+            await asyncio.sleep(3600)
+
+    autopilot_task = asyncio.create_task(subscription_expiry_autopilot_loop())
+    running_tasks.add(autopilot_task)
+    autopilot_task.add_done_callback(running_tasks.discard)
+
 @app.on_event("shutdown")
 async def shutdown_event():
     print("🛑 Server Shutdown Initiated...")

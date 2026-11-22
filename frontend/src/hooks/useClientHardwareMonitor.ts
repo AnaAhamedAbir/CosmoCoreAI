@@ -129,7 +129,7 @@ function computeThermalRisk(
   return { riskLevel: 'cool', riskLabel: 'Cool / Optimal' };
 }
 
-export function useClientHardwareMonitor(enabled: boolean): HardwareMonitorState {
+export function useClientHardwareMonitor(enabled: boolean, includeVpsTelemetry = true): HardwareMonitorState {
   const profile = useDeviceProfile();
 
   const [gpuRenderer, setGpuRenderer] = useState<string | null>(null);
@@ -165,10 +165,10 @@ export function useClientHardwareMonitor(enabled: boolean): HardwareMonitorState
     if (showSpinner) setVpsLoading(true);
     try {
       const [data, rttMs] = await Promise.all([
-        systemService.getHardwareTelemetry(forceLatencyProbe),
+        includeVpsTelemetry ? systemService.getHardwareTelemetry(forceLatencyProbe) : Promise.resolve(null),
         systemService.pingServerRtt().catch(() => null),
       ]);
-      setVps(data);
+      if (data) setVps(data);
       if (rttMs !== null) {
         setClientToVpsMs((prev) => {
           if (prev !== null) {
@@ -180,12 +180,12 @@ export function useClientHardwareMonitor(enabled: boolean): HardwareMonitorState
       setVpsError(null);
       setLastUpdatedAt(Date.now());
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'VPS telemetry unavailable';
+      const msg = err instanceof Error ? err.message : 'Telemetry unavailable';
       setVpsError(msg);
     } finally {
       if (showSpinner) setVpsLoading(false);
     }
-  }, []);
+  }, [includeVpsTelemetry]);
 
   // Probe static GPU renderer once when enabled
   useEffect(() => {

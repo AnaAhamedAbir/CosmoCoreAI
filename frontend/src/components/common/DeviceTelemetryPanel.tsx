@@ -19,6 +19,7 @@ import type { ThermalMode } from '@/utils/deviceProfile';
 
 interface DeviceTelemetryPanelProps {
   active: boolean;
+  clientOnly?: boolean;
 }
 
 const formatUptime = (seconds: number): string => {
@@ -74,7 +75,7 @@ const formatMs = (ms: number | null | undefined): string => {
   return `${Math.round(ms)} ms`;
 };
 
-const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) => {
+const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active, clientOnly = false }) => {
   const {
     profile,
     client,
@@ -85,7 +86,7 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
     vpsError,
     setThermalMode,
     refreshNow,
-  } = useClientHardwareMonitor(active);
+  } = useClientHardwareMonitor(active, !clientOnly);
   const pwa = usePwaInstall();
 
   const clientHeapPct =
@@ -279,7 +280,8 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
         </div>
       </div>
 
-      {/* ─── Section 2: VPS Server Hardware (Live) ─── */}
+      {/* ─── Section 2: VPS Server Hardware (Live, Owner Only) ─── */}
+      {!clientOnly && (
       <div className="rounded-xl border border-cyan-500/25 bg-white/80 dark:bg-white/[0.03] p-3 space-y-2.5 shadow-sm dark:shadow-none">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -428,8 +430,9 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
           </div>
         )}
       </div>
+      )}
 
-      {/* ─── Section 3: Network & Exchange Latency + PWA App Status ─── */}
+      {/* ─── Section 3: Network Latency + PWA App Status ─── */}
       <div className="rounded-xl border border-emerald-500/25 bg-white/80 dark:bg-white/[0.03] p-3 space-y-2.5 shadow-sm dark:shadow-none">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -438,15 +441,24 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
             </div>
             <div className="min-w-0">
               <span className="text-[10px] font-black tracking-wider uppercase text-slate-900 dark:text-white block">
-                Network &amp; Exchange Latency
+                {clientOnly ? 'Connection Ping & App Mode' : 'Network & Exchange Latency'}
               </span>
               <p className="text-[10px] text-slate-500 dark:text-gray-400 truncate">
-                Device ↔ VPS RTT &amp; VPS → Binance API / WS Ping
+                {clientOnly ? 'Live Device ↔ Platform Ping & Standalone App Status' : 'Device ↔ VPS RTT & VPS → Binance API / WS Ping'}
               </p>
             </div>
           </div>
 
-          {vps?.network && (
+          {clientOnly ? (
+            <button
+              type="button"
+              onClick={refreshNow}
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-white/10 text-slate-500 dark:text-gray-400 hover:text-emerald-500 transition-colors cursor-pointer"
+              title="Measure Ping Again"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${vpsLoading ? 'animate-spin text-emerald-400' : ''}`} />
+            </button>
+          ) : vps?.network ? (
             <span
               className={`px-1.5 py-0.5 text-[8.5px] font-black uppercase rounded border ${
                 vps.network.status === 'optimal'
@@ -458,12 +470,14 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
             >
               {vps.network.status}
             </span>
-          )}
+          ) : null}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className={`grid gap-2 ${clientOnly ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'}`}>
           <div className="rounded-lg bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 p-2 space-y-0.5 shadow-sm dark:shadow-none">
-            <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">DEVICE ↔ VPS</span>
+            <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">
+              {clientOnly ? 'SERVER PING' : 'DEVICE ↔ VPS'}
+            </span>
             <span className={`text-xs font-mono font-black ${getLatencyTone(clientToVpsMs)}`}>
               {formatMs(clientToVpsMs)}
             </span>
@@ -472,29 +486,43 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active }) =
             </span>
           </div>
 
-          <div className="rounded-lg bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 p-2 space-y-0.5 shadow-sm dark:shadow-none">
-            <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">VPS → SPOT REST</span>
-            <span className={`text-xs font-mono font-black ${getLatencyTone(vps?.network?.binance_spot_ms)}`}>
-              {formatMs(vps?.network?.binance_spot_ms)}
-            </span>
-            <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500 block">api.binance.com</span>
-          </div>
+          {clientOnly && (
+            <div className="rounded-lg bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 p-2 space-y-0.5 shadow-sm dark:shadow-none">
+              <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">CONNECTION</span>
+              <span className="text-xs font-mono font-black text-emerald-400">
+                {clientToVpsMs === null ? 'Measuring...' : clientToVpsMs < 150 ? 'OPTIMAL' : 'MODERATE'}
+              </span>
+              <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500 block">Encrypted HTTPS</span>
+            </div>
+          )}
 
-          <div className="rounded-lg bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 p-2 space-y-0.5 shadow-sm dark:shadow-none">
-            <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">VPS → FUTURES REST</span>
-            <span className={`text-xs font-mono font-black ${getLatencyTone(vps?.network?.binance_futures_ms)}`}>
-              {formatMs(vps?.network?.binance_futures_ms)}
-            </span>
-            <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500 block">fapi.binance.com</span>
-          </div>
+          {!clientOnly && (
+            <>
+              <div className="rounded-lg bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 p-2 space-y-0.5 shadow-sm dark:shadow-none">
+                <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">VPS → SPOT REST</span>
+                <span className={`text-xs font-mono font-black ${getLatencyTone(vps?.network?.binance_spot_ms)}`}>
+                  {formatMs(vps?.network?.binance_spot_ms)}
+                </span>
+                <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500 block">api.binance.com</span>
+              </div>
 
-          <div className="rounded-lg bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 p-2 space-y-0.5 shadow-sm dark:shadow-none">
-            <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">VPS → BINANCE WS</span>
-            <span className={`text-xs font-mono font-black ${getLatencyTone(vps?.network?.binance_ws_ms)}`}>
-              {formatMs(vps?.network?.binance_ws_ms)}
-            </span>
-            <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500 block">stream.binance:9443</span>
-          </div>
+              <div className="rounded-lg bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 p-2 space-y-0.5 shadow-sm dark:shadow-none">
+                <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">VPS → FUTURES REST</span>
+                <span className={`text-xs font-mono font-black ${getLatencyTone(vps?.network?.binance_futures_ms)}`}>
+                  {formatMs(vps?.network?.binance_futures_ms)}
+                </span>
+                <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500 block">fapi.binance.com</span>
+              </div>
+
+              <div className="rounded-lg bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 p-2 space-y-0.5 shadow-sm dark:shadow-none">
+                <span className="text-[8.5px] font-bold text-slate-500 dark:text-gray-400 block">VPS → BINANCE WS</span>
+                <span className={`text-xs font-mono font-black ${getLatencyTone(vps?.network?.binance_ws_ms)}`}>
+                  {formatMs(vps?.network?.binance_ws_ms)}
+                </span>
+                <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500 block">stream.binance:9443</span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* PWA Install Bar */}

@@ -12,6 +12,7 @@ import ThemeToggle from '@/components/common/ThemeToggle';
 import MarketTicker from '@/components/features/market/MarketTicker';
 import PanicButton from '@/components/common/PanicButton';
 import SystemAlertWidget from '@/components/common/SystemAlertWidget';
+import ClientDeviceWidget from '@/components/common/ClientDeviceWidget';
 import SystemNotificationWidget from '@/components/common/SystemNotificationWidget';
 import MarketSwitcher from '@/components/common/MarketSwitcher';
 import GlobalAnnouncementBar from '@/components/common/GlobalAnnouncementBar';
@@ -646,10 +647,10 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                     {viewToRender}
                                 </h1>
 
-                                {/* Center — Market Switcher & Owner System Alert Monitor Widget */}
+                                {/* Center — Market Switcher & Owner System Alert Monitor / Customer Device Widget */}
                                 <div className="flex items-center justify-center gap-4 laptop:gap-2 shrink-0">
                                     <MarketSwitcher />
-                                    {userProfile.is_superuser && <SystemAlertWidget />}
+                                    {userProfile.is_superuser ? <SystemAlertWidget /> : <ClientDeviceWidget />}
                                     <SystemNotificationWidget />
                                 </div>
 

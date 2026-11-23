@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, FC } from 'react';
 import { createPortal } from 'react-dom';
-import { GripVertical, X, Sparkles, Zap } from 'lucide-react';
+import { GripVertical, X, Sparkles, Zap, Minus, Maximize2, Shield, Target, Layers, Activity } from 'lucide-react';
 import { fetchApiKeys } from '../../../services/settings';
 import { botService } from '../../../services/botService';
 import { marketDataService } from '../../../services/marketData';
@@ -116,7 +116,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
     const [tradingMode, setTradingMode] = useState<'spot' | 'futures'>('spot');
     const [strategyMode, setStrategyMode] = useState<'long' | 'short' | 'auto'>('long');
     const [availableExchanges, setAvailableExchanges] = useState<string[]>([]);
-    const [showAdvancedTSL, setShowAdvancedTSL] = useState(false);
+    const [isMinimized, setIsMinimized] = useState(false);
 
     const [form, setForm] = useState({
         botName: '',
@@ -1433,6 +1433,41 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
     const currencyPrefix = isShortMode ? '' : '$';
     const currencySuffix = isShortMode ? ` ${baseCurrency}` : '';
 
+    // --- ACTIVE ARMED MODULE COUNTERS FOR SAAS TELEMETRY ---
+    const triggersArmedCount = [
+        form.enableWallTrigger,
+        form.enableVWAPSDSnipe,
+        form.enableIcebergTrigger,
+        form.enableGodModeEntryTrigger,
+        form.enableLiqTrigger,
+        form.enableMlFilter,
+        form.enableUtBot,
+        form.enableSupertrendBot,
+        form.enableWickSr,
+        form.enableDualEngine,
+        !form.tradingSessions.includes('None'),
+    ].filter(Boolean).length;
+
+    const riskArmedCount = [
+        form.enableRiskSl,
+        form.enableTsl,
+        form.enableAutoFiboTp,
+        form.enablePartialTp,
+        form.enableBreakevenSl,
+        form.useNativeOtoco,
+        form.enableBreakevenStop,
+        form.enableGlobalTp,
+    ].filter(Boolean).length;
+
+    const advArmedCount = [
+        form.enableMicroScalp,
+        form.enableTaSnapshot,
+        form.enableBtcCorrelation,
+        form.enableTrendFilter,
+        form.vpvrEnabled,
+        form.atrEnabled,
+    ].filter(Boolean).length;
+
     return createPortal(
         <div
             ref={modalContainerRef}
@@ -1459,53 +1494,198 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 contain: 'layout paint style',
                 backfaceVisibility: 'hidden',
             }}
-            className={`cosmo-theme-modal fixed w-[620px] max-w-[calc(100vw-12px)] rounded-xl border z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col ${
+            className={`cosmo-theme-modal fixed ${isMinimized ? 'w-[456px]' : 'w-[610px]'} max-w-[calc(100vw-12px)] rounded-xl border z-[99999] overflow-hidden transition-[width,background-color,border-color] duration-200 select-none flex flex-col ${
                 isThermalGuardActive ? 'animate-cosmo-modal-fast' : 'animate-cosmo-modal-amber'
             } ${
                 isThermalGuardActive
                     ? 'bg-[#080c16] border-amber-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
-                    : 'bg-[#070b14] bg-gradient-to-b from-[#0c1220]/95 via-[#080d1a]/[0.98] to-[#050811]/[0.98] border-amber-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_20px_rgba(245,158,11,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
+                    : 'bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#050811]/[0.98] border-amber-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(245,158,11,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
             }`}
         >
             <FloatingModalCyberFX color="amber" isThermalGuard={isThermalGuardActive} />
 
             {/* Top Neon Horizon Accent Line */}
-            <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-amber-400 to-orange-500 opacity-85 shrink-0" />
+            <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-amber-400 to-cyan-400 opacity-85 shrink-0" />
 
-            {/* Header (Draggable Handle matching ManualTradeModal) */}
-            <div
-                onMouseDown={handleStartDrag}
-                onTouchStart={handleStartDrag}
-                style={{ touchAction: 'none' }}
-                className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0"
-                title="Drag to move modal"
-            >
-                <div className="flex items-center gap-1.5 pointer-events-none min-w-0 flex-1 overflow-hidden">
-                    <GripVertical className="w-3.5 h-3.5 text-amber-400/80 shrink-0" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.9)] animate-pulse shrink-0" />
-                    <div className="flex flex-col text-left min-w-0 flex-1 overflow-hidden">
-                        <div className="flex items-center gap-1 min-w-0">
-                            <span className="font-black text-white text-[13px] sm:text-[14.5px] tracking-tight truncate max-w-[180px]">
+            {isMinimized ? (
+                /* ULTRA-SLIM BOT BUILDER CYBER-HUD PILL */
+                <div
+                    onMouseDown={handleStartDrag}
+                    onTouchStart={handleStartDrag}
+                    style={{ touchAction: 'none' }}
+                    className="px-2.5 py-2 space-y-1.5 relative z-10 cursor-grab active:cursor-grabbing select-none"
+                    title="Drag to move HUD"
+                >
+                    <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0 pointer-events-none flex-wrap">
+                            <GripVertical className="w-3 h-3 text-amber-400/80 shrink-0" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.9)] animate-pulse shrink-0" />
+                            <span className="font-black text-white text-[12px] tracking-tight truncate max-w-[115px]">
                                 {form.botName || form.symbol || symbol || 'WallHunter'}
                             </span>
-                            <span className={`text-[8.5px] uppercase px-1.5 py-0.2 rounded font-mono font-black border leading-tight shrink-0 whitespace-nowrap ${
+                            <span className={`text-[8.5px] uppercase px-1.5 py-0.2 rounded font-mono font-black border leading-tight shrink-0 ${
                                 tradingMode === 'futures'
                                     ? 'bg-orange-500/20 border-orange-400/40 text-orange-300'
                                     : 'bg-amber-500/20 border-amber-400/40 text-amber-300'
                             }`}>
                                 {tradingMode === 'futures' ? `${form.leverage || 5}x FUT` : 'SPOT'}
                             </span>
-                            <span className="text-[8.5px] uppercase px-1.5 py-0.2 rounded font-mono font-bold border bg-white/[0.05] border-white/10 text-gray-300 leading-tight shrink-0 truncate max-w-[84px]">
-                                {form.exchange?.toUpperCase() || exchange?.toUpperCase()}
-                            </span>
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setForm(prev => ({ ...prev, isPaper: !prev.isPaper }));
+                                }}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                className={`pointer-events-auto text-[8.5px] uppercase px-1.5 py-0.2 rounded font-mono font-black border leading-tight shrink-0 cursor-pointer transition-all ${
+                                    form.isPaper
+                                        ? 'bg-emerald-500/15 hover:bg-emerald-500/30 border-emerald-400/40 text-emerald-300'
+                                        : 'bg-rose-500/20 hover:bg-rose-500/35 border-rose-400/50 text-rose-300 animate-pulse'
+                                }`}
+                                title="Click to toggle SIM (Paper) / REAL (Live API)"
+                            >
+                                {form.isPaper ? 'SIM' : 'REAL'}
+                            </button>
                             {currentPrice > 0 && (
-                                <span className="text-emerald-400 font-mono text-[11px] font-bold tracking-tight shrink-0 hidden sm:inline">
+                                <span className="text-emerald-400 font-mono text-[10.5px] font-bold shrink-0">
                                     ${currentPrice >= 1 ? currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : currentPrice}
                                 </span>
                             )}
                         </div>
-                        <span className="text-[9.5px] text-gray-400 font-medium tracking-wide truncate">
-                            L2 Order Book Sniper • {tradeDirection.toUpperCase()}
+
+                        <div className="flex items-center gap-1 shrink-0" data-no-drag="true" onPointerDown={(e) => e.stopPropagation()}>
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAutoDetect();
+                                }}
+                                className="p-1 rounded bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 cursor-pointer"
+                                title="Auto-Detect Optimal Parameters"
+                            >
+                                <Sparkles className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsMinimized(false);
+                                }}
+                                className="p-1 rounded bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-white cursor-pointer"
+                                title="Expand WallHunter Bot Terminal"
+                            >
+                                <Maximize2 className="w-3 h-3" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onClose();
+                                }}
+                                className="p-1 rounded bg-white/[0.04] hover:bg-rose-500/20 border border-white/[0.08] hover:border-rose-500/40 text-gray-400 hover:text-rose-300 cursor-pointer"
+                                title="Close"
+                            >
+                                <X className="w-3 h-3" />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div
+                        data-no-drag="true"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-[#04070e]/90 border border-white/10"
+                    >
+                        <div className="flex items-center gap-1.5 text-[9.5px] font-mono min-w-0 flex-wrap">
+                            <button
+                                type="button"
+                                onClick={() => { setActiveTab('basic'); setIsMinimized(false); }}
+                                className="text-cyan-200 hover:text-white font-bold cursor-pointer"
+                                title="Edit Allocation & Strategy"
+                            >
+                                {currencyPrefix}{form.amount}{currencySuffix}
+                            </button>
+                            <span className="text-gray-600">•</span>
+                            <button
+                                type="button"
+                                onClick={() => { setActiveTab('triggers'); setIsMinimized(false); }}
+                                className="text-emerald-300 hover:text-emerald-200 font-bold cursor-pointer"
+                                title="Edit Entry Triggers"
+                            >
+                                🎯 {triggersArmedCount}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => { setActiveTab('risk'); setIsMinimized(false); }}
+                                className="text-blue-300 hover:text-blue-200 font-bold cursor-pointer"
+                                title="Edit Risk Guards"
+                            >
+                                🛡️ {riskArmedCount}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => { setActiveTab('advanced'); setIsMinimized(false); }}
+                                className="text-purple-300 hover:text-purple-200 font-bold cursor-pointer"
+                                title="Edit Quant Modules"
+                            >
+                                🔬 {advArmedCount}
+                            </button>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={handleDeploy}
+                            disabled={isLoading}
+                            className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider text-white cursor-pointer active:scale-95 transition-all shrink-0 ${
+                                isLoading
+                                    ? 'bg-gray-600 opacity-70 cursor-not-allowed'
+                                    : (existingBot && deployMode === 'update')
+                                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600'
+                                        : tradingMode === 'futures'
+                                            ? 'bg-gradient-to-r from-orange-500 to-red-600'
+                                            : 'bg-gradient-to-r from-amber-500 to-orange-600'
+                            }`}
+                        >
+                            {isLoading ? 'Working...' : (existingBot && deployMode === 'update') ? '⚙️ Update' : '🚀 Deploy'}
+                        </button>
+                    </div>
+                </div>
+            ) : (
+            <>
+            {/* Unified SaaS Bot Command Header (Draggable Handle) */}
+            <div
+                onMouseDown={handleStartDrag}
+                onTouchStart={handleStartDrag}
+                style={{ touchAction: 'none' }}
+                className="flex items-center justify-between px-3 py-2 border-b border-amber-500/20 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0 gap-2"
+                title="Drag to move terminal"
+            >
+                <div className="flex items-center gap-1.5 pointer-events-none min-w-0 flex-1 overflow-hidden">
+                    <GripVertical className="w-3.5 h-3.5 text-amber-400/80 shrink-0" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.9)] animate-pulse shrink-0" />
+                    <div className="flex flex-col text-left min-w-0 flex-1 overflow-hidden">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                            <span className="font-black text-white text-[13.5px] tracking-tight truncate max-w-[175px]">
+                                {form.botName || form.symbol || symbol || 'WallHunter'}
+                            </span>
+                            <span className={`text-[8.5px] uppercase px-1.5 py-0.2 rounded font-mono font-black border leading-tight shrink-0 whitespace-nowrap ${
+                                tradingMode === 'futures'
+                                    ? 'bg-orange-500/20 border-orange-400/45 text-orange-300'
+                                    : 'bg-amber-500/20 border-amber-400/45 text-amber-300'
+                            }`}>
+                                {tradingMode === 'futures' ? `${form.leverage || 5}x ${(form.marginMode || 'iso').toUpperCase().slice(0, 3)}` : 'SPOT'}
+                            </span>
+                            <span className="text-[8.5px] uppercase px-1.5 py-0.2 rounded font-mono font-bold border bg-white/[0.05] border-white/10 text-gray-300 leading-tight shrink-0 truncate max-w-[78px]">
+                                {form.exchange?.toUpperCase() || exchange?.toUpperCase()}
+                            </span>
+                            {currentPrice > 0 && (
+                                <span className="text-emerald-400 font-mono text-[11.5px] font-extrabold tracking-tight shrink-0 hidden sm:inline">
+                                    ${currentPrice >= 1 ? currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : currentPrice}
+                                </span>
+                            )}
+                        </div>
+                        <span className="text-[9.5px] text-gray-400 font-mono tracking-wide truncate">
+                            L2 ORDER BOOK SNIPER • {form.selectedStrategy === 'cascading_bb' ? 'CASCADING BB' : 'L2 SCALPING'} • {tradeDirection.toUpperCase()}
                         </span>
                     </div>
                 </div>
@@ -1518,11 +1698,25 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             handleAutoDetect();
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 px-1.5 py-0.5 rounded-md text-[9.5px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-[0_0_8px_rgba(245,158,11,0.15)] active:scale-95"
-                        title="Auto-detect best sniper parameters from current order book walls"
+                        disabled={isLoading}
+                        className="flex items-center gap-1 bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/45 text-amber-300 px-2 py-1 rounded-md text-[9.5px] font-mono font-black uppercase tracking-wider transition-all cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.18)] active:scale-95 disabled:opacity-50"
+                        title="Auto-detect optimal L2 parameters from order book walls & OHLCV ATR"
                     >
-                        <Sparkles className="w-2.5 h-2.5 text-amber-400" />
-                        AUTO DETECT
+                        <Sparkles className={`w-2.5 h-2.5 text-amber-400 ${isLoading ? 'animate-spin' : ''}`} />
+                        <span>AUTO DETECT</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsMinimized(true);
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="px-1.5 py-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-white transition-all cursor-pointer flex items-center gap-1 font-mono text-[9.5px] font-black uppercase"
+                        title="Collapse to compact Bot HUD"
+                    >
+                        <Minus className="w-3 h-3" />
+                        <span>HUD</span>
                     </button>
                     <button
                         type="button"
@@ -1539,80 +1733,151 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 </div>
             </div>
 
-            {/* --- MAIN TRADING MODE TOGGLE --- */}
-            <div className="px-3 pt-1.5 shrink-0">
-                <div className="flex bg-black/50 p-0.5 rounded-lg border border-white/10">
-                    <button
-                        type="button"
-                        onClick={() => setTradingMode('spot')}
-                        className={`flex-1 py-1.5 text-[11.5px] font-black uppercase rounded-md transition-all ${
-                            tradingMode === 'spot'
-                                ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 shadow-[0_0_12px_rgba(245,158,11,0.4)]'
-                                : 'text-gray-400 hover:text-white hover:bg-white/5'
-                        }`}
-                    >
-                        SPOT BOT
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setTradingMode('futures')}
-                        className={`flex-1 py-1.5 text-[11.5px] font-black uppercase rounded-md transition-all flex items-center justify-center gap-1 ${
-                            tradingMode === 'futures'
-                                ? 'bg-orange-500 text-white shadow-[0_0_12px_rgba(249,115,22,0.4)]'
-                                : 'text-gray-400 hover:text-white hover:bg-white/5'
-                        }`}
-                    >
-                        <Zap className="w-3.5 h-3.5" />
-                        FUTURE TRADING BOT ⚡
-                    </button>
+            {/* Slim Execution Mode & Live Est. ROI Telemetry Strip */}
+            <div className="px-3 py-1.5 bg-[#04070e]/90 border-b border-white/10 shrink-0 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                    {/* Spot vs Futures Switch */}
+                    <div className="flex bg-[#0a101d] p-0.5 rounded-lg border border-white/10">
+                        <button
+                            type="button"
+                            onClick={() => setTradingMode('spot')}
+                            className={`px-2.5 py-1 text-[10px] font-mono font-black uppercase rounded-md transition-all cursor-pointer ${
+                                tradingMode === 'spot'
+                                    ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.35)]'
+                                    : 'text-gray-400 hover:text-white'
+                            }`}
+                        >
+                            SPOT
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setTradingMode('futures')}
+                            className={`px-2.5 py-1 text-[10px] font-mono font-black uppercase rounded-md transition-all flex items-center gap-1 cursor-pointer ${
+                                tradingMode === 'futures'
+                                    ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-[0_0_10px_rgba(249,115,22,0.35)]'
+                                    : 'text-gray-400 hover:text-white'
+                            }`}
+                        >
+                            <Zap className="w-3 h-3 fill-current" />
+                            <span>FUTURES</span>
+                        </button>
+                    </div>
+
+                    {/* Paper SIM vs Live REAL Quick Toggle */}
+                    <div className="flex bg-[#0a101d] p-0.5 rounded-lg border border-white/10">
+                        <button
+                            type="button"
+                            onClick={() => setForm({ ...form, isPaper: true })}
+                            className={`px-2 py-1 text-[10px] font-mono font-black uppercase rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                                form.isPaper
+                                    ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-300'
+                                    : 'text-gray-400 hover:text-white border border-transparent'
+                            }`}
+                            title="Paper Trading Simulation Mode (No real funds at risk)"
+                        >
+                            <span className={`w-1.5 h-1.5 rounded-full ${form.isPaper ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600'}`} />
+                            <span>SIM</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setForm({ ...form, isPaper: false })}
+                            className={`px-2 py-1 text-[10px] font-mono font-black uppercase rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                                !form.isPaper
+                                    ? 'bg-rose-500/25 border border-rose-400/60 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.25)]'
+                                    : 'text-gray-400 hover:text-white border border-transparent'
+                            }`}
+                            title="Real Live Exchange API Execution Mode"
+                        >
+                            <span className={`w-1.5 h-1.5 rounded-full ${!form.isPaper ? 'bg-rose-400 animate-pulse' : 'bg-gray-600'}`} />
+                            <span>REAL</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Live Est. Net ROI Telemetry Pill */}
+                <div className="flex items-center gap-1.5 text-[10.5px] font-mono ml-auto">
+                    <span className="text-gray-400">Size: <strong className="text-cyan-200">{currencyPrefix}{form.amount}{currencySuffix}</strong></span>
+                    <span className="text-gray-600">•</span>
+                    {form.mlExecutionMode === 'advanced' ? (
+                        <span className="px-1.5 py-0.5 rounded bg-purple-500/20 border border-purple-400/40 text-purple-300 font-bold text-[9.5px]">
+                            🤖 AI TP/SL
+                        </span>
+                    ) : (
+                        <span className={`px-1.5 py-0.5 rounded border font-bold text-[10px] ${
+                            netProfitUSD > 0
+                                ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+                                : 'bg-rose-500/15 border-rose-500/35 text-rose-300'
+                        }`}>
+                            Net: {netProfitUSD > 0 ? '+' : ''}{currencyPrefix}{netProfitUSD.toFixed(2)}{currencySuffix} ({netProfitPct > 0 ? '+' : ''}{netProfitPct.toFixed(2)}%)
+                        </span>
+                    )}
                 </div>
             </div>
 
-            {/* --- TABS NAVIGATION --- */}
-            <div className="flex gap-1 px-3 pt-1.5 pb-1 border-b border-white/10 overflow-x-auto shrink-0 hide-scrollbar">
+            {/* 4-Tab SaaS Navigation Bar with Armed Counts */}
+            <div className="flex gap-1 px-3 py-1.5 border-b border-white/10 bg-[#050811]/85 overflow-x-auto shrink-0 hide-scrollbar">
                 <button
                     type="button"
                     onClick={() => setActiveTab('basic')}
-                    className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap ${
+                    className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${
                         activeTab === 'basic'
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-400/50 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                     }`}
                 >
-                    Basic & Execution
+                    <Layers className="w-3 h-3" />
+                    <span>Strategy</span>
                 </button>
                 <button
                     type="button"
                     onClick={() => setActiveTab('triggers')}
-                    className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap ${
+                    className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${
                         activeTab === 'triggers'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                     }`}
                 >
-                    Entry Triggers
+                    <Target className="w-3 h-3" />
+                    <span>Triggers</span>
+                    {triggersArmedCount > 0 && (
+                        <span className="px-1 py-0.2 rounded bg-emerald-500/25 text-emerald-200 font-mono text-[9px] leading-none">
+                            {triggersArmedCount}
+                        </span>
+                    )}
                 </button>
                 <button
                     type="button"
                     onClick={() => setActiveTab('risk')}
-                    className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap ${
+                    className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${
                         activeTab === 'risk'
-                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-400/50 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                     }`}
                 >
-                    Risk Management
+                    <Shield className="w-3 h-3" />
+                    <span>Risk</span>
+                    {riskArmedCount > 0 && (
+                        <span className="px-1 py-0.2 rounded bg-blue-500/25 text-blue-200 font-mono text-[9px] leading-none">
+                            {riskArmedCount}
+                        </span>
+                    )}
                 </button>
                 <button
                     type="button"
                     onClick={() => setActiveTab('advanced')}
-                    className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap ${
+                    className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${
                         activeTab === 'advanced'
-                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+                            ? 'bg-purple-500/20 text-purple-300 border border-purple-400/50 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
                             : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                     }`}
                 >
-                    Advanced
+                    <Activity className="w-3 h-3" />
+                    <span>Quant</span>
+                    {advArmedCount > 0 && (
+                        <span className="px-1 py-0.2 rounded bg-purple-500/25 text-purple-200 font-mono text-[9px] leading-none">
+                            {advArmedCount}
+                        </span>
+                    )}
                 </button>
             </div>
 
@@ -1623,151 +1888,222 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             >
                     {activeTab === 'basic' && (
                         <div className="animate-fadeIn space-y-2.5">
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-0.5">
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase block">Bot Name (Optional)</label>
-                                    <input
-                                        className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-yellow-500 outline-none border border-transparent focus:border-brand-primary focus:bg-black/40 text-[13px] transition-all font-mono h-[32px]"
-                                        placeholder="Auto-generated if empty"
-                                        value={form.botName}
-                                        onChange={(e) => handleFormChange('botName', e.target.value)}
-                                        maxLength={50}
-                                    />
-                                </div>
-                                <div className="space-y-0.5">
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase block">Trading Strategy</label>
-                                    <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/10 h-[32px]">
-                                        <button
-                                            onClick={() => handleFormChange('selectedStrategy', 'wall_hunter')}
-                                            className={`flex-1 h-full text-[10px] font-bold uppercase rounded-md transition-all ${form.selectedStrategy === 'wall_hunter' ? 'bg-brand-primary text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
-                                        >
-                                            L2 Scalping
-                                        </button>
-                                        <button
-                                            onClick={() => handleFormChange('selectedStrategy', 'cascading_bb')}
-                                            className={`flex-1 h-full text-[10px] font-bold uppercase rounded-md transition-all ${form.selectedStrategy === 'cascading_bb' ? 'bg-purple-600 text-white shadow-[0_0_8px_rgba(147,51,234,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
-                                        >
-                                            Cascading BB
-                                        </button>
+                            {/* Card 1: Bot Identity & Core Strategy Engine */}
+                            <div className="rounded-xl bg-[#04070e]/90 border border-white/10 p-2.5 space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-mono text-gray-400 font-bold uppercase tracking-wider block">Bot Name (Optional)</label>
+                                        <input
+                                            className="w-full bg-[#0a101d] px-2.5 py-1.5 rounded-lg text-amber-300 outline-none border border-white/10 focus:border-amber-400/70 text-[12.5px] transition-colors font-mono font-bold h-[34px]"
+                                            placeholder="Auto-generated if empty"
+                                            value={form.botName}
+                                            onChange={(e) => handleFormChange('botName', e.target.value)}
+                                            maxLength={50}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-mono text-gray-400 font-bold uppercase tracking-wider block">Strategy Engine</label>
+                                        <div className="flex bg-[#0a101d] rounded-lg p-0.5 border border-white/10 h-[34px] gap-0.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleFormChange('selectedStrategy', 'wall_hunter')}
+                                                className={`flex-1 h-full text-[10px] font-mono font-black uppercase rounded-md transition-all cursor-pointer ${form.selectedStrategy === 'wall_hunter' ? 'bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.3)]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                            >
+                                                L2 Scalping
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleFormChange('selectedStrategy', 'cascading_bb')}
+                                                className={`flex-1 h-full text-[10px] font-mono font-black uppercase rounded-md transition-all cursor-pointer ${form.selectedStrategy === 'cascading_bb' ? 'bg-purple-600 text-white shadow-[0_0_10px_rgba(147,51,234,0.3)]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                            >
+                                                Cascading BB
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
+
+                                {form.selectedStrategy === 'cascading_bb' && (
+                                    <div className="grid grid-cols-3 gap-2 pt-1.5 border-t border-white/10 animate-fadeIn">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-mono text-gray-400 font-bold uppercase whitespace-nowrap block">Break (%)</label>
+                                            <input
+                                                type="number"
+                                                step="0.1"
+                                                className="w-full bg-[#0a101d] px-2 py-1.5 rounded-lg text-amber-300 outline-none border border-white/10 focus:border-cyan-400/60 text-[12.5px] font-mono font-bold"
+                                                value={form.breakPercentage}
+                                                onChange={(e) => handleFormChange('breakPercentage', parseFloat(e.target.value) || 0)}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-mono text-gray-400 font-bold uppercase whitespace-nowrap block">Tolerance</label>
+                                            <input
+                                                type="number"
+                                                step="0.05"
+                                                className="w-full bg-[#0a101d] px-2 py-1.5 rounded-lg text-amber-300 outline-none border border-white/10 focus:border-cyan-400/60 text-[12.5px] font-mono font-bold"
+                                                value={form.bandTolerance}
+                                                onChange={(e) => handleFormChange('bandTolerance', parseFloat(e.target.value) || 0)}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-mono text-gray-400 font-bold uppercase whitespace-nowrap block">TP Mode</label>
+                                            <select
+                                                className="w-full bg-[#0a101d] px-2 py-1.5 rounded-lg text-white outline-none text-[12.5px] font-semibold border border-white/10 focus:border-cyan-400/60 cursor-pointer"
+                                                value={form.cascadingTpMode}
+                                                onChange={(e) => handleFormChange('cascadingTpMode', e.target.value)}
+                                            >
+                                                <option className="bg-[#070b14] text-white" value="dynamic">Dynamic BB</option>
+                                                <option className="bg-[#070b14] text-white" value="middle">Middle Band</option>
+                                                <option className="bg-[#070b14] text-white" value="fixed">Fixed Spread</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {form.selectedStrategy === 'cascading_bb' && tradingMode === 'futures' && (
+                                    <div className="animate-fadeIn space-y-1 pt-1.5 border-t border-white/10">
+                                        <label className="text-[10px] font-mono text-cyan-300 font-bold uppercase block">Accumulation Mode</label>
+                                        <div className="flex bg-[#0a101d] rounded-lg p-0.5 border border-white/10 gap-0.5">
+                                            <button type="button" onClick={() => setStrategyMode('long')} className={`flex-1 py-1 text-[10px] font-mono font-bold uppercase rounded transition-all cursor-pointer ${strategyMode === 'long' ? 'bg-cyan-500 text-slate-950 shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>Long Only</button>
+                                            <button type="button" onClick={() => setStrategyMode('short')} className={`flex-1 py-1 text-[10px] font-mono font-bold uppercase rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${strategyMode === 'short' ? 'bg-rose-600 text-white shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>Short Only</button>
+                                            <button type="button" onClick={() => setStrategyMode('auto')} className={`flex-1 py-1 text-[10px] font-mono font-bold uppercase rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${strategyMode === 'auto' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>Auto (Ping-Pong)</button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
-                            {form.selectedStrategy === 'cascading_bb' && (
-                                <div className="grid grid-cols-3 gap-2 animate-fadeIn">
-                                    <div className="space-y-0.5">
-                                        <label className="text-[10px] text-gray-500 font-bold uppercase whitespace-nowrap block">Break (%)</label>
-                                        <input
-                                            type="number"
-                                            step="0.1"
-                                            className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-yellow-500 outline-none border border-transparent focus:border-brand-primary text-[13px] font-mono"
-                                            value={form.breakPercentage}
-                                            onChange={(e) => handleFormChange('breakPercentage', parseFloat(e.target.value) || 0)}
-                                        />
+                            {/* Card 2: Execution Account & Live API Key */}
+                            {!form.isPaper && (
+                                <div className="rounded-xl bg-rose-950/20 border border-rose-500/40 p-2.5 space-y-1.5 animate-fadeIn">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] font-mono font-black uppercase tracking-wider text-rose-300 flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                                            Real Exchange API Key ({form.exchange?.toUpperCase()})
+                                        </label>
+                                        <span className="text-[9.5px] font-mono text-rose-300/80 font-bold">LIVE ORDERS ACTIVE</span>
                                     </div>
-                                    <div className="space-y-0.5">
-                                        <label className="text-[10px] text-gray-500 font-bold uppercase whitespace-nowrap block">Tolerance</label>
-                                        <input
-                                            type="number"
-                                            step="0.05"
-                                            className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-yellow-500 outline-none border border-transparent focus:border-brand-primary text-[13px] font-mono"
-                                            value={form.bandTolerance}
-                                            onChange={(e) => handleFormChange('bandTolerance', parseFloat(e.target.value) || 0)}
-                                        />
+                                    <select
+                                        className="w-full bg-[#0a101d] border border-amber-500/35 focus:border-amber-400 px-2.5 py-1.5 rounded-lg text-white outline-none text-[12.5px] font-semibold cursor-pointer"
+                                        value={form.apiKeyId}
+                                        onChange={(e) => setForm({ ...form, apiKeyId: e.target.value })}
+                                    >
+                                        <option className="bg-[#070b14] text-white" value="">-- Choose Saved API Key --</option>
+                                        {savedKeys.filter(k => k.exchange === form.exchange).map(k => (
+                                            <option className="bg-[#070b14] text-white" key={k.id} value={k.id}>{k.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Card 3: Market Routing & Order Execution Types */}
+                            <div className="rounded-xl bg-[#04070e]/90 border border-white/10 p-2.5 space-y-2">
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-mono text-gray-400 font-bold uppercase block">Target Asset</label>
+                                        <input className="w-full bg-[#0a101d] px-2.5 py-1.5 rounded-lg text-amber-300 font-mono font-bold outline-none border border-white/10 text-[12.5px]" value={form.symbol} readOnly />
                                     </div>
-                                    <div className="space-y-0.5">
-                                        <label className="text-[10px] text-gray-500 font-bold uppercase whitespace-nowrap block">TP Mode</label>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-mono text-gray-400 font-bold uppercase block">Exchange</label>
                                         <select
-                                            className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-white outline-none text-[13px] border border-transparent focus:border-brand-primary"
-                                            value={form.cascadingTpMode}
-                                            onChange={(e) => handleFormChange('cascadingTpMode', e.target.value)}
+                                            className="w-full bg-[#0a101d] border border-white/10 focus:border-amber-400/60 px-2 py-1.5 rounded-lg text-white outline-none text-[12.5px] font-semibold cursor-pointer"
+                                            value={form.exchange}
+                                            onChange={(e) => setForm({ ...form, exchange: e.target.value })}
                                         >
-                                            <option className="bg-[#000000] text-white" value="dynamic">Dynamic BB</option>
-                                            <option className="bg-[#000000] text-white" value="middle">Middle Band</option>
-                                            <option className="bg-[#000000] text-white" value="fixed">Fixed Spread</option>
+                                            {availableExchanges.length > 0 ? (
+                                                availableExchanges.map(ex => (
+                                                    <option key={ex} className="bg-[#070b14] text-white" value={ex}>
+                                                        {ex.charAt(0).toUpperCase() + ex.slice(1)}
+                                                    </option>
+                                                ))
+                                            ) : (
+                                                <>
+                                                    <option className="bg-[#070b14] text-white" value="binance">Binance</option>
+                                                    <option className="bg-[#070b14] text-white" value="bybit">Bybit</option>
+                                                    <option className="bg-[#070b14] text-white" value="okx">OKX</option>
+                                                    <option className="bg-[#070b14] text-white" value="mexc">MEXC</option>
+                                                </>
+                                            )}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-mono text-gray-400 font-bold uppercase block truncate">
+                                            {tradingMode === 'spot' && strategyMode === 'short' ? 'Sell Entry Type' : 'Sell Exit (TP)'}
+                                        </label>
+                                        <select className="w-full bg-[#0a101d] border border-white/10 rounded-lg px-2 py-1.5 text-white outline-none focus:border-cyan-400/60 text-[12.5px] font-bold cursor-pointer" value={form.sellOrderType} onChange={(e) => handleFormChange('sellOrderType', e.target.value)}>
+                                            <option className="bg-[#070b14] text-white" value="market">Market (Normal)</option>
+                                            <option className="bg-[#070b14] text-white" value="limit">Limit (Maker)</option>
+                                            <option className="bg-[#070b14] text-white" value="marketable_limit">Marketable Limit (MEXC)</option>
                                         </select>
                                     </div>
                                 </div>
-                            )}
 
-                            {form.selectedStrategy === 'cascading_bb' && tradingMode === 'futures' && (
-                                <div className="animate-fadeIn space-y-0.5">
-                                    <label className="text-[10px] text-brand-primary font-bold uppercase block">Accumulation Mode</label>
-                                    <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/10">
-                                        <button onClick={() => setStrategyMode('long')} className={`flex-1 py-1 text-[10.5px] font-bold uppercase rounded transition-all ${strategyMode === 'long' ? 'bg-brand-primary text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Long Only</button>
-                                        <button onClick={() => setStrategyMode('short')} className={`flex-1 py-1 text-[10.5px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 ${strategyMode === 'short' ? 'bg-red-600 text-white shadow-[0_0_8px_rgba(220,38,38,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Short Only</button>
-                                        <button onClick={() => setStrategyMode('auto')} className={`flex-1 py-1 text-[10.5px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 ${strategyMode === 'auto' ? 'bg-purple-600 text-white shadow-[0_0_8px_rgba(147,51,234,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Auto (Ping-Pong)</button>
+                                {/* Buy Order Type, Buffer & Timeout */}
+                                <div className="flex gap-2 pt-1.5 border-t border-white/10">
+                                    <div className="flex-1 space-y-1">
+                                        <label className="text-[10px] font-mono text-gray-400 font-bold uppercase block">
+                                            {tradingMode === 'spot' && strategyMode === 'short' ? 'Buy Exit (TP)' : 'Buy Entry Type'}
+                                        </label>
+                                        <select
+                                            className="w-full bg-[#0a101d] border border-white/10 rounded-lg px-2 py-1.5 text-white outline-none focus:border-cyan-400/60 text-[12.5px] font-bold truncate cursor-pointer"
+                                            value={form.buyOrderType}
+                                            onChange={(e) => handleFormChange('buyOrderType', e.target.value)}
+                                        >
+                                            <option className="bg-[#070b14]" value="market">Market</option>
+                                            <option className="bg-[#070b14]" value="limit">Limit (Maker)</option>
+                                            <option className="bg-[#070b14]" value="marketable_limit">Marketable Limit</option>
+                                        </select>
                                     </div>
-                                </div>
-                            )}
-                            <div className="grid grid-cols-3 gap-2">
-                                <div className="space-y-0.5">
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase block">Asset</label>
-                                    <input className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-yellow-500 font-mono outline-none border border-transparent text-[13px]" value={form.symbol} readOnly />
-                                </div>
-                                <div className="space-y-0.5">
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase block">Exchange</label>
-                                    <select
-                                        className="w-full bg-white/5 px-2 py-1.5 rounded-lg text-white outline-none text-[13px]"
-                                        value={form.exchange}
-                                        onChange={(e) => setForm({ ...form, exchange: e.target.value })}
-                                    >
-                                        {availableExchanges.length > 0 ? (
-                                            availableExchanges.map(ex => (
-                                                <option key={ex} className="bg-[#000000] text-white" value={ex}>
-                                                    {ex.charAt(0).toUpperCase() + ex.slice(1)}
-                                                </option>
-                                            ))
-                                        ) : (
-                                            <>
-                                                <option className="bg-[#000000] text-white" value="binance">Binance</option>
-                                                <option className="bg-[#000000] text-white" value="bybit">Bybit</option>
-                                                <option className="bg-[#000000] text-white" value="okx">OKX</option>
-                                                <option className="bg-[#000000] text-white" value="mexc">MEXC</option>
-                                            </>
-                                        )}
-                                    </select>
-                                </div>
-                                <div className="space-y-0.5">
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase block truncate">
-                                        {tradingMode === 'spot' && strategyMode === 'short' ? 'Sell Order (Entry)' : 'Sell Order (TP)'}
-                                    </label>
-                                    <select className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-white outline-none focus:border-brand-primary text-[13px] font-bold" value={form.sellOrderType} onChange={(e) => handleFormChange('sellOrderType', e.target.value)}>
-                                        <option className="bg-[#000000] text-white" value="market">Market (Normal)</option>
-                                        <option className="bg-[#000000] text-white" value="limit">Limit (Maker)</option>
-                                        <option className="bg-[#000000] text-white" value="marketable_limit">Marketable Limit (MEXC)</option>
-                                    </select>
+                                    {(form.buyOrderType === 'marketable_limit' || form.sellOrderType === 'marketable_limit') && (
+                                        <div className="w-[76px] space-y-1 animate-fadeIn">
+                                            <label className="text-[10px] font-mono text-orange-400 font-bold uppercase block">Buffer %</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                className="w-full bg-orange-500/10 border border-orange-500/35 rounded-lg px-1.5 py-1.5 text-orange-300 outline-none text-center font-mono font-bold text-[12.5px]"
+                                                value={form.limitBuffer}
+                                                onChange={(e) => handleFormChange('limitBuffer', parseFloat(e.target.value))}
+                                            />
+                                        </div>
+                                    )}
+                                    <div className="w-[84px] space-y-1">
+                                        <label className="text-[10px] font-mono text-gray-400 font-bold uppercase block truncate" title="Max wait time before cancelling an unfilled LIMIT entry order.">
+                                            Timeout (s)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-[#0a101d] border border-white/10 rounded-lg px-1.5 py-1.5 text-white outline-none focus:border-cyan-400/60 font-mono font-bold text-center text-[12.5px]"
+                                            value={form.entryOrderTimeout}
+                                            onChange={(e) => handleFormChange('entryOrderTimeout', parseFloat(e.target.value) || 0)}
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* --- NEW: SPOT STRATEGY MODE / BASE ACCUMULATION FLAG --- */}
+                            {/* Spot Strategy Mode Selector */}
                             {tradingMode === 'spot' && (
-                                <div className="flex flex-col gap-2 p-2 bg-white/5 border border-white/10 rounded-xl animate-fadeIn">
+                                <div className="flex flex-col gap-2 p-2.5 bg-[#04070e]/90 border border-white/10 rounded-xl animate-fadeIn">
                                     <div className="flex flex-col w-full space-y-1">
-                                        <div className="flex justify-between items-center">
-                                            <label className="text-[10px] text-brand-primary font-black uppercase">Spot Strategy Mode</label>
-                                        </div>
-                                        <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/10 gap-1">
-                                            <button onClick={() => setStrategyMode('long')} className={`flex-1 py-1 px-1 text-[10px] font-bold uppercase rounded transition-all whitespace-nowrap ${strategyMode === 'long' ? 'bg-brand-primary text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>Long (Quote)</button>
-                                            <button onClick={() => setStrategyMode('short')} className={`flex-1 py-1 px-1 text-[10px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 whitespace-nowrap ${strategyMode === 'short' ? 'bg-yellow-600 text-white shadow-[0_0_8px_rgba(202,138,4,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+                                        <label className="text-[10px] font-mono text-cyan-300 font-black uppercase tracking-wider">Spot Direction & Inventory Mode</label>
+                                        <div className="flex bg-[#0a101d] rounded-lg p-0.5 border border-white/10 gap-1">
+                                            <button type="button" onClick={() => setStrategyMode('long')} className={`flex-1 py-1.5 px-1 text-[10px] font-mono font-bold uppercase rounded-md transition-all whitespace-nowrap cursor-pointer ${strategyMode === 'long' ? 'bg-cyan-500 text-slate-950 shadow-[0_0_8px_rgba(6,182,212,0.3)]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>Long (Quote)</button>
+                                            <button type="button" onClick={() => setStrategyMode('short')} className={`flex-1 py-1.5 px-1 text-[10px] font-mono font-bold uppercase rounded-md transition-all flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${strategyMode === 'short' ? 'bg-amber-500 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.3)]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                                                 <svg className="w-2.5 h-2.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
                                                 Short (Base)
                                             </button>
-                                            <button onClick={() => setStrategyMode('auto')} className={`flex-1 py-1 px-1 text-[10px] font-bold uppercase rounded transition-all flex items-center justify-center gap-1 whitespace-nowrap ${strategyMode === 'auto' ? 'bg-purple-600 text-white shadow-[0_0_8px_rgba(147,51,234,0.3)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+                                            <button type="button" onClick={() => setStrategyMode('auto')} className={`flex-1 py-1.5 px-1 text-[10px] font-mono font-bold uppercase rounded-md transition-all flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${strategyMode === 'auto' ? 'bg-purple-600 text-white shadow-[0_0_8px_rgba(147,51,234,0.3)]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                                                 <svg className="w-2.5 h-2.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
                                                 Bi-Directional
                                             </button>
                                         </div>
                                     </div>
                                     {strategyMode === 'auto' && (
-                                        <div className="p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg flex gap-2 items-start animate-fadeIn">
-                                            <div className="bg-purple-500/20 p-1.5 rounded-md mt-0.5 shrink-0">
+                                        <div className="p-2 bg-purple-500/10 border border-purple-500/25 rounded-lg flex gap-2 items-start animate-fadeIn">
+                                            <div className="bg-purple-500/20 p-1 rounded-md mt-0.5 shrink-0">
                                                 <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                             </div>
                                             <div>
-                                                <h4 className="text-[11.5px] font-bold text-purple-400 mb-0.5">Bi-Directional (Auto) Mode</h4>
-                                                <p className="text-[10.5px] text-gray-400 leading-snug">
-                                                    Requires both USDT (Quote) and {form.symbol ? form.symbol.split('/')[0] : 'Base Token'} balances. The bot will automatically Accumulate from Buy Walls and Distribute from Sell Walls based on ML Filter predictions.
+                                                <h4 className="text-[11px] font-bold text-purple-300 mb-0.5">Bi-Directional (Auto) Mode</h4>
+                                                <p className="text-[10px] text-gray-400 leading-snug">
+                                                    Requires both {cleanQuoteAsset} and {form.symbol ? form.symbol.split('/')[0] : 'Base Token'} balances to accumulate from Buy Walls and distribute at Sell Walls.
                                                 </p>
                                             </div>
                                         </div>
@@ -1775,93 +2111,32 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                 </div>
                             )}
 
-                            {/* --- NEW: BUY ORDER TYPE & TIMEOUT --- */}
-                            <div className="flex gap-2 p-2 bg-white/5 border border-white/10 rounded-xl">
-                                <div className="flex-1 space-y-0.5">
-                                    <label className="text-[10px] text-gray-400 font-black uppercase block">
-                                        {tradingMode === 'spot' && strategyMode === 'short' ? 'Buy Order (TP)' : 'Buy Order Type'}
-                                    </label>
-                                    <select
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-white outline-none focus:border-brand-primary text-[13px] font-bold truncate"
-                                        value={form.buyOrderType}
-                                        onChange={(e) => handleFormChange('buyOrderType', e.target.value)}
-                                    >
-                                        <option className="bg-[#000000]" value="market">Market</option>
-                                        <option className="bg-[#000000]" value="limit">Limit</option>
-                                        <option className="bg-[#000000]" value="marketable_limit">Marketable Limit</option>
-                                    </select>
-                                </div>
-                                {(form.buyOrderType === 'marketable_limit' || form.sellOrderType === 'marketable_limit') && (
-                                    <div className="w-[72px] space-y-0.5 animate-fadeIn">
-                                        <label className="text-[10px] text-orange-400 font-black uppercase block">Buffer %</label>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            className="w-full bg-orange-500/10 border border-orange-500/30 rounded-lg px-1.5 py-1.5 text-orange-400 outline-none text-center font-mono font-bold text-[13px]"
-                                            value={form.limitBuffer}
-                                            onChange={(e) => handleFormChange('limitBuffer', parseFloat(e.target.value))}
-                                        />
-                                    </div>
-                                )}
-                                <div className="w-[76px] space-y-0.5">
-                                    <label className="text-[10px] text-gray-400 font-black uppercase block truncate" title="Max wait time before cancelling an unfilled LIMIT entry order.">
-                                        Timeout (s)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-1.5 py-1.5 text-white outline-none focus:border-brand-primary font-mono font-bold text-center text-[13px]"
-                                        value={form.entryOrderTimeout}
-                                        onChange={(e) => handleFormChange('entryOrderTimeout', parseFloat(e.target.value) || 0)}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className={`px-2.5 py-1.5 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${form.isPaper ? 'bg-green-500/10 border-green-500' : 'bg-white/5 border-white/10'}`} onClick={() => setForm({ ...form, isPaper: true })}>
-                                    <p className="text-[12px] font-bold text-white">Paper Trading <span className="text-[10px] text-green-500 ml-0.5">(SIM)</span></p>
-                                    {form.isPaper && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>}
-                                </div>
-                                <div className={`px-2.5 py-1.5 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${!form.isPaper ? 'bg-red-500/10 border-red-500 shadow-[0_0_12px_rgba(239,68,68,0.3)]' : 'bg-white/5 border-white/10'}`} onClick={() => setForm({ ...form, isPaper: false })}>
-                                    <p className="text-[12px] font-bold text-white">Live Market <span className="text-[10px] text-red-500 ml-0.5">(REAL)</span></p>
-                                    {!form.isPaper && <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>}
-                                </div>
-                            </div>
-
-                            {!form.isPaper && (
-                                <div className="flex flex-col">
-                                    <label className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Select API Config</label>
-                                    <select className="w-full bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-1.5 rounded-lg text-white outline-none text-[13px]" value={form.apiKeyId} onChange={(e) => setForm({ ...form, apiKeyId: e.target.value })}>
-                                        <option className="bg-[#000000] text-white" value="">-- Choose Saved Key --</option>
-                                        {savedKeys.filter(k => k.exchange === form.exchange).map(k => (
-                                            <option className="bg-[#000000] text-white" key={k.id} value={k.id}>{k.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-
-                            {/* --- FUTURES SPECIFIC SETTINGS IN BASIC TAB --- */}
+                            {/* Futures Margin, Direction & Leverage Card */}
                             {tradingMode === 'futures' && (
-                                <div className="animate-fadeIn bg-orange-500/5 border border-orange-500/20 p-2.5 rounded-xl space-y-2.5">
+                                <div className="animate-fadeIn bg-orange-950/15 border border-orange-500/30 p-2.5 rounded-xl space-y-2.5">
                                     <div className="flex justify-between items-center">
-                                        <h3 className="text-[11.5px] font-black text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                            Futures Configuration
+                                        <h3 className="text-[11px] font-mono font-black text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                                            <Zap className="w-3.5 h-3.5 fill-orange-400" />
+                                            Futures Leverage & Routing
                                         </h3>
+                                        <span className={`text-[11px] font-mono font-black px-2 py-0.5 rounded border ${form.leverage > 20 ? 'bg-rose-500/20 border-rose-400/50 text-rose-300' : 'bg-orange-500/20 border-orange-400/40 text-orange-300'}`}>
+                                            {form.leverage}x
+                                        </span>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-2.5">
-                                        <div className="space-y-0.5">
-                                            <label className="text-[10px] text-gray-400 font-bold uppercase block">Margin Mode</label>
-                                            <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/10">
-                                                <button onClick={() => handleFormChange('marginMode', 'cross')} className={`flex-1 py-1 text-[10.5px] font-bold uppercase rounded ${form.marginMode === 'cross' ? 'bg-orange-500 text-white' : 'text-gray-500'}`}>Cross</button>
-                                                <button onClick={() => handleFormChange('marginMode', 'isolated')} className={`flex-1 py-1 text-[10.5px] font-bold uppercase rounded ${form.marginMode === 'isolated' ? 'bg-orange-500 text-white' : 'text-gray-500'}`}>Isolated</button>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-mono text-gray-400 font-bold uppercase block">Margin Mode</label>
+                                            <div className="flex bg-[#0a101d] rounded-lg p-0.5 border border-white/10 gap-0.5">
+                                                <button type="button" onClick={() => handleFormChange('marginMode', 'cross')} className={`flex-1 py-1 text-[10px] font-mono font-bold uppercase rounded cursor-pointer ${form.marginMode === 'cross' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'}`}>Cross</button>
+                                                <button type="button" onClick={() => handleFormChange('marginMode', 'isolated')} className={`flex-1 py-1 text-[10px] font-mono font-bold uppercase rounded cursor-pointer ${form.marginMode === 'isolated' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'}`}>Isolated</button>
                                             </div>
                                         </div>
                                         {form.selectedStrategy !== 'cascading_bb' && (
-                                            <div className="space-y-0.5">
-                                                <label className="text-[10px] text-gray-400 font-bold uppercase block">Position Direction</label>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-mono text-gray-400 font-bold uppercase block">Direction</label>
                                                 <select
-                                                    className="w-full bg-black/40 border border-white/10 px-2 py-1.5 rounded-lg text-white outline-none text-[13px]"
+                                                    className="w-full bg-[#0a101d] border border-white/10 px-2 py-1 rounded-lg text-white outline-none text-[12px] font-bold cursor-pointer"
                                                     value={form.positionDirection}
                                                     onChange={(e) => {
                                                         const val = e.target.value;
@@ -1869,19 +2144,19 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                         if (val === 'auto') handleFormChange('enableObImbalance', true);
                                                     }}
                                                 >
-                                                    <option className="bg-[#000000]" value="auto">Auto (Heatmap Based)</option>
-                                                    <option className="bg-[#000000] text-green-400" value="long">Long Only</option>
-                                                    <option className="bg-[#000000] text-red-400" value="short">Short Only</option>
+                                                    <option className="bg-[#070b14]" value="auto">Auto (Heatmap Based)</option>
+                                                    <option className="bg-[#070b14] text-emerald-400" value="long">Long Only</option>
+                                                    <option className="bg-[#070b14] text-rose-400" value="short">Short Only</option>
                                                 </select>
                                             </div>
                                         )}
                                     </div>
 
                                     {form.selectedStrategy !== 'cascading_bb' && form.positionDirection === 'auto' && (
-                                        <div className="animate-fadeIn bg-black/40 border border-orange-500/30 p-2 rounded-lg">
-                                            <div className="flex justify-between items-center mb-0.5">
-                                                <label className="text-[10px] font-bold text-orange-400 uppercase tracking-tighter">Heatmap Imbalance Ratio</label>
-                                                <span className="text-[12px] font-mono font-bold text-white">{form.obImbalanceRatio}x</span>
+                                        <div className="animate-fadeIn bg-[#0a101d] border border-orange-500/30 p-2 rounded-lg">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <label className="text-[10px] font-mono font-bold text-orange-400 uppercase tracking-tight">Heatmap Imbalance Ratio</label>
+                                                <span className="text-[11.5px] font-mono font-bold text-white">{form.obImbalanceRatio}x</span>
                                             </div>
                                             <div className="flex gap-2 items-center">
                                                 <input
@@ -1896,111 +2171,139 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 <input
                                                     type="number"
                                                     step="0.1"
-                                                    className="w-14 bg-black/40 border border-white/10 rounded-md p-1 text-white text-center font-mono text-[12px]"
+                                                    className="w-14 bg-[#04070e] border border-white/10 rounded-md p-1 text-white text-center font-mono text-[12px]"
                                                     value={form.obImbalanceRatio}
                                                     onChange={(e) => handleFormChange('obImbalanceRatio', parseFloat(e.target.value))}
                                                 />
                                             </div>
-                                            <p className="text-[9.5px] text-gray-500 mt-0.5 italic">Bot will only enter if one side has {form.obImbalanceRatio}x more volume than the other.</p>
                                         </div>
                                     )}
 
                                     <div>
-                                        <div className="flex justify-between items-end mb-0.5">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase">Leverage (Max 125x)</label>
-                                            <span className={`text-[12px] font-mono font-bold ${form.leverage > 20 ? 'text-red-500' : 'text-orange-400'}`}>{form.leverage}x</span>
+                                        <div className="flex justify-between items-end mb-1">
+                                            <label className="text-[10px] font-mono font-bold text-gray-400 uppercase">Leverage (1x – 125x)</label>
                                         </div>
                                         <div className="flex gap-2 items-center">
-                                            <input type="range" min="1" max="125" step="1" className={`flex-1 h-1.5 rounded-lg appearance-none cursor-pointer ${form.leverage > 20 ? 'accent-red-500' : 'accent-orange-500'} bg-white/10`} value={form.leverage} onChange={(e) => handleFormChange('leverage', parseInt(e.target.value))} />
-                                            <input type="number" min="1" max="125" className="w-16 bg-black/40 border border-white/10 rounded-lg p-1 text-white outline-none focus:border-orange-500 text-center font-mono text-[13px]" value={form.leverage} onChange={(e) => handleFormChange('leverage', parseInt(e.target.value))} />
+                                            <input type="range" min="1" max="125" step="1" className={`flex-1 h-1.5 rounded-lg appearance-none cursor-pointer ${form.leverage > 20 ? 'accent-rose-500' : 'accent-orange-500'} bg-white/10`} value={form.leverage} onChange={(e) => handleFormChange('leverage', parseInt(e.target.value))} />
+                                            <input type="number" min="1" max="125" className="w-16 bg-[#0a101d] border border-white/10 rounded-lg p-1 text-white outline-none focus:border-orange-500 text-center font-mono text-[12.5px] font-bold" value={form.leverage} onChange={(e) => handleFormChange('leverage', parseInt(e.target.value))} />
                                         </div>
                                     </div>
                                 </div>
                             )}
 
-                            <div className={form.mlExecutionMode === 'advanced' ? 'opacity-30 pointer-events-none select-none relative grayscale transition-all' : ''}>
-                                <div>
-                                    <div className="flex justify-between items-end mb-0.5">
-                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Target Spread Profit</label>
-                                        <span className="text-[12px] font-mono font-bold text-brand-primary">{form.spread.toString().includes('e') ? form.spread.toFixed(12).replace(/\.?0+$/, '') : form.spread}</span>
+                            {/* Card 4: Target Spread, Capital Allocation & Native Fee Discount */}
+                            <div className="rounded-xl bg-[#04070e]/90 border border-cyan-500/20 p-2.5 space-y-2.5">
+                                <div className={form.mlExecutionMode === 'advanced' ? 'opacity-30 pointer-events-none select-none grayscale transition-all' : ''}>
+                                    <div className="flex justify-between items-end mb-1">
+                                        <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">Target Spread Profit</label>
+                                        <span className="text-[12px] font-mono font-bold text-cyan-300">
+                                            {form.spread.toString().includes('e') ? form.spread.toFixed(12).replace(/\.?0+$/, '') : form.spread} ({(spreadPct * 100).toFixed(2)}%)
+                                        </span>
                                     </div>
                                     <div className="flex gap-2 items-center">
-                                        <input type="range" min="0" max={dynamicMax} step={dynamicStep} className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-primary" value={form.spread} onChange={(e) => setForm({ ...form, spread: parseFloat(e.target.value) || 0 })} />
-                                        <input type="number" min="0" step={dynamicStep} className="w-20 bg-black/40 border border-white/10 rounded-lg p-1 text-white outline-none focus:border-brand-primary text-center font-mono text-[13px]" value={form.spread.toString().includes('e') ? form.spread.toFixed(12).replace(/\.?0+$/, '') : form.spread} onChange={(e) => setForm({ ...form, spread: e.target.value === '' ? 0 : parseFloat(e.target.value) })} />
+                                        <input type="range" min="0" max={dynamicMax} step={dynamicStep} className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-400" value={form.spread} onChange={(e) => setForm({ ...form, spread: parseFloat(e.target.value) || 0 })} />
+                                        <input type="number" min="0" step={dynamicStep} className="w-24 bg-[#0a101d] border border-white/10 rounded-lg p-1 text-white outline-none focus:border-cyan-400 text-center font-mono font-bold text-[12.5px]" value={form.spread.toString().includes('e') ? form.spread.toFixed(12).replace(/\.?0+$/, '') : form.spread} onChange={(e) => setForm({ ...form, spread: e.target.value === '' ? 0 : parseFloat(e.target.value) })} />
                                     </div>
                                 </div>
-                            </div>
-                            {tradingMode === 'spot' && strategyMode === 'auto' ? (
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div className="min-w-0">
-                                        <InputField label={`Margin Allocation (${cleanQuoteAsset})`} value={form.amount} onChange={(v: number | '') => setForm({ ...form, amount: v === '' || Number.isNaN(Number(v)) ? 0 : Number(v) })} step={10} />
+
+                                {tradingMode === 'spot' && strategyMode === 'auto' ? (
+                                    <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-white/10">
+                                        <div className="min-w-0">
+                                            <InputField label={`Margin Allocation (${cleanQuoteAsset})`} value={form.amount} onChange={(v: number | '') => setForm({ ...form, amount: v === '' || Number.isNaN(Number(v)) ? 0 : Number(v) })} step={10} />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <InputField label={`Margin Allocation (${form.symbol ? form.symbol.split('/')[0] : 'Base'})`} value={form.amount_base} onChange={(v: number | '') => setForm({ ...form, amount_base: v === '' || Number.isNaN(Number(v)) ? '' : String(v) })} step={1} />
+                                            {!form.amount_base && (
+                                                <div className="mt-0.5 text-[8.5px] font-mono text-gray-500 italic text-right">
+                                                    Auto Calculate
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                    <div className="min-w-0">
-                                        <InputField label={`Margin Allocation (${form.symbol ? form.symbol.split('/')[0] : 'Base'})`} value={form.amount_base} onChange={(v: number | '') => setForm({ ...form, amount_base: v === '' || Number.isNaN(Number(v)) ? '' : String(v) })} step={1} />
-                                        {!form.amount_base && (
-                                            <div className="mt-0.5 text-[8.5px] text-gray-500 italic text-right">
-                                                Auto Calculate
+                                ) : (
+                                    <div className="space-y-1.5 pt-1.5 border-t border-white/10">
+                                        <InputField label={`Margin Allocation (${form.symbol ? (tradingMode === 'spot' && strategyMode === 'short' ? form.symbol.split('/')[0] : cleanQuoteAsset) : 'USDT'})`} value={form.amount} onChange={(v: number | '') => setForm({ ...form, amount: v === '' || Number.isNaN(Number(v)) ? 0 : Number(v) })} step={10} />
+                                        {!isShortMode && (
+                                            <div className="grid grid-cols-5 gap-1">
+                                                {[50, 100, 250, 500, 1000].map((preset) => (
+                                                    <button
+                                                        key={preset}
+                                                        type="button"
+                                                        onClick={() => setForm({ ...form, amount: preset })}
+                                                        className={`py-0.5 rounded text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                                                            form.amount === preset
+                                                                ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
+                                                                : 'bg-[#0a101d] border-white/10 text-gray-400 hover:text-white hover:border-white/25'
+                                                        }`}
+                                                    >
+                                                        ${preset}
+                                                    </button>
+                                                ))}
                                             </div>
                                         )}
                                     </div>
-                                </div>
-                            ) : (
-                                <InputField label={`Margin Allocation (${form.symbol ? (tradingMode === 'spot' && strategyMode === 'short' ? form.symbol.split('/')[0] : cleanQuoteAsset) : 'USDT'})`} value={form.amount} onChange={(v: number | '') => setForm({ ...form, amount: v === '' || Number.isNaN(Number(v)) ? 0 : Number(v) })} step={10} />
-                            )}
+                                )}
 
-                            {/* --- NATIVE TOKEN FEE TOGGLE --- */}
-                            {(form.exchange === 'binance' || form.exchange === 'mexc' || form.exchange === 'kucoin') && (
-                                <div className="flex items-center gap-2 pt-0.5 px-0.5">
-                                    <button
+                                {(form.exchange === 'binance' || form.exchange === 'mexc' || form.exchange === 'kucoin') && (
+                                    <div
+                                        className="flex items-center gap-2 pt-1 cursor-pointer select-none"
                                         onClick={() => setUseNativeTokenFee(!useNativeTokenFee)}
-                                        className={`w-3.5 h-3.5 flex-shrink-0 rounded border flex items-center justify-center transition-colors ${useNativeTokenFee ? 'bg-brand-primary border-brand-primary' : 'border-gray-500'}`}
                                     >
-                                        {useNativeTokenFee && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
-                                    </button>
-                                    <span className="text-[12px] font-bold text-gray-400 cursor-pointer select-none" onClick={() => setUseNativeTokenFee(!useNativeTokenFee)}>
-                                        Pay fees in {form.exchange === 'binance' ? 'BNB (25% Discount)' : form.exchange === 'mexc' ? 'MX (20% Discount)' : 'KCS (20% Discount)'}
-                                    </span>
-                                </div>
-                            )}
+                                        <button
+                                            type="button"
+                                            className={`w-3.5 h-3.5 flex-shrink-0 rounded border flex items-center justify-center transition-colors cursor-pointer ${useNativeTokenFee ? 'bg-cyan-500 border-cyan-400' : 'border-gray-500'}`}
+                                        >
+                                            {useNativeTokenFee && <svg className="w-2.5 h-2.5 text-slate-950" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
+                                        </button>
+                                        <span className="text-[11px] font-mono font-bold text-gray-400 hover:text-gray-200">
+                                            Pay fees in {form.exchange === 'binance' ? 'BNB (25% Discount)' : form.exchange === 'mexc' ? 'MX (20% Discount)' : 'KCS (20% Discount)'}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
 
-                            {/* --- ESTIMATED PROFIT ANALYSIS --- */}
+                            {/* Card 5: Institutional Estimated Profit Analysis KPI Card */}
                             {form.mlExecutionMode !== 'advanced' ? (
-                                <div className="bg-[#000000] p-2.5 rounded-lg border border-brand-primary/20 shadow-[0_0_12px_rgba(59,130,246,0.05)]">
-                                    <h4 className="text-[10px] font-black uppercase text-gray-500 mb-1.5 flex items-center gap-1.5">
-                                        <svg className="w-3 h-3 text-brand-primary" fill="currentColor" viewBox="0 0 20 20"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" /></svg>
-                                        Estimated Profit Analysis
-                                    </h4>
-                                    <div className="space-y-1">
-                                        <div className="flex justify-between items-center text-[12px]">
-                                            <span className="text-gray-400">Trade Value {isFutures && '(Leveraged)'}</span>
-                                            <span className="font-mono text-gray-300">{currencyPrefix}{tradeValue.toFixed(isShortMode ? Math.max(2, displayDigits - 2) : 2)}{currencySuffix}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center text-[12px]">
-                                            <span className="text-gray-400">Gross Profit ({(spreadPct * 100).toFixed(2)}%)</span>
-                                            <span className="font-mono text-green-400">+{currencyPrefix}{grossProfitUSD.toFixed(isShortMode ? Math.max(2, displayDigits) : 2)}{currencySuffix}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center text-[12px]">
-                                            <span className="text-gray-400">
-                                                Estimated Fees ({(feeRate * 100).toFixed(3)}%)
-                                                {liveFeeRate !== null && <span className="ml-1 text-[9px] text-green-400 border border-green-500/30 bg-green-500/10 px-1 py-0.2 rounded cursor-help" title="Live VIP/Account fee fetched directly from exchange.">API TIER</span>}
+                                <div className="bg-[#04070e] p-2.5 rounded-xl border border-cyan-500/25 shadow-[0_0_12px_rgba(6,182,212,0.06)] space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-[10px] font-mono font-black uppercase text-gray-400 flex items-center gap-1.5 tracking-wider">
+                                            <svg className="w-3 h-3 text-cyan-400" fill="currentColor" viewBox="0 0 20 20"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" /></svg>
+                                            Estimated Trade Yield
+                                        </h4>
+                                        {liveFeeRate !== null && (
+                                            <span className="text-[9px] font-mono text-emerald-300 border border-emerald-500/35 bg-emerald-500/10 px-1.5 py-0.2 rounded cursor-help" title="Live VIP/Account fee fetched directly from exchange.">
+                                                API FEE TIER
                                             </span>
-                                            <span className="font-mono text-red-400">-{currencyPrefix}{feeUSD.toFixed(isShortMode ? Math.max(3, displayDigits + 1) : 3)}{currencySuffix}</span>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-1.5 text-[11px] font-mono">
+                                        <div className="p-1.5 rounded-lg bg-[#0a101d] border border-white/5">
+                                            <span className="text-[9px] text-gray-400 uppercase block">Exposure {isFutures && `(${form.leverage}x)`}</span>
+                                            <strong className="text-gray-200">{currencyPrefix}{tradeValue.toFixed(isShortMode ? Math.max(2, displayDigits - 2) : 2)}{currencySuffix}</strong>
                                         </div>
-                                        <div className="pt-1 border-t border-white/5 flex justify-between items-center">
-                                            <span className="text-[13px] font-bold text-gray-300">Net Profit</span>
-                                            <span className={`text-[13px] font-mono font-bold ${netProfitUSD > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                {netProfitUSD > 0 ? '+' : ''}{currencyPrefix}{netProfitUSD.toFixed(isShortMode ? Math.max(2, displayDigits) : 2)}{currencySuffix} ({netProfitPct > 0 ? '+' : ''}{netProfitPct.toFixed(2)}%)
-                                            </span>
+                                        <div className="p-1.5 rounded-lg bg-[#0a101d] border border-white/5">
+                                            <span className="text-[9px] text-gray-400 uppercase block">Gross ({(spreadPct * 100).toFixed(2)}%)</span>
+                                            <strong className="text-emerald-400">+{currencyPrefix}{grossProfitUSD.toFixed(isShortMode ? Math.max(2, displayDigits) : 2)}{currencySuffix}</strong>
                                         </div>
+                                        <div className="p-1.5 rounded-lg bg-[#0a101d] border border-white/5">
+                                            <span className="text-[9px] text-gray-400 uppercase block">Fees ({(feeRate * 100).toFixed(3)}%)</span>
+                                            <strong className="text-rose-400">-{currencyPrefix}{feeUSD.toFixed(isShortMode ? Math.max(3, displayDigits + 1) : 3)}{currencySuffix}</strong>
+                                        </div>
+                                    </div>
+                                    <div className="pt-1 border-t border-white/10 flex justify-between items-center">
+                                        <span className="text-[11px] font-mono font-bold uppercase text-gray-400">Net Est. Profit Per Cycle</span>
+                                        <span className={`text-[13px] font-mono font-black ${netProfitUSD > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            {netProfitUSD > 0 ? '+' : ''}{currencyPrefix}{netProfitUSD.toFixed(isShortMode ? Math.max(2, displayDigits) : 2)}{currencySuffix} ({netProfitPct > 0 ? '+' : ''}{netProfitPct.toFixed(2)}%)
+                                        </span>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="bg-purple-500/5 p-2.5 rounded-lg border border-purple-500/20 shadow-[0_0_12px_rgba(168,85,247,0.05)]">
-                                    <h4 className="text-[10.5px] font-black uppercase text-purple-400 mb-1 flex items-center gap-1.5">
-                                        <div className="text-[13px] animate-pulse">🤖</div> AI Managed Trade
+                                <div className="bg-purple-500/10 p-2.5 rounded-xl border border-purple-500/30 shadow-[0_0_12px_rgba(168,85,247,0.08)]">
+                                    <h4 className="text-[10.5px] font-mono font-black uppercase text-purple-300 mb-1 flex items-center gap-1.5">
+                                        <span className="text-[13px] animate-pulse">🤖</span> AI Dynamic Exit Mode Active
                                     </h4>
-                                    <p className="text-[12px] text-gray-400 leading-snug">
-                                        Fixed profit projection is hidden because the ML model will dynamically enforce TP/SL exits based on real-time order flow and structural volatility.
+                                    <p className="text-[11px] text-gray-300 leading-snug">
+                                        Fixed spread yield is overridden because your ML model dynamically controls Take-Profit & Stop-Loss exits using live L2 order flow.
                                     </p>
                                 </div>
                             )}
@@ -2008,31 +2311,34 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     )}
 
                     {activeTab === 'triggers' && (
-                        <div className="animate-fadeIn space-y-2">
-                            {/* --- NEW: TRADING SESSION FILTER --- */}
-                            <div className="bg-black/20 p-2.5 rounded-lg border border-white/10 space-y-1.5 relative overflow-hidden">
-                                <div className="absolute top-0 left-0 w-0.5 h-full bg-blue-500 rounded-l-lg"></div>
-                                <div className="flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1.5">
-                                    <span>Trading Session (UTC)</span>
+                        <div className="animate-fadeIn space-y-2.5">
+                            {/* Interactive Trading Session Filter Chips */}
+                            <div className="bg-[#04070e]/90 p-2.5 rounded-xl border border-blue-500/25 space-y-2">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[10px] font-mono font-black text-blue-300 uppercase tracking-wider">
+                                        🕒 Trading Session Filter (UTC)
+                                    </span>
+                                    <span className="text-[9.5px] font-mono text-gray-400">
+                                        {form.tradingSessions.includes('None') ? '24/7 Continuous' : `${form.tradingSessions.length} Selected`}
+                                    </span>
                                 </div>
-                                <div className="pl-1.5 space-y-1">
+                                <div className="flex flex-wrap gap-1.5">
                                     {[
-                                        { id: 'None', label: '24/7 (Ignore Sessions)' },
-                                        { id: 'Sydney', label: '🇦🇺 Sydney (22:00 - 07:00 UTC)' },
-                                        { id: 'Tokyo', label: '🇯🇵 Tokyo (00:00 - 09:00 UTC)' },
-                                        { id: 'London', label: '🇬🇧 London (08:00 - 17:00 UTC)' },
-                                        { id: 'New York', label: '🇺🇸 New York (13:00 - 22:00 UTC)' },
-                                        { id: 'Overlap', label: '🔥 London & NY Overlap (13:00 - 17:00 UTC)' }
-                                    ].map(session => (
-                                        <div key={session.id} className="flex items-center space-x-2">
-                                            <input
-                                                type="checkbox"
-                                                id={`session_${session.id}`}
-                                                className="w-3 h-3 accent-blue-500 cursor-pointer"
-                                                checked={form.tradingSessions.includes(session.id)}
-                                                onChange={(e) => {
+                                        { id: 'None', label: '24/7 All Hours' },
+                                        { id: 'Sydney', label: '🇦🇺 Sydney (22–07)' },
+                                        { id: 'Tokyo', label: '🇯🇵 Tokyo (00–09)' },
+                                        { id: 'London', label: '🇬🇧 London (08–17)' },
+                                        { id: 'New York', label: '🇺🇸 NY (13–22)' },
+                                        { id: 'Overlap', label: '🔥 LDN+NY (13–17)' }
+                                    ].map(session => {
+                                        const isActive = form.tradingSessions.includes(session.id);
+                                        return (
+                                            <button
+                                                key={session.id}
+                                                type="button"
+                                                onClick={() => {
                                                     let updated = [...form.tradingSessions];
-                                                    if (e.target.checked) {
+                                                    if (!isActive) {
                                                         if (session.id === 'None') updated = ['None'];
                                                         else {
                                                             updated = updated.filter(s => s !== 'None');
@@ -2044,54 +2350,60 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     }
                                                     handleFormChange('tradingSessions', updated);
                                                 }}
-                                            />
-                                            <label htmlFor={`session_${session.id}`} className="text-[12px] text-gray-300 font-semibold cursor-pointer select-none">
+                                                className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                                                    isActive
+                                                        ? 'bg-blue-500/25 border-blue-400/60 text-blue-200 shadow-[0_0_8px_rgba(59,130,246,0.2)]'
+                                                        : 'bg-[#0a101d] border-white/10 text-gray-400 hover:text-white hover:border-white/25'
+                                                }`}
+                                            >
                                                 {session.label}
-                                            </label>
-                                        </div>
-                                    ))}
+                                            </button>
+                                        );
+                                    })}
 
-                                    <div className="flex items-center space-x-2 pt-0.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const hasCustom = form.tradingSessions.some(s => s.startsWith('Custom|'));
+                                            let updated = form.tradingSessions.filter(s => !s.startsWith('Custom|'));
+                                            if (!hasCustom) {
+                                                updated = updated.filter(s => s !== 'None');
+                                                updated.push('Custom|00:00-00:00');
+                                            } else if (updated.length === 0) {
+                                                updated = ['None'];
+                                            }
+                                            handleFormChange('tradingSessions', updated);
+                                        }}
+                                        className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                                            form.tradingSessions.some(s => s.startsWith('Custom|'))
+                                                ? 'bg-cyan-500/25 border-cyan-400/60 text-cyan-200'
+                                                : 'bg-[#0a101d] border-white/10 text-gray-400 hover:text-white hover:border-white/25'
+                                        }`}
+                                    >
+                                        ⏱ Custom UTC
+                                    </button>
+                                </div>
+
+                                {form.tradingSessions.some(s => s.startsWith('Custom|')) && (
+                                    <div className="pt-1 flex items-center gap-2 animate-fadeIn">
                                         <input
-                                            type="checkbox"
-                                            id="session_custom"
-                                            className="w-3 h-3 accent-blue-500 cursor-pointer"
-                                            checked={form.tradingSessions.some(s => s.startsWith('Custom|'))}
+                                            type="text"
+                                            className="flex-1 bg-[#0a101d] border border-white/15 rounded-lg p-1.5 text-white outline-none focus:border-cyan-400 text-[12px] font-mono"
+                                            placeholder="e.g. 14:30-16:00"
+                                            value={form.tradingSessions.find(s => s.startsWith('Custom|'))?.split('|')[1] || ''}
                                             onChange={(e) => {
+                                                const val = e.target.value;
                                                 let updated = form.tradingSessions.filter(s => !s.startsWith('Custom|'));
-                                                if (e.target.checked) {
-                                                    updated = updated.filter(s => s !== 'None');
-                                                    updated.push('Custom|00:00-00:00'); // placeholder
-                                                } else if (updated.length === 0) {
-                                                    updated = ['None'];
-                                                }
+                                                updated.push(`Custom|${val}`);
                                                 handleFormChange('tradingSessions', updated);
                                             }}
                                         />
-                                        <label htmlFor="session_custom" className="text-[12px] text-gray-300 font-semibold cursor-pointer select-none">
-                                            Custom Time (UTC)
-                                        </label>
+                                        <span className="text-[9.5px] font-mono text-gray-400 shrink-0">HH:MM-HH:MM UTC</span>
                                     </div>
-
-                                    {form.tradingSessions.some(s => s.startsWith('Custom|')) && (
-                                        <div className="pl-5 pt-0.5">
-                                            <input
-                                                type="text"
-                                                className="w-full bg-black/40 border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-brand-primary text-[12px] font-mono"
-                                                placeholder="e.g. 14:30-16:00"
-                                                value={form.tradingSessions.find(s => s.startsWith('Custom|'))?.split('|')[1] || ''}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    let updated = form.tradingSessions.filter(s => !s.startsWith('Custom|'));
-                                                    updated.push(`Custom|${val}`);
-                                                    handleFormChange('tradingSessions', updated);
-                                                }}
-                                            />
-                                            <p className="text-[9px] text-gray-500 mt-0.5">Format: HH:MM-HH:MM (24-hour UTC time)</p>
-                                        </div>
-                                    )}
-                                </div>
-                                <p className="text-[9px] text-gray-500 italic mt-0.5 leading-tight pl-1.5">If any selected session is active, the bot takes entries. If all end, the bot will auto-shutdown and send a Telegram alert.</p>
+                                )}
+                                <p className="text-[9.5px] text-gray-500 leading-tight">
+                                    Bot runs while any selected session is active and auto-shuts down with a Telegram alert once all windows end.
+                                </p>
                             </div>
 
                             {/* Triggers remain untouched */}
@@ -2483,7 +2795,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 <p className="text-[12px] text-gray-500 italic">No models found in Registry. Train an AI model first.</p>
                                             ) : (
                                                 <select
-                                                    className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-blue-500 text-[13px] font-bold"
+                                                    className="w-full bg-[#0a101d] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-blue-500 text-[13px] font-bold"
                                                     value={form.mlModelId}
                                                     onChange={(e) => handleFormChange('mlModelId', e.target.value)}
                                                 >
@@ -2629,7 +2941,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 <div className="col-span-2">
                                                     <label className="text-[10px] font-bold text-fuchsia-400 uppercase mb-1 block">UT Timeframe</label>
                                                     <select
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-fuchsia-500 text-[13px] font-bold text-center"
+                                                        className="w-full bg-[#0a101d] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-fuchsia-500 text-[13px] font-bold text-center"
                                                         value={form.utBotTimeframe}
                                                         onChange={(e) => handleFormChange('utBotTimeframe', e.target.value)}
                                                     >
@@ -2647,7 +2959,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Sensitivity (Key)</label>
                                                     <input
                                                         type="number"
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-fuchsia-500 text-[13px] font-bold text-center font-mono"
+                                                        className="w-full bg-[#0a101d] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-fuchsia-500 text-[13px] font-bold text-center font-mono"
                                                         value={form.utBotSensitivity}
                                                         onChange={(e) => handleFormChange('utBotSensitivity', parseFloat(e.target.value))}
                                                         min={0.1}
@@ -2658,7 +2970,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">ATR Period</label>
                                                     <input
                                                         type="number"
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-fuchsia-500 text-[13px] font-bold text-center font-mono"
+                                                        className="w-full bg-[#0a101d] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-fuchsia-500 text-[13px] font-bold text-center font-mono"
                                                         value={form.utBotAtrPeriod}
                                                         onChange={(e) => handleFormChange('utBotAtrPeriod', parseInt(e.target.value))}
                                                         min={1}
@@ -2804,7 +3116,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 <div className="col-span-2">
                                                     <label className="text-[10px] font-bold text-sky-400 uppercase mb-1 block">Supertrend Timeframe</label>
                                                     <select
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-sky-500 text-[13px] font-bold text-center"
+                                                        className="w-full bg-[#0a101d] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-sky-500 text-[13px] font-bold text-center"
                                                         value={form.supertrendTimeframe}
                                                         onChange={(e) => handleFormChange('supertrendTimeframe', e.target.value)}
                                                     >
@@ -2822,7 +3134,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">ATR Period</label>
                                                     <input
                                                         type="number"
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-sky-500 text-[13px] font-bold text-center font-mono"
+                                                        className="w-full bg-[#0a101d] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-sky-500 text-[13px] font-bold text-center font-mono"
                                                         value={form.supertrendPeriod}
                                                         onChange={(e) => handleFormChange('supertrendPeriod', parseInt(e.target.value))}
                                                         min={1}
@@ -2833,7 +3145,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">ATR Multiplier</label>
                                                     <input
                                                         type="number"
-                                                        className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-sky-500 text-[13px] font-bold text-center font-mono"
+                                                        className="w-full bg-[#0a101d] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-sky-500 text-[13px] font-bold text-center font-mono"
                                                         value={form.supertrendMultiplier}
                                                         onChange={(e) => handleFormChange('supertrendMultiplier', parseFloat(e.target.value))}
                                                         min={0.1}
@@ -2906,7 +3218,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                             <div className="col-span-2">
                                                 <label className="text-[10px] font-bold text-emerald-400 uppercase mb-1 block">Calculation Timeframe</label>
                                                 <select
-                                                    className="w-full bg-[#000000] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-emerald-500 text-[13px] font-bold text-center"
+                                                    className="w-full bg-[#0a101d] border border-white/10 rounded-lg p-1.5 text-white outline-none focus:border-emerald-500 text-[13px] font-bold text-center"
                                                     value={form.wickSrTimeframe}
                                                     onChange={(e) => handleFormChange('wickSrTimeframe', e.target.value)}
                                                 >
@@ -3215,11 +3527,11 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                     value={form.slOrderType}
                                     onChange={(e) => handleFormChange('slOrderType', e.target.value)}
                                 >
-                                    <option className="bg-[#000000]" value="market">Market (Safest)</option>
-                                    <option className="bg-[#000000]" value="stop_limit">Stop-Limit (Slippage Bound)</option>
-                                    <option className="bg-[#000000]" value="soft_limit">Soft Limit (Maker Try)</option>
-                                    <option className="bg-[#000000]" value="limit">Limit (Strict Maker)</option>
-                                    <option className="bg-[#000000]" value="smart_chase">Smart Chase Limit</option>
+                                    <option className="bg-[#070b14]" value="market">Market (Safest)</option>
+                                    <option className="bg-[#070b14]" value="stop_limit">Stop-Limit (Slippage Bound)</option>
+                                    <option className="bg-[#070b14]" value="soft_limit">Soft Limit (Maker Try)</option>
+                                    <option className="bg-[#070b14]" value="limit">Limit (Strict Maker)</option>
+                                    <option className="bg-[#070b14]" value="smart_chase">Smart Chase Limit</option>
                                 </select>
                             </div>
 
@@ -3688,13 +4000,13 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                                 value={form.trendFilterThreshold}
                                                 onChange={(e) => handleFormChange('trendFilterThreshold', e.target.value)}
                                             >
-                                                <option className="bg-[#000000]" value="Moderate">Moderate (0.7+)</option>
-                                                <option className="bg-[#000000]" value="Moderately Strong">Moderately Strong (0.8+)</option>
-                                                <option className="bg-[#000000]" value="Mostly Strong">Mostly Strong (0.9+)</option>
-                                                <option className="bg-[#000000]" value="Strong">Strong (0.92+)</option>
-                                                <option className="bg-[#000000]" value="Very Strong">Very Strong (0.94+)</option>
-                                                <option className="bg-[#000000]" value="Exceptionally Strong">Exceptionally Strong (0.96+)</option>
-                                                <option className="bg-[#000000]" value="Ultra Strong">Ultra Strong (0.98+)</option>
+                                                <option className="bg-[#070b14]" value="Moderate">Moderate (0.7+)</option>
+                                                <option className="bg-[#070b14]" value="Moderately Strong">Moderately Strong (0.8+)</option>
+                                                <option className="bg-[#070b14]" value="Mostly Strong">Mostly Strong (0.9+)</option>
+                                                <option className="bg-[#070b14]" value="Strong">Strong (0.92+)</option>
+                                                <option className="bg-[#070b14]" value="Very Strong">Very Strong (0.94+)</option>
+                                                <option className="bg-[#070b14]" value="Exceptionally Strong">Exceptionally Strong (0.96+)</option>
+                                                <option className="bg-[#070b14]" value="Ultra Strong">Ultra Strong (0.98+)</option>
                                             </select>
                                         </div>
                                         <div className="col-span-2">
@@ -3785,36 +4097,61 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     )}
                 </div>
 
-                {/* --- FOOTER ACTIONS --- */}
-                <div className="px-3 py-2 border-t border-white/10 bg-black/50 shrink-0 space-y-1.5">
+                {/* --- STICKY SAAS FOOTER DOCK --- */}
+                <div className="px-3 py-2 border-t border-amber-500/20 bg-[#04070e]/95 shrink-0 space-y-1.5">
+
+                    {/* Live Armed Pre-Deploy Telemetry Pills */}
+                    <div className="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg bg-[#0a101d]/90 border border-white/10 text-[9.5px] font-mono overflow-x-auto hide-scrollbar">
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`px-1.5 py-0.2 rounded font-black uppercase border ${form.isPaper ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : 'bg-rose-500/20 border-rose-500/50 text-rose-300'}`}>
+                                {form.isPaper ? 'SIM' : 'REAL API'}
+                            </span>
+                            <span className="text-gray-300 font-bold">
+                                {tradingMode === 'futures' ? `${form.leverage}x FUT` : 'SPOT'} • {currencyPrefix}{form.amount}{currencySuffix}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                            <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold">
+                                🎯 {triggersArmedCount}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded bg-blue-500/15 border border-blue-500/30 text-blue-300 font-bold">
+                                🛡️ {riskArmedCount}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300 font-bold">
+                                🔬 {advArmedCount}
+                            </span>
+                        </div>
+                    </div>
 
                     {/* --- ACTIVE BOT WARNING BANNER (Option C) --- */}
                     {existingBot && (
-                        <div className="p-2 rounded-lg border border-amber-500/40 bg-amber-500/5 animate-fadeIn">
+                        <div className="p-2 rounded-xl border border-amber-500/40 bg-amber-500/10 animate-fadeIn">
                             <div className="flex items-center gap-1.5 mb-1">
                                 <svg className="w-3 h-3 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                 </svg>
-                                <p className="text-[10.5px] font-black text-amber-400 uppercase tracking-wider">Active Bot Detected on {existingBot.market}</p>
+                                <p className="text-[10.5px] font-mono font-black text-amber-300 uppercase tracking-wider">Active Bot Detected on {existingBot.market}</p>
                             </div>
-                            <p className="text-[10px] text-gray-400 mb-1.5 pl-4">
-                                <span className="text-white font-bold">"{existingBot.name}"</span> is currently <span className="text-green-400 font-bold">running</span>. Choose an action:
+                            <p className="text-[10px] text-gray-300 mb-1.5 pl-4">
+                                <span className="text-white font-bold">"{existingBot.name}"</span> is currently <span className="text-emerald-400 font-bold">running</span>. Choose an action:
                             </p>
                             <div className="flex gap-1.5 pl-4">
                                 <button
+                                    type="button"
                                     onClick={() => setDeployMode('update')}
-                                    className={`flex-1 py-0.5 text-[10px] font-black uppercase rounded-md transition-all border ${deployMode === 'update'
-                                            ? 'bg-blue-500/20 border-blue-500/60 text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.2)]'
-                                            : 'bg-black/30 border-white/10 text-gray-500 hover:text-gray-300 hover:border-white/20'
+                                    className={`flex-1 py-1 text-[10px] font-mono font-black uppercase rounded-md transition-all border cursor-pointer ${deployMode === 'update'
+                                            ? 'bg-blue-500/25 border-blue-400/60 text-blue-300 shadow-[0_0_8px_rgba(59,130,246,0.2)]'
+                                            : 'bg-[#0a101d] border-white/10 text-gray-400 hover:text-white hover:border-white/20'
                                         }`}
                                 >
                                     ⚙️ Update Existing
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={() => setDeployMode('new')}
-                                    className={`flex-1 py-0.5 text-[10px] font-black uppercase rounded-md transition-all border ${deployMode === 'new'
-                                            ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
-                                            : 'bg-black/30 border-white/10 text-gray-500 hover:text-gray-300 hover:border-white/20'
+                                    className={`flex-1 py-1 text-[10px] font-mono font-black uppercase rounded-md transition-all border cursor-pointer ${deployMode === 'new'
+                                            ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
+                                            : 'bg-[#0a101d] border-white/10 text-gray-400 hover:text-white hover:border-white/20'
                                         }`}
                                 >
                                     🚀 Deploy New Bot
@@ -3824,7 +4161,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     )}
 
                     {errorMsg && (
-                        <p className={`text-[12px] font-bold animate-pulse text-center py-1 rounded-lg ${errorMsg.includes('Success') ? 'text-green-400 bg-green-500/10' : 'text-red-500 bg-red-500/10'}`}>
+                        <p className={`text-[11.5px] font-mono font-bold text-center py-1 px-2 rounded-lg border ${errorMsg.includes('Success') ? 'text-emerald-300 bg-emerald-500/15 border-emerald-500/35' : 'text-rose-300 bg-rose-500/15 border-rose-500/35'}`}>
                             {errorMsg}
                         </p>
                     )}
@@ -3834,7 +4171,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             type="button"
                             onClick={onClose}
                             disabled={isLoading}
-                            className="w-[92px] h-9 sm:h-10 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-lg text-[12px] font-bold transition-all cursor-pointer shrink-0"
+                            className="w-[88px] h-9 sm:h-10 bg-white/[0.04] hover:bg-white/10 text-gray-300 border border-white/10 rounded-lg text-[11.5px] font-mono font-bold transition-all cursor-pointer shrink-0"
                         >
                             CANCEL
                         </button>
@@ -3842,13 +4179,13 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                             type="button"
                             onClick={handleDeploy}
                             disabled={isLoading}
-                            className={`flex-1 h-9 sm:h-10 rounded-lg font-black text-white text-[13px] tracking-wider uppercase transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] cursor-pointer active:scale-[0.99] ${isLoading
+                            className={`flex-1 h-9 sm:h-10 rounded-lg font-mono font-black text-white text-[12.5px] tracking-wider uppercase transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] cursor-pointer active:scale-[0.99] ${isLoading
                                     ? 'bg-gray-600 cursor-not-allowed opacity-70'
                                     : (existingBot && deployMode === 'update')
-                                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:scale-[1.01]'
+                                        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:brightness-110'
                                         : tradingMode === 'futures'
-                                            ? 'bg-gradient-to-r from-orange-500 to-red-600 hover:scale-[1.01]'
-                                            : 'bg-gradient-to-r from-yellow-400 to-orange-600 hover:scale-[1.01]'
+                                            ? 'bg-gradient-to-r from-orange-500 to-red-600 hover:brightness-110'
+                                            : 'bg-gradient-to-r from-amber-500 to-orange-600 hover:brightness-110'
                                 }`}
                         >
                             {isLoading
@@ -3863,16 +4200,18 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     </div>
 
                     {/* Footer Status Bar */}
-                    <div className="flex items-center justify-between text-[9.5px] text-gray-500 select-none">
+                    <div className="flex items-center justify-between text-[9.5px] font-mono text-gray-500 select-none">
                         <span className="flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
                             Level 2 Sniper Engine Ready
                         </span>
-                        <span className="font-mono text-[9px] text-gray-400">
+                        <span className="text-[9px] text-gray-400">
                             Drag header to position anywhere
                         </span>
                     </div>
                 </div>
+            </>
+            )}
             </div>,
             document.body
         );
@@ -3880,11 +4219,11 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
 const InputField = ({ label, value, onChange, step = 1 }: any) => (
     <div>
-        <label className="text-[10px] font-bold text-gray-500 uppercase mb-0.5 block">{label}</label>
+        <label className="text-[10px] font-mono font-bold text-gray-400 uppercase mb-1 block">{label}</label>
         <input
             type="number"
             step={step}
-            className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-white text-[13px] font-mono outline-none focus:border-brand-primary"
+            className="w-full bg-[#0a101d] border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-2.5 text-white text-[13px] font-mono font-bold outline-none transition-colors"
             value={Number.isNaN(value) ? '' : (value ?? '')}
             onChange={(e) => {
                 const raw = e.target.value;
@@ -3974,11 +4313,11 @@ const DualInput = ({
     };
 
     return (
-        <div className="flex flex-col bg-white/5 border border-white/10 rounded-lg p-2 focus-within:border-brand-primary transition-colors hover:bg-white/10">
+        <div className="flex flex-col bg-[#04070e]/90 border border-white/10 rounded-xl p-2 focus-within:border-cyan-400/60 transition-colors">
             <div className="flex justify-between items-center mb-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter flex items-center gap-1">
+                <label className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-tight flex items-center gap-1">
                     {label}
-                    <span className="bg-black/40 px-1 py-0.2 rounded text-[8.5px] text-gray-500 font-mono">
+                    <span className="bg-[#0a101d] px-1 py-0.2 rounded text-[8.5px] text-gray-400 font-mono border border-white/10">
                         {direction === 'long' ? 'LONG' : 'SHORT'}
                     </span>
                 </label>
@@ -3986,7 +4325,7 @@ const DualInput = ({
             <div className="flex gap-1 items-center">
                 <div className="relative flex-1 min-w-0 group">
                     <span
-                        className="absolute z-10 left-1 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-[9px] cursor-pointer hover:text-white bg-black/50 hover:bg-black/80 px-1 py-0.5 rounded transition-all select-none border border-white/10 shadow-sm"
+                        className="absolute z-10 left-1 top-1/2 -translate-y-1/2 text-cyan-300 font-mono font-bold text-[9px] cursor-pointer hover:text-white bg-[#0a101d] hover:bg-white/10 px-1 py-0.5 rounded transition-all select-none border border-white/10 shadow-sm"
                         onClick={toggleInputType}
                         title={`Toggle input: currently entering ${inputType === 'price' ? 'Asset Price' : 'Spread Gap'}`}
                     >
@@ -3995,7 +4334,7 @@ const DualInput = ({
                     <input
                         type="number"
                         step={1 / Math.pow(10, precision)}
-                        className={`w-full bg-black/40 border border-white/5 rounded-md py-1 ${inputType === 'price' ? 'pl-6' : 'pl-8'} pr-1 text-white outline-none font-mono text-[12px] focus:border-brand-primary focus:bg-black transition-all`}
+                        className={`w-full bg-[#0a101d] border border-white/10 rounded-md py-1 ${inputType === 'price' ? 'pl-6' : 'pl-8'} pr-1 text-white outline-none font-mono font-bold text-[12px] focus:border-cyan-400/60 transition-all`}
                         value={priceStr}
                         onChange={handlePriceChange}
                         placeholder={inputType === 'price' ? 'Price' : 'Gap'}

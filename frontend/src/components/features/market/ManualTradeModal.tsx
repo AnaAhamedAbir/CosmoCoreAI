@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle, Minus, Maximize2, GripVertical, Trash2, Target, MoveVertical, Magnet } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, DollarSign, ChevronDown, RefreshCw, Square, ShieldAlert, Zap, Layers, AlertTriangle, Minus, Maximize2, GripVertical, Trash2, Target, MoveVertical, Magnet, KeyRound } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { manualTradeService, ApiKey, FastBalanceResponse, FastPositionResponse, MlLivePreviewResponse } from '../../../services/manualTradeService';
 import { notificationService } from '../../../services/notification';
@@ -33,6 +33,10 @@ import {
   SmartPegWallStrategyPanel,
   TakeProfitWallSnapButton,
 } from './LiquidityWallMagnetControls';
+import {
+  ForceExecutionPanel,
+  QuickTpSlInlineStrip,
+} from './ManualTradeTerminalPanels';
 
 const MotionButton = motion.button as any;
 const MotionDiv = motion.div as any;
@@ -85,6 +89,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   const { isThermalGuardActive, timings } = useDeviceProfile();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [hudDrawer, setHudDrawer] = useState<'none' | 'force' | 'ai' | 'wall'>('none');
+  const [showFuturesPopover, setShowFuturesPopover] = useState(false);
   const [activeTerminalTab, setActiveTerminalTab] = useState<'order' | 'brackets' | 'ai' | 'orders'>('order');
   const [submittingSide, setSubmittingSide] = useState<'Buy' | 'Sell' | null>(null);
   const [activeSymbol, setActiveSymbol] = useState<string>(symbol);
@@ -3776,17 +3782,21 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
               className={`cosmo-theme-modal fixed rounded-xl ${isThermalGuardActive ? 'animate-cosmo-modal-fast' : 'animate-cosmo-modal-cyan'
                 } ${isMinimized
                   ? isThermalGuardActive
-                    ? 'w-[474px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
-                    : 'w-[474px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
+                    ? 'w-[468px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
+                    : 'w-[468px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
                   : isThermalGuardActive
-                    ? 'w-[620px] max-w-[calc(100vw-12px)] flex flex-col bg-[#080c16] border-cyan-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
-                    : 'w-[620px] max-w-[calc(100vw-12px)] flex flex-col bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
+                    ? 'w-[580px] max-w-[calc(100vw-12px)] flex flex-col bg-[#080c16] border-cyan-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
+                    : 'w-[580px] max-w-[calc(100vw-12px)] flex flex-col bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
                 } border z-[99999] overflow-hidden select-none`}
             >
               <FloatingModalCyberFX color="cyan" isThermalGuard={isThermalGuardActive} />
 
-              {isMinimized ? (
-                /* ULTRA-SLIM PREMIUM MINIMIZED QUICK TRADE CYBER-HUD */
+              {isMinimized ? (() => {
+                const hudActivePeg = activeBrackets.find(b => b.status === 'pegging');
+                const hudActiveChase = activeBrackets.find(b => b.status === 'chasing');
+                const hudHasFuturesPos = Boolean(isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none');
+                return (
+                /* ULTRA-SLIM SAAS 2-TIER MINIMIZED QUICK TRADE CYBER-HUD */
                 <div
                   key="minimized-hud"
                   onMouseDown={handleStartDrag}
@@ -3797,7 +3807,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                   {/* Top Neon Horizon Accent Line */}
                   <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-cyan-400 to-emerald-400 opacity-85" />
 
-                  <div className="px-2.5 py-1.5 space-y-1 relative z-10">
+                  <div className="px-2.5 py-1.5 space-y-1.5 relative z-10">
                     {/* Row 1: Single-Line Ultra-Slim Drag Handle & Header */}
                     <div
                       style={{ touchAction: 'none' }}
@@ -3820,7 +3830,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             onTouchStart={(e) => e.stopPropagation()}
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => e.stopPropagation()}
-                            className="pointer-events-auto bg-[#0a101d] border border-cyan-500/40 hover:border-cyan-400 rounded px-1 py-0.5 text-white font-mono font-black text-[11px] tracking-tight max-w-[105px] truncate focus:outline-none cursor-pointer shrink-0"
+                            className="pointer-events-auto bg-[#0a101d] border border-cyan-500/40 hover:border-cyan-400 rounded px-1 py-0.5 text-white font-mono font-black text-[11px] tracking-tight max-w-[100px] truncate focus:outline-none cursor-pointer shrink-0"
                             title="Switch target chart pair"
                           >
                             {availablePairs.map((p, idx) => (
@@ -3859,45 +3869,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
                           className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-black uppercase leading-tight shrink-0 pointer-events-auto cursor-pointer transition-all active:scale-95 border ${orderType === 'SmartPeg'
-                            ? 'bg-amber-500/25 border-amber-400/60 text-amber-300 hover:bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.35)]'
+                            ? 'bg-amber-500/25 border-amber-400/60 text-amber-300 hover:bg-amber-500/40'
                             : orderType === 'Market'
-                              ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-300 hover:bg-cyan-500/35 shadow-[0_0_8px_rgba(6,182,212,0.3)]'
+                              ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-300 hover:bg-cyan-500/35'
                               : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/10 hover:border-cyan-400/40 text-gray-300 hover:text-white'
                             }`}
                           title="Click to switch Order Type: Limit ➔ Market ➔ Smart Peg"
                         >
                           {orderType === 'SmartPeg' ? (smartPegStrategy === 'wall_aware' ? '🧱PEG' : '⚡PEG') : orderType === 'Market' ? 'MKT' : 'LMT'}
                         </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setWallMagnetEnabled(prev => {
-                              const next = !prev;
-                              if (next && effectiveWalls.length === 0) {
-                                fetchNearestWalls();
-                              }
-                              return next;
-                            });
-                          }}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-black uppercase leading-tight shrink-0 pointer-events-auto cursor-pointer transition-all active:scale-95 border flex items-center gap-0.5 ${wallMagnetEnabled || (orderType === 'SmartPeg' && smartPegStrategy === 'wall_aware')
-                              ? 'bg-amber-500/25 border-amber-400/60 text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.35)]'
-                              : 'bg-white/[0.04] hover:bg-white/[0.1] border-white/10 text-gray-400 hover:text-amber-200'
-                            }`}
-                          title="Toggle Liquidity-Wall Magnet & 1-Click Front-Run Snap (Hold Shift while dragging onto chart to snap)"
-                        >
-                          <Magnet className="w-2.5 h-2.5" />
-                          <span>WALL</span>
-                        </button>
-                        {tpConfig.enabled && (
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold leading-tight shrink-0">
-                            TP
-                          </span>
-                        )}
-                        {slConfig.enabled && (
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono font-bold leading-tight shrink-0">
-                            SL
+                        {(tpConfig.enabled || slConfig.enabled) && (
+                          <span className="text-[8.5px] px-1 py-0.2 rounded bg-white/[0.06] border border-white/15 text-gray-300 font-mono font-bold leading-tight shrink-0">
+                            {[tpConfig.enabled && 'TP', slConfig.enabled && 'SL'].filter(Boolean).join('+')}
                           </span>
                         )}
                         {(() => {
@@ -3914,18 +3897,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             </span>
                           );
                         })()}
-                        {mlFilterConfig.enabled && (
-                          <span
-                            className="text-[9px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight shrink-0"
-                            title="L2 Machine Learning Entry Filter Active"
-                          >
-                            AI
-                          </span>
-                        )}
                         {openLimitOrders.length > 0 && (
                           <span
-                            className="text-[9px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse shrink-0 pointer-events-auto"
-                            title={`${openLimitOrders.length} open limit orders active. Click to view and cancel.`}
+                            className="text-[9px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 shrink-0 pointer-events-auto"
+                            title={`${openLimitOrders.length} open limit orders active. Click to view.`}
                             onClick={(e) => {
                               e.stopPropagation();
                               setActiveTerminalTab('orders');
@@ -3935,28 +3910,38 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             {openLimitOrders.length} OPEN
                           </span>
                         )}
-                        {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
-                          <HudLivePositionPnlChip
-                            positionData={positionData}
-                            effectiveCurrentPrice={effectiveCurrentPrice}
-                            hasActiveSoftwareSl={activeBrackets.some((b) => b?.status === 'monitoring')}
-                            isBreakevenActivated={activeBrackets.some((b) => b?.status === 'monitoring' && Boolean(b?.breakeven_activated))}
-                            isMovingBe={isMovingBreakeven}
-                            onMoveToBreakeven={handleMoveToBreakeven}
-                          />
+                        {hudHasFuturesPos && positionData && (
+                          <div
+                            className="pointer-events-auto shrink-0"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onTouchStart={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                          >
+                            <HudLivePositionPnlChip
+                              positionData={positionData}
+                              effectiveCurrentPrice={effectiveCurrentPrice}
+                              hasActiveSoftwareSl={activeBrackets.some((b) => b?.status === 'monitoring')}
+                              isBreakevenActivated={activeBrackets.some((b) => b?.status === 'monitoring' && Boolean(b?.breakeven_activated))}
+                              isMovingBe={isMovingBreakeven}
+                              onMoveToBreakeven={handleMoveToBreakeven}
+                            />
+                          </div>
                         )}
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-[9px] font-mono text-gray-400 hidden xl:inline max-w-[65px] truncate">
-                          {balanceData
-                            ? isInverseFutures
-                              ? `${(balanceData.base_free || 0).toFixed(1)} ${baseCurrency}`
+                        {balanceData && (
+                          <span
+                            className="text-[9px] font-mono text-gray-400 hidden sm:inline max-w-[78px] truncate"
+                            title="Available free balance"
+                          >
+                            {isInverseFutures
+                              ? `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency}`
                               : sizeMode === 'quote' || isFutures || tradeSide === 'Buy'
-                                ? `${(balanceData.quote_free || 0).toFixed(1)} ${quoteCurrency}`
-                                : `${(balanceData.base_free || 0).toFixed(1)} ${baseCurrency}`
-                            : ''}
-                        </span>
+                                ? `$${(balanceData.quote_free || 0).toFixed(1)}`
+                                : `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency}`}
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -3964,8 +3949,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             fetchBalance(false, true);
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
-                          className={`p-1 rounded bg-white/[0.04] hover:bg-white/10 border border-white/[0.07] text-gray-400 hover:text-cyan-300 transition-all cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''
-                            }`}
+                          className={`p-1 rounded bg-white/[0.04] hover:bg-white/10 border border-white/[0.07] text-gray-400 hover:text-cyan-300 transition-all cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''}`}
                           title="Refresh Balance"
                         >
                           <RefreshCw className={`w-2.5 h-2.5 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -3999,36 +3983,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Row 1.5: Optional Compact Liquidity-Wall Magnet Quick Snap Bar */}
-                    {wallMagnetEnabled && (
-                      <HudWallMagnetBar
-                        wallTargets={wallTargets}
-                        frontRunTicks={smartPegFrontRunTicks}
-                        orderType={orderType}
-                        isAutoLimit={isAutoLimit}
-                        limitPrice={limitPrice}
-                        smartPegAnchorPrice={smartPegAnchorPrice}
-                        smartPegStrategy={smartPegStrategy}
-                        smartPegAntiSpoof={smartPegAntiSpoof}
-                        isFetchingWalls={isFetchingWalls}
-                        formatDisplayPrice={formatDisplayPrice}
-                        onSnapLimitToWall={handleSnapLimitToWall}
-                        onClearPinnedPrice={handleClearPinnedPrice}
-                        onCyclePegStrategy={handleCyclePegStrategy}
-                        onRefreshWalls={fetchNearestWalls}
-                      />
-                    )}
-
-                    {/* Row 2: Ultra-Compact Order Size + 25/50/75/100% Shortcuts + 0-100% Slide Bar */}
+                    {/* Row 2: Compact Order Size + 25/50/75/100% + 0-100% Slide Bar */}
                     <div
                       data-no-drag="true"
                       onMouseDown={(e) => e.stopPropagation()}
                       onTouchStart={(e) => e.stopPropagation()}
                       className="rounded-lg bg-slate-50 dark:bg-[#04070e]/90 border border-slate-200 dark:border-white/[0.08] px-2 py-1 space-y-1 shadow-inner dark:shadow-[inset_0_1px_6px_rgba(0,0,0,0.65)]"
                     >
-                      {/* Line 2A: Unit Switch + Size Input + 4 Shortcut Points (25, 50, 75, 100%) + Active % Badge */}
                       <div className="flex items-center justify-between gap-1">
-                        {/* Base / Quote / Risk$ / Risk% Mini Toggle */}
                         <div className="flex items-center bg-[#0a101d] rounded p-0.5 border border-white/10 shrink-0">
                           <button
                             type="button"
@@ -4090,7 +4052,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           </button>
                         </div>
 
-                        {/* Compact Size or Risk Input */}
                         {sizingMode === 'standard' ? (
                           <input
                             type="number"
@@ -4100,7 +4061,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               setSelectedPercent(null);
                             }}
                             placeholder="0.00"
-                            className="w-[74px] bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded py-0.5 px-1.5 text-white font-mono text-[11px] font-bold focus:outline-none transition-colors"
+                            className="w-[72px] bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded py-0.5 px-1.5 text-white font-mono text-[11px] font-bold focus:outline-none transition-colors"
                           />
                         ) : (
                           <input
@@ -4115,7 +4076,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           />
                         )}
 
-                        {/* 4 Shortcut Point Buttons: 25%, 50%, 75%, 100% */}
                         <div className="flex items-center gap-1 flex-1 justify-end">
                           {[25, 50, 75, 100].map((pt) => {
                             const isSelected = sliderPercentValue === pt;
@@ -4139,20 +4099,18 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           })}
                         </div>
 
-                        {/* Live Percentage Readout Pill */}
                         <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 font-mono text-[10px] font-black shrink-0 min-w-[34px] text-center leading-tight">
                           {sliderPercentValue}%
                         </span>
                       </div>
 
-                      {/* Line 2B: 0% to 100% Interactive Slide Bar with Milestone Track Points */}
+                      {/* 0% to 100% Interactive Slide Bar */}
                       <div className="relative h-3 flex items-center select-none px-1">
                         <div className="w-full h-1 rounded-full bg-slate-200 dark:bg-[#0c1424] border border-slate-300 dark:border-white/10 relative overflow-visible">
                           <div
                             style={{ width: `${sliderPercentValue}%` }}
                             className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-sky-400 to-emerald-400 shadow-[0_0_8px_rgba(6,182,212,0.65)] transition-all duration-75"
                           />
-
                           {[0, 25, 50, 75, 100].map((pt) => {
                             const isReached = sliderPercentValue >= pt && (pt > 0 || sliderPercentValue > 0);
                             return (
@@ -4167,12 +4125,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             );
                           })}
                         </div>
-
                         <div
                           style={{ left: `calc(${sliderPercentValue}% - 6px)` }}
                           className="pointer-events-none absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,1)] transition-all duration-75"
                         />
-
                         <input
                           type="range"
                           min={0}
@@ -4202,118 +4158,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       )}
                     </div>
 
-                    {/* Row 2.5: Compact AI ML Filter & Model Selector Bar in Minimized HUD */}
+                    {/* Row 3: Unified Execution + Drag-to-Chart TP/SL Bar */}
                     <div
                       data-no-drag="true"
                       onMouseDown={(e) => e.stopPropagation()}
                       onTouchStart={(e) => e.stopPropagation()}
-                      className={`flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg border transition-all ${mlFilterConfig.enabled
-                        ? 'bg-blue-950/40 border-blue-500/45 shadow-[0_0_10px_rgba(59,130,246,0.15)]'
-                        : 'bg-white/[0.02] border-white/10'
-                        }`}
+                      className="flex items-center gap-1"
                     >
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          hasManualMlOverrideRef.current = true;
-                          setMlFilterConfig(prev => ({
-                            ...prev,
-                            enabled: !prev.enabled,
-                            modelId: !prev.enabled && !prev.modelId && mlModels.length > 0 ? mlModels[0].id : prev.modelId
-                          }));
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-extrabold uppercase tracking-wider border transition-all cursor-pointer shrink-0 flex items-center gap-1 ${mlFilterConfig.enabled
-                          ? 'bg-blue-600/30 border-blue-400 text-blue-200 shadow-[0_0_8px_rgba(59,130,246,0.4)]'
-                          : 'bg-black/40 border-white/15 text-gray-400 hover:text-white'
-                          }`}
-                        title="Toggle L2 / Training Studio Machine Learning Entry Filter"
-                      >
-                        <span>🤖 AI {mlFilterConfig.enabled ? 'ON' : 'OFF'}</span>
-                      </button>
-
-                      <div className="relative flex-1 min-w-0">
-                        <select
-                          value={mlFilterConfig.modelId}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            hasManualMlOverrideRef.current = true;
-                            const val = e.target.value;
-                            const opt = getModelOptimalThresholds(val);
-                            setMlFilterConfig(prev => ({
-                              ...prev,
-                              modelId: val,
-                              enabled: Boolean(val) ? true : prev.enabled,
-                              bullishThreshold: prev.autoThreshold ? opt.bullish : prev.bullishThreshold,
-                              bearishThreshold: prev.autoThreshold ? opt.bearish : prev.bearishThreshold
-                            }));
-                          }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          className="w-full appearance-none bg-[#050811]/95 hover:bg-[#080d1a] text-blue-200 font-mono text-[10px] font-bold rounded border border-blue-500/30 focus:border-blue-400 pl-1.5 pr-4 py-0.5 truncate cursor-pointer focus:outline-none transition-colors"
-                          title="Select Trained ML Model from ML Registry"
-                        >
-                          <option value="" className="bg-[#070b14] text-gray-400">
-                            {mlModels.length === 0 ? 'No ML Registry Models' : '-- Select ML Model --'}
-                          </option>
-                          {mlModels.map((m) => (
-                            <option key={m.id} value={m.id} className="bg-[#070b14] text-white font-mono">
-                              {`${m.name} (${m.modelType})`}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown className="w-2.5 h-2.5 text-blue-400 pointer-events-none absolute right-1 top-1/2 -translate-y-1/2" />
-                      </div>
-
-                      {mlFilterConfig.enabled && (
-                        <span
-                          className="text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-black/50 border border-blue-500/30 text-blue-300 shrink-0"
-                          title="Bullish BUY Threshold / Bearish SELL Threshold"
-                        >
-                          <span className={tradeSide === 'Buy' ? 'text-emerald-300 font-black underline' : 'text-gray-400'}>
-                            B:{(mlFilterConfig.bullishThreshold * 100).toFixed(0)}%
-                          </span>{' '}
-                          <span className={tradeSide === 'Sell' ? 'text-rose-300 font-black underline' : 'text-gray-400'}>
-                            S:{(mlFilterConfig.bearishThreshold * 100).toFixed(0)}%
-                          </span>
-                        </span>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          fetchMlModels();
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="p-0.5 rounded bg-white/[0.04] hover:bg-white/10 border border-white/10 text-gray-400 hover:text-blue-300 transition-colors cursor-pointer shrink-0"
-                        title="Refresh ML Models from Registry"
-                      >
-                        <RefreshCw className={`w-2.5 h-2.5 ${isLoadingMlModels ? 'animate-spin text-blue-400' : ''}`} />
-                      </button>
-                    </div>
-
-                    {mlFilterConfig.enabled && mlLivePreview && (
-                      <HudLiveAiMicroGauge
-                        preview={mlLivePreview}
-                        tradeSide={tradeSide}
-                        bullishThreshold={mlFilterConfig.bullishThreshold}
-                        bearishThreshold={mlFilterConfig.bearishThreshold}
-                        compact
-                      />
-                    )}
-
-                    <HudCompactPnlStrip preview={tradePnlPreview} />
-
-                    {/* Row 3: Synchronized Execution Row (Side Selector Toggle + Dedicated Action Button) */}
-                    <div
-                      data-no-drag="true"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onTouchStart={(e) => e.stopPropagation()}
-                      className="flex items-center gap-1.5"
-                    >
-                      {/* Side Selector Mini Toggle (Keeps HUD aligned with full terminal state) */}
                       <div className="flex items-center bg-[#050811] rounded-lg p-0.5 border border-white/10 shrink-0 shadow-inner">
                         <button
                           type="button"
@@ -4363,7 +4214,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         </button>
                       </div>
 
-                      {/* Single Dynamic Primary Execution Button with Touch/Drag-to-Chart capability */}
+                      {/* Primary Execute / Drag Order CTA */}
                       <button
                         type="button"
                         disabled={isSubmitting}
@@ -4380,383 +4231,400 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           handleTrade(tradeSide);
                         }}
                         style={{ touchAction: 'none' }}
-                        className={`relative flex-1 overflow-hidden py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 select-none cursor-grab active:cursor-grabbing group shadow-sm ${tradeSide === 'Buy'
+                        className={`relative flex-1 min-w-0 overflow-hidden py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1 transition-all active:scale-95 disabled:opacity-50 select-none cursor-grab active:cursor-grabbing group shadow-sm ${tradeSide === 'Buy'
                           ? orderType === 'SmartPeg'
-                            ? 'bg-gradient-to-r from-amber-600/35 via-emerald-600/35 to-green-700/40 hover:from-amber-600 hover:to-green-600 text-emerald-300 hover:text-white border border-emerald-400/60 shadow-[0_2px_12px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)]'
-                            : 'bg-emerald-500/15 dark:bg-gradient-to-b dark:from-emerald-500/30 dark:via-emerald-600/25 dark:to-green-900/40 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:via-emerald-600 dark:hover:to-green-700 text-emerald-700 dark:text-emerald-300 hover:text-white border border-emerald-500/40 dark:border-emerald-400/50 hover:border-emerald-400 dark:hover:border-emerald-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)]'
+                            ? 'bg-gradient-to-r from-amber-600/35 via-emerald-600/35 to-green-700/40 hover:from-amber-600 hover:to-green-600 text-emerald-300 hover:text-white border border-emerald-400/60'
+                            : 'bg-emerald-500/15 dark:bg-gradient-to-b dark:from-emerald-500/30 dark:via-emerald-600/25 dark:to-green-900/40 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:to-green-700 text-emerald-700 dark:text-emerald-300 hover:text-white border border-emerald-500/40 dark:border-emerald-400/50'
                           : orderType === 'SmartPeg'
-                            ? 'bg-gradient-to-r from-amber-600/35 via-rose-600/35 to-red-700/40 hover:from-amber-600 hover:to-red-600 text-rose-300 hover:text-white border border-rose-400/60 shadow-[0_2px_12px_rgba(244,63,94,0.3)] hover:shadow-[0_0_20px_rgba(244,63,94,0.5)]'
-                            : 'bg-rose-500/15 dark:bg-gradient-to-b dark:from-rose-500/30 dark:via-rose-600/25 dark:to-red-900/40 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:via-rose-600 dark:hover:to-red-700 text-rose-700 dark:text-rose-300 hover:text-white border border-rose-500/40 dark:border-rose-400/50 hover:border-rose-400 dark:hover:border-rose-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)]'
+                            ? 'bg-gradient-to-r from-amber-600/35 via-rose-600/35 to-red-700/40 hover:from-amber-600 hover:to-red-600 text-rose-300 hover:text-white border border-rose-400/60'
+                            : 'bg-rose-500/15 dark:bg-gradient-to-b dark:from-rose-500/30 dark:via-rose-600/25 dark:to-red-900/40 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:to-red-700 text-rose-700 dark:text-rose-300 hover:text-white border border-rose-500/40 dark:border-rose-400/50'
                           }`}
                         title={`Click for instant ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
                       >
                         {isSubmitting ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
                         ) : orderType === 'SmartPeg' ? (
-                          <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300 group-hover:scale-110 transition-transform shrink-0" />
+                          <Zap className="w-3 h-3 text-amber-300 fill-amber-300 shrink-0" />
                         ) : tradeSide === 'Buy' ? (
-                          <TrendingUp className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 group-hover:text-white transition-transform shrink-0" />
+                          <TrendingUp className="w-3 h-3 text-emerald-600 dark:text-emerald-400 group-hover:text-white shrink-0" />
                         ) : (
-                          <TrendingDown className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 group-hover:text-white transition-transform shrink-0" />
+                          <TrendingDown className="w-3 h-3 text-rose-600 dark:text-rose-400 group-hover:text-white shrink-0" />
                         )}
 
-                        <span className="text-[12px] uppercase tracking-wider font-black leading-none truncate">
+                        <span className="text-[11px] uppercase tracking-wider font-black leading-none truncate">
                           {isSubmitting
-                            ? `${tradeSide === 'Buy' ? 'Buying' : 'Selling'}...`
+                            ? '...'
                             : orderType === 'SmartPeg'
                               ? `PEG ${tradeSide === 'Buy' ? (isFutures ? 'LONG' : 'BUY') : (isFutures ? 'SHORT' : 'SELL')}`
                               : orderType === 'Market'
-                                ? `MKT ${tradeSide === 'Buy' ? (isFutures ? 'BUY / LONG' : 'BUY') : (isFutures ? 'SELL / SHORT' : 'SELL')}`
-                                : `LMT ${tradeSide === 'Buy' ? (isFutures ? 'BUY / LONG' : 'BUY') : (isFutures ? 'SELL / SHORT' : 'SELL')}`}
+                                ? `MKT ${tradeSide === 'Buy' ? (isFutures ? 'LONG' : 'BUY') : (isFutures ? 'SHORT' : 'SELL')}`
+                                : `LMT ${tradeSide === 'Buy' ? (isFutures ? 'LONG' : 'BUY') : (isFutures ? 'SHORT' : 'SELL')}`}
                         </span>
 
-                        {(tpConfig.enabled || slConfig.enabled) && (
-                          <span
-                            className={`text-[8.5px] font-mono px-1 py-0.2 rounded font-extrabold border shrink-0 leading-tight ${tradeSide === 'Buy'
-                              ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
-                              : 'bg-rose-950/80 border-rose-500/50 text-rose-300'
-                              }`}
-                            title={`Attached Brackets: ${[tpConfig.enabled && 'TP', slConfig.enabled && 'SL'].filter(Boolean).join(' + ')}`}
-                          >
-                            {tpConfig.enabled && slConfig.enabled ? 'TP+SL' : tpConfig.enabled ? 'TP' : 'SL'}
-                          </span>
-                        )}
-
                         {size && Number(size) > 0 && effectiveOrderPrice > 0 && (
-                          <span className="text-[10px] font-mono text-white/90 group-hover:text-white font-semibold truncate shrink-0">
+                          <span className="text-[9.5px] font-mono text-white/90 group-hover:text-white font-semibold truncate shrink-0">
                             • ${sizeMode === 'quote' ? Number(size).toFixed(0) : (Number(size) * effectiveOrderPrice).toFixed(0)}
                           </span>
                         )}
-
                         <MoveVertical className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 shrink-0" />
                       </button>
-                    </div>
 
-                    {/* Row 3.5: Interactive Drag-to-Chart TP / SL Quick Protector Bar (Always available for Pending & Executed Trades) */}
-                    <div
-                      data-no-drag="true"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onTouchStart={(e) => e.stopPropagation()}
-                      className="grid grid-cols-2 gap-1.5"
-                    >
-                      {/* Drag TP Handle */}
+                      {/* Inline Drag-to-Chart TP & SL Handles */}
                       <div
-                        onPointerDown={(e) => startLineDrag(e, 'tp')}
+                        data-no-drag="true"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          startLineDrag(e, 'tp');
+                        }}
                         style={{ touchAction: 'none' }}
-                        className="py-1 px-2 rounded-lg border border-emerald-400/40 hover:border-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-300 flex items-center justify-between font-mono text-[10px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(16,185,129,0.12)] active:scale-95 group"
-                        title="Touch or drag onto chart to place Take Profit at your target price level"
+                        className="py-1.5 px-2 rounded-lg border border-emerald-400/45 hover:border-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-300 flex items-center gap-1 font-mono text-[9.5px] font-black select-none transition-all cursor-grab active:cursor-grabbing shrink-0"
+                        title={`Drag onto chart to place Take Profit (${tpConfig.orderType})`}
                       >
-                        <div className="flex items-center gap-1.5 truncate">
-                          <Target className="w-3 h-3 text-emerald-400 group-hover:scale-110 transition-transform shrink-0" />
-                          <span className="uppercase tracking-wider">Drag TP</span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className="text-[8.5px] px-1 py-0.2 rounded font-bold uppercase border bg-emerald-500/20 text-emerald-300 border-emerald-400/30">
-                            {tpConfig.orderType}
-                          </span>
-                          <MoveVertical className="w-3 h-3 text-emerald-400/70" />
-                        </div>
+                        <Target className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>TP</span>
                       </div>
-
-                      {/* Drag SL Handle */}
                       <div
-                        onPointerDown={(e) => startLineDrag(e, 'sl')}
+                        data-no-drag="true"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          startLineDrag(e, 'sl');
+                        }}
                         style={{ touchAction: 'none' }}
-                        className="py-1 px-2 rounded-lg border border-rose-400/40 hover:border-rose-300 bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 text-rose-300 flex items-center justify-between font-mono text-[10px] font-black select-none transition-all cursor-grab active:cursor-grabbing shadow-[0_0_10px_rgba(244,63,94,0.12)] active:scale-95 group"
-                        title="Touch or drag onto chart to place Stop Loss (Smart Chase) at your target price level"
+                        className="py-1.5 px-2 rounded-lg border border-rose-400/45 hover:border-rose-300 bg-rose-500/10 hover:bg-rose-500/25 text-rose-300 flex items-center gap-1 font-mono text-[9.5px] font-black select-none transition-all cursor-grab active:cursor-grabbing shrink-0"
+                        title={`Drag onto chart to place Stop Loss (${slConfig.type === 'smart_chase' ? 'Smart Chase' : slConfig.type})`}
                       >
-                        <div className="flex items-center gap-1.5 truncate">
-                          <ShieldAlert className="w-3 h-3 text-rose-400 group-hover:scale-110 transition-transform shrink-0" />
-                          <span className="uppercase tracking-wider">Drag SL</span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className="text-[8.5px] px-1 py-0.2 rounded font-bold uppercase border bg-rose-500/20 text-rose-300 border-rose-400/30">
-                            {slConfig.type === 'smart_chase' ? '⚡Chase' : slConfig.type === 'trailing' ? 'Trail' : 'Fixed'}
-                          </span>
-                          <MoveVertical className="w-3 h-3 text-rose-400/70" />
-                        </div>
+                        <ShieldAlert className="w-3 h-3 text-rose-400 shrink-0" />
+                        <span>SL</span>
                       </div>
                     </div>
 
-                    {/* Row 4: Ultra-Slim Emergency Force Buy / Sell Panel with Target Order Selector */}
-                    <div
-                      data-no-drag="true"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onTouchStart={(e) => e.stopPropagation()}
-                      className="rounded-lg bg-slate-50 dark:bg-gradient-to-r dark:from-[#13070c]/95 dark:via-[#090d18]/95 dark:to-[#061310]/95 border border-amber-500/35 px-2 py-1 space-y-1 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-                    >
-                      {/* Sub-Row 4A: Target Order Selector (Select which specific Open Order / Bracket to Force Buy/Sell, or ALL) */}
-                      <div className="flex items-center justify-between gap-1">
-                        <span
-                          className="flex items-center gap-1 text-[9px] font-mono font-extrabold uppercase tracking-tight text-amber-300/90 shrink-0"
-                          title="Choose which open order or active bracket to cancel & force execute at current price"
-                        >
-                          <span>🎯 ORDER</span>
-                          <span
-                            className={`px-1 py-0.2 rounded text-[8px] font-black leading-none border ${forceOrderTargets.length > 0
-                              ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
-                              : 'bg-white/5 border-white/10 text-gray-400'
-                              }`}
-                          >
-                            {forceOrderTargets.length}
-                          </span>
+                    <HudCompactPnlStrip preview={tradePnlPreview} />
+
+                    {/* Compact AI Shield Rejection Notice (Visible in Minimized HUD) */}
+                    {aiRejectNotice && (
+                      <div
+                        data-no-drag="true"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="px-2 py-1 rounded-lg bg-amber-950/60 border border-amber-500/45 flex items-center justify-between gap-2 text-[9.5px] font-mono text-amber-200"
+                      >
+                        <span className="flex items-center gap-1 min-w-0 truncate">
+                          <ShieldAlert className="w-3 h-3 text-amber-400 shrink-0" />
+                          <strong className="text-amber-300 shrink-0">{aiRejectNotice.side} Blocked:</strong>
+                          <span className="truncate">{aiRejectNotice.calibratedProb.toFixed(0)}% &lt; {aiRejectNotice.threshold.toFixed(0)}% • {aiRejectNotice.reason}</span>
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => setAiRejectNotice(null)}
+                          className="text-amber-300 hover:text-white shrink-0 cursor-pointer"
+                          title="Dismiss"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
 
-                        <div className="relative flex-1 min-w-0">
-                          <select
-                            value={selectedForceOrderId}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              const val = e.target.value;
-                              userChoseAllForceRef.current = val === 'all' && forceOrderTargets.length > 0;
-                              setSelectedForceOrderId(val);
-                            }}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            className="w-full appearance-none bg-[#050811]/95 hover:bg-[#080d1a] text-cyan-200 font-mono text-[10px] font-bold rounded border border-cyan-500/35 focus:border-amber-400/80 pl-1.5 pr-4 py-0.5 truncate cursor-pointer focus:outline-none transition-colors"
-                            title="Select specific open order/bracket to Force Buy or Force Sell, or select ALL / Wallet Balance"
-                          >
-                            {forceOrderTargets.map((t, idx) => (
-                              <option key={t.id} value={t.id} className="bg-[#070b14] text-white font-mono">
-                                {`#${idx + 1} ${t.label}`}
-                              </option>
-                            ))}
-                            <option value="all" className="bg-[#070b14] text-amber-300 font-mono font-bold">
-                              {forceOrderTargets.length > 0
-                                ? `⚡ ALL OPEN ORDERS (${forceOrderTargets.length}) + WALLET`
-                                : `⚡ WALLET / POSITION (No Open Orders)`}
-                            </option>
-                          </select>
-                          <ChevronDown className="w-2.5 h-2.5 text-cyan-400 pointer-events-none absolute right-1 top-1/2 -translate-y-1/2" />
-                        </div>
+                    {/* Row 4: Ultra-Slim Tactical Drawer Switcher (Keeps HUD ~145px until expanded) */}
+                    <div
+                      data-no-drag="true"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className="flex items-center justify-between gap-1 pt-0.5 border-t border-white/[0.06]"
+                    >
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHudDrawer((prev) => (prev === 'wall' ? 'none' : 'wall'));
+                            if (!wallMagnetEnabled && effectiveWalls.length === 0) {
+                              fetchNearestWalls();
+                            }
+                          }}
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                            hudDrawer === 'wall' || wallMagnetEnabled
+                              ? 'bg-amber-500/25 border-amber-400/60 text-amber-200'
+                              : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 text-gray-400 hover:text-white'
+                          }`}
+                          title="Toggle Wall Magnet & Limit Price Quick Snap Drawer"
+                        >
+                          <Magnet className="w-2.5 h-2.5" />
+                          <span>Wall</span>
+                        </button>
 
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            fetchActiveBrackets(true);
-                          }}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          className="p-0.5 rounded bg-white/[0.04] hover:bg-white/10 border border-white/10 text-gray-400 hover:text-amber-300 transition-colors cursor-pointer shrink-0"
-                          title="Refresh Open Orders List"
+                          onClick={() => setHudDrawer((prev) => (prev === 'ai' ? 'none' : 'ai'))}
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                            hudDrawer === 'ai' || mlFilterConfig.enabled
+                              ? 'bg-blue-500/25 border-blue-400/60 text-blue-200'
+                              : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 text-gray-400 hover:text-white'
+                          }`}
+                          title="Toggle AI Entry Filter & Live Gauge"
                         >
-                          <RefreshCw className="w-2.5 h-2.5" />
+                          <span>🤖 AI {mlFilterConfig.enabled ? 'ON' : ''}</span>
                         </button>
 
-                        {forceOrderTargets.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setHudDrawer((prev) => (prev === 'force' ? 'none' : 'force'))}
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                            hudDrawer === 'force'
+                              ? 'bg-rose-500/25 border-rose-400/60 text-rose-200'
+                              : forceOrderTargets.length > 0
+                                ? 'bg-amber-500/15 border-amber-400/40 text-amber-200'
+                                : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 text-gray-400 hover:text-white'
+                          }`}
+                          title="Toggle Emergency Force Buy/Sell (0% Maker / Market)"
+                        >
+                          <Zap className="w-2.5 h-2.5 text-amber-400" />
+                          <span>Force{forceOrderTargets.length > 0 ? ` (${forceOrderTargets.length})` : ''}</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {hudActivePeg && (
                           <button
                             type="button"
-                            disabled={cancellingOrderId !== null || isCancellingAll}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (selectedForceOrderId !== 'all') {
-                                handleCancelOrder(selectedForceOrderId);
-                              } else {
-                                handleCancelAllOrders();
-                              }
-                            }}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            className="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500 border border-rose-500/40 text-rose-200 hover:text-white text-[9px] font-mono font-black uppercase tracking-tight transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50"
-                            title={selectedForceOrderId !== 'all' ? `Cancel Selected Order #${selectedForceOrderId}` : 'Cancel ALL Open Orders'}
+                            disabled={isStoppingPeg}
+                            onClick={() => handleStopSmartPeg(hudActivePeg)}
+                            className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-mono text-[8.5px] font-black uppercase cursor-pointer"
                           >
-                            {cancellingOrderId || isCancellingAll ? (
-                              <RefreshCw className="w-2 h-2 animate-spin" />
-                            ) : (
-                              <span>✕ {selectedForceOrderId !== 'all' ? 'Cancel' : 'Cancel All'}</span>
-                            )}
+                            ⏹ Stop Peg
+                          </button>
+                        )}
+                        {!hudActivePeg && hudActiveChase && (
+                          <button
+                            type="button"
+                            disabled={isStoppingChase}
+                            onClick={() => handleStopSmartChase(hudActiveChase)}
+                            className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-mono text-[8.5px] font-black uppercase cursor-pointer"
+                          >
+                            ⏹ Stop Chase
+                          </button>
+                        )}
+                        {hudDrawer !== 'none' && (
+                          <button
+                            type="button"
+                            onClick={() => setHudDrawer('none')}
+                            className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-[9px] font-mono cursor-pointer"
+                            title="Collapse drawer"
+                          >
+                            ▲
                           </button>
                         )}
                       </div>
+                    </div>
 
-                      {/* Sub-Row 4B: Compact Force Execution Mode Bar (Maker 0% / Market + Close / Stop) */}
-                      <div className="flex items-center justify-between gap-1.5">
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span
-                            className="flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wider text-amber-300"
-                            title="Emergency Force Trigger: Cancels selected order & executes at current price"
-                          >
-                            <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400 animate-pulse" />
-                            FORCE
-                          </span>
-
-                          <div className="flex items-center bg-[#050811] rounded p-0.5 border border-white/10">
+                    {/* Expandable Tactical Drawers inside Minimized HUD */}
+                    {hudDrawer === 'wall' && (
+                      <div
+                        data-no-drag="true"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="space-y-1.5"
+                      >
+                        {orderType === 'Limit' && (
+                          <div className="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg bg-[#04070e]/90 border border-cyan-500/25">
                             <button
                               type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEmergencyMode('limit_maker');
-                              }}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-extrabold transition-all cursor-pointer leading-none ${emergencyMode === 'limit_maker'
-                                ? 'bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
-                                : 'text-gray-400 hover:text-white'
-                                }`}
-                              title="Option 1: Dynamic Limit Maker (0% Maker Fee — chases Best Bid/Ask until 100% filled)"
-                            >
-                              MAKER 0%
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEmergencyMode('market');
-                              }}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-extrabold transition-all cursor-pointer leading-none ${emergencyMode === 'market'
-                                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
-                                : 'text-gray-400 hover:text-white'
-                                }`}
-                              title="Option 2: Instant Market Price Sweep"
-                            >
-                              MARKET
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          {isFutures && positionData && positionData.amount > 0 && positionData.side !== 'none' && (
-                            <button
-                              type="button"
-                              disabled={isClosingPosition}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleClosePosition();
-                              }}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 border border-rose-400 text-white font-mono text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer active:scale-95 shrink-0 shadow-[0_0_8px_rgba(244,63,94,0.4)] disabled:opacity-50"
-                              title={`Instant Market Close Active ${positionData.side.toUpperCase()} Position (${positionData.amount} ${baseCurrency})`}
-                            >
-                              {isClosingPosition ? <RefreshCw className="w-2 h-2 animate-spin" /> : <span>⚡ CLOSE</span>}
-                            </button>
-                          )}
-
-                          {activeBrackets.some((b) => b.status === 'pegging' || b.status === 'chasing') && (
-                            <button
-                              type="button"
-                              disabled={isStoppingPeg || isStoppingChase}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const peg = activeBrackets.find((b) => b.status === 'pegging');
-                                if (peg) {
-                                  handleStopSmartPeg(peg);
-                                } else {
-                                  handleStopSmartChase(activeBrackets.find((b) => b.status === 'chasing'));
+                              onClick={() => {
+                                const nextAuto = !isAutoLimit;
+                                setIsAutoLimit(nextAuto);
+                                if (nextAuto && !isFutures) setUseNativeTpSl(false);
+                                else if (!nextAuto && (!limitPrice || Number(limitPrice) <= 0) && effectiveCurrentPrice > 0) {
+                                  setLimitPrice(effectiveCurrentPrice.toString());
                                 }
                               }}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500 border border-amber-400/60 text-amber-200 hover:text-slate-950 font-mono text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer active:scale-95 shrink-0"
-                              title="Stop Active Smart Peg / Chase Immediately"
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-black border cursor-pointer shrink-0 ${isAutoLimit
+                                ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
+                                : 'bg-white/5 border-white/15 text-gray-400 hover:text-white'
+                                }`}
+                              title="Toggle Auto Best Limit (BBO Post-Only Maker)"
                             >
-                              ⏹ STOP
+                              {isAutoLimit ? '⚡ BBO ON' : 'MANUAL PX'}
                             </button>
+                            {!isAutoLimit ? (
+                              <div className="flex items-center gap-1 flex-1 min-w-0">
+                                <input
+                                  type="number"
+                                  value={limitPrice}
+                                  onChange={(e) => setLimitPrice(e.target.value)}
+                                  placeholder="Limit Price"
+                                  className="flex-1 min-w-0 bg-[#0a101d] border border-white/15 focus:border-cyan-400 rounded px-1.5 py-0.5 text-white font-mono text-[10.5px] font-bold focus:outline-none"
+                                />
+                                {effectiveCurrentPrice > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setLimitPrice(effectiveCurrentPrice.toString())}
+                                    className="px-1.5 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/35 text-cyan-300 font-mono text-[9px] font-bold cursor-pointer shrink-0"
+                                  >
+                                    Live
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[9.5px] font-mono text-gray-400 truncate">
+                                Snipes Best Bid/Ask at 0% Maker Fee
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <HudWallMagnetBar
+                          wallTargets={wallTargets}
+                          frontRunTicks={smartPegFrontRunTicks}
+                          orderType={orderType}
+                          isAutoLimit={isAutoLimit}
+                          limitPrice={limitPrice}
+                          smartPegAnchorPrice={smartPegAnchorPrice}
+                          smartPegStrategy={smartPegStrategy}
+                          smartPegAntiSpoof={smartPegAntiSpoof}
+                          isFetchingWalls={isFetchingWalls}
+                          formatDisplayPrice={formatDisplayPrice}
+                          onSnapLimitToWall={handleSnapLimitToWall}
+                          onClearPinnedPrice={handleClearPinnedPrice}
+                          onCyclePegStrategy={handleCyclePegStrategy}
+                          onRefreshWalls={fetchNearestWalls}
+                        />
+                      </div>
+                    )}
+
+                    {hudDrawer === 'ai' && (
+                      <div
+                        data-no-drag="true"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="space-y-1.5"
+                      >
+                        <div
+                          className={`flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg border transition-all ${mlFilterConfig.enabled
+                            ? 'bg-blue-950/40 border-blue-500/45'
+                            : 'bg-white/[0.02] border-white/10'
+                            }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              hasManualMlOverrideRef.current = true;
+                              setMlFilterConfig(prev => ({
+                                ...prev,
+                                enabled: !prev.enabled,
+                                modelId: !prev.enabled && !prev.modelId && mlModels.length > 0 ? mlModels[0].id : prev.modelId
+                              }));
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className={`px-1.5 py-0.5 rounded text-[9.5px] font-mono font-extrabold uppercase tracking-wider border transition-all cursor-pointer shrink-0 ${mlFilterConfig.enabled
+                              ? 'bg-blue-600/30 border-blue-400 text-blue-200'
+                              : 'bg-black/40 border-white/15 text-gray-400 hover:text-white'
+                              }`}
+                          >
+                            🤖 AI {mlFilterConfig.enabled ? 'ON' : 'OFF'}
+                          </button>
+
+                          <div className="relative flex-1 min-w-0">
+                            <select
+                              value={mlFilterConfig.modelId}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                hasManualMlOverrideRef.current = true;
+                                const val = e.target.value;
+                                const opt = getModelOptimalThresholds(val);
+                                setMlFilterConfig(prev => ({
+                                  ...prev,
+                                  modelId: val,
+                                  enabled: Boolean(val) ? true : prev.enabled,
+                                  bullishThreshold: prev.autoThreshold ? opt.bullish : prev.bullishThreshold,
+                                  bearishThreshold: prev.autoThreshold ? opt.bearish : prev.bearishThreshold
+                                }));
+                              }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              className="w-full appearance-none bg-[#050811]/95 text-blue-200 font-mono text-[10px] font-bold rounded border border-blue-500/30 pl-1.5 pr-4 py-0.5 truncate cursor-pointer focus:outline-none"
+                            >
+                              <option value="" className="bg-[#070b14] text-gray-400">
+                                {mlModels.length === 0 ? 'No ML Registry Models' : '-- Select ML Model --'}
+                              </option>
+                              {mlModels.map((m) => (
+                                <option key={m.id} value={m.id} className="bg-[#070b14] text-white font-mono">
+                                  {`${m.name} (${m.modelType})`}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown className="w-2.5 h-2.5 text-blue-400 pointer-events-none absolute right-1 top-1/2 -translate-y-1/2" />
+                          </div>
+
+                          {mlFilterConfig.enabled && (
+                            <span className="text-[9px] font-mono font-bold px-1 py-0.5 rounded bg-black/50 border border-blue-500/30 text-blue-300 shrink-0">
+                              B:{(mlFilterConfig.bullishThreshold * 100).toFixed(0)}% S:{(mlFilterConfig.bearishThreshold * 100).toFixed(0)}%
+                            </span>
                           )}
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              fetchMlModels();
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className="p-0.5 rounded bg-white/[0.04] hover:bg-white/10 border border-white/10 text-gray-400 hover:text-blue-300 cursor-pointer shrink-0"
+                            title="Refresh ML Models"
+                          >
+                            <RefreshCw className={`w-2.5 h-2.5 ${isLoadingMlModels ? 'animate-spin text-blue-400' : ''}`} />
+                          </button>
                         </div>
-                      </div>
 
-                      {/* Sub-Row 4C: Side-by-Side Horizontal Force Buy & Force Sell Buttons */}
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <button
-                          type="button"
-                          disabled={isEmergencySubmitting || selectedForceTarget?.side === 'sell'}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (selectedForceTarget?.side === 'sell') return;
-                            handleEmergencyForceTrade('Buy');
-                          }}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          className={`relative w-full min-w-0 overflow-hidden py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1 transition-all select-none group shadow-sm ${selectedForceTarget?.side === 'sell'
-                            ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed'
-                            : `bg-emerald-500/15 dark:bg-gradient-to-b dark:from-emerald-500/30 dark:via-emerald-600/25 dark:to-green-900/40 hover:bg-emerald-500 dark:hover:from-emerald-500 dark:hover:via-emerald-600 dark:hover:to-green-700 text-emerald-700 dark:text-emerald-300 hover:text-white border hover:border-emerald-400 dark:hover:border-emerald-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)] cursor-pointer active:scale-95 disabled:opacity-50 ${selectedForceTarget?.side === 'buy'
-                              ? 'border-emerald-500 dark:border-emerald-300 ring-1 ring-emerald-400/50'
-                              : 'border-emerald-500/40 dark:border-emerald-400/50'
-                            }`
-                            }`}
-                          title={
-                            selectedForceTarget?.side === 'sell'
-                              ? 'Cannot Force Buy: Selected order is a SELL / Exit order'
-                              : selectedForceTarget
-                                ? `Force BUY Selected Order (${selectedForceTarget.label}) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                }`
-                                : `Emergency Force BUY (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                }`
-                          }
-                        >
-                          {isEmergencySubmitting && emergencySubmittingSide === 'Buy' ? (
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
-                          ) : (
-                            <Zap className={`w-3.5 h-3.5 shrink-0 transition-transform ${selectedForceTarget?.side === 'sell' ? 'opacity-30' : 'text-emerald-600 dark:text-emerald-400 fill-current group-hover:text-white group-hover:scale-110'}`} />
-                          )}
-                          <span className="text-[11px] uppercase tracking-wider font-black leading-none shrink-0">
-                            FORCE BUY
-                          </span>
-                          {selectedForceTarget?.side === 'buy' && (
-                            <span className="text-[8.5px] font-mono px-1 py-0.2 rounded font-extrabold border shrink-0 leading-tight bg-emerald-950/80 border-emerald-500/50 text-emerald-300">
-                              FILL
-                            </span>
-                          )}
-                          <span className="text-[9.5px] font-mono text-white/90 group-hover:text-white font-semibold truncate min-w-0">
-                            •{' '}
-                            {selectedForceTarget
-                              ? `${Number(selectedForceTarget.amount.toFixed(1))} ${baseCurrency}${effectiveCurrentPrice > 0 ? ` ($${(selectedForceTarget.amount * effectiveCurrentPrice).toFixed(0)})` : ''}`
-                              : sliderPercentValue > 0
-                                ? `${sliderPercentValue}%`
-                                : '100%'}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isEmergencySubmitting || selectedForceTarget?.side === 'buy'}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (selectedForceTarget?.side === 'buy') return;
-                            handleEmergencyForceTrade('Sell');
-                          }}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          className={`relative w-full min-w-0 overflow-hidden py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1 transition-all select-none group shadow-sm ${selectedForceTarget?.side === 'buy'
-                            ? 'bg-white/[0.02] border border-white/5 text-gray-500 opacity-25 cursor-not-allowed'
-                            : `bg-rose-500/15 dark:bg-gradient-to-b dark:from-rose-500/30 dark:via-rose-600/25 dark:to-red-900/40 hover:bg-rose-500 dark:hover:from-rose-500 dark:hover:via-rose-600 dark:hover:to-red-700 text-rose-700 dark:text-rose-300 hover:text-white border hover:border-rose-400 dark:hover:border-rose-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_12px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)] cursor-pointer active:scale-95 disabled:opacity-50 ${selectedForceTarget?.side === 'sell'
-                              ? 'border-rose-500 dark:border-rose-300 ring-1 ring-rose-400/50'
-                              : 'border-rose-500/40 dark:border-rose-400/50'
-                            }`
-                            }`}
-                          title={
-                            selectedForceTarget?.side === 'buy'
-                              ? 'Cannot Force Sell: Selected pending order is a BUY (Entry not filled yet)'
-                              : selectedForceTarget
-                                ? `Force SELL Selected Order (${selectedForceTarget.label}) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                }`
-                                : `Emergency Force SELL (${sliderPercentValue > 0 ? sliderPercentValue : 100}%) via ${emergencyMode === 'limit_maker' ? 'Limit Maker (0% Fee)' : 'Market Price'
-                                }`
-                          }
-                        >
-                          {isEmergencySubmitting && emergencySubmittingSide === 'Sell' ? (
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
-                          ) : (
-                            <Zap className={`w-3.5 h-3.5 shrink-0 transition-transform ${selectedForceTarget?.side === 'buy' ? 'opacity-30' : 'text-rose-600 dark:text-rose-400 fill-current group-hover:text-white group-hover:scale-110'}`} />
-                          )}
-                          <span className="text-[11px] uppercase tracking-wider font-black leading-none shrink-0">
-                            FORCE SELL
-                          </span>
-                          {selectedForceTarget?.side === 'sell' && (
-                            <span className="text-[8.5px] font-mono px-1 py-0.2 rounded font-extrabold border shrink-0 leading-tight bg-rose-950/80 border-rose-500/50 text-rose-300">
-                              EXIT
-                            </span>
-                          )}
-                          <span className="text-[9.5px] font-mono text-white/90 group-hover:text-white font-semibold truncate min-w-0">
-                            •{' '}
-                            {selectedForceTarget
-                              ? `${Number(selectedForceTarget.amount.toFixed(1))} ${baseCurrency}${effectiveCurrentPrice > 0 ? ` ($${(selectedForceTarget.amount * effectiveCurrentPrice).toFixed(0)})` : ''}`
-                              : sliderPercentValue > 0
-                                ? `${sliderPercentValue}%`
-                                : '100%'}
-                          </span>
-                        </button>
+                        {mlFilterConfig.enabled && mlLivePreview && (
+                          <HudLiveAiMicroGauge
+                            preview={mlLivePreview}
+                            tradeSide={tradeSide}
+                            bullishThreshold={mlFilterConfig.bullishThreshold}
+                            bearishThreshold={mlFilterConfig.bearishThreshold}
+                            compact
+                          />
+                        )}
                       </div>
-                    </div>
+                    )}
+
+                    {hudDrawer === 'force' && (
+                      <ForceExecutionPanel
+                        forceOrderTargets={forceOrderTargets}
+                        selectedForceOrderId={selectedForceOrderId}
+                        onSelectForceOrderId={(id, choseAll) => {
+                          userChoseAllForceRef.current = choseAll;
+                          setSelectedForceOrderId(id);
+                        }}
+                        selectedForceTarget={selectedForceTarget}
+                        emergencyMode={emergencyMode}
+                        onChangeEmergencyMode={setEmergencyMode}
+                        isEmergencySubmitting={isEmergencySubmitting}
+                        emergencySubmittingSide={emergencySubmittingSide}
+                        cancellingOrderId={cancellingOrderId}
+                        isCancellingAll={isCancellingAll}
+                        isClosingPosition={isClosingPosition}
+                        isStoppingPeg={isStoppingPeg}
+                        isStoppingChase={isStoppingChase}
+                        hasActiveFuturesPos={hudHasFuturesPos}
+                        positionSide={positionData?.side}
+                        positionAmount={positionData?.amount}
+                        activePeg={hudActivePeg}
+                        activeChase={hudActiveChase}
+                        baseCurrency={baseCurrency}
+                        effectiveCurrentPrice={effectiveCurrentPrice}
+                        sliderPercentValue={sliderPercentValue}
+                        onRefreshOrders={() => fetchActiveBrackets(true)}
+                        onCancelOrder={handleCancelOrder}
+                        onCancelAllOrders={handleCancelAllOrders}
+                        onClosePosition={handleClosePosition}
+                        onStopSmartPeg={handleStopSmartPeg}
+                        onStopSmartChase={handleStopSmartChase}
+                        onForceTrade={handleEmergencyForceTrade}
+                        compact
+                      />
+                    )}
                   </div>
                 </div>
-              ) : (() => {
+                );
+              })() : (() => {
                 const activePeg = activeBrackets.find(b => b.status === 'pegging');
                 const activeChase = activeBrackets.find(b => b.status === 'chasing');
                 const activeSoftwareSls = activeBrackets.filter(b => b.status === 'monitoring' && (b.type === 'smart_chase' || b.type === 'trailing_chase' || b.type === 'trailing' || b.auto_breakeven_enabled));
@@ -4768,74 +4636,118 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                     {/* Top Neon Horizon Accent Line (matching Minimized Cyber-HUD) */}
                     <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-cyan-400 to-emerald-400 opacity-85 shrink-0" />
 
-                    {/* Compact Cyber-HUD Header (Draggable Handle) */}
+                    {/* Unified SaaS Command Header (Draggable Handle) */}
                     <div
                       onMouseDown={handleStartDrag}
                       onTouchStart={handleStartDrag}
                       style={{ touchAction: 'none' }}
                       className="flex items-center justify-between px-3 py-2 border-b border-cyan-500/20 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0 gap-2"
-                      title="Drag to move"
+                      title="Drag to move terminal"
                     >
                       <div className="flex items-center gap-1.5 pointer-events-none min-w-0 flex-1 overflow-hidden">
                         <GripVertical className="w-3.5 h-3.5 text-cyan-400/80 shrink-0" />
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse shrink-0" />
-                        <div className="flex flex-col text-left min-w-0 flex-1 overflow-hidden">
-                          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                            <span className="font-black text-white text-[13px] sm:text-[14.5px] tracking-tight truncate max-w-[115px]">
-                              {activeSymbol}
-                            </span>
-                            <span
-                              className={`text-[8.5px] uppercase px-1.5 py-0.2 rounded font-mono font-black border leading-tight shrink-0 ${isFutures
-                                ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
-                                : 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
-                                }`}
-                            >
-                              {isFutures ? `${leverage}x FUT` : 'SPOT'}
-                            </span>
-                            {effectiveCurrentPrice > 0 && (
-                              <span className="text-emerald-400 font-mono text-[11px] font-bold tracking-tight shrink-0">
-                                ${formatDisplayPrice(effectiveCurrentPrice)}
-                              </span>
-                            )}
-                            {tpConfig.enabled && (
-                              <span className="text-[8.5px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 font-mono font-bold leading-tight shrink-0">
-                                TP
-                              </span>
-                            )}
-                            {slConfig.enabled && (
-                              <span className="text-[8.5px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/35 text-rose-300 font-mono font-bold leading-tight shrink-0">
-                                SL
-                              </span>
-                            )}
-                            {!isFutures && orderType === 'Limit' && isIceberg && (
-                              <span className="text-[8.5px] px-1 py-0.2 rounded bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 font-mono font-bold leading-tight shrink-0">
-                                ICE
-                              </span>
-                            )}
-                            {mlFilterConfig.enabled && (
-                              <span className="text-[8.5px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight shrink-0">
-                                AI
-                              </span>
-                            )}
-                            {openLimitOrders.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveTerminalTab('orders');
-                                }}
-                                onPointerDown={(e) => e.stopPropagation()}
-                                className="text-[8.5px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse shrink-0 pointer-events-auto"
-                                title="Jump to Open Orders"
-                              >
-                                {openLimitOrders.length} OPEN
-                              </button>
-                            )}
-                          </div>
-                          <span className="text-[9.5px] text-gray-400 font-mono tracking-wide truncate">
-                            QUANT TERMINAL • {isFutures ? `${marginMode.toUpperCase()} MARGIN` : 'SPOT EXECUTION'}
+                        {availablePairs && availablePairs.length > 1 ? (
+                          <select
+                            value={activePair?.id || availablePairs[0]?.id || ''}
+                            onChange={(e) => {
+                              const selected = availablePairs.find(p => p.id === e.target.value);
+                              if (selected) handleSelectPair(selected);
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onTouchStart={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
+                            className="pointer-events-auto bg-[#0a101d] border border-cyan-500/35 hover:border-cyan-400 rounded-md py-0.5 pl-1.5 pr-5 text-white font-mono font-black text-[13px] tracking-tight max-w-[140px] truncate focus:outline-none cursor-pointer shrink-0"
+                            title="Switch active chart symbol"
+                          >
+                            {availablePairs.map((p, idx) => {
+                              const duplicateCount = availablePairs.filter(item => item.symbol === p.symbol).length;
+                              const chartSuffix = p.isMain ? ' (Main)' : duplicateCount > 1 ? ` (#${idx + 1})` : '';
+                              return (
+                                <option key={p.id} value={p.id} className="bg-[#070b14] text-white">
+                                  {p.symbol}{chartSuffix}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        ) : (
+                          <span className="font-black text-white text-[14px] tracking-tight truncate max-w-[125px]">
+                            {activeSymbol}
                           </span>
-                        </div>
+                        )}
+
+                        {isFutures ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowFuturesPopover(prev => !prev);
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className={`pointer-events-auto text-[9px] uppercase px-1.5 py-0.5 rounded font-mono font-black border leading-tight shrink-0 cursor-pointer transition-all flex items-center gap-1 ${showFuturesPopover
+                              ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.4)]'
+                              : 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-400/45 text-amber-300'
+                              }`}
+                            title="Click to configure Margin Mode, Leverage & Reduce-Only"
+                          >
+                            <span>{leverage}x {marginMode === 'cross' ? 'CROSS' : 'ISO'}</span>
+                            <ChevronDown className={`w-2.5 h-2.5 transition-transform ${showFuturesPopover ? 'rotate-180' : ''}`} />
+                          </button>
+                        ) : (
+                          <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-mono font-black border leading-tight shrink-0 bg-cyan-500/20 border-cyan-400/40 text-cyan-300">
+                            SPOT
+                          </span>
+                        )}
+
+                        {effectiveCurrentPrice > 0 && (
+                          <span className="text-emerald-400 font-mono text-[12px] font-extrabold tracking-tight shrink-0">
+                            ${formatDisplayPrice(effectiveCurrentPrice)}
+                          </span>
+                        )}
+
+                        {(() => {
+                          const holdBr = activeBrackets.find(
+                            (b) => b?.anti_wick_state === 'holding_dwell' || b?.anti_wick_state === 'holding_candle'
+                          );
+                          if (!holdBr) return null;
+                          return (
+                            <span
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/30 border border-amber-400/60 text-amber-200 font-mono font-black leading-tight animate-pulse shrink-0"
+                              title={holdBr.anti_wick_reason || 'Anti-Wick Stop Guard holding against wick'}
+                            >
+                              🕯️ {Number(holdBr.anti_wick_remaining_sec || 0).toFixed(1)}s
+                            </span>
+                          );
+                        })()}
+
+                        {hasActiveFuturesPos && positionData && (
+                          <div className="pointer-events-auto shrink-0" onPointerDown={(e) => e.stopPropagation()}>
+                            <HudLivePositionPnlChip
+                              positionData={positionData}
+                              effectiveCurrentPrice={effectiveCurrentPrice}
+                              hasActiveSoftwareSl={activeBrackets.some((b) => b?.status === 'monitoring')}
+                              isBreakevenActivated={activeBrackets.some((b) => b?.status === 'monitoring' && Boolean(b?.breakeven_activated))}
+                              isMovingBe={isMovingBreakeven}
+                              onMoveToBreakeven={handleMoveToBreakeven}
+                            />
+                          </div>
+                        )}
+
+                        {ordersBadgeCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveTerminalTab('orders');
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className="text-[8.5px] px-1.5 py-0.5 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 shrink-0 pointer-events-auto"
+                            title="Jump to Orders & Force Execution"
+                          >
+                            {ordersBadgeCount} LIVE
+                          </button>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
@@ -4847,7 +4759,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
                           className={`p-1 rounded-md bg-white/[0.04] hover:bg-white/10 border border-white/[0.08] text-gray-400 hover:text-cyan-300 transition-all cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''}`}
-                          title="Refresh Balance & Position"
+                          title="Refresh Balance, Orders & Position"
                         >
                           <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
                         </button>
@@ -4858,10 +4770,11 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             setIsMinimized(true);
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
-                          className="p-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-white transition-all cursor-pointer"
-                          title="Minimize to Quick Buy/Sell Cyber-HUD"
+                          className="px-1.5 py-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-white transition-all cursor-pointer flex items-center gap-1 font-mono text-[9.5px] font-black uppercase"
+                          title="Minimize to Compact Quick-Trade Cyber-HUD"
                         >
                           <Minus className="w-3 h-3" />
+                          <span>HUD</span>
                         </button>
                         <button
                           type="button"
@@ -4880,100 +4793,144 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Multi-Chart Pair Selector Dropdown */}
-                    {availablePairs && availablePairs.length > 1 && (
-                      <div className="px-3 py-1.5 bg-[#04070e]/90 border-b border-cyan-500/15 flex items-center gap-2 shrink-0">
-                        <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1 shrink-0">
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                          PAIR ({availablePairs.length})
-                        </label>
-                        <div className="relative flex-1 min-w-0">
-                          <select
-                            value={activePair?.id || availablePairs[0]?.id || ''}
-                            onChange={(e) => {
-                              const selected = availablePairs.find(p => p.id === e.target.value);
-                              if (selected) {
-                                handleSelectPair(selected);
-                              }
-                            }}
-                            className="w-full bg-[#0a101d] border border-cyan-500/30 hover:border-cyan-400/60 rounded-lg py-1 pl-2.5 pr-7 text-white font-mono font-bold text-[12px] focus:outline-none focus:border-cyan-400 transition-all appearance-none cursor-pointer"
-                          >
-                            {availablePairs.map((p, idx) => {
-                              const pPrice = formatDisplayPrice(p.price);
-                              const duplicateCount = availablePairs.filter(item => item.symbol === p.symbol).length;
-                              const chartSuffix = p.isMain
-                                ? ' (Main)'
-                                : duplicateCount > 1
-                                  ? ` (Chart ${idx + 1})`
-                                  : '';
-                              const label = `${p.symbol}${pPrice ? ` • $${pPrice}` : ''}${chartSuffix}`;
-                              return (
-                                <option key={p.id} value={p.id} className="bg-[#070b14] text-white py-1">
-                                  {label}
-                                </option>
-                              );
-                            })}
-                          </select>
-                          <ChevronDown className="absolute right-2 top-[7px] w-3.5 h-3.5 text-cyan-400 pointer-events-none" />
+                    {/* Quick Collapsible Futures Leverage & Margin Bar (Toggled from Header Badge) */}
+                    {isFutures && showFuturesPopover && (
+                      <div className="px-3 py-2 bg-[#060b16] border-b border-amber-500/25 space-y-2 shrink-0 animate-fadeIn">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex bg-black/60 rounded-md p-0.5 border border-white/10">
+                            <button
+                              type="button"
+                              onClick={() => setMarginMode('cross')}
+                              className={`px-2 py-0.5 rounded text-[10.5px] font-mono font-bold transition-colors cursor-pointer ${marginMode === 'cross' ? 'bg-cyan-500 text-slate-950' : 'text-gray-400 hover:text-white'}`}
+                            >
+                              CROSS
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMarginMode('isolated')}
+                              className={`px-2 py-0.5 rounded text-[10.5px] font-mono font-bold transition-colors cursor-pointer ${marginMode === 'isolated' ? 'bg-cyan-500 text-slate-950' : 'text-gray-400 hover:text-white'}`}
+                            >
+                              ISOLATED
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <label className="flex items-center space-x-1.5 cursor-pointer group">
+                              <input
+                                type="checkbox"
+                                checked={reduceOnly}
+                                onChange={(e) => setReduceOnly(e.target.checked)}
+                                className="form-checkbox bg-black/40 border-white/20 text-cyan-400 rounded focus:ring-0 focus:ring-offset-0 cursor-pointer w-3.5 h-3.5"
+                              />
+                              <span className="text-[10.5px] font-mono text-gray-300 group-hover:text-white">Reduce-Only</span>
+                            </label>
+                            <span className="text-[11px] bg-amber-500/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded font-mono font-black">
+                              {leverage}x
+                            </span>
+                          </div>
                         </div>
+
+                        <input
+                          type="range"
+                          min="1"
+                          max="125"
+                          value={leverage}
+                          onChange={(e) => setLeverage(Number(e.target.value))}
+                          className="w-full accent-amber-400 h-1.5 bg-black/60 rounded-lg appearance-none cursor-pointer"
+                        />
                       </div>
                     )}
 
-                    {/* Top Tactical Control Strip: Line 1 = Buy/Sell (Larger), Line 2 = Market/Limit/Peg */}
-                    <div className="px-3 py-2 bg-[#04070e]/75 border-b border-white/10 shrink-0 space-y-2">
-                      <div className="flex flex-col gap-1.5">
-                        {/* Line 1: Larger Full-Width Buy / Sell Segmented Switch */}
-                        <div className="flex w-full p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleSideChange('Buy')}
-                            className={`flex-1 py-2 text-[13px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Buy'
-                              ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.28)]'
-                              : 'text-gray-500 hover:text-white border border-transparent'
-                              }`}
-                          >
-                            {isFutures ? 'Long' : 'Buy'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSideChange('Sell')}
-                            className={`flex-1 py-2 text-[13px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Sell'
-                              ? 'bg-rose-500/25 text-rose-300 border border-rose-400/60 shadow-[0_0_12px_rgba(244,63,94,0.28)]'
-                              : 'text-gray-500 hover:text-white border border-transparent'
-                              }`}
-                          >
-                            {isFutures ? 'Short' : 'Sell'}
-                          </button>
+                    {/* Slim Account & Live Balance Telemetry Bar */}
+                    <div className="px-3 py-1.5 bg-[#04070e]/90 border-b border-white/10 shrink-0 space-y-1">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        {/* Compact API Key Selector */}
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1 max-w-[235px]">
+                          <KeyRound className="w-3 h-3 text-cyan-400/80 shrink-0" />
+                          <div className="relative flex-1 min-w-0">
+                            <select
+                              value={selectedApi}
+                              onChange={(e) => {
+                                const nextId = e.target.value;
+                                setSelectedApi(nextId);
+                                onApiKeyChange?.(nextId);
+                                try {
+                                  localStorage.setItem('cosmo_manual_selected_api_v1', nextId);
+                                } catch { }
+                              }}
+                              className="w-full bg-[#0a101d] border border-white/10 hover:border-cyan-500/40 rounded-md py-0.5 pl-2 pr-6 text-white text-[11px] font-mono font-semibold focus:outline-none focus:border-cyan-400/60 transition-colors appearance-none cursor-pointer truncate"
+                              title="Active Execution API Account"
+                            >
+                              {apiKeys.map(k => (
+                                <option key={k.id} value={k.id} className="bg-[#070b14]">
+                                  {k.name || k.label || k.key_name || `${k.exchange?.toUpperCase()} — Key #${k.id}`}
+                                </option>
+                              ))}
+                              {apiKeys.length === 0 && <option value="" disabled>No API Keys found</option>}
+                            </select>
+                            <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-cyan-400/70 pointer-events-none" />
+                          </div>
                         </div>
 
-                        {/* Line 2: Full-Width Order Type Toggle: Market | Limit | Smart Peg */}
-                        <div className="flex w-full p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-1">
-                          {(['Market', 'Limit', 'SmartPeg'] as const).map((type) => (
-                            <button
-                              key={type}
-                              type="button"
-                              onClick={() => setOrderType(type)}
-                              className={`flex-1 py-1.5 text-[11.5px] font-black rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer ${orderType === type
-                                ? type === 'SmartPeg'
-                                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.35)]'
-                                  : 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
-                                : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
-                                }`}
-                            >
-                              {type === 'SmartPeg' ? (
-                                <>
-                                  <Zap className="w-3 h-3 fill-current" />
-                                  <span>PEG</span>
-                                </>
-                              ) : (
-                                <span className="uppercase tracking-wider">{type}</span>
-                              )}
-                            </button>
-                          ))}
+                        {/* Live Free / Locked / Position Telemetry */}
+                        <div className="flex items-center gap-2 text-[10.5px] font-mono ml-auto flex-wrap justify-end">
+                          <span className="flex items-center gap-1 text-gray-400">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title={`Live Auto-Sync Active (${(timings.balancePollMs / 1000).toFixed(1)}s)`} />
+                            <span>Bal:</span>
+                            <strong className="text-cyan-200">
+                              {isLoadingBalance && !balanceData ? "..." : balanceData ? (
+                                isInverseFutures
+                                  ? sizeMode === 'quote'
+                                    ? `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency} (~$${(((balanceData.base_free || 0) * (effectiveOrderPrice || effectiveCurrentPrice || 0))).toFixed(2)})`
+                                    : `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency}`
+                                  : sizeMode === 'quote'
+                                    ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
+                                    : isFutures
+                                      ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
+                                      : tradeSide === 'Buy'
+                                        ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
+                                        : `${(balanceData.base_free || 0).toFixed(4)} ${baseCurrency}`
+                              ) : "N/A"}
+                            </strong>
+                          </span>
+
+                          {balanceData && (() => {
+                            const isQuoteTarget = !isInverseFutures && (sizeMode === 'quote' || (isFutures ? true : tradeSide === 'Buy'));
+                            const lockedAmount = isQuoteTarget ? (balanceData.quote_used || 0) : (balanceData.base_used || 0);
+                            const curr = isQuoteTarget ? quoteCurrency : baseCurrency;
+                            if (lockedAmount <= 0) return null;
+                            return (
+                              <span className="text-amber-400">
+                                Lock: <strong>{isQuoteTarget ? lockedAmount.toFixed(2) : lockedAmount.toFixed(4)} {curr}</strong>
+                              </span>
+                            );
+                          })()}
+
+                          {isFutures && reduceOnly && (
+                            <span className="text-cyan-300">
+                              Pos: {isLoadingPosition ? "..." : (positionData && positionData.amount > 0 ? (
+                                isInverseFutures && positionData.contracts
+                                  ? `${positionData.contracts} Cont`
+                                  : `${positionData.amount} (${positionData.side.toUpperCase()})`
+                              ) : "0")}
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      {/* Ultra-Compact Live Telemetry Quick Strip when Peg/Chase/Position active */}
+                      {/* COIN-M Wallet Diagnostic Alerts */}
+                      {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.usds_futures_free && balanceData.usds_futures_free > 0) && (
+                        <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                          <span>⚠️ {balanceData?.usds_futures_free?.toFixed(2)} in USDⓈ-M! Transfer to COIN-M</span>
+                        </div>
+                      )}
+                      {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.spot_free && balanceData.spot_free > 0) && (
+                        <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                          <span>⚠️ {balanceData?.spot_free?.toFixed(2)} in Spot! Transfer to COIN-M</span>
+                        </div>
+                      )}
+
+                      {/* Active Peg / Chase / Position Quick Banner */}
                       {(activePeg || activeChase || hasActiveFuturesPos) && (
                         <div className="flex items-center justify-between gap-2 px-2 py-1 rounded-md bg-cyan-950/30 border border-cyan-500/25 text-[10px] font-mono">
                           {activePeg ? (
@@ -5026,8 +4983,8 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       )}
                     </div>
 
-                    {/* Sci-Fi Tabs Navigation (Matching WallHunterModal Architecture) */}
-                    <div className="flex gap-1 px-3 py-1.5 border-b border-white/10 bg-[#050811]/80 shrink-0 overflow-x-auto hide-scrollbar">
+                    {/* 4-Tab SaaS Navigation Bar */}
+                    <div className="flex gap-1 px-3 py-1.5 border-b border-white/10 bg-[#050811]/85 shrink-0 overflow-x-auto hide-scrollbar">
                       <button
                         type="button"
                         onClick={() => setActiveTerminalTab('order')}
@@ -5036,7 +4993,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                           }`}
                       >
-                        <span>⚡ Order & Size</span>
+                        <span>⚡ Trade</span>
                       </button>
                       <button
                         type="button"
@@ -5062,7 +5019,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                           }`}
                       >
-                        <span>🤖 AI Filter</span>
+                        <span>🤖 AI Shield</span>
                         {mlFilterConfig.enabled && (
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
                         )}
@@ -5075,7 +5032,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
                           }`}
                       >
-                        <span>📋 Orders</span>
+                        <span>📋 Orders & Force</span>
                         {ordersBadgeCount > 0 && (
                           <span className="px-1 py-0.2 rounded bg-amber-500/30 text-amber-200 font-mono text-[9px] leading-none">
                             {ordersBadgeCount}
@@ -5089,9 +5046,43 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                       style={{ touchAction: 'pan-y' }}
                       className="flex-1 min-h-0 overflow-y-auto px-3 py-2.5 space-y-2.5 cursor-default [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-cyan-500/20 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-cyan-400/40"
                     >
-                      {/* TAB 4: ORDERS, ACTIVE BRACKETS & POSITION */}
+                      {/* TAB 4: ORDERS, ACTIVE BRACKETS, POSITION & FORCE EXECUTION */}
                       {activeTerminalTab === 'orders' && (
                         <div className="space-y-2.5 animate-fadeIn">
+                          <ForceExecutionPanel
+                            forceOrderTargets={forceOrderTargets}
+                            selectedForceOrderId={selectedForceOrderId}
+                            onSelectForceOrderId={(id, choseAll) => {
+                              userChoseAllForceRef.current = choseAll;
+                              setSelectedForceOrderId(id);
+                            }}
+                            selectedForceTarget={selectedForceTarget}
+                            emergencyMode={emergencyMode}
+                            onChangeEmergencyMode={setEmergencyMode}
+                            isEmergencySubmitting={isEmergencySubmitting}
+                            emergencySubmittingSide={emergencySubmittingSide}
+                            cancellingOrderId={cancellingOrderId}
+                            isCancellingAll={isCancellingAll}
+                            isClosingPosition={isClosingPosition}
+                            isStoppingPeg={isStoppingPeg}
+                            isStoppingChase={isStoppingChase}
+                            hasActiveFuturesPos={hasActiveFuturesPos}
+                            positionSide={positionData?.side}
+                            positionAmount={positionData?.amount}
+                            activePeg={activePeg}
+                            activeChase={activeChase}
+                            baseCurrency={baseCurrency}
+                            effectiveCurrentPrice={effectiveCurrentPrice}
+                            sliderPercentValue={sliderPercentValue}
+                            onRefreshOrders={() => fetchActiveBrackets(true)}
+                            onCancelOrder={handleCancelOrder}
+                            onCancelAllOrders={handleCancelAllOrders}
+                            onClosePosition={handleClosePosition}
+                            onStopSmartPeg={handleStopSmartPeg}
+                            onStopSmartChase={handleStopSmartChase}
+                            onForceTrade={handleEmergencyForceTrade}
+                          />
+
                           {activePeg && (
                             <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-950/90 via-black to-amber-950/40 border border-amber-500/50 shadow-[0_0_16px_rgba(245,158,11,0.2)] flex flex-col gap-2">
                               <div className="flex items-center justify-between">
@@ -5384,72 +5375,78 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                           )}
 
                           {ordersBadgeCount === 0 && (
-                            <div className="p-6 rounded-xl bg-[#04070e]/75 border border-cyan-500/15 text-center space-y-2">
-                              <Layers className="w-6 h-6 text-cyan-400/50 mx-auto" />
-                              <p className="text-[13px] font-mono font-bold text-gray-300">No Active Orders or Brackets</p>
-                              <p className="text-[11px] text-gray-500">Open Limit orders, Smart Peg monitors, Smart Chase SL, and active Futures positions for {activeSymbol} will appear here.</p>
+                            <div className="px-3 py-2 rounded-xl bg-[#04070e]/75 border border-cyan-500/15 flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-mono text-gray-400">
+                                No active orders, Smart Pegs, or positions on <strong className="text-gray-200">{activeSymbol}</strong>
+                              </span>
                               <button
                                 type="button"
                                 onClick={() => fetchBalance(false, true)}
-                                className="px-3 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-cyan-300 text-[11px] font-mono font-bold uppercase cursor-pointer"
+                                className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-cyan-300 text-[10px] font-mono font-bold uppercase cursor-pointer shrink-0"
                               >
-                                Sync Exchange State
+                                Sync Exchange
                               </button>
                             </div>
                           )}
                         </div>
                       )}
 
-                      {/* TAB 1: ORDER & SIZE */}
+                      {/* TAB 1: STREAMLINED SAAS TRADE WORKSPACE */}
                       {activeTerminalTab === 'order' && (
                         <div className="space-y-2.5 animate-fadeIn">
 
-                          {/* API Account & Limit Price (2-Column Sci-Fi Row when Standard Limit active) */}
-                          <div className={`grid gap-2 ${orderType === 'Limit' && !isAutoLimit ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">Execute With</label>
-                              <div className="relative">
-                                <select
-                                  value={selectedApi}
-                                  onChange={(e) => {
-                                    const nextId = e.target.value;
-                                    setSelectedApi(nextId);
-                                    onApiKeyChange?.(nextId);
-                                    try {
-                                      localStorage.setItem('cosmo_manual_selected_api_v1', nextId);
-                                    } catch { }
-                                  }}
-                                  className="w-full bg-[#04070e]/90 border border-white/10 hover:border-cyan-500/40 rounded-lg py-1.5 pl-2.5 pr-7 text-white text-[13px] font-semibold focus:outline-none focus:border-cyan-400/60 transition-colors appearance-none cursor-pointer"
-                                >
-                                  {apiKeys.map(k => (
-                                    <option key={k.id} value={k.id} className="bg-[#070b14]">
-                                      {k.name || k.label || k.key_name || `${k.exchange?.toUpperCase()} — Key #${k.id}`}
-                                    </option>
-                                  ))}
-                                  {apiKeys.length === 0 && <option value="" disabled>No API Keys found</option>}
-                                </select>
-                                <ChevronDown className="absolute right-2 top-[8px] w-3.5 h-3.5 text-cyan-400/70 pointer-events-none" />
-                              </div>
+                          {/* Direction & Execution Mode Segmented Switches */}
+                          <div className="grid grid-cols-12 gap-1.5">
+                            <div className="col-span-6 flex p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleSideChange('Buy')}
+                                className={`flex-1 py-1.5 text-[12px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Buy'
+                                  ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.28)]'
+                                  : 'text-gray-500 hover:text-white border border-transparent'
+                                  }`}
+                              >
+                                {isFutures ? 'Long' : 'Buy'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSideChange('Sell')}
+                                className={`flex-1 py-1.5 text-[12px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Sell'
+                                  ? 'bg-rose-500/25 text-rose-300 border border-rose-400/60 shadow-[0_0_12px_rgba(244,63,94,0.28)]'
+                                  : 'text-gray-500 hover:text-white border border-transparent'
+                                  }`}
+                              >
+                                {isFutures ? 'Short' : 'Sell'}
+                              </button>
                             </div>
 
-                            {orderType === 'Limit' && !isAutoLimit && (
-                              <div className="space-y-1">
-                                <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">Limit Price</label>
-                                <div className="relative">
-                                  <input
-                                    type="number"
-                                    value={limitPrice}
-                                    disabled={isAutoLimit}
-                                    onChange={(e) => setLimitPrice(e.target.value)}
-                                    className="w-full bg-[#04070e]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-2.5 pl-6 text-white font-mono font-bold text-[13px] focus:outline-none transition-colors disabled:opacity-50"
-                                  />
-                                  <span className="absolute left-2.5 top-1.5 text-cyan-400/80 font-mono text-[13px]">$</span>
-                                </div>
-                              </div>
-                            )}
+                            <div className="col-span-6 flex p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-1">
+                              {(['Market', 'Limit', 'SmartPeg'] as const).map((type) => (
+                                <button
+                                  key={type}
+                                  type="button"
+                                  onClick={() => setOrderType(type)}
+                                  className={`flex-1 py-1.5 text-[10.5px] font-black rounded-md transition-all flex items-center justify-center gap-0.5 cursor-pointer ${orderType === type
+                                    ? type === 'SmartPeg'
+                                      ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.35)]'
+                                      : 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                                    : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                                    }`}
+                                >
+                                  {type === 'SmartPeg' ? (
+                                    <>
+                                      <Zap className="w-3 h-3 fill-current" />
+                                      <span>PEG</span>
+                                    </>
+                                  ) : (
+                                    <span className="uppercase tracking-wide">{type === 'Market' ? 'MKT' : 'LMT'}</span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
                           </div>
 
-                          {/* Smart Peg Entry Explanatory & Settings Panel */}
+                          {/* Smart Peg Entry Panel */}
                           <AnimatePresence>
                             {orderType === 'SmartPeg' && (
                               <MotionDiv
@@ -5461,16 +5458,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-1.5 font-bold text-amber-300">
                                     <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                                    <span>⚡ Dynamic Maker Peg Entry Active</span>
+                                    <span>⚡ Dynamic Maker Peg Entry</span>
                                   </div>
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold">
-                                    Post-Only Maker
+                                  <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold">
+                                    Post-Only 0% Fee
                                   </span>
                                 </div>
-                                <p className="text-[10px] text-gray-400 leading-relaxed">
-                                  Automatically shadows the top of the orderbook (Best Bid for Buy, Best Ask for Sell) at #1 Queue Priority until 100% filled.
-                                </p>
-                                <div className="space-y-1 pt-1 border-t border-white/5">
+                                <div className="space-y-1">
                                   <div className="flex justify-between items-center text-[10px] text-gray-400">
                                     <span>Max Chase Drift Guard</span>
                                     <span className="text-amber-400 font-bold font-mono">
@@ -5486,9 +5480,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     onChange={(e) => setSmartPegMaxDev(parseFloat(e.target.value))}
                                     className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
                                   />
-                                  <span className="text-[9px] text-gray-500">
-                                    {smartPegMaxDev === 0 ? 'Chases continuously until filled.' : 'Stops chasing if price drifts too far away from initial entry.'}
-                                  </span>
                                 </div>
                                 <SmartPegWallStrategyPanel
                                   pegStrategy={smartPegStrategy}
@@ -5507,7 +5498,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             )}
                           </AnimatePresence>
 
-                          {/* Auto Best Limit (if Limit mode) */}
+                          {/* Limit Price & Liquidity-Wall Magnet Card */}
                           <AnimatePresence>
                             {orderType === 'Limit' && (
                               <MotionDiv
@@ -5516,35 +5507,64 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                 exit={{ height: 0, opacity: 0 }}
                                 className="overflow-hidden space-y-2"
                               >
-                                {/* Switch: Auto Best Limit */}
-                                <div
-                                  className="flex items-center justify-between bg-[#04070e]/85 p-2 rounded-lg border border-cyan-500/20 hover:border-cyan-400/40 cursor-pointer transition-colors"
-                                  onClick={() => {
-                                    const nextAuto = !isAutoLimit;
-                                    setIsAutoLimit(nextAuto);
-                                    if (nextAuto && !isFutures) {
-                                      // Like Binance BBO mode, Auto Best Limit Post-Only disables Native OTO/OTOCO bundle
-                                      setUseNativeTpSl(false);
-                                    } else if (!nextAuto && (!limitPrice || Number(limitPrice) <= 0) && effectiveCurrentPrice > 0) {
-                                      setLimitPrice(effectiveCurrentPrice.toString());
-                                    }
-                                  }}
-                                >
-                                  <div className="flex flex-col pr-2">
-                                    <span className="text-[12px] font-bold text-cyan-300">Auto Best Limit (Post-Only)</span>
-                                    <span className="text-[10.5px] text-gray-400">
-                                      {isAutoLimit && !isFutures
-                                        ? 'Snipes BBO Maker 0% Fee (Turn OFF to use Native Binance OTO/OTOCO)'
-                                        : 'Snipes entry at Best Bid/Ask without Taker Fees'}
-                                    </span>
+                                <div className="bg-[#04070e]/90 p-2 rounded-xl border border-cyan-500/20 space-y-2">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const nextAuto = !isAutoLimit;
+                                        setIsAutoLimit(nextAuto);
+                                        if (nextAuto && !isFutures) {
+                                          setUseNativeTpSl(false);
+                                        } else if (!nextAuto && (!limitPrice || Number(limitPrice) <= 0) && effectiveCurrentPrice > 0) {
+                                          setLimitPrice(effectiveCurrentPrice.toString());
+                                        }
+                                      }}
+                                      className="flex items-center gap-2 cursor-pointer text-left flex-1 min-w-0"
+                                    >
+                                      <div className={`relative w-7 h-3.5 rounded-full transition-colors shrink-0 ${isAutoLimit ? 'bg-cyan-500' : 'bg-gray-600'}`}>
+                                        <MotionDiv
+                                          className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
+                                          animate={{ x: isAutoLimit ? 14 : 0 }}
+                                          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                        />
+                                      </div>
+                                      <div className="min-w-0">
+                                        <span className="text-[11px] font-bold text-cyan-300 block leading-tight">
+                                          Auto Best Limit (BBO Maker)
+                                        </span>
+                                        <span className="text-[9.5px] text-gray-400 block truncate">
+                                          {isAutoLimit && !isFutures
+                                            ? '0% Maker Fee (Turn OFF for Native OTO/OTOCO)'
+                                            : 'Manual custom price / Wall-Magnet Limit'}
+                                        </span>
+                                      </div>
+                                    </button>
+
+                                    {!isAutoLimit && effectiveCurrentPrice > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setLimitPrice(effectiveCurrentPrice.toString())}
+                                        className="px-2 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/35 text-cyan-300 font-mono text-[10px] font-bold cursor-pointer shrink-0"
+                                        title="Snap Limit Price to current live price"
+                                      >
+                                        Live ${formatDisplayPrice(effectiveCurrentPrice)}
+                                      </button>
+                                    )}
                                   </div>
-                                  <div className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${isAutoLimit ? 'bg-cyan-500' : 'bg-gray-600'}`}>
-                                    <MotionDiv
-                                      className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                                      animate={{ x: isAutoLimit ? 16 : 0 }}
-                                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                    />
-                                  </div>
+
+                                  {!isAutoLimit && (
+                                    <div className="relative">
+                                      <input
+                                        type="number"
+                                        value={limitPrice}
+                                        onChange={(e) => setLimitPrice(e.target.value)}
+                                        placeholder="Enter Limit Price"
+                                        className="w-full bg-[#0a101d] border border-white/15 focus:border-cyan-400/60 rounded-lg py-1.5 px-2.5 pl-6 text-white font-mono font-bold text-[13px] focus:outline-none transition-colors"
+                                      />
+                                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-cyan-400/80 font-mono text-[12.5px]">$</span>
+                                    </div>
+                                  )}
                                 </div>
 
                                 <FullModalLimitWallPanel
@@ -5563,15 +5583,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             )}
                           </AnimatePresence>
 
-                          {/* Size (Cyber-HUD Order Size Card) */}
+                          {/* Unified Order Size & 0-100% Interactive Slider Card */}
                           <div className="space-y-2 rounded-xl bg-[#04070e]/90 border border-cyan-500/20 p-2.5 shadow-[inset_0_1px_6px_rgba(0,0,0,0.65)]">
-                            {/* Label row: currency name + toggle switch + balance */}
                             <div className="flex justify-between items-center gap-2">
-                              <div className="flex items-center gap-1.5">
-                                <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-                                  Order Size
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <label className="text-[10.5px] font-mono uppercase tracking-wider text-gray-400 font-bold">
+                                  Size
                                 </label>
-                                {/* Base / Quote / Risk $ / Risk % toggle */}
                                 <div className="flex items-center gap-0.5 bg-[#0a101d] rounded p-0.5 border border-white/10">
                                   <button
                                     type="button"
@@ -5633,70 +5651,22 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   </button>
                                 </div>
                               </div>
-                              <div className="text-[11px] text-gray-500 text-right flex flex-col items-end">
-                                <div className="flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title={`Live Auto-Sync Active (${(timings.balancePollMs / 1000).toFixed(1)}s)`} />
-                                  <span>Bal:</span>
-                                  <span className="text-cyan-200 font-semibold font-mono">
-                                    {isLoadingBalance && !balanceData ? "..." : balanceData ? (
-                                      isInverseFutures
-                                        ? sizeMode === 'quote'
-                                          ? `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency} (~$${(((balanceData.base_free || 0) * (effectiveOrderPrice || effectiveCurrentPrice || 0))).toFixed(2)})`
-                                          : `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency}`
-                                        : sizeMode === 'quote'
-                                          ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                                          : isFutures
-                                            ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                                            : tradeSide === 'Buy'
-                                              ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                                              : `${(balanceData.base_free || 0).toFixed(4)} ${baseCurrency}`
-                                    ) : "N/A"}
+
+                              <div className="flex items-center gap-1.5">
+                                {sizingMode === 'standard' && size && Number(size) > 0 && effectiveOrderPrice > 0 && (
+                                  <span className="text-[10.5px] font-mono text-amber-300 font-semibold">
+                                    ≈ {sizeMode === 'quote'
+                                      ? `${(Number(size) / effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${baseCurrency}`
+                                      : `$${(Number(size) * effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
                                   </span>
-                                </div>
-
-                                {/* Show helpful diagnostic badge if funds are located in USDⓈ-M or Spot wallet instead of COIN-M */}
-                                {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.usds_futures_free && balanceData.usds_futures_free > 0) && (
-                                  <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in USDⓈ-M Futures wallet instead of COIN-M Futures">
-                                    <span>⚠️ {balanceData?.usds_futures_free?.toFixed(2)} in USDⓈ-M! Transfer to COIN-M</span>
-                                  </div>
                                 )}
-                                {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.spot_free && balanceData.spot_free > 0) && (
-                                  <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in Spot wallet instead of COIN-M Futures">
-                                    <span>⚠️ {balanceData?.spot_free?.toFixed(2)} in Spot! Transfer to COIN-M</span>
-                                  </div>
-                                )}
-
-                                {/* Show Locked / In-Orders Balance if any */}
-                                {balanceData && (
-                                  (() => {
-                                    const isQuoteTarget = !isInverseFutures && (sizeMode === 'quote' || (isFutures ? true : tradeSide === 'Buy'));
-                                    const lockedAmount = isQuoteTarget ? (balanceData.quote_used || 0) : (balanceData.base_used || 0);
-                                    const curr = isQuoteTarget ? quoteCurrency : baseCurrency;
-                                    if (lockedAmount > 0) {
-                                      return (
-                                        <div className="text-[10px] text-amber-400 font-mono flex items-center gap-1">
-                                          <span>Locked:</span>
-                                          <span>{isQuoteTarget ? lockedAmount.toFixed(2) : lockedAmount.toFixed(4)} {curr}</span>
-                                        </div>
-                                      );
-                                    }
-                                    return null;
-                                  })()
-                                )}
-
-                                {isFutures && reduceOnly && (
-                                  <div className="text-[11px] text-cyan-300 font-mono">
-                                    Pos: {isLoadingPosition ? "..." : (positionData && positionData.amount > 0 ? (
-                                      isInverseFutures && positionData.contracts
-                                        ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(1)} ${baseCurrency})`
-                                        : `${positionData.amount} (${positionData.side.toUpperCase()})`
-                                    ) : "0")}
-                                  </div>
-                                )}
+                                <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 font-mono text-[10px] font-black min-w-[36px] text-center">
+                                  {sliderPercentValue}%
+                                </span>
                               </div>
                             </div>
 
-                            {/* Input field */}
+                            {/* Order Amount Input */}
                             <div className="relative">
                               {sizingMode === 'standard' ? (
                                 <>
@@ -5732,6 +5702,14 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               )}
                             </div>
 
+                            {sizingMode === 'standard' && size && Number(size) > 0 && effectiveOrderPrice > 0 && isInverseFutures && (
+                              <div className="flex items-center gap-1.5 px-1 font-mono">
+                                <span className="text-[10.5px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.2 rounded font-mono font-semibold">
+                                  {Math.max(1, Math.round(((sizeMode === 'quote' ? Number(size) : Number(size) * effectiveOrderPrice)) / contractSize))} Cont (${contractSize}/Cont)
+                                </span>
+                              </div>
+                            )}
+
                             {sizingMode !== 'standard' && (
                               <RiskSizingSubBar
                                 sizeMode={sizingMode}
@@ -5744,26 +5722,42 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                               />
                             )}
 
-                            {/* Live conversion estimate */}
-                            {sizingMode === 'standard' && size && Number(size) > 0 && effectiveOrderPrice > 0 && (
-                              <div className="flex items-center gap-1.5 px-1 flex-wrap font-mono">
-                                <span className="text-[11px] text-gray-500">≈</span>
-                                {sizeMode === 'quote' ? (
-                                  <span className="text-[11px] text-amber-300 font-semibold">
-                                    {(Number(size) / effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} {baseCurrency}
-                                  </span>
-                                ) : (
-                                  <span className="text-[11px] text-amber-300 font-semibold">
-                                    ${(Number(size) * effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
-                                  </span>
-                                )}
-                                {isInverseFutures && (
-                                  <span className="text-[10.5px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.2 rounded font-mono font-semibold">
-                                    • {Math.max(1, Math.round(((sizeMode === 'quote' ? Number(size) : Number(size) * effectiveOrderPrice)) / contractSize))} Cont (${contractSize}/Cont)
-                                  </span>
-                                )}
+                            {/* 0% to 100% Interactive Milestone Slide Bar */}
+                            <div className="relative h-3 flex items-center select-none px-1">
+                              <div className="w-full h-1 rounded-full bg-slate-200 dark:bg-[#0c1424] border border-slate-300 dark:border-white/10 relative overflow-visible">
+                                <div
+                                  style={{ width: `${sliderPercentValue}%` }}
+                                  className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-sky-400 to-emerald-400 shadow-[0_0_8px_rgba(6,182,212,0.65)] transition-all duration-75"
+                                />
+                                {[0, 25, 50, 75, 100].map((pt) => {
+                                  const isReached = sliderPercentValue >= pt && (pt > 0 || sliderPercentValue > 0);
+                                  return (
+                                    <div
+                                      key={pt}
+                                      style={{ left: `${pt}%` }}
+                                      className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full border transition-all duration-150 ${isReached
+                                        ? 'bg-cyan-300 border-white shadow-[0_0_5px_rgba(34,211,238,0.9)]'
+                                        : 'bg-[#152036] border-white/25'
+                                        }`}
+                                    />
+                                  );
+                                })}
                               </div>
-                            )}
+                              <div
+                                style={{ left: `calc(${sliderPercentValue}% - 6px)` }}
+                                className="pointer-events-none absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,1)] transition-all duration-75"
+                              />
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                step={1}
+                                value={sliderPercentValue}
+                                onChange={(e) => handlePercentSliderChange(Number(e.target.value))}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                                title={`Order Size: ${sliderPercentValue}%`}
+                              />
+                            </div>
 
                             {/* % quick-fill buttons */}
                             <div className="flex justify-between gap-1.5">
@@ -5773,7 +5767,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   <button
                                     key={pct}
                                     type="button"
-                                    className={`flex-1 py-1 text-[11px] font-mono font-extrabold rounded border transition-all cursor-pointer active:scale-95 ${isSelected
+                                    className={`flex-1 py-1 text-[10.5px] font-mono font-extrabold rounded border transition-all cursor-pointer active:scale-95 ${isSelected
                                       ? 'bg-gradient-to-r from-cyan-500/35 to-emerald-500/30 border-cyan-400 text-cyan-200 shadow-[0_0_8px_rgba(6,182,212,0.35)]'
                                       : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-cyan-500/40 text-gray-400 hover:text-white'
                                       }`}
@@ -5805,6 +5799,104 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             </div>
                           </div>
 
+                          {/* Inline Quick TP & SL Brackets Strip */}
+                          <QuickTpSlInlineStrip
+                            tpEnabled={tpConfig.enabled}
+                            tpMode={tpConfig.mode}
+                            tpValue={tpConfig.value}
+                            tpOrderType={tpConfig.orderType}
+                            onToggleTp={() => setTpConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
+                            onChangeTpValue={(val) => setTpConfig(prev => ({ ...prev, value: val }))}
+                            onChangeTpMode={(m) => setTpConfig(prev => ({ ...prev, mode: m }))}
+                            onToggleTpOrderType={() => setTpConfig(prev => ({ ...prev, orderType: prev.orderType === 'Limit' ? 'Market' : 'Limit' }))}
+                            slEnabled={slConfig.enabled}
+                            slType={slConfig.type}
+                            slMode={slConfig.mode}
+                            slValue={slConfig.value}
+                            onToggleSl={() => setSlConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
+                            onChangeSlValue={(val) => setSlConfig(prev => ({ ...prev, value: val }))}
+                            onChangeSlMode={(m) => setSlConfig(prev => ({ ...prev, mode: m }))}
+                            tradeSide={tradeSide}
+                            wallTargets={wallTargets}
+                            frontRunTicks={smartPegFrontRunTicks}
+                            formatDisplayPrice={formatDisplayPrice}
+                            onSnapTpToWall={handleSnapTpToWall}
+                            onOpenBracketsTab={() => setActiveTerminalTab('brackets')}
+                            isNativeExchangeSlLockedToFixed={isNativeExchangeSlLockedToFixed}
+                          />
+
+                          {/* Compact Inline AI Shield & Model Strip */}
+                          <div className={`rounded-xl border p-2 transition-all space-y-1.5 ${mlFilterConfig.enabled ? 'bg-blue-500/10 border-blue-500/45' : 'bg-[#04070e]/85 border-white/10'}`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  hasManualMlOverrideRef.current = true;
+                                  setMlFilterConfig(prev => ({
+                                    ...prev,
+                                    enabled: !prev.enabled,
+                                    modelId: !prev.enabled && !prev.modelId && mlModels.length > 0 ? mlModels[0].id : prev.modelId
+                                  }));
+                                }}
+                                className="flex items-center gap-1.5 cursor-pointer shrink-0"
+                              >
+                                <div className={`relative w-7 h-3.5 rounded-full transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500' : 'bg-gray-600'}`}>
+                                  <MotionDiv
+                                    className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
+                                    animate={{ x: mlFilterConfig.enabled ? 14 : 0 }}
+                                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                  />
+                                </div>
+                                <span className="text-[11px] font-black uppercase tracking-wide text-blue-300">
+                                  🤖 AI Shield
+                                </span>
+                              </button>
+
+                              <select
+                                className="flex-1 min-w-0 bg-black/60 border border-blue-500/30 rounded-md py-0.5 px-2 text-white outline-none focus:border-blue-400 text-[10.5px] font-bold cursor-pointer truncate"
+                                value={mlFilterConfig.modelId}
+                                onChange={(e) => {
+                                  hasManualMlOverrideRef.current = true;
+                                  const val = e.target.value;
+                                  const opt = getModelOptimalThresholds(val);
+                                  setMlFilterConfig(prev => ({
+                                    ...prev,
+                                    modelId: val,
+                                    enabled: Boolean(val) ? true : prev.enabled,
+                                    bullishThreshold: prev.autoThreshold ? opt.bullish : prev.bullishThreshold,
+                                    bearishThreshold: prev.autoThreshold ? opt.bearish : prev.bearishThreshold
+                                  }));
+                                }}
+                              >
+                                <option value="">-- Select Model --</option>
+                                {mlModels.map(m => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name} ({m.modelType})
+                                  </option>
+                                ))}
+                              </select>
+
+                              <button
+                                type="button"
+                                onClick={() => setActiveTerminalTab('ai')}
+                                className="px-1.5 py-0.5 rounded bg-blue-500/15 hover:bg-blue-500/30 border border-blue-400/35 text-blue-300 text-[9.5px] font-mono font-bold cursor-pointer shrink-0"
+                                title="Open Full AI Shield Thresholds & Execution Mode"
+                              >
+                                ⚙ Tune
+                              </button>
+                            </div>
+
+                            {mlFilterConfig.enabled && mlLivePreview && (
+                              <HudLiveAiMicroGauge
+                                preview={mlLivePreview}
+                                tradeSide={tradeSide}
+                                bullishThreshold={mlFilterConfig.bullishThreshold}
+                                bearishThreshold={mlFilterConfig.bearishThreshold}
+                                compact
+                              />
+                            )}
+                          </div>
+
                           {/* Binance Native Iceberg Order Panel (Spot Limit Only) */}
                           {orderType === 'Limit' && !isFutures && (
                             <div className="space-y-2.5 bg-cyan-950/20 p-2.5 rounded-lg border border-cyan-500/20 transition-all">
@@ -5818,10 +5910,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   </div>
                                   <div className="flex flex-col text-left">
                                     <div className="flex items-center gap-1.5">
-                                      <span className="text-[13px] font-bold text-cyan-300">Binance Native Iceberg</span>
-                                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold uppercase">Spot GTC</span>
+                                      <span className="text-[12.5px] font-bold text-cyan-300">Binance Native Iceberg</span>
+                                      <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold uppercase">Spot GTC</span>
                                     </div>
-                                    <span className="text-[11px] text-gray-400">
+                                    <span className="text-[10.5px] text-gray-400">
                                       Splits limit order into smaller visible book slices
                                     </span>
                                   </div>
@@ -5843,15 +5935,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                     exit={{ height: 0, opacity: 0 }}
                                     className="space-y-2.5 overflow-hidden pt-2 border-t border-cyan-500/20"
                                   >
-                                    {/* Slice Mode Selector */}
                                     <div className="flex items-center justify-between gap-2">
                                       <label className="text-[11px] text-gray-400 font-medium">Visible Slice Size</label>
                                       <div className="flex bg-black/40 rounded border border-white/10 p-0.5">
                                         <button
                                           type="button"
                                           onClick={() => setIcebergMode('percent')}
-                                          className={`px-2 py-0.5 text-[11px] rounded transition-colors ${icebergMode === 'percent' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
-                                            }`}
+                                          className={`px-2 py-0.5 text-[11px] rounded transition-colors ${icebergMode === 'percent' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'}`}
                                         >
                                           % of Total
                                         </button>
@@ -5863,15 +5953,13 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                               setIcebergCustomQty('250');
                                             }
                                           }}
-                                          className={`px-2 py-0.5 text-[11px] rounded transition-colors ${icebergMode === 'qty' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
-                                            }`}
+                                          className={`px-2 py-0.5 text-[11px] rounded transition-colors ${icebergMode === 'qty' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'}`}
                                         >
                                           {baseCurrency}
                                         </button>
                                       </div>
                                     </div>
 
-                                    {/* Percent Quick Buttons */}
                                     {icebergMode === 'percent' && (
                                       <div className="grid grid-cols-4 gap-1.5">
                                         {['10', '20', '25', '50'].map((pct) => (
@@ -5890,7 +5978,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       </div>
                                     )}
 
-                                    {/* Base Coin Qty Quick Buttons */}
                                     {icebergMode === 'qty' && (
                                       <div className="grid grid-cols-4 gap-1.5">
                                         {['100', '250', '500', '1000'].map((q) => (
@@ -5909,7 +5996,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       </div>
                                     )}
 
-                                    {/* Input Field */}
                                     <div className="relative">
                                       <input
                                         type="number"
@@ -5930,7 +6016,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                       </span>
                                     </div>
 
-                                    {/* Live Slice Calculation & Warning Pill */}
                                     {(() => {
                                       if (effectiveIcebergQty <= 0 || currentBaseAmount <= 0) return null;
                                       const refPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
@@ -5989,27 +6074,27 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             </div>
                           )}
 
-                          {/* Futures Options Panel (Inside Order & Size Tab) */}
+                          {/* Futures Margin, Leverage & Reduce-Only Card */}
                           {isFutures && (
-                            <div className="space-y-2.5 bg-[#04070e]/90 p-2.5 rounded-lg border border-cyan-500/20">
-                              <div className="flex justify-between items-center text-[13px] text-gray-400 font-medium">
+                            <div className="space-y-2 bg-[#04070e]/90 p-2.5 rounded-xl border border-cyan-500/20">
+                              <div className="flex justify-between items-center text-[12px] text-gray-400 font-medium">
                                 <div className="flex bg-black/50 rounded p-0.5 border border-white/10">
                                   <button
                                     type="button"
                                     onClick={() => setMarginMode('cross')}
-                                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-colors cursor-pointer ${marginMode === 'cross' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
+                                    className={`px-2 py-0.5 rounded text-[10.5px] font-bold transition-colors cursor-pointer ${marginMode === 'cross' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
                                   >
                                     Cross
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => setMarginMode('isolated')}
-                                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-colors cursor-pointer ${marginMode === 'isolated' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
+                                    className={`px-2 py-0.5 rounded text-[10.5px] font-bold transition-colors cursor-pointer ${marginMode === 'isolated' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
                                   >
                                     Isolated
                                   </button>
                                 </div>
-                                <span className="text-[12px] bg-amber-500/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded font-mono font-black tracking-wider">
+                                <span className="text-[11px] bg-amber-500/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded font-mono font-black tracking-wider">
                                   {leverage}x LEVERAGE
                                 </span>
                               </div>
@@ -6030,7 +6115,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                                   onChange={(e) => setReduceOnly(e.target.checked)}
                                   className="form-checkbox bg-black/40 border-white/20 text-cyan-400 rounded focus:ring-0 focus:ring-offset-0 cursor-pointer w-3.5 h-3.5"
                                 />
-                                <span className="text-[12px] text-gray-400 group-hover:text-white transition-colors font-medium">Reduce Only (Close Position)</span>
+                                <span className="text-[11.5px] text-gray-400 group-hover:text-white transition-colors font-medium">Reduce Only (Close Position)</span>
                               </label>
                             </div>
                           )}
@@ -7278,50 +7363,86 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                         isFutures={isFutures}
                       />
 
-                      {/* Action Button (Click to Execute or Drag onto Chart) */}
-                      <button
-                        type="button"
-                        onPointerDown={(e) => {
-                          handleOrderPointerDown(e, tradeSide);
-                        }}
-                        onClick={(e) => {
-                          if (didOrderDragRef.current) {
-                            didOrderDragRef.current = false;
-                            return;
-                          }
-                          handleTrade(tradeSide);
-                        }}
-                        style={{ touchAction: 'none' }}
-                        disabled={isSubmitting}
-                        className={`w-full py-2 px-3 rounded-lg font-bold flex items-center justify-between transition-all disabled:opacity-50 group border cursor-grab active:cursor-grabbing select-none ${orderType === 'SmartPeg'
-                          ? tradeSide === 'Buy'
-                            ? 'bg-gradient-to-r from-amber-600/30 to-emerald-600/30 hover:from-amber-600 hover:to-emerald-600 text-amber-200 hover:text-white border-amber-400/60 shadow-[0_0_16px_rgba(245,158,11,0.25)]'
-                            : 'bg-gradient-to-r from-amber-600/30 to-rose-600/30 hover:from-amber-600 hover:to-rose-600 text-amber-200 hover:text-white border-amber-400/60 shadow-[0_0_16px_rgba(245,158,11,0.25)]'
-                          : tradeSide === 'Buy'
-                            ? 'bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white border-emerald-400/60 shadow-[0_0_14px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)]'
-                            : 'bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border-rose-400/60 shadow-[0_0_14px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)]'
-                          }`}
-                        title={`Click to execute ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
-                      >
-                        <div className="flex items-center gap-2">
-                          {orderType === 'SmartPeg' ? (
-                            <Zap className="w-4 h-4 text-amber-300 fill-amber-300 group-hover:scale-110 transition-transform" />
-                          ) : tradeSide === 'Buy' ? (
-                            <TrendingUp className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
-                          ) : (
-                            <TrendingDown className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
-                          )}
-                          <span className="text-[13px] font-black uppercase tracking-wider font-mono">
-                            {isSubmitting
-                              ? 'EXECUTING...'
-                              : `${orderType === 'SmartPeg' ? 'SMART PEG' : 'EXECUTE'} ${isFutures ? (tradeSide === 'Buy' ? 'LONG' : 'SHORT') : tradeSide.toUpperCase()}`}
+                      {/* Primary Execute + Drag-to-Chart CTA & Inline TP/SL Handles */}
+                      <div className="flex items-stretch gap-1.5">
+                        <button
+                          type="button"
+                          onPointerDown={(e) => {
+                            handleOrderPointerDown(e, tradeSide);
+                          }}
+                          onClick={(e) => {
+                            if (didOrderDragRef.current) {
+                              didOrderDragRef.current = false;
+                              return;
+                            }
+                            handleTrade(tradeSide);
+                          }}
+                          style={{ touchAction: 'none' }}
+                          disabled={isSubmitting}
+                          className={`flex-1 min-w-0 py-2 px-3 rounded-lg font-bold flex items-center justify-between transition-all disabled:opacity-50 group border cursor-grab active:cursor-grabbing select-none ${orderType === 'SmartPeg'
+                            ? tradeSide === 'Buy'
+                              ? 'bg-gradient-to-r from-amber-600/30 to-emerald-600/30 hover:from-amber-600 hover:to-emerald-600 text-amber-200 hover:text-white border-amber-400/60 shadow-[0_0_16px_rgba(245,158,11,0.25)]'
+                              : 'bg-gradient-to-r from-amber-600/30 to-rose-600/30 hover:from-amber-600 hover:to-rose-600 text-amber-200 hover:text-white border-amber-400/60 shadow-[0_0_16px_rgba(245,158,11,0.25)]'
+                            : tradeSide === 'Buy'
+                              ? 'bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white border-emerald-400/60 shadow-[0_0_14px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)]'
+                              : 'bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border-rose-400/60 shadow-[0_0_14px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)]'
+                            }`}
+                          title={`Click to execute ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {orderType === 'SmartPeg' ? (
+                              <Zap className="w-4 h-4 text-amber-300 fill-amber-300 group-hover:scale-110 transition-transform shrink-0" />
+                            ) : tradeSide === 'Buy' ? (
+                              <TrendingUp className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform shrink-0" />
+                            ) : (
+                              <TrendingDown className="w-4 h-4 group-hover:translate-y-0.5 transition-transform shrink-0" />
+                            )}
+                            <span className="text-[12.5px] font-black uppercase tracking-wider font-mono truncate">
+                              {isSubmitting
+                                ? 'EXECUTING...'
+                                : `${orderType === 'SmartPeg' ? 'SMART PEG' : 'EXECUTE'} ${isFutures ? (tradeSide === 'Buy' ? 'LONG' : 'SHORT') : tradeSide.toUpperCase()}`}
+                            </span>
+                            {currentBaseAmount > 0 && effectiveOrderPrice > 0 && (
+                              <span className="text-[10.5px] font-mono opacity-85 hidden sm:inline shrink-0">
+                                • ${(currentBaseAmount * effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[9.5px] font-mono text-gray-300/80 group-hover:text-white flex items-center gap-1 shrink-0 ml-2">
+                            <span className="hidden sm:inline">Drag Chart</span>
+                            <MoveVertical className="w-3 h-3 opacity-80" />
                           </span>
+                        </button>
+
+                        {/* Inline Drag-to-Chart TP & SL Handles */}
+                        <div
+                          data-no-drag="true"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            startLineDrag(e, 'tp');
+                          }}
+                          style={{ touchAction: 'none' }}
+                          className="px-2.5 rounded-lg border border-emerald-400/45 hover:border-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-300 flex items-center gap-1 font-mono text-[10px] font-black select-none transition-all cursor-grab active:cursor-grabbing shrink-0"
+                          title={`Drag onto chart to place Take Profit (${tpConfig.orderType})`}
+                        >
+                          <Target className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>TP</span>
                         </div>
-                        <span className="text-[10px] font-mono text-gray-300/80 group-hover:text-white flex items-center gap-1">
-                          <span>Click or Drag Chart</span>
-                          <MoveVertical className="w-3 h-3 opacity-80" />
-                        </span>
-                      </button>
+
+                        <div
+                          data-no-drag="true"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            startLineDrag(e, 'sl');
+                          }}
+                          style={{ touchAction: 'none' }}
+                          className="px-2.5 rounded-lg border border-rose-400/45 hover:border-rose-300 bg-rose-500/10 hover:bg-rose-500/25 text-rose-300 flex items-center gap-1 font-mono text-[10px] font-black select-none transition-all cursor-grab active:cursor-grabbing shrink-0"
+                          title={`Drag onto chart to place Stop Loss (${slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase' ? 'Smart Chase' : 'Exchange Native'})`}
+                        >
+                          <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                          <span>SL</span>
+                        </div>
+                      </div>
 
                       {/* Footer Telemetry Status Strip */}
                       <div className="flex items-center justify-between text-[9.5px] font-mono text-gray-500">

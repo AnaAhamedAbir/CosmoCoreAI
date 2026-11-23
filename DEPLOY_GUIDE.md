@@ -102,12 +102,10 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 ### নিয়মিত আল্ট্রা-ফাস্ট ও নিরাপদ আপডেট (১ লাইনে — কন্টাবো VPS-ও ফ্রিজ হবে না):
 ```bash
-# সাধারণ মোডে (যেখানে ওয়েবসাইট :2026 পোর্টে চলে):
-cd ~/CosmoCoreAI && bash scripts/safe_update.sh
-
-# আর ডোমেইন + Nginx (পোর্ট 80/443) চালু থাকলে:
-cd ~/CosmoCoreAI && bash scripts/safe_update.sh --prod
+cd ~/CosmoCoreAI && git pull && bash scripts/safe_update.sh
 ```
+*(নোট: সাধারণ অবস্থায় এটি সরাসরি `http://YOUR_VPS_IP:2026` পোর্ট চালু রাখে। ডোমেইন ও SSL/Nginx চালু করার পর `bash scripts/safe_update.sh --prod` ব্যবহার করবেন।)*
+
 **এই স্ক্রিপ্টটি যা যা করে:**
 1. আপডেট শুরুর সাথে সাথেই সব ইউজারের স্ক্রিনে **"🚀 Version update in progress..."** ব্যানার অটোমেটিক দেখিয়ে দেয়।
 2. `git pull` করে শুধু Frontend রিবিল্ড করে (~৩ সেকেন্ড)।
@@ -115,7 +113,9 @@ cd ~/CosmoCoreAI && bash scripts/safe_update.sh --prod
 4. `backend` পুরোপুরি রেডি হওয়ার সাথে সাথেই ব্যানার সরিয়ে ইউজারদের স্ক্রিন অটো-রিফ্রেশ করে দেয়!
 
 ### কখন শুধু একবার ফুল `--build` লাগবে?
-শুধুমাত্র যদি কোনো দিন `backend/Dockerfile` বা `requirements-advanced-rl.txt` / `requirements-nextgen.txt` পরিবর্তন করা হয়—তখন শুধু নিচের ফুল বিল্ড কমান্ডটি চালাবেন:
+শুধুমাত্র যদি কোনো দিন `backend/Dockerfile` বা `requirements-advanced-rl.txt` / `requirements-nextgen.txt` পরিবর্তন করা হয়—তখন নিচের ফুল বিল্ড কমান্ডটি চালাবেন:
 ```bash
+docker compose up -d --build
+# অথবা ডোমেইন + Nginx মোডে থাকলে:
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```

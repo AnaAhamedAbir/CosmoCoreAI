@@ -4,13 +4,19 @@
 # Zero CPU/RAM Spike + Auto Frontend "Version update in progress" Banner)
 # ==============================================================================
 # Usage on VPS:
-#   bash scripts/safe_update.sh
+#   bash scripts/safe_update.sh          (default: keeps :2026 open, safe for IP access)
+#   bash scripts/safe_update.sh --prod   (domain + Nginx port 80/443 mode, closes :2026)
 # ==============================================================================
 
 set -e
 
+USE_PROD=0
+if [ "${1:-}" = "--prod" ]; then
+  USE_PROD=1
+fi
+
 COMPOSE_FILES="-f docker-compose.yml"
-if [ -f docker-compose.prod.yml ]; then
+if [ "$USE_PROD" -eq 1 ] && [ -f docker-compose.prod.yml ]; then
   COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.prod.yml"
 fi
 
@@ -64,7 +70,7 @@ for svc in celery_worker_default celery_beat celery_worker_heavy telegram_bot; d
 done
 
 echo "5/5 Starting/reloading edge Nginx (if prod compose active) & clearing update banner..."
-if [ -f docker-compose.prod.yml ]; then
+if [ "$USE_PROD" -eq 1 ] && [ -f docker-compose.prod.yml ]; then
   docker compose $COMPOSE_FILES up -d --no-deps --force-recreate nginx >/dev/null 2>&1 || true
 fi
 NEW_VER=$(git rev-parse --short HEAD 2>/dev/null || date +%s)

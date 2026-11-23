@@ -102,7 +102,11 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 ### নিয়মিত আল্ট্রা-ফাস্ট ও নিরাপদ আপডেট (১ লাইনে — কন্টাবো VPS-ও ফ্রিজ হবে না):
 ```bash
+# সাধারণ মোডে (যেখানে ওয়েবসাইট :2026 পোর্টে চলে):
 cd ~/CosmoCoreAI && bash scripts/safe_update.sh
+
+# আর ডোমেইন + Nginx (পোর্ট 80/443) চালু থাকলে:
+cd ~/CosmoCoreAI && bash scripts/safe_update.sh --prod
 ```
 **এই স্ক্রিপ্টটি যা যা করে:**
 1. আপডেট শুরুর সাথে সাথেই সব ইউজারের স্ক্রিনে **"🚀 Version update in progress..."** ব্যানার অটোমেটিক দেখিয়ে দেয়।

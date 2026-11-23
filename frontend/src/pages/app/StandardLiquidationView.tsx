@@ -5,7 +5,7 @@ import Card from '@/components/common/Card';
 import { useTheme } from '@/context/ThemeContext';
 import { ExpandIcon, CollapseIcon } from '@/constants';
 import ComboBox from '@/components/common/ComboBox';
-import { useLiquidationWebSocket, LiquidationEvent, CldData, AggregatedStats } from '../../hooks/useLiquidationWebSocket';
+import { useLiquidationWebSocket, LiquidationEvent, CldData, AggregatedStats, normalizePairSymbol } from '../../hooks/useLiquidationWebSocket';
 import { useCCXTMarkets } from '../../hooks/useCCXTMarkets';
 import LiquidationBubbleChart from '@/components/features/trading/LiquidationBubbleChart';
 import { useUIStore } from '@/store/uiStore';
@@ -34,8 +34,10 @@ const KillFeedItem: React.FC<{ event: LiquidationEvent; activePair: string }> = 
     const textColor = isLong ? 'text-rose-500' : 'text-emerald-500';
     const iconWrapperBg = isLong ? 'bg-rose-500/10' : 'bg-emerald-500/10';
     const glowColor = isLong ? 'rgba(244,63,94,0.3)' : 'rgba(16,185,129,0.3)';
-    const baseToken = activePair ? activePair.split('/')[0] : '';
+    const pairSource = event.symbol || activePair;
+    const baseToken = pairSource ? pairSource.split(':')[0].split('/')[0] : '';
     const label = `${baseToken} ${isLong ? 'Long Rekt' : 'Short Rekt'}`;
+    const priceDigits = event.price > 0 && event.price < 1 ? 4 : 2;
 
     return (
         <div className={`relative flex items-center justify-between p-3 mb-2 rounded-xl border ${borderColor} ${bgColor} ${event.isNew ? 'animate-fade-in-right' : ''} group overflow-hidden transition-colors hover:bg-slate-100/80 dark:hover:bg-white/5`}>
@@ -55,7 +57,7 @@ const KillFeedItem: React.FC<{ event: LiquidationEvent; activePair: string }> = 
                         <span className="text-[9px] text-slate-500 dark:text-gray-500 font-mono bg-slate-100 dark:bg-black/30 px-1 py-0.5 rounded border border-slate-200 dark:border-white/5">{event.time}</span>
                     </div>
                     <div className="text-sm font-mono font-bold text-slate-900 dark:text-white tracking-tight dark:drop-shadow-[0_0_5px_rgba(255,255,255,0.2)]">
-                        ${event.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ${event.price.toLocaleString(undefined, { minimumFractionDigits: priceDigits, maximumFractionDigits: priceDigits })}
                     </div>
                 </div>
             </div>
@@ -77,6 +79,7 @@ const StandardLiquidationView: React.FC = () => {
     const drawnLinesRef = useRef<any[]>([]);
     const [isChartFullScreen, setIsChartFullScreen] = useState(false);
     const [widgetKey, setWidgetKey] = useState(Date.now());
+    const [tvChartReady, setTvChartReady] = useState(false);
 
     const { exchanges, selectedExchange, setSelectedExchange, availablePairs, selectedPair, setSelectedPair, isLoading: isPairsLoading } = useCCXTMarkets();
     const activePair = selectedPair || 'BTC/USDT';
@@ -135,9 +138,10 @@ const StandardLiquidationView: React.FC = () => {
             if (!container) return;
             if (widgetRef.current) { try { widgetRef.current.remove(); } catch (e) { } widgetRef.current = null; }
 
+            const cleanTvPair = activePair.split(':')[0].replace('/', '');
             // @ts-ignore
             const widget = new window.TradingView.widget({
-                symbol: `${selectedExchange.toUpperCase()}:${activePair.replace('/', '')}`,
+                symbol: `${selectedExchange.toUpperCase()}:${cleanTvPair}`,
                 interval: '15',
                 autosize: true,
                 container_id: containerId,
@@ -149,13 +153,23 @@ const StandardLiquidationView: React.FC = () => {
                 hide_side_toolbar: false,
                 allow_symbol_change: false,
                 studies: ["Volume@tv-basicstudies"],
-                onready: () => { chartApiRef.current = widget.chart(); },
+                onready: () => {
+                    try {
+                        chartApiRef.current = typeof widget.chart === 'function' ? widget.chart() : null;
+                    } catch (e) {
+                        chartApiRef.current = null;
+                    }
+                    setTvChartReady(true);
+                },
             });
             widgetRef.current = widget;
         };
         const checkLibraryAndCreate = () => { if (typeof window.TradingView !== 'undefined' && window.TradingView.widget) createWidget(); else setTimeout(checkLibraryAndCreate, 100); }
         checkLibraryAndCreate();
-        return () => { if (widgetRef.current) { try { widgetRef.current.remove(); widgetRef.current = null; chartApiRef.current = null; } catch (e) { } } };
+        return () => {
+            setTvChartReady(false);
+            if (widgetRef.current) { try { widgetRef.current.remove(); widgetRef.current = null; chartApiRef.current = null; } catch (e) { } }
+        };
     }, [selectedExchange, activePair, theme, widgetKey, isChartFullScreen, chartView]);
 
     // Drawing Lines
@@ -172,19 +186,20 @@ const StandardLiquidationView: React.FC = () => {
     };
 
     useEffect(() => {
-        if (chartApiRef.current) {
-            drawnLinesRef.current.forEach(line => { try { chartApiRef.current.removeEntity(line.id); } catch (e) { } });
+        const chartApi = chartApiRef.current;
+        if (tvChartReady && chartApi && typeof chartApi.createHorzLine === 'function') {
+            drawnLinesRef.current.forEach(line => { try { chartApi.removeEntity(line.id); } catch (e) { } });
             drawnLinesRef.current = [];
             highlightedLevels.forEach(level => {
                 try {
-                    const line = chartApiRef.current.createHorzLine({
+                    const line = chartApi.createHorzLine({
                         price: level, text: `$${level.toLocaleString()}`, lineStyle: 2, lineColor: '#FBBF24', textColor: '#000000', backgroundColor: '#FBBF24', showLabel: true
                     });
                     drawnLinesRef.current.push(line);
                 } catch (e) { }
             });
         }
-    }, [highlightedLevels, chartApiRef.current]);
+    }, [highlightedLevels, tvChartReady]);
 
 
 
@@ -393,7 +408,7 @@ const StandardLiquidationView: React.FC = () => {
                            <div className="flex items-center gap-3 bg-white/90 dark:bg-black/60 backdrop-blur-md rounded-xl px-4 py-1 shadow-md dark:shadow-[0_4px_20px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-white/10 h-[34px]">
                                 <span className="text-[10px] text-slate-500 dark:text-gray-500 uppercase tracking-widest font-bold">Oracle</span>
                                 <span className={`text-base font-mono font-bold tracking-tight transition-colors duration-300 ${priceUpdateStatus === 'up' ? 'text-emerald-600 dark:text-emerald-400 dark:drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]' : priceUpdateStatus === 'down' ? 'text-rose-600 dark:text-rose-400 dark:drop-shadow-[0_0_8px_rgba(251,113,133,0.5)]' : 'text-slate-900 dark:text-white dark:drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]'}`}>
-                                    {wsPrice > 0 ? `$${wsPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---'}
+                                    {wsPrice > 0 ? `$${wsPrice.toLocaleString(undefined, { minimumFractionDigits: wsPrice < 1 ? 4 : 2, maximumFractionDigits: wsPrice < 1 ? 4 : 2 })}` : '---'}
                                 </span>
                                 {!isConnected && (
                                     <span className="text-[8px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20 animate-pulse">
@@ -409,7 +424,7 @@ const StandardLiquidationView: React.FC = () => {
 
                         {chartView === 'bubbles' && (
                             <div className="w-full h-full p-6 bg-transparent relative z-10">
-                                <LiquidationBubbleChart data={liveFeed} activePair={activePair} />
+                                <LiquidationBubbleChart data={liveFeed} activePair={activePair} activeExchange={selectedExchange} />
                             </div>
                         )}
 
@@ -496,9 +511,15 @@ const StandardLiquidationView: React.FC = () => {
                                             </span>
                                         </div>
                                     )}
-                                    {liveFeed.filter(e => e.amount >= minLiquidationThreshold).map(e => (
-                                        <KillFeedItem key={e.id} event={e} activePair={activePair} />
-                                    ))}
+                                    {liveFeed
+                                        .filter(
+                                            (e) =>
+                                                e.amount >= minLiquidationThreshold &&
+                                                (!e.symbol || normalizePairSymbol(e.symbol) === normalizePairSymbol(activePair))
+                                        )
+                                        .map((e) => (
+                                            <KillFeedItem key={e.id} event={e} activePair={activePair} />
+                                        ))}
                                 </div>
                             ) : (
                                 <div className="absolute inset-0 flex flex-col p-5">

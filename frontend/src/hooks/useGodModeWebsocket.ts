@@ -35,24 +35,37 @@ export interface GodModeState {
     };
 }
 
-export const useGodModeWebsocket = (symbol: string = 'BTC/USDT') => {
+export const useGodModeWebsocket = (symbol: string = 'BTC/USDT', exchange: string = 'binance') => {
     const [state, setState] = useState<GodModeState | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    const connect = () => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    const cleanSymbol = (symbol || 'BTC/USDT').split(':')[0];
+    const cleanExchange = (exchange || 'binance').toLowerCase();
 
-        const encodedSymbol = encodeURIComponent(symbol);
+    const connect = () => {
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+        }
+        if (wsRef.current) {
+            wsRef.current.onclose = null;
+            wsRef.current.onerror = null;
+            wsRef.current.close();
+            wsRef.current = null;
+        }
+
+        const encodedSymbol = encodeURIComponent(cleanSymbol);
+        const encodedExchange = encodeURIComponent(cleanExchange);
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/api/v1/advanced_liquidation/ws/god-mode?symbol=${encodedSymbol}`;
+        const wsUrl = `${protocol}//${host}/api/v1/advanced_liquidation/ws/god-mode?symbol=${encodedSymbol}&exchange=${encodedExchange}`;
         
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
-            console.log(`[GodMode WS] Connected for ${symbol}`);
+            console.log(`[GodMode WS] Connected for ${cleanExchange}:${cleanSymbol}`);
             setIsConnected(true);
         };
 
@@ -68,7 +81,6 @@ export const useGodModeWebsocket = (symbol: string = 'BTC/USDT') => {
         ws.onclose = () => {
             console.log(`[GodMode WS] Disconnected`);
             setIsConnected(false);
-            // Auto reconnect
             reconnectTimeoutRef.current = setTimeout(() => {
                 connect();
             }, 3000);
@@ -83,15 +95,22 @@ export const useGodModeWebsocket = (symbol: string = 'BTC/USDT') => {
     };
 
     useEffect(() => {
+        setState(null);
         connect();
 
         return () => {
-            if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+                reconnectTimeoutRef.current = null;
+            }
             if (wsRef.current) {
+                wsRef.current.onclose = null;
+                wsRef.current.onerror = null;
                 wsRef.current.close();
+                wsRef.current = null;
             }
         };
-    }, [symbol]);
+    }, [cleanSymbol, cleanExchange]);
 
     return { state, isConnected };
 };

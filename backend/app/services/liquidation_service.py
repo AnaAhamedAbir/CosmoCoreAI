@@ -5,11 +5,34 @@ import time
 from typing import Optional, Dict, Any, Callable, Awaitable, Set
 
 import ccxt.pro as ccxtpro  # type: ignore
-from ccxt.base.errors import NotSupported, ExchangeNotAvailable, InvalidNonce, NetworkError  # type: ignore
+from ccxt.base.errors import (  # type: ignore
+    NotSupported,
+    ExchangeNotAvailable,
+    InvalidNonce,
+    NetworkError,
+    BadRequest,
+    BadSymbol,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def canonical_pair_symbol(symbol: str) -> str:
+    """
+    Normalize a symbol like 'ACE/USDT:USDT' or 'aceusdt' to canonical 'ACE/USDT' format.
+    """
+    if not symbol:
+        return "BTC/USDT"
+    s = symbol.strip().upper().split(":")[0]
+    if "/" in s:
+        return s
+    for quote in ("USDT", "USDC", "BUSD", "USD", "BTC", "ETH"):
+        if s.endswith(quote) and len(s) > len(quote):
+            return f"{s[:-len(quote)]}/{quote}"
+    return s
+
 
 class LiquidationService:
     """
@@ -25,7 +48,7 @@ class LiquidationService:
         
         # Track active subscriptions and exchanges
         self._active_subscriptions: Dict[str, asyncio.Task] = {}
-        self._sub_counts: Dict[str, int] = {} # Track number of subscribers per sub_id
+        self._sub_counts: Dict[str, int] = {}  # Track number of subscribers per sub_id
         self._exchanges: Dict[str, ccxtpro.Exchange] = {}
         self._lock = asyncio.Lock()
 
@@ -57,150 +80,240 @@ class LiquidationService:
         for callback in dead_callbacks:
             self.remove_callback(callback)
 
+    EXCHANGE_ALIASES = {
+        "gateio": "gate",
+        "huobi": "htx",
+    }
+
     async def _get_exchange(self, exchange_id: str) -> ccxtpro.Exchange:
         """
-        Get or initialize a CCXT Pro exchange instance.
+        Get or initialize a CCXT Pro exchange instance configured for perpetual futures/swaps.
         """
+        exchange_id = (exchange_id or "binance").lower().strip()
+        ccxt_id = self.EXCHANGE_ALIASES.get(exchange_id, exchange_id)
         if exchange_id not in self._exchanges:
             try:
-                # Dynamically instantiate the exchange
-                exchange_class = getattr(ccxtpro, exchange_id)
-                options = {}
-                
-                # Binance needs defaultType = 'future' or 'delivery' to get liquidations usually
-                if exchange_id == 'binance':
-                    # ccxt prefers using explicitly binanceusdm or passing options
-                    options['defaultType'] = 'future'
-                    
+                exchange_class = getattr(ccxtpro, ccxt_id)
+                options: Dict[str, Any] = {}
+
+                # Configure derivatives/perpetual swap mode so watch_liquidations uses futures streams
+                if ccxt_id in ("binance", "okx", "bitget", "kucoin", "gate", "mexc", "htx"):
+                    options["defaultType"] = "swap"
+                elif ccxt_id == "bybit":
+                    options["defaultType"] = "linear"
+
                 self._exchanges[exchange_id] = exchange_class({
-                    'enableRateLimit': True,
-                    'newUpdates': True, # Retrieve only new data on watch calls
-                    'options': options
+                    "enableRateLimit": True,
+                    "newUpdates": True,  # Retrieve only new data on watch calls
+                    "options": options,
                 })
             except AttributeError:
-                logger.error(f"Exchange {exchange_id} not found in ccxt.pro")
+                logger.error(f"Exchange {exchange_id} ({ccxt_id}) not found in ccxt.pro")
                 raise ValueError(f"Exchange {exchange_id} not supported.")
-                
+
         return self._exchanges[exchange_id]
 
-    async def subscribe(self, exchange_id: str, symbol: str):
+    async def _resolve_contract_symbol(self, exchange: ccxtpro.Exchange, symbol: str) -> Optional[str]:
+        """
+        Resolve a user/UI symbol (e.g., 'ACE/USDT' or 'ACE/USDT:USDT' or 'ACEUSDT')
+        to the exchange's unified contract/swap symbol (e.g., 'ACE/USDT:USDT') required
+        by CCXT Pro watch_liquidations.
+        """
+        try:
+            if not getattr(exchange, "markets", None):
+                await exchange.load_markets()
+        except Exception as e:
+            logger.warning(f"⚠️ [Ignored] load_markets failed for {exchange.id} before resolving {symbol}: {e}")
+
+        markets = getattr(exchange, "markets", None) or {}
+        if not markets:
+            base_pair = canonical_pair_symbol(symbol)
+            quote = base_pair.split("/")[1] if "/" in base_pair else "USDT"
+            return f"{base_pair}:{quote}"
+
+        raw_upper = symbol.strip().upper()
+        base_pair = canonical_pair_symbol(raw_upper)
+        quote = base_pair.split("/")[1] if "/" in base_pair else "USDT"
+
+        # 1. Prioritize perpetual swap / futures contract symbols (e.g. ACE/USDT:USDT)
+        contract_candidates = [
+            f"{base_pair}:{quote}",
+            f"{base_pair}:USDT",
+            f"{base_pair}:USDC",
+            f"{base_pair}:USD",
+            raw_upper,
+            base_pair,
+        ]
+        for cand in contract_candidates:
+            m = markets.get(cand)
+            if m and (m.get("contract") or m.get("swap") or m.get("future")):
+                return cand
+
+        # 2. Scan markets for matching base/quote contract
+        if "/" in base_pair:
+            base_coin, quote_coin = base_pair.split("/", 1)
+            for m_sym, m in markets.items():
+                if (
+                    m
+                    and (m.get("contract") or m.get("swap") or m.get("future"))
+                    and str(m.get("base", "")).upper() == base_coin
+                    and str(m.get("quote", "")).upper() == quote_coin
+                    and m.get("active") is not False
+                ):
+                    return m_sym
+
+        # 3. Fallback if only present as direct key
+        if raw_upper in markets:
+            return raw_upper
+        if base_pair in markets:
+            return base_pair
+
+        return None
+
+    async def get_latest_price(self, exchange_id: str, symbol: str) -> float:
+        """
+        Fetch current market price for initial Oracle hydration when switching pairs.
+        """
+        try:
+            exchange = await self._get_exchange(exchange_id)
+            resolved = await self._resolve_contract_symbol(exchange, symbol) or canonical_pair_symbol(symbol)
+            ticker = await exchange.fetch_ticker(resolved)
+            price = ticker.get("last") or ticker.get("close") or 0.0
+            return float(price) if price else 0.0
+        except Exception as e:
+            logger.debug(f"Could not fetch initial price for {exchange_id}:{symbol}: {e}")
+            return 0.0
+
+    async def subscribe(self, exchange_id: str, symbol: str) -> bool:
         """
         Subscribe to specific symbol liquidation streams on a specific exchange.
+        Returns True if subscription is active, False otherwise.
         """
-        if not exchange_id:
-            exchange_id = 'binance'
+        exchange_id = (exchange_id or "binance").lower().strip()
+        canonical_sym = canonical_pair_symbol(symbol)
+        sub_id = f"{exchange_id}:{canonical_sym}"
 
-        sub_id = f"{exchange_id}:{symbol}"
-        
-        async def watch_loop(exchange: ccxtpro.Exchange, sym: str):
-            logger.info(f"Started CCXT watch_liquidations loop for {exchange.id} {sym}")
-            while self._running:
-                try:
-                    # Depending on CCXT version and exchange, it might return a list or dict
-                    liquidations = await exchange.watch_liquidations(sym)
-                    
-                    if not isinstance(liquidations, list):
-                        liquidations = [liquidations]
-                        
-                    for liq in liquidations:
-                        # Map CCXT structure to our frontend structure
-                        side = liq.get('side', '') 
-                        # In CCXT, side is usually the direction of the trade that caused liquidation.
-                        # Usually, if a long is liquidated, it's a SELL order. If a short is liquidated, it's a BUY order.
-                        # Safely handle potential None values gracefully
-                        price = liq.get('price')
-                        price = float(price) if price is not None else 0.0
-                        
-                        amount = liq.get('amount')
-                        amount = float(amount) if amount is not None else 0.0
-                        
-                        contracts = liq.get('contracts')
-                        contracts = float(contracts) if contracts is not None else 0.0
-                        
-                        contractSize = liq.get('contractSize')
-                        contractSize = float(contractSize) if contractSize is not None else 1.0
-                        
-                        quoteValue = liq.get('quoteValue')
-                        quoteValue = float(quoteValue) if quoteValue is not None else 0.0
+        async def watch_loop(exchange: ccxtpro.Exchange, watch_sym: str, client_sym: str, key: str):
+            logger.info(f"Started CCXT watch_liquidations loop for {exchange.id} {watch_sym} (canonical: {client_sym})")
+            try:
+                while self._running:
+                    try:
+                        liquidations = await exchange.watch_liquidations(watch_sym)
 
-                        usd_value = quoteValue or (price * amount)
-                        if usd_value == 0:
-                            # Try contracts * contractSize * price
-                            usd_value = contracts * contractSize * price
-                        
-                        liq_type = "Long Liquidation" if side.lower() == "sell" else "Short Liquidation"
-                        if not side:
-                            liq_type = "Long Liquidation" # Fallback
-                            
-                        processed_data = {
-                            "exchange": exchange.id,
-                            "symbol": sym, # The symbol string
-                            "side": side.upper() if side else "",
-                            "type": liq_type,
-                            "price": price,
-                            "quantity": amount or contracts,
-                            "usd_value": usd_value,
-                            "timestamp": int(liq.get('timestamp') or int(time.time() * 1000)),
-                            "time_iso": liq.get('datetime') or time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())
-                        }
-                        
-                        await self._broadcast(processed_data)
-                except NotSupported as e:
-                    logger.error(f"{exchange.id} {sym} does not support watch_liquidations: {e}")
-                    # Stop the loop if explicit not supported
-                    break
-                except (ExchangeNotAvailable, NetworkError, InvalidNonce) as e:
-                    logger.warning(f"Connection issue for {exchange.id} {sym}: {e}. Retrying in 5s...")
-                    await asyncio.sleep(5)
-                except Exception as e:
-                    logger.error(f"Error watching {exchange.id} {sym}: {e}")
-                    await asyncio.sleep(5)
-            
-            logger.info(f"Stopped CCXT watch_liquidations loop for {exchange.id} {sym}")
+                        if not isinstance(liquidations, list):
+                            liquidations = [liquidations]
+
+                        for liq in liquidations:
+                            info = liq.get("info") or {}
+                            side = liq.get("side") or info.get("S") or ""
+
+                            price = liq.get("price")
+                            if price is None or float(price) == 0.0:
+                                price = info.get("ap") or info.get("p") or 0.0
+                            price = float(price) if price is not None else 0.0
+
+                            amount = liq.get("amount")
+                            amount = float(amount) if amount is not None else 0.0
+
+                            contracts = liq.get("contracts")
+                            if contracts is None or float(contracts) == 0.0:
+                                contracts = info.get("l") or info.get("q") or 0.0
+                            contracts = float(contracts) if contracts is not None else 0.0
+
+                            contractSize = liq.get("contractSize")
+                            contractSize = float(contractSize) if contractSize is not None else 1.0
+
+                            quoteValue = liq.get("quoteValue")
+                            quoteValue = float(quoteValue) if quoteValue is not None else 0.0
+
+                            usd_value = quoteValue or (price * amount)
+                            if usd_value == 0:
+                                usd_value = contracts * contractSize * price
+
+                            if price <= 0 or usd_value <= 0:
+                                continue
+
+                            # In CCXT / Binance forceOrder, a SELL order liquidates a Long position;
+                            # a BUY order liquidates a Short position.
+                            liq_type = "Long Liquidation" if str(side).lower() == "sell" else "Short Liquidation"
+                            if not side:
+                                liq_type = "Long Liquidation"
+
+                            raw_event_sym = liq.get("symbol") or watch_sym
+                            event_canonical_sym = canonical_pair_symbol(raw_event_sym)
+
+                            processed_data = {
+                                "exchange": exchange_id,
+                                "symbol": event_canonical_sym,
+                                "contract_symbol": raw_event_sym,
+                                "side": str(side).upper() if side else "",
+                                "type": liq_type,
+                                "price": price,
+                                "quantity": amount or contracts,
+                                "usd_value": usd_value,
+                                "timestamp": int(liq.get("timestamp") or int(time.time() * 1000)),
+                                "time_iso": liq.get("datetime") or time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
+                            }
+
+                            await self._broadcast(processed_data)
+                    except (NotSupported, BadRequest, BadSymbol) as e:
+                        logger.error(f"{exchange.id} {watch_sym} cannot watch_liquidations: {e}")
+                        break
+                    except asyncio.CancelledError:
+                        break
+                    except (ExchangeNotAvailable, NetworkError, InvalidNonce) as e:
+                        logger.warning(f"Connection issue for {exchange.id} {watch_sym}: {e}. Retrying in 5s...")
+                        await asyncio.sleep(5)
+                    except Exception as e:
+                        logger.error(f"Error watching {exchange.id} {watch_sym}: {e}")
+                        await asyncio.sleep(5)
+            finally:
+                self._active_subscriptions.pop(key, None)
+                logger.info(f"Stopped CCXT watch_liquidations loop for {exchange.id} {watch_sym}")
 
         async with self._lock:
-            # Update counter
-            self._sub_counts[sub_id] = self._sub_counts.get(sub_id, 0) + 1
-            
-            if sub_id not in self._active_subscriptions:
-                try:
-                    exchange = await self._get_exchange(exchange_id)
-                    
-                    # Validate symbol exists on the exchange
-                    try:
-                        await exchange.load_markets()
-                    except Exception as e:
-                        logger.warning(f"⚠️ [Ignored] load_markets failed for {exchange_id} before subscribing to {symbol}: {e}")
-                    
-                    if exchange.markets and symbol not in exchange.markets:
-                        logger.error(f"Symbol {symbol} not found on {exchange_id}")
-                        self._sub_counts[sub_id] -= 1 # Rollback counter
-                        return
+            task = self._active_subscriptions.get(sub_id)
+            if task and not task.done():
+                self._sub_counts[sub_id] = self._sub_counts.get(sub_id, 0) + 1
+                return True
 
-                    task = asyncio.create_task(watch_loop(exchange, symbol))
-                    self._active_subscriptions[sub_id] = task
-                    logger.info(f"Subscribed to: {sub_id} (New task started)")
-                except Exception as e:
-                    logger.error(f"Failed to subscribe to {sub_id}: {e}")
-                    # Rollback counter if task failed to start
-                    if sub_id in self._sub_counts:
-                        self._sub_counts[sub_id] -= 1
-                        if self._sub_counts[sub_id] <= 0:
-                            self._sub_counts.pop(sub_id)
+            try:
+                exchange = await self._get_exchange(exchange_id)
+                supports_liq = bool(
+                    exchange.has.get("watchLiquidations")
+                    or exchange.has.get("watchLiquidationsForSymbols")
+                )
+                if not supports_liq:
+                    logger.warning(f"Exchange {exchange_id} does not support watch_liquidations in CCXT Pro")
+                    return False
+
+                resolved_symbol = await self._resolve_contract_symbol(exchange, symbol)
+                if not resolved_symbol:
+                    logger.error(f"Contract symbol for {symbol} not found on {exchange_id}")
+                    return False
+
+                new_task = asyncio.create_task(watch_loop(exchange, resolved_symbol, canonical_sym, sub_id))
+                self._active_subscriptions[sub_id] = new_task
+                self._sub_counts[sub_id] = 1
+                logger.info(f"Subscribed to: {sub_id} (resolved contract: {resolved_symbol})")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to subscribe to {sub_id}: {e}")
+                return False
 
     async def unsubscribe(self, exchange_id: str, symbol: str):
         """
         Unsubscribe from specific symbol liquidation streams.
         """
-        if not exchange_id:
-            exchange_id = 'binance'
+        exchange_id = (exchange_id or "binance").lower().strip()
+        canonical_sym = canonical_pair_symbol(symbol)
+        sub_id = f"{exchange_id}:{canonical_sym}"
 
-        sub_id = f"{exchange_id}:{symbol}"
         async with self._lock:
             if sub_id in self._sub_counts:
-                self._sub_counts[sub_id] -= 1
+                self._sub_counts[sub_id] = max(0, self._sub_counts[sub_id] - 1)
                 logger.info(f"Unsubscribed listener from {sub_id}. Remaining: {self._sub_counts[sub_id]}")
-                
+
                 if self._sub_counts[sub_id] <= 0:
                     self._sub_counts.pop(sub_id, None)
                     task = self._active_subscriptions.pop(sub_id, None)
@@ -208,15 +321,20 @@ class LiquidationService:
                         task.cancel()
                         logger.info(f"Stopped background task for: {sub_id}")
 
-    async def get_klines(self, symbol: str, interval: str = '15m', limit: int = 50) -> list[Dict[str, Any]]:
+    async def get_klines(
+        self,
+        symbol: str,
+        interval: str = "15m",
+        limit: int = 50,
+        exchange_id: str = "binance",
+    ) -> list[Dict[str, Any]]:
         """
-        Fetch historical klines (candles) using CCXT REST API.
-        Default to Binance for klines if exchange not specifically tied here.
-        This maintains backward compatibility.
+        Fetch historical klines (candles) using CCXT REST API for the requested exchange and symbol.
         """
         try:
-            exchange = await self._get_exchange('binance')
-            raw_data = await exchange.fetch_ohlcv(symbol, timeframe=interval, limit=limit)
+            exchange = await self._get_exchange(exchange_id or "binance")
+            resolved_sym = await self._resolve_contract_symbol(exchange, symbol) or canonical_pair_symbol(symbol)
+            raw_data = await exchange.fetch_ohlcv(resolved_sym, timeframe=interval, limit=limit)
             formatted_data = []
             for d in raw_data:
                 formatted_data.append({
@@ -225,11 +343,11 @@ class LiquidationService:
                     "high": float(d[2]),
                     "low": float(d[3]),
                     "close": float(d[4]),
-                    "volume": float(d[5])
+                    "volume": float(d[5]),
                 })
             return formatted_data
         except Exception as e:
-            logger.error(f"Error fetching klines via CCXT for {symbol}: {e}")
+            logger.error(f"Error fetching klines via CCXT for {exchange_id}:{symbol}: {e}")
             return []
 
     async def start(self):
@@ -252,12 +370,14 @@ class LiquidationService:
                 task.cancel()
                 logger.info(f"Cancelled task for {sub_id}")
             self._active_subscriptions.clear()
-            
+            self._sub_counts.clear()
+
             for exchange_id, exchange in self._exchanges.items():
                 await exchange.close()
                 logger.info(f"Closed exchange connection for {exchange_id}")
             self._exchanges.clear()
         logger.info("LiquidationService stopped.")
+
 
 # Global Singleton Instance
 liquidation_service = LiquidationService()

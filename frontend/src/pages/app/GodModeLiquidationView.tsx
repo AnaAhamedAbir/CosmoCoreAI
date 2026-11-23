@@ -12,13 +12,14 @@ import { useTheme } from '@/context/ThemeContext';
 
 const GodModeLiquidationView: React.FC = () => {
     const { theme } = useTheme();
-    const { selectedPair } = useCCXTMarkets();
-    const activePair = selectedPair || 'BTC/USDT';
+    const { selectedPair, selectedExchange } = useCCXTMarkets();
+    const activePair = (selectedPair || 'BTC/USDT').split(':')[0];
+    const activeExchange = (selectedExchange || 'binance').toLowerCase();
     const [trailingLiquidityEnabled, setTrailingLiquidityEnabled] = useState(false);
     const { indicatorSettings } = useBotStore();
     
     // Connect to live backend stream
-    const { state, isConnected } = useGodModeWebsocket(activePair);
+    const { state, isConnected } = useGodModeWebsocket(activePair, activeExchange);
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -54,16 +55,9 @@ const GodModeLiquidationView: React.FC = () => {
         // Fetch basic history to make the chart look alive
         const fetchHistory = async () => {
             try {
-                // Determine exchange (default to binance if not specified in symbol string format)
-                let exchange = 'binance';
-                let formattedSymbol = activePair;
-                if (activePair.includes(':')) {
-                    // For CCXT futures format like BTC/USDT:USDT we keep binance
-                }
-                
                 const data = await marketDepthService.getOHLCV(
-                    formattedSymbol,
-                    exchange,
+                    activePair,
+                    activeExchange,
                     '15m',
                     200
                 );
@@ -103,7 +97,7 @@ const GodModeLiquidationView: React.FC = () => {
             resizeObserver.disconnect();
             chart.remove();
         };
-    }, [activePair, state !== null]);
+    }, [activePair, activeExchange, state !== null]);
 
     // Update Lightweight Chart theme dynamically
     useEffect(() => {
@@ -117,11 +111,25 @@ const GodModeLiquidationView: React.FC = () => {
         });
     }, [theme]);
 
-    // Update real-time price tick
+    // Update real-time price tick on the latest candle
     useEffect(() => {
-        if (state && seriesRef.current && state.current_price) {
-            const latestData = seriesRef.current.dataByIndex(999999); // get latest
-            // In a real app we'd get the actual time/OHLC tick from WS, here we just update if we have a way
+        if (state && seriesRef.current && state.current_price > 0 && candlesRef.current.length > 0) {
+            const lastIdx = candlesRef.current.length - 1;
+            const lastCandle = candlesRef.current[lastIdx];
+            if (lastCandle) {
+                const updatedCandle = {
+                    ...lastCandle,
+                    close: state.current_price,
+                    high: Math.max(lastCandle.high, state.current_price),
+                    low: Math.min(lastCandle.low, state.current_price),
+                };
+                candlesRef.current[lastIdx] = updatedCandle;
+                try {
+                    seriesRef.current.update(updatedCandle);
+                } catch (e) {
+                    // ignore transient chart update errors during remount
+                }
+            }
         }
     }, [state]);
 

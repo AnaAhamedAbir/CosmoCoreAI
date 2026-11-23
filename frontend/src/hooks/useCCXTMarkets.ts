@@ -51,20 +51,37 @@ export const useCCXTMarkets = () => {
             const rawMarkets = await exchangeInstance.loadMarkets();
 
             const parsedMarkets: MarketPair[] = [];
+            const seenSymbols = new Set<string>();
             const quotes = new Set<string>();
 
-            Object.values(rawMarkets).forEach((market: any) => {
+            const allMarkets = Object.values(rawMarkets) as any[];
+            const hasContractFlag = allMarkets.some(
+                (m) => m && (m.swap || m.future || m.contract)
+            );
+
+            allMarkets.forEach((market: any) => {
                 if (market && market.symbol && market.active !== false) {
+                    if (hasContractFlag && !(market.swap || market.future || market.contract)) {
+                        return;
+                    }
+
                     const quote = market.settle || market.quote;
                     const base = market.base;
-                    
+
                     if (base && quote) {
                         if (market.symbol.includes('-') && !market.symbol.includes('PERP')) {
-                             return;
+                            return;
                         }
-                        
+
+                        // Normalize 'ACE/USDT:USDT' -> 'ACE/USDT' and deduplicate
+                        const canonicalSymbol = String(market.symbol).split(':')[0];
+                        if (seenSymbols.has(canonicalSymbol)) {
+                            return;
+                        }
+                        seenSymbols.add(canonicalSymbol);
+
                         parsedMarkets.push({
-                            symbol: market.symbol,
+                            symbol: canonicalSymbol,
                             baseId: base,
                             quoteId: quote,
                             active: true
@@ -135,10 +152,12 @@ export const useCCXTMarkets = () => {
         }
     }, [selectedExchange, loadMarkets]);
 
-    // Whenever the selected Quote changes, immediately filter the available pairs
+    // Whenever the selected Quote changes (after markets have loaded), filter the available pairs
     useEffect(() => {
-        filterPairsByQuote(selectedQuote);
-    }, [selectedQuote]);
+        if (markets.length > 0) {
+            filterPairsByQuote(selectedQuote, markets);
+        }
+    }, [selectedQuote, markets, filterPairsByQuote]);
 
     return {
         // Exchange selection state

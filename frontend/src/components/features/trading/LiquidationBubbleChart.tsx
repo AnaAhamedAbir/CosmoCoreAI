@@ -12,11 +12,12 @@ import {
     CartesianGrid
 } from 'recharts';
 import { useTheme } from '@/context/ThemeContext';
-import { LiquidationEvent } from '@/hooks/useLiquidationWebSocket';
+import { LiquidationEvent, normalizePairSymbol } from '@/hooks/useLiquidationWebSocket';
 
 interface LiquidationBubbleChartProps {
     data: LiquidationEvent[];
     activePair: string;
+    activeExchange?: string;
 }
 
 interface CandleData {
@@ -27,45 +28,50 @@ interface CandleData {
     close: number;
 }
 
-const LiquidationBubbleChart: React.FC<LiquidationBubbleChartProps> = ({ data, activePair }) => {
+const LiquidationBubbleChart: React.FC<LiquidationBubbleChartProps> = ({ data, activePair, activeExchange = 'binance' }) => {
     const { theme } = useTheme();
     const [candles, setCandles] = useState<CandleData[]>([]);
 
     useEffect(() => {
         const fetchCandles = async () => {
             try {
-                // Fetch last 50 candles (15m interval) from Binance
-                // Fetch last 50 candles (15m interval) from Backend Proxy
-                const symbol = activePair.replace('/', '');
-                const response = await fetch(`/api/v1/liquidation/candles?symbol=${symbol}&interval=15m&limit=50`);
+                const cleanSymbol = activePair.split(':')[0];
+                const params = new URLSearchParams({
+                    symbol: cleanSymbol,
+                    exchange: (activeExchange || 'binance').toLowerCase(),
+                    interval: '15m',
+                    limit: '50',
+                });
+                const response = await fetch(`/api/v1/liquidation/candles?${params.toString()}`);
                 const formatted: CandleData[] = await response.json();
-                setCandles(formatted);
+                if (Array.isArray(formatted)) {
+                    setCandles(formatted);
+                } else {
+                    setCandles([]);
+                }
             } catch (error) {
                 console.error("Failed to fetch candles", error);
+                setCandles([]);
             }
         };
 
         if (activePair) {
             fetchCandles();
-            // Poll for fresh candles every 15s? Or just once on mount/change. 
-            // For now, once is fine as liquidations are the live part.
         }
-    }, [activePair]);
+    }, [activePair, activeExchange]);
 
-    // Prepare chart data
-    // We need to combine or layer data. 
-    // Recharts ComposedChart can handle multiple data sources if we pass them to individual components?
-    // Actually, it's better to use specific data props for each series.
-    // XAxis domain will be properly calculated if we include both datasets?
-    // We will supply `candles` to ComposedChart (to set the main axis) and `data` to Scatter.
-
-    const bubbleData = data.map((event) => ({
-        ...event,
-        time: event.timestamp || Date.now(), // Map timestamp to 'time' to match XAxis dataKey
-        x: event.timestamp || Date.now(),    // Keep 'x' just in case
-        y: event.price,
-        z: event.amount
-    }));
+    const targetSym = normalizePairSymbol(activePair);
+    const bubbleData = data
+        .filter((event) => !event.symbol || normalizePairSymbol(event.symbol) === targetSym)
+        .map((event) => ({
+            ...event,
+            displayTime: event.time,
+            time: event.timestamp || Date.now(),
+            x: event.timestamp || Date.now(),
+            y: event.price,
+            close: event.price,
+            z: event.amount,
+        }));
 
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
@@ -82,7 +88,7 @@ const LiquidationBubbleChart: React.FC<LiquidationBubbleChartProps> = ({ data, a
                     <div className={`p-3 rounded-xl border backdrop-blur-md bg-white/95 dark:bg-black/60 ${borderColor} ${glowClass} text-xs font-mono z-50 min-w-[180px]`}>
                         <div className="flex items-center justify-between mb-2 border-b border-slate-200 dark:border-white/10 pb-2">
                             <span className={`font-bold uppercase tracking-wider ${colorClass}`}>{dataPoint.type} REKT</span>
-                            <span className="text-[10px] text-slate-500 dark:text-gray-400">{dataPoint.time}</span>
+                            <span className="text-[10px] text-slate-500 dark:text-gray-400">{dataPoint.displayTime || new Date(dataPoint.time).toLocaleTimeString()}</span>
                         </div>
                         <div className="space-y-1.5">
                             <div className="flex justify-between">

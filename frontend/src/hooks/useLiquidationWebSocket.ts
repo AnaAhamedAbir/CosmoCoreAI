@@ -26,6 +26,16 @@ export interface AggregatedStats {
 const MAX_FEED_LENGTH = 50; // Increased buffer
 const MAX_CLD_POINTS = 100;
 
+export const normalizePairSymbol = (sym?: string): string => {
+    if (!sym) return '';
+    return sym.split(':')[0].replace('/', '').trim().toUpperCase();
+};
+
+export const canonicalPairLabel = (sym?: string): string => {
+    if (!sym) return 'BTC/USDT';
+    return sym.split(':')[0].trim().toUpperCase();
+};
+
 export const useLiquidationWebSocket = (activeExchange: string, activePair: string) => {
     const [isConnected, setIsConnected] = useState(false);
     const [liveFeed, setLiveFeed] = useState<LiquidationEvent[]>([]);
@@ -36,24 +46,38 @@ export const useLiquidationWebSocket = (activeExchange: string, activePair: stri
 
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectTimeoutRef = useRef<any>(null);
+    const currentPriceRef = useRef<number>(0);
+    const priceStatusTimeoutRef = useRef<any>(null);
 
     const connect = useCallback(() => {
         try {
-            // detailed logging for debugging
-            console.log(`Connecting to Liquidation Stream for ${activeExchange}:${activePair}...`);
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+                reconnectTimeoutRef.current = null;
+            }
+            if (wsRef.current) {
+                wsRef.current.onclose = null;
+                wsRef.current.onerror = null;
+                wsRef.current.close();
+                wsRef.current = null;
+            }
+
+            const cleanPair = canonicalPairLabel(activePair);
+            const cleanExchange = (activeExchange || 'binance').toLowerCase();
+
+            console.log(`Connecting to Liquidation Stream for ${cleanExchange}:${cleanPair}...`);
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const host = window.location.host;
             const WS_URL = `${protocol}//${host}/api/v1/liquidation/ws/stream`;
-            
-            // Format symbol explicitly as it appears in CCXT (e.g., BTC/USDT or BTC/USDT:USDT)
+
             const params = new URLSearchParams({
-                exchange: activeExchange.toLowerCase(),
-                symbol: activePair
+                exchange: cleanExchange,
+                symbol: cleanPair
             });
             const ws = new WebSocket(`${WS_URL}?${params.toString()}`);
 
             ws.onopen = () => {
-                console.log('Connected to Liquidation Stream');
+                console.log(`Connected to Liquidation Stream (${cleanExchange}:${cleanPair})`);
                 setIsConnected(true);
             };
 
@@ -61,22 +85,44 @@ export const useLiquidationWebSocket = (activeExchange: string, activePair: stri
                 try {
                     const data = JSON.parse(event.data);
 
-                    // --- 1. Global Feed Logic (Show EVERYTHING) ---
-                    // We want the "Kill Feed" to be exciting, so we show all liquidations.
+                    const normalizedIncoming = normalizePairSymbol(data.symbol);
+                    const normalizedTarget = normalizePairSymbol(cleanPair);
+
+                    // Ignore cross-pair or cross-exchange messages
+                    if (normalizedIncoming && normalizedTarget && normalizedIncoming !== normalizedTarget) {
+                        return;
+                    }
+                    if (data.exchange && String(data.exchange).toLowerCase() !== cleanExchange) {
+                        return;
+                    }
+
+                    const price = Number(data.price || 0);
+
+                    // Initial Oracle price sync message (not a liquidation event)
+                    if (data.event_type === 'price_sync') {
+                        if (price > 0) {
+                            currentPriceRef.current = price;
+                            setCurrentPrice(price);
+                        }
+                        return;
+                    }
 
                     const isLong = data.type === 'Long Liquidation';
-                    const amount = data.usd_value;
-                    const price = data.price;
-                    const eventSymbol = data.symbol;
+                    const amount = Number(data.usd_value || 0);
+                    const eventSymbol = canonicalPairLabel(data.symbol || cleanPair);
+
+                    if (price <= 0 || amount <= 0) {
+                        return;
+                    }
 
                     const newEvent: LiquidationEvent = {
                         id: Date.now() + Math.random(),
                         time: new Date(data.timestamp).toLocaleTimeString(),
-                        timestamp: data.timestamp, // Store raw timestamp
+                        timestamp: data.timestamp,
                         type: isLong ? 'Long' : 'Short',
                         amount: amount,
                         price: price,
-                        symbol: eventSymbol, // Show symbol in feed
+                        symbol: eventSymbol,
                         isNew: true,
                         isWhale: amount > 50000,
                     };
@@ -86,38 +132,34 @@ export const useLiquidationWebSocket = (activeExchange: string, activePair: stri
                         return updated.slice(0, MAX_FEED_LENGTH);
                     });
 
-                    // Update Global Stats
                     setAggregatedStats(prev => ({
                         longLiqs: prev.longLiqs + (isLong ? amount : 0),
                         shortLiqs: prev.shortLiqs + (!isLong ? amount : 0),
                         totalVol: prev.totalVol + amount
                     }));
 
-                    // --- 2. Active Pair Logic (Specific Updates) ---
-                    // Only update Price and CLD if the symbol matches the active pair.
-
-                    const normalizedSymbol = data.symbol.replace('/', '');
-                    const targetSymbol = activePair.replace('/', '');
-
-                    if (normalizedSymbol === targetSymbol) {
-                        // Update Query Price
-                        setCurrentPrice(prev => {
-                            if (price > prev) setPriceUpdateStatus('up');
-                            else if (price < prev) setPriceUpdateStatus('down');
-                            else setPriceUpdateStatus('none');
-                            setTimeout(() => setPriceUpdateStatus('none'), 500);
-                            return price;
-                        });
-
-                        // Update CLD (Specific to this pair)
-                        setCldData(prev => {
-                            const lastValue = prev[prev.length - 1]?.value || 0;
-                            const change = isLong ? -amount : amount;
-                            const newValue = lastValue + change;
-                            const newPoint = { time: data.timestamp, value: newValue };
-                            return [...prev, newPoint].slice(-MAX_CLD_POINTS);
-                        });
+                    // Update Oracle Price & direction flash cleanly outside state updater
+                    const prevPrice = currentPriceRef.current;
+                    currentPriceRef.current = price;
+                    setCurrentPrice(price);
+                    if (prevPrice > 0) {
+                        if (price > prevPrice) setPriceUpdateStatus('up');
+                        else if (price < prevPrice) setPriceUpdateStatus('down');
+                        else setPriceUpdateStatus('none');
+                        if (priceStatusTimeoutRef.current) {
+                            clearTimeout(priceStatusTimeoutRef.current);
+                        }
+                        priceStatusTimeoutRef.current = setTimeout(() => setPriceUpdateStatus('none'), 500);
                     }
+
+                    // Update Cumulative Liquidation Delta (CLD)
+                    setCldData(prev => {
+                        const lastValue = prev[prev.length - 1]?.value || 0;
+                        const change = isLong ? -amount : amount;
+                        const newValue = lastValue + change;
+                        const newPoint = { time: data.timestamp, value: newValue };
+                        return [...prev, newPoint].slice(-MAX_CLD_POINTS);
+                    });
 
                 } catch (e) {
                     console.error('Error parsing liquidation message:', e);
@@ -141,7 +183,21 @@ export const useLiquidationWebSocket = (activeExchange: string, activePair: stri
             console.error('Connection failed:', error);
             reconnectTimeoutRef.current = setTimeout(connect, 3000);
         }
-    }, [activePair]);
+    }, [activeExchange, activePair]);
+
+    // Reset ALL pair-specific state when exchange or pair changes so stale pair data never bleeds across symbols
+    useEffect(() => {
+        if (priceStatusTimeoutRef.current) {
+            clearTimeout(priceStatusTimeoutRef.current);
+            priceStatusTimeoutRef.current = null;
+        }
+        currentPriceRef.current = 0;
+        setLiveFeed([]);
+        setAggregatedStats({ longLiqs: 0, shortLiqs: 0, totalVol: 0 });
+        setCldData([]);
+        setCurrentPrice(0);
+        setPriceUpdateStatus('none');
+    }, [activeExchange, activePair]);
 
     useEffect(() => {
         connect();
@@ -150,17 +206,18 @@ export const useLiquidationWebSocket = (activeExchange: string, activePair: stri
                 wsRef.current.onclose = null;
                 wsRef.current.onerror = null;
                 wsRef.current.close();
+                wsRef.current = null;
             }
-            if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+                reconnectTimeoutRef.current = null;
+            }
+            if (priceStatusTimeoutRef.current) {
+                clearTimeout(priceStatusTimeoutRef.current);
+                priceStatusTimeoutRef.current = null;
+            }
         };
     }, [connect]);
-
-    // Reset ONLY pair-specific data when pair changes
-    useEffect(() => {
-        setCldData([]);
-        setCurrentPrice(0);
-        // liveFeed and aggregatedStats are kept global
-    }, [activePair]);
 
     return {
         isConnected,

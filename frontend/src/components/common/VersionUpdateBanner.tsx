@@ -70,11 +70,20 @@ const VersionUpdateBanner: React.FC = () => {
       }
     };
 
+    const handleGatewayBump = () => {
+      if (!alive) return;
+      wasUpdatingRef.current = true;
+      setIsUpdating(true);
+      setUpdateMsg('Version update in progress — reconnecting automatically...');
+    };
+    window.addEventListener('app:version-updating', handleGatewayBump);
+
     void checkUpdateStatus();
-    const timer = setInterval(() => void checkUpdateStatus(), 6000);
+    const timer = setInterval(() => void checkUpdateStatus(), 3000);
     return () => {
       alive = false;
       clearInterval(timer);
+      window.removeEventListener('app:version-updating', handleGatewayBump);
     };
   }, []);
 

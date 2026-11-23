@@ -37,6 +37,7 @@ trap cleanup EXIT
 echo "1/5 Marking 'Version update in progress' banner ON in frontend..."
 CUR_VER=$(git rev-parse --short HEAD 2>/dev/null || echo "live")
 set_update_flag "true" "Version update in progress — active bots & monitors stay safe..." "$CUR_VER"
+sleep 3
 
 echo "2/5 Pulling latest code from Git..."
 git pull
@@ -62,7 +63,8 @@ for svc in celery_worker_default celery_beat celery_worker_heavy telegram_bot; d
   sleep 4
 done
 
-echo "5/5 Clearing update banner & finalizing..."
+echo "5/5 Reloading edge Nginx (if running) & clearing update banner..."
+docker compose $COMPOSE_FILES restart nginx >/dev/null 2>&1 || true
 NEW_VER=$(git rev-parse --short HEAD 2>/dev/null || date +%s)
 set_update_flag "false" "Update complete" "$NEW_VER"
 trap - EXIT

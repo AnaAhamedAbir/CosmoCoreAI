@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getThermalProfile, isThermalGuardActive } from '@/utils/deviceProfile';
+import { isFloatingModalDragging, subscribeFloatingModalDragEnd } from '@/hooks/useFloatingModalDrag';
 
 export interface OrderBookLevel {
     price: number;
@@ -54,7 +55,9 @@ function emitLiveTradeTick(symbol: string, exchange: string, tick: TradeTickEven
     const channel = liveTickChannels.get(key);
     if (!channel || channel.listeners.size === 0) return;
 
-    if (!isThermalGuardActive()) {
+    const modalDragging = isFloatingModalDragging();
+
+    if (!isThermalGuardActive() && !modalDragging) {
         dispatchTickToListeners(channel, tick);
         return;
     }
@@ -63,7 +66,7 @@ function emitLiveTradeTick(symbol: string, exchange: string, tick: TradeTickEven
         return;
     }
 
-    const throttleMs = getThermalProfile().timings.tradeTickChartMs;
+    const throttleMs = modalDragging ? 250 : getThermalProfile().timings.tradeTickChartMs;
     if (throttleMs <= 0) {
         dispatchTickToListeners(channel, tick);
         return;
@@ -155,6 +158,11 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
                 throttleTimer = null;
                 return;
             }
+            if (isFloatingModalDragging()) {
+                // Defer React tree re-render while user is dragging a floating modal at 100Hz+
+                throttleTimer = null;
+                return;
+            }
             if (isThermalGuardActive() && typeof document !== 'undefined' && document.hidden) {
                 // Keep pendingData intact and flush when tab becomes visible again
                 throttleTimer = null;
@@ -171,11 +179,17 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
         };
 
         const scheduleFlush = () => {
-            if (!throttleTimer) {
+            if (!throttleTimer && !isFloatingModalDragging()) {
                 const delay = getThermalProfile().timings.l2FlushMs;
                 throttleTimer = setTimeout(flushUpdate, delay);
             }
         };
+
+        const unsubscribeDragEnd = subscribeFloatingModalDragEnd(() => {
+            if (pendingData && isSubscribed) {
+                scheduleFlush();
+            }
+        });
 
         const handleVisibilityChange = () => {
             if (typeof document !== 'undefined' && !document.hidden && pendingData && isSubscribed) {
@@ -224,16 +238,7 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
                             currentPrice: tick.price,
                             tradeEvent: tick
                         };
-                        if (isThermalGuardActive()) {
-                            scheduleFlush();
-                        } else {
-                            // Light-speed instant flush for trades on desktop
-                            if (throttleTimer) {
-                                clearTimeout(throttleTimer);
-                                throttleTimer = null;
-                            }
-                            flushUpdate();
-                        }
+                        scheduleFlush();
                     }
                 };
 
@@ -277,6 +282,7 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
 
         return () => {
             isSubscribed = false;
+            unsubscribeDragEnd();
             if (typeof document !== 'undefined') {
                 document.removeEventListener('visibilitychange', handleVisibilityChange);
             }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { IndicatorConfig, SignalType, TECHNICAL_INDICATORS } from './indicatorConfig';
+import { isFloatingModalDragging } from '@/hooks/useFloatingModalDrag';
 
 export interface IndicatorData extends IndicatorConfig {
   value: number | string;
@@ -50,6 +51,7 @@ export const useTechnicalIndicators = (symbol: string, isModalOpen: boolean) => 
       };
 
       ws.onmessage = (event) => {
+        if (isFloatingModalDragging()) return;
         try {
           const payload = JSON.parse(event.data);
           

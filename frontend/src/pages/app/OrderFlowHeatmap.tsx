@@ -73,6 +73,7 @@ import { MLPredictionCloudRenderer } from '../../components/features/market/Adva
 import { botService } from '../../services/botService';
 import { manualTradeService } from '../../services/manualTradeService';
 import { useWallHunterStatus } from '@/hooks/useWallHunterStatus';
+import { beginFloatingModalDrag, endFloatingModalDrag } from '@/hooks/useFloatingModalDrag';
 import { toast } from 'react-hot-toast';
 import { useMarketStore } from '@/store/marketStore';
 import { useBotStore, CLEAN_INDICATOR_SETTINGS } from '@/store/botStore';
@@ -5057,32 +5058,46 @@ const OrderFlowHeatmap: React.FC = () => {
     const [manualTradeTrigger, setManualTradeTrigger] = useState<number>(0);
     const [isTopTokensModalOpen, setIsTopTokensModalOpen] = useState(false);
 
-    // ── Draggable HUD state ────────────────────────────────────────────────────
+    // ── Draggable HUD state (Zero-React-Re-render GPU translate3d during drag) ──
     const [hudPos, setHudPos] = useState({ x: 24, y: 24 }); // initial: top-right offset
-    const hudDragRef = useRef({ dragging: false, startX: 0, startY: 0, originX: 0, originY: 0 });
+    const hudContainerRef = useRef<HTMLDivElement>(null);
+    const hudDragRef = useRef({ dragging: false, startX: 0, startY: 0, originX: 24, originY: 24, currentX: 24, currentY: 24 });
 
     const startHudDrag = useCallback((e: React.MouseEvent) => {
+        if (e.button !== 0) return;
         e.preventDefault();
+        e.stopPropagation();
         const drag = hudDragRef.current;
         drag.dragging = true;
         drag.startX = e.clientX;
         drag.startY = e.clientY;
         drag.originX = hudPos.x;
         drag.originY = hudPos.y;
+        drag.currentX = hudPos.x;
+        drag.currentY = hudPos.y;
+
+        beginFloatingModalDrag(hudContainerRef.current);
 
         const onMove = (mv: MouseEvent) => {
             if (!hudDragRef.current.dragging) return;
-            setHudPos({
-                x: Math.max(0, drag.originX + (mv.clientX - drag.startX)),
-                y: Math.max(0, drag.originY + (mv.clientY - drag.startY)),
-            });
+            const nextX = Math.round(Math.max(0, drag.originX + (mv.clientX - drag.startX)));
+            const nextY = Math.round(Math.max(0, drag.originY + (mv.clientY - drag.startY)));
+            if (nextX === drag.currentX && nextY === drag.currentY) return;
+            drag.currentX = nextX;
+            drag.currentY = nextY;
+            if (hudContainerRef.current) {
+                hudContainerRef.current.style.transform = `translate3d(${nextX}px, ${nextY}px, 0)`;
+            }
         };
         const onUp = () => {
+            if (!hudDragRef.current.dragging) return;
             hudDragRef.current.dragging = false;
+            endFloatingModalDrag(hudContainerRef.current);
+            setHudPos({ x: drag.currentX, y: drag.currentY });
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
         };
-        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mousemove', onMove, { passive: true });
         window.addEventListener('mouseup', onUp);
     }, [hudPos.x, hudPos.y]);
     const [showSubNav, setShowSubNav] = useState(() => {
@@ -5787,10 +5802,14 @@ const OrderFlowHeatmap: React.FC = () => {
                 {/* ACTIVE BOT STATUS HUD — DRAGGABLE */}
                 {selectedHudBotId && botStatus && (
                     <div
+                        ref={hudContainerRef}
+                        className="cosmo-theme-modal"
                         style={{
                             position: 'absolute',
-                            left: hudPos.x,
-                            top: hudPos.y,
+                            left: 0,
+                            top: 0,
+                            transform: `translate3d(${hudPos.x}px, ${hudPos.y}px, 0)`,
+                            willChange: 'transform',
                             zIndex: 50,
                             userSelect: 'none',
                             width: '256px',

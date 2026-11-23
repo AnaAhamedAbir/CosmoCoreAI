@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { isFloatingModalDragging } from '@/hooks/useFloatingModalDrag';
 
 export interface TokenData {
     symbol: string;
@@ -81,6 +82,7 @@ export const useBinanceMarketData = (isOpen: boolean, baseMarket: string = 'USDT
             const ws = new WebSocket('wss://stream.binance.com:9443/ws/!ticker@arr');
             
             ws.onmessage = (event) => {
+                if (isFloatingModalDragging()) return;
                 const tickers = JSON.parse(event.data);
                 const now = Date.now();
                 

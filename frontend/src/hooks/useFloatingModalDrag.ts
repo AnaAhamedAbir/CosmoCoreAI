@@ -23,6 +23,59 @@ interface DragState {
   maxY: number;
 }
 
+// Global floating modal drag lock to pause background high-frequency React re-renders
+// while the user is actively dragging any floating tool modal at 100Hz/120Hz+.
+let activeModalDragCount = 0;
+const dragEndListeners = new Set<() => void>();
+
+export function isFloatingModalDragging(): boolean {
+  return activeModalDragCount > 0;
+}
+
+export function subscribeFloatingModalDragEnd(cb: () => void): () => void {
+  dragEndListeners.add(cb);
+  return () => {
+    dragEndListeners.delete(cb);
+  };
+}
+
+export function beginFloatingModalDrag(modalEl?: HTMLElement | null): void {
+  activeModalDragCount += 1;
+  if (typeof document !== 'undefined') {
+    document.documentElement.classList.add('cosmo-modal-dragging');
+  }
+  if (modalEl) {
+    modalEl.classList.add('cosmo-modal-active-drag');
+    modalEl.style.animation = 'none';
+    modalEl.style.transition = 'none';
+    modalEl.style.willChange = 'transform';
+  }
+}
+
+export function endFloatingModalDrag(modalEl?: HTMLElement | null): void {
+  activeModalDragCount = Math.max(0, activeModalDragCount - 1);
+  if (modalEl) {
+    modalEl.classList.remove('cosmo-modal-active-drag');
+    modalEl.style.transition = '';
+    modalEl.style.animation = 'none';
+  }
+  if (activeModalDragCount === 0) {
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.remove('cosmo-modal-dragging');
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.body.style.pointerEvents = '';
+    }
+    dragEndListeners.forEach((cb) => {
+      try {
+        cb();
+      } catch {
+        // ignore listener errors
+      }
+    });
+  }
+}
+
 function getViewportSize() {
   if (typeof window === 'undefined') {
     return { width: 1920, height: 1080 };
@@ -97,11 +150,11 @@ export function useFloatingModalDrag({
       const modalH = modalContainerRef.current?.offsetHeight || Math.min(defaultHeight, winH - 24);
       const topMargin = isCompact ? 6 : 10;
       const bottomMargin = isCompact ? 8 : 14;
-      const effectiveH = Math.min(modalH, Math.max(220, winH - 180));
+      const effectiveH = Math.min(modalH, Math.max(220, winH - topMargin - bottomMargin));
 
       return {
-        x: Math.max(6, Math.min(Math.max(6, winW - modalW - 6), pos.x)),
-        y: Math.max(topMargin, Math.min(Math.max(topMargin, winH - effectiveH - bottomMargin), pos.y)),
+        x: Math.max(6, Math.min(Math.max(6, winW - modalW - 6), Math.round(pos.x))),
+        y: Math.max(topMargin, Math.min(Math.max(topMargin, winH - effectiveH - bottomMargin), Math.round(pos.y))),
       };
     },
     [defaultWidth, defaultHeight]
@@ -123,11 +176,17 @@ export function useFloatingModalDrag({
           x: Math.round((winW - modalW) / 2),
           y: Math.round((winH - modalH) / 2),
         });
+        dragRef.current.currentX = centered.x;
+        dragRef.current.currentY = centered.y;
+        modalEl.style.transform = `translate3d(${centered.x}px, ${centered.y}px, 0)`;
         setModalPos((prev) => (prev.x !== centered.x || prev.y !== centered.y ? centered : prev));
         return;
       }
       setModalPos((prev) => {
         const next = clampPos(prev);
+        dragRef.current.currentX = next.x;
+        dragRef.current.currentY = next.y;
+        modalEl.style.transform = `translate3d(${next.x}px, ${next.y}px, 0)`;
         return next.x !== prev.x || next.y !== prev.y ? next : prev;
       });
     };
@@ -135,6 +194,7 @@ export function useFloatingModalDrag({
     const handleAnimationEnd = (e: AnimationEvent) => {
       if (e.target === modalEl) {
         modalEl.style.animation = 'none';
+        modalEl.style.willChange = 'transform';
       }
     };
 
@@ -202,8 +262,7 @@ export function useFloatingModalDrag({
       const modalH = modalEl?.offsetHeight || Math.min(defaultHeight, winH - 24);
       const topMargin = isCompact ? 6 : 10;
       const bottomMargin = isCompact ? 8 : 14;
-      const cap = isCompact ? (compactMaxCapHeight ?? Math.min(maxCapHeight, 440)) : maxCapHeight;
-      const effectiveH = Math.min(modalH, Math.max(220, winH - 180));
+      const effectiveH = Math.min(modalH, Math.max(220, winH - topMargin - bottomMargin));
 
       const drag = dragRef.current;
       drag.isDragging = true;
@@ -218,33 +277,18 @@ export function useFloatingModalDrag({
       drag.minY = topMargin;
       drag.maxY = Math.max(topMargin, winH - effectiveH - bottomMargin);
 
-      document.body.style.userSelect = 'none';
-      document.body.style.cursor = 'grabbing';
-      document.body.style.pointerEvents = 'none';
-
-      if (modalEl) {
-        modalEl.style.pointerEvents = 'auto';
-        modalEl.style.backdropFilter = 'none';
-        (modalEl.style as unknown as { webkitBackdropFilter: string }).webkitBackdropFilter = 'none';
-        modalEl.style.backgroundColor = document.documentElement.classList.contains('light')
-          ? 'rgba(255, 255, 255, 0.98)'
-          : 'rgba(7, 11, 20, 0.98)';
-        modalEl.style.transition = 'none';
-        modalEl.style.animation = 'none';
-      }
+      beginFloatingModalDrag(modalEl);
 
       const applyMove = (clientX: number, clientY: number) => {
         if (!drag.isDragging) return;
-        const clampedX = Math.max(drag.minX, Math.min(drag.maxX, drag.originX + (clientX - drag.startX)));
-        const clampedY = Math.max(drag.minY, Math.min(drag.maxY, drag.originY + (clientY - drag.startY)));
+        const clampedX = Math.round(Math.max(drag.minX, Math.min(drag.maxX, drag.originX + (clientX - drag.startX))));
+        const clampedY = Math.round(Math.max(drag.minY, Math.min(drag.maxY, drag.originY + (clientY - drag.startY))));
+        if (clampedX === drag.currentX && clampedY === drag.currentY) return;
         drag.currentX = clampedX;
         drag.currentY = clampedY;
 
         if (modalContainerRef.current) {
-          const { height: curWinH } = getViewportSize();
-          const dynamicMaxH = Math.max(220, Math.min(cap, Math.round(curWinH - clampedY - bottomMargin)));
           modalContainerRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
-          modalContainerRef.current.style.maxHeight = `${dynamicMaxH}px`;
         }
       };
 
@@ -256,21 +300,12 @@ export function useFloatingModalDrag({
         if (touch) applyMove(touch.clientX, touch.clientY);
       };
 
+      let cleanedUp = false;
       const cleanupDrag = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
         drag.isDragging = false;
-        if (typeof document !== 'undefined') {
-          document.body.style.userSelect = '';
-          document.body.style.cursor = '';
-          document.body.style.pointerEvents = '';
-        }
-        if (modalEl) {
-          modalEl.style.pointerEvents = '';
-          modalEl.style.backdropFilter = '';
-          (modalEl.style as unknown as { webkitBackdropFilter: string }).webkitBackdropFilter = '';
-          modalEl.style.backgroundColor = '';
-          modalEl.style.transition = '';
-          modalEl.style.animation = 'none';
-        }
+        endFloatingModalDrag(modalEl);
         window.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('mouseup', onUp);
         window.removeEventListener('touchmove', onTouchMove);
@@ -287,8 +322,8 @@ export function useFloatingModalDrag({
           cleanupDrag();
           return;
         }
-        cleanupDrag();
         const finalPos = { x: drag.currentX, y: drag.currentY };
+        cleanupDrag();
         setModalPos(finalPos);
         hasUserDraggedRef.current = true;
         try {
@@ -306,17 +341,15 @@ export function useFloatingModalDrag({
       window.addEventListener('touchcancel', onUp);
       window.addEventListener('blur', onUp);
     },
-    [modalPos, defaultWidth, defaultHeight, maxCapHeight, compactMaxCapHeight, storageKey]
+    [modalPos, defaultWidth, defaultHeight, storageKey]
   );
 
   const { width: vw, height: vh } = getViewportSize();
   const isSmall = vh < 920 || vw < 1200;
-  const activeY = dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y;
-  const activeX = dragRef.current.isDragging ? dragRef.current.currentX : modalPos.x;
-  const maxHeightPx = Math.max(
-    220,
-    Math.min(isSmall ? (compactMaxCapHeight ?? Math.min(maxCapHeight, 440)) : maxCapHeight, Math.round(vh - activeY - (isSmall ? 8 : 14)))
-  );
+  const topMargin = isSmall ? 6 : 10;
+  const bottomMargin = isSmall ? 8 : 14;
+  const cap = isSmall ? (compactMaxCapHeight ?? Math.min(maxCapHeight, 440)) : maxCapHeight;
+  const maxHeightPx = Math.max(220, Math.min(cap, Math.round(vh - topMargin - bottomMargin)));
 
   return {
     modalContainerRef,
@@ -324,10 +357,13 @@ export function useFloatingModalDrag({
     containerStyle: {
       left: 0,
       top: 0,
-      transform: `translate3d(${activeX}px, ${activeY}px, 0)`,
+      transform: `translate3d(${modalPos.x}px, ${modalPos.y}px, 0)`,
       maxHeight: `${maxHeightPx}px`,
       willChange: 'transform',
+      contain: 'layout paint style',
+      backfaceVisibility: 'hidden',
     } as React.CSSProperties,
   };
 }
+
 

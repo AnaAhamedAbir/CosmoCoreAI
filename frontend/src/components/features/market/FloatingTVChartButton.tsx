@@ -21,6 +21,7 @@ import { HeatmapSymbolSelector } from './HeatmapSymbolSelector';
 import { TimeframeSelector } from './TimeframeSelector';
 import { useTheme } from '../../../context/ThemeContext';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { beginFloatingModalDrag, endFloatingModalDrag } from '@/hooks/useFloatingModalDrag';
 import { FloatingModalCyberFX } from '@/components/common/FloatingModalCyberFX';
 
 const MotionButton = motion.button as any;
@@ -620,23 +621,7 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
       drag.minY = 6;
       drag.maxY = Math.max(6, winH - modalH - 6);
 
-      document.body.style.userSelect = 'none';
-      document.body.style.cursor = 'grabbing';
-      // Shield background OrderFlowHeatmap and canvas from mouse/pointer events during drag
-      document.body.style.pointerEvents = 'none';
-
-      if (modalEl) {
-        modalEl.style.pointerEvents = 'auto';
-        modalEl.style.transition = 'none';
-        modalEl.style.animation = 'none';
-        modalEl.style.boxShadow = 'none';
-        modalEl.style.backdropFilter = 'none';
-        (modalEl.style as any).webkitBackdropFilter = 'none';
-        modalEl.style.backgroundColor =
-          typeof document !== 'undefined' && document.documentElement.classList.contains('light')
-            ? 'rgba(255, 255, 255, 0.98)'
-            : 'rgba(7, 12, 23, 0.98)';
-      }
+      beginFloatingModalDrag(modalEl);
 
       // Temporarily disable pointer events on inner chart canvas during drag
       if (chartContentRef.current) {
@@ -650,6 +635,7 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
 
         const clampedX = Math.round(Math.max(drag.minX, Math.min(drag.maxX, rawX)));
         const clampedY = Math.round(Math.max(drag.minY, Math.min(drag.maxY, rawY)));
+        if (clampedX === drag.currentX && clampedY === drag.currentY) return;
 
         drag.currentX = clampedX;
         drag.currentY = clampedY;
@@ -671,25 +657,14 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
         applyMove(touch.clientX, touch.clientY);
       };
 
+      let cleanedUp = false;
       const cleanupDrag = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
         drag.isDragging = false;
         isDraggingRef.current = false;
 
-        if (typeof document !== 'undefined') {
-          document.body.style.userSelect = '';
-          document.body.style.cursor = '';
-          document.body.style.pointerEvents = '';
-        }
-
-        if (modalContainerRef.current) {
-          modalContainerRef.current.style.pointerEvents = '';
-          modalContainerRef.current.style.transition = '';
-          modalContainerRef.current.style.animation = 'none';
-          modalContainerRef.current.style.backdropFilter = '';
-          (modalContainerRef.current.style as any).webkitBackdropFilter = '';
-          modalContainerRef.current.style.backgroundColor = '';
-          modalContainerRef.current.style.boxShadow = '';
-        }
+        endFloatingModalDrag(modalContainerRef.current);
 
         if (chartContentRef.current) {
           chartContentRef.current.style.pointerEvents = '';
@@ -712,9 +687,9 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
           cleanupDrag();
           return;
         }
+        const finalPos = { x: drag.currentX, y: drag.currentY };
         cleanupDrag();
 
-        const finalPos = { x: drag.currentX, y: drag.currentY };
         modalPosRef.current = finalPos;
         setModalPos(finalPos);
         try {
@@ -797,15 +772,17 @@ const FloatingTVChartButtonBase: React.FC<FloatingTVChartButtonProps> = ({
               onAnimationEnd={(e) => {
                 if (e.target === e.currentTarget) {
                   (e.currentTarget as HTMLElement).style.animation = 'none';
+                  (e.currentTarget as HTMLElement).style.willChange = 'transform';
                 }
               }}
               style={{
                 position: 'fixed',
                 left: 0,
                 top: 0,
-                transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : modalPos.x}px, ${dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y}px, 0)`,
+                transform: `translate3d(${modalPos.x}px, ${modalPos.y}px, 0)`,
                 willChange: 'transform',
-                contain: 'layout paint',
+                contain: 'layout paint style',
+                backfaceVisibility: 'hidden',
                 height: modalHeight,
                 zIndex: 100000,
               }}

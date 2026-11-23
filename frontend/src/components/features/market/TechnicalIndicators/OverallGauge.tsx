@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { OverallSentiment } from './useTechnicalIndicators';
+import { isFloatingModalDragging } from '@/hooks/useFloatingModalDrag';
 
 interface Props {
   sentiment: OverallSentiment;
@@ -10,12 +11,25 @@ export const OverallGauge: React.FC<Props> = ({ sentiment }) => {
 
   // Animate the score number ticking up
   useEffect(() => {
+    if (isFloatingModalDragging()) {
+      setAnimatedScore(sentiment.score);
+      return;
+    }
     let startTime: number;
-    const duration = 1000; // 1 second
+    let rafId: number;
+    const duration = 600;
     const startValue = animatedScore;
     const endValue = sentiment.score;
+    if (Math.abs(endValue - startValue) < 0.5) {
+      setAnimatedScore(endValue);
+      return;
+    }
 
     const animate = (time: number) => {
+      if (isFloatingModalDragging()) {
+        setAnimatedScore(endValue);
+        return;
+      }
       if (!startTime) startTime = time;
       const progress = Math.min((time - startTime) / duration, 1);
       // easeOutQuart
@@ -23,11 +37,12 @@ export const OverallGauge: React.FC<Props> = ({ sentiment }) => {
       setAnimatedScore(startValue + (endValue - startValue) * easeProgress);
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        rafId = requestAnimationFrame(animate);
       }
     };
     
-    requestAnimationFrame(animate);
+    rafId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafId);
   }, [sentiment.score]);
 
   // Map score (0-100) to degrees (0-180) for the gauge needle

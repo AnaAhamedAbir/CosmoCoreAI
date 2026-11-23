@@ -13,6 +13,7 @@ import { CustomMLModel } from '../../../types';
 import { AdvancedRiskManager } from './AdvancedRiskManager';
 import { GodModeBotTriggerSettings } from './GodModeBotTriggerSettings';
 import { useDeviceProfile } from '../../../hooks/useDeviceProfile';
+import { beginFloatingModalDrag, endFloatingModalDrag } from '../../../hooks/useFloatingModalDrag';
 import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
 
 const getDefaultProxySymbol = (nativeSym: string) =>
@@ -370,9 +371,11 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
     }, [symbol, exchange]);
 
     // Smart default calculation on first load
+    const topBidPrice = bids.length > 0 ? Number(bids[0].price) : 0;
+    const topAskPrice = asks.length > 0 ? Number(asks[0].price) : 0;
     useEffect(() => {
-        if (isOpen && symbol !== lastInitializedSymbol && (bids.length > 0 || asks.length > 0) && !existingBot) {
-            const initialPrice = bids.length > 0 ? Number(bids[0].price) : Number(asks[0].price);
+        if (isOpen && symbol !== lastInitializedSymbol && (topBidPrice > 0 || topAskPrice > 0) && !existingBot) {
+            const initialPrice = topBidPrice > 0 ? topBidPrice : topAskPrice;
             let dynamicStep = 0.01;
             let displayDigits = 2;
             if (initialPrice < 0.000000001) { dynamicStep = 0.00000000001; displayDigits = 11; }
@@ -394,7 +397,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             setForm(prev => ({ ...prev, spread: defaultSpread }));
             setLastInitializedSymbol(symbol);
         }
-    }, [isOpen, symbol, bids, asks, existingBot, lastInitializedSymbol]);
+    }, [isOpen, symbol, topBidPrice, topAskPrice, existingBot, lastInitializedSymbol]);
 
     useEffect(() => {
         if (form.exchange !== 'binance' && form.exchange !== 'mexc' && form.exchange !== 'kucoin') {
@@ -682,11 +685,12 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             const winW = window.visualViewport?.width || window.innerWidth;
             const winH = window.visualViewport?.height || window.innerHeight;
             const isTabletOrSmall = winH < 920 || winW < 1200;
+            const topMargin = isTabletOrSmall ? 6 : 10;
             const bottomMargin = isTabletOrSmall ? 8 : 14;
             const compactMaxCap = isTabletOrSmall ? 720 : 778;
 
             const clamped = clampPos(modalPos.x, modalPos.y, modalEl);
-            const maxH = Math.max(260, Math.min(compactMaxCap, Math.round(winH - clamped.y - bottomMargin)));
+            const maxH = Math.max(260, Math.min(compactMaxCap, Math.round(winH - topMargin - bottomMargin)));
 
             modalEl.style.transform = `translate3d(${clamped.x}px, ${clamped.y}px, 0)`;
             modalEl.style.maxHeight = `${maxH}px`;
@@ -752,10 +756,9 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         const isTabletOrSmall = winH < 920 || winW < 1200;
         const topMargin = isTabletOrSmall ? 6 : 10;
         const bottomMargin = isTabletOrSmall ? 8 : 14;
-        const compactMaxCap = isTabletOrSmall ? 720 : 778;
 
         const minUsableH = 260;
-        const effectiveH = Math.min(modalH, Math.max(minUsableH, winH - minUsableH));
+        const effectiveH = Math.min(modalH, Math.max(minUsableH, winH - topMargin - bottomMargin));
 
         const drag = dragRef.current;
         drag.isDragging = true;
@@ -770,21 +773,7 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
         drag.minY = topMargin;
         drag.maxY = Math.max(drag.minY, winH - effectiveH - bottomMargin);
 
-        document.body.style.userSelect = 'none';
-        document.body.style.cursor = 'grabbing';
-        document.body.style.pointerEvents = 'none';
-
-        if (modalEl) {
-            modalEl.style.pointerEvents = 'auto';
-            modalEl.style.backdropFilter = 'none';
-            (modalEl.style as any).webkitBackdropFilter = 'none';
-            modalEl.style.backgroundColor =
-                typeof document !== 'undefined' && document.documentElement.classList.contains('light')
-                    ? 'rgba(255, 255, 255, 0.98)'
-                    : 'rgba(7, 11, 20, 0.98)';
-            modalEl.style.transition = 'none';
-            modalEl.style.animation = 'none';
-        }
+        beginFloatingModalDrag(modalEl);
 
         const applyMove = (clientX: number, clientY: number) => {
             if (!drag.isDragging) return;
@@ -793,15 +782,13 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
 
             const clampedX = Math.round(Math.max(drag.minX, Math.min(drag.maxX, rawX)));
             const clampedY = Math.round(Math.max(drag.minY, Math.min(drag.maxY, rawY)));
+            if (clampedX === drag.currentX && clampedY === drag.currentY) return;
 
             drag.currentX = clampedX;
             drag.currentY = clampedY;
 
             if (modalContainerRef.current) {
-                const currentWinH = window.visualViewport?.height || window.innerHeight;
-                const dynamicMaxH = Math.max(260, Math.min(compactMaxCap, Math.round(currentWinH - clampedY - bottomMargin)));
                 modalContainerRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
-                modalContainerRef.current.style.maxHeight = `${dynamicMaxH}px`;
             }
         };
 
@@ -817,21 +804,12 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             applyMove(touch.clientX, touch.clientY);
         };
 
+        let cleanedUp = false;
         const cleanupDrag = () => {
+            if (cleanedUp) return;
+            cleanedUp = true;
             drag.isDragging = false;
-            if (typeof document !== 'undefined') {
-                document.body.style.userSelect = '';
-                document.body.style.cursor = '';
-                document.body.style.pointerEvents = '';
-            }
-            if (modalEl) {
-                modalEl.style.pointerEvents = '';
-                modalEl.style.backdropFilter = '';
-                (modalEl.style as any).webkitBackdropFilter = '';
-                modalEl.style.backgroundColor = '';
-                modalEl.style.transition = '';
-                modalEl.style.animation = 'none';
-            }
+            endFloatingModalDrag(modalEl);
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onUp);
             window.removeEventListener('touchmove', onTouchMove);
@@ -848,10 +826,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                 cleanupDrag();
                 return;
             }
-            cleanupDrag();
-
             const finalX = drag.currentX;
             const finalY = drag.currentY;
+            cleanupDrag();
+
             setModalPos({ x: finalX, y: finalY });
             hasUserDraggedModalRef.current = true;
             try {
@@ -1461,23 +1439,25 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
             onAnimationEnd={(e) => {
                 if (e.target === e.currentTarget) {
                     (e.currentTarget as HTMLElement).style.animation = 'none';
+                    (e.currentTarget as HTMLElement).style.willChange = 'transform';
                 }
             }}
             style={{
                 left: 0,
                 top: 0,
-                transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : modalPos.x}px, ${dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y}px, 0)`,
+                transform: `translate3d(${modalPos.x}px, ${modalPos.y}px, 0)`,
                 maxHeight: typeof window !== 'undefined'
                     ? (() => {
                         const vh = window.visualViewport?.height || window.innerHeight;
                         const vw = window.visualViewport?.width || window.innerWidth;
                         const isSmall = vh < 920 || vw < 1200;
                         const cap = isSmall ? 720 : 778;
-                        const y = dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y;
-                        return `${Math.max(300, Math.min(cap, Math.round(vh - y - (isSmall ? 8 : 14))))}px`;
+                        return `${Math.max(300, Math.min(cap, Math.round(vh - (isSmall ? 14 : 24))))}px`;
                     })()
                     : '778px',
-                willChange: 'transform'
+                willChange: 'transform',
+                contain: 'layout paint style',
+                backfaceVisibility: 'hidden',
             }}
             className={`cosmo-theme-modal fixed w-[620px] max-w-[calc(100vw-12px)] rounded-xl border z-[99999] overflow-hidden transition-colors duration-200 select-none flex flex-col ${
                 isThermalGuardActive ? 'animate-cosmo-modal-fast' : 'animate-cosmo-modal-amber'

@@ -2104,6 +2104,11 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
    Shields mobile GPUs from overheating by eliminating heavy backdrop blur filters
    and throttles expensive CSS recalculations.
    ========================================================================== */
+.cosmo-theme-modal {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
 .mobile-thermal-guard .cosmo-theme-modal {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -2112,6 +2117,47 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
 .mobile-thermal-guard * {
   /* Prevent browser text subpixel thrashing during rapid DOM updates */
   text-rendering: optimizeSpeed;
+}
+
+/* ==========================================================================
+   100Hz/120Hz+ Buttery-Smooth Floating Modal Drag Compositor Layer
+   Eliminates main-thread hit-testing, backdrop-filter GPU readbacks,
+   nested blur/SVG filters, and multi-pass drop shadows during active drag.
+   ========================================================================== */
+html.cosmo-modal-dragging,
+html.cosmo-modal-dragging body {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  cursor: grabbing !important;
+}
+
+html.cosmo-modal-dragging body {
+  pointer-events: none !important;
+}
+
+.cosmo-theme-modal.cosmo-modal-active-drag {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background-image: none !important;
+  background-color: #070b14 !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.78) !important;
+  transition: none !important;
+  animation: none !important;
+  will-change: transform !important;
+  contain: layout paint style !important;
+  pointer-events: none !important;
+}
+
+html.light .cosmo-theme-modal.cosmo-modal-active-drag {
+  background-color: #ffffff !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2) !important;
+}
+
+.cosmo-theme-modal.cosmo-modal-active-drag * {
+  pointer-events: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: none !important;
 }
 
 /* ==========================================================================

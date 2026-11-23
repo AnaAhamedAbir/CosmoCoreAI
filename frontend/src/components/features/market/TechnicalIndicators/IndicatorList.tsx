@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { IndicatorData } from './useTechnicalIndicators';
 import { IndicatorCategory } from './indicatorConfig';
 import { IndicatorSettingsModal } from './IndicatorSettingsModal';
@@ -75,14 +75,14 @@ export const IndicatorList: React.FC<Props> = ({ indicators, winRates = {}, onSa
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedInd, setSelectedInd] = useState({ id: '', name: '' });
 
-  const handleOpenSettings = (id: string, name: string) => {
+  const handleOpenSettings = useCallback((id: string, name: string) => {
     setSelectedInd({ id, name });
     setSettingsOpen(true);
-  };
+  }, []);
 
-  const handleSaveSettings = (config: any) => {
+  const handleSaveSettings = useCallback((config: any) => {
     onSaveConfig(selectedInd.id, config);
-  };
+  }, [onSaveConfig, selectedInd.id]);
 
   const grouped = useMemo(() => {
     const groups: Record<string, IndicatorData[]> = {};

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 export type FloatingModalColor =
   | 'cyan'
@@ -19,7 +19,15 @@ export const FloatingModalCyberFX: React.FC<FloatingModalCyberFXProps> = ({
   color = 'cyan',
   isThermalGuard = false,
 }) => {
-  if (isThermalGuard) return null;
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (isThermalGuard) return;
+    const timer = window.setTimeout(() => setDone(true), 700);
+    return () => window.clearTimeout(timer);
+  }, [isThermalGuard]);
+
+  if (isThermalGuard || done) return null;
 
   const colorMap: Record<FloatingModalColor, { corner: string; beam: string }> = {
     cyan: {

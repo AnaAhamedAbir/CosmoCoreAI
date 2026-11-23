@@ -9,6 +9,7 @@ import { mlModelsService } from '../../../services/mlModelsService';
 import { trainingStudioToolsService } from '../../../services/trainingStudioToolsService';
 import { CustomMLModel } from '../../../types';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { beginFloatingModalDrag, endFloatingModalDrag } from '@/hooks/useFloatingModalDrag';
 import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
 import { findBestWallsForTrade, OrderbookWall } from '../../../utils/liquidityWallMagnet';
 import {
@@ -1237,19 +1238,19 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       const refOrderPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
       const forceRiskCalc = isRiskSizedCustom
         ? calculateRiskBasedPositionSize({
-            riskValue: parseFloat(riskAmountInput) || 0,
-            riskMode: sizingMode === 'risk_pct' ? 'risk_pct' : 'risk_usd',
-            entryPrice: refOrderPrice,
-            side,
-            slConfig,
-            balance: balanceData,
-            isFutures,
-            leverage,
-            reduceOnly,
-            positionData,
-            isInverseFutures,
-            contractSize,
-          })
+          riskValue: parseFloat(riskAmountInput) || 0,
+          riskMode: sizingMode === 'risk_pct' ? 'risk_pct' : 'risk_usd',
+          entryPrice: refOrderPrice,
+          side,
+          slConfig,
+          balance: balanceData,
+          isFutures,
+          leverage,
+          reduceOnly,
+          positionData,
+          isInverseFutures,
+          contractSize,
+        })
         : null;
       if (forceRiskCalc && forceRiskCalc.baseAmount <= 0) {
         toast.error(forceRiskCalc.warning || 'Please set a valid Stop-Loss and Risk amount.');
@@ -1674,33 +1675,16 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
     drag.minY = topMargin;
     drag.maxY = Math.max(drag.minY, winH - modalH - bottomMargin);
 
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'grabbing';
-    // Shield underlying LightweightCharts / OrderFlowHeatmap canvas from receiving mousemove / crosshair events during drag
-    document.body.style.pointerEvents = 'none';
-
-    // Temporarily suspend expensive 24px Gaussian backdrop-filter blur over live 60fps WebGL/Canvas while dragging
-    if (modalEl) {
-      modalEl.style.pointerEvents = 'auto';
-      modalEl.style.backdropFilter = 'none';
-      (modalEl.style as any).webkitBackdropFilter = 'none';
-      modalEl.style.backgroundColor =
-        typeof document !== 'undefined' && document.documentElement.classList.contains('light')
-          ? 'rgba(255, 255, 255, 0.98)'
-          : isMinimized
-            ? 'rgba(9, 13, 22, 0.98)'
-            : 'rgba(6, 9, 15, 0.96)';
-      modalEl.style.transition = 'none';
-      modalEl.style.animation = 'none';
-    }
+    beginFloatingModalDrag(modalEl);
 
     const applyMove = (clientX: number, clientY: number) => {
       if (!drag.isDragging) return;
       const rawX = drag.originX + (clientX - drag.startX);
       const rawY = drag.originY + (clientY - drag.startY);
 
-      const clampedX = Math.max(drag.minX, Math.min(drag.maxX, rawX));
-      const clampedY = Math.max(drag.minY, Math.min(drag.maxY, rawY));
+      const clampedX = Math.round(Math.max(drag.minX, Math.min(drag.maxX, rawX)));
+      const clampedY = Math.round(Math.max(drag.minY, Math.min(drag.maxY, rawY)));
+      if (clampedX === drag.currentX && clampedY === drag.currentY) return;
 
       drag.currentX = clampedX;
       drag.currentY = clampedY;
@@ -1722,23 +1706,28 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
       applyMove(touch.clientX, touch.clientY);
     };
 
-    const onUp = () => {
-      if (!drag.isDragging) return;
+    let cleanedUp = false;
+    const cleanupDrag = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
       drag.isDragging = false;
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-      document.body.style.pointerEvents = '';
+      endFloatingModalDrag(modalContainerRef.current);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onUp);
+      window.removeEventListener('touchcancel', onUp);
+      window.removeEventListener('blur', onUp);
+    };
 
-      if (modalContainerRef.current) {
-        modalContainerRef.current.style.pointerEvents = '';
-        modalContainerRef.current.style.backdropFilter = '';
-        (modalContainerRef.current.style as any).webkitBackdropFilter = '';
-        modalContainerRef.current.style.backgroundColor = '';
-        modalContainerRef.current.style.transition = '';
-        modalContainerRef.current.style.animation = 'none';
+    const onUp = () => {
+      if (!drag.isDragging) {
+        cleanupDrag();
+        return;
       }
-
       const finalPos = { x: drag.currentX, y: drag.currentY };
+      cleanupDrag();
+
       if (isMinimized) {
         hasUserDraggedHudRef.current = true;
         setHudPos(finalPos);
@@ -1752,13 +1741,6 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
           localStorage.setItem('cosmo_manual_trade_full_pos_v2', JSON.stringify(finalPos));
         } catch { }
       }
-
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onUp);
-      window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('touchend', onUp);
-      window.removeEventListener('touchcancel', onUp);
-      window.removeEventListener('blur', onUp);
     };
 
     window.addEventListener('mousemove', onMouseMove, { passive: true });
@@ -1773,18 +1755,12 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
   React.useEffect(() => {
     if (!isOpen && dragRef.current.isDragging) {
       dragRef.current.isDragging = false;
-      if (typeof document !== 'undefined') {
-        document.body.style.userSelect = '';
-        document.body.style.cursor = '';
-        document.body.style.pointerEvents = '';
-      }
+      endFloatingModalDrag(modalContainerRef.current);
     }
     return () => {
-      if (typeof document !== 'undefined' && dragRef.current.isDragging) {
+      if (dragRef.current.isDragging) {
         dragRef.current.isDragging = false;
-        document.body.style.userSelect = '';
-        document.body.style.cursor = '';
-        document.body.style.pointerEvents = '';
+        endFloatingModalDrag(modalContainerRef.current);
       }
     };
   }, [isOpen]);
@@ -3775,35 +3751,36 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
               onAnimationEnd={(e) => {
                 if (e.target === e.currentTarget) {
                   (e.currentTarget as HTMLElement).style.animation = 'none';
+                  (e.currentTarget as HTMLElement).style.willChange = 'transform';
                 }
               }}
               style={{
                 left: 0,
                 top: 0,
-                transform: `translate3d(${dragRef.current.isDragging ? dragRef.current.currentX : (isMinimized ? hudPos.x : modalPos.x)}px, ${dragRef.current.isDragging ? dragRef.current.currentY : (isMinimized ? hudPos.y : modalPos.y)}px, 0)`,
+                transform: `translate3d(${isMinimized ? hudPos.x : modalPos.x}px, ${isMinimized ? hudPos.y : modalPos.y}px, 0)`,
                 maxHeight: isMinimized
                   ? undefined
                   : typeof window !== 'undefined'
                     ? (() => {
-                        const vh = window.visualViewport?.height || window.innerHeight;
-                        const vw = window.visualViewport?.width || window.innerWidth;
-                        const isSmall = vh < 920 || vw < 1200;
-                        const cap = isSmall ? 720 : 778;
-                        const y = dragRef.current.isDragging ? dragRef.current.currentY : modalPos.y;
-                        return `${Math.max(300, Math.min(cap, Math.round(vh - y - (isSmall ? 8 : 14))))}px`;
-                      })()
+                      const vh = window.visualViewport?.height || window.innerHeight;
+                      const vw = window.visualViewport?.width || window.innerWidth;
+                      const isSmall = vh < 920 || vw < 1200;
+                      const cap = isSmall ? 720 : 778;
+                      return `${Math.max(300, Math.min(cap, Math.round(vh - (isSmall ? 14 : 28))))}px`;
+                    })()
                     : '778px',
-                willChange: 'transform'
+                willChange: 'transform',
+                contain: 'layout paint style',
+                backfaceVisibility: 'hidden',
               }}
-              className={`cosmo-theme-modal fixed rounded-xl ${
-                isThermalGuardActive ? 'animate-cosmo-modal-fast' : 'animate-cosmo-modal-cyan'
-              } ${isMinimized
-                ? isThermalGuardActive
-                  ? 'w-[474px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
-                  : 'w-[474px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
-                : isThermalGuardActive
-                  ? 'w-[620px] max-w-[calc(100vw-12px)] flex flex-col bg-[#080c16] border-cyan-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
-                  : 'w-[620px] max-w-[calc(100vw-12px)] flex flex-col bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
+              className={`cosmo-theme-modal fixed rounded-xl ${isThermalGuardActive ? 'animate-cosmo-modal-fast' : 'animate-cosmo-modal-cyan'
+                } ${isMinimized
+                  ? isThermalGuardActive
+                    ? 'w-[474px] max-w-[calc(100vw-12px)] bg-[#0B0E14]/95 border-cyan-500/45 shadow-[0_10px_28px_rgba(0,0,0,0.9)]'
+                    : 'w-[474px] max-w-[calc(100vw-12px)] bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl'
+                  : isThermalGuardActive
+                    ? 'w-[620px] max-w-[calc(100vw-12px)] flex flex-col bg-[#080c16] border-cyan-500/45 shadow-[0_14px_36px_rgba(0,0,0,0.92)]'
+                    : 'w-[620px] max-w-[calc(100vw-12px)] flex flex-col bg-[#070b14] bg-gradient-to-b from-[#0b1120]/95 via-[#070b14]/[0.98] to-[#05070d]/[0.98] border-cyan-500/40 shadow-[0_14px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(6,182,212,0.18),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl'
                 } border z-[99999] overflow-hidden select-none`}
             >
               <FloatingModalCyberFX color="cyan" isThermalGuard={isThermalGuardActive} />
@@ -3904,11 +3881,10 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                             });
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
-                          className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-black uppercase leading-tight shrink-0 pointer-events-auto cursor-pointer transition-all active:scale-95 border flex items-center gap-0.5 ${
-                            wallMagnetEnabled || (orderType === 'SmartPeg' && smartPegStrategy === 'wall_aware')
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-black uppercase leading-tight shrink-0 pointer-events-auto cursor-pointer transition-all active:scale-95 border flex items-center gap-0.5 ${wallMagnetEnabled || (orderType === 'SmartPeg' && smartPegStrategy === 'wall_aware')
                               ? 'bg-amber-500/25 border-amber-400/60 text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.35)]'
                               : 'bg-white/[0.04] hover:bg-white/[0.1] border-white/10 text-gray-400 hover:text-amber-200'
-                          }`}
+                            }`}
                           title="Toggle Liquidity-Wall Magnet & 1-Click Front-Run Snap (Hold Shift while dragging onto chart to snap)"
                         >
                           <Magnet className="w-2.5 h-2.5" />
@@ -4788,2592 +4764,2591 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
                 const ordersBadgeCount = openLimitOrders.length + activeSoftwareSls.length + (activePeg ? 1 : 0) + (activeChase ? 1 : 0) + (hasActiveFuturesPos ? 1 : 0);
 
                 return (
-                <div key="full-terminal" className="animate-modal-simple-switch flex flex-col flex-1 min-h-0 overflow-hidden">
-                  {/* Top Neon Horizon Accent Line (matching Minimized Cyber-HUD) */}
-                  <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-cyan-400 to-emerald-400 opacity-85 shrink-0" />
+                  <div key="full-terminal" className="animate-modal-simple-switch flex flex-col flex-1 min-h-0 overflow-hidden">
+                    {/* Top Neon Horizon Accent Line (matching Minimized Cyber-HUD) */}
+                    <div className="h-[1.5px] w-full bg-gradient-to-r from-transparent via-cyan-400 to-emerald-400 opacity-85 shrink-0" />
 
-                  {/* Compact Cyber-HUD Header (Draggable Handle) */}
-                  <div
-                    onMouseDown={handleStartDrag}
-                    onTouchStart={handleStartDrag}
-                    style={{ touchAction: 'none' }}
-                    className="flex items-center justify-between px-3 py-2 border-b border-cyan-500/20 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0 gap-2"
-                    title="Drag to move"
-                  >
-                    <div className="flex items-center gap-1.5 pointer-events-none min-w-0 flex-1 overflow-hidden">
-                      <GripVertical className="w-3.5 h-3.5 text-cyan-400/80 shrink-0" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse shrink-0" />
-                      <div className="flex flex-col text-left min-w-0 flex-1 overflow-hidden">
-                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                          <span className="font-black text-white text-[13px] sm:text-[14.5px] tracking-tight truncate max-w-[115px]">
-                            {activeSymbol}
-                          </span>
-                          <span
-                            className={`text-[8.5px] uppercase px-1.5 py-0.2 rounded font-mono font-black border leading-tight shrink-0 ${isFutures
-                              ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
-                              : 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
-                              }`}
-                          >
-                            {isFutures ? `${leverage}x FUT` : 'SPOT'}
-                          </span>
-                          {effectiveCurrentPrice > 0 && (
-                            <span className="text-emerald-400 font-mono text-[11px] font-bold tracking-tight shrink-0">
-                              ${formatDisplayPrice(effectiveCurrentPrice)}
+                    {/* Compact Cyber-HUD Header (Draggable Handle) */}
+                    <div
+                      onMouseDown={handleStartDrag}
+                      onTouchStart={handleStartDrag}
+                      style={{ touchAction: 'none' }}
+                      className="flex items-center justify-between px-3 py-2 border-b border-cyan-500/20 bg-white/[0.03] cursor-grab active:cursor-grabbing select-none shrink-0 gap-2"
+                      title="Drag to move"
+                    >
+                      <div className="flex items-center gap-1.5 pointer-events-none min-w-0 flex-1 overflow-hidden">
+                        <GripVertical className="w-3.5 h-3.5 text-cyan-400/80 shrink-0" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] animate-pulse shrink-0" />
+                        <div className="flex flex-col text-left min-w-0 flex-1 overflow-hidden">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                            <span className="font-black text-white text-[13px] sm:text-[14.5px] tracking-tight truncate max-w-[115px]">
+                              {activeSymbol}
                             </span>
-                          )}
-                          {tpConfig.enabled && (
-                            <span className="text-[8.5px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 font-mono font-bold leading-tight shrink-0">
-                              TP
-                            </span>
-                          )}
-                          {slConfig.enabled && (
-                            <span className="text-[8.5px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/35 text-rose-300 font-mono font-bold leading-tight shrink-0">
-                              SL
-                            </span>
-                          )}
-                          {!isFutures && orderType === 'Limit' && isIceberg && (
-                            <span className="text-[8.5px] px-1 py-0.2 rounded bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 font-mono font-bold leading-tight shrink-0">
-                              ICE
-                            </span>
-                          )}
-                          {mlFilterConfig.enabled && (
-                            <span className="text-[8.5px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight shrink-0">
-                              AI
-                            </span>
-                          )}
-                          {openLimitOrders.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveTerminalTab('orders');
-                              }}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              className="text-[8.5px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse shrink-0 pointer-events-auto"
-                              title="Jump to Open Orders"
+                            <span
+                              className={`text-[8.5px] uppercase px-1.5 py-0.2 rounded font-mono font-black border leading-tight shrink-0 ${isFutures
+                                ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
+                                : 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
+                                }`}
                             >
-                              {openLimitOrders.length} OPEN
-                            </button>
-                          )}
-                        </div>
-                        <span className="text-[9.5px] text-gray-400 font-mono tracking-wide truncate">
-                          QUANT TERMINAL • {isFutures ? `${marginMode.toUpperCase()} MARGIN` : 'SPOT EXECUTION'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          fetchBalance(false, true);
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className={`p-1 rounded-md bg-white/[0.04] hover:bg-white/10 border border-white/[0.08] text-gray-400 hover:text-cyan-300 transition-all cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''}`}
-                        title="Refresh Balance & Position"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsMinimized(true);
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="p-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-white transition-all cursor-pointer"
-                        title="Minimize to Quick Buy/Sell Cyber-HUD"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsOpen(false);
-                          setIsMinimized(false);
-                          onClose?.();
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="p-1 rounded-md bg-white/[0.04] hover:bg-rose-500/20 border border-white/[0.08] hover:border-rose-500/40 text-gray-400 hover:text-rose-300 transition-all cursor-pointer"
-                        title="Close"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Multi-Chart Pair Selector Dropdown */}
-                  {availablePairs && availablePairs.length > 1 && (
-                    <div className="px-3 py-1.5 bg-[#04070e]/90 border-b border-cyan-500/15 flex items-center gap-2 shrink-0">
-                      <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1 shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                        PAIR ({availablePairs.length})
-                      </label>
-                      <div className="relative flex-1 min-w-0">
-                        <select
-                          value={activePair?.id || availablePairs[0]?.id || ''}
-                          onChange={(e) => {
-                            const selected = availablePairs.find(p => p.id === e.target.value);
-                            if (selected) {
-                              handleSelectPair(selected);
-                            }
-                          }}
-                          className="w-full bg-[#0a101d] border border-cyan-500/30 hover:border-cyan-400/60 rounded-lg py-1 pl-2.5 pr-7 text-white font-mono font-bold text-[12px] focus:outline-none focus:border-cyan-400 transition-all appearance-none cursor-pointer"
-                        >
-                          {availablePairs.map((p, idx) => {
-                            const pPrice = formatDisplayPrice(p.price);
-                            const duplicateCount = availablePairs.filter(item => item.symbol === p.symbol).length;
-                            const chartSuffix = p.isMain
-                              ? ' (Main)'
-                              : duplicateCount > 1
-                                ? ` (Chart ${idx + 1})`
-                                : '';
-                            const label = `${p.symbol}${pPrice ? ` • $${pPrice}` : ''}${chartSuffix}`;
-                            return (
-                              <option key={p.id} value={p.id} className="bg-[#070b14] text-white py-1">
-                                {label}
-                              </option>
-                            );
-                          })}
-                        </select>
-                        <ChevronDown className="absolute right-2 top-[7px] w-3.5 h-3.5 text-cyan-400 pointer-events-none" />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Top Tactical Control Strip: Line 1 = Buy/Sell (Larger), Line 2 = Market/Limit/Peg */}
-                  <div className="px-3 py-2 bg-[#04070e]/75 border-b border-white/10 shrink-0 space-y-2">
-                    <div className="flex flex-col gap-1.5">
-                      {/* Line 1: Larger Full-Width Buy / Sell Segmented Switch */}
-                      <div className="flex w-full p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleSideChange('Buy')}
-                          className={`flex-1 py-2 text-[13px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Buy'
-                            ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.28)]'
-                            : 'text-gray-500 hover:text-white border border-transparent'
-                            }`}
-                        >
-                          {isFutures ? 'Long' : 'Buy'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSideChange('Sell')}
-                          className={`flex-1 py-2 text-[13px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Sell'
-                            ? 'bg-rose-500/25 text-rose-300 border border-rose-400/60 shadow-[0_0_12px_rgba(244,63,94,0.28)]'
-                            : 'text-gray-500 hover:text-white border border-transparent'
-                            }`}
-                        >
-                          {isFutures ? 'Short' : 'Sell'}
-                        </button>
-                      </div>
-
-                      {/* Line 2: Full-Width Order Type Toggle: Market | Limit | Smart Peg */}
-                      <div className="flex w-full p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-1">
-                        {(['Market', 'Limit', 'SmartPeg'] as const).map((type) => (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={() => setOrderType(type)}
-                            className={`flex-1 py-1.5 text-[11.5px] font-black rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer ${orderType === type
-                              ? type === 'SmartPeg'
-                                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.35)]'
-                                : 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
-                              : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
-                              }`}
-                          >
-                            {type === 'SmartPeg' ? (
-                              <>
-                                <Zap className="w-3 h-3 fill-current" />
-                                <span>PEG</span>
-                              </>
-                            ) : (
-                              <span className="uppercase tracking-wider">{type}</span>
+                              {isFutures ? `${leverage}x FUT` : 'SPOT'}
+                            </span>
+                            {effectiveCurrentPrice > 0 && (
+                              <span className="text-emerald-400 font-mono text-[11px] font-bold tracking-tight shrink-0">
+                                ${formatDisplayPrice(effectiveCurrentPrice)}
+                              </span>
                             )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Ultra-Compact Live Telemetry Quick Strip when Peg/Chase/Position active */}
-                    {(activePeg || activeChase || hasActiveFuturesPos) && (
-                      <div className="flex items-center justify-between gap-2 px-2 py-1 rounded-md bg-cyan-950/30 border border-cyan-500/25 text-[10px] font-mono">
-                        {activePeg ? (
-                          <>
-                            <span className="text-amber-300 font-bold flex items-center gap-1 truncate">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                              ⚡ Peg #{activePeg.current_attempt || 1} @ {activePeg.current_maker_price || 'Book'}
-                            </span>
-                            <button
-                              type="button"
-                              disabled={isStoppingPeg}
-                              onClick={() => handleStopSmartPeg(activePeg)}
-                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[9px] cursor-pointer shrink-0 disabled:opacity-50"
-                            >
-                              {isStoppingPeg ? 'Stopping...' : 'Stop Peg'}
-                            </button>
-                          </>
-                        ) : activeChase ? (
-                          <>
-                            <span className="text-rose-300 font-bold flex items-center gap-1 truncate">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
-                              ⚡ Chase SL #{activeChase.current_attempt || 1} ({activeChase.amount})
-                            </span>
-                            <button
-                              type="button"
-                              disabled={isStoppingChase}
-                              onClick={() => handleStopSmartChase(activeChase)}
-                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[9px] cursor-pointer shrink-0 disabled:opacity-50"
-                            >
-                              {isStoppingChase ? 'Stopping...' : 'Stop Chase'}
-                            </button>
-                          </>
-                        ) : hasActiveFuturesPos && positionData ? (
-                          <>
-                            <span className="text-cyan-200 font-bold flex items-center gap-1 truncate">
-                              <span className={`w-1.5 h-1.5 rounded-full ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-400' : 'bg-rose-400'} animate-pulse`} />
-                              POS {positionData.side.toUpperCase()}: {positionData.amount} {baseCurrency}
-                            </span>
-                            <button
-                              type="button"
-                              disabled={isClosingPosition}
-                              onClick={handleClosePosition}
-                              className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[9px] cursor-pointer shrink-0 disabled:opacity-50"
-                            >
-                              {isClosingPosition ? 'Closing...' : 'Close Pos'}
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Sci-Fi Tabs Navigation (Matching WallHunterModal Architecture) */}
-                  <div className="flex gap-1 px-3 py-1.5 border-b border-white/10 bg-[#050811]/80 shrink-0 overflow-x-auto hide-scrollbar">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTerminalTab('order')}
-                      className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'order'
-                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
-                        : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
-                        }`}
-                    >
-                      <span>⚡ Order & Size</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTerminalTab('brackets')}
-                      className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'brackets'
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
-                        : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
-                        }`}
-                    >
-                      <span>🎯 TP / SL</span>
-                      {(tpConfig.enabled || slConfig.enabled) && (
-                        <span className="flex items-center gap-0.5">
-                          {tpConfig.enabled && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-                          {slConfig.enabled && <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />}
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTerminalTab('ai')}
-                      className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'ai'
-                        ? 'bg-blue-500/20 text-blue-300 border border-blue-400/50 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
-                        : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
-                        }`}
-                    >
-                      <span>🤖 AI Filter</span>
-                      {mlFilterConfig.enabled && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTerminalTab('orders')}
-                      className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'orders'
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-400/50 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
-                        : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
-                        }`}
-                    >
-                      <span>📋 Orders</span>
-                      {ordersBadgeCount > 0 && (
-                        <span className="px-1 py-0.2 rounded bg-amber-500/30 text-amber-200 font-mono text-[9px] leading-none">
-                          {ordersBadgeCount}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-
-                  {/* Scrollable Tab Workspace */}
-                  <div
-                    style={{ touchAction: 'pan-y' }}
-                    className="flex-1 min-h-0 overflow-y-auto px-3 py-2.5 space-y-2.5 cursor-default [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-cyan-500/20 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-cyan-400/40"
-                  >
-                    {/* TAB 4: ORDERS, ACTIVE BRACKETS & POSITION */}
-                    {activeTerminalTab === 'orders' && (
-                      <div className="space-y-2.5 animate-fadeIn">
-                        {activePeg && (
-                          <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-950/90 via-black to-amber-950/40 border border-amber-500/50 shadow-[0_0_16px_rgba(245,158,11,0.2)] flex flex-col gap-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="relative flex h-2 w-2">
-                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                                </span>
-                                <span className="text-[12px] font-black tracking-wide text-amber-200 uppercase flex items-center gap-1">
-                                  <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                                  Smart Peg Entry Active
-                                </span>
-                                {activePeg.peg_strategy === 'wall_aware' && (
-                                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-orange-500/25 text-orange-200 border border-orange-400/45 font-bold">
-                                    🧱 Wall Front-Run
-                                  </span>
-                                )}
-                                {activePeg.peg_strategy === 'inside_spread' && (
-                                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 font-bold">
-                                    🎯 Inside-Spread
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
-                                Attempt {activePeg.current_attempt || 1}/{activePeg.max_attempts ? activePeg.max_attempts : '∞'}
+                            {tpConfig.enabled && (
+                              <span className="text-[8.5px] px-1 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 font-mono font-bold leading-tight shrink-0">
+                                TP
                               </span>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
-                              <div className="text-left">
-                                <span className="text-gray-400 block text-[9.5px] uppercase">Side</span>
-                                <span className={`font-bold ${activePeg.side?.toLowerCase() === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
-                                  {activePeg.side?.toUpperCase()} (Maker)
-                                </span>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-gray-400 block text-[9.5px] uppercase">Best Maker Price</span>
-                                <span className="text-amber-300 font-bold">{activePeg.current_maker_price || 'Active'}</span>
-                              </div>
-                              <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[10px]">
-                                <span className="text-gray-400">Target Size / Filled:</span>
-                                <span className="text-gray-200 font-semibold">{activePeg.filled_amount || 0} / {activePeg.amount}</span>
-                              </div>
-                              {activePeg.tracked_wall?.price && (
-                                <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[10px]">
-                                  <span className="text-amber-300/90">🧱 Shadowing Whale Wall:</span>
-                                  <span className="text-amber-200 font-bold">
-                                    ${formatDisplayPrice(activePeg.tracked_wall.price)} ({Number(activePeg.tracked_wall.size || 0).toLocaleString()})
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-
-                            <button
-                              type="button"
-                              disabled={isStoppingPeg}
-                              onClick={() => handleStopSmartPeg(activePeg)}
-                              className="w-full py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-[12px] uppercase tracking-wider shadow-[0_0_12px_rgba(239,68,68,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                            >
-                              <Square className="w-3 h-3 fill-white" />
-                              {isStoppingPeg ? 'Stopping Peg...' : 'Stop Smart Peg Entry'}
-                            </button>
-                          </div>
-                        )}
-
-                        {activeChase && (
-                          <div className="p-2.5 rounded-xl bg-gradient-to-br from-red-950/90 via-amber-950/70 to-black border border-red-500/50 shadow-[0_0_16px_rgba(239,68,68,0.2)] flex flex-col gap-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="relative flex h-2 w-2">
-                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                                </span>
-                                <span className="text-[12px] font-black tracking-wide text-red-200 uppercase flex items-center gap-1">
-                                  <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                                  {activeChase.chase_mode === 'dynamic_bbo' ? 'Dynamic BBO Peg Chasing' : 'Smart Chase SL Chasing'}
-                                </span>
-                              </div>
-                              <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
-                                Attempt {activeChase.current_attempt || 1}/{activeChase.max_attempts ? activeChase.max_attempts : '∞'}
+                            )}
+                            {slConfig.enabled && (
+                              <span className="text-[8.5px] px-1 py-0.2 rounded bg-rose-500/15 border border-rose-500/35 text-rose-300 font-mono font-bold leading-tight shrink-0">
+                                SL
                               </span>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
-                              <div className="text-left">
-                                <span className="text-gray-400 block text-[9.5px] uppercase">SL Trigger</span>
-                                <span className="text-white font-bold">
-                                  {activeChase.trigger_price || '—'}
-                                  {activeChase.trigger_source && (
-                                    <span className="text-[9.5px] text-cyan-300 font-normal ml-1">
-                                      ({activeChase.trigger_source === 'bid_ask' ? '⚡ Bid/Ask' : '📊 Last'})
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-gray-400 block text-[9.5px] uppercase">Maker Price</span>
-                                <span className="text-amber-300 font-bold">{activeChase.current_maker_price || 'Active'}</span>
-                              </div>
-                              <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[10px]">
-                                <span className="text-gray-400">Position Remaining:</span>
-                                <span className="text-gray-200 font-semibold">{activeChase.amount} ({activeChase.side?.toUpperCase()})</span>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              disabled={isStoppingChase}
-                              onClick={() => handleStopSmartChase(activeChase)}
-                              className="w-full py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-[12px] uppercase tracking-wider shadow-[0_0_12px_rgba(239,68,68,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                            >
-                              <Square className="w-3 h-3 fill-white" />
-                              {isStoppingChase ? 'Stopping Chase...' : 'Stop Smart Chase SL'}
-                            </button>
-                          </div>
-                        )}
-
-                        {activeSoftwareSls.length > 0 && (
-                          <div className="flex flex-col gap-1.5">
-                            {activeSoftwareSls.map((activeSoftwareSl, idx) => {
-                              const isChase = activeSoftwareSl.type === 'smart_chase';
-                              const isTrailChase = activeSoftwareSl.type === 'trailing_chase';
-                              const baseLabel = isTrailChase
-                                ? '⚡ Trailing Chase Armed'
-                                : (isChase ? '⚡ Smart Chase Armed' : (activeSoftwareSl.type === 'trailing' ? '⚡ Trailing SL Armed' : '🛡️ Stop-Loss Armed'));
-                              const titleLabel = activeSoftwareSls.length > 1 ? `${baseLabel} #${idx + 1}` : baseLabel;
-
-                              return (
-                                <div key={activeSoftwareSl.id || idx} className="p-2.5 rounded-xl bg-blue-950/60 border border-cyan-500/40 shadow-sm flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2">
-                                    <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0" />
-                                    <div className="flex flex-col text-left">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="text-[11.5px] font-bold text-cyan-300 uppercase leading-tight">{titleLabel}</span>
-                                        {activeSoftwareSl.peg_strategy === 'wall_aware' && (
-                                          <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
-                                            🧱 Wall-Aware
-                                          </span>
-                                        )}
-                                        {activeSoftwareSl.peg_strategy === 'inside_spread' && (
-                                          <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
-                                            🎯 Inside-Spread
-                                          </span>
-                                        )}
-                                        {activeSoftwareSl.auto_breakeven_enabled && (
-                                          <span className={`text-[9px] font-mono px-1 py-0.2 rounded font-bold border ${activeSoftwareSl.breakeven_activated ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'}`}>
-                                            {activeSoftwareSl.breakeven_activated ? '🛡️ BE Active' : '🛡️ Auto-BE'}
-                                          </span>
-                                        )}
-                                        {activeSoftwareSl.anti_wick_mode && activeSoftwareSl.anti_wick_mode !== 'instant' && (
-                                          <span className={`text-[9px] font-mono px-1 py-0.2 rounded font-bold border ${
-                                            activeSoftwareSl.anti_wick_state === 'holding_dwell' || activeSoftwareSl.anti_wick_state === 'holding_candle'
-                                              ? 'bg-amber-500/30 text-amber-200 border-amber-400/60 animate-pulse'
-                                              : 'bg-indigo-500/20 text-indigo-300 border-indigo-400/35'
-                                          }`}>
-                                            {activeSoftwareSl.anti_wick_state === 'holding_dwell' || activeSoftwareSl.anti_wick_state === 'holding_candle'
-                                              ? `🕯️ Hold ${Number(activeSoftwareSl.anti_wick_remaining_sec || 0).toFixed(1)}s`
-                                              : activeSoftwareSl.anti_wick_mode === 'dwell'
-                                                ? `⏱️ ${activeSoftwareSl.anti_wick_dwell_seconds || 3}s Guard`
-                                                : `🕯️ ${activeSoftwareSl.anti_wick_timeframe || '1m'} Close`}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <span className="text-[11px] text-gray-300 font-mono">
-                                        SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
-                                        {activeSoftwareSl.trigger_source === 'bid_ask' ? ' • ⚡ Bid/Ask' : ' • 📊 Last'}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    disabled={isStoppingChase}
-                                    onClick={() => handleStopSmartChase(activeSoftwareSl)}
-                                    className="py-1 px-2 rounded-md bg-white/5 hover:bg-red-950/80 hover:text-red-300 hover:border-red-500/50 border border-white/10 text-gray-300 text-[10.5px] font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50 shrink-0"
-                                  >
-                                    {isStoppingChase ? 'Cancelling...' : 'Cancel SL'}
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {hasActiveFuturesPos && positionData && (
-                          <div className="p-2.5 rounded-xl bg-gradient-to-r from-[#170a14] via-[#0e101d] to-[#0a1518] border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)] flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]'} animate-pulse`} />
-                              <div className="flex flex-col text-left min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-[11px] font-extrabold text-white uppercase tracking-tight">Active Position:</span>
-                                  <span className={`text-[10px] font-mono font-black px-1.5 py-0.2 rounded border ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'}`}>
-                                    {positionData.side.toUpperCase()}
-                                  </span>
-                                  <span className="text-[11px] font-mono font-bold text-gray-200">
-                                    {isInverseFutures && positionData.contracts ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(2)} ${baseCurrency})` : `${positionData.amount} ${baseCurrency}`}
-                                  </span>
-                                </div>
-                                <span className="text-[9.5px] text-gray-400 font-mono">
-                                  Instant Market Exit / Flatten
-                                </span>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              disabled={isClosingPosition}
-                              onClick={handleClosePosition}
-                              className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-mono text-[11px] font-black uppercase tracking-wider shadow-[0_0_12px_rgba(244,63,94,0.35)] transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
-                              title="Close active position immediately at Market price"
-                            >
-                              {isClosingPosition ? (
-                                <RefreshCw className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Zap className="w-3 h-3 fill-current" />
-                              )}
-                              <span>{isClosingPosition ? 'Closing...' : 'Close Pos'}</span>
-                            </button>
-                          </div>
-                        )}
-
-                        {openLimitOrders && openLimitOrders.length > 0 && (
-                          <div className="p-2.5 rounded-xl bg-[#04070e]/90 border border-cyan-500/25 shadow-sm flex flex-col gap-2">
-                            <div className="flex items-center justify-between pb-1 border-b border-white/10">
-                              <div className="flex items-center gap-1.5">
-                                <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                                <span className="text-[11.5px] font-bold text-cyan-200 uppercase tracking-wide font-mono">
-                                  Open Orders ({openLimitOrders.length})
-                                </span>
-                              </div>
+                            )}
+                            {!isFutures && orderType === 'Limit' && isIceberg && (
+                              <span className="text-[8.5px] px-1 py-0.2 rounded bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 font-mono font-bold leading-tight shrink-0">
+                                ICE
+                              </span>
+                            )}
+                            {mlFilterConfig.enabled && (
+                              <span className="text-[8.5px] px-1 py-0.2 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 font-mono font-bold leading-tight shrink-0">
+                                AI
+                              </span>
+                            )}
+                            {openLimitOrders.length > 0 && (
                               <button
                                 type="button"
-                                disabled={isCancellingAll}
-                                onClick={handleCancelAllOrders}
-                                className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10.5px] font-mono font-bold tracking-wider transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                title="Cancel all open orders on this symbol"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTerminalTab('orders');
+                                }}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                className="text-[8.5px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/50 text-amber-300 font-mono font-black leading-tight cursor-pointer hover:bg-amber-500/35 animate-pulse shrink-0 pointer-events-auto"
+                                title="Jump to Open Orders"
                               >
-                                {isCancellingAll ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Trash2 className="w-2.5 h-2.5" />}
-                                <span>{isCancellingAll ? 'Cancelling...' : 'Cancel All'}</span>
+                                {openLimitOrders.length} OPEN
+                              </button>
+                            )}
+                          </div>
+                          <span className="text-[9.5px] text-gray-400 font-mono tracking-wide truncate">
+                            QUANT TERMINAL • {isFutures ? `${marginMode.toUpperCase()} MARGIN` : 'SPOT EXECUTION'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fetchBalance(false, true);
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className={`p-1 rounded-md bg-white/[0.04] hover:bg-white/10 border border-white/[0.08] text-gray-400 hover:text-cyan-300 transition-all cursor-pointer ${isRefreshing ? 'text-cyan-400' : ''}`}
+                          title="Refresh Balance & Position"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsMinimized(true);
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="p-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-white transition-all cursor-pointer"
+                          title="Minimize to Quick Buy/Sell Cyber-HUD"
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsOpen(false);
+                            setIsMinimized(false);
+                            onClose?.();
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="p-1 rounded-md bg-white/[0.04] hover:bg-rose-500/20 border border-white/[0.08] hover:border-rose-500/40 text-gray-400 hover:text-rose-300 transition-all cursor-pointer"
+                          title="Close"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Multi-Chart Pair Selector Dropdown */}
+                    {availablePairs && availablePairs.length > 1 && (
+                      <div className="px-3 py-1.5 bg-[#04070e]/90 border-b border-cyan-500/15 flex items-center gap-2 shrink-0">
+                        <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1 shrink-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                          PAIR ({availablePairs.length})
+                        </label>
+                        <div className="relative flex-1 min-w-0">
+                          <select
+                            value={activePair?.id || availablePairs[0]?.id || ''}
+                            onChange={(e) => {
+                              const selected = availablePairs.find(p => p.id === e.target.value);
+                              if (selected) {
+                                handleSelectPair(selected);
+                              }
+                            }}
+                            className="w-full bg-[#0a101d] border border-cyan-500/30 hover:border-cyan-400/60 rounded-lg py-1 pl-2.5 pr-7 text-white font-mono font-bold text-[12px] focus:outline-none focus:border-cyan-400 transition-all appearance-none cursor-pointer"
+                          >
+                            {availablePairs.map((p, idx) => {
+                              const pPrice = formatDisplayPrice(p.price);
+                              const duplicateCount = availablePairs.filter(item => item.symbol === p.symbol).length;
+                              const chartSuffix = p.isMain
+                                ? ' (Main)'
+                                : duplicateCount > 1
+                                  ? ` (Chart ${idx + 1})`
+                                  : '';
+                              const label = `${p.symbol}${pPrice ? ` • $${pPrice}` : ''}${chartSuffix}`;
+                              return (
+                                <option key={p.id} value={p.id} className="bg-[#070b14] text-white py-1">
+                                  {label}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <ChevronDown className="absolute right-2 top-[7px] w-3.5 h-3.5 text-cyan-400 pointer-events-none" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Top Tactical Control Strip: Line 1 = Buy/Sell (Larger), Line 2 = Market/Limit/Peg */}
+                    <div className="px-3 py-2 bg-[#04070e]/75 border-b border-white/10 shrink-0 space-y-2">
+                      <div className="flex flex-col gap-1.5">
+                        {/* Line 1: Larger Full-Width Buy / Sell Segmented Switch */}
+                        <div className="flex w-full p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleSideChange('Buy')}
+                            className={`flex-1 py-2 text-[13px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Buy'
+                              ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.28)]'
+                              : 'text-gray-500 hover:text-white border border-transparent'
+                              }`}
+                          >
+                            {isFutures ? 'Long' : 'Buy'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSideChange('Sell')}
+                            className={`flex-1 py-2 text-[13px] font-black rounded-md transition-all uppercase tracking-wider cursor-pointer ${tradeSide === 'Sell'
+                              ? 'bg-rose-500/25 text-rose-300 border border-rose-400/60 shadow-[0_0_12px_rgba(244,63,94,0.28)]'
+                              : 'text-gray-500 hover:text-white border border-transparent'
+                              }`}
+                          >
+                            {isFutures ? 'Short' : 'Sell'}
+                          </button>
+                        </div>
+
+                        {/* Line 2: Full-Width Order Type Toggle: Market | Limit | Smart Peg */}
+                        <div className="flex w-full p-0.5 rounded-lg bg-[#0a101d] border border-white/10 gap-1">
+                          {(['Market', 'Limit', 'SmartPeg'] as const).map((type) => (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => setOrderType(type)}
+                              className={`flex-1 py-1.5 text-[11.5px] font-black rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer ${orderType === type
+                                ? type === 'SmartPeg'
+                                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.35)]'
+                                  : 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                                : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                                }`}
+                            >
+                              {type === 'SmartPeg' ? (
+                                <>
+                                  <Zap className="w-3 h-3 fill-current" />
+                                  <span>PEG</span>
+                                </>
+                              ) : (
+                                <span className="uppercase tracking-wider">{type}</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Ultra-Compact Live Telemetry Quick Strip when Peg/Chase/Position active */}
+                      {(activePeg || activeChase || hasActiveFuturesPos) && (
+                        <div className="flex items-center justify-between gap-2 px-2 py-1 rounded-md bg-cyan-950/30 border border-cyan-500/25 text-[10px] font-mono">
+                          {activePeg ? (
+                            <>
+                              <span className="text-amber-300 font-bold flex items-center gap-1 truncate">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                                ⚡ Peg #{activePeg.current_attempt || 1} @ {activePeg.current_maker_price || 'Book'}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={isStoppingPeg}
+                                onClick={() => handleStopSmartPeg(activePeg)}
+                                className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[9px] cursor-pointer shrink-0 disabled:opacity-50"
+                              >
+                                {isStoppingPeg ? 'Stopping...' : 'Stop Peg'}
+                              </button>
+                            </>
+                          ) : activeChase ? (
+                            <>
+                              <span className="text-rose-300 font-bold flex items-center gap-1 truncate">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+                                ⚡ Chase SL #{activeChase.current_attempt || 1} ({activeChase.amount})
+                              </span>
+                              <button
+                                type="button"
+                                disabled={isStoppingChase}
+                                onClick={() => handleStopSmartChase(activeChase)}
+                                className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[9px] cursor-pointer shrink-0 disabled:opacity-50"
+                              >
+                                {isStoppingChase ? 'Stopping...' : 'Stop Chase'}
+                              </button>
+                            </>
+                          ) : hasActiveFuturesPos && positionData ? (
+                            <>
+                              <span className="text-cyan-200 font-bold flex items-center gap-1 truncate">
+                                <span className={`w-1.5 h-1.5 rounded-full ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-400' : 'bg-rose-400'} animate-pulse`} />
+                                POS {positionData.side.toUpperCase()}: {positionData.amount} {baseCurrency}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={isClosingPosition}
+                                onClick={handleClosePosition}
+                                className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-black uppercase text-[9px] cursor-pointer shrink-0 disabled:opacity-50"
+                              >
+                                {isClosingPosition ? 'Closing...' : 'Close Pos'}
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Sci-Fi Tabs Navigation (Matching WallHunterModal Architecture) */}
+                    <div className="flex gap-1 px-3 py-1.5 border-b border-white/10 bg-[#050811]/80 shrink-0 overflow-x-auto hide-scrollbar">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTerminalTab('order')}
+                        className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'order'
+                          ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                          : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                          }`}
+                      >
+                        <span>⚡ Order & Size</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTerminalTab('brackets')}
+                        className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'brackets'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                          : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                          }`}
+                      >
+                        <span>🎯 TP / SL</span>
+                        {(tpConfig.enabled || slConfig.enabled) && (
+                          <span className="flex items-center gap-0.5">
+                            {tpConfig.enabled && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+                            {slConfig.enabled && <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTerminalTab('ai')}
+                        className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'ai'
+                          ? 'bg-blue-500/20 text-blue-300 border border-blue-400/50 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
+                          : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                          }`}
+                      >
+                        <span>🤖 AI Filter</span>
+                        {mlFilterConfig.enabled && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTerminalTab('orders')}
+                        className={`flex-1 px-2 py-1 text-[10px] font-black tracking-wide uppercase rounded-md transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 ${activeTerminalTab === 'orders'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-400/50 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                          : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                          }`}
+                      >
+                        <span>📋 Orders</span>
+                        {ordersBadgeCount > 0 && (
+                          <span className="px-1 py-0.2 rounded bg-amber-500/30 text-amber-200 font-mono text-[9px] leading-none">
+                            {ordersBadgeCount}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Scrollable Tab Workspace */}
+                    <div
+                      style={{ touchAction: 'pan-y' }}
+                      className="flex-1 min-h-0 overflow-y-auto px-3 py-2.5 space-y-2.5 cursor-default [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-cyan-500/20 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-cyan-400/40"
+                    >
+                      {/* TAB 4: ORDERS, ACTIVE BRACKETS & POSITION */}
+                      {activeTerminalTab === 'orders' && (
+                        <div className="space-y-2.5 animate-fadeIn">
+                          {activePeg && (
+                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-950/90 via-black to-amber-950/40 border border-amber-500/50 shadow-[0_0_16px_rgba(245,158,11,0.2)] flex flex-col gap-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                  </span>
+                                  <span className="text-[12px] font-black tracking-wide text-amber-200 uppercase flex items-center gap-1">
+                                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                                    Smart Peg Entry Active
+                                  </span>
+                                  {activePeg.peg_strategy === 'wall_aware' && (
+                                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-orange-500/25 text-orange-200 border border-orange-400/45 font-bold">
+                                      🧱 Wall Front-Run
+                                    </span>
+                                  )}
+                                  {activePeg.peg_strategy === 'inside_spread' && (
+                                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 font-bold">
+                                      🎯 Inside-Spread
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                                  Attempt {activePeg.current_attempt || 1}/{activePeg.max_attempts ? activePeg.max_attempts : '∞'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
+                                <div className="text-left">
+                                  <span className="text-gray-400 block text-[9.5px] uppercase">Side</span>
+                                  <span className={`font-bold ${activePeg.side?.toLowerCase() === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
+                                    {activePeg.side?.toUpperCase()} (Maker)
+                                  </span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-gray-400 block text-[9.5px] uppercase">Best Maker Price</span>
+                                  <span className="text-amber-300 font-bold">{activePeg.current_maker_price || 'Active'}</span>
+                                </div>
+                                <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[10px]">
+                                  <span className="text-gray-400">Target Size / Filled:</span>
+                                  <span className="text-gray-200 font-semibold">{activePeg.filled_amount || 0} / {activePeg.amount}</span>
+                                </div>
+                                {activePeg.tracked_wall?.price && (
+                                  <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[10px]">
+                                    <span className="text-amber-300/90">🧱 Shadowing Whale Wall:</span>
+                                    <span className="text-amber-200 font-bold">
+                                      ${formatDisplayPrice(activePeg.tracked_wall.price)} ({Number(activePeg.tracked_wall.size || 0).toLocaleString()})
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={isStoppingPeg}
+                                onClick={() => handleStopSmartPeg(activePeg)}
+                                className="w-full py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-[12px] uppercase tracking-wider shadow-[0_0_12px_rgba(239,68,68,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                              >
+                                <Square className="w-3 h-3 fill-white" />
+                                {isStoppingPeg ? 'Stopping Peg...' : 'Stop Smart Peg Entry'}
                               </button>
                             </div>
+                          )}
 
-                            <div className="max-h-52 overflow-y-auto space-y-1.5 pr-0.5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
-                              {openLimitOrders.map((ord: any) => {
-                                const isBuy = String(ord.side).toLowerCase() === 'buy';
-                                const mode = ord.mode || 'LIMIT';
-                                const isCancelling = cancellingOrderId === String(ord.id);
+                          {activeChase && (
+                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-red-950/90 via-amber-950/70 to-black border border-red-500/50 shadow-[0_0_16px_rgba(239,68,68,0.2)] flex flex-col gap-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                                  </span>
+                                  <span className="text-[12px] font-black tracking-wide text-red-200 uppercase flex items-center gap-1">
+                                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                                    {activeChase.chase_mode === 'dynamic_bbo' ? 'Dynamic BBO Peg Chasing' : 'Smart Chase SL Chasing'}
+                                  </span>
+                                </div>
+                                <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                                  Attempt {activeChase.current_attempt || 1}/{activeChase.max_attempts ? activeChase.max_attempts : '∞'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-black/60 p-2 rounded-lg border border-white/5 font-mono">
+                                <div className="text-left">
+                                  <span className="text-gray-400 block text-[9.5px] uppercase">SL Trigger</span>
+                                  <span className="text-white font-bold">
+                                    {activeChase.trigger_price || '—'}
+                                    {activeChase.trigger_source && (
+                                      <span className="text-[9.5px] text-cyan-300 font-normal ml-1">
+                                        ({activeChase.trigger_source === 'bid_ask' ? '⚡ Bid/Ask' : '📊 Last'})
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-gray-400 block text-[9.5px] uppercase">Maker Price</span>
+                                  <span className="text-amber-300 font-bold">{activeChase.current_maker_price || 'Active'}</span>
+                                </div>
+                                <div className="text-left col-span-2 pt-1 border-t border-white/5 flex justify-between text-[10px]">
+                                  <span className="text-gray-400">Position Remaining:</span>
+                                  <span className="text-gray-200 font-semibold">{activeChase.amount} ({activeChase.side?.toUpperCase()})</span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={isStoppingChase}
+                                onClick={() => handleStopSmartChase(activeChase)}
+                                className="w-full py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-black text-[12px] uppercase tracking-wider shadow-[0_0_12px_rgba(239,68,68,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                              >
+                                <Square className="w-3 h-3 fill-white" />
+                                {isStoppingChase ? 'Stopping Chase...' : 'Stop Smart Chase SL'}
+                              </button>
+                            </div>
+                          )}
+
+                          {activeSoftwareSls.length > 0 && (
+                            <div className="flex flex-col gap-1.5">
+                              {activeSoftwareSls.map((activeSoftwareSl, idx) => {
+                                const isChase = activeSoftwareSl.type === 'smart_chase';
+                                const isTrailChase = activeSoftwareSl.type === 'trailing_chase';
+                                const baseLabel = isTrailChase
+                                  ? '⚡ Trailing Chase Armed'
+                                  : (isChase ? '⚡ Smart Chase Armed' : (activeSoftwareSl.type === 'trailing' ? '⚡ Trailing SL Armed' : '🛡️ Stop-Loss Armed'));
+                                const titleLabel = activeSoftwareSls.length > 1 ? `${baseLabel} #${idx + 1}` : baseLabel;
+
                                 return (
-                                  <div
-                                    key={ord.id}
-                                    className="p-1.5 rounded-lg bg-black/50 border border-white/10 flex items-center justify-between text-[11px] font-mono"
-                                  >
-                                    <div className="flex items-center gap-1.5 min-w-0">
-                                      <span
-                                        className={`px-1 py-0.2 rounded text-[9px] font-bold uppercase ${isBuy
-                                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                          }`}
-                                      >
-                                        {isBuy ? 'BUY' : 'SELL'}
-                                      </span>
-                                      <span className="text-[9px] text-cyan-300/80 uppercase font-bold">[{mode}]</span>
-                                      {ord.isIceberg && ord.icebergQty && (
-                                        <span className="text-[8.5px] px-1 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                                          🧊{ord.icebergQty}
+                                  <div key={activeSoftwareSl.id || idx} className="p-2.5 rounded-xl bg-blue-950/60 border border-cyan-500/40 shadow-sm flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0" />
+                                      <div className="flex flex-col text-left">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-[11.5px] font-bold text-cyan-300 uppercase leading-tight">{titleLabel}</span>
+                                          {activeSoftwareSl.peg_strategy === 'wall_aware' && (
+                                            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                                              🧱 Wall-Aware
+                                            </span>
+                                          )}
+                                          {activeSoftwareSl.peg_strategy === 'inside_spread' && (
+                                            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
+                                              🎯 Inside-Spread
+                                            </span>
+                                          )}
+                                          {activeSoftwareSl.auto_breakeven_enabled && (
+                                            <span className={`text-[9px] font-mono px-1 py-0.2 rounded font-bold border ${activeSoftwareSl.breakeven_activated ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'}`}>
+                                              {activeSoftwareSl.breakeven_activated ? '🛡️ BE Active' : '🛡️ Auto-BE'}
+                                            </span>
+                                          )}
+                                          {activeSoftwareSl.anti_wick_mode && activeSoftwareSl.anti_wick_mode !== 'instant' && (
+                                            <span className={`text-[9px] font-mono px-1 py-0.2 rounded font-bold border ${activeSoftwareSl.anti_wick_state === 'holding_dwell' || activeSoftwareSl.anti_wick_state === 'holding_candle'
+                                                ? 'bg-amber-500/30 text-amber-200 border-amber-400/60 animate-pulse'
+                                                : 'bg-indigo-500/20 text-indigo-300 border-indigo-400/35'
+                                              }`}>
+                                              {activeSoftwareSl.anti_wick_state === 'holding_dwell' || activeSoftwareSl.anti_wick_state === 'holding_candle'
+                                                ? `🕯️ Hold ${Number(activeSoftwareSl.anti_wick_remaining_sec || 0).toFixed(1)}s`
+                                                : activeSoftwareSl.anti_wick_mode === 'dwell'
+                                                  ? `⏱️ ${activeSoftwareSl.anti_wick_dwell_seconds || 3}s Guard`
+                                                  : `🕯️ ${activeSoftwareSl.anti_wick_timeframe || '1m'} Close`}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <span className="text-[11px] text-gray-300 font-mono">
+                                          SL @ {activeSoftwareSl.trigger_price || activeSoftwareSl.price} ({activeSoftwareSl.amount})
+                                          {activeSoftwareSl.trigger_source === 'bid_ask' ? ' • ⚡ Bid/Ask' : ' • 📊 Last'}
                                         </span>
-                                      )}
-                                      <span className="text-gray-200 truncate">
-                                        {Number(ord.amount || ord.remaining || 0).toFixed(2)} @{' '}
-                                        <strong className="text-white">${formatDisplayPrice(ord.price)}</strong>
-                                      </span>
+                                      </div>
                                     </div>
-
                                     <button
                                       type="button"
-                                      disabled={isCancelling}
-                                      onClick={() => handleCancelOrder(String(ord.id))}
-                                      className="p-1 rounded hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-transparent hover:border-rose-500/30 transition-all cursor-pointer disabled:opacity-50 shrink-0 ml-1"
-                                      title={`Cancel Order #${ord.id}`}
+                                      disabled={isStoppingChase}
+                                      onClick={() => handleStopSmartChase(activeSoftwareSl)}
+                                      className="py-1 px-2 rounded-md bg-white/5 hover:bg-red-950/80 hover:text-red-300 hover:border-red-500/50 border border-white/10 text-gray-300 text-[10.5px] font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50 shrink-0"
                                     >
-                                      {isCancelling ? (
-                                        <RefreshCw className="w-3 h-3 animate-spin text-rose-400" />
-                                      ) : (
-                                        <X className="w-3 h-3" />
-                                      )}
+                                      {isStoppingChase ? 'Cancelling...' : 'Cancel SL'}
                                     </button>
                                   </div>
                                 );
                               })}
                             </div>
-                          </div>
-                        )}
+                          )}
 
-                        {ordersBadgeCount === 0 && (
-                          <div className="p-6 rounded-xl bg-[#04070e]/75 border border-cyan-500/15 text-center space-y-2">
-                            <Layers className="w-6 h-6 text-cyan-400/50 mx-auto" />
-                            <p className="text-[13px] font-mono font-bold text-gray-300">No Active Orders or Brackets</p>
-                            <p className="text-[11px] text-gray-500">Open Limit orders, Smart Peg monitors, Smart Chase SL, and active Futures positions for {activeSymbol} will appear here.</p>
-                            <button
-                              type="button"
-                              onClick={() => fetchBalance(false, true)}
-                              className="px-3 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-cyan-300 text-[11px] font-mono font-bold uppercase cursor-pointer"
-                            >
-                              Sync Exchange State
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* TAB 1: ORDER & SIZE */}
-                    {activeTerminalTab === 'order' && (
-                      <div className="space-y-2.5 animate-fadeIn">
-
-                      {/* API Account & Limit Price (2-Column Sci-Fi Row when Standard Limit active) */}
-                      <div className={`grid gap-2 ${orderType === 'Limit' && !isAutoLimit ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">Execute With</label>
-                          <div className="relative">
-                            <select
-                              value={selectedApi}
-                              onChange={(e) => {
-                                const nextId = e.target.value;
-                                setSelectedApi(nextId);
-                                onApiKeyChange?.(nextId);
-                                try {
-                                  localStorage.setItem('cosmo_manual_selected_api_v1', nextId);
-                                } catch { }
-                              }}
-                              className="w-full bg-[#04070e]/90 border border-white/10 hover:border-cyan-500/40 rounded-lg py-1.5 pl-2.5 pr-7 text-white text-[13px] font-semibold focus:outline-none focus:border-cyan-400/60 transition-colors appearance-none cursor-pointer"
-                            >
-                              {apiKeys.map(k => (
-                                <option key={k.id} value={k.id} className="bg-[#070b14]">
-                                  {k.name || k.label || k.key_name || `${k.exchange?.toUpperCase()} — Key #${k.id}`}
-                                </option>
-                              ))}
-                              {apiKeys.length === 0 && <option value="" disabled>No API Keys found</option>}
-                            </select>
-                            <ChevronDown className="absolute right-2 top-[8px] w-3.5 h-3.5 text-cyan-400/70 pointer-events-none" />
-                          </div>
-                        </div>
-
-                        {orderType === 'Limit' && !isAutoLimit && (
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">Limit Price</label>
-                            <div className="relative">
-                              <input
-                                type="number"
-                                value={limitPrice}
-                                disabled={isAutoLimit}
-                                onChange={(e) => setLimitPrice(e.target.value)}
-                                className="w-full bg-[#04070e]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-2.5 pl-6 text-white font-mono font-bold text-[13px] focus:outline-none transition-colors disabled:opacity-50"
-                              />
-                              <span className="absolute left-2.5 top-1.5 text-cyan-400/80 font-mono text-[13px]">$</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Smart Peg Entry Explanatory & Settings Panel */}
-                      <AnimatePresence>
-                        {orderType === 'SmartPeg' && (
-                          <MotionDiv
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="p-2.5 rounded-xl bg-gradient-to-r from-amber-950/40 via-red-950/20 to-[#04070e] border border-amber-500/35 text-[11px] space-y-2 overflow-hidden shadow-[0_0_15px_rgba(245,158,11,0.15)]"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 font-bold text-amber-300">
-                                <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                                <span>⚡ Dynamic Maker Peg Entry Active</span>
+                          {hasActiveFuturesPos && positionData && (
+                            <div className="p-2.5 rounded-xl bg-gradient-to-r from-[#170a14] via-[#0e101d] to-[#0a1518] border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)] flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]'} animate-pulse`} />
+                                <div className="flex flex-col text-left min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[11px] font-extrabold text-white uppercase tracking-tight">Active Position:</span>
+                                    <span className={`text-[10px] font-mono font-black px-1.5 py-0.2 rounded border ${positionData.side.toLowerCase() === 'long' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'}`}>
+                                      {positionData.side.toUpperCase()}
+                                    </span>
+                                    <span className="text-[11px] font-mono font-bold text-gray-200">
+                                      {isInverseFutures && positionData.contracts ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(2)} ${baseCurrency})` : `${positionData.amount} ${baseCurrency}`}
+                                    </span>
+                                  </div>
+                                  <span className="text-[9.5px] text-gray-400 font-mono">
+                                    Instant Market Exit / Flatten
+                                  </span>
+                                </div>
                               </div>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold">
-                                Post-Only Maker
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-gray-400 leading-relaxed">
-                              Automatically shadows the top of the orderbook (Best Bid for Buy, Best Ask for Sell) at #1 Queue Priority until 100% filled.
-                            </p>
-                            <div className="space-y-1 pt-1 border-t border-white/5">
-                              <div className="flex justify-between items-center text-[10px] text-gray-400">
-                                <span>Max Chase Drift Guard</span>
-                                <span className="text-amber-400 font-bold font-mono">
-                                  {smartPegMaxDev === 0 ? 'Unlimited (∞)' : `${smartPegMaxDev}%`}
-                                </span>
-                              </div>
-                              <input
-                                type="range"
-                                min="0"
-                                max="5.0"
-                                step="0.1"
-                                value={smartPegMaxDev}
-                                onChange={(e) => setSmartPegMaxDev(parseFloat(e.target.value))}
-                                className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
-                              />
-                              <span className="text-[9px] text-gray-500">
-                                {smartPegMaxDev === 0 ? 'Chases continuously until filled.' : 'Stops chasing if price drifts too far away from initial entry.'}
-                              </span>
-                            </div>
-                            <SmartPegWallStrategyPanel
-                              pegStrategy={smartPegStrategy}
-                              setPegStrategy={setSmartPegStrategy}
-                              wallMultiplier={smartPegWallMultiplier}
-                              setWallMultiplier={setSmartPegWallMultiplier}
-                              frontRunTicks={smartPegFrontRunTicks}
-                              setFrontRunTicks={setSmartPegFrontRunTicks}
-                              antiSpoofGuard={smartPegAntiSpoof}
-                              setAntiSpoofGuard={setSmartPegAntiSpoof}
-                              wallTargets={wallTargets}
-                              tradeSide={tradeSide}
-                              formatDisplayPrice={formatDisplayPrice}
-                            />
-                          </MotionDiv>
-                        )}
-                      </AnimatePresence>
 
-                      {/* Auto Best Limit (if Limit mode) */}
-                      <AnimatePresence>
-                        {orderType === 'Limit' && (
-                          <MotionDiv
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="overflow-hidden space-y-2"
-                          >
-                            {/* Switch: Auto Best Limit */}
-                            <div
-                              className="flex items-center justify-between bg-[#04070e]/85 p-2 rounded-lg border border-cyan-500/20 hover:border-cyan-400/40 cursor-pointer transition-colors"
-                              onClick={() => {
-                                const nextAuto = !isAutoLimit;
-                                setIsAutoLimit(nextAuto);
-                                if (nextAuto && !isFutures) {
-                                  // Like Binance BBO mode, Auto Best Limit Post-Only disables Native OTO/OTOCO bundle
-                                  setUseNativeTpSl(false);
-                                } else if (!nextAuto && (!limitPrice || Number(limitPrice) <= 0) && effectiveCurrentPrice > 0) {
-                                  setLimitPrice(effectiveCurrentPrice.toString());
-                                }
-                              }}
-                            >
-                              <div className="flex flex-col pr-2">
-                                <span className="text-[12px] font-bold text-cyan-300">Auto Best Limit (Post-Only)</span>
-                                <span className="text-[10.5px] text-gray-400">
-                                  {isAutoLimit && !isFutures
-                                    ? 'Snipes BBO Maker 0% Fee (Turn OFF to use Native Binance OTO/OTOCO)'
-                                    : 'Snipes entry at Best Bid/Ask without Taker Fees'}
-                                </span>
-                              </div>
-                              <div className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${isAutoLimit ? 'bg-cyan-500' : 'bg-gray-600'}`}>
-                                <MotionDiv
-                                  className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                                  animate={{ x: isAutoLimit ? 16 : 0 }}
-                                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                />
-                              </div>
-                            </div>
-
-                            <FullModalLimitWallPanel
-                              wallTargets={wallTargets}
-                              frontRunTicks={smartPegFrontRunTicks}
-                              setFrontRunTicks={setSmartPegFrontRunTicks}
-                              wallMagnetEnabled={wallMagnetEnabled}
-                              setWallMagnetEnabled={setWallMagnetEnabled}
-                              isFetchingWalls={isFetchingWalls}
-                              currentPrice={effectiveCurrentPrice}
-                              formatDisplayPrice={formatDisplayPrice}
-                              onSnapLimitToWall={handleSnapLimitToWall}
-                              onRefreshWalls={fetchNearestWalls}
-                            />
-                          </MotionDiv>
-                        )}
-                      </AnimatePresence>
-
-                      {/* Size (Cyber-HUD Order Size Card) */}
-                      <div className="space-y-2 rounded-xl bg-[#04070e]/90 border border-cyan-500/20 p-2.5 shadow-[inset_0_1px_6px_rgba(0,0,0,0.65)]">
-                        {/* Label row: currency name + toggle switch + balance */}
-                        <div className="flex justify-between items-center gap-2">
-                          <div className="flex items-center gap-1.5">
-                            <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">
-                              Order Size
-                            </label>
-                            {/* Base / Quote / Risk $ / Risk % toggle */}
-                            <div className="flex items-center gap-0.5 bg-[#0a101d] rounded p-0.5 border border-white/10">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setSizingMode('standard');
-                                  setSizeMode('base');
-                                  if (!selectedPercent) setSize('');
-                                }}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'standard' && sizeMode === 'base'
-                                  ? 'bg-cyan-500 text-slate-950 shadow'
-                                  : 'text-gray-400 hover:text-white'
-                                  }`}
+                                disabled={isClosingPosition}
+                                onClick={handleClosePosition}
+                                className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-mono text-[11px] font-black uppercase tracking-wider shadow-[0_0_12px_rgba(244,63,94,0.35)] transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 active:scale-95 shrink-0"
+                                title="Close active position immediately at Market price"
                               >
-                                {baseCurrency}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSizingMode('standard');
-                                  setSizeMode('quote');
-                                  if (!selectedPercent) setSize('');
-                                }}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'standard' && sizeMode === 'quote'
-                                  ? 'bg-amber-400 text-slate-950 shadow'
-                                  : 'text-gray-400 hover:text-white'
-                                  }`}
-                              >
-                                {quoteCurrency}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSizingMode('risk_usd');
-                                  setSelectedPercent(null);
-                                  if (!riskAmountInput || Number(riskAmountInput) <= 0) setRiskAmountInput('10');
-                                }}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'risk_usd'
-                                  ? 'bg-emerald-400 text-slate-950 shadow'
-                                  : 'text-gray-400 hover:text-emerald-300'
-                                  }`}
-                                title="Auto-compute Position Size from max USD ($) risk to SL"
-                              >
-                                RISK $
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSizingMode('risk_pct');
-                                  setSelectedPercent(null);
-                                  if (!riskAmountInput || Number(riskAmountInput) <= 0 || Number(riskAmountInput) > 25) setRiskAmountInput('1');
-                                }}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'risk_pct'
-                                  ? 'bg-emerald-400 text-slate-950 shadow'
-                                  : 'text-gray-400 hover:text-emerald-300'
-                                  }`}
-                                title="Auto-compute Position Size from % wallet balance risk to SL"
-                              >
-                                RISK %
+                                {isClosingPosition ? (
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Zap className="w-3 h-3 fill-current" />
+                                )}
+                                <span>{isClosingPosition ? 'Closing...' : 'Close Pos'}</span>
                               </button>
                             </div>
-                          </div>
-                          <div className="text-[11px] text-gray-500 text-right flex flex-col items-end">
-                            <div className="flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title={`Live Auto-Sync Active (${(timings.balancePollMs / 1000).toFixed(1)}s)`} />
-                              <span>Bal:</span>
-                              <span className="text-cyan-200 font-semibold font-mono">
-                                {isLoadingBalance && !balanceData ? "..." : balanceData ? (
-                                  isInverseFutures
-                                    ? sizeMode === 'quote'
-                                      ? `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency} (~$${(((balanceData.base_free || 0) * (effectiveOrderPrice || effectiveCurrentPrice || 0))).toFixed(2)})`
-                                      : `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency}`
-                                    : sizeMode === 'quote'
-                                      ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                                      : isFutures
-                                        ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                                        : tradeSide === 'Buy'
-                                          ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
-                                          : `${(balanceData.base_free || 0).toFixed(4)} ${baseCurrency}`
-                                ) : "N/A"}
-                              </span>
-                            </div>
+                          )}
 
-                            {/* Show helpful diagnostic badge if funds are located in USDⓈ-M or Spot wallet instead of COIN-M */}
-                            {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.usds_futures_free && balanceData.usds_futures_free > 0) && (
-                              <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in USDⓈ-M Futures wallet instead of COIN-M Futures">
-                                <span>⚠️ {balanceData?.usds_futures_free?.toFixed(2)} in USDⓈ-M! Transfer to COIN-M</span>
+                          {openLimitOrders && openLimitOrders.length > 0 && (
+                            <div className="p-2.5 rounded-xl bg-[#04070e]/90 border border-cyan-500/25 shadow-sm flex flex-col gap-2">
+                              <div className="flex items-center justify-between pb-1 border-b border-white/10">
+                                <div className="flex items-center gap-1.5">
+                                  <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                                  <span className="text-[11.5px] font-bold text-cyan-200 uppercase tracking-wide font-mono">
+                                    Open Orders ({openLimitOrders.length})
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={isCancellingAll}
+                                  onClick={handleCancelAllOrders}
+                                  className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10.5px] font-mono font-bold tracking-wider transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                  title="Cancel all open orders on this symbol"
+                                >
+                                  {isCancellingAll ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Trash2 className="w-2.5 h-2.5" />}
+                                  <span>{isCancellingAll ? 'Cancelling...' : 'Cancel All'}</span>
+                                </button>
                               </div>
-                            )}
-                            {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.spot_free && balanceData.spot_free > 0) && (
-                              <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in Spot wallet instead of COIN-M Futures">
-                                <span>⚠️ {balanceData?.spot_free?.toFixed(2)} in Spot! Transfer to COIN-M</span>
-                              </div>
-                            )}
 
-                            {/* Show Locked / In-Orders Balance if any */}
-                            {balanceData && (
-                              (() => {
-                                const isQuoteTarget = !isInverseFutures && (sizeMode === 'quote' || (isFutures ? true : tradeSide === 'Buy'));
-                                const lockedAmount = isQuoteTarget ? (balanceData.quote_used || 0) : (balanceData.base_used || 0);
-                                const curr = isQuoteTarget ? quoteCurrency : baseCurrency;
-                                if (lockedAmount > 0) {
+                              <div className="max-h-52 overflow-y-auto space-y-1.5 pr-0.5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
+                                {openLimitOrders.map((ord: any) => {
+                                  const isBuy = String(ord.side).toLowerCase() === 'buy';
+                                  const mode = ord.mode || 'LIMIT';
+                                  const isCancelling = cancellingOrderId === String(ord.id);
                                   return (
-                                    <div className="text-[10px] text-amber-400 font-mono flex items-center gap-1">
-                                      <span>Locked:</span>
-                                      <span>{isQuoteTarget ? lockedAmount.toFixed(2) : lockedAmount.toFixed(4)} {curr}</span>
+                                    <div
+                                      key={ord.id}
+                                      className="p-1.5 rounded-lg bg-black/50 border border-white/10 flex items-center justify-between text-[11px] font-mono"
+                                    >
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span
+                                          className={`px-1 py-0.2 rounded text-[9px] font-bold uppercase ${isBuy
+                                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                            : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                            }`}
+                                        >
+                                          {isBuy ? 'BUY' : 'SELL'}
+                                        </span>
+                                        <span className="text-[9px] text-cyan-300/80 uppercase font-bold">[{mode}]</span>
+                                        {ord.isIceberg && ord.icebergQty && (
+                                          <span className="text-[8.5px] px-1 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                                            🧊{ord.icebergQty}
+                                          </span>
+                                        )}
+                                        <span className="text-gray-200 truncate">
+                                          {Number(ord.amount || ord.remaining || 0).toFixed(2)} @{' '}
+                                          <strong className="text-white">${formatDisplayPrice(ord.price)}</strong>
+                                        </span>
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        disabled={isCancelling}
+                                        onClick={() => handleCancelOrder(String(ord.id))}
+                                        className="p-1 rounded hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-transparent hover:border-rose-500/30 transition-all cursor-pointer disabled:opacity-50 shrink-0 ml-1"
+                                        title={`Cancel Order #${ord.id}`}
+                                      >
+                                        {isCancelling ? (
+                                          <RefreshCw className="w-3 h-3 animate-spin text-rose-400" />
+                                        ) : (
+                                          <X className="w-3 h-3" />
+                                        )}
+                                      </button>
                                     </div>
                                   );
-                                }
-                                return null;
-                              })()
-                            )}
-
-                            {isFutures && reduceOnly && (
-                              <div className="text-[11px] text-cyan-300 font-mono">
-                                Pos: {isLoadingPosition ? "..." : (positionData && positionData.amount > 0 ? (
-                                  isInverseFutures && positionData.contracts
-                                    ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(1)} ${baseCurrency})`
-                                    : `${positionData.amount} (${positionData.side.toUpperCase()})`
-                                ) : "0")}
+                                })}
                               </div>
-                            )}
-                          </div>
-                        </div>
+                            </div>
+                          )}
 
-                        {/* Input field */}
-                        <div className="relative">
-                          {sizingMode === 'standard' ? (
-                            <>
-                              <input
-                                type="number"
-                                value={size}
-                                onChange={(e) => {
-                                  setSize(e.target.value);
-                                  setSelectedPercent(null);
-                                }}
-                                placeholder={isInverseFutures ? `Min 1 Cont ($${contractSize})` : "0.00"}
-                                className={`w-full bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-3 ${sizeMode === 'quote' ? 'pl-7' : 'pl-12'} text-white font-mono font-bold text-[13px] focus:outline-none transition-colors`}
-                              />
-                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11.5px] font-mono font-bold text-cyan-400/80 pointer-events-none">
-                                {sizeMode === 'quote' ? '$' : baseCurrency.slice(0, 4)}
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <input
-                                type="number"
-                                step="any"
-                                min="0"
-                                value={riskAmountInput}
-                                onChange={(e) => setRiskAmountInput(e.target.value)}
-                                placeholder={sizingMode === 'risk_usd' ? 'Max Loss in $ (e.g. 10)' : 'Max Risk % (e.g. 1)'}
-                                className="w-full bg-[#0a101d]/90 border border-emerald-500/40 focus:border-emerald-400 rounded-lg py-1.5 px-3 pl-14 text-emerald-200 font-mono font-bold text-[13px] focus:outline-none transition-colors"
-                              />
-                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] font-mono font-bold text-emerald-400 pointer-events-none">
-                                {sizingMode === 'risk_usd' ? 'RISK$' : 'RISK%'}
-                              </span>
-                            </>
+                          {ordersBadgeCount === 0 && (
+                            <div className="p-6 rounded-xl bg-[#04070e]/75 border border-cyan-500/15 text-center space-y-2">
+                              <Layers className="w-6 h-6 text-cyan-400/50 mx-auto" />
+                              <p className="text-[13px] font-mono font-bold text-gray-300">No Active Orders or Brackets</p>
+                              <p className="text-[11px] text-gray-500">Open Limit orders, Smart Peg monitors, Smart Chase SL, and active Futures positions for {activeSymbol} will appear here.</p>
+                              <button
+                                type="button"
+                                onClick={() => fetchBalance(false, true)}
+                                className="px-3 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-cyan-300 text-[11px] font-mono font-bold uppercase cursor-pointer"
+                              >
+                                Sync Exchange State
+                              </button>
+                            </div>
                           )}
                         </div>
+                      )}
 
-                        {sizingMode !== 'standard' && (
-                          <RiskSizingSubBar
-                            sizeMode={sizingMode}
-                            riskInput={riskAmountInput}
-                            onSelectRiskPreset={setRiskAmountInput}
-                            riskCalc={riskSizing}
-                            baseCurrency={baseCurrency}
-                            quoteCurrency={quoteCurrency}
-                            formatDisplayPrice={formatDisplayPrice}
-                          />
-                        )}
+                      {/* TAB 1: ORDER & SIZE */}
+                      {activeTerminalTab === 'order' && (
+                        <div className="space-y-2.5 animate-fadeIn">
 
-                        {/* Live conversion estimate */}
-                        {sizingMode === 'standard' && size && Number(size) > 0 && effectiveOrderPrice > 0 && (
-                          <div className="flex items-center gap-1.5 px-1 flex-wrap font-mono">
-                            <span className="text-[11px] text-gray-500">≈</span>
-                            {sizeMode === 'quote' ? (
-                              <span className="text-[11px] text-amber-300 font-semibold">
-                                {(Number(size) / effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} {baseCurrency}
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-amber-300 font-semibold">
-                                ${(Number(size) * effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
-                              </span>
-                            )}
-                            {isInverseFutures && (
-                              <span className="text-[10.5px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.2 rounded font-mono font-semibold">
-                                • {Math.max(1, Math.round(((sizeMode === 'quote' ? Number(size) : Number(size) * effectiveOrderPrice)) / contractSize))} Cont (${contractSize}/Cont)
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* % quick-fill buttons */}
-                        <div className="flex justify-between gap-1.5">
-                          {['25%', '50%', '75%', '100%'].map(pct => {
-                            const isSelected = sizingMode === 'standard' && selectedPercent === pct;
-                            return (
-                              <button
-                                key={pct}
-                                type="button"
-                                className={`flex-1 py-1 text-[11px] font-mono font-extrabold rounded border transition-all cursor-pointer active:scale-95 ${isSelected
-                                  ? 'bg-gradient-to-r from-cyan-500/35 to-emerald-500/30 border-cyan-400 text-cyan-200 shadow-[0_0_8px_rgba(6,182,212,0.35)]'
-                                  : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-cyan-500/40 text-gray-400 hover:text-white'
-                                  }`}
-                                onClick={() => {
-                                  setSizingMode('standard');
-                                  setSelectedPercent(pct);
-                                  if (balanceData && effectiveOrderPrice > 0) {
-                                    const newSize = calculateSize(
-                                      pct,
-                                      balanceData,
-                                      effectiveOrderPrice,
-                                      sizeMode,
-                                      tradeSide,
-                                      isFutures,
-                                      leverage,
-                                      reduceOnly,
-                                      positionData
-                                    );
-                                    if (newSize) {
-                                      setSize(newSize);
-                                    }
-                                  }
-                                }}
-                              >
-                                {pct}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Binance Native Iceberg Order Panel (Spot Limit Only) */}
-                      {orderType === 'Limit' && !isFutures && (
-                        <div className="space-y-2.5 bg-cyan-950/20 p-2.5 rounded-lg border border-cyan-500/20 transition-all">
-                          <div
-                            className="flex justify-between items-center cursor-pointer select-none"
-                            onClick={() => setIsIceberg(!isIceberg)}
-                          >
-                            <div className="flex items-center gap-2">
-                              <div className="p-1 rounded bg-cyan-500/10 text-cyan-400">
-                                <Layers className="w-3.5 h-3.5" />
+                          {/* API Account & Limit Price (2-Column Sci-Fi Row when Standard Limit active) */}
+                          <div className={`grid gap-2 ${orderType === 'Limit' && !isAutoLimit ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">Execute With</label>
+                              <div className="relative">
+                                <select
+                                  value={selectedApi}
+                                  onChange={(e) => {
+                                    const nextId = e.target.value;
+                                    setSelectedApi(nextId);
+                                    onApiKeyChange?.(nextId);
+                                    try {
+                                      localStorage.setItem('cosmo_manual_selected_api_v1', nextId);
+                                    } catch { }
+                                  }}
+                                  className="w-full bg-[#04070e]/90 border border-white/10 hover:border-cyan-500/40 rounded-lg py-1.5 pl-2.5 pr-7 text-white text-[13px] font-semibold focus:outline-none focus:border-cyan-400/60 transition-colors appearance-none cursor-pointer"
+                                >
+                                  {apiKeys.map(k => (
+                                    <option key={k.id} value={k.id} className="bg-[#070b14]">
+                                      {k.name || k.label || k.key_name || `${k.exchange?.toUpperCase()} — Key #${k.id}`}
+                                    </option>
+                                  ))}
+                                  {apiKeys.length === 0 && <option value="" disabled>No API Keys found</option>}
+                                </select>
+                                <ChevronDown className="absolute right-2 top-[8px] w-3.5 h-3.5 text-cyan-400/70 pointer-events-none" />
                               </div>
-                              <div className="flex flex-col text-left">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[13px] font-bold text-cyan-300">Binance Native Iceberg</span>
-                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold uppercase">Spot GTC</span>
+                            </div>
+
+                            {orderType === 'Limit' && !isAutoLimit && (
+                              <div className="space-y-1">
+                                <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">Limit Price</label>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    value={limitPrice}
+                                    disabled={isAutoLimit}
+                                    onChange={(e) => setLimitPrice(e.target.value)}
+                                    className="w-full bg-[#04070e]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-2.5 pl-6 text-white font-mono font-bold text-[13px] focus:outline-none transition-colors disabled:opacity-50"
+                                  />
+                                  <span className="absolute left-2.5 top-1.5 text-cyan-400/80 font-mono text-[13px]">$</span>
                                 </div>
-                                <span className="text-[11px] text-gray-400">
-                                  Splits limit order into smaller visible book slices
-                                </span>
                               </div>
-                            </div>
-                            <div className={`relative w-8 h-4 rounded-full transition-colors ${isIceberg ? 'bg-cyan-500' : 'bg-gray-600'}`}>
-                              <MotionDiv
-                                className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                                animate={{ x: isIceberg ? 16 : 0 }}
-                                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                              />
-                            </div>
+                            )}
                           </div>
 
+                          {/* Smart Peg Entry Explanatory & Settings Panel */}
                           <AnimatePresence>
-                            {isIceberg && (
+                            {orderType === 'SmartPeg' && (
                               <MotionDiv
                                 initial={{ height: 0, opacity: 0 }}
                                 animate={{ height: 'auto', opacity: 1 }}
                                 exit={{ height: 0, opacity: 0 }}
-                                className="space-y-2.5 overflow-hidden pt-2 border-t border-cyan-500/20"
+                                className="p-2.5 rounded-xl bg-gradient-to-r from-amber-950/40 via-red-950/20 to-[#04070e] border border-amber-500/35 text-[11px] space-y-2 overflow-hidden shadow-[0_0_15px_rgba(245,158,11,0.15)]"
                               >
-                                {/* Slice Mode Selector */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <label className="text-[11px] text-gray-400 font-medium">Visible Slice Size</label>
-                                  <div className="flex bg-black/40 rounded border border-white/10 p-0.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => setIcebergMode('percent')}
-                                      className={`px-2 py-0.5 text-[11px] rounded transition-colors ${icebergMode === 'percent' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
-                                        }`}
-                                    >
-                                      % of Total
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setIcebergMode('qty');
-                                        if (!icebergCustomQty || icebergCustomQty === '0') {
-                                          setIcebergCustomQty('250');
-                                        }
-                                      }}
-                                      className={`px-2 py-0.5 text-[11px] rounded transition-colors ${icebergMode === 'qty' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
-                                        }`}
-                                    >
-                                      {baseCurrency}
-                                    </button>
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                                    <span>⚡ Dynamic Maker Peg Entry Active</span>
                                   </div>
-                                </div>
-
-                                {/* Percent Quick Buttons */}
-                                {icebergMode === 'percent' && (
-                                  <div className="grid grid-cols-4 gap-1.5">
-                                    {['10', '20', '25', '50'].map((pct) => (
-                                      <button
-                                        key={pct}
-                                        type="button"
-                                        onClick={() => setIcebergPercent(pct)}
-                                        className={`py-1 text-[11px] font-mono rounded border transition-all ${icebergPercent === pct
-                                          ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
-                                          : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
-                                          }`}
-                                      >
-                                        {pct}%
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {/* Base Coin Qty Quick Buttons */}
-                                {icebergMode === 'qty' && (
-                                  <div className="grid grid-cols-4 gap-1.5">
-                                    {['100', '250', '500', '1000'].map((q) => (
-                                      <button
-                                        key={q}
-                                        type="button"
-                                        onClick={() => setIcebergCustomQty(q)}
-                                        className={`py-1 text-[11px] font-mono rounded border transition-all ${icebergCustomQty === q
-                                          ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
-                                          : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
-                                          }`}
-                                      >
-                                        {q} {baseCurrency}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {/* Input Field */}
-                                <div className="relative">
-                                  <input
-                                    type="number"
-                                    step="any"
-                                    value={icebergMode === 'percent' ? icebergPercent : icebergCustomQty}
-                                    onChange={(e) => {
-                                      if (icebergMode === 'percent') {
-                                        setIcebergPercent(e.target.value);
-                                      } else {
-                                        setIcebergCustomQty(e.target.value);
-                                      }
-                                    }}
-                                    placeholder={icebergMode === 'percent' ? 'e.g. 20' : '250'}
-                                    className="w-full bg-black/40 border border-cyan-500/30 rounded py-1.5 px-3 pr-14 text-white text-[13px] font-mono focus:outline-none focus:border-cyan-400 transition-colors"
-                                  />
-                                  <span className="absolute right-3 top-1.5 text-[11px] text-cyan-400 font-bold font-mono">
-                                    {icebergMode === 'percent' ? '% SLICE' : baseCurrency}
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold">
+                                    Post-Only Maker
                                   </span>
                                 </div>
-
-                                {/* Live Slice Calculation & Warning Pill */}
-                                {(() => {
-                                  if (effectiveIcebergQty <= 0 || currentBaseAmount <= 0) return null;
-                                  const refPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
-                                  const sliceNotional = effectiveIcebergQty * refPrice;
-                                  const minRequiredSlice = refPrice > 0 ? Math.ceil(5.05 / refPrice) : 65;
-
-                                  if (effectiveIcebergQty >= currentBaseAmount) {
-                                    return (
-                                      <div className="p-2 rounded bg-amber-950/40 border border-amber-500/40 text-[11px] text-amber-300 flex items-center gap-1.5 font-mono">
-                                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                        <span>Slice ({effectiveIcebergQty.toFixed(2)}) must be smaller than total order ({currentBaseAmount.toFixed(2)} {baseCurrency}).</span>
-                                      </div>
-                                    );
-                                  }
-
-                                  if (sliceNotional < 5.0) {
-                                    return (
-                                      <div className="p-2 rounded bg-red-950/50 border border-red-500/50 flex flex-col gap-1.5 text-[11px] animate-fadeIn">
-                                        <div className="flex items-center justify-between text-red-300 font-bold">
-                                          <span className="flex items-center gap-1">
-                                            <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                                            Slice value (${sliceNotional.toFixed(2)}) is below Binance $5.00 Min Notional!
-                                          </span>
-                                        </div>
-                                        <div className="flex items-center justify-between text-gray-300">
-                                          <span className="text-[10px]">Binance requires each slice ≥ $5.00 (~{minRequiredSlice} {baseCurrency})</span>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setIcebergMode('qty');
-                                              setIcebergCustomQty(minRequiredSlice.toString());
-                                            }}
-                                            className="px-2 py-0.5 rounded bg-red-600/30 hover:bg-red-600/60 text-red-200 border border-red-500/50 font-bold uppercase tracking-wider text-[10px] transition-colors cursor-pointer"
-                                          >
-                                            Auto-Set Min ({minRequiredSlice} {baseCurrency})
-                                          </button>
-                                        </div>
-                                      </div>
-                                    );
-                                  }
-
-                                  return (
-                                    <div className="p-2 rounded bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-between text-[11px] font-mono">
-                                      <span className="text-gray-300">
-                                        Order Book Shows: <strong className="text-cyan-300">{effectiveIcebergQty.toFixed(4)} {baseCurrency}</strong> (~${sliceNotional.toFixed(2)})
-                                      </span>
-                                      <span className="text-cyan-400 font-bold">
-                                        ≈ {Math.max(1, Math.ceil(currentBaseAmount / effectiveIcebergQty))} Slices Total ✓
-                                      </span>
-                                    </div>
-                                  );
-                                })()}
+                                <p className="text-[10px] text-gray-400 leading-relaxed">
+                                  Automatically shadows the top of the orderbook (Best Bid for Buy, Best Ask for Sell) at #1 Queue Priority until 100% filled.
+                                </p>
+                                <div className="space-y-1 pt-1 border-t border-white/5">
+                                  <div className="flex justify-between items-center text-[10px] text-gray-400">
+                                    <span>Max Chase Drift Guard</span>
+                                    <span className="text-amber-400 font-bold font-mono">
+                                      {smartPegMaxDev === 0 ? 'Unlimited (∞)' : `${smartPegMaxDev}%`}
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="5.0"
+                                    step="0.1"
+                                    value={smartPegMaxDev}
+                                    onChange={(e) => setSmartPegMaxDev(parseFloat(e.target.value))}
+                                    className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                  />
+                                  <span className="text-[9px] text-gray-500">
+                                    {smartPegMaxDev === 0 ? 'Chases continuously until filled.' : 'Stops chasing if price drifts too far away from initial entry.'}
+                                  </span>
+                                </div>
+                                <SmartPegWallStrategyPanel
+                                  pegStrategy={smartPegStrategy}
+                                  setPegStrategy={setSmartPegStrategy}
+                                  wallMultiplier={smartPegWallMultiplier}
+                                  setWallMultiplier={setSmartPegWallMultiplier}
+                                  frontRunTicks={smartPegFrontRunTicks}
+                                  setFrontRunTicks={setSmartPegFrontRunTicks}
+                                  antiSpoofGuard={smartPegAntiSpoof}
+                                  setAntiSpoofGuard={setSmartPegAntiSpoof}
+                                  wallTargets={wallTargets}
+                                  tradeSide={tradeSide}
+                                  formatDisplayPrice={formatDisplayPrice}
+                                />
                               </MotionDiv>
                             )}
                           </AnimatePresence>
-                        </div>
-                      )}
 
-                      {/* Futures Options Panel (Inside Order & Size Tab) */}
-                      {isFutures && (
-                        <div className="space-y-2.5 bg-[#04070e]/90 p-2.5 rounded-lg border border-cyan-500/20">
-                          <div className="flex justify-between items-center text-[13px] text-gray-400 font-medium">
-                            <div className="flex bg-black/50 rounded p-0.5 border border-white/10">
-                              <button
-                                type="button"
-                                onClick={() => setMarginMode('cross')}
-                                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-colors cursor-pointer ${marginMode === 'cross' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
+                          {/* Auto Best Limit (if Limit mode) */}
+                          <AnimatePresence>
+                            {orderType === 'Limit' && (
+                              <MotionDiv
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden space-y-2"
                               >
-                                Cross
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setMarginMode('isolated')}
-                                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-colors cursor-pointer ${marginMode === 'isolated' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
-                              >
-                                Isolated
-                              </button>
-                            </div>
-                            <span className="text-[12px] bg-amber-500/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded font-mono font-black tracking-wider">
-                              {leverage}x LEVERAGE
-                            </span>
-                          </div>
-
-                          <input
-                            type="range"
-                            min="1"
-                            max="125"
-                            value={leverage}
-                            onChange={(e) => setLeverage(Number(e.target.value))}
-                            className="w-full accent-cyan-400 h-1.5 bg-black/60 rounded-lg appearance-none cursor-pointer"
-                          />
-
-                          <label className="flex items-center space-x-2 cursor-pointer group w-max">
-                            <input
-                              type="checkbox"
-                              checked={reduceOnly}
-                              onChange={(e) => setReduceOnly(e.target.checked)}
-                              className="form-checkbox bg-black/40 border-white/20 text-cyan-400 rounded focus:ring-0 focus:ring-offset-0 cursor-pointer w-3.5 h-3.5"
-                            />
-                            <span className="text-[12px] text-gray-400 group-hover:text-white transition-colors font-medium">Reduce Only (Close Position)</span>
-                          </label>
-                        </div>
-                      )}
-                      </div>
-                    )}
-
-                    {/* TAB 3: AI SHIELD (L2 MACHINE LEARNING FILTER) */}
-                    {activeTerminalTab === 'ai' && (
-                      <div className="space-y-2.5 animate-fadeIn">
-                      {/* L2 / Training Studio Machine Learning Filter Panel */}
-                      <div className={`space-y-2.5 p-3 rounded-lg border transition-all ${mlFilterConfig.enabled ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.12)]' : 'bg-[#04070e]/85 border-blue-500/25'}`}>
-                        <div
-                          className="flex justify-between items-center cursor-pointer group"
-                          onClick={() => {
-                            hasManualMlOverrideRef.current = true;
-                            setMlFilterConfig(prev => ({
-                              ...prev,
-                              enabled: !prev.enabled,
-                              modelId: !prev.enabled && !prev.modelId && mlModels.length > 0 ? mlModels[0].id : prev.modelId
-                            }));
-                          }}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500/25 text-blue-300 border border-blue-400/50' : 'bg-white/5 text-blue-400/70'}`}>
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                              </svg>
-                            </div>
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[13px] font-bold text-gray-200 group-hover:text-white transition-colors">
-                                  L2 Machine Learning Filter
-                                </span>
-                                <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${mlFilterConfig.enabled ? 'bg-blue-500/30 text-blue-200 border border-blue-400/40' : 'bg-white/5 text-gray-400'}`}>
-                                  {mlFilterConfig.enabled ? 'ACTIVE' : 'OFF'}
-                                </span>
-                                {pinnedModelId && mlFilterConfig.modelId === pinnedModelId && (
-                                  <span className="text-[9.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/35">
-                                    PINNED
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[11px] text-gray-400">
-                                🤖 Filter {tradeSide.toUpperCase()} entry using Training Studio / ML Registry model
-                              </span>
-                            </div>
-                          </div>
-                          <div className={`relative w-8 h-4 rounded-full transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500' : 'bg-gray-600'}`}>
-                            <MotionDiv
-                              className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                              animate={{ x: mlFilterConfig.enabled ? 16 : 0 }}
-                              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Always-Visible ML Registry Model Selector Dropdown */}
-                        <div className="bg-black/45 p-2 rounded-lg border border-blue-500/25 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[11px] font-bold text-blue-400 uppercase tracking-wider">
-                              Select Trained Model (ML Registry)
-                            </label>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                fetchMlModels();
-                              }}
-                              className="p-1 rounded bg-white/5 hover:bg-blue-500/20 text-gray-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1 text-[10px]"
-                              title="Refresh Models from ML Registry"
-                            >
-                              <RefreshCw className={`w-3 h-3 ${isLoadingMlModels ? 'animate-spin text-blue-400' : ''}`} />
-                              <span>Refresh</span>
-                            </button>
-                          </div>
-
-                          {mlModels.length === 0 ? (
-                            <p className="text-[11px] text-amber-400/90 italic py-1">
-                              No models found in ML Registry. Train & save a model in Training Studio first.
-                            </p>
-                          ) : (
-                            <select
-                              className="w-full bg-black border border-blue-500/30 rounded-lg py-1.5 px-2.5 text-white outline-none focus:border-blue-400 text-[13px] font-bold cursor-pointer"
-                              value={mlFilterConfig.modelId}
-                              onChange={(e) => {
-                                hasManualMlOverrideRef.current = true;
-                                const val = e.target.value;
-                                const opt = getModelOptimalThresholds(val);
-                                setMlFilterConfig(prev => ({
-                                  ...prev,
-                                  modelId: val,
-                                  enabled: Boolean(val) ? true : prev.enabled,
-                                  bullishThreshold: prev.autoThreshold ? opt.bullish : prev.bullishThreshold,
-                                  bearishThreshold: prev.autoThreshold ? opt.bearish : prev.bearishThreshold
-                                }));
-                              }}
-                            >
-                              <option value="">-- Select a Model from ML Registry --</option>
-                              {mlModels.map(m => (
-                                <option key={m.id} value={m.id}>
-                                  {m.name} ({m.modelType}) - v{m.versions?.find(v => v.id === m.activeVersionId)?.version || '1.0'}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
-
-                        {mlFilterConfig.enabled && mlLivePreview && (
-                          <HudLiveAiMicroGauge
-                            preview={mlLivePreview}
-                            tradeSide={tradeSide}
-                            bullishThreshold={mlFilterConfig.bullishThreshold}
-                            bearishThreshold={mlFilterConfig.bearishThreshold}
-                            compact={false}
-                          />
-                        )}
-
-                        <AnimatePresence>
-                          {mlFilterConfig.enabled && (
-                            <MotionDiv
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="space-y-2.5 overflow-hidden pt-1 border-t border-white/5"
-                            >
-                              {/* Execution Mode Selector (Signal Only vs Dynamic Setup, matching WallHunterModal) */}
-                              <div className="bg-black/40 p-2 rounded-lg border border-white/5 space-y-1.5">
-                                <label className="text-[11px] font-bold text-blue-400 uppercase tracking-wider block">
-                                  Execution Mode
-                                </label>
-                                <div className="grid grid-cols-2 gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'basic' }))}
-                                    className={`py-1.5 px-2 rounded-lg font-bold text-[11px] transition-all border cursor-pointer ${mlFilterConfig.executionMode === 'basic'
-                                      ? 'bg-blue-600/25 border-blue-500 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
-                                      : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
-                                      }`}
-                                  >
-                                    Signal Only (Filter Entry)
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'advanced' }))}
-                                    className={`py-1.5 px-2 rounded-lg font-bold text-[11px] transition-all border cursor-pointer ${mlFilterConfig.executionMode === 'advanced'
-                                      ? 'bg-purple-600/25 border-purple-500 text-purple-300 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
-                                      : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
-                                      }`}
-                                  >
-                                    Dynamic Setup (AI TP/SL)
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* Smart Auto-Align to Model Toggle */}
-                              {(() => {
-                                const opt = getModelOptimalThresholds(mlFilterConfig.modelId);
-                                return (
-                                  <div className="flex items-center justify-between p-2 rounded-lg bg-black/45 border border-blue-500/25">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <Zap className={`w-3.5 h-3.5 shrink-0 ${mlFilterConfig.autoThreshold ? 'text-amber-400 fill-amber-400' : 'text-gray-500'}`} />
-                                      <div className="flex flex-col min-w-0">
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="text-[11px] font-bold text-gray-200">
-                                            Smart Auto-Align to Model
-                                          </span>
-                                          <span className={`text-[9.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase border ${mlFilterConfig.autoThreshold ? 'bg-amber-500/20 text-amber-300 border-amber-500/35 shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-gray-400 border-white/5'}`}>
-                                            {mlFilterConfig.autoThreshold ? 'AUTO ON' : 'MANUAL'}
-                                          </span>
-                                        </div>
-                                        <span className="text-[10px] text-gray-400 font-mono truncate">
-                                          {opt.note}
-                                        </span>
-                                      </div>
-                                    </div>
-                                    <div
-                                      className={`relative w-7 h-3.5 rounded-full transition-colors cursor-pointer shrink-0 ${mlFilterConfig.autoThreshold ? 'bg-amber-500' : 'bg-gray-700'}`}
-                                      onClick={() => {
-                                        const newAuto = !mlFilterConfig.autoThreshold;
-                                        setMlFilterConfig(prev => ({
-                                          ...prev,
-                                          autoThreshold: newAuto,
-                                          bullishThreshold: newAuto ? opt.bullish : prev.bullishThreshold,
-                                          bearishThreshold: newAuto ? opt.bearish : prev.bearishThreshold
-                                        }));
-                                      }}
-                                      title={mlFilterConfig.autoThreshold ? "Click to set custom manual thresholds" : "Click to auto-tune thresholds to model"}
-                                    >
-                                      <MotionDiv
-                                        className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
-                                        animate={{ x: mlFilterConfig.autoThreshold ? 14 : 0 }}
-                                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                      />
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-
-                              {/* Bullish Threshold (Active for BUY orders) */}
-                              <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Buy' ? 'bg-emerald-950/25 border-emerald-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
-                                <div className="flex justify-between items-center mb-1">
-                                  <label className="text-[11px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
-                                    <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Buy' ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`}></span>
-                                    <span>BUY Filter: Bullish Threshold</span>
-                                  </label>
-                                  <span className="text-[13px] font-mono font-bold text-emerald-400">
-                                    {(mlFilterConfig.bullishThreshold * 100).toFixed(0)}%
-                                  </span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min="0.1"
-                                  max="0.9"
-                                  step="0.01"
-                                  value={mlFilterConfig.bullishThreshold}
-                                  onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bullishThreshold: parseFloat(e.target.value) }))}
-                                  className="w-full accent-emerald-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
-                                />
-                                <p className="text-[10px] text-gray-400 mt-1 leading-tight">
-                                  For <span className="text-emerald-400 font-semibold">BUY</span> orders: AI must predict ≥{(mlFilterConfig.bullishThreshold * 100).toFixed(0)}% Bullish probability to permit entry, otherwise it denies the trade.
-                                </p>
-                              </div>
-
-                              {/* Bearish Threshold (Active for SELL orders — Spot Hold Currency Sell High & Futures Short) */}
-                              <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Sell' ? 'bg-rose-950/25 border-rose-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
-                                <div className="flex justify-between items-center mb-1">
-                                  <label className="text-[11px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
-                                    <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Sell' ? 'bg-rose-400 animate-pulse' : 'bg-gray-500'}`}></span>
-                                    <span>SELL Filter: Bearish Threshold</span>
-                                  </label>
-                                  <span className="text-[13px] font-mono font-bold text-rose-400">
-                                    {(mlFilterConfig.bearishThreshold * 100).toFixed(0)}%
-                                  </span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min="0.1"
-                                  max="0.9"
-                                  step="0.01"
-                                  value={mlFilterConfig.bearishThreshold}
-                                  onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bearishThreshold: parseFloat(e.target.value) }))}
-                                  className="w-full accent-rose-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
-                                />
-                                <p className="text-[10px] text-gray-400 mt-1 leading-tight">
-                                  For <span className="text-rose-400 font-semibold">SELL</span> orders (Spot Hold Sell High → Low TP Buy Back, or Short): AI must predict ≥{(mlFilterConfig.bearishThreshold * 100).toFixed(0)}% Bearish probability to permit selling.
-                                </p>
-                              </div>
-                            </MotionDiv>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                      </div>
-                    )}
-
-                    {/* TAB 2: BRACKETS (TP / SL / NATIVE OTO-OTOCO) */}
-                    {activeTerminalTab === 'brackets' && (
-                      <div className="space-y-2.5 animate-fadeIn">
-
-                      {/* Native Binance TP/SL Toggle (Spot) & Futures Bracket Architecture Summary */}
-                      {(tpConfig.enabled || slConfig.enabled) && !isFutures && (
-                        <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${!canConfigureNativeTpSl ? 'opacity-40 pointer-events-none' : ''}`}>
-                          <div className="flex flex-col pr-2">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[13px] font-bold text-brand-primary">Use Native Binance OTO/OTOCO</span>
-                              {useNativeTpSl && isNativeTpSlSupported && (
-                                <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-brand-primary/25 text-cyan-200 border border-brand-primary/40">
-                                  {tpConfig.enabled && slConfig.enabled && (slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
-                                    ? `HYBRID 2-LEG OTO${isIceberg ? ' + ICEBERG' : ''} + SMART CHASE SL`
-                                    : tpConfig.enabled && slConfig.enabled
-                                      ? `FULL 3-LEG OTOCO${isIceberg ? ' + ICEBERG' : ''}`
-                                      : `2-LEG NATIVE OTO${isIceberg ? ' + ICEBERG' : ''}`}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[10px] text-brand-primary/80 leading-snug mt-0.5">
-                              {orderType === 'SmartPeg'
-                                ? '⚡ Dynamic Peg Mode: Entry is dynamic maker; Native OCO auto-spawns upon fill'
-                                : orderType === 'Market'
-                                  ? '⚡ Market Entry: Post-fill Native OCO/Bracket spawns automatically upon fill'
-                                  : (tpConfig.enabled && tpConfig.orderType === 'Market')
-                                    ? '⚠️ Auto-disabled: Market TP requires software bracket execution'
-                                    : !canConfigureNativeTpSl
-                                      ? '⚠️ Enable Limit TP (or Fixed Stop SL) to use Native Binance OTO/OTOCO'
-                                      : isAutoLimit
-                                        ? 'ℹ️ Auto Best Limit (BBO Post-Only) is ON — click toggle to switch to Standard Limit + Native OTO/OTOCO'
-                                        : tpConfig.enabled && slConfig.enabled && (slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
-                                          ? `⚡ Entry + TP${isIceberg ? ' + Iceberg' : ''} sent as Native Binance OTO • SL runs via Smart Chase (250–350ms)`
-                                          : tpConfig.enabled && slConfig.enabled
-                                            ? `🛡️ Entry + TP + Fixed SL${isIceberg ? ' + Iceberg' : ''} sent as 3-Leg Native Binance OTOCO`
-                                            : `🎯 Entry + ${tpConfig.enabled ? 'TP' : 'Fixed SL'}${isIceberg ? ' + Iceberg' : ''} sent as 2-Leg Native Binance OTO`
-                              }
-                            </span>
-                          </div>
-                          <div
-                            className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer shrink-0 ${useNativeTpSl && isNativeTpSlSupported ? 'bg-brand-primary' : 'bg-gray-600'}`}
-                            onClick={() => {
-                              if (!canConfigureNativeTpSl) return;
-                              if (isAutoLimit) {
-                                // Turning on Native OTO/OTOCO automatically turns off Auto Best Limit (BBO Post-Only)
-                                setIsAutoLimit(false);
-                                if ((!limitPrice || Number(limitPrice) <= 0) && effectiveCurrentPrice > 0) {
-                                  setLimitPrice(effectiveCurrentPrice.toString());
-                                }
-                                setUseNativeTpSl(true);
-                              } else {
-                                setUseNativeTpSl(!useNativeTpSl);
-                              }
-                            }}
-                          >
-                            <MotionDiv
-                              className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                              animate={{ x: (useNativeTpSl && isNativeTpSlSupported) ? 16 : 0 }}
-                              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {(tpConfig.enabled || slConfig.enabled) && isFutures && (
-                        <div className="flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30">
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[13px] font-bold text-brand-primary">Futures Hybrid Bracket Engine</span>
-                              <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/35">
-                                {leverage}x {marginMode.toUpperCase()}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-brand-primary/80 leading-snug mt-0.5">
-                              {tpConfig.enabled && slConfig.enabled
-                                ? `🎯 Native Futures ${tpConfig.orderType} TP + ${slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase' ? '⚡ Smart Chase Maker SL (250ms) + Native Disaster Stop' : `🛡️ Native ${slConfig.type === 'trailing' ? 'Trailing' : 'Stop-Market'} SL`}`
-                                : tpConfig.enabled
-                                  ? `🎯 Native Futures ${tpConfig.orderType} Take-Profit (reduceOnly)`
-                                  : `🛡️ ${slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase' ? '⚡ Smart Chase Maker SL (250ms) + Native Disaster Stop' : 'Native Futures Stop-Loss (reduceOnly)'}`}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Bracket Order (Attached TP) Panel */}
-                      <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-brand-primary/10 transition-all">
-                        <div className="flex justify-between items-center cursor-pointer" onClick={() => setTpConfig({ ...tpConfig, enabled: !tpConfig.enabled })}>
-                          <div className="flex flex-col">
-                            <span className="text-[13px] font-bold text-gray-300 group-hover:text-white transition-colors">Attached Take-Profit (Bracket)</span>
-                            <span className="text-[11px] text-gray-500">Auto-trigger scalp exit once entry fills</span>
-                          </div>
-                          <div className={`relative w-8 h-4 rounded-full transition-colors ${tpConfig.enabled ? 'bg-brand-primary' : 'bg-gray-600'}`}>
-                            <MotionDiv
-                              className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                              animate={{ x: tpConfig.enabled ? 16 : 0 }}
-                              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                            />
-                          </div>
-                        </div>
-
-                        <AnimatePresence>
-                          {tpConfig.enabled && (
-                            <MotionDiv
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="space-y-3 overflow-hidden pt-2 border-t border-white/5"
-                            >
-                              {/* Layout Grid */}
-                              <div className="grid grid-cols-2 gap-2">
-                                {/* TP Order Type */}
-                                <div className="space-y-1">
-                                  <label className="text-[11px] text-gray-400 font-medium">TP Order Type</label>
-                                  <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
-                                    {(['Limit', 'Market'] as const).map(type => (
-                                      <button
-                                        key={type}
-                                        onClick={() => setTpConfig({ ...tpConfig, orderType: type })}
-                                        className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.orderType === type ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                      >
-                                        {type}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {/* Gap Mode */}
-                                <div className="space-y-1">
-                                  <label className="text-[11px] text-gray-400 font-medium">Mode</label>
-                                  <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
-                                    <button
-                                      onClick={() => setTpConfig({
-                                        ...tpConfig,
-                                        mode: 'percentage',
-                                        value: tpConfig.mode === 'percentage' ? tpConfig.value : getSmartGapValue('percentage', true)
-                                      })}
-                                      className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.mode === 'percentage' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                    >
-                                      %
-                                    </button>
-                                    <button
-                                      onClick={() => setTpConfig({
-                                        ...tpConfig,
-                                        mode: 'price',
-                                        value: tpConfig.mode === 'price' ? tpConfig.value : getSmartGapValue('price', true)
-                                      })}
-                                      className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.mode === 'price' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                    >
-                                      $
-                                    </button>
-                                    <button
-                                      onClick={() => setTpConfig({
-                                        ...tpConfig,
-                                        mode: 'absolute',
-                                        value: tpConfig.mode === 'absolute' ? tpConfig.value : getSmartGapValue('absolute', true)
-                                      })}
-                                      className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.mode === 'absolute' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                    >
-                                      🎯
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Target Gap & Timeout */}
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1">
-                                  <label className="text-[11px] text-gray-400 font-medium">{tpConfig.mode === 'absolute' ? 'Exact Price' : 'Target Gap'}</label>
-                                  <div className="relative">
-                                    <input
-                                      type="number"
-                                      value={tpConfig.value}
-                                      onChange={(e) => setTpConfig({ ...tpConfig, value: e.target.value })}
-                                      placeholder={tpConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 1.050" : "e.g. 0.950") : (tpConfig.mode === 'percentage' ? "e.g. 1.5" : "e.g. 0.005")}
-                                      className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-[13px] focus:outline-none focus:border-brand-primary/50"
-                                    />
-                                    <span className="absolute right-2 top-1.5 text-[11px] text-brand-primary font-bold">{tpConfig.mode === 'percentage' ? '%' : (tpConfig.mode === 'absolute' ? '🎯' : '$')}</span>
-                                  </div>
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="flex items-center justify-between">
-                                    <label className="text-[11px] text-gray-400 font-medium flex items-center gap-1">
-                                      <span>Monitor Limit</span>
-                                      {tpConfig.timeoutMins === 0 && (
-                                        <span className="text-[9px] text-emerald-400/90 font-medium">● Infinite</span>
-                                      )}
-                                    </label>
-                                    <button
-                                      type="button"
-                                      onClick={() => setTpConfig({ ...tpConfig, timeoutMins: tpConfig.timeoutMins === 0 ? 60 : 0 })}
-                                      className={`text-[10px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${tpConfig.timeoutMins === 0
-                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
-                                        : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
-                                        }`}
-                                      title={tpConfig.timeoutMins === 0 ? "Infinite monitor active (watches until filled). Click to set minute limit." : "Click to disable timeout limit (Monitor Infinitely)"}
-                                    >
-                                      {tpConfig.timeoutMins === 0 ? (
-                                        <>
-                                          <span className="text-[13px] font-bold leading-none">∞</span>
-                                          <span>No Limit</span>
-                                        </>
-                                      ) : (
-                                        <span>Limit On</span>
-                                      )}
-                                    </button>
-                                  </div>
-                                  <div className="flex items-center space-x-2">
-                                    <input
-                                      type="range"
-                                      min="0" max="60" step="1"
-                                      value={tpConfig.timeoutMins}
-                                      onChange={(e) => setTpConfig({ ...tpConfig, timeoutMins: Number(e.target.value) })}
-                                      className="w-full accent-brand-primary h-1 bg-black/50 rounded appearance-none cursor-pointer"
-                                      title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
-                                    />
-                                    <span
-                                      className={`text-[11px] font-mono min-w-[28px] text-right font-bold transition-colors ${tpConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
-                                        }`}
-                                      title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
-                                    >
-                                      {tpConfig.timeoutMins === 0 ? '∞' : `${tpConfig.timeoutMins}m`}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <TakeProfitWallSnapButton
-                                tradeSide={tradeSide}
-                                wallTargets={wallTargets}
-                                frontRunTicks={smartPegFrontRunTicks}
-                                formatDisplayPrice={formatDisplayPrice}
-                                onSnapTpToWall={handleSnapTpToWall}
-                              />
-                            </MotionDiv>
-                          )}
-                        </AnimatePresence>
-                      </div>
-
-                      {/* Attached Stop Loss (SL) Panel */}
-                      <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-red-500/10 transition-all">
-                        <div className="flex justify-between items-center cursor-pointer group" onClick={() => setSlConfig({ ...slConfig, enabled: !slConfig.enabled })}>
-                          <div className="flex flex-col">
-                            <span className="text-[13px] font-bold text-gray-300 group-hover:text-white transition-colors">Attached Stop-Loss (SL)</span>
-                            <span className="text-[11px] text-gray-400">{(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native Order (Visible on Exchange)' : '⚡ Bot Maker Loop (Zero Maker Fee)'}</span>
-                          </div>
-                          <div className={`relative w-8 h-4 rounded-full transition-colors ${slConfig.enabled ? 'bg-red-500' : 'bg-gray-600'}`}>
-                            <MotionDiv
-                              className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
-                              animate={{ x: slConfig.enabled ? 16 : 0 }}
-                              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                            />
-                          </div>
-                        </div>
-
-                        <AnimatePresence>
-                          {slConfig.enabled && (
-                            <MotionDiv
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="space-y-3 overflow-hidden pt-2 border-t border-white/5"
-                            >
-                              {/* Execution Engine Selector (Exchange Native vs Smart Chase Bot) */}
-                              <div className="space-y-2 bg-black/30 p-2.5 rounded-lg border border-white/5">
-                                <div className="flex items-center justify-between">
-                                  <label className="text-[11px] text-gray-300 font-semibold flex items-center gap-1">
-                                    <span>SL Execution Engine</span>
-                                  </label>
-                                  <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono font-bold ${(slConfig.type === 'fixed' || slConfig.type === 'trailing')
-                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                    }`}>
-                                    {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native (Safe)' : '⚡ Bot Software Loop'}
-                                  </span>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/50 rounded-lg border border-white/10">
-                                  <button
-                                    type="button"
-                                    onClick={() => setSlConfig({
-                                      ...slConfig,
-                                      type: 'fixed',
-                                      mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
-                                      value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
-                                    })}
-                                    className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all text-center ${(slConfig.type === 'fixed' || slConfig.type === 'trailing')
-                                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-md shadow-emerald-950/40 ring-1 ring-emerald-400/30'
-                                      : 'text-gray-400 hover:text-white hover:bg-white/5'
-                                      }`}
-                                  >
-                                    <span className="text-[11.5px] font-bold flex items-center gap-1">
-                                      <span>🛡️</span> Exchange Native
-                                    </span>
-                                    <span className="text-[8.5px] opacity-80 leading-tight mt-0.5">
-                                      Real order on Binance • 24/7 Safe
-                                    </span>
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => setSlConfig({
-                                      ...slConfig,
-                                      type: 'smart_chase',
-                                      mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
-                                      value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
-                                    })}
-                                    className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all text-center ${(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
-                                      ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-bold shadow-md shadow-amber-950/40 ring-1 ring-amber-400/30'
-                                      : 'text-gray-400 hover:text-white hover:bg-white/5'
-                                      }`}
-                                  >
-                                    <span className="text-[11.5px] font-bold flex items-center gap-1">
-                                      <span>⚡</span> Smart Chase
-                                    </span>
-                                    <span className="text-[8.5px] opacity-80 leading-tight mt-0.5">
-                                      Bot Maker Loop • 0% Fee
-                                    </span>
-                                  </button>
-                                </div>
-
-                                {/* Dynamic Sub-Variant & Gap Mode */}
-                                <div className="grid grid-cols-2 gap-2 pt-0.5">
-                                  {/* Sub-variant based on selected target */}
-                                  <div className="space-y-1">
-                                    <label className="text-[10.5px] text-gray-400 font-medium">
-                                      {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? 'Order Variant' : 'Chase Strategy'}
-                                    </label>
-                                    <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
-                                      {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? (
-                                        <>
-                                          <button
-                                            type="button"
-                                            onClick={() => setSlConfig({ ...slConfig, type: 'fixed' })}
-                                            className={`flex-1 text-[9.5px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-emerald-600 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                          >
-                                            Fixed Stop
-                                          </button>
-                                          <button
-                                            type="button"
-                                            disabled={isNativeExchangeSlLockedToFixed}
-                                            onClick={() => {
-                                              if (isNativeExchangeSlLockedToFixed) return;
-                                              setSlConfig({ ...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode });
-                                            }}
-                                            title={isNativeExchangeSlLockedToFixed ? 'Disabled when Native Binance OTO/OTOCO is ON (Binance Spot OTOCO only supports Fixed Stop_Loss_Limit. Use ⚡ Smart Chase -> Trail Chase for trailing)' : 'Trailing Stop'}
-                                            className={`flex-1 text-[9.5px] py-1 rounded transition-colors ${isNativeExchangeSlLockedToFixed
-                                              ? 'text-gray-600 opacity-40 cursor-not-allowed'
-                                              : slConfig.type === 'trailing'
-                                                ? 'bg-emerald-600 text-white font-bold'
-                                                : 'text-gray-500 hover:text-white'
-                                              }`}
-                                          >
-                                            Trailing {isNativeExchangeSlLockedToFixed ? '🔒' : ''}
-                                          </button>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <button
-                                            type="button"
-                                            onClick={() => setSlConfig({ ...slConfig, type: 'smart_chase' })}
-                                            className={`flex-1 text-[9.5px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-amber-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                          >
-                                            BBO Chase
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => setSlConfig({ ...slConfig, type: 'trailing_chase' })}
-                                            className={`flex-1 text-[9px] py-1 rounded transition-colors ${slConfig.type === 'trailing_chase' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                          >
-                                            ⚡ Trail Chase
-                                          </button>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Gap Mode */}
-                                  <div className="space-y-1">
-                                    <label className="text-[10.5px] text-gray-400 font-medium">Gap Unit</label>
-                                    <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => setSlConfig({
-                                          ...slConfig,
-                                          mode: 'percentage',
-                                          value: slConfig.mode === 'percentage' ? slConfig.value : getSmartGapValue('percentage', false)
-                                        })}
-                                        className={`flex-1 text-[11px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                      >
-                                        %
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setSlConfig({
-                                          ...slConfig,
-                                          mode: 'price',
-                                          value: slConfig.mode === 'price' ? slConfig.value : getSmartGapValue('price', false)
-                                        })}
-                                        className={`flex-1 text-[11px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                      >
-                                        $
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setSlConfig({
-                                          ...slConfig,
-                                          mode: 'absolute',
-                                          type: (slConfig.type === 'trailing' || slConfig.type === 'trailing_chase') ? 'fixed' : slConfig.type,
-                                          value: slConfig.mode === 'absolute' ? slConfig.value : getSmartGapValue('absolute', false)
-                                        })}
-                                        className={`flex-1 text-[11px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
-                                      >
-                                        🎯
-                                      </button>
-                                      {slConfig.type !== 'smart_chase' && slConfig.type !== 'trailing_chase' && (
-                                        <button
-                                          type="button"
-                                          disabled={isNativeExchangeSlLockedToFixed}
-                                          onClick={() => {
-                                            if (isNativeExchangeSlLockedToFixed) return;
-                                            setSlConfig({ ...slConfig, mode: 'atr', type: 'trailing' });
-                                          }}
-                                          title={isNativeExchangeSlLockedToFixed ? 'Disabled when Native Binance OTO/OTOCO is ON' : 'ATR Trailing Stop'}
-                                          className={`flex-1 text-[11px] py-1 rounded transition-colors ${isNativeExchangeSlLockedToFixed
-                                            ? 'text-gray-600 opacity-40 cursor-not-allowed'
-                                            : slConfig.mode === 'atr'
-                                              ? 'bg-red-500 text-white font-bold'
-                                              : 'text-gray-500 hover:text-white'
-                                            }`}
-                                        >
-                                          ATR {isNativeExchangeSlLockedToFixed ? '🔒' : ''}
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Assurance Banner */}
-                                {(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase') ? (
-                                  <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
-                                    <span>⚡</span>
-                                    <span>
-                                      <strong>Bot Smart Chase Loop:</strong> ব্যাকএন্ডে ultra-fast (~250ms) ট্র্যাক হবে
-                                      {!isFutures && useNativeTpSl && !isAutoLimit && tpConfig.enabled
-                                        ? ' (Hybrid: TP সরাসরি Binance OTO-তে বসবে)।'
-                                        : ' (Binance অর্ডারবুকে সরাসরি বসবে না)।'}
-                                    </span>
-                                  </div>
-                                ) : isFutures ? (
-                                  <div className="text-[10px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
-                                    <span>🛡️</span>
-                                    <span>
-                                      <strong>Binance Futures Native:</strong>{' '}
-                                      {slConfig.type === 'trailing'
-                                        ? 'TRAILING_STOP_MARKET (callback 0.1%–10%) সরাসরি Binance Futures-এ বসবে।'
-                                        : 'STOP_MARKET অর্ডার সরাসরি Binance Futures-এ বসবে এবং দৃশ্যমান থাকবে।'}
-                                    </span>
-                                  </div>
-                                ) : (useNativeTpSl && !isAutoLimit && slConfig.type === 'fixed') ? (
-                                  <div className="text-[10px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
-                                    <span>🛡️</span>
-                                    <span><strong>Binance Native {tpConfig.enabled ? 'OTOCO' : 'OTO'}:</strong> Fixed STOP_LOSS_LIMIT সরাসরি Binance-এ বসবে।</span>
-                                  </div>
-                                ) : (tpConfig.enabled || slConfig.type === 'trailing' || slConfig.mode === 'atr') ? (
-                                  <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
-                                    <span>⚠️</span>
-                                    <span>
-                                      <strong>Spot Software Fallback:</strong>{' '}
-                                      {tpConfig.enabled
-                                        ? 'Spot-এ TP ব্যালেন্স লক করে বলে SL ব্যাকএন্ড Watchdog-এ চলবে (Binance-এ SL রাখতে Native OTO/OTOCO ON করুন)।'
-                                        : 'Spot-এ Trailing/ATR স্টপ ব্যাকএন্ড Software Watchdog-এ ট্র্যাক হবে।'}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <div className="text-[10px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
-                                    <span>🛡️</span>
-                                    <span><strong>Binance Native Stop:</strong> অর্ডার সরাসরি Binance-এ বসবে এবং অ্যাপে দৃশ্যমান থাকবে।</span>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Target Gap & Timeout */}
-                              <div className="grid grid-cols-2 gap-2">
-                                {slConfig.mode === 'atr' ? (
-                                  <div className="grid grid-cols-3 gap-1">
-                                    <div className="space-y-1">
-                                      <label className="text-[11px] text-gray-400 font-medium">TF</label>
-                                      <select
-                                        value={slConfig.atrTimeframe}
-                                        onChange={(e) => setSlConfig({ ...slConfig, atrTimeframe: e.target.value })}
-                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-1 text-white text-[11px] focus:outline-none"
-                                      >
-                                        <option value="1m">1m</option>
-                                        <option value="5m">5m</option>
-                                        <option value="15m">15m</option>
-                                        <option value="1h">1h</option>
-                                        <option value="4h">4h</option>
-                                        <option value="1d">1d</option>
-                                      </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-[11px] text-gray-400 font-medium">Period</label>
-                                      <input
-                                        type="number"
-                                        value={slConfig.atrPeriod}
-                                        onChange={(e) => setSlConfig({ ...slConfig, atrPeriod: Number(e.target.value) })}
-                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[11px] focus:outline-none"
-                                      />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-[11px] text-gray-400 font-medium">Mult.</label>
-                                      <input
-                                        type="number"
-                                        step="0.1"
-                                        value={slConfig.atrMultiplier}
-                                        onChange={(e) => setSlConfig({ ...slConfig, atrMultiplier: Number(e.target.value) })}
-                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[11px] focus:outline-none"
-                                      />
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="space-y-1">
-                                    <label className="text-[11px] text-gray-400 font-medium">
-                                      {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'smart_chase' ? 'Chase Trigger Gap' : (slConfig.type === 'trailing_chase' ? 'Trailing Callback Gap' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap')))}
-                                    </label>
-                                    <div className="relative">
-                                      <input
-                                        type="number"
-                                        value={slConfig.value}
-                                        onChange={(e) => setSlConfig({ ...slConfig, value: e.target.value })}
-                                        placeholder={slConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 0.950" : "e.g. 1.050") : (slConfig.mode === 'percentage' ? "e.g. 1.0" : "e.g. 0.003")}
-                                        className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-[13px] focus:outline-none focus:border-red-500/50"
-                                      />
-                                      <span className="absolute right-2 top-1.5 text-[11px] text-red-500 font-bold">{slConfig.mode === 'percentage' ? '%' : (slConfig.mode === 'absolute' ? '🎯' : '$')}</span>
-                                    </div>
-                                  </div>
-                                )}
-                                <div className="space-y-1">
-                                  <div className="flex items-center justify-between">
-                                    <label className="text-[11px] text-gray-400 font-medium flex items-center gap-1">
-                                      <span>Monitor Limit</span>
-                                      {slConfig.timeoutMins === 0 && (
-                                        <span className="text-[9px] text-emerald-400/90 font-medium">● Infinite</span>
-                                      )}
-                                    </label>
-                                    <button
-                                      type="button"
-                                      onClick={() => setSlConfig({ ...slConfig, timeoutMins: slConfig.timeoutMins === 0 ? 60 : 0 })}
-                                      className={`text-[10px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${slConfig.timeoutMins === 0
-                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
-                                        : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
-                                        }`}
-                                      title={slConfig.timeoutMins === 0 ? "Infinite monitor active (watches until filled). Click to set minute limit." : "Click to disable timeout limit (Monitor Infinitely)"}
-                                    >
-                                      {slConfig.timeoutMins === 0 ? (
-                                        <>
-                                          <span className="text-[13px] font-bold leading-none">∞</span>
-                                          <span>No Limit</span>
-                                        </>
-                                      ) : (
-                                        <span>Limit On</span>
-                                      )}
-                                    </button>
-                                  </div>
-                                  <div className="flex items-center space-x-2">
-                                    <input
-                                      type="range"
-                                      min="0" max="60" step="1"
-                                      value={slConfig.timeoutMins}
-                                      onChange={(e) => setSlConfig({ ...slConfig, timeoutMins: Number(e.target.value) })}
-                                      className="w-full accent-red-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
-                                      title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
-                                    />
-                                    <span
-                                      className={`text-[11px] font-mono min-w-[28px] text-right font-bold transition-colors ${slConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
-                                        }`}
-                                      title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
-                                    >
-                                      {slConfig.timeoutMins === 0 ? '∞' : `${slConfig.timeoutMins}m`}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Smart Chase Detailed Controls (for Smart Chase & Trailing Chase) */}
-                              {(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase') && (
-                                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 space-y-2 mt-1 animate-fadeIn">
-                                  <div className="flex items-center justify-between text-[11px]">
-                                    <span className="font-bold text-red-400 flex items-center gap-1.5">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                                      {slConfig.type === 'trailing_chase' ? 'Trailing Chase Engine (Maker Post-Only)' : 'Smart Chase Settings (Maker Post-Only)'}
-                                    </span>
-                                    <span className="text-[10px] text-amber-400 font-mono font-bold">Circuit: {slConfig.smartChaseDeviationPct}%</span>
-                                  </div>
-
-                                  {/* Pegging Strategy Selector: Standard BBO vs Inside-Spread vs Wall-Aware */}
-                                  <div className="space-y-1">
-                                    <div className="flex justify-between items-center text-[10px] text-gray-400">
-                                      <span className="font-semibold text-gray-300">Pegging Strategy</span>
-                                      <span className="text-[9.5px] font-mono text-amber-300 font-bold">
-                                        {slConfig.smartChasePegStrategy === 'wall_aware' ? '🧱 Wall-Aware' : (slConfig.smartChasePegStrategy === 'inside_spread' ? '🎯 Inside-Spread' : '⚡ Top BBO')}
-                                      </span>
-                                    </div>
-                                    <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[10px] font-semibold">
-                                      <button
-                                        type="button"
-                                        onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'bbo' })}
-                                        className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChasePegStrategy === 'bbo'
-                                          ? 'bg-amber-600 text-white font-bold shadow-md'
-                                          : 'text-gray-400 hover:text-white'
-                                          }`}
-                                        title="Standard Top-of-Book BBO: Tracks Best Bid/Ask directly"
-                                      >
-                                        ⚡ Top BBO
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'inside_spread' })}
-                                        className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChasePegStrategy === 'inside_spread'
-                                          ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold shadow-md'
-                                          : 'text-gray-400 hover:text-white'
-                                          }`}
-                                        title="Inside-Spread Pegging: Places 1 tick inside spread when spread > 1 tick. Ensures #1 queue priority maker fill without taker fees."
-                                      >
-                                        🎯 Inside-Spread
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'wall_aware' })}
-                                        className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChasePegStrategy === 'wall_aware'
-                                          ? 'bg-gradient-to-r from-orange-600 to-amber-600 text-white font-bold shadow-md'
-                                          : 'text-gray-400 hover:text-white'
-                                          }`}
-                                        title="Liquidity-Wall Aware: Scans L2 depth, detects support/resistance walls, and front-runs 1 tick ahead."
-                                      >
-                                        🧱 Wall-Aware
-                                      </button>
-                                    </div>
-                                    {slConfig.smartChasePegStrategy === 'wall_aware' && (
-                                      <div className="p-2 rounded bg-amber-950/20 border border-amber-500/20 space-y-1">
-                                        <div className="flex justify-between items-center text-[9.5px]">
-                                          <span className="text-gray-300">Wall Threshold Multiplier</span>
-                                          <span className="text-amber-400 font-mono font-bold">{slConfig.smartChaseWallMultiplier}x Depth</span>
-                                        </div>
-                                        <input
-                                          type="range"
-                                          min="1.5" max="5.0" step="0.5"
-                                          value={slConfig.smartChaseWallMultiplier}
-                                          onChange={(e) => setSlConfig({ ...slConfig, smartChaseWallMultiplier: parseFloat(e.target.value) || 2.5 })}
-                                          className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
-                                        />
-                                        <p className="text-[9px] text-gray-400 leading-tight">
-                                          Front-runs orderbook clusters with volume ≥ {slConfig.smartChaseWallMultiplier}x average depth.
-                                        </p>
-                                      </div>
-                                    )}
-                                    {slConfig.smartChasePegStrategy === 'inside_spread' && (
-                                      <p className="text-[9px] text-cyan-400/90 leading-tight">
-                                        💡 Jumps 1 tick inside the spread to capture top execution priority before takers match other makers.
-                                      </p>
-                                    )}
-                                  </div>
-
-                                  {/* Chase Trigger Basis Toggle: Last Market Price vs Bid / Ask Price */}
-                                  <div className="space-y-1">
-                                    <div className="flex justify-between items-center text-[10px] text-gray-400">
-                                      <span className="font-semibold text-gray-300">Trigger Condition Basis</span>
-                                      <span className="text-[9.5px] font-mono text-cyan-300 font-bold">
-                                        {slConfig.smartChaseTriggerSource === 'bid_ask' ? '⚡ Bid / Ask (BBO)' : '📊 Last Market Price'}
-                                      </span>
-                                    </div>
-                                    <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[10px] font-semibold">
-                                      <button
-                                        type="button"
-                                        onClick={() => setSlConfig({ ...slConfig, smartChaseTriggerSource: 'last' })}
-                                        className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseTriggerSource === 'last'
-                                          ? 'bg-blue-600 text-white font-bold shadow-md'
-                                          : 'text-gray-400 hover:text-white'
-                                          }`}
-                                        title="Last Traded Price: Standard market trigger. Immune to temporary spread widening or empty book spikes."
-                                      >
-                                        📊 Last Price
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setSlConfig({ ...slConfig, smartChaseTriggerSource: 'bid_ask' })}
-                                        className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseTriggerSource === 'bid_ask'
-                                          ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold shadow-md'
-                                          : 'text-gray-400 hover:text-white'
-                                          }`}
-                                        title="Order Book Bid/Ask: Triggers instantly based on executable Top-of-Book (Bid for Long exit, Ask for Short exit). Eliminates lag on slow pairs."
-                                      >
-                                        ⚡ Bid / Ask
-                                      </button>
-                                    </div>
-                                    <p className="text-[9px] text-gray-400 leading-tight">
-                                      {slConfig.smartChaseTriggerSource === 'bid_ask'
-                                        ? 'Triggers immediately when Top Bid (Long exit) or Ask (Short exit) reaches SL.'
-                                        : 'Triggers when a matched trade on the exchange reaches or breaches SL.'}
-                                    </p>
-                                  </div>
-
-                                  {/* Chase Mode Selector: Dynamic BBO Peg vs Interval Timer */}
-                                  <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[10px] font-semibold">
-                                    <button
-                                      type="button"
-                                      onClick={() => setSlConfig({ ...slConfig, smartChaseMode: 'dynamic_bbo' })}
-                                      className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseMode === 'dynamic_bbo'
-                                        ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white font-bold shadow-md'
-                                        : 'text-gray-400 hover:text-white'
-                                        }`}
-                                      title="Real-time Order Book Shadowing: Automatically tracks Best Bid/Ask in real time without waiting"
-                                    >
-                                      <Zap className="w-2.5 h-2.5 text-amber-300 fill-amber-300" />
-                                      ⚡ Dynamic BBO Peg
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setSlConfig({ ...slConfig, smartChaseMode: 'interval' })}
-                                      className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseMode === 'interval'
-                                        ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white font-bold shadow-md'
-                                        : 'text-gray-400 hover:text-white'
-                                        }`}
-                                      title="Interval Timer: Waits for a fixed delay time before checking and retrying"
-                                    >
-                                      ⏱️ Interval Chase
-                                    </button>
-                                  </div>
-
-                                  {slConfig.smartChaseMode === 'dynamic_bbo' ? (
-                                    <div className="p-2 rounded bg-amber-950/30 border border-amber-500/30 text-[10px] text-amber-300/90 space-y-0.5">
-                                      <div className="font-bold flex items-center gap-1 text-amber-300">
-                                        <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
-                                        <span>Real-Time Order Book Shadowing Active</span>
-                                      </div>
-                                      <p className="text-[9.5px] text-gray-400 leading-tight">
-                                        Stays resting at Top-of-Book to preserve queue priority. Instantly cancels and re-pegs when another participant outbids you!
-                                      </p>
-                                    </div>
-                                  ) : (
-                                    <div className="p-1.5 rounded bg-black/40 border border-white/5 text-[10px] text-gray-400">
-                                      <span>Waits for configured delay interval between chase attempts.</span>
-                                    </div>
-                                  )}
-
-                                  {/* Max Chase Deviation Slider */}
-                                  <div className="space-y-1">
-                                    <div className="flex justify-between items-center text-[10px] text-gray-400">
-                                      <span>Max Deviation (Circuit Breaker)</span>
-                                      <span className="text-amber-400 font-bold font-mono">{slConfig.smartChaseDeviationPct}%</span>
-                                    </div>
-                                    <input
-                                      type="range"
-                                      min="0.1" max="5.0" step="0.1"
-                                      value={slConfig.smartChaseDeviationPct}
-                                      onChange={(e) => setSlConfig({ ...slConfig, smartChaseDeviationPct: parseFloat(e.target.value) })}
-                                      className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
-                                    />
-                                    <p className="text-[9px] text-gray-500">Breach triggers emergency Market Sweep.</p>
-                                  </div>
-
-                                  {/* Retries and Delay Grid */}
-                                  <div className={`grid ${slConfig.smartChaseMode === 'dynamic_bbo' ? 'grid-cols-1' : 'grid-cols-2'} gap-2 pt-1 border-t border-white/5`}>
-                                    <div className="space-y-1">
-                                      <label className="text-[10px] text-gray-400 font-medium flex justify-between">
-                                        <span>Max Re-pegs / Retries</span>
-                                        <span className="text-[9px] text-amber-400 font-bold">0 = ∞ (Continuous)</span>
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="0" max="100000" step="1"
-                                        value={slConfig.smartChaseMaxAttempts}
-                                        onChange={(e) => setSlConfig({ ...slConfig, smartChaseMaxAttempts: parseInt(e.target.value) || 0 })}
-                                        placeholder="0 (Unlimited)"
-                                        className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-red-500/50"
-                                      />
-                                    </div>
-                                    {slConfig.smartChaseMode === 'interval' && (
-                                      <div className="space-y-1">
-                                        <label className="text-[10px] text-gray-400 font-medium flex justify-between">
-                                          <span>Delay (ms)</span>
-                                          <span className="text-[9px] text-gray-500">Throttle</span>
-                                        </label>
-                                        <input
-                                          type="number"
-                                          min="200" max="5000" step="100"
-                                          value={slConfig.smartChaseDelayMs}
-                                          onChange={(e) => setSlConfig({ ...slConfig, smartChaseDelayMs: parseInt(e.target.value) || 1500 })}
-                                          placeholder="1500"
-                                          className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-red-500/50"
-                                        />
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Auto-Breakeven (Capital Protection) Panel */}
-                              <div className={`bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-2.5 space-y-2 mt-2 ${(isNativeExchangeSlLockedToFixed && (slConfig.type === 'fixed' || slConfig.type === 'trailing')) ? 'opacity-45 pointer-events-none' : ''}`}>
+                                {/* Switch: Auto Best Limit */}
                                 <div
-                                  className="flex justify-between items-center cursor-pointer group"
+                                  className="flex items-center justify-between bg-[#04070e]/85 p-2 rounded-lg border border-cyan-500/20 hover:border-cyan-400/40 cursor-pointer transition-colors"
                                   onClick={() => {
-                                    if (isNativeExchangeSlLockedToFixed && (slConfig.type === 'fixed' || slConfig.type === 'trailing')) return;
-                                    setSlConfig({ ...slConfig, autoBreakevenEnabled: !slConfig.autoBreakevenEnabled });
+                                    const nextAuto = !isAutoLimit;
+                                    setIsAutoLimit(nextAuto);
+                                    if (nextAuto && !isFutures) {
+                                      // Like Binance BBO mode, Auto Best Limit Post-Only disables Native OTO/OTOCO bundle
+                                      setUseNativeTpSl(false);
+                                    } else if (!nextAuto && (!limitPrice || Number(limitPrice) <= 0) && effectiveCurrentPrice > 0) {
+                                      setLimitPrice(effectiveCurrentPrice.toString());
+                                    }
                                   }}
                                 >
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                    <span className="text-[11px] font-bold text-emerald-300 group-hover:text-white transition-colors">
-                                      🛡️ Auto-Breakeven {(isNativeExchangeSlLockedToFixed && (slConfig.type === 'fixed' || slConfig.type === 'trailing')) ? '(Switch to ⚡ Smart Chase to enable with Native OTO)' : '(Risk-Free Trade)'}
+                                  <div className="flex flex-col pr-2">
+                                    <span className="text-[12px] font-bold text-cyan-300">Auto Best Limit (Post-Only)</span>
+                                    <span className="text-[10.5px] text-gray-400">
+                                      {isAutoLimit && !isFutures
+                                        ? 'Snipes BBO Maker 0% Fee (Turn OFF to use Native Binance OTO/OTOCO)'
+                                        : 'Snipes entry at Best Bid/Ask without Taker Fees'}
                                     </span>
                                   </div>
-                                  <div className={`relative w-7 h-3.5 rounded-full transition-colors ${slConfig.autoBreakevenEnabled ? 'bg-emerald-500' : 'bg-gray-700'}`}>
+                                  <div className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${isAutoLimit ? 'bg-cyan-500' : 'bg-gray-600'}`}>
                                     <MotionDiv
-                                      className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
-                                      animate={{ x: slConfig.autoBreakevenEnabled ? 14 : 0 }}
+                                      className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                                      animate={{ x: isAutoLimit ? 16 : 0 }}
                                       transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                                     />
                                   </div>
                                 </div>
 
-                                <AnimatePresence>
-                                  {slConfig.autoBreakevenEnabled && (
-                                    <MotionDiv
-                                      initial={{ height: 0, opacity: 0 }}
-                                      animate={{ height: 'auto', opacity: 1 }}
-                                      exit={{ height: 0, opacity: 0 }}
-                                      className="space-y-2 pt-1 border-t border-emerald-500/10 overflow-hidden"
-                                    >
-                                      <div className="grid grid-cols-2 gap-2">
-                                        <div className="space-y-1">
-                                          <label className="text-[10px] text-gray-400 font-medium flex justify-between">
-                                            <span>Trigger at Profit</span>
-                                            <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenTriggerPct}%</span>
-                                          </label>
-                                          <input
-                                            type="number"
-                                            step="0.1"
-                                            min="0.1"
-                                            max="50"
-                                            value={slConfig.autoBreakevenTriggerPct}
-                                            onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenTriggerPct: parseFloat(e.target.value) || 0.5 })}
-                                            className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
-                                          />
+                                <FullModalLimitWallPanel
+                                  wallTargets={wallTargets}
+                                  frontRunTicks={smartPegFrontRunTicks}
+                                  setFrontRunTicks={setSmartPegFrontRunTicks}
+                                  wallMagnetEnabled={wallMagnetEnabled}
+                                  setWallMagnetEnabled={setWallMagnetEnabled}
+                                  isFetchingWalls={isFetchingWalls}
+                                  currentPrice={effectiveCurrentPrice}
+                                  formatDisplayPrice={formatDisplayPrice}
+                                  onSnapLimitToWall={handleSnapLimitToWall}
+                                  onRefreshWalls={fetchNearestWalls}
+                                />
+                              </MotionDiv>
+                            )}
+                          </AnimatePresence>
+
+                          {/* Size (Cyber-HUD Order Size Card) */}
+                          <div className="space-y-2 rounded-xl bg-[#04070e]/90 border border-cyan-500/20 p-2.5 shadow-[inset_0_1px_6px_rgba(0,0,0,0.65)]">
+                            {/* Label row: currency name + toggle switch + balance */}
+                            <div className="flex justify-between items-center gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 font-bold">
+                                  Order Size
+                                </label>
+                                {/* Base / Quote / Risk $ / Risk % toggle */}
+                                <div className="flex items-center gap-0.5 bg-[#0a101d] rounded p-0.5 border border-white/10">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSizingMode('standard');
+                                      setSizeMode('base');
+                                      if (!selectedPercent) setSize('');
+                                    }}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'standard' && sizeMode === 'base'
+                                      ? 'bg-cyan-500 text-slate-950 shadow'
+                                      : 'text-gray-400 hover:text-white'
+                                      }`}
+                                  >
+                                    {baseCurrency}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSizingMode('standard');
+                                      setSizeMode('quote');
+                                      if (!selectedPercent) setSize('');
+                                    }}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'standard' && sizeMode === 'quote'
+                                      ? 'bg-amber-400 text-slate-950 shadow'
+                                      : 'text-gray-400 hover:text-white'
+                                      }`}
+                                  >
+                                    {quoteCurrency}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSizingMode('risk_usd');
+                                      setSelectedPercent(null);
+                                      if (!riskAmountInput || Number(riskAmountInput) <= 0) setRiskAmountInput('10');
+                                    }}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'risk_usd'
+                                      ? 'bg-emerald-400 text-slate-950 shadow'
+                                      : 'text-gray-400 hover:text-emerald-300'
+                                      }`}
+                                    title="Auto-compute Position Size from max USD ($) risk to SL"
+                                  >
+                                    RISK $
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSizingMode('risk_pct');
+                                      setSelectedPercent(null);
+                                      if (!riskAmountInput || Number(riskAmountInput) <= 0 || Number(riskAmountInput) > 25) setRiskAmountInput('1');
+                                    }}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${sizingMode === 'risk_pct'
+                                      ? 'bg-emerald-400 text-slate-950 shadow'
+                                      : 'text-gray-400 hover:text-emerald-300'
+                                      }`}
+                                    title="Auto-compute Position Size from % wallet balance risk to SL"
+                                  >
+                                    RISK %
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="text-[11px] text-gray-500 text-right flex flex-col items-end">
+                                <div className="flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title={`Live Auto-Sync Active (${(timings.balancePollMs / 1000).toFixed(1)}s)`} />
+                                  <span>Bal:</span>
+                                  <span className="text-cyan-200 font-semibold font-mono">
+                                    {isLoadingBalance && !balanceData ? "..." : balanceData ? (
+                                      isInverseFutures
+                                        ? sizeMode === 'quote'
+                                          ? `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency} (~$${(((balanceData.base_free || 0) * (effectiveOrderPrice || effectiveCurrentPrice || 0))).toFixed(2)})`
+                                          : `${(balanceData.base_free || 0).toFixed(2)} ${baseCurrency}`
+                                        : sizeMode === 'quote'
+                                          ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
+                                          : isFutures
+                                            ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
+                                            : tradeSide === 'Buy'
+                                              ? `${(balanceData.quote_free || 0).toFixed(2)} ${quoteCurrency}`
+                                              : `${(balanceData.base_free || 0).toFixed(4)} ${baseCurrency}`
+                                    ) : "N/A"}
+                                  </span>
+                                </div>
+
+                                {/* Show helpful diagnostic badge if funds are located in USDⓈ-M or Spot wallet instead of COIN-M */}
+                                {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.usds_futures_free && balanceData.usds_futures_free > 0) && (
+                                  <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in USDⓈ-M Futures wallet instead of COIN-M Futures">
+                                    <span>⚠️ {balanceData?.usds_futures_free?.toFixed(2)} in USDⓈ-M! Transfer to COIN-M</span>
+                                  </div>
+                                )}
+                                {isInverseFutures && (balanceData?.base_free || 0) === 0 && Boolean(balanceData?.spot_free && balanceData.spot_free > 0) && (
+                                  <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 mt-0.5" title="Funds are in Spot wallet instead of COIN-M Futures">
+                                    <span>⚠️ {balanceData?.spot_free?.toFixed(2)} in Spot! Transfer to COIN-M</span>
+                                  </div>
+                                )}
+
+                                {/* Show Locked / In-Orders Balance if any */}
+                                {balanceData && (
+                                  (() => {
+                                    const isQuoteTarget = !isInverseFutures && (sizeMode === 'quote' || (isFutures ? true : tradeSide === 'Buy'));
+                                    const lockedAmount = isQuoteTarget ? (balanceData.quote_used || 0) : (balanceData.base_used || 0);
+                                    const curr = isQuoteTarget ? quoteCurrency : baseCurrency;
+                                    if (lockedAmount > 0) {
+                                      return (
+                                        <div className="text-[10px] text-amber-400 font-mono flex items-center gap-1">
+                                          <span>Locked:</span>
+                                          <span>{isQuoteTarget ? lockedAmount.toFixed(2) : lockedAmount.toFixed(4)} {curr}</span>
                                         </div>
-                                        <div className="space-y-1">
-                                          <label className="text-[10px] text-gray-400 font-medium flex justify-between">
-                                            <span>Fee Buffer</span>
-                                            <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenBufferPct}%</span>
-                                          </label>
-                                          <input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            max="1.0"
-                                            value={slConfig.autoBreakevenBufferPct}
-                                            onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenBufferPct: parseFloat(e.target.value) || 0.05 })}
-                                            className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
-                                            title="Extra cushion above entry price to guarantee 0 loss after exchange commissions"
+                                      );
+                                    }
+                                    return null;
+                                  })()
+                                )}
+
+                                {isFutures && reduceOnly && (
+                                  <div className="text-[11px] text-cyan-300 font-mono">
+                                    Pos: {isLoadingPosition ? "..." : (positionData && positionData.amount > 0 ? (
+                                      isInverseFutures && positionData.contracts
+                                        ? `${positionData.contracts} Cont (~${positionData.amount.toFixed(1)} ${baseCurrency})`
+                                        : `${positionData.amount} (${positionData.side.toUpperCase()})`
+                                    ) : "0")}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Input field */}
+                            <div className="relative">
+                              {sizingMode === 'standard' ? (
+                                <>
+                                  <input
+                                    type="number"
+                                    value={size}
+                                    onChange={(e) => {
+                                      setSize(e.target.value);
+                                      setSelectedPercent(null);
+                                    }}
+                                    placeholder={isInverseFutures ? `Min 1 Cont ($${contractSize})` : "0.00"}
+                                    className={`w-full bg-[#0a101d]/90 border border-white/10 focus:border-cyan-400/60 rounded-lg py-1.5 px-3 ${sizeMode === 'quote' ? 'pl-7' : 'pl-12'} text-white font-mono font-bold text-[13px] focus:outline-none transition-colors`}
+                                  />
+                                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11.5px] font-mono font-bold text-cyan-400/80 pointer-events-none">
+                                    {sizeMode === 'quote' ? '$' : baseCurrency.slice(0, 4)}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0"
+                                    value={riskAmountInput}
+                                    onChange={(e) => setRiskAmountInput(e.target.value)}
+                                    placeholder={sizingMode === 'risk_usd' ? 'Max Loss in $ (e.g. 10)' : 'Max Risk % (e.g. 1)'}
+                                    className="w-full bg-[#0a101d]/90 border border-emerald-500/40 focus:border-emerald-400 rounded-lg py-1.5 px-3 pl-14 text-emerald-200 font-mono font-bold text-[13px] focus:outline-none transition-colors"
+                                  />
+                                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] font-mono font-bold text-emerald-400 pointer-events-none">
+                                    {sizingMode === 'risk_usd' ? 'RISK$' : 'RISK%'}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+
+                            {sizingMode !== 'standard' && (
+                              <RiskSizingSubBar
+                                sizeMode={sizingMode}
+                                riskInput={riskAmountInput}
+                                onSelectRiskPreset={setRiskAmountInput}
+                                riskCalc={riskSizing}
+                                baseCurrency={baseCurrency}
+                                quoteCurrency={quoteCurrency}
+                                formatDisplayPrice={formatDisplayPrice}
+                              />
+                            )}
+
+                            {/* Live conversion estimate */}
+                            {sizingMode === 'standard' && size && Number(size) > 0 && effectiveOrderPrice > 0 && (
+                              <div className="flex items-center gap-1.5 px-1 flex-wrap font-mono">
+                                <span className="text-[11px] text-gray-500">≈</span>
+                                {sizeMode === 'quote' ? (
+                                  <span className="text-[11px] text-amber-300 font-semibold">
+                                    {(Number(size) / effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} {baseCurrency}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-amber-300 font-semibold">
+                                    ${(Number(size) * effectiveOrderPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} {quoteCurrency}
+                                  </span>
+                                )}
+                                {isInverseFutures && (
+                                  <span className="text-[10.5px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.2 rounded font-mono font-semibold">
+                                    • {Math.max(1, Math.round(((sizeMode === 'quote' ? Number(size) : Number(size) * effectiveOrderPrice)) / contractSize))} Cont (${contractSize}/Cont)
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {/* % quick-fill buttons */}
+                            <div className="flex justify-between gap-1.5">
+                              {['25%', '50%', '75%', '100%'].map(pct => {
+                                const isSelected = sizingMode === 'standard' && selectedPercent === pct;
+                                return (
+                                  <button
+                                    key={pct}
+                                    type="button"
+                                    className={`flex-1 py-1 text-[11px] font-mono font-extrabold rounded border transition-all cursor-pointer active:scale-95 ${isSelected
+                                      ? 'bg-gradient-to-r from-cyan-500/35 to-emerald-500/30 border-cyan-400 text-cyan-200 shadow-[0_0_8px_rgba(6,182,212,0.35)]'
+                                      : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 hover:border-cyan-500/40 text-gray-400 hover:text-white'
+                                      }`}
+                                    onClick={() => {
+                                      setSizingMode('standard');
+                                      setSelectedPercent(pct);
+                                      if (balanceData && effectiveOrderPrice > 0) {
+                                        const newSize = calculateSize(
+                                          pct,
+                                          balanceData,
+                                          effectiveOrderPrice,
+                                          sizeMode,
+                                          tradeSide,
+                                          isFutures,
+                                          leverage,
+                                          reduceOnly,
+                                          positionData
+                                        );
+                                        if (newSize) {
+                                          setSize(newSize);
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    {pct}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Binance Native Iceberg Order Panel (Spot Limit Only) */}
+                          {orderType === 'Limit' && !isFutures && (
+                            <div className="space-y-2.5 bg-cyan-950/20 p-2.5 rounded-lg border border-cyan-500/20 transition-all">
+                              <div
+                                className="flex justify-between items-center cursor-pointer select-none"
+                                onClick={() => setIsIceberg(!isIceberg)}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className="p-1 rounded bg-cyan-500/10 text-cyan-400">
+                                    <Layers className="w-3.5 h-3.5" />
+                                  </div>
+                                  <div className="flex flex-col text-left">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[13px] font-bold text-cyan-300">Binance Native Iceberg</span>
+                                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold uppercase">Spot GTC</span>
+                                    </div>
+                                    <span className="text-[11px] text-gray-400">
+                                      Splits limit order into smaller visible book slices
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className={`relative w-8 h-4 rounded-full transition-colors ${isIceberg ? 'bg-cyan-500' : 'bg-gray-600'}`}>
+                                  <MotionDiv
+                                    className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                                    animate={{ x: isIceberg ? 16 : 0 }}
+                                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                  />
+                                </div>
+                              </div>
+
+                              <AnimatePresence>
+                                {isIceberg && (
+                                  <MotionDiv
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className="space-y-2.5 overflow-hidden pt-2 border-t border-cyan-500/20"
+                                  >
+                                    {/* Slice Mode Selector */}
+                                    <div className="flex items-center justify-between gap-2">
+                                      <label className="text-[11px] text-gray-400 font-medium">Visible Slice Size</label>
+                                      <div className="flex bg-black/40 rounded border border-white/10 p-0.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => setIcebergMode('percent')}
+                                          className={`px-2 py-0.5 text-[11px] rounded transition-colors ${icebergMode === 'percent' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
+                                            }`}
+                                        >
+                                          % of Total
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setIcebergMode('qty');
+                                            if (!icebergCustomQty || icebergCustomQty === '0') {
+                                              setIcebergCustomQty('250');
+                                            }
+                                          }}
+                                          className={`px-2 py-0.5 text-[11px] rounded transition-colors ${icebergMode === 'qty' ? 'bg-cyan-600 text-white font-bold' : 'text-gray-400 hover:text-white'
+                                            }`}
+                                        >
+                                          {baseCurrency}
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Percent Quick Buttons */}
+                                    {icebergMode === 'percent' && (
+                                      <div className="grid grid-cols-4 gap-1.5">
+                                        {['10', '20', '25', '50'].map((pct) => (
+                                          <button
+                                            key={pct}
+                                            type="button"
+                                            onClick={() => setIcebergPercent(pct)}
+                                            className={`py-1 text-[11px] font-mono rounded border transition-all ${icebergPercent === pct
+                                              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
+                                              : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
+                                              }`}
+                                          >
+                                            {pct}%
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {/* Base Coin Qty Quick Buttons */}
+                                    {icebergMode === 'qty' && (
+                                      <div className="grid grid-cols-4 gap-1.5">
+                                        {['100', '250', '500', '1000'].map((q) => (
+                                          <button
+                                            key={q}
+                                            type="button"
+                                            onClick={() => setIcebergCustomQty(q)}
+                                            className={`py-1 text-[11px] font-mono rounded border transition-all ${icebergCustomQty === q
+                                              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]'
+                                              : 'bg-black/30 border-white/5 text-gray-400 hover:text-white hover:bg-white/5'
+                                              }`}
+                                          >
+                                            {q} {baseCurrency}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {/* Input Field */}
+                                    <div className="relative">
+                                      <input
+                                        type="number"
+                                        step="any"
+                                        value={icebergMode === 'percent' ? icebergPercent : icebergCustomQty}
+                                        onChange={(e) => {
+                                          if (icebergMode === 'percent') {
+                                            setIcebergPercent(e.target.value);
+                                          } else {
+                                            setIcebergCustomQty(e.target.value);
+                                          }
+                                        }}
+                                        placeholder={icebergMode === 'percent' ? 'e.g. 20' : '250'}
+                                        className="w-full bg-black/40 border border-cyan-500/30 rounded py-1.5 px-3 pr-14 text-white text-[13px] font-mono focus:outline-none focus:border-cyan-400 transition-colors"
+                                      />
+                                      <span className="absolute right-3 top-1.5 text-[11px] text-cyan-400 font-bold font-mono">
+                                        {icebergMode === 'percent' ? '% SLICE' : baseCurrency}
+                                      </span>
+                                    </div>
+
+                                    {/* Live Slice Calculation & Warning Pill */}
+                                    {(() => {
+                                      if (effectiveIcebergQty <= 0 || currentBaseAmount <= 0) return null;
+                                      const refPrice = effectiveOrderPrice || effectiveCurrentPrice || 0;
+                                      const sliceNotional = effectiveIcebergQty * refPrice;
+                                      const minRequiredSlice = refPrice > 0 ? Math.ceil(5.05 / refPrice) : 65;
+
+                                      if (effectiveIcebergQty >= currentBaseAmount) {
+                                        return (
+                                          <div className="p-2 rounded bg-amber-950/40 border border-amber-500/40 text-[11px] text-amber-300 flex items-center gap-1.5 font-mono">
+                                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                            <span>Slice ({effectiveIcebergQty.toFixed(2)}) must be smaller than total order ({currentBaseAmount.toFixed(2)} {baseCurrency}).</span>
+                                          </div>
+                                        );
+                                      }
+
+                                      if (sliceNotional < 5.0) {
+                                        return (
+                                          <div className="p-2 rounded bg-red-950/50 border border-red-500/50 flex flex-col gap-1.5 text-[11px] animate-fadeIn">
+                                            <div className="flex items-center justify-between text-red-300 font-bold">
+                                              <span className="flex items-center gap-1">
+                                                <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                                                Slice value (${sliceNotional.toFixed(2)}) is below Binance $5.00 Min Notional!
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-gray-300">
+                                              <span className="text-[10px]">Binance requires each slice ≥ $5.00 (~{minRequiredSlice} {baseCurrency})</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setIcebergMode('qty');
+                                                  setIcebergCustomQty(minRequiredSlice.toString());
+                                                }}
+                                                className="px-2 py-0.5 rounded bg-red-600/30 hover:bg-red-600/60 text-red-200 border border-red-500/50 font-bold uppercase tracking-wider text-[10px] transition-colors cursor-pointer"
+                                              >
+                                                Auto-Set Min ({minRequiredSlice} {baseCurrency})
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+
+                                      return (
+                                        <div className="p-2 rounded bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-between text-[11px] font-mono">
+                                          <span className="text-gray-300">
+                                            Order Book Shows: <strong className="text-cyan-300">{effectiveIcebergQty.toFixed(4)} {baseCurrency}</strong> (~${sliceNotional.toFixed(2)})
+                                          </span>
+                                          <span className="text-cyan-400 font-bold">
+                                            ≈ {Math.max(1, Math.ceil(currentBaseAmount / effectiveIcebergQty))} Slices Total ✓
+                                          </span>
+                                        </div>
+                                      );
+                                    })()}
+                                  </MotionDiv>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          )}
+
+                          {/* Futures Options Panel (Inside Order & Size Tab) */}
+                          {isFutures && (
+                            <div className="space-y-2.5 bg-[#04070e]/90 p-2.5 rounded-lg border border-cyan-500/20">
+                              <div className="flex justify-between items-center text-[13px] text-gray-400 font-medium">
+                                <div className="flex bg-black/50 rounded p-0.5 border border-white/10">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMarginMode('cross')}
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-colors cursor-pointer ${marginMode === 'cross' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
+                                  >
+                                    Cross
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setMarginMode('isolated')}
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-colors cursor-pointer ${marginMode === 'isolated' ? 'bg-cyan-500 text-slate-950' : 'hover:text-white'}`}
+                                  >
+                                    Isolated
+                                  </button>
+                                </div>
+                                <span className="text-[12px] bg-amber-500/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded font-mono font-black tracking-wider">
+                                  {leverage}x LEVERAGE
+                                </span>
+                              </div>
+
+                              <input
+                                type="range"
+                                min="1"
+                                max="125"
+                                value={leverage}
+                                onChange={(e) => setLeverage(Number(e.target.value))}
+                                className="w-full accent-cyan-400 h-1.5 bg-black/60 rounded-lg appearance-none cursor-pointer"
+                              />
+
+                              <label className="flex items-center space-x-2 cursor-pointer group w-max">
+                                <input
+                                  type="checkbox"
+                                  checked={reduceOnly}
+                                  onChange={(e) => setReduceOnly(e.target.checked)}
+                                  className="form-checkbox bg-black/40 border-white/20 text-cyan-400 rounded focus:ring-0 focus:ring-offset-0 cursor-pointer w-3.5 h-3.5"
+                                />
+                                <span className="text-[12px] text-gray-400 group-hover:text-white transition-colors font-medium">Reduce Only (Close Position)</span>
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* TAB 3: AI SHIELD (L2 MACHINE LEARNING FILTER) */}
+                      {activeTerminalTab === 'ai' && (
+                        <div className="space-y-2.5 animate-fadeIn">
+                          {/* L2 / Training Studio Machine Learning Filter Panel */}
+                          <div className={`space-y-2.5 p-3 rounded-lg border transition-all ${mlFilterConfig.enabled ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.12)]' : 'bg-[#04070e]/85 border-blue-500/25'}`}>
+                            <div
+                              className="flex justify-between items-center cursor-pointer group"
+                              onClick={() => {
+                                hasManualMlOverrideRef.current = true;
+                                setMlFilterConfig(prev => ({
+                                  ...prev,
+                                  enabled: !prev.enabled,
+                                  modelId: !prev.enabled && !prev.modelId && mlModels.length > 0 ? mlModels[0].id : prev.modelId
+                                }));
+                              }}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500/25 text-blue-300 border border-blue-400/50' : 'bg-white/5 text-blue-400/70'}`}>
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                                  </svg>
+                                </div>
+                                <div className="flex flex-col">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[13px] font-bold text-gray-200 group-hover:text-white transition-colors">
+                                      L2 Machine Learning Filter
+                                    </span>
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${mlFilterConfig.enabled ? 'bg-blue-500/30 text-blue-200 border border-blue-400/40' : 'bg-white/5 text-gray-400'}`}>
+                                      {mlFilterConfig.enabled ? 'ACTIVE' : 'OFF'}
+                                    </span>
+                                    {pinnedModelId && mlFilterConfig.modelId === pinnedModelId && (
+                                      <span className="text-[9.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/35">
+                                        PINNED
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] text-gray-400">
+                                    🤖 Filter {tradeSide.toUpperCase()} entry using Training Studio / ML Registry model
+                                  </span>
+                                </div>
+                              </div>
+                              <div className={`relative w-8 h-4 rounded-full transition-colors ${mlFilterConfig.enabled ? 'bg-blue-500' : 'bg-gray-600'}`}>
+                                <MotionDiv
+                                  className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                                  animate={{ x: mlFilterConfig.enabled ? 16 : 0 }}
+                                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Always-Visible ML Registry Model Selector Dropdown */}
+                            <div className="bg-black/45 p-2 rounded-lg border border-blue-500/25 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[11px] font-bold text-blue-400 uppercase tracking-wider">
+                                  Select Trained Model (ML Registry)
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    fetchMlModels();
+                                  }}
+                                  className="p-1 rounded bg-white/5 hover:bg-blue-500/20 text-gray-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1 text-[10px]"
+                                  title="Refresh Models from ML Registry"
+                                >
+                                  <RefreshCw className={`w-3 h-3 ${isLoadingMlModels ? 'animate-spin text-blue-400' : ''}`} />
+                                  <span>Refresh</span>
+                                </button>
+                              </div>
+
+                              {mlModels.length === 0 ? (
+                                <p className="text-[11px] text-amber-400/90 italic py-1">
+                                  No models found in ML Registry. Train & save a model in Training Studio first.
+                                </p>
+                              ) : (
+                                <select
+                                  className="w-full bg-black border border-blue-500/30 rounded-lg py-1.5 px-2.5 text-white outline-none focus:border-blue-400 text-[13px] font-bold cursor-pointer"
+                                  value={mlFilterConfig.modelId}
+                                  onChange={(e) => {
+                                    hasManualMlOverrideRef.current = true;
+                                    const val = e.target.value;
+                                    const opt = getModelOptimalThresholds(val);
+                                    setMlFilterConfig(prev => ({
+                                      ...prev,
+                                      modelId: val,
+                                      enabled: Boolean(val) ? true : prev.enabled,
+                                      bullishThreshold: prev.autoThreshold ? opt.bullish : prev.bullishThreshold,
+                                      bearishThreshold: prev.autoThreshold ? opt.bearish : prev.bearishThreshold
+                                    }));
+                                  }}
+                                >
+                                  <option value="">-- Select a Model from ML Registry --</option>
+                                  {mlModels.map(m => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.name} ({m.modelType}) - v{m.versions?.find(v => v.id === m.activeVersionId)?.version || '1.0'}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+
+                            {mlFilterConfig.enabled && mlLivePreview && (
+                              <HudLiveAiMicroGauge
+                                preview={mlLivePreview}
+                                tradeSide={tradeSide}
+                                bullishThreshold={mlFilterConfig.bullishThreshold}
+                                bearishThreshold={mlFilterConfig.bearishThreshold}
+                                compact={false}
+                              />
+                            )}
+
+                            <AnimatePresence>
+                              {mlFilterConfig.enabled && (
+                                <MotionDiv
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  className="space-y-2.5 overflow-hidden pt-1 border-t border-white/5"
+                                >
+                                  {/* Execution Mode Selector (Signal Only vs Dynamic Setup, matching WallHunterModal) */}
+                                  <div className="bg-black/40 p-2 rounded-lg border border-white/5 space-y-1.5">
+                                    <label className="text-[11px] font-bold text-blue-400 uppercase tracking-wider block">
+                                      Execution Mode
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'basic' }))}
+                                        className={`py-1.5 px-2 rounded-lg font-bold text-[11px] transition-all border cursor-pointer ${mlFilterConfig.executionMode === 'basic'
+                                          ? 'bg-blue-600/25 border-blue-500 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
+                                          : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
+                                          }`}
+                                      >
+                                        Signal Only (Filter Entry)
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setMlFilterConfig(prev => ({ ...prev, executionMode: 'advanced' }))}
+                                        className={`py-1.5 px-2 rounded-lg font-bold text-[11px] transition-all border cursor-pointer ${mlFilterConfig.executionMode === 'advanced'
+                                          ? 'bg-purple-600/25 border-purple-500 text-purple-300 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+                                          : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'
+                                          }`}
+                                      >
+                                        Dynamic Setup (AI TP/SL)
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Smart Auto-Align to Model Toggle */}
+                                  {(() => {
+                                    const opt = getModelOptimalThresholds(mlFilterConfig.modelId);
+                                    return (
+                                      <div className="flex items-center justify-between p-2 rounded-lg bg-black/45 border border-blue-500/25">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <Zap className={`w-3.5 h-3.5 shrink-0 ${mlFilterConfig.autoThreshold ? 'text-amber-400 fill-amber-400' : 'text-gray-500'}`} />
+                                          <div className="flex flex-col min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-[11px] font-bold text-gray-200">
+                                                Smart Auto-Align to Model
+                                              </span>
+                                              <span className={`text-[9.5px] px-1.5 py-0.2 rounded font-mono font-bold uppercase border ${mlFilterConfig.autoThreshold ? 'bg-amber-500/20 text-amber-300 border-amber-500/35 shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-gray-400 border-white/5'}`}>
+                                                {mlFilterConfig.autoThreshold ? 'AUTO ON' : 'MANUAL'}
+                                              </span>
+                                            </div>
+                                            <span className="text-[10px] text-gray-400 font-mono truncate">
+                                              {opt.note}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <div
+                                          className={`relative w-7 h-3.5 rounded-full transition-colors cursor-pointer shrink-0 ${mlFilterConfig.autoThreshold ? 'bg-amber-500' : 'bg-gray-700'}`}
+                                          onClick={() => {
+                                            const newAuto = !mlFilterConfig.autoThreshold;
+                                            setMlFilterConfig(prev => ({
+                                              ...prev,
+                                              autoThreshold: newAuto,
+                                              bullishThreshold: newAuto ? opt.bullish : prev.bullishThreshold,
+                                              bearishThreshold: newAuto ? opt.bearish : prev.bearishThreshold
+                                            }));
+                                          }}
+                                          title={mlFilterConfig.autoThreshold ? "Click to set custom manual thresholds" : "Click to auto-tune thresholds to model"}
+                                        >
+                                          <MotionDiv
+                                            className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
+                                            animate={{ x: mlFilterConfig.autoThreshold ? 14 : 0 }}
+                                            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                                           />
                                         </div>
                                       </div>
-                                      <p className="text-[9px] text-emerald-400/80 leading-tight">
-                                        ⚡ When profit reaches +{slConfig.autoBreakevenTriggerPct}%, SL automatically ratchets to Entry + {slConfig.autoBreakevenBufferPct}% buffer (100% Risk-Free)!
-                                      </p>
-                                    </MotionDiv>
-                                  )}
-                                </AnimatePresence>
-                              </div>
+                                    );
+                                  })()}
 
-                              <AntiWickSlControls
-                                mode={slConfig.antiWickMode}
-                                setMode={(m) => setSlConfig({ ...slConfig, antiWickMode: m })}
-                                dwellSeconds={slConfig.antiWickDwellSeconds}
-                                setDwellSeconds={(s) => setSlConfig({ ...slConfig, antiWickDwellSeconds: s })}
-                                timeframe={slConfig.antiWickTimeframe}
-                                setTimeframe={(tf) => setSlConfig({ ...slConfig, antiWickTimeframe: tf })}
-                                disasterPct={slConfig.antiWickDisasterPct}
-                                setDisasterPct={(pct) => setSlConfig({ ...slConfig, antiWickDisasterPct: pct })}
-                                isLockedByNativeSl={false}
-                              />
-                            </MotionDiv>
-                          )}
-                        </AnimatePresence>
-                      </div>
+                                  {/* Bullish Threshold (Active for BUY orders) */}
+                                  <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Buy' ? 'bg-emerald-950/25 border-emerald-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
+                                    <div className="flex justify-between items-center mb-1">
+                                      <label className="text-[11px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
+                                        <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Buy' ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`}></span>
+                                        <span>BUY Filter: Bullish Threshold</span>
+                                      </label>
+                                      <span className="text-[13px] font-mono font-bold text-emerald-400">
+                                        {(mlFilterConfig.bullishThreshold * 100).toFixed(0)}%
+                                      </span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min="0.1"
+                                      max="0.9"
+                                      step="0.01"
+                                      value={mlFilterConfig.bullishThreshold}
+                                      onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bullishThreshold: parseFloat(e.target.value) }))}
+                                      className="w-full accent-emerald-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
+                                    />
+                                    <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                                      For <span className="text-emerald-400 font-semibold">BUY</span> orders: AI must predict ≥{(mlFilterConfig.bullishThreshold * 100).toFixed(0)}% Bullish probability to permit entry, otherwise it denies the trade.
+                                    </p>
+                                  </div>
 
-                      {(!tpConfig.enabled && !slConfig.enabled) && (
-                        <div className="px-2.5 py-1.5 rounded-lg bg-cyan-950/20 border border-cyan-500/20 text-[10.5px] font-mono text-gray-400">
-                          💡 Tip: Enable Take-Profit or Stop-Loss below to arm Native Binance OTO/OTOCO, Hybrid Smart Chase SL, or Futures Brackets.
+                                  {/* Bearish Threshold (Active for SELL orders — Spot Hold Currency Sell High & Futures Short) */}
+                                  <div className={`p-2.5 rounded-lg border transition-colors ${tradeSide === 'Sell' ? 'bg-rose-950/25 border-rose-500/35' : 'bg-black/30 border-white/5 opacity-85'}`}>
+                                    <div className="flex justify-between items-center mb-1">
+                                      <label className="text-[11px] font-bold text-gray-300 uppercase flex items-center gap-1.5">
+                                        <span className={`w-1.5 h-1.5 rounded-full ${tradeSide === 'Sell' ? 'bg-rose-400 animate-pulse' : 'bg-gray-500'}`}></span>
+                                        <span>SELL Filter: Bearish Threshold</span>
+                                      </label>
+                                      <span className="text-[13px] font-mono font-bold text-rose-400">
+                                        {(mlFilterConfig.bearishThreshold * 100).toFixed(0)}%
+                                      </span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min="0.1"
+                                      max="0.9"
+                                      step="0.01"
+                                      value={mlFilterConfig.bearishThreshold}
+                                      onChange={(e) => setMlFilterConfig(prev => ({ ...prev, autoThreshold: false, bearishThreshold: parseFloat(e.target.value) }))}
+                                      className="w-full accent-rose-500 h-1.5 bg-black/50 rounded-lg cursor-pointer"
+                                    />
+                                    <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                                      For <span className="text-rose-400 font-semibold">SELL</span> orders (Spot Hold Sell High → Low TP Buy Back, or Short): AI must predict ≥{(mlFilterConfig.bearishThreshold * 100).toFixed(0)}% Bearish probability to permit selling.
+                                    </p>
+                                  </div>
+                                </MotionDiv>
+                              )}
+                            </AnimatePresence>
+                          </div>
                         </div>
                       )}
-                      </div>
-                    )}
 
-                  </div> {/* End Scrollable Tab Workspace */}
+                      {/* TAB 2: BRACKETS (TP / SL / NATIVE OTO-OTOCO) */}
+                      {activeTerminalTab === 'brackets' && (
+                        <div className="space-y-2.5 animate-fadeIn">
 
-                  {/* Sticky Sci-Fi Footer */}
-                  <div className="px-3 py-2 bg-[#04070e]/95 border-t border-cyan-500/20 shrink-0 space-y-1.5">
-                    {/* Inline AI Trade Shield Rejection Card */}
-                    <AnimatePresence>
-                      {aiRejectNotice && (
-                        <MotionDiv
-                          initial={{ height: 0, opacity: 0, y: 6 }}
-                          animate={{ height: 'auto', opacity: 1, y: 0 }}
-                          exit={{ height: 0, opacity: 0, y: 6 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="p-2 rounded-xl bg-gradient-to-br from-amber-950/60 via-[#0d1424] to-black border border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)] space-y-1.5">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
-                                  AI Shield Protected ({aiRejectNotice.side} Blocked)
-                                </span>
-                                <span className="text-[9.5px] text-gray-500 font-mono">
-                                  {aiRejectNotice.timestamp}
-                                </span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setAiRejectNotice(null)}
-                                className="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10 transition-colors cursor-pointer"
-                                title="Dismiss AI Shield Notice"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-
-                            {/* Score vs Threshold Progress Bar */}
-                            <div className="space-y-1 bg-black/50 p-1.5 rounded-lg border border-white/5">
-                              <div className="flex items-center justify-between text-[10px] font-mono">
-                                <span className="text-gray-300">
-                                  {aiRejectNotice.directionLabel}:{' '}
-                                  <strong className="text-amber-300">{aiRejectNotice.calibratedProb.toFixed(1)}%</strong>
-                                  {aiRejectNotice.rawProb !== null && aiRejectNotice.rawProb !== undefined && Math.abs(aiRejectNotice.rawProb - aiRejectNotice.calibratedProb) > 3 && (
-                                    <span className="text-[9px] text-gray-500 ml-1">(Raw {aiRejectNotice.rawProb.toFixed(1)}%)</span>
+                          {/* Native Binance TP/SL Toggle (Spot) & Futures Bracket Architecture Summary */}
+                          {(tpConfig.enabled || slConfig.enabled) && !isFutures && (
+                            <div className={`flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30 transition-opacity ${!canConfigureNativeTpSl ? 'opacity-40 pointer-events-none' : ''}`}>
+                              <div className="flex flex-col pr-2">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[13px] font-bold text-brand-primary">Use Native Binance OTO/OTOCO</span>
+                                  {useNativeTpSl && isNativeTpSlSupported && (
+                                    <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-brand-primary/25 text-cyan-200 border border-brand-primary/40">
+                                      {tpConfig.enabled && slConfig.enabled && (slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
+                                        ? `HYBRID 2-LEG OTO${isIceberg ? ' + ICEBERG' : ''} + SMART CHASE SL`
+                                        : tpConfig.enabled && slConfig.enabled
+                                          ? `FULL 3-LEG OTOCO${isIceberg ? ' + ICEBERG' : ''}`
+                                          : `2-LEG NATIVE OTO${isIceberg ? ' + ICEBERG' : ''}`}
+                                    </span>
                                   )}
-                                </span>
-                                <span className="text-cyan-300 font-bold">
-                                  Req ≥{aiRejectNotice.threshold.toFixed(0)}% • {aiRejectNotice.oppositeLabel} {aiRejectNotice.oppositeProb.toFixed(1)}%
+                                </div>
+                                <span className="text-[10px] text-brand-primary/80 leading-snug mt-0.5">
+                                  {orderType === 'SmartPeg'
+                                    ? '⚡ Dynamic Peg Mode: Entry is dynamic maker; Native OCO auto-spawns upon fill'
+                                    : orderType === 'Market'
+                                      ? '⚡ Market Entry: Post-fill Native OCO/Bracket spawns automatically upon fill'
+                                      : (tpConfig.enabled && tpConfig.orderType === 'Market')
+                                        ? '⚠️ Auto-disabled: Market TP requires software bracket execution'
+                                        : !canConfigureNativeTpSl
+                                          ? '⚠️ Enable Limit TP (or Fixed Stop SL) to use Native Binance OTO/OTOCO'
+                                          : isAutoLimit
+                                            ? 'ℹ️ Auto Best Limit (BBO Post-Only) is ON — click toggle to switch to Standard Limit + Native OTO/OTOCO'
+                                            : tpConfig.enabled && slConfig.enabled && (slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
+                                              ? `⚡ Entry + TP${isIceberg ? ' + Iceberg' : ''} sent as Native Binance OTO • SL runs via Smart Chase (250–350ms)`
+                                              : tpConfig.enabled && slConfig.enabled
+                                                ? `🛡️ Entry + TP + Fixed SL${isIceberg ? ' + Iceberg' : ''} sent as 3-Leg Native Binance OTOCO`
+                                                : `🎯 Entry + ${tpConfig.enabled ? 'TP' : 'Fixed SL'}${isIceberg ? ' + Iceberg' : ''} sent as 2-Leg Native Binance OTO`
+                                  }
                                 </span>
                               </div>
-                              <div className="relative h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full ${aiRejectNotice.side === 'BUY'
-                                    ? 'bg-gradient-to-r from-emerald-500 to-amber-400'
-                                    : 'bg-gradient-to-r from-rose-500 to-amber-400'
-                                    }`}
-                                  style={{ width: `${Math.min(100, Math.max(4, aiRejectNotice.calibratedProb))}%` }}
-                                />
-                                <div
-                                  className="absolute top-0 bottom-0 w-0.5 bg-cyan-300"
-                                  style={{ left: `${Math.min(98, Math.max(2, aiRejectNotice.threshold))}%` }}
+                              <div
+                                className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer shrink-0 ${useNativeTpSl && isNativeTpSlSupported ? 'bg-brand-primary' : 'bg-gray-600'}`}
+                                onClick={() => {
+                                  if (!canConfigureNativeTpSl) return;
+                                  if (isAutoLimit) {
+                                    // Turning on Native OTO/OTOCO automatically turns off Auto Best Limit (BBO Post-Only)
+                                    setIsAutoLimit(false);
+                                    if ((!limitPrice || Number(limitPrice) <= 0) && effectiveCurrentPrice > 0) {
+                                      setLimitPrice(effectiveCurrentPrice.toString());
+                                    }
+                                    setUseNativeTpSl(true);
+                                  } else {
+                                    setUseNativeTpSl(!useNativeTpSl);
+                                  }
+                                }}
+                              >
+                                <MotionDiv
+                                  className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                                  animate={{ x: (useNativeTpSl && isNativeTpSlSupported) ? 16 : 0 }}
+                                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                                 />
                               </div>
-                              <div className="flex flex-wrap items-center gap-1 pt-0.5 text-[9px] font-mono text-gray-300">
-                                <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
-                                  Model: <strong className="text-blue-300">{aiRejectNotice.modelName}</strong>
+                            </div>
+                          )}
+
+                          {(tpConfig.enabled || slConfig.enabled) && isFutures && (
+                            <div className="flex justify-between items-center bg-brand-primary/10 p-2 rounded border border-brand-primary/30">
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[13px] font-bold text-brand-primary">Futures Hybrid Bracket Engine</span>
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/35">
+                                    {leverage}x {marginMode.toUpperCase()}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-brand-primary/80 leading-snug mt-0.5">
+                                  {tpConfig.enabled && slConfig.enabled
+                                    ? `🎯 Native Futures ${tpConfig.orderType} TP + ${slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase' ? '⚡ Smart Chase Maker SL (250ms) + Native Disaster Stop' : `🛡️ Native ${slConfig.type === 'trailing' ? 'Trailing' : 'Stop-Market'} SL`}`
+                                    : tpConfig.enabled
+                                      ? `🎯 Native Futures ${tpConfig.orderType} Take-Profit (reduceOnly)`
+                                      : `🛡️ ${slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase' ? '⚡ Smart Chase Maker SL (250ms) + Native Disaster Stop' : 'Native Futures Stop-Loss (reduceOnly)'}`}
                                 </span>
-                                {aiRejectNotice.flowPct !== null && aiRejectNotice.flowPct !== undefined && (
-                                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
-                                    {aiRejectNotice.flowLabel || 'Flow'}: <strong className="text-white">{aiRejectNotice.flowPct.toFixed(0)}%</strong>
-                                  </span>
-                                )}
-                                {aiRejectNotice.l2Pct !== null && aiRejectNotice.l2Pct !== undefined && (
-                                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
-                                    {aiRejectNotice.l2Label || 'L2'}: <strong className="text-white">{aiRejectNotice.l2Pct.toFixed(0)}%</strong>
-                                  </span>
-                                )}
-                                {aiRejectNotice.tpHitEst !== null && aiRejectNotice.tpHitEst !== undefined && (
-                                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
-                                    TP Hit Est: <strong className="text-amber-300">{aiRejectNotice.tpHitEst.toFixed(0)}%</strong>
-                                  </span>
-                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Bracket Order (Attached TP) Panel */}
+                          <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-brand-primary/10 transition-all">
+                            <div className="flex justify-between items-center cursor-pointer" onClick={() => setTpConfig({ ...tpConfig, enabled: !tpConfig.enabled })}>
+                              <div className="flex flex-col">
+                                <span className="text-[13px] font-bold text-gray-300 group-hover:text-white transition-colors">Attached Take-Profit (Bracket)</span>
+                                <span className="text-[11px] text-gray-500">Auto-trigger scalp exit once entry fills</span>
+                              </div>
+                              <div className={`relative w-8 h-4 rounded-full transition-colors ${tpConfig.enabled ? 'bg-brand-primary' : 'bg-gray-600'}`}>
+                                <MotionDiv
+                                  className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                                  animate={{ x: tpConfig.enabled ? 16 : 0 }}
+                                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                />
                               </div>
                             </div>
 
-                            <div className="text-[10px] text-amber-200/95 leading-tight flex items-start gap-1 px-0.5">
-                              <span className="text-amber-400 shrink-0">⚡</span>
-                              <span>{aiRejectNotice.reason}</span>
-                            </div>
+                            <AnimatePresence>
+                              {tpConfig.enabled && (
+                                <MotionDiv
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  className="space-y-3 overflow-hidden pt-2 border-t border-white/5"
+                                >
+                                  {/* Layout Grid */}
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {/* TP Order Type */}
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-gray-400 font-medium">TP Order Type</label>
+                                      <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                        {(['Limit', 'Market'] as const).map(type => (
+                                          <button
+                                            key={type}
+                                            onClick={() => setTpConfig({ ...tpConfig, orderType: type })}
+                                            className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.orderType === type ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                          >
+                                            {type}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    {/* Gap Mode */}
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-gray-400 font-medium">Mode</label>
+                                      <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                        <button
+                                          onClick={() => setTpConfig({
+                                            ...tpConfig,
+                                            mode: 'percentage',
+                                            value: tpConfig.mode === 'percentage' ? tpConfig.value : getSmartGapValue('percentage', true)
+                                          })}
+                                          className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.mode === 'percentage' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                          %
+                                        </button>
+                                        <button
+                                          onClick={() => setTpConfig({
+                                            ...tpConfig,
+                                            mode: 'price',
+                                            value: tpConfig.mode === 'price' ? tpConfig.value : getSmartGapValue('price', true)
+                                          })}
+                                          className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.mode === 'price' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                          $
+                                        </button>
+                                        <button
+                                          onClick={() => setTpConfig({
+                                            ...tpConfig,
+                                            mode: 'absolute',
+                                            value: tpConfig.mode === 'absolute' ? tpConfig.value : getSmartGapValue('absolute', true)
+                                          })}
+                                          className={`flex-1 text-[11px] py-1 rounded transition-colors ${tpConfig.mode === 'absolute' ? 'bg-brand-primary text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                          🎯
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Target Gap & Timeout */}
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] text-gray-400 font-medium">{tpConfig.mode === 'absolute' ? 'Exact Price' : 'Target Gap'}</label>
+                                      <div className="relative">
+                                        <input
+                                          type="number"
+                                          value={tpConfig.value}
+                                          onChange={(e) => setTpConfig({ ...tpConfig, value: e.target.value })}
+                                          placeholder={tpConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 1.050" : "e.g. 0.950") : (tpConfig.mode === 'percentage' ? "e.g. 1.5" : "e.g. 0.005")}
+                                          className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-[13px] focus:outline-none focus:border-brand-primary/50"
+                                        />
+                                        <span className="absolute right-2 top-1.5 text-[11px] text-brand-primary font-bold">{tpConfig.mode === 'percentage' ? '%' : (tpConfig.mode === 'absolute' ? '🎯' : '$')}</span>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="flex items-center justify-between">
+                                        <label className="text-[11px] text-gray-400 font-medium flex items-center gap-1">
+                                          <span>Monitor Limit</span>
+                                          {tpConfig.timeoutMins === 0 && (
+                                            <span className="text-[9px] text-emerald-400/90 font-medium">● Infinite</span>
+                                          )}
+                                        </label>
+                                        <button
+                                          type="button"
+                                          onClick={() => setTpConfig({ ...tpConfig, timeoutMins: tpConfig.timeoutMins === 0 ? 60 : 0 })}
+                                          className={`text-[10px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${tpConfig.timeoutMins === 0
+                                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
+                                            : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
+                                            }`}
+                                          title={tpConfig.timeoutMins === 0 ? "Infinite monitor active (watches until filled). Click to set minute limit." : "Click to disable timeout limit (Monitor Infinitely)"}
+                                        >
+                                          {tpConfig.timeoutMins === 0 ? (
+                                            <>
+                                              <span className="text-[13px] font-bold leading-none">∞</span>
+                                              <span>No Limit</span>
+                                            </>
+                                          ) : (
+                                            <span>Limit On</span>
+                                          )}
+                                        </button>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <input
+                                          type="range"
+                                          min="0" max="60" step="1"
+                                          value={tpConfig.timeoutMins}
+                                          onChange={(e) => setTpConfig({ ...tpConfig, timeoutMins: Number(e.target.value) })}
+                                          className="w-full accent-brand-primary h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                          title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
+                                        />
+                                        <span
+                                          className={`text-[11px] font-mono min-w-[28px] text-right font-bold transition-colors ${tpConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
+                                            }`}
+                                          title={tpConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${tpConfig.timeoutMins} minutes limit`}
+                                        >
+                                          {tpConfig.timeoutMins === 0 ? '∞' : `${tpConfig.timeoutMins}m`}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <TakeProfitWallSnapButton
+                                    tradeSide={tradeSide}
+                                    wallTargets={wallTargets}
+                                    frontRunTicks={smartPegFrontRunTicks}
+                                    formatDisplayPrice={formatDisplayPrice}
+                                    onSnapTpToWall={handleSnapTpToWall}
+                                  />
+                                </MotionDiv>
+                              )}
+                            </AnimatePresence>
                           </div>
-                        </MotionDiv>
+
+                          {/* Attached Stop Loss (SL) Panel */}
+                          <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-red-500/10 transition-all">
+                            <div className="flex justify-between items-center cursor-pointer group" onClick={() => setSlConfig({ ...slConfig, enabled: !slConfig.enabled })}>
+                              <div className="flex flex-col">
+                                <span className="text-[13px] font-bold text-gray-300 group-hover:text-white transition-colors">Attached Stop-Loss (SL)</span>
+                                <span className="text-[11px] text-gray-400">{(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native Order (Visible on Exchange)' : '⚡ Bot Maker Loop (Zero Maker Fee)'}</span>
+                              </div>
+                              <div className={`relative w-8 h-4 rounded-full transition-colors ${slConfig.enabled ? 'bg-red-500' : 'bg-gray-600'}`}>
+                                <MotionDiv
+                                  className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full"
+                                  animate={{ x: slConfig.enabled ? 16 : 0 }}
+                                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                />
+                              </div>
+                            </div>
+
+                            <AnimatePresence>
+                              {slConfig.enabled && (
+                                <MotionDiv
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  className="space-y-3 overflow-hidden pt-2 border-t border-white/5"
+                                >
+                                  {/* Execution Engine Selector (Exchange Native vs Smart Chase Bot) */}
+                                  <div className="space-y-2 bg-black/30 p-2.5 rounded-lg border border-white/5">
+                                    <div className="flex items-center justify-between">
+                                      <label className="text-[11px] text-gray-300 font-semibold flex items-center gap-1">
+                                        <span>SL Execution Engine</span>
+                                      </label>
+                                      <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono font-bold ${(slConfig.type === 'fixed' || slConfig.type === 'trailing')
+                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                        }`}>
+                                        {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? '🛡️ Binance Native (Safe)' : '⚡ Bot Software Loop'}
+                                      </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/50 rounded-lg border border-white/10">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSlConfig({
+                                          ...slConfig,
+                                          type: 'fixed',
+                                          mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
+                                          value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
+                                        })}
+                                        className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all text-center ${(slConfig.type === 'fixed' || slConfig.type === 'trailing')
+                                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-md shadow-emerald-950/40 ring-1 ring-emerald-400/30'
+                                          : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                          }`}
+                                      >
+                                        <span className="text-[11.5px] font-bold flex items-center gap-1">
+                                          <span>🛡️</span> Exchange Native
+                                        </span>
+                                        <span className="text-[8.5px] opacity-80 leading-tight mt-0.5">
+                                          Real order on Binance • 24/7 Safe
+                                        </span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => setSlConfig({
+                                          ...slConfig,
+                                          type: 'smart_chase',
+                                          mode: slConfig.mode === 'atr' ? 'percentage' : slConfig.mode,
+                                          value: slConfig.mode === 'atr' ? getSmartGapValue('percentage', false) : slConfig.value
+                                        })}
+                                        className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all text-center ${(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase')
+                                          ? 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-bold shadow-md shadow-amber-950/40 ring-1 ring-amber-400/30'
+                                          : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                          }`}
+                                      >
+                                        <span className="text-[11.5px] font-bold flex items-center gap-1">
+                                          <span>⚡</span> Smart Chase
+                                        </span>
+                                        <span className="text-[8.5px] opacity-80 leading-tight mt-0.5">
+                                          Bot Maker Loop • 0% Fee
+                                        </span>
+                                      </button>
+                                    </div>
+
+                                    {/* Dynamic Sub-Variant & Gap Mode */}
+                                    <div className="grid grid-cols-2 gap-2 pt-0.5">
+                                      {/* Sub-variant based on selected target */}
+                                      <div className="space-y-1">
+                                        <label className="text-[10.5px] text-gray-400 font-medium">
+                                          {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? 'Order Variant' : 'Chase Strategy'}
+                                        </label>
+                                        <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                          {(slConfig.type === 'fixed' || slConfig.type === 'trailing') ? (
+                                            <>
+                                              <button
+                                                type="button"
+                                                onClick={() => setSlConfig({ ...slConfig, type: 'fixed' })}
+                                                className={`flex-1 text-[9.5px] py-1 rounded transition-colors ${slConfig.type === 'fixed' ? 'bg-emerald-600 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                              >
+                                                Fixed Stop
+                                              </button>
+                                              <button
+                                                type="button"
+                                                disabled={isNativeExchangeSlLockedToFixed}
+                                                onClick={() => {
+                                                  if (isNativeExchangeSlLockedToFixed) return;
+                                                  setSlConfig({ ...slConfig, type: 'trailing', mode: slConfig.mode === 'absolute' ? 'percentage' : slConfig.mode });
+                                                }}
+                                                title={isNativeExchangeSlLockedToFixed ? 'Disabled when Native Binance OTO/OTOCO is ON (Binance Spot OTOCO only supports Fixed Stop_Loss_Limit. Use ⚡ Smart Chase -> Trail Chase for trailing)' : 'Trailing Stop'}
+                                                className={`flex-1 text-[9.5px] py-1 rounded transition-colors ${isNativeExchangeSlLockedToFixed
+                                                  ? 'text-gray-600 opacity-40 cursor-not-allowed'
+                                                  : slConfig.type === 'trailing'
+                                                    ? 'bg-emerald-600 text-white font-bold'
+                                                    : 'text-gray-500 hover:text-white'
+                                                  }`}
+                                              >
+                                                Trailing {isNativeExchangeSlLockedToFixed ? '🔒' : ''}
+                                              </button>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <button
+                                                type="button"
+                                                onClick={() => setSlConfig({ ...slConfig, type: 'smart_chase' })}
+                                                className={`flex-1 text-[9.5px] py-1 rounded transition-colors ${slConfig.type === 'smart_chase' ? 'bg-amber-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                              >
+                                                BBO Chase
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => setSlConfig({ ...slConfig, type: 'trailing_chase' })}
+                                                className={`flex-1 text-[9px] py-1 rounded transition-colors ${slConfig.type === 'trailing_chase' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                              >
+                                                ⚡ Trail Chase
+                                              </button>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Gap Mode */}
+                                      <div className="space-y-1">
+                                        <label className="text-[10.5px] text-gray-400 font-medium">Gap Unit</label>
+                                        <div className="flex bg-black/40 rounded border border-white/5 p-0.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({
+                                              ...slConfig,
+                                              mode: 'percentage',
+                                              value: slConfig.mode === 'percentage' ? slConfig.value : getSmartGapValue('percentage', false)
+                                            })}
+                                            className={`flex-1 text-[11px] py-1 rounded transition-colors ${slConfig.mode === 'percentage' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                          >
+                                            %
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({
+                                              ...slConfig,
+                                              mode: 'price',
+                                              value: slConfig.mode === 'price' ? slConfig.value : getSmartGapValue('price', false)
+                                            })}
+                                            className={`flex-1 text-[11px] py-1 rounded transition-colors ${slConfig.mode === 'price' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                          >
+                                            $
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({
+                                              ...slConfig,
+                                              mode: 'absolute',
+                                              type: (slConfig.type === 'trailing' || slConfig.type === 'trailing_chase') ? 'fixed' : slConfig.type,
+                                              value: slConfig.mode === 'absolute' ? slConfig.value : getSmartGapValue('absolute', false)
+                                            })}
+                                            className={`flex-1 text-[11px] py-1 rounded transition-colors ${slConfig.mode === 'absolute' ? 'bg-red-500 text-white font-bold' : 'text-gray-500 hover:text-white'}`}
+                                          >
+                                            🎯
+                                          </button>
+                                          {slConfig.type !== 'smart_chase' && slConfig.type !== 'trailing_chase' && (
+                                            <button
+                                              type="button"
+                                              disabled={isNativeExchangeSlLockedToFixed}
+                                              onClick={() => {
+                                                if (isNativeExchangeSlLockedToFixed) return;
+                                                setSlConfig({ ...slConfig, mode: 'atr', type: 'trailing' });
+                                              }}
+                                              title={isNativeExchangeSlLockedToFixed ? 'Disabled when Native Binance OTO/OTOCO is ON' : 'ATR Trailing Stop'}
+                                              className={`flex-1 text-[11px] py-1 rounded transition-colors ${isNativeExchangeSlLockedToFixed
+                                                ? 'text-gray-600 opacity-40 cursor-not-allowed'
+                                                : slConfig.mode === 'atr'
+                                                  ? 'bg-red-500 text-white font-bold'
+                                                  : 'text-gray-500 hover:text-white'
+                                                }`}
+                                            >
+                                              ATR {isNativeExchangeSlLockedToFixed ? '🔒' : ''}
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Assurance Banner */}
+                                    {(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase') ? (
+                                      <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
+                                        <span>⚡</span>
+                                        <span>
+                                          <strong>Bot Smart Chase Loop:</strong> ব্যাকএন্ডে ultra-fast (~250ms) ট্র্যাক হবে
+                                          {!isFutures && useNativeTpSl && !isAutoLimit && tpConfig.enabled
+                                            ? ' (Hybrid: TP সরাসরি Binance OTO-তে বসবে)।'
+                                            : ' (Binance অর্ডারবুকে সরাসরি বসবে না)।'}
+                                        </span>
+                                      </div>
+                                    ) : isFutures ? (
+                                      <div className="text-[10px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                                        <span>🛡️</span>
+                                        <span>
+                                          <strong>Binance Futures Native:</strong>{' '}
+                                          {slConfig.type === 'trailing'
+                                            ? 'TRAILING_STOP_MARKET (callback 0.1%–10%) সরাসরি Binance Futures-এ বসবে।'
+                                            : 'STOP_MARKET অর্ডার সরাসরি Binance Futures-এ বসবে এবং দৃশ্যমান থাকবে।'}
+                                        </span>
+                                      </div>
+                                    ) : (useNativeTpSl && !isAutoLimit && slConfig.type === 'fixed') ? (
+                                      <div className="text-[10px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                                        <span>🛡️</span>
+                                        <span><strong>Binance Native {tpConfig.enabled ? 'OTOCO' : 'OTO'}:</strong> Fixed STOP_LOSS_LIMIT সরাসরি Binance-এ বসবে।</span>
+                                      </div>
+                                    ) : (tpConfig.enabled || slConfig.type === 'trailing' || slConfig.mode === 'atr') ? (
+                                      <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
+                                        <span>⚠️</span>
+                                        <span>
+                                          <strong>Spot Software Fallback:</strong>{' '}
+                                          {tpConfig.enabled
+                                            ? 'Spot-এ TP ব্যালেন্স লক করে বলে SL ব্যাকএন্ড Watchdog-এ চলবে (Binance-এ SL রাখতে Native OTO/OTOCO ON করুন)।'
+                                            : 'Spot-এ Trailing/ATR স্টপ ব্যাকএন্ড Software Watchdog-এ ট্র্যাক হবে।'}
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <div className="text-[10px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                                        <span>🛡️</span>
+                                        <span><strong>Binance Native Stop:</strong> অর্ডার সরাসরি Binance-এ বসবে এবং অ্যাপে দৃশ্যমান থাকবে।</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Target Gap & Timeout */}
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {slConfig.mode === 'atr' ? (
+                                      <div className="grid grid-cols-3 gap-1">
+                                        <div className="space-y-1">
+                                          <label className="text-[11px] text-gray-400 font-medium">TF</label>
+                                          <select
+                                            value={slConfig.atrTimeframe}
+                                            onChange={(e) => setSlConfig({ ...slConfig, atrTimeframe: e.target.value })}
+                                            className="w-full bg-black/30 border border-white/10 rounded py-1 px-1 text-white text-[11px] focus:outline-none"
+                                          >
+                                            <option value="1m">1m</option>
+                                            <option value="5m">5m</option>
+                                            <option value="15m">15m</option>
+                                            <option value="1h">1h</option>
+                                            <option value="4h">4h</option>
+                                            <option value="1d">1d</option>
+                                          </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="text-[11px] text-gray-400 font-medium">Period</label>
+                                          <input
+                                            type="number"
+                                            value={slConfig.atrPeriod}
+                                            onChange={(e) => setSlConfig({ ...slConfig, atrPeriod: Number(e.target.value) })}
+                                            className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[11px] focus:outline-none"
+                                          />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="text-[11px] text-gray-400 font-medium">Mult.</label>
+                                          <input
+                                            type="number"
+                                            step="0.1"
+                                            value={slConfig.atrMultiplier}
+                                            onChange={(e) => setSlConfig({ ...slConfig, atrMultiplier: Number(e.target.value) })}
+                                            className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 text-white text-[11px] focus:outline-none"
+                                          />
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-1">
+                                        <label className="text-[11px] text-gray-400 font-medium">
+                                          {slConfig.mode === 'absolute' ? 'Exact Price' : (slConfig.type === 'smart_chase' ? 'Chase Trigger Gap' : (slConfig.type === 'trailing_chase' ? 'Trailing Callback Gap' : (slConfig.type === 'trailing' ? 'Callback Rate/Distance' : 'Stop Gap')))}
+                                        </label>
+                                        <div className="relative">
+                                          <input
+                                            type="number"
+                                            value={slConfig.value}
+                                            onChange={(e) => setSlConfig({ ...slConfig, value: e.target.value })}
+                                            placeholder={slConfig.mode === 'absolute' ? (tradeSide === 'Buy' ? "e.g. 0.950" : "e.g. 1.050") : (slConfig.mode === 'percentage' ? "e.g. 1.0" : "e.g. 0.003")}
+                                            className="w-full bg-black/30 border border-white/10 rounded py-1 px-2 pr-6 text-white text-[13px] focus:outline-none focus:border-red-500/50"
+                                          />
+                                          <span className="absolute right-2 top-1.5 text-[11px] text-red-500 font-bold">{slConfig.mode === 'percentage' ? '%' : (slConfig.mode === 'absolute' ? '🎯' : '$')}</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                    <div className="space-y-1">
+                                      <div className="flex items-center justify-between">
+                                        <label className="text-[11px] text-gray-400 font-medium flex items-center gap-1">
+                                          <span>Monitor Limit</span>
+                                          {slConfig.timeoutMins === 0 && (
+                                            <span className="text-[9px] text-emerald-400/90 font-medium">● Infinite</span>
+                                          )}
+                                        </label>
+                                        <button
+                                          type="button"
+                                          onClick={() => setSlConfig({ ...slConfig, timeoutMins: slConfig.timeoutMins === 0 ? 60 : 0 })}
+                                          className={`text-[10px] px-1.5 py-0.5 rounded font-semibold transition-all flex items-center gap-1 border ${slConfig.timeoutMins === 0
+                                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
+                                            : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
+                                            }`}
+                                          title={slConfig.timeoutMins === 0 ? "Infinite monitor active (watches until filled). Click to set minute limit." : "Click to disable timeout limit (Monitor Infinitely)"}
+                                        >
+                                          {slConfig.timeoutMins === 0 ? (
+                                            <>
+                                              <span className="text-[13px] font-bold leading-none">∞</span>
+                                              <span>No Limit</span>
+                                            </>
+                                          ) : (
+                                            <span>Limit On</span>
+                                          )}
+                                        </button>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <input
+                                          type="range"
+                                          min="0" max="60" step="1"
+                                          value={slConfig.timeoutMins}
+                                          onChange={(e) => setSlConfig({ ...slConfig, timeoutMins: Number(e.target.value) })}
+                                          className="w-full accent-red-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                          title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
+                                        />
+                                        <span
+                                          className={`text-[11px] font-mono min-w-[28px] text-right font-bold transition-colors ${slConfig.timeoutMins === 0 ? 'text-emerald-400' : 'text-gray-300'
+                                            }`}
+                                          title={slConfig.timeoutMins === 0 ? "0 = Infinite (Monitors until filled)" : `${slConfig.timeoutMins} minutes limit`}
+                                        >
+                                          {slConfig.timeoutMins === 0 ? '∞' : `${slConfig.timeoutMins}m`}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Smart Chase Detailed Controls (for Smart Chase & Trailing Chase) */}
+                                  {(slConfig.type === 'smart_chase' || slConfig.type === 'trailing_chase') && (
+                                    <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 space-y-2 mt-1 animate-fadeIn">
+                                      <div className="flex items-center justify-between text-[11px]">
+                                        <span className="font-bold text-red-400 flex items-center gap-1.5">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                          {slConfig.type === 'trailing_chase' ? 'Trailing Chase Engine (Maker Post-Only)' : 'Smart Chase Settings (Maker Post-Only)'}
+                                        </span>
+                                        <span className="text-[10px] text-amber-400 font-mono font-bold">Circuit: {slConfig.smartChaseDeviationPct}%</span>
+                                      </div>
+
+                                      {/* Pegging Strategy Selector: Standard BBO vs Inside-Spread vs Wall-Aware */}
+                                      <div className="space-y-1">
+                                        <div className="flex justify-between items-center text-[10px] text-gray-400">
+                                          <span className="font-semibold text-gray-300">Pegging Strategy</span>
+                                          <span className="text-[9.5px] font-mono text-amber-300 font-bold">
+                                            {slConfig.smartChasePegStrategy === 'wall_aware' ? '🧱 Wall-Aware' : (slConfig.smartChasePegStrategy === 'inside_spread' ? '🎯 Inside-Spread' : '⚡ Top BBO')}
+                                          </span>
+                                        </div>
+                                        <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[10px] font-semibold">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'bbo' })}
+                                            className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChasePegStrategy === 'bbo'
+                                              ? 'bg-amber-600 text-white font-bold shadow-md'
+                                              : 'text-gray-400 hover:text-white'
+                                              }`}
+                                            title="Standard Top-of-Book BBO: Tracks Best Bid/Ask directly"
+                                          >
+                                            ⚡ Top BBO
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'inside_spread' })}
+                                            className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChasePegStrategy === 'inside_spread'
+                                              ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold shadow-md'
+                                              : 'text-gray-400 hover:text-white'
+                                              }`}
+                                            title="Inside-Spread Pegging: Places 1 tick inside spread when spread > 1 tick. Ensures #1 queue priority maker fill without taker fees."
+                                          >
+                                            🎯 Inside-Spread
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, smartChasePegStrategy: 'wall_aware' })}
+                                            className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChasePegStrategy === 'wall_aware'
+                                              ? 'bg-gradient-to-r from-orange-600 to-amber-600 text-white font-bold shadow-md'
+                                              : 'text-gray-400 hover:text-white'
+                                              }`}
+                                            title="Liquidity-Wall Aware: Scans L2 depth, detects support/resistance walls, and front-runs 1 tick ahead."
+                                          >
+                                            🧱 Wall-Aware
+                                          </button>
+                                        </div>
+                                        {slConfig.smartChasePegStrategy === 'wall_aware' && (
+                                          <div className="p-2 rounded bg-amber-950/20 border border-amber-500/20 space-y-1">
+                                            <div className="flex justify-between items-center text-[9.5px]">
+                                              <span className="text-gray-300">Wall Threshold Multiplier</span>
+                                              <span className="text-amber-400 font-mono font-bold">{slConfig.smartChaseWallMultiplier}x Depth</span>
+                                            </div>
+                                            <input
+                                              type="range"
+                                              min="1.5" max="5.0" step="0.5"
+                                              value={slConfig.smartChaseWallMultiplier}
+                                              onChange={(e) => setSlConfig({ ...slConfig, smartChaseWallMultiplier: parseFloat(e.target.value) || 2.5 })}
+                                              className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                            />
+                                            <p className="text-[9px] text-gray-400 leading-tight">
+                                              Front-runs orderbook clusters with volume ≥ {slConfig.smartChaseWallMultiplier}x average depth.
+                                            </p>
+                                          </div>
+                                        )}
+                                        {slConfig.smartChasePegStrategy === 'inside_spread' && (
+                                          <p className="text-[9px] text-cyan-400/90 leading-tight">
+                                            💡 Jumps 1 tick inside the spread to capture top execution priority before takers match other makers.
+                                          </p>
+                                        )}
+                                      </div>
+
+                                      {/* Chase Trigger Basis Toggle: Last Market Price vs Bid / Ask Price */}
+                                      <div className="space-y-1">
+                                        <div className="flex justify-between items-center text-[10px] text-gray-400">
+                                          <span className="font-semibold text-gray-300">Trigger Condition Basis</span>
+                                          <span className="text-[9.5px] font-mono text-cyan-300 font-bold">
+                                            {slConfig.smartChaseTriggerSource === 'bid_ask' ? '⚡ Bid / Ask (BBO)' : '📊 Last Market Price'}
+                                          </span>
+                                        </div>
+                                        <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[10px] font-semibold">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, smartChaseTriggerSource: 'last' })}
+                                            className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseTriggerSource === 'last'
+                                              ? 'bg-blue-600 text-white font-bold shadow-md'
+                                              : 'text-gray-400 hover:text-white'
+                                              }`}
+                                            title="Last Traded Price: Standard market trigger. Immune to temporary spread widening or empty book spikes."
+                                          >
+                                            📊 Last Price
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlConfig({ ...slConfig, smartChaseTriggerSource: 'bid_ask' })}
+                                            className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseTriggerSource === 'bid_ask'
+                                              ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold shadow-md'
+                                              : 'text-gray-400 hover:text-white'
+                                              }`}
+                                            title="Order Book Bid/Ask: Triggers instantly based on executable Top-of-Book (Bid for Long exit, Ask for Short exit). Eliminates lag on slow pairs."
+                                          >
+                                            ⚡ Bid / Ask
+                                          </button>
+                                        </div>
+                                        <p className="text-[9px] text-gray-400 leading-tight">
+                                          {slConfig.smartChaseTriggerSource === 'bid_ask'
+                                            ? 'Triggers immediately when Top Bid (Long exit) or Ask (Short exit) reaches SL.'
+                                            : 'Triggers when a matched trade on the exchange reaches or breaches SL.'}
+                                        </p>
+                                      </div>
+
+                                      {/* Chase Mode Selector: Dynamic BBO Peg vs Interval Timer */}
+                                      <div className="flex bg-black/60 rounded p-0.5 border border-white/5 text-[10px] font-semibold">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSlConfig({ ...slConfig, smartChaseMode: 'dynamic_bbo' })}
+                                          className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseMode === 'dynamic_bbo'
+                                            ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white font-bold shadow-md'
+                                            : 'text-gray-400 hover:text-white'
+                                            }`}
+                                          title="Real-time Order Book Shadowing: Automatically tracks Best Bid/Ask in real time without waiting"
+                                        >
+                                          <Zap className="w-2.5 h-2.5 text-amber-300 fill-amber-300" />
+                                          ⚡ Dynamic BBO Peg
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setSlConfig({ ...slConfig, smartChaseMode: 'interval' })}
+                                          className={`flex-1 py-1 rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${slConfig.smartChaseMode === 'interval'
+                                            ? 'bg-gradient-to-r from-amber-500 to-red-500 text-white font-bold shadow-md'
+                                            : 'text-gray-400 hover:text-white'
+                                            }`}
+                                          title="Interval Timer: Waits for a fixed delay time before checking and retrying"
+                                        >
+                                          ⏱️ Interval Chase
+                                        </button>
+                                      </div>
+
+                                      {slConfig.smartChaseMode === 'dynamic_bbo' ? (
+                                        <div className="p-2 rounded bg-amber-950/30 border border-amber-500/30 text-[10px] text-amber-300/90 space-y-0.5">
+                                          <div className="font-bold flex items-center gap-1 text-amber-300">
+                                            <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
+                                            <span>Real-Time Order Book Shadowing Active</span>
+                                          </div>
+                                          <p className="text-[9.5px] text-gray-400 leading-tight">
+                                            Stays resting at Top-of-Book to preserve queue priority. Instantly cancels and re-pegs when another participant outbids you!
+                                          </p>
+                                        </div>
+                                      ) : (
+                                        <div className="p-1.5 rounded bg-black/40 border border-white/5 text-[10px] text-gray-400">
+                                          <span>Waits for configured delay interval between chase attempts.</span>
+                                        </div>
+                                      )}
+
+                                      {/* Max Chase Deviation Slider */}
+                                      <div className="space-y-1">
+                                        <div className="flex justify-between items-center text-[10px] text-gray-400">
+                                          <span>Max Deviation (Circuit Breaker)</span>
+                                          <span className="text-amber-400 font-bold font-mono">{slConfig.smartChaseDeviationPct}%</span>
+                                        </div>
+                                        <input
+                                          type="range"
+                                          min="0.1" max="5.0" step="0.1"
+                                          value={slConfig.smartChaseDeviationPct}
+                                          onChange={(e) => setSlConfig({ ...slConfig, smartChaseDeviationPct: parseFloat(e.target.value) })}
+                                          className="w-full accent-amber-500 h-1 bg-black/50 rounded appearance-none cursor-pointer"
+                                        />
+                                        <p className="text-[9px] text-gray-500">Breach triggers emergency Market Sweep.</p>
+                                      </div>
+
+                                      {/* Retries and Delay Grid */}
+                                      <div className={`grid ${slConfig.smartChaseMode === 'dynamic_bbo' ? 'grid-cols-1' : 'grid-cols-2'} gap-2 pt-1 border-t border-white/5`}>
+                                        <div className="space-y-1">
+                                          <label className="text-[10px] text-gray-400 font-medium flex justify-between">
+                                            <span>Max Re-pegs / Retries</span>
+                                            <span className="text-[9px] text-amber-400 font-bold">0 = ∞ (Continuous)</span>
+                                          </label>
+                                          <input
+                                            type="number"
+                                            min="0" max="100000" step="1"
+                                            value={slConfig.smartChaseMaxAttempts}
+                                            onChange={(e) => setSlConfig({ ...slConfig, smartChaseMaxAttempts: parseInt(e.target.value) || 0 })}
+                                            placeholder="0 (Unlimited)"
+                                            className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-red-500/50"
+                                          />
+                                        </div>
+                                        {slConfig.smartChaseMode === 'interval' && (
+                                          <div className="space-y-1">
+                                            <label className="text-[10px] text-gray-400 font-medium flex justify-between">
+                                              <span>Delay (ms)</span>
+                                              <span className="text-[9px] text-gray-500">Throttle</span>
+                                            </label>
+                                            <input
+                                              type="number"
+                                              min="200" max="5000" step="100"
+                                              value={slConfig.smartChaseDelayMs}
+                                              onChange={(e) => setSlConfig({ ...slConfig, smartChaseDelayMs: parseInt(e.target.value) || 1500 })}
+                                              placeholder="1500"
+                                              className="w-full bg-black/40 border border-white/10 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-red-500/50"
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Auto-Breakeven (Capital Protection) Panel */}
+                                  <div className={`bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-2.5 space-y-2 mt-2 ${(isNativeExchangeSlLockedToFixed && (slConfig.type === 'fixed' || slConfig.type === 'trailing')) ? 'opacity-45 pointer-events-none' : ''}`}>
+                                    <div
+                                      className="flex justify-between items-center cursor-pointer group"
+                                      onClick={() => {
+                                        if (isNativeExchangeSlLockedToFixed && (slConfig.type === 'fixed' || slConfig.type === 'trailing')) return;
+                                        setSlConfig({ ...slConfig, autoBreakevenEnabled: !slConfig.autoBreakevenEnabled });
+                                      }}
+                                    >
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                        <span className="text-[11px] font-bold text-emerald-300 group-hover:text-white transition-colors">
+                                          🛡️ Auto-Breakeven {(isNativeExchangeSlLockedToFixed && (slConfig.type === 'fixed' || slConfig.type === 'trailing')) ? '(Switch to ⚡ Smart Chase to enable with Native OTO)' : '(Risk-Free Trade)'}
+                                        </span>
+                                      </div>
+                                      <div className={`relative w-7 h-3.5 rounded-full transition-colors ${slConfig.autoBreakevenEnabled ? 'bg-emerald-500' : 'bg-gray-700'}`}>
+                                        <MotionDiv
+                                          className="absolute top-0.5 left-0.5 w-2.5 h-2.5 bg-white rounded-full"
+                                          animate={{ x: slConfig.autoBreakevenEnabled ? 14 : 0 }}
+                                          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <AnimatePresence>
+                                      {slConfig.autoBreakevenEnabled && (
+                                        <MotionDiv
+                                          initial={{ height: 0, opacity: 0 }}
+                                          animate={{ height: 'auto', opacity: 1 }}
+                                          exit={{ height: 0, opacity: 0 }}
+                                          className="space-y-2 pt-1 border-t border-emerald-500/10 overflow-hidden"
+                                        >
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <div className="space-y-1">
+                                              <label className="text-[10px] text-gray-400 font-medium flex justify-between">
+                                                <span>Trigger at Profit</span>
+                                                <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenTriggerPct}%</span>
+                                              </label>
+                                              <input
+                                                type="number"
+                                                step="0.1"
+                                                min="0.1"
+                                                max="50"
+                                                value={slConfig.autoBreakevenTriggerPct}
+                                                onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenTriggerPct: parseFloat(e.target.value) || 0.5 })}
+                                                className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
+                                              />
+                                            </div>
+                                            <div className="space-y-1">
+                                              <label className="text-[10px] text-gray-400 font-medium flex justify-between">
+                                                <span>Fee Buffer</span>
+                                                <span className="text-emerald-400 font-mono font-bold">+{slConfig.autoBreakevenBufferPct}%</span>
+                                              </label>
+                                              <input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                max="1.0"
+                                                value={slConfig.autoBreakevenBufferPct}
+                                                onChange={(e) => setSlConfig({ ...slConfig, autoBreakevenBufferPct: parseFloat(e.target.value) || 0.05 })}
+                                                className="w-full bg-black/40 border border-emerald-500/20 rounded py-1 px-2 text-white text-[11px] text-center font-mono focus:outline-none focus:border-emerald-500/50"
+                                                title="Extra cushion above entry price to guarantee 0 loss after exchange commissions"
+                                              />
+                                            </div>
+                                          </div>
+                                          <p className="text-[9px] text-emerald-400/80 leading-tight">
+                                            ⚡ When profit reaches +{slConfig.autoBreakevenTriggerPct}%, SL automatically ratchets to Entry + {slConfig.autoBreakevenBufferPct}% buffer (100% Risk-Free)!
+                                          </p>
+                                        </MotionDiv>
+                                      )}
+                                    </AnimatePresence>
+                                  </div>
+
+                                  <AntiWickSlControls
+                                    mode={slConfig.antiWickMode}
+                                    setMode={(m) => setSlConfig({ ...slConfig, antiWickMode: m })}
+                                    dwellSeconds={slConfig.antiWickDwellSeconds}
+                                    setDwellSeconds={(s) => setSlConfig({ ...slConfig, antiWickDwellSeconds: s })}
+                                    timeframe={slConfig.antiWickTimeframe}
+                                    setTimeframe={(tf) => setSlConfig({ ...slConfig, antiWickTimeframe: tf })}
+                                    disasterPct={slConfig.antiWickDisasterPct}
+                                    setDisasterPct={(pct) => setSlConfig({ ...slConfig, antiWickDisasterPct: pct })}
+                                    isLockedByNativeSl={false}
+                                  />
+                                </MotionDiv>
+                              )}
+                            </AnimatePresence>
+                          </div>
+
+                          {(!tpConfig.enabled && !slConfig.enabled) && (
+                            <div className="px-2.5 py-1.5 rounded-lg bg-cyan-950/20 border border-cyan-500/20 text-[10.5px] font-mono text-gray-400">
+                              💡 Tip: Enable Take-Profit or Stop-Loss below to arm Native Binance OTO/OTOCO, Hybrid Smart Chase SL, or Futures Brackets.
+                            </div>
+                          )}
+                        </div>
                       )}
-                    </AnimatePresence>
 
-                    {/* Live Dollar PnL, R:R & Maker Fee Savings Preview */}
-                    <LivePnlAndRRBar
-                      preview={tradePnlPreview}
-                      orderType={orderType}
-                      isFutures={isFutures}
-                    />
+                    </div> {/* End Scrollable Tab Workspace */}
 
-                    {/* Action Button (Click to Execute or Drag onto Chart) */}
-                    <button
-                      type="button"
-                      onPointerDown={(e) => {
-                        handleOrderPointerDown(e, tradeSide);
-                      }}
-                      onClick={(e) => {
-                        if (didOrderDragRef.current) {
-                          didOrderDragRef.current = false;
-                          return;
-                        }
-                        handleTrade(tradeSide);
-                      }}
-                      style={{ touchAction: 'none' }}
-                      disabled={isSubmitting}
-                      className={`w-full py-2 px-3 rounded-lg font-bold flex items-center justify-between transition-all disabled:opacity-50 group border cursor-grab active:cursor-grabbing select-none ${orderType === 'SmartPeg'
-                        ? tradeSide === 'Buy'
-                          ? 'bg-gradient-to-r from-amber-600/30 to-emerald-600/30 hover:from-amber-600 hover:to-emerald-600 text-amber-200 hover:text-white border-amber-400/60 shadow-[0_0_16px_rgba(245,158,11,0.25)]'
-                          : 'bg-gradient-to-r from-amber-600/30 to-rose-600/30 hover:from-amber-600 hover:to-rose-600 text-amber-200 hover:text-white border-amber-400/60 shadow-[0_0_16px_rgba(245,158,11,0.25)]'
-                        : tradeSide === 'Buy'
-                          ? 'bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white border-emerald-400/60 shadow-[0_0_14px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)]'
-                          : 'bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border-rose-400/60 shadow-[0_0_14px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)]'
-                        }`}
-                      title={`Click to execute ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
-                    >
-                      <div className="flex items-center gap-2">
-                        {orderType === 'SmartPeg' ? (
-                          <Zap className="w-4 h-4 text-amber-300 fill-amber-300 group-hover:scale-110 transition-transform" />
-                        ) : tradeSide === 'Buy' ? (
-                          <TrendingUp className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
-                        ) : (
-                          <TrendingDown className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
+                    {/* Sticky Sci-Fi Footer */}
+                    <div className="px-3 py-2 bg-[#04070e]/95 border-t border-cyan-500/20 shrink-0 space-y-1.5">
+                      {/* Inline AI Trade Shield Rejection Card */}
+                      <AnimatePresence>
+                        {aiRejectNotice && (
+                          <MotionDiv
+                            initial={{ height: 0, opacity: 0, y: 6 }}
+                            animate={{ height: 'auto', opacity: 1, y: 0 }}
+                            exit={{ height: 0, opacity: 0, y: 6 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="p-2 rounded-xl bg-gradient-to-br from-amber-950/60 via-[#0d1424] to-black border border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)] space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
+                                    AI Shield Protected ({aiRejectNotice.side} Blocked)
+                                  </span>
+                                  <span className="text-[9.5px] text-gray-500 font-mono">
+                                    {aiRejectNotice.timestamp}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setAiRejectNotice(null)}
+                                  className="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                                  title="Dismiss AI Shield Notice"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              {/* Score vs Threshold Progress Bar */}
+                              <div className="space-y-1 bg-black/50 p-1.5 rounded-lg border border-white/5">
+                                <div className="flex items-center justify-between text-[10px] font-mono">
+                                  <span className="text-gray-300">
+                                    {aiRejectNotice.directionLabel}:{' '}
+                                    <strong className="text-amber-300">{aiRejectNotice.calibratedProb.toFixed(1)}%</strong>
+                                    {aiRejectNotice.rawProb !== null && aiRejectNotice.rawProb !== undefined && Math.abs(aiRejectNotice.rawProb - aiRejectNotice.calibratedProb) > 3 && (
+                                      <span className="text-[9px] text-gray-500 ml-1">(Raw {aiRejectNotice.rawProb.toFixed(1)}%)</span>
+                                    )}
+                                  </span>
+                                  <span className="text-cyan-300 font-bold">
+                                    Req ≥{aiRejectNotice.threshold.toFixed(0)}% • {aiRejectNotice.oppositeLabel} {aiRejectNotice.oppositeProb.toFixed(1)}%
+                                  </span>
+                                </div>
+                                <div className="relative h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${aiRejectNotice.side === 'BUY'
+                                      ? 'bg-gradient-to-r from-emerald-500 to-amber-400'
+                                      : 'bg-gradient-to-r from-rose-500 to-amber-400'
+                                      }`}
+                                    style={{ width: `${Math.min(100, Math.max(4, aiRejectNotice.calibratedProb))}%` }}
+                                  />
+                                  <div
+                                    className="absolute top-0 bottom-0 w-0.5 bg-cyan-300"
+                                    style={{ left: `${Math.min(98, Math.max(2, aiRejectNotice.threshold))}%` }}
+                                  />
+                                </div>
+                                <div className="flex flex-wrap items-center gap-1 pt-0.5 text-[9px] font-mono text-gray-300">
+                                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                                    Model: <strong className="text-blue-300">{aiRejectNotice.modelName}</strong>
+                                  </span>
+                                  {aiRejectNotice.flowPct !== null && aiRejectNotice.flowPct !== undefined && (
+                                    <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                                      {aiRejectNotice.flowLabel || 'Flow'}: <strong className="text-white">{aiRejectNotice.flowPct.toFixed(0)}%</strong>
+                                    </span>
+                                  )}
+                                  {aiRejectNotice.l2Pct !== null && aiRejectNotice.l2Pct !== undefined && (
+                                    <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                                      {aiRejectNotice.l2Label || 'L2'}: <strong className="text-white">{aiRejectNotice.l2Pct.toFixed(0)}%</strong>
+                                    </span>
+                                  )}
+                                  {aiRejectNotice.tpHitEst !== null && aiRejectNotice.tpHitEst !== undefined && (
+                                    <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5">
+                                      TP Hit Est: <strong className="text-amber-300">{aiRejectNotice.tpHitEst.toFixed(0)}%</strong>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="text-[10px] text-amber-200/95 leading-tight flex items-start gap-1 px-0.5">
+                                <span className="text-amber-400 shrink-0">⚡</span>
+                                <span>{aiRejectNotice.reason}</span>
+                              </div>
+                            </div>
+                          </MotionDiv>
                         )}
-                        <span className="text-[13px] font-black uppercase tracking-wider font-mono">
-                          {isSubmitting
-                            ? 'EXECUTING...'
-                            : `${orderType === 'SmartPeg' ? 'SMART PEG' : 'EXECUTE'} ${isFutures ? (tradeSide === 'Buy' ? 'LONG' : 'SHORT') : tradeSide.toUpperCase()}`}
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-mono text-gray-300/80 group-hover:text-white flex items-center gap-1">
-                        <span>Click or Drag Chart</span>
-                        <MoveVertical className="w-3 h-3 opacity-80" />
-                      </span>
-                    </button>
+                      </AnimatePresence>
 
-                    {/* Footer Telemetry Status Strip */}
-                    <div className="flex items-center justify-between text-[9.5px] font-mono text-gray-500">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(52,211,153,0.8)]" />
-                        Secure API Execution
-                      </span>
-                      {isTelegramConnected === true ? (
-                        <span className="text-cyan-400/90 flex items-center gap-1 font-medium" title="Telegram alerts are active and verified">
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_rgba(6,182,212,0.8)]"></span>
-                          Telegram Alerts Active
+                      {/* Live Dollar PnL, R:R & Maker Fee Savings Preview */}
+                      <LivePnlAndRRBar
+                        preview={tradePnlPreview}
+                        orderType={orderType}
+                        isFutures={isFutures}
+                      />
+
+                      {/* Action Button (Click to Execute or Drag onto Chart) */}
+                      <button
+                        type="button"
+                        onPointerDown={(e) => {
+                          handleOrderPointerDown(e, tradeSide);
+                        }}
+                        onClick={(e) => {
+                          if (didOrderDragRef.current) {
+                            didOrderDragRef.current = false;
+                            return;
+                          }
+                          handleTrade(tradeSide);
+                        }}
+                        style={{ touchAction: 'none' }}
+                        disabled={isSubmitting}
+                        className={`w-full py-2 px-3 rounded-lg font-bold flex items-center justify-between transition-all disabled:opacity-50 group border cursor-grab active:cursor-grabbing select-none ${orderType === 'SmartPeg'
+                          ? tradeSide === 'Buy'
+                            ? 'bg-gradient-to-r from-amber-600/30 to-emerald-600/30 hover:from-amber-600 hover:to-emerald-600 text-amber-200 hover:text-white border-amber-400/60 shadow-[0_0_16px_rgba(245,158,11,0.25)]'
+                            : 'bg-gradient-to-r from-amber-600/30 to-rose-600/30 hover:from-amber-600 hover:to-rose-600 text-amber-200 hover:text-white border-amber-400/60 shadow-[0_0_16px_rgba(245,158,11,0.25)]'
+                          : tradeSide === 'Buy'
+                            ? 'bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white border-emerald-400/60 shadow-[0_0_14px_rgba(16,185,129,0.2)] hover:shadow-[0_0_18px_rgba(16,185,129,0.45)]'
+                            : 'bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border-rose-400/60 shadow-[0_0_14px_rgba(244,63,94,0.2)] hover:shadow-[0_0_18px_rgba(244,63,94,0.45)]'
+                          }`}
+                        title={`Click to execute ${orderType} ${tradeSide}, or Touch/Drag onto chart to place at price level`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {orderType === 'SmartPeg' ? (
+                            <Zap className="w-4 h-4 text-amber-300 fill-amber-300 group-hover:scale-110 transition-transform" />
+                          ) : tradeSide === 'Buy' ? (
+                            <TrendingUp className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+                          ) : (
+                            <TrendingDown className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
+                          )}
+                          <span className="text-[13px] font-black uppercase tracking-wider font-mono">
+                            {isSubmitting
+                              ? 'EXECUTING...'
+                              : `${orderType === 'SmartPeg' ? 'SMART PEG' : 'EXECUTE'} ${isFutures ? (tradeSide === 'Buy' ? 'LONG' : 'SHORT') : tradeSide.toUpperCase()}`}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono text-gray-300/80 group-hover:text-white flex items-center gap-1">
+                          <span>Click or Drag Chart</span>
+                          <MoveVertical className="w-3 h-3 opacity-80" />
                         </span>
-                      ) : isTelegramConnected === false ? (
-                        <a
-                          href="/settings"
-                          className="text-amber-400/90 hover:text-amber-300 flex items-center gap-1 font-medium underline cursor-pointer"
-                          title="Manual trade alerts are disabled in Settings or Telegram bot is not connected. Click to configure in Settings."
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                          Manual Alerts Disabled
-                        </a>
-                      ) : (
-                        <span className="text-gray-500">Drag header to move</span>
-                      )}
+                      </button>
+
+                      {/* Footer Telemetry Status Strip */}
+                      <div className="flex items-center justify-between text-[9.5px] font-mono text-gray-500">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(52,211,153,0.8)]" />
+                          Secure API Execution
+                        </span>
+                        {isTelegramConnected === true ? (
+                          <span className="text-cyan-400/90 flex items-center gap-1 font-medium" title="Telegram alerts are active and verified">
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_rgba(6,182,212,0.8)]"></span>
+                            Telegram Alerts Active
+                          </span>
+                        ) : isTelegramConnected === false ? (
+                          <a
+                            href="/settings"
+                            className="text-amber-400/90 hover:text-amber-300 flex items-center gap-1 font-medium underline cursor-pointer"
+                            title="Manual trade alerts are disabled in Settings or Telegram bot is not connected. Click to configure in Settings."
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                            Manual Alerts Disabled
+                          </a>
+                        ) : (
+                          <span className="text-gray-500">Drag header to move</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
                 );
               })()}
             </div>

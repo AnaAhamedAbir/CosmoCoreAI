@@ -1840,8 +1840,13 @@ html.mobile-thermal-guard .animate-glow {
   animation: none !important;
 }
 
-html.mobile-thermal-guard [class*="will-change"] {
+html.mobile-thermal-guard [class*="will-change"],
+html.mobile-thermal-guard [style*="will-change"] {
   will-change: auto !important;
+}
+
+html.mobile-thermal-guard .animate-marquee-slow {
+  animation: none !important;
 }
 
 /* ============================================================================

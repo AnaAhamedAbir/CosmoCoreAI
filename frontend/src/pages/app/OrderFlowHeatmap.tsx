@@ -171,7 +171,7 @@ const CandleCountdown = React.memo<{
     if (!countdownFormatted) return null;
 
     return (
-        <div className={`bg-black/60 dark:bg-black/60 border border-white/10 text-[#d1d5db] font-mono font-bold rounded shadow-lg backdrop-blur-md ${compact ? 'text-[11px] px-2 py-0.5' : 'text-[20px] px-3 py-1.5'}`}>
+        <div className={`bg-black/60 dark:bg-black/60 border border-white/10 text-[#d1d5db] font-mono font-bold rounded shadow-lg ${compact || isThermalGuardActive() ? '' : 'backdrop-blur-md'} ${compact ? 'text-[11px] px-2 py-0.5' : 'text-[20px] px-3 py-1.5'}`}>
             {countdownFormatted}
         </div>
     );
@@ -4731,7 +4731,7 @@ const OrderFlowChartPanel = React.memo<{
         <div 
             className={isFullscreen 
                 ? 'fixed inset-0 z-[99999] flex flex-col bg-[#050505] p-2 md:p-4 overflow-hidden w-screen h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)]' 
-                : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border transition-all duration-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col ${panelDeviceProfile.isPhoneMobileUI ? 'min-h-[380px]' : 'min-h-[240px]'} ${
+                : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border ${panelDeviceProfile.isThermalGuardActive ? '' : 'transition-all duration-200'} overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col ${panelDeviceProfile.isPhoneMobileUI ? 'min-h-[380px]' : 'min-h-[240px]'} ${
                     isActive && allChartsCount > 1 
                         ? 'border-brand-primary/80 ring-2 ring-brand-primary/20 shadow-[0_0_25px_rgba(59,130,246,0.2)]' 
                         : 'border-gray-200 dark:border-white/5'
@@ -5604,8 +5604,8 @@ const OrderFlowHeatmap: React.FC = () => {
                     overflow: 'hidden',  // will be flipped to 'visible' via onTransitionEnd when open
                     maxHeight: showSubNav ? (isPhoneMobileUI ? '65dvh' : '480px') : '0px',
                     opacity: showSubNav ? 1 : 0,
-                    transition: 'max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease',
-                    willChange: 'max-height, opacity',
+                    transition: deviceProfile.isThermalGuardActive ? 'none' : 'max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease',
+                    willChange: deviceProfile.isThermalGuardActive ? 'auto' : 'max-height, opacity',
                 }}
             >
                 <header className="relative z-20 flex-shrink-0 p-4 laptop:p-2 flex-wrap gap-2 border-b border-gray-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-[#000000]">

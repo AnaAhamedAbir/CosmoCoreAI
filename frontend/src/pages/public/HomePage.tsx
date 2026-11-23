@@ -48,13 +48,17 @@ export const CosmicStarBackground: React.FC = () => {
         if (!ctx) return;
 
         let animId: number = 0;
+        let resumeTimerId: number = 0;
         let isDisposed = false;
         const maxZ = 3000;
         // Desktop: full 24,000 warp stars @ native refresh rate.
-        // Mobile/Tablet thermal guard: 50% star density (up to 12,000) rendered via
-        // flat TypedArrays + 30 batched RGBA path fills @ 60 FPS cap (~25x lower GPU draw-call overhead, zero GC).
+        // Mobile/Tablet thermal guard: capped density (uses physical screen width so desktop-view toggle on phones doesn't inflate star count)
+        // rendered via flat TypedArrays + 30 batched RGBA path fills @ 30 FPS cap.
+        const effectiveStarWidth = thermalGuard
+            ? Math.min(window.innerWidth, window.screen?.width || window.innerWidth)
+            : window.innerWidth;
         const starCount = thermalGuard
-            ? Math.min(12000, Math.max(1800, Math.round(window.innerWidth * 9)))
+            ? Math.min(4800, Math.max(1500, Math.round(effectiveStarWidth * 7)))
             : Math.min(24000, window.innerWidth * 18);
         const palette = ['#ffffff', '#e2e8f0', '#a5f3fc', '#67e8f9', '#8b5cf6', '#d946ef'];
         const paletteRgb = [
@@ -155,7 +159,21 @@ export const CosmicStarBackground: React.FC = () => {
         };
 
         let lastFrameTime = 0;
-        const minMobileFrameMs = 14.5; // Caps 120Hz mobile/tablet screens to locked 60 FPS while giving 60Hz screens jitter margin
+        const minMobileFrameMs = 31.5; // Caps mobile/tablet starfield to ~30 FPS for cool battery & GPU thermals
+
+        const scheduleResumeCheck = () => {
+            if (isDisposed || resumeTimerId) return;
+            resumeTimerId = window.setTimeout(() => {
+                resumeTimerId = 0;
+                if (isDisposed || document.hidden) return;
+                if (canvas.offsetParent !== null && !animId) {
+                    lastFrameTime = 0;
+                    animId = requestAnimationFrame(animate);
+                } else if (canvas.offsetParent === null) {
+                    scheduleResumeCheck();
+                }
+            }, 500);
+        };
 
         const animate = (timestamp: number = 0) => {
             if (isDisposed) return;
@@ -166,7 +184,8 @@ export const CosmicStarBackground: React.FC = () => {
             }
 
             if (canvas.offsetParent === null) {
-                animId = requestAnimationFrame(animate);
+                animId = 0;
+                scheduleResumeCheck();
                 return;
             }
 
@@ -284,6 +303,7 @@ export const CosmicStarBackground: React.FC = () => {
             window.removeEventListener('resize', handleResize);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             if (animId) cancelAnimationFrame(animId);
+            if (resumeTimerId) clearTimeout(resumeTimerId);
         };
     }, [thermalGuard]);
 
@@ -302,7 +322,7 @@ export const CosmicStarBackground: React.FC = () => {
             <canvas
                 ref={canvasRef}
                 className="absolute inset-0 w-full h-full pointer-events-none"
-                style={{ willChange: 'transform', transform: 'translateZ(0)' }}
+                style={thermalGuard ? undefined : { willChange: 'transform', transform: 'translateZ(0)' }}
             />
         </div>
     );

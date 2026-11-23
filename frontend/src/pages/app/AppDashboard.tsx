@@ -279,7 +279,7 @@ const Sidebar: React.FC<{
     const sidebarAside = (
         <aside className={`${
             isPhoneMobileUI
-                ? `fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[272px] max-w-[84vw] z-[90] transform transition-transform duration-300 ease-out ${isMobileOpen ? 'translate-x-0 pointer-events-auto' : '-translate-x-full pointer-events-none'}`
+                ? `${isMobileOpen ? 'fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[272px] max-w-[84vw] z-[90] translate-x-0 pointer-events-auto' : 'hidden'}`
                 : `${effectiveCollapsed ? 'w-20' : 'w-72'} h-full max-h-full flex-shrink-0 transition-all duration-[350ms] ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width] z-30 relative`
         } bg-[#F8FAFC] dark:bg-[#000000] border-r border-gray-200 dark:border-white/5 flex flex-col shadow-[5px_0_20px_rgba(0,0,0,0.05)] group`}>
 
@@ -676,7 +676,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
 
     return (
         <BacktestProvider>
-            <div className="flex h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-full max-w-[100vw] overflow-hidden bg-brand-light dark:bg-[#000000] transition-all duration-300">
+            <div className={`flex h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-full max-w-[100vw] overflow-hidden bg-brand-light dark:bg-[#000000] ${deviceProfile.isThermalGuardActive ? '' : 'transition-all duration-300'}`}>
                 <Sidebar 
                         onLogout={onLogout} 
                         isCollapsed={isSidebarCollapsed} 

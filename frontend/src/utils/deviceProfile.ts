@@ -1,5 +1,6 @@
 export type ThermalMode = 'auto' | 'eco' | 'full';
 export type DeviceClass = 'phone' | 'tablet' | 'desktop';
+export type PhoneViewMode = 'mobile' | 'desktop';
 
 export interface ThermalTimings {
   l2FlushMs: number;
@@ -21,13 +22,20 @@ export interface DeviceThermalProfile {
   isPhone: boolean;
   isTablet: boolean;
   isMobileOrTablet: boolean;
+  phoneViewMode: PhoneViewMode;
+  isPhoneMobileUI: boolean;
   mode: ThermalMode;
   isThermalGuardActive: boolean;
   timings: ThermalTimings;
 }
 
 const STORAGE_KEY = 'cosmo_thermal_mode';
+const PHONE_VIEW_STORAGE_KEY = 'cosmo_phone_view_mode';
 const PROFILE_EVENT = 'cosmo:thermal-profile-change';
+const MOBILE_VIEWPORT_CONTENT =
+  'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=overlays-content';
+const DESKTOP_EMULATED_VIEWPORT_CONTENT =
+  'width=1280, user-scalable=no, interactive-widget=overlays-content';
 
 const DESKTOP_TIMINGS: ThermalTimings = {
   l2FlushMs: 100,
@@ -70,6 +78,19 @@ export function getStoredThermalMode(): ThermalMode {
     // Ignore storage access errors (private browsing / restricted context)
   }
   return 'auto';
+}
+
+export function getStoredPhoneViewMode(): PhoneViewMode {
+  if (typeof window === 'undefined') return 'mobile';
+  try {
+    const val = window.localStorage.getItem(PHONE_VIEW_STORAGE_KEY);
+    if (val === 'desktop' || val === 'mobile') {
+      return val;
+    }
+  } catch {
+    // Ignore storage access errors
+  }
+  return 'mobile';
 }
 
 export function detectDeviceClass(): DeviceClass {
@@ -122,6 +143,8 @@ export function computeThermalProfile(): DeviceThermalProfile {
   const isPhone = deviceClass === 'phone';
   const isTablet = deviceClass === 'tablet';
   const isMobileOrTablet = isPhone || isTablet;
+  const phoneViewMode: PhoneViewMode = isPhone ? getStoredPhoneViewMode() : 'desktop';
+  const isPhoneMobileUI = isPhone && phoneViewMode === 'mobile';
 
   const isThermalGuardActive =
     mode === 'eco' ? true : mode === 'full' ? false : isMobileOrTablet;
@@ -131,6 +154,8 @@ export function computeThermalProfile(): DeviceThermalProfile {
     isPhone,
     isTablet,
     isMobileOrTablet,
+    phoneViewMode,
+    isPhoneMobileUI,
     mode,
     isThermalGuardActive,
     timings: isThermalGuardActive ? MOBILE_THERMAL_TIMINGS : DESKTOP_TIMINGS,
@@ -155,10 +180,46 @@ export function syncThermalDocumentClass(): DeviceThermalProfile {
   if (typeof document !== 'undefined') {
     const root = document.documentElement;
     root.classList.toggle('mobile-thermal-guard', profile.isThermalGuardActive);
+    root.classList.toggle('mobile-phone-ui', profile.isPhoneMobileUI);
+    root.classList.toggle('mobile-desktop-mode', profile.isPhone && profile.phoneViewMode === 'desktop');
     root.dataset.deviceClass = profile.deviceClass;
     root.dataset.thermalMode = profile.mode;
+    root.dataset.phoneViewMode = profile.phoneViewMode;
+
+    // Dynamically adjust viewport ONLY on auto-detected phones.
+    // Tablets and PCs keep index.html viewport untouched; two-finger zoom stays disabled.
+    if (profile.isPhone) {
+      const viewportMeta = document.querySelector('meta[name="viewport"]');
+      if (viewportMeta) {
+        const desired =
+          profile.phoneViewMode === 'desktop'
+            ? DESKTOP_EMULATED_VIEWPORT_CONTENT
+            : MOBILE_VIEWPORT_CONTENT;
+        if (viewportMeta.getAttribute('content') !== desired) {
+          viewportMeta.setAttribute('content', desired);
+        }
+      }
+    }
   }
   return profile;
+}
+
+export function setPhoneViewMode(mode: PhoneViewMode): DeviceThermalProfile {
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(PHONE_VIEW_STORAGE_KEY, mode);
+    } catch {
+      // ignore
+    }
+  }
+  const next = syncThermalDocumentClass();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PROFILE_EVENT, { detail: next }));
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 60);
+  }
+  return next;
 }
 
 export function setThermalModeOverride(mode: ThermalMode): DeviceThermalProfile {
@@ -184,7 +245,7 @@ export function subscribeThermalProfile(listener: (profile: DeviceThermalProfile
   if (typeof window === 'undefined') return () => {};
   const handleCustom = () => listener(getThermalProfile(true));
   const handleStorage = (e: StorageEvent) => {
-    if (e.key === STORAGE_KEY) {
+    if (e.key === STORAGE_KEY || e.key === PHONE_VIEW_STORAGE_KEY) {
       listener(syncThermalDocumentClass());
     }
   };
@@ -201,6 +262,7 @@ if (typeof window !== 'undefined') {
   (window as Window & { __COSMO_THERMAL__?: unknown }).__COSMO_THERMAL__ = {
     getProfile: () => getThermalProfile(true),
     setMode: (mode: ThermalMode) => setThermalModeOverride(mode),
+    setPhoneViewMode: (mode: PhoneViewMode) => setPhoneViewMode(mode),
   };
 }
 

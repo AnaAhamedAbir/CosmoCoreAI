@@ -5,7 +5,9 @@ import { Logo, DashboardIcon, PortfolioIcon, BacktesterIcon, BotLabIcon, MarketI
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getPathFromView, getViewFromPath } from '@/utils/routeUtils';
 import { AppView, TradingBot, IndicatorData } from '@/types';
-import { Cpu, LayoutDashboard, Database, Activity, LineChart, BrainCircuit, CloudLightning, Bot, Zap, History, Layers, Shield, Bell, Palette } from 'lucide-react';
+import { Cpu, LayoutDashboard, Database, Activity, LineChart, BrainCircuit, CloudLightning, Bot, Zap, History, Layers, Shield, Bell, Palette, Menu, X, Monitor, Smartphone } from 'lucide-react';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { setPhoneViewMode } from '@/utils/deviceProfile';
 import Button from '@/components/common/Button';
 import AIAssistantModal from './AIAssistantModal';
 import ThemeToggle from '@/components/common/ThemeToggle';
@@ -120,7 +122,10 @@ const Sidebar: React.FC<{
     onLogout: () => void;
     isCollapsed: boolean;
     onToggle: () => void;
-}> = ({ onLogout, isCollapsed, onToggle }) => {
+    isPhoneMobileUI?: boolean;
+    isMobileOpen?: boolean;
+    onCloseMobile?: () => void;
+}> = ({ onLogout, isCollapsed, onToggle, isPhoneMobileUI = false, isMobileOpen = false, onCloseMobile }) => {
     const location = useLocation();
     const navigate = useNavigate();
     const currentView = getViewFromPath(location.pathname);
@@ -269,16 +274,34 @@ const Sidebar: React.FC<{
         ];
     }, [activeMarket, userProfile.is_superuser]);
 
-    return (
-        <aside className={`${isCollapsed ? 'w-20' : 'w-72'} bg-[#F8FAFC] dark:bg-[#000000] border-r border-gray-200 dark:border-white/5 flex flex-col h-full max-h-full flex-shrink-0 transition-all duration-[350ms] ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width] shadow-[5px_0_20px_rgba(0,0,0,0.05)] z-30 relative group`}>
+    const effectiveCollapsed = isPhoneMobileUI ? false : isCollapsed;
 
-            {/* Collapse Toggle Button */}
-            <button
-                onClick={onToggle}
-                className="absolute -right-3 top-20 w-6 h-6 bg-white dark:bg-[#111111] border border-gray-200 dark:border-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-brand-primary shadow-md z-30 transition-all duration-300 hover:scale-110 active:scale-95 ease-out"
-            >
-                <ChevronDownIcon className={`w-4 h-4 transition-transform duration-300 ease-in-out ${isCollapsed ? '-rotate-90' : 'rotate-90'}`} />
-            </button>
+    const sidebarAside = (
+        <aside className={`${
+            isPhoneMobileUI
+                ? `fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[272px] max-w-[84vw] z-[90] transform transition-transform duration-300 ease-out ${isMobileOpen ? 'translate-x-0 pointer-events-auto' : '-translate-x-full pointer-events-none'}`
+                : `${effectiveCollapsed ? 'w-20' : 'w-72'} h-full max-h-full flex-shrink-0 transition-all duration-[350ms] ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width] z-30 relative`
+        } bg-[#F8FAFC] dark:bg-[#000000] border-r border-gray-200 dark:border-white/5 flex flex-col shadow-[5px_0_20px_rgba(0,0,0,0.05)] group`}>
+
+            {/* Mobile Drawer Close Button */}
+            {isPhoneMobileUI ? (
+                <button
+                    type="button"
+                    onClick={onCloseMobile}
+                    aria-label="Close navigation menu"
+                    className="absolute right-3 top-3 w-8 h-8 bg-white/90 dark:bg-[#111111] border border-gray-200 dark:border-gray-700 rounded-xl flex items-center justify-center text-gray-500 hover:text-brand-primary shadow-md z-30 active:scale-95"
+                >
+                    <X className="w-4 h-4" />
+                </button>
+            ) : (
+                /* Collapse Toggle Button (PC / Tablet unchanged) */
+                <button
+                    onClick={onToggle}
+                    className="absolute -right-3 top-20 w-6 h-6 bg-white dark:bg-[#111111] border border-gray-200 dark:border-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-brand-primary shadow-md z-30 transition-all duration-300 hover:scale-110 active:scale-95 ease-out"
+                >
+                    <ChevronDownIcon className={`w-4 h-4 transition-transform duration-300 ease-in-out ${effectiveCollapsed ? '-rotate-90' : 'rotate-90'}`} />
+                </button>
+            )}
 
             {/* Glowing Background Effect */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -287,16 +310,16 @@ const Sidebar: React.FC<{
 
             <div className="p-6 pb-4 laptop:p-3 laptop:pb-2 relative z-10 flex-shrink-0 overflow-hidden">
                 <div className={`flex items-center justify-center mb-2 transition-all duration-[350ms] ease-in-out will-change-transform ${
-                    isCollapsed 
+                    effectiveCollapsed 
                         ? 'opacity-80 scale-50 -translate-y-4' 
                         : 'opacity-100 scale-100 translate-y-0'
                 } [&_img]:transition-transform [&_img]:duration-[350ms] [&_span]:transition-all [&_span]:duration-[350ms] ${
-                    isCollapsed ? '[&_span]:opacity-0 [&_span]:translate-y-2 [&_span]:scale-90 [&_span]:pointer-events-none' : '[&_span]:opacity-100 [&_span]:translate-y-0 [&_span]:scale-100'
+                    effectiveCollapsed ? '[&_span]:opacity-0 [&_span]:translate-y-2 [&_span]:scale-90 [&_span]:pointer-events-none' : '[&_span]:opacity-100 [&_span]:translate-y-0 [&_span]:scale-100'
                 }`}>
                     <Logo />
                 </div>
                 {/* Stylish Divider */}
-                <div className={`h-px w-full bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent my-6 laptop:my-2 transition-all duration-[350ms] ease-in-out ${isCollapsed ? 'opacity-0 scale-x-0' : 'opacity-100 scale-x-100'}`}></div>
+                <div className={`h-px w-full bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent my-6 laptop:my-2 transition-all duration-[350ms] ease-in-out ${effectiveCollapsed ? 'opacity-0 scale-x-0' : 'opacity-100 scale-x-100'}`}></div>
             </div>
 
             <nav className="flex-1 min-h-0 space-y-2 overflow-y-auto px-4 laptop:px-2.5 custom-scrollbar pb-4 laptop:pb-2 relative z-10">
@@ -304,10 +327,10 @@ const Sidebar: React.FC<{
                     <div key={category.title} className="mb-8 last:mb-0">
                         {/* Gradient Text Header */}
                         <div className="relative h-4 mb-3">
-                            <h3 className={`absolute inset-0 px-4 whitespace-nowrap text-[10px] font-extrabold uppercase tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-slate-500 to-slate-400 dark:from-gray-400 dark:to-gray-600 select-none transition-opacity duration-300 ${isCollapsed ? 'opacity-0' : 'opacity-100 delay-100'}`}>
+                            <h3 className={`absolute inset-0 px-4 whitespace-nowrap text-[10px] font-extrabold uppercase tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-slate-500 to-slate-400 dark:from-gray-400 dark:to-gray-600 select-none transition-opacity duration-300 ${effectiveCollapsed ? 'opacity-0' : 'opacity-100 delay-100'}`}>
                                 {category.title}
                             </h3>
-                            <div className={`absolute left-4 right-4 top-1/2 h-px bg-gray-200 dark:bg-gray-800 transition-opacity duration-300 ${isCollapsed ? 'opacity-30' : 'opacity-0'}`} />
+                            <div className={`absolute left-4 right-4 top-1/2 h-px bg-gray-200 dark:bg-gray-800 transition-opacity duration-300 ${effectiveCollapsed ? 'opacity-30' : 'opacity-0'}`} />
                         </div>
                         <div className="space-y-1">
                             {category.items.map(item => (
@@ -317,7 +340,8 @@ const Sidebar: React.FC<{
                                     label={item.label}
                                     path={getPathFromView(item.view)}
                                     isActive={currentView === item.view}
-                                    isCollapsed={isCollapsed}
+                                    isCollapsed={effectiveCollapsed}
+                                    onClick={isPhoneMobileUI ? onCloseMobile : undefined}
                                 />
                             ))}
                         </div>
@@ -422,7 +446,7 @@ const Sidebar: React.FC<{
                         <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-brand-primary to-purple-500 text-white flex items-center justify-center font-bold text-sm shadow-md ring-2 ring-white dark:ring-[#000000]">AA</div>
                         <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-[#000000] rounded-full"></div>
                     </div>
-                    <div className="ml-3 flex-1 min-w-0 text-left transition-all duration-[350ms] ease-in-out will-change-[opacity,width]" style={{ width: isCollapsed ? '0px' : 'auto', opacity: isCollapsed ? 0 : 1, overflow: 'hidden' }}>
+                    <div className="ml-3 flex-1 min-w-0 text-left transition-all duration-[350ms] ease-in-out will-change-[opacity,width]" style={{ width: effectiveCollapsed ? '0px' : 'auto', opacity: effectiveCollapsed ? 0 : 1, overflow: 'hidden' }}>
                         <p className="font-bold text-sm text-slate-900 dark:text-white truncate group-hover:text-brand-primary transition-colors">{userProfile.fullName}</p>
                         <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate font-medium flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-brand-warning"></span>
@@ -435,7 +459,7 @@ const Sidebar: React.FC<{
                                         : 'Hobbyist (Free)'}
                         </p>
                     </div>
-                    {!isCollapsed && (
+                    {!effectiveCollapsed && (
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ease-in-out ${isProfileOpen ? 'bg-brand-primary/10 text-brand-primary rotate-180' : 'bg-transparent text-gray-400 group-hover:text-brand-primary'}`}>
                             <ChevronDownIcon className="h-5 w-5" />
                         </div>
@@ -444,6 +468,22 @@ const Sidebar: React.FC<{
             </div>
         </aside>
     );
+
+    if (isPhoneMobileUI) {
+        return (
+            <>
+                {isMobileOpen && (
+                    <div
+                        className="fixed inset-0 bg-slate-900/50 dark:bg-black/70 backdrop-blur-xs z-[85] transition-opacity duration-300"
+                        onClick={onCloseMobile}
+                    />
+                )}
+                {sidebarAside}
+            </>
+        );
+    }
+
+    return sidebarAside;
 };
 
 const MODAL_VIEWS: AppView[] = [];
@@ -470,10 +510,17 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
     const [walletAddress, setWalletAddress] = useState<string | null>(null);
     const [isAssistantOpen, setIsAssistantOpen] = useState(false);
     const [modalView, setModalView] = useState<AppView | null>(null);
+    const deviceProfile = useDeviceProfile();
+    const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
+    const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
     // Auto-collapse sidebar on laptop/small screens (≤1366px)
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() =>
         typeof window !== 'undefined' && (window.innerWidth <= 1440 || window.matchMedia?.('(pointer: coarse)').matches)
     );
+
+    useEffect(() => {
+        setIsMobileSidebarOpen(false);
+    }, [location.pathname, isPhoneMobileUI]);
     const lastWidthRef = useRef(typeof window !== 'undefined' ? window.innerWidth : 0);
     const userToggledSidebarRef = useRef(false);
 
@@ -636,51 +683,124 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                         onToggle={() => {
                             userToggledSidebarRef.current = true;
                             setIsSidebarCollapsed(!isSidebarCollapsed);
-                        }} 
+                        }}
+                        isPhoneMobileUI={isPhoneMobileUI}
+                        isMobileOpen={isMobileSidebarOpen}
+                        onCloseMobile={() => setIsMobileSidebarOpen(false)}
                     />
                     <div className="flex-1 min-w-0 min-h-0 h-full flex flex-col overflow-hidden relative z-0">
                         <header className="relative z-50 flex-shrink-0 bg-white/80 dark:bg-[#000000]/80 backdrop-blur-md border-b border-gray-200 dark:border-[#1A1A1A]/50">
                             <GlobalAnnouncementBar />
-                            <div className="flex items-center justify-between gap-2 px-8 laptop:px-4 h-16 laptop:h-12 min-w-0">
-                                {/* Left — Page Title */}
-                                <h1 className="text-xl laptop:text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2 truncate min-w-0 shrink">
-                                    {viewToRender}
-                                </h1>
+                            {isPhoneMobileUI ? (
+                                <>
+                                    {/* Mobile Row 1: Drawer Trigger + Title + Quick Actions */}
+                                    <div className="flex items-center justify-between gap-2 px-3 h-12 min-w-0">
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsMobileSidebarOpen(true)}
+                                                aria-label="Open navigation menu"
+                                                className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-slate-700 dark:text-slate-200 active:scale-95 shrink-0"
+                                            >
+                                                <Menu className="w-5 h-5" />
+                                            </button>
+                                            <h1 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate min-w-0">
+                                                {viewToRender}
+                                            </h1>
+                                        </div>
 
-                                {/* Center — Market Switcher & Owner System Alert Monitor / Customer Device Widget */}
-                                <div className="flex items-center justify-center gap-4 laptop:gap-2 shrink-0">
-                                    <MarketSwitcher />
-                                    {userProfile.is_superuser ? <SystemAlertWidget /> : <ClientDeviceWidget />}
-                                    <SystemNotificationWidget />
-                                </div>
-
-                                {/* Right — Action Buttons */}
-                                <div className="flex items-center gap-4 laptop:gap-2 justify-end shrink-0">
-                                    {showWalletConnect && (
-                                        <div>
-                                             {walletAddress ? (
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-mono bg-gray-100 dark:bg-[#0A0A0A]/50 px-2 py-1 rounded text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
-                                                        {`${walletAddress.substring(0, 6)}...${walletAddress.substring(walletAddress.length - 4)}`}
-                                                    </span>
-                                                    <Button variant="secondary" onClick={handleDisconnectWallet} className="px-3 py-1 text-xs h-8">Disconnect</Button>
-                                                </div>
-                                            ) : (
-                                                <Button variant="secondary" onClick={handleConnectWallet} className="px-3 py-1 text-xs h-8 shadow-sm bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10">Connect Wallet</Button>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => setPhoneViewMode('desktop')}
+                                                title="Switch to full Desktop Layout"
+                                                className="flex items-center gap-1 px-2 h-8 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-500/25 text-[10px] font-bold uppercase tracking-wider active:scale-95"
+                                            >
+                                                <Monitor className="w-3.5 h-3.5" />
+                                                <span>Desktop</span>
+                                            </button>
+                                            <SystemNotificationWidget />
+                                            <Button variant="outline" onClick={() => setIsAssistantOpen(true)} className="!p-1.5 rounded-full border-gray-200 dark:border-gray-700 text-gray-500 hover:text-brand-primary">
+                                                <AssistantIcon className="h-4 w-4" />
+                                            </Button>
+                                            <ThemeToggle />
+                                        </div>
+                                    </div>
+                                    {/* Mobile Row 2: Market Switcher + Telemetry + Panic + Wallet */}
+                                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-t border-gray-100 dark:border-white/5 overflow-x-auto hide-scrollbar">
+                                        <div className="shrink-0">
+                                            <MarketSwitcher />
+                                        </div>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            {userProfile.is_superuser ? <SystemAlertWidget /> : <ClientDeviceWidget />}
+                                            <PanicButton />
+                                            {showWalletConnect && (
+                                                walletAddress ? (
+                                                    <Button variant="secondary" onClick={handleDisconnectWallet} className="px-2 py-1 text-[10px] h-8">
+                                                        {`${walletAddress.substring(0, 4)}..${walletAddress.substring(walletAddress.length - 3)}`}
+                                                    </Button>
+                                                ) : (
+                                                    <Button variant="secondary" onClick={handleConnectWallet} className="px-2.5 py-1 text-[10px] h-8 shadow-sm bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10">
+                                                        Wallet
+                                                    </Button>
+                                                )
                                             )}
                                         </div>
-                                    )}
-                                    <PanicButton />
-                                    <Button variant="outline" onClick={() => setIsAssistantOpen(true)} className="!p-2 rounded-full border-gray-200 dark:border-gray-700 text-gray-500 hover:text-brand-primary">
-                                        <AssistantIcon className="h-5 w-5" />
-                                    </Button>
-                                    <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
-                                    <ThemeToggle />
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex items-center justify-between gap-2 px-8 laptop:px-4 h-16 laptop:h-12 min-w-0">
+                                    {/* Left — Page Title */}
+                                    <h1 className="text-xl laptop:text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2 truncate min-w-0 shrink">
+                                        {viewToRender}
+                                    </h1>
+
+                                    {/* Center — Market Switcher & Owner System Alert Monitor / Customer Device Widget */}
+                                    <div className="flex items-center justify-center gap-4 laptop:gap-2 shrink-0">
+                                        <MarketSwitcher />
+                                        {userProfile.is_superuser ? <SystemAlertWidget /> : <ClientDeviceWidget />}
+                                        <SystemNotificationWidget />
+                                    </div>
+
+                                    {/* Right — Action Buttons */}
+                                    <div className="flex items-center gap-4 laptop:gap-2 justify-end shrink-0">
+                                        {deviceProfile.isPhone && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setPhoneViewMode('mobile')}
+                                                title="Return to Mobile-Optimized View"
+                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-bold uppercase tracking-wider whitespace-nowrap"
+                                            >
+                                                <Smartphone className="w-3.5 h-3.5" />
+                                                <span>Mobile UI</span>
+                                            </button>
+                                        )}
+                                        {showWalletConnect && (
+                                            <div>
+                                                 {walletAddress ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-mono bg-gray-100 dark:bg-[#0A0A0A]/50 px-2 py-1 rounded text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
+                                                            {`${walletAddress.substring(0, 6)}...${walletAddress.substring(walletAddress.length - 4)}`}
+                                                        </span>
+                                                        <Button variant="secondary" onClick={handleDisconnectWallet} className="px-3 py-1 text-xs h-8">Disconnect</Button>
+                                                    </div>
+                                                ) : (
+                                                    <Button variant="secondary" onClick={handleConnectWallet} className="px-3 py-1 text-xs h-8 shadow-sm bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10">Connect Wallet</Button>
+                                                )}
+                                            </div>
+                                        )}
+                                        <PanicButton />
+                                        <Button variant="outline" onClick={() => setIsAssistantOpen(true)} className="!p-2 rounded-full border-gray-200 dark:border-gray-700 text-gray-500 hover:text-brand-primary">
+                                            <AssistantIcon className="h-5 w-5" />
+                                        </Button>
+                                        <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
+                                        <ThemeToggle />
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                             {viewToRender === AppView.MARKET && <div className="border-t border-gray-100 dark:border-gray-800"><MarketTicker /></div>}
                         </header>
-                        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-8 laptop:p-3 laptop-h:p-2.5 relative z-0">
+                        <main className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden relative z-0 ${isPhoneMobileUI ? 'p-3' : 'p-8 laptop:p-3 laptop-h:p-2.5'}`}>
                             <Suspense fallback={<div className="flex items-center justify-center h-full min-h-[240px] text-slate-400 text-xs">Loading module...</div>}>
                                 {renderContent()}
                             </Suspense>

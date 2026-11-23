@@ -9,6 +9,7 @@ import { ResponsiveContainer, AreaChart, Area, Tooltip, PieChart, Pie, Cell } fr
 import type { Asset, Exchange } from '@/types';
 import { portfolioService } from '@/services/portfolioService';
 import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 
 const STABLE_COINS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'FDUSD', 'TUSD']);
 
@@ -208,6 +209,8 @@ const PortfolioTracker: React.FC = () => {
     const { showToast } = useToast();
     const queryClient = useQueryClient();
     const { activeMarket, setGlobalSymbol, setGlobalExchange } = useMarketStore();
+    const deviceProfile = useDeviceProfile();
+    const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
     const [riskTolerance, setRiskTolerance] = useState(65);
     const [scenario, setScenario] = useState<'Normal' | 'Recession' | 'High Inflation' | 'Stagflation'>('Normal');
@@ -485,19 +488,19 @@ const PortfolioTracker: React.FC = () => {
             </div>
 
             {/* Hero Visualization */}
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-                <GlassCard className="xl:col-span-8 p-10 relative group">
-                    <div className="absolute top-0 right-0 p-8 flex items-center gap-3">
+            <div className={`grid grid-cols-1 xl:grid-cols-12 ${isPhoneMobileUI ? 'gap-4' : 'gap-8'} items-start`}>
+                <GlassCard className={`xl:col-span-8 ${isPhoneMobileUI ? 'p-4 rounded-2xl' : 'p-10'} relative group`}>
+                    <div className={isPhoneMobileUI ? 'flex flex-wrap items-center gap-2 mb-4' : 'absolute top-0 right-0 p-8 flex items-center gap-3'}>
                          <button
                             onClick={() => refreshPortfolio(true)}
                             disabled={isSyncing}
                             title="Sync live balances"
-                            className="bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-white/80 border border-slate-200 dark:border-white/10 backdrop-blur-md rounded-2xl px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 disabled:opacity-50"
+                            className={`bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-white/80 border border-slate-200 dark:border-white/10 backdrop-blur-md rounded-2xl ${isPhoneMobileUI ? 'px-3 py-2 text-[11px]' : 'px-4 py-3 text-xs'} font-bold uppercase tracking-wider transition-all flex items-center gap-2 disabled:opacity-50`}
                          >
                             <span className={`inline-block h-2 w-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`}></span>
                             {isSyncing ? 'Syncing...' : 'Sync'}
                          </button>
-                         <Button variant="secondary" className="bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white border-slate-200 dark:border-white/10 backdrop-blur-md rounded-2xl px-6 py-3 transition-all transform hover:scale-105" onClick={() => setIsModalOpen(true)}>
+                         <Button variant="secondary" className={`bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-900 dark:text-white border-slate-200 dark:border-white/10 backdrop-blur-md rounded-2xl ${isPhoneMobileUI ? 'px-3.5 py-2 text-[11px]' : 'px-6 py-3'} transition-all transform hover:scale-105`} onClick={() => setIsModalOpen(true)}>
                             + Add Data Stream
                          </Button>
                     </div>
@@ -507,7 +510,7 @@ const PortfolioTracker: React.FC = () => {
                         {isInitialLoading ? (
                             <div className="h-20 w-72 rounded-2xl bg-slate-200/70 dark:bg-white/10 animate-pulse my-2" />
                         ) : (
-                            <h1 className="text-6xl md:text-8xl font-black text-slate-900 dark:text-white leading-tight">
+                            <h1 className={`${isPhoneMobileUI ? 'text-4xl' : 'text-6xl md:text-8xl'} font-black text-slate-900 dark:text-white leading-tight`}>
                                 <GlowingText>${totalPortfolioValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</GlowingText>
                             </h1>
                         )}

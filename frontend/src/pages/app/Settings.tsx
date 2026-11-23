@@ -33,6 +33,7 @@ import { User, Shield, Key, Bell, Palette, Database, CreditCard } from 'lucide-r
 import TelegramConnectionPanel from '@/components/features/settings/TelegramConnectionPanel';
 import TwoFactorPanel from '@/components/features/settings/TwoFactorPanel';
 import PlanUsagePanel from '@/components/features/settings/PlanUsagePanel';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 
 
 
@@ -65,6 +66,8 @@ const TrashIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
 const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection }) => {
 
     const { theme, setTheme } = useTheme();
+    const deviceProfile = useDeviceProfile();
+    const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
 
     const { showToast } = useToast();
 
@@ -858,21 +861,21 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
 
     return (
 
-        <div className="flex flex-col md:flex-row gap-8 w-full max-w-6xl mx-auto animate-fade-in-slide-up">
+        <div className={`flex flex-col md:flex-row ${isPhoneMobileUI ? 'gap-4' : 'gap-8'} w-full max-w-6xl mx-auto animate-fade-in-slide-up`}>
 
             {/* Sidebar / Tabs */}
 
             <div className="w-full md:w-64 flex-shrink-0">
 
-                <div className="bg-white dark:bg-[#0A0A0A] rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden sticky top-4">
+                <div className={`bg-white dark:bg-[#0A0A0A] rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden ${isPhoneMobileUI ? '' : 'sticky top-4'}`}>
 
-                    <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+                    <div className={`${isPhoneMobileUI ? 'px-3 py-2.5' : 'p-4'} border-b border-gray-200 dark:border-gray-800`}>
 
                         <h2 className="font-bold text-lg text-slate-900 dark:text-white">Settings</h2>
 
                     </div>
 
-                    <div className="flex flex-col p-2 space-y-1">
+                    <div className={isPhoneMobileUI ? 'flex flex-row overflow-x-auto hide-scrollbar p-2 gap-1.5' : 'flex flex-col p-2 space-y-1'}>
 
                         {TABS.map(tab => (
 
@@ -882,7 +885,7 @@ const Settings: React.FC<{ initialSection?: string | null }> = ({ initialSection
 
                                 onClick={() => setActiveTab(tab.id)}
 
-                                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
+                                className={`flex items-center ${isPhoneMobileUI ? 'gap-2 px-3 py-2 text-xs whitespace-nowrap shrink-0' : 'gap-3 px-4 py-3 text-sm'} rounded-lg font-medium transition-all ${
 
                                     activeTab === tab.id
 

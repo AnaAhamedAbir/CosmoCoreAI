@@ -15,7 +15,8 @@ import {
 } from 'lucide-react';
 import { useClientHardwareMonitor, ThermalRiskLevel } from '@/hooks/useClientHardwareMonitor';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
-import type { ThermalMode } from '@/utils/deviceProfile';
+import type { ThermalMode, PhoneViewMode } from '@/utils/deviceProfile';
+import { setPhoneViewMode } from '@/utils/deviceProfile';
 
 interface DeviceTelemetryPanelProps {
   active: boolean;
@@ -158,6 +159,37 @@ const DeviceTelemetryPanel: React.FC<DeviceTelemetryPanelProps> = ({ active, cli
         {client.gpuRenderer && (
           <div className="text-[9.5px] font-mono text-slate-600 dark:text-gray-400 bg-slate-100/90 dark:bg-black/30 rounded-lg px-2.5 py-1 border border-slate-200/80 dark:border-white/5 truncate">
             GPU: <span className="text-cyan-600 dark:text-cyan-300">{client.gpuRenderer}</span>
+          </div>
+        )}
+
+        {profile.isPhone && (
+          <div className="flex items-center justify-between gap-2 rounded-lg bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1.5">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
+                Phone Display Mode
+              </p>
+              <p className="text-[9px] text-slate-500 dark:text-gray-400">
+                {profile.phoneViewMode === 'mobile'
+                  ? 'Adaptive Mobile Layout (Pinch-zoom locked)'
+                  : 'Full 1280px Desktop Layout (Pinch-zoom locked)'}
+              </p>
+            </div>
+            <div className="flex items-center gap-0.5 bg-white/80 dark:bg-black/40 border border-indigo-500/20 rounded-lg p-0.5 shrink-0">
+              {(['mobile', 'desktop'] as PhoneViewMode[]).map((vm) => (
+                <button
+                  key={vm}
+                  type="button"
+                  onClick={() => setPhoneViewMode(vm)}
+                  className={`px-2 py-1 text-[9px] font-bold uppercase rounded transition-colors cursor-pointer ${
+                    profile.phoneViewMode === vm
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {vm === 'mobile' ? 'Mobile' : 'Desktop'}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

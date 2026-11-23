@@ -1528,26 +1528,43 @@ export const AssistantIcon = ({ className = "h-6 w-6" }: { className?: string })
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
     </svg>
 );
-export const Logo = ({ className = '' }: { className?: string }) => (
-    <div className={`flex flex-col items-center -mt-6 select-none ${className}`}>
-        <div className="relative flex flex-col items-center justify-center">
-            {/* The Logo Image with Realistic Multi-Layered Drop Shadow System */}
-            <img 
-                src="/logo.png" 
-                alt="CosmoQuantAI" 
-                className="relative z-10 h-32 w-auto object-contain transition-all duration-300 drop-shadow-[0_4px_6px_rgba(15,23,42,0.18)] drop-shadow-[0_12px_22px_rgba(15,23,42,0.14)] drop-shadow-[0_20px_35px_rgba(99,102,241,0.20)] dark:drop-shadow-[0_0_20px_rgba(99,102,241,0.45)]" 
-            />
+export const Logo = ({ className = '', compact = false }: { className?: string; compact?: boolean }) => {
+    if (compact) {
+        return (
+            <div className={`flex flex-row items-center gap-1.5 select-none ${className}`}>
+                <img
+                    src="/logo.png"
+                    alt="CosmoQuantAI"
+                    className="h-7 w-auto object-contain shrink-0 drop-shadow-[0_0_10px_rgba(99,102,241,0.45)]"
+                />
+                <span className="font-extrabold text-sm text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
+                    CosmoQuantAI
+                </span>
+            </div>
+        );
+    }
 
-            {/* Floating 3D ground contact shadow directly under the emblem */}
-            <div 
-                className="w-24 h-2.5 rounded-[50%] bg-gradient-to-r from-transparent via-slate-800/25 dark:via-indigo-500/30 to-transparent blur-sm -mt-9 mb-1 pointer-events-none transition-all duration-300"
-            />
+    return (
+        <div className={`flex flex-col items-center -mt-6 select-none ${className}`}>
+            <div className="relative flex flex-col items-center justify-center">
+                {/* The Logo Image with Realistic Multi-Layered Drop Shadow System */}
+                <img 
+                    src="/logo.png" 
+                    alt="CosmoQuantAI" 
+                    className="relative z-10 h-32 w-auto object-contain transition-all duration-300 drop-shadow-[0_4px_6px_rgba(15,23,42,0.18)] drop-shadow-[0_12px_22px_rgba(15,23,42,0.14)] drop-shadow-[0_20px_35px_rgba(99,102,241,0.20)] dark:drop-shadow-[0_0_20px_rgba(99,102,241,0.45)]" 
+                />
+
+                {/* Floating 3D ground contact shadow directly under the emblem */}
+                <div 
+                    className="w-24 h-2.5 rounded-[50%] bg-gradient-to-r from-transparent via-slate-800/25 dark:via-indigo-500/30 to-transparent blur-sm -mt-9 mb-1 pointer-events-none transition-all duration-300"
+                />
+            </div>
+            <span className="relative z-10 font-extrabold text-2xl text-slate-900 dark:text-white -mt-1 tracking-tight cosmo-3d-text">
+                CosmoQuantAI
+            </span>
         </div>
-        <span className="relative z-10 font-extrabold text-2xl text-slate-900 dark:text-white -mt-1 tracking-tight cosmo-3d-text">
-            CosmoQuantAI
-        </span>
-    </div>
-);
+    );
+};
 
 // New Icons for Homepage Redesign
 export const IdeaIcon = ({ className = "h-10 w-10" }: { className?: string }) => (

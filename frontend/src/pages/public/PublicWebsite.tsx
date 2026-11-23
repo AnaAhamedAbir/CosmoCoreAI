@@ -2,6 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import Button from '@/components/common/Button';
 import { Logo } from '@/constants';
+import { Menu, X, Monitor, Smartphone } from 'lucide-react';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import { setPhoneViewMode } from '@/utils/deviceProfile';
 import HomePage, { CosmicStarBackground } from './HomePage';
 import ServicesPage from './ServicesPage';
 import PricingPage from './PricingPage';
@@ -44,6 +47,9 @@ const PublicHeader: React.FC<{
 }> = ({ onLogin, onSignUp, currentView, setCurrentView }) => {
     const navItems: PublicView[] = ['Services', 'Portfolio', 'Pricing', 'Blog'];
     const [scrolled, setScrolled] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const deviceProfile = useDeviceProfile();
+    const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
 
     useEffect(() => {
         const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -52,23 +58,37 @@ const PublicHeader: React.FC<{
     }, []);
 
     return (
-        <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 flex justify-center pt-4 px-4 pointer-events-none`}>
-            <nav className={`pointer-events-auto w-full max-w-[95%] transition-all duration-500 border flex items-center justify-between ${scrolled
-                    ? 'bg-[#050A14]/40 backdrop-blur-sm border-cyan-500/20 shadow-[0_0_30px_rgba(6,182,212,0.1)] py-3 px-6 rounded-2xl'
-                    : 'bg-[#050A14]/10 backdrop-blur-sm border-white/5 shadow-lg py-4 px-8 rounded-2xl'
+        <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 flex flex-col items-center ${isPhoneMobileUI ? 'pt-2.5 px-2.5' : 'pt-4 px-4'} pointer-events-none`}>
+            <nav className={`pointer-events-auto w-full ${isPhoneMobileUI ? 'max-w-full py-2.5 px-3.5 rounded-xl' : `max-w-[95%] ${scrolled ? 'py-3 px-6 rounded-2xl' : 'py-4 px-8 rounded-2xl'}`} transition-all duration-500 border flex items-center justify-between gap-2 ${scrolled
+                    ? 'bg-[#050A14]/40 backdrop-blur-sm border-cyan-500/20 shadow-[0_0_30px_rgba(6,182,212,0.1)]'
+                    : 'bg-[#050A14]/10 backdrop-blur-sm border-white/5 shadow-lg'
                 }`}>
 
                 {/* Left: Logo + Nav */}
-                <div className="flex items-center gap-6 lg:gap-10">
-                    <button onClick={() => setCurrentView('Home')} className="transform hover:scale-105 transition-transform group">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.5)] group-hover:shadow-[0_0_25px_rgba(6,182,212,0.7)] transition-all">
-                                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                </svg>
+                <div className="flex items-center gap-3 lg:gap-10 min-w-0">
+                    {isPhoneMobileUI && (
+                        <button
+                            type="button"
+                            onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+                            aria-label="Toggle public navigation"
+                            className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-slate-200 shrink-0 active:scale-95"
+                        >
+                            {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+                        </button>
+                    )}
+                    <button onClick={() => { setCurrentView('Home'); setIsMobileMenuOpen(false); }} className="transform hover:scale-105 transition-transform group min-w-0">
+                        {isPhoneMobileUI ? (
+                            <Logo compact className="!text-white" />
+                        ) : (
+                            <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.5)] group-hover:shadow-[0_0_25px_rgba(6,182,212,0.7)] transition-all shrink-0">
+                                    <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                </div>
+                                <Logo className="!text-lg !text-white whitespace-nowrap" />
                             </div>
-                            <Logo className="!text-lg !text-white" />
-                        </div>
+                        )}
                     </button>
 
                     <div className="hidden md:flex items-center gap-1">
@@ -97,7 +117,18 @@ const PublicHeader: React.FC<{
                 </div>
 
                 {/* Right: Actions */}
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 md:gap-3 shrink-0">
+                    {deviceProfile.isPhone && !isPhoneMobileUI && (
+                        <button
+                            type="button"
+                            onClick={() => setPhoneViewMode('mobile')}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold uppercase tracking-wider"
+                        >
+                            <Smartphone className="w-3.5 h-3.5" />
+                            <span>Mobile UI</span>
+                        </button>
+                    )}
+
                     {/* Live indicator */}
                     <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/20">
                         <span className="relative flex h-1.5 w-1.5">
@@ -111,19 +142,68 @@ const PublicHeader: React.FC<{
 
                     <button
                         onClick={onLogin}
-                        className="hidden md:block text-sm font-medium text-slate-400 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-white/5"
+                        className={`${isPhoneMobileUI ? 'text-xs px-2.5 py-1.5' : 'hidden md:block text-sm px-3 py-2'} font-medium text-slate-300 hover:text-white transition-colors rounded-lg hover:bg-white/5 whitespace-nowrap`}
                     >
                         Log In
                     </button>
                     <button
                         onClick={onSignUp}
-                        className="relative overflow-hidden text-sm font-semibold px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] transition-all hover:scale-105 group"
+                        className={`relative overflow-hidden font-semibold rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] transition-all hover:scale-105 group whitespace-nowrap ${isPhoneMobileUI ? 'text-xs px-3 py-2' : 'text-sm px-5 py-2.5'}`}
                     >
                         <span className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
                         Get Started
                     </button>
                 </div>
             </nav>
+
+            {/* Mobile Dropdown Menu (Phone Mobile UI only) */}
+            {isPhoneMobileUI && isMobileMenuOpen && (
+                <div className="pointer-events-auto mt-2 w-full rounded-xl bg-[#050A14]/95 border border-cyan-500/25 shadow-2xl p-3 space-y-1.5">
+                    <div className="grid grid-cols-2 gap-1.5">
+                        {navItems.map((item) => (
+                            <button
+                                key={item}
+                                type="button"
+                                onClick={() => {
+                                    setCurrentView(item);
+                                    setIsMobileMenuOpen(false);
+                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                className={`px-3 py-2 rounded-lg text-xs font-semibold text-left transition-colors ${
+                                    currentView === item
+                                        ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+                                        : 'bg-white/5 text-slate-300 border border-white/5'
+                                }`}
+                            >
+                                {item}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="pt-1.5 border-t border-white/10 flex items-center justify-between gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsMobileMenuOpen(false);
+                                setPhoneViewMode('desktop');
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-bold"
+                        >
+                            <Monitor className="w-3.5 h-3.5" />
+                            <span>Desktop View</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsMobileMenuOpen(false);
+                                onLogin();
+                            }}
+                            className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-semibold text-white"
+                        >
+                            Log In
+                        </button>
+                    </div>
+                </div>
+            )}
         </header>
     );
 };

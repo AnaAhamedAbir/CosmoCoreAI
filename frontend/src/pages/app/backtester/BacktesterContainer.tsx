@@ -22,6 +22,7 @@ import { useDownloadData } from './hooks/useDownloadData';
 
 import { WalkForwardResults } from './components/WalkForwardResults';
 import { PlayIcon, CodeIcon, Download, GitMerge, Square, LayoutGrid, Layers, UploadCloud } from 'lucide-react';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 
 // --- Helper Functions ---
 const parseParamsFromCode = (code: string): Record<string, any> => {
@@ -40,6 +41,8 @@ const parseParamsFromCode = (code: string): Record<string, any> => {
 
 export const BacktesterContainer: React.FC = () => {
     const { showToast } = useToast();
+    const deviceProfile = useDeviceProfile();
+    const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
     const {
         exchanges, markets, selectedExchange, setSelectedExchange,
         symbol, setSymbol, handleSyncData, isSyncing, syncProgress, syncStatusText
@@ -307,7 +310,7 @@ export const BacktesterContainer: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-white dark:bg-[#050505] rounded-xl overflow-hidden animate-in fade-in duration-300 border border-slate-200 dark:border-[#1F1F1F]">
+        <div className={`flex flex-col ${isPhoneMobileUI ? 'min-h-full overflow-y-auto' : 'h-full overflow-hidden'} bg-white dark:bg-[#050505] rounded-xl animate-in fade-in duration-300 border border-slate-200 dark:border-[#1F1F1F]`}>
             {/* Top Bar */}
             <div className="flex flex-col md:flex-row items-center justify-between p-3 border-b border-slate-200 dark:border-[#1F1F1F] bg-white dark:bg-[#0A0A0A] shrink-0 gap-3">
                 <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -332,7 +335,7 @@ export const BacktesterContainer: React.FC = () => {
             </div>
 
             {/* Main Split Layout */}
-            <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
+            <div className={`flex-1 flex flex-col md:flex-row ${isPhoneMobileUI ? 'overflow-visible' : 'min-h-0 overflow-hidden'}`}>
                 {activeTab === 'editor' ? (
                     <div className="flex-1 overflow-auto p-4 custom-scrollbar">
                         <AIStrategyLab aiPrompt={aiPrompt} setAiPrompt={setAiPrompt} handleAiGenerate={handleAiGenerate} isGenerating={isGenerating} fileInputRef={fileInputRef} handleFileChange={(e) => { if (e.target.files?.[0]) setFileName(e.target.files[0].name); }} handleUpload={handleStrategyUpload} fileName={fileName} strategy={strategy} currentStrategyCode={currentStrategyCode} setCurrentStrategyCode={setCurrentStrategyCode} />
@@ -340,7 +343,7 @@ export const BacktesterContainer: React.FC = () => {
                 ) : (
                     <>
                         {/* Left Sidebar: Configuration Panel */}
-                        <div className="w-full md:w-[28rem] laptop:md:w-80 border-r-0 md:border-r border-b md:border-b-0 border-slate-200 dark:border-[#1F1F1F] bg-slate-50/50 dark:bg-[#0A0A0A]/50 flex flex-col min-h-0 shrink-0">
+                        <div className={`w-full md:w-[28rem] laptop:md:w-80 border-r-0 md:border-r border-b md:border-b-0 border-slate-200 dark:border-[#1F1F1F] bg-slate-50/50 dark:bg-[#0A0A0A]/50 flex flex-col ${isPhoneMobileUI ? '' : 'min-h-0'} shrink-0`}>
                             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
                                 <BacktestForm
                                     strategies={strategies} customStrategies={customStrategies} strategy={strategy} setStrategy={setStrategy}

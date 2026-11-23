@@ -9,6 +9,7 @@ import { generateTrade, SUPPORTED_EXCHANGES, ExpandIcon, CollapseIcon, MOCK_CRYP
 import type { Trade, Exchange, Timeframe } from '@/types';
 import SmartOrderForm from '@/components/features/trading/SmartOrderForm'; // Import SOR Component
 import { getThermalProfile, isThermalGuardActive } from '@/utils/deviceProfile';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 
 const timeframes: Timeframe[] = [
     '1s', '5s', '10s', '15s', '30s', '45s',
@@ -323,6 +324,8 @@ const ConnectExchangeModal: React.FC<{
 
 const Market: React.FC = () => {
     const { theme } = useTheme();
+    const deviceProfile = useDeviceProfile();
+    const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
 
     const { 
         activeMarket,
@@ -754,7 +757,7 @@ const Market: React.FC = () => {
     const activeGradientClass = activeOrderFormTab === 'buy' ? 'from-emerald-500/20 to-emerald-500/5' : 'from-rose-500/20 to-rose-500/5';
 
     return (
-        <div className="flex flex-col h-full gap-4 laptop:gap-2 overflow-hidden">
+        <div className={`flex flex-col ${isPhoneMobileUI ? 'min-h-full gap-3 overflow-y-auto pb-4' : 'h-full gap-4 laptop:gap-2 overflow-hidden'}`}>
             {isModalOpen && (
                 <ConnectExchangeModal
                     isOpen={isModalOpen}
@@ -861,11 +864,14 @@ const Market: React.FC = () => {
             </div>
 
             {/* Main Workspace */}
-            <div ref={containerRef} className="flex-1 flex gap-3 min-h-0 relative staggered-fade-in" style={{ animationDelay: '100ms' }}>
+            <div ref={containerRef} className={`flex-1 flex ${isPhoneMobileUI ? 'flex-col gap-3' : 'gap-3 min-h-0'} relative staggered-fade-in`} style={{ animationDelay: '100ms' }}>
                 {isResizing && <div className="absolute inset-0 z-50 cursor-col-resize" />}
 
                 {/* Chart Area (Now with TradingView) */}
-                <div className="h-full flex flex-col transition-all duration-75" style={{ width: `${leftPaneWidth}%` }}>
+                <div
+                    className={`flex flex-col transition-all duration-75 ${isPhoneMobileUI ? 'w-full h-[340px] min-h-[320px]' : 'h-full'}`}
+                    style={isPhoneMobileUI ? undefined : { width: `${leftPaneWidth}%` }}
+                >
                     <Card className="h-full p-0 overflow-hidden border-0 shadow-xl bg-white dark:bg-[#0A0A0A] relative group flex flex-col">
                         {/* Custom Timeframe Toolbar (Optional: TradingView has its own, but keeping this for UI consistency if needed) */}
                         <div className="flex items-center gap-1 p-2 border-b border-gray-200 dark:border-white/5 overflow-x-auto no-scrollbar bg-white dark:bg-[#0A0A0A] z-10">
@@ -894,16 +900,21 @@ const Market: React.FC = () => {
                     </Card>
                 </div>
 
-                {/* Dragger */}
-                <div
-                    className="w-1.5 cursor-col-resize flex items-center justify-center group flex-shrink-0 hover:scale-x-150 transition-transform"
-                    onMouseDown={handleMouseDown}
-                >
-                    <div className={`h-16 w-1 rounded-full bg-gray-300 dark:bg-gray-700 group-hover:bg-brand-primary transition-colors ${isResizing ? 'bg-brand-primary' : ''}`}></div>
-                </div>
+                {/* Dragger (hidden on phone vertical stack) */}
+                {!isPhoneMobileUI && (
+                    <div
+                        className="w-1.5 cursor-col-resize flex items-center justify-center group flex-shrink-0 hover:scale-x-150 transition-transform"
+                        onMouseDown={handleMouseDown}
+                    >
+                        <div className={`h-16 w-1 rounded-full bg-gray-300 dark:bg-gray-700 group-hover:bg-brand-primary transition-colors ${isResizing ? 'bg-brand-primary' : ''}`}></div>
+                    </div>
+                )}
 
-                {/* Right Panel (Order Book & Trade) - UNCHANGED */}
-                <div className="h-full flex flex-col gap-3" style={{ width: `calc(${100 - leftPaneWidth}% - 12px)` }}>
+                {/* Right Panel (Order Book & Trade) */}
+                <div
+                    className={`flex flex-col gap-3 ${isPhoneMobileUI ? 'w-full min-h-[420px]' : 'h-full'}`}
+                    style={isPhoneMobileUI ? undefined : { width: `calc(${100 - leftPaneWidth}% - 12px)` }}
+                >
 
                     {/* Tab Switcher */}
                     <div className="flex p-1 bg-gray-200 dark:bg-[#0A0A0A] rounded-xl">

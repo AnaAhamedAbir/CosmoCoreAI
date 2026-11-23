@@ -114,7 +114,8 @@ const formatDisplayPrice = (price: number | undefined | null): string => {
 const CandleCountdown = React.memo<{
     interval: string;
     lastCandleRef: React.MutableRefObject<CandlestickData | null>;
-}>(({ interval, lastCandleRef }) => {
+    compact?: boolean;
+}>(({ interval, lastCandleRef, compact = false }) => {
     const [countdownFormatted, setCountdownFormatted] = useState<string>('');
 
     useEffect(() => {
@@ -170,7 +171,7 @@ const CandleCountdown = React.memo<{
     if (!countdownFormatted) return null;
 
     return (
-        <div className="bg-black/60 dark:bg-black/60 border border-white/10 text-[#d1d5db] text-[20px] font-mono font-bold px-3 py-1.5 rounded shadow-lg backdrop-blur-md">
+        <div className={`bg-black/60 dark:bg-black/60 border border-white/10 text-[#d1d5db] font-mono font-bold rounded shadow-lg backdrop-blur-md ${compact ? 'text-[11px] px-2 py-0.5' : 'text-[20px] px-3 py-1.5'}`}>
             {countdownFormatted}
         </div>
     );
@@ -3701,34 +3702,35 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     />
                     {indicatorSettings.showBB && bbData.length > 0 && (() => {
                         const last = bbData[bbData.length - 1];
+                        const isCompactPhone = deviceProfile.isPhoneMobileUI;
                         return (
-                            <div className="absolute top-2 left-2 z-[10] flex flex-col gap-1 pointer-events-none select-none">
-                                <div className={`flex items-center gap-2 px-2 py-1 ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/60 backdrop-blur-md'} rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none`}>
+                            <div className={`absolute top-2 left-2 z-[10] flex flex-col ${isCompactPhone ? 'gap-0.5' : 'gap-1'} pointer-events-none select-none`}>
+                                <div className={`flex items-center ${isCompactPhone ? 'gap-1 px-1.5 py-0.5' : 'gap-2 px-2 py-1'} ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/60 backdrop-blur-md'} rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none`}>
                                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-[#22c55e]" />
-                                    <span className="text-[10px] font-bold text-slate-600 dark:text-gray-400">BB UPPER:</span>
-                                    <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-[#22c55e]">{last.upper.toFixed(5)}</span>
+                                    <span className={`${isCompactPhone ? 'text-[8.5px]' : 'text-[10px]'} font-bold text-slate-600 dark:text-gray-400`}>BB UPPER:</span>
+                                    <span className={`${isCompactPhone ? 'text-[8.5px]' : 'text-[10px]'} font-mono font-bold text-emerald-600 dark:text-[#22c55e]`}>{last.upper.toFixed(5)}</span>
                                 </div>
-                                <div className={`flex items-center gap-2 px-2 py-1 ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/60 backdrop-blur-md'} rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none`}>
+                                <div className={`flex items-center ${isCompactPhone ? 'gap-1 px-1.5 py-0.5' : 'gap-2 px-2 py-1'} ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/60 backdrop-blur-md'} rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none`}>
                                     <div className="w-1.5 h-1.5 rounded-full bg-blue-500 dark:bg-[#3b82f6]" />
-                                    <span className="text-[10px] font-bold text-slate-600 dark:text-gray-400">BB MIDDLE:</span>
-                                    <span className="text-[10px] font-mono font-bold text-blue-600 dark:text-[#3b82f6]">{last.middle.toFixed(5)}</span>
+                                    <span className={`${isCompactPhone ? 'text-[8.5px]' : 'text-[10px]'} font-bold text-slate-600 dark:text-gray-400`}>BB MIDDLE:</span>
+                                    <span className={`${isCompactPhone ? 'text-[8.5px]' : 'text-[10px]'} font-mono font-bold text-blue-600 dark:text-[#3b82f6]`}>{last.middle.toFixed(5)}</span>
                                 </div>
-                                <div className={`flex items-center gap-2 px-2 py-1 ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/60 backdrop-blur-md'} rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none`}>
+                                <div className={`flex items-center ${isCompactPhone ? 'gap-1 px-1.5 py-0.5' : 'gap-2 px-2 py-1'} ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/60 backdrop-blur-md'} rounded border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none`}>
                                     <div className="w-1.5 h-1.5 rounded-full bg-rose-500 dark:bg-[#ef4444]" />
-                                    <span className="text-[10px] font-bold text-slate-600 dark:text-gray-400">BB LOWER:</span>
-                                    <span className="text-[10px] font-mono font-bold text-rose-600 dark:text-[#ef4444]">{last.lower.toFixed(5)}</span>
+                                    <span className={`${isCompactPhone ? 'text-[8.5px]' : 'text-[10px]'} font-bold text-slate-600 dark:text-gray-400`}>BB LOWER:</span>
+                                    <span className={`${isCompactPhone ? 'text-[8.5px]' : 'text-[10px]'} font-mono font-bold text-rose-600 dark:text-[#ef4444]`}>{last.lower.toFixed(5)}</span>
                                 </div>
                             </div>
                         );
                     })()}
                     {/* ── Multi-Timeframe EMA HUD Overlay ── */}
                     {indicatorSettings.showEMA && Object.keys(mtfEmaValues).length > 0 && (
-                        <div className={`absolute top-2 right-14 z-[10] flex items-center gap-2 px-2.5 py-1 ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/75 backdrop-blur-md'} rounded-lg border border-slate-200 dark:border-white/10 select-none shadow-md dark:shadow-lg`}>
-                            <span className="text-[10px] font-bold text-slate-700 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <div className={`absolute ${deviceProfile.isPhoneMobileUI ? 'bottom-8 left-2 max-w-[60%] flex-wrap gap-1 px-1.5 py-0.5' : 'top-2 right-14 gap-2 px-2.5 py-1'} z-[10] flex items-center ${isThermalGuard ? 'bg-white/95 dark:bg-black/85' : 'bg-white/90 dark:bg-black/75 backdrop-blur-md'} rounded-lg border border-slate-200 dark:border-white/10 select-none shadow-md dark:shadow-lg`}>
+                            <span className={`${deviceProfile.isPhoneMobileUI ? 'text-[8.5px]' : 'text-[10px]'} font-bold text-slate-700 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1`}>
                                 <span className={`w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 ${isThermalGuard ? '' : 'animate-pulse'}`} />
                                 EMA {indicatorSettings.emaPeriod}:
                             </span>
-                            <div className="flex items-center gap-2 font-mono text-[10px] font-bold">
+                            <div className={`flex items-center flex-wrap ${deviceProfile.isPhoneMobileUI ? 'gap-1.5 text-[8.5px]' : 'gap-2 text-[10px]'} font-mono font-bold`}>
                                 {(indicatorSettings.emaTimeframes && indicatorSettings.emaTimeframes.length > 0 ? indicatorSettings.emaTimeframes : ['1m']).map((tf) => {
                                     const val = mtfEmaValues[tf];
                                     if (val === undefined) return null;
@@ -3923,7 +3925,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     return typeof window !== 'undefined' ? createPortal(quantumHudElement, document.body) : null;
                 })()}
 
-                <div className="absolute bottom-[40px] right-[75px] z-20 pointer-events-none flex flex-col items-end gap-2">
+                <div className={`absolute ${deviceProfile.isPhoneMobileUI ? 'bottom-[30px] right-[62px] gap-1' : 'bottom-[40px] right-[75px] gap-2'} z-20 pointer-events-none flex flex-col items-end`}>
                     {dontAskDragConfirm && (
                         <button
                             onClick={() => {
@@ -3934,12 +3936,14 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                                 } catch (e) {}
                                 toast('Drag & Drop confirmation popup re-enabled', { icon: '🛡️' });
                             }}
-                            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold bg-white/95 dark:bg-black/85 hover:bg-white dark:hover:bg-black/90 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 hover:border-cyan-400 transition-all cursor-pointer pointer-events-auto shadow-md ${isThermalGuard ? '' : 'backdrop-blur-md'} flex items-center gap-1.5 group`}
+                            className={`${deviceProfile.isPhoneMobileUI ? 'px-1.5 py-0.5 text-[9px]' : 'px-2.5 py-1 text-[10px]'} rounded-lg font-mono font-semibold bg-white/95 dark:bg-black/85 hover:bg-white dark:hover:bg-black/90 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 hover:border-cyan-400 transition-all cursor-pointer pointer-events-auto shadow-md ${isThermalGuard ? '' : 'backdrop-blur-md'} flex items-center gap-1.5 group`}
                             title="Click to require confirmation popup on drag & drop again"
                         >
                             <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
                             <span>⚡ Instant Drag: ON</span>
-                            <span className="text-[9px] text-gray-500 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white underline">Re-enable popup</span>
+                            {!deviceProfile.isPhoneMobileUI && (
+                                <span className="text-[9px] text-gray-500 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white underline">Re-enable popup</span>
+                            )}
                         </button>
                     )}
                     {botStatus && botStatus.is_absorbing && (
@@ -3957,7 +3961,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             </span>
                         </div>
                     )}
-                    <CandleCountdown interval={interval} lastCandleRef={lastCandleRef} />
+                    <CandleCountdown interval={interval} lastCandleRef={lastCandleRef} compact={deviceProfile.isPhoneMobileUI} />
                 </div>
             </div>
             {showCVD && (
@@ -4727,15 +4731,15 @@ const OrderFlowChartPanel = React.memo<{
         <div 
             className={isFullscreen 
                 ? 'fixed inset-0 z-[99999] flex flex-col bg-[#050505] p-2 md:p-4 overflow-hidden w-screen h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)]' 
-                : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border transition-all duration-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col min-h-[240px] ${
+                : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border transition-all duration-200 overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col ${panelDeviceProfile.isPhoneMobileUI ? 'min-h-[380px]' : 'min-h-[240px]'} ${
                     isActive && allChartsCount > 1 
                         ? 'border-brand-primary/80 ring-2 ring-brand-primary/20 shadow-[0_0_25px_rgba(59,130,246,0.2)]' 
                         : 'border-gray-200 dark:border-white/5'
                 }`
             }
         >
-            <div className="p-2 border-b border-gray-200 dark:border-white/5 flex justify-between items-center gap-2">
-                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+            <div className={`${panelDeviceProfile.isPhoneMobileUI ? 'p-1.5 gap-1.5' : 'p-2 gap-2'} border-b border-gray-200 dark:border-white/5 flex justify-between items-center`}>
+                <div className={`flex ${panelDeviceProfile.isPhoneMobileUI ? 'flex-nowrap overflow-x-auto hide-scrollbar gap-1.5' : 'flex-wrap items-center gap-1.5'} items-center min-w-0`}>
                     {allChartsCount > 1 && (
                         <button
                             type="button"
@@ -5082,7 +5086,14 @@ const OrderFlowHeatmap: React.FC = () => {
         window.addEventListener('mouseup', onUp);
     }, [hudPos.x, hudPos.y]);
     const [showSubNav, setShowSubNav] = useState(() => {
-        try { return localStorage.getItem('heatmapSubNavVisible') !== 'false'; } catch { return true; }
+        try {
+            if (typeof window !== 'undefined' && document.documentElement.classList.contains('mobile-phone-ui')) {
+                return localStorage.getItem('heatmapSubNavVisiblePhone') === 'true';
+            }
+            return localStorage.getItem('heatmapSubNavVisible') !== 'false';
+        } catch {
+            return true;
+        }
     });
     // Ref to the animated toolbar wrapper — lets us flip overflow:hidden↔visible
     // imperatively so dropdowns (Indicators, SymbolSelector, AdvancedMetrics) are
@@ -5543,8 +5554,39 @@ const OrderFlowHeatmap: React.FC = () => {
         </>
     );
 
+    const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
+
     return (
         <div className="flex flex-col h-full bg-brand-light dark:bg-[#000000] text-slate-900 dark:text-white overflow-hidden rounded-xl border border-gray-200 dark:border-white/10">
+            {isPhoneMobileUI && (
+                <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-white dark:bg-[#000000] border-b border-gray-200 dark:border-white/10 shrink-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[11px] font-bold text-slate-900 dark:text-white truncate">{symbol}</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-slate-600 dark:text-slate-300">{interval}</span>
+                        <span className={`text-xs font-mono font-bold ${lastPriceSide === 'buy' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            {formatDisplayPrice(currentPrice)}
+                        </span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const next = !showSubNav;
+                            if (!next && toolbarRef.current) {
+                                toolbarRef.current.style.overflow = 'hidden';
+                            }
+                            setShowSubNav(next);
+                            try { localStorage.setItem('heatmapSubNavVisiblePhone', String(next)); } catch {}
+                        }}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors shrink-0 ${
+                            showSubNav
+                                ? 'bg-brand-primary/15 text-brand-primary border-brand-primary/30'
+                                : 'bg-gray-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border-gray-200 dark:border-white/10'
+                        }`}
+                    >
+                        {showSubNav ? 'Hide Controls' : 'Controls & Filters'}
+                    </button>
+                </div>
+            )}
             {/* ── Animated collapsible toolbar (header + subnav) ──────────── */}
             <div
                 ref={toolbarRef}
@@ -5553,14 +5595,14 @@ const OrderFlowHeatmap: React.FC = () => {
                     // dropdown menus (Indicators, SymbolSelector, AdvancedMetrics)
                     // can extend beyond the wrapper boundary without being clipped.
                     if (showSubNav && toolbarRef.current) {
-                        toolbarRef.current.style.overflow = 'visible';
+                        toolbarRef.current.style.overflow = isPhoneMobileUI ? 'auto' : 'visible';
                     }
                 }}
                 style={{
                     position: 'relative',
                     zIndex: 30,          // sit above the chart so dropdowns render on top
                     overflow: 'hidden',  // will be flipped to 'visible' via onTransitionEnd when open
-                    maxHeight: showSubNav ? '480px' : '0px',
+                    maxHeight: showSubNav ? (isPhoneMobileUI ? '65dvh' : '480px') : '0px',
                     opacity: showSubNav ? 1 : 0,
                     transition: 'max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease',
                     willChange: 'max-height, opacity',
@@ -5638,6 +5680,7 @@ const OrderFlowHeatmap: React.FC = () => {
             </div>
 
             {/* ── Arrow toggle button (always visible) ──────────────────────── */}
+            {!isPhoneMobileUI && (
             <div className="flex justify-center">
                 <button
                     onClick={() => {
@@ -5686,6 +5729,7 @@ const OrderFlowHeatmap: React.FC = () => {
                     </svg>
                 </button>
             </div>
+            )}
 
 
             <div className="flex-1 min-h-0 flex flex-col p-4 laptop:p-2 overflow-y-auto hide-scrollbar relative bg-gray-50 dark:bg-[#000000]">

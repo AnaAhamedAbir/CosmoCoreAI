@@ -2588,6 +2588,60 @@ html.light .cosmo-theme-modal .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   will-change: opacity, transform;
 }
 
+/* ============================================================================
+   DYNAMIC PHONE UI LAYER (Strictly scoped to html.mobile-phone-ui)
+   Auto-active ONLY on phones (e.g. Samsung Galaxy A34). Zero effect on PC/Tablet.
+   ============================================================================ */
+
+html.mobile-phone-ui {
+  font-size: 15px !important;
+}
+
+html.mobile-phone-ui aside.w-72 {
+  width: 272px !important;
+}
+
+html.mobile-phone-ui main .h-64 {
+  height: 14rem !important;
+}
+
+html.mobile-phone-ui main .h-72 {
+  height: 16rem !important;
+}
+
+html.mobile-phone-ui main .min-h-\[300px\] {
+  min-height: 230px !important;
+}
+
+/* Keep dense header widgets compact on phones */
+html.mobile-phone-ui header .h-16 {
+  height: auto !important;
+}
+
+html.mobile-phone-ui header .px-4.py-2 {
+  padding-left: 0.625rem !important;
+  padding-right: 0.625rem !important;
+  padding-top: 0.375rem !important;
+  padding-bottom: 0.375rem !important;
+}
+
+html.mobile-phone-ui header button.px-4.py-2 {
+  padding-left: 0.55rem !important;
+  padding-right: 0.55rem !important;
+  padding-top: 0.3rem !important;
+  padding-bottom: 0.3rem !important;
+  font-size: 0.72rem !important;
+  gap: 0.3rem !important;
+}
+
+/* Ensure wide tables or flex rows inside main scroll horizontally rather than shrinking cards */
+html.mobile-phone-ui main table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 
 
 

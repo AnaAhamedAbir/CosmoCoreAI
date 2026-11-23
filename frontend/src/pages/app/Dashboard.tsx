@@ -10,6 +10,7 @@ import MarketStatusWidget from '@/components/features/market/MarketStatusWidget'
 import EconomicCalendarWidget from '@/components/features/market/EconomicCalendarWidget';
 import { useMarketStore } from '@/store/marketStore';
 import { isThermalGuardActive } from '@/utils/deviceProfile';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
 // Icons for the dashboard
@@ -81,30 +82,31 @@ const KpiCard: React.FC<{
     change?: number;
     icon: React.ReactNode;
     colorClass: string;
-    animationDelay: number
-}> = ({ title, value, isCurrency = false, change, icon, colorClass, animationDelay }) => (
+    animationDelay: number;
+    compact?: boolean;
+}> = ({ title, value, isCurrency = false, change, icon, colorClass, animationDelay, compact = false }) => (
     <div
-        className={`relative group p-6 laptop:p-3 rounded-2xl bg-white dark:bg-[#0A0A0A] border border-brand-border-light dark:border-[#1A1A1A] overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-xl staggered-fade-in`}
+        className={`relative group ${compact ? 'p-3.5 rounded-xl' : 'p-6 laptop:p-3 rounded-2xl'} bg-white dark:bg-[#0A0A0A] border border-brand-border-light dark:border-[#1A1A1A] overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-xl staggered-fade-in`}
         style={{ animationDelay: `${animationDelay}ms` }}
     >
         {/* Background Glow */}
         <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full opacity-10 group-hover:opacity-20 transition-opacity blur-2xl ${colorClass}`}></div>
 
-        <div className="flex justify-between items-start relative z-10">
-            <div>
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{title}</p>
-                <h3 className="text-3xl laptop:text-2xl font-extrabold text-slate-900 dark:text-white mt-2">
+        <div className="flex justify-between items-start gap-2 relative z-10">
+            <div className="min-w-0">
+                <p className={`${compact ? 'text-[11px]' : 'text-sm'} font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide truncate`}>{title}</p>
+                <h3 className={`${compact ? 'text-xl mt-1' : 'text-3xl laptop:text-2xl mt-2'} font-extrabold text-slate-900 dark:text-white`}>
                     <AnimatedNumber value={value} isCurrency={isCurrency} />
                 </h3>
                 {change !== undefined && (
-                    <div className={`flex items-center mt-2 text-sm font-bold ${change >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
+                    <div className={`flex items-center ${compact ? 'mt-1 text-xs' : 'mt-2 text-sm'} font-bold ${change >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
                         <span className="mr-1">{change >= 0 ? '▲' : '▼'}</span>
                         {Math.abs(change)}%
-                        <span className="ml-2 text-gray-400 font-normal text-xs">vs last 24h</span>
+                        <span className={`ml-1.5 text-gray-400 font-normal ${compact ? 'text-[10px]' : 'text-xs'}`}>vs 24h</span>
                     </div>
                 )}
             </div>
-            <div className={`p-3 rounded-xl bg-gray-50 dark:bg-white/5 ${colorClass.replace('bg-', 'text-').replace('opacity-10', '')}`}>
+            <div className={`${compact ? 'p-2 rounded-lg shrink-0' : 'p-3 rounded-xl'} bg-gray-50 dark:bg-white/5 ${colorClass.replace('bg-', 'text-').replace('opacity-10', '')}`}>
                 {icon}
             </div>
         </div>
@@ -155,6 +157,8 @@ const QuickActionBtn: React.FC<{ icon: React.ReactNode; label: string; onClick?:
 const Dashboard: React.FC = () => {
     const { theme } = useTheme();
     const { activeMarket } = useMarketStore();
+    const deviceProfile = useDeviceProfile();
+    const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
     const COLORS = ['#6366F1', '#818CF8', '#A78BFA', '#F472B6', '#10B981', '#F59E0B'];
 
     const axisColor = theme === 'dark' ? '#9CA3AF' : '#6B7280';
@@ -246,10 +250,10 @@ const Dashboard: React.FC = () => {
     }
 
     return (
-        <div className="space-y-8 laptop:space-y-4">
+        <div className={`${isPhoneMobileUI ? 'space-y-4' : 'space-y-8 laptop:space-y-4'}`}>
 
             {/* Welcome Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-fade-in-down">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 md:gap-4 animate-fade-in-down">
                 <div>
                     <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">
                         Command Center
@@ -268,47 +272,51 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* KPI Grid - Bento Style */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 laptop:gap-3">
+            <div className={`grid ${isPhoneMobileUI ? 'grid-cols-2 gap-2.5' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 laptop:gap-3'}`}>
                 <KpiCard
                     title="Total Equity"
                     value={totalPortfolioValue}
                     isCurrency={true}
                     change={dashboardData?.equity_change_24h}
-                    icon={<WalletIcon className="w-6 h-6" />}
+                    icon={<WalletIcon className={isPhoneMobileUI ? "w-4 h-4" : "w-6 h-6"} />}
                     colorClass="bg-brand-primary"
                     animationDelay={100}
+                    compact={isPhoneMobileUI}
                 />
                 <KpiCard
                     title="24h Profit"
                     value={dashboardData?.total_profit_24h || 0}
                     isCurrency={true}
                     change={dashboardData?.profit_change_24h}
-                    icon={<TrendingUpIcon className="w-6 h-6" />}
+                    icon={<TrendingUpIcon className={isPhoneMobileUI ? "w-4 h-4" : "w-6 h-6"} />}
                     colorClass="bg-brand-success"
                     animationDelay={200}
+                    compact={isPhoneMobileUI}
                 />
                 <KpiCard
                     title="Active Bots"
                     value={totalBots}
-                    icon={<CpuIcon className="w-6 h-6" />}
+                    icon={<CpuIcon className={isPhoneMobileUI ? "w-4 h-4" : "w-6 h-6"} />}
                     colorClass="bg-blue-500"
                     animationDelay={300}
+                    compact={isPhoneMobileUI}
                 />
                 <KpiCard
                     title="Win Rate"
                     value={winRate}
                     change={dashboardData?.win_rate_change_24h}
-                    icon={<ActivityIcon className="w-6 h-6" />}
+                    icon={<ActivityIcon className={isPhoneMobileUI ? "w-4 h-4" : "w-6 h-6"} />}
                     colorClass="bg-purple-500"
                     animationDelay={400}
+                    compact={isPhoneMobileUI}
                 />
             </div>
 
             {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 laptop:gap-4">
                 {/* Main Area Chart */}
-                <div className="lg:col-span-2 rounded-2xl bg-white dark:bg-[#0A0A0A] border border-brand-border-light dark:border-[#1A1A1A] p-6 laptop:p-4 shadow-lg staggered-fade-in" style={{ animationDelay: '500ms' }}>
-                    <div className="flex justify-between items-center mb-6">
+                <div className={`lg:col-span-2 rounded-2xl bg-white dark:bg-[#0A0A0A] border border-brand-border-light dark:border-[#1A1A1A] ${isPhoneMobileUI ? 'p-4' : 'p-6 laptop:p-4'} shadow-lg staggered-fade-in`} style={{ animationDelay: '500ms' }}>
+                    <div className="flex flex-wrap justify-between items-center gap-2 mb-6">
                         <div>
                             <h2 className="text-lg font-bold text-slate-900 dark:text-white">Portfolio Performance</h2>
                             <p className="text-xs text-gray-500">Net Asset Value over time</p>

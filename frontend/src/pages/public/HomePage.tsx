@@ -13,6 +13,7 @@ import { useTheme } from '@/context/ThemeContext';
 import MarketTicker from '@/components/features/market/MarketTicker';
 import { useToast } from '@/context/ToastContext';
 import { isThermalGuardActive } from '@/utils/deviceProfile';
+import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 
 // Scroll Animation Hook
 const useScrollAnimation = (threshold = 0.1) => {
@@ -980,6 +981,8 @@ const CustomServicesSection: React.FC = () => {
 const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ onLogin, onSignUp }) => {
     const { theme } = useTheme();
     const [activeSymbol, setActiveSymbol] = useState('BTCUSDT');
+    const deviceProfile = useDeviceProfile();
+    const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
 
     useEffect(() => {
         const thermalGuard = isThermalGuardActive();
@@ -1043,9 +1046,9 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
         <div className="relative overflow-hidden bg-transparent">
             {/* ========== HERO ========== */}
             <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-transparent">
-                <div className="container mx-auto px-4 relative z-10 flex flex-col items-center text-center pt-24 pb-32">
+                <div className={`container mx-auto px-4 relative z-10 flex flex-col items-center text-center ${isPhoneMobileUI ? 'pt-14 pb-28' : 'pt-24 pb-32'}`}>
                     {/* Badge */}
-                    <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-bold uppercase tracking-widest mb-10 animate-fade-in-down shadow-[0_0_20px_rgba(6,182,212,0.1)]">
+                    <div className={`inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 ${isPhoneMobileUI ? 'text-[10px] mb-6' : 'text-xs mb-10'} font-bold uppercase tracking-widest animate-fade-in-down shadow-[0_0_20px_rgba(6,182,212,0.1)]`}>
                         <span className="relative flex h-1.5 w-1.5">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400"></span>
@@ -1054,7 +1057,7 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
                     </div>
 
                     {/* Headline */}
-                    <h1 className="text-5xl md:text-7xl lg:text-8xl font-extrabold tracking-tighter text-white mb-8 animate-fade-in-down leading-none" style={{ animationDelay: '0.1s' }}>
+                    <h1 className={`${isPhoneMobileUI ? 'text-4xl mb-5' : 'text-5xl md:text-7xl lg:text-8xl mb-8'} font-extrabold tracking-tighter text-white animate-fade-in-down leading-none`} style={{ animationDelay: '0.1s' }}>
                         Stop Guessing.{' '}
                         <br className="hidden md:block" />
                         <span className="relative">
@@ -1067,15 +1070,15 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
                     </h1>
 
                     {/* Subtitle */}
-                    <p className="max-w-2xl text-xl text-slate-400 mb-12 leading-relaxed animate-fade-in-down" style={{ animationDelay: '0.2s' }}>
+                    <p className={`max-w-2xl ${isPhoneMobileUI ? 'text-base mb-7 px-1' : 'text-xl mb-12'} text-slate-400 leading-relaxed animate-fade-in-down`} style={{ animationDelay: '0.2s' }}>
                         The all-in-one platform for algorithmic trading. Build, backtest, and deploy strategies without managing infrastructure.
                     </p>
 
                     {/* CTA Buttons */}
-                    <div className="flex flex-col sm:flex-row gap-4 animate-fade-in-down mb-6" style={{ animationDelay: '0.3s' }}>
+                    <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 animate-fade-in-down mb-6 w-full sm:w-auto items-center" style={{ animationDelay: '0.3s' }}>
                         <button
                             onClick={onSignUp}
-                            className="relative overflow-hidden px-10 py-4 text-lg font-semibold rounded-2xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_50px_rgba(6,182,212,0.6)] transition-all hover:scale-105 group"
+                            className={`relative overflow-hidden ${isPhoneMobileUI ? 'w-full max-w-xs px-6 py-3.5 text-base justify-center' : 'px-10 py-4 text-lg'} font-semibold rounded-2xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_50px_rgba(6,182,212,0.6)] transition-all hover:scale-105 group flex items-center`}
                         >
                             <span className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
                             <span className="flex items-center gap-2">
@@ -1083,7 +1086,7 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
                             </span>
                         </button>
                         <button
-                            className="px-10 py-4 text-lg font-semibold rounded-2xl border border-white/15 text-white hover:border-cyan-500/40 hover:bg-white/5 transition-all hover:scale-105 flex items-center gap-2"
+                            className={`${isPhoneMobileUI ? 'w-full max-w-xs px-6 py-3.5 text-base justify-center' : 'px-10 py-4 text-lg'} font-semibold rounded-2xl border border-white/15 text-white hover:border-cyan-500/40 hover:bg-white/5 transition-all hover:scale-105 flex items-center gap-2`}
                         >
                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                             See How It Works
@@ -1091,7 +1094,7 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
                     </div>
 
                     {/* Social proof */}
-                    <div className="flex items-center gap-4 text-sm text-slate-500 animate-fade-in-down" style={{ animationDelay: '0.4s' }}>
+                    <div className="flex items-center gap-3 text-xs sm:text-sm text-slate-500 animate-fade-in-down" style={{ animationDelay: '0.4s' }}>
                         <div className="flex -space-x-2">
                             {['🧑', '👩', '🧔', '👨', '👩‍'].map((emoji, i) => (
                                 <div key={i} className="w-7 h-7 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600 flex items-center justify-center text-xs">
@@ -1103,7 +1106,7 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
                     </div>
 
                     {/* Chart */}
-                    <div className="mt-20 w-full max-w-6xl relative animate-fade-in-slide-up">
+                    <div className={`${isPhoneMobileUI ? 'mt-10' : 'mt-20'} w-full max-w-6xl relative animate-fade-in-slide-up`}>
                         {/* Glow behind chart */}
                         <div className="absolute -inset-4 bg-cyan-500/5 rounded-3xl blur-2xl" />
                         <div className="relative rounded-2xl overflow-hidden border border-white/8 shadow-[0_0_60px_rgba(6,182,212,0.1)] bg-[#0D1117]">
@@ -1116,8 +1119,8 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
                                     <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/70" />
                                     <div className="w-2.5 h-2.5 rounded-full bg-green-500/70" />
                                 </div>
-                                <span className="ml-2 text-xs text-slate-500 font-mono">CosmoQuant Terminal — Live Chart</span>
-                                <div className="ml-auto flex items-center gap-1.5">
+                                <span className="ml-2 text-xs text-slate-500 font-mono truncate">CosmoQuant Terminal — Live Chart</span>
+                                <div className="ml-auto flex items-center gap-1.5 shrink-0">
                                     <span className="relative flex h-1.5 w-1.5">
                                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                                         <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
@@ -1125,7 +1128,7 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
                                     <span className="text-[10px] text-green-400 font-mono">LIVE</span>
                                 </div>
                             </div>
-                            <div id="homepage_chart" className="w-full h-[500px] md:h-[580px]" />
+                            <div id="homepage_chart" className={`w-full ${isPhoneMobileUI ? 'h-[360px]' : 'h-[500px] md:h-[580px]'}`} />
                         </div>
                     </div>
                 </div>

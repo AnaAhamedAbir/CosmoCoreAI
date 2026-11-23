@@ -4,26 +4,14 @@
 # Zero CPU/RAM Spike + Auto Frontend "Version update in progress" Banner)
 # ==============================================================================
 # Usage on VPS:
-#   Standard mode (keeps port 2026 open):  bash scripts/safe_update.sh
-#   Production Nginx mode (port 80/443):   bash scripts/safe_update.sh --prod
+#   bash scripts/safe_update.sh
 # ==============================================================================
 
 set -e
 
 COMPOSE_FILES="-f docker-compose.yml"
-USE_PROD="false"
-
-if [ "${1:-}" = "--prod" ]; then
-  USE_PROD="true"
-elif docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^cosmoquant_nginx$'; then
-  USE_PROD="true"
-fi
-
-if [ "$USE_PROD" = "true" ] && [ -f docker-compose.prod.yml ]; then
+if [ -f docker-compose.prod.yml ]; then
   COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.prod.yml"
-  echo "Mode: Production Nginx (Port 80/443)"
-else
-  echo "Mode: Standard Docker Compose (Frontend Port 2026)"
 fi
 
 set_update_flag() {
@@ -75,9 +63,9 @@ for svc in celery_worker_default celery_beat celery_worker_heavy telegram_bot; d
   sleep 4
 done
 
-echo "5/5 Syncing edge Nginx (if prod mode) & clearing update banner..."
-if [ "$USE_PROD" = "true" ]; then
-  docker compose $COMPOSE_FILES up -d --no-deps --force-recreate nginx
+echo "5/5 Starting/reloading edge Nginx (if prod compose active) & clearing update banner..."
+if [ -f docker-compose.prod.yml ]; then
+  docker compose $COMPOSE_FILES up -d --no-deps --force-recreate nginx >/dev/null 2>&1 || true
 fi
 NEW_VER=$(git rev-parse --short HEAD 2>/dev/null || date +%s)
 set_update_flag "false" "Update complete" "$NEW_VER"

@@ -769,8 +769,9 @@ export interface UTBotDataPoint {
 }
 
 /**
- * Calculates UT Bot Alerts exactly matching Pine Script logic.
- * Uses RMA (Rolling Moving Average) for ATR to match TradingView's default `atr()`.
+ * Calculates UT Bot Alerts matching Pine Script logic, with clean ATR warmup
+ * (no zero-ATR distortion before `atrPeriod`) and NaN guards.
+ * Uses RMA (Rolling Moving Average) for ATR to match TradingView's `atr()`.
  */
 export const calculateUTBotAlerts = (
     data: { time: any; open: number; high: number; low: number; close: number }[],
@@ -779,61 +780,84 @@ export const calculateUTBotAlerts = (
     h: boolean = false
 ): UTBotDataPoint[] => {
     const result: UTBotDataPoint[] = [];
-    const sens = Number(a) > 0 ? Number(a) : 1;
+    const sens = Number.isFinite(Number(a)) && Number(a) > 0 ? Number(a) : 1;
     const atrPeriod = Math.max(1, Math.floor(Number(c) || 10));
     if (!Array.isArray(data) || data.length <= atrPeriod) return result;
 
-    // Calculate True Range and RMA (TradingView ATR)
-    const trs: number[] = [0]; 
-    for (let i = 1; i < data.length; i++) {
-        if (!data[i] || !data[i - 1]) { trs.push(0); continue; }
-        const h_val = data[i].high;
-        const l_val = data[i].low;
-        const pc = data[i - 1].close;
-        const tr = Math.max(h_val - l_val, Math.abs(h_val - pc), Math.abs(l_val - pc));
-        trs.push(tr);
+    // Validate & sanitize OHLC values so a single malformed bar never poisons ATR with NaN
+    const n = data.length;
+    const opens = new Array<number>(n);
+    const highs = new Array<number>(n);
+    const lows = new Array<number>(n);
+    const closes = new Array<number>(n);
+
+    let lastValidClose = Number.isFinite(data[0]?.close) ? data[0].close : 0;
+    for (let i = 0; i < n; i++) {
+        const bar = data[i];
+        const closeVal = bar && Number.isFinite(bar.close) ? bar.close : lastValidClose;
+        const openVal = bar && Number.isFinite(bar.open) ? bar.open : closeVal;
+        const highVal = bar && Number.isFinite(bar.high) ? bar.high : Math.max(openVal, closeVal);
+        const lowVal = bar && Number.isFinite(bar.low) ? bar.low : Math.min(openVal, closeVal);
+        opens[i] = openVal;
+        highs[i] = highVal;
+        lows[i] = lowVal;
+        closes[i] = closeVal;
+        lastValidClose = closeVal;
     }
 
-    const atrs: number[] = new Array(data.length).fill(0);
+    // Calculate True Range and RMA (TradingView ATR)
+    const trs = new Array<number>(n);
+    trs[0] = Math.max(0, highs[0] - lows[0]);
+    for (let i = 1; i < n; i++) {
+        const pc = closes[i - 1];
+        trs[i] = Math.max(highs[i] - lows[i], Math.abs(highs[i] - pc), Math.abs(lows[i] - pc));
+    }
+
+    const atrs = new Array<number>(n).fill(0);
     let trSum = 0;
     for (let i = 1; i <= atrPeriod; i++) {
-        trSum += trs[i] || 0;
+        trSum += trs[i];
     }
     atrs[atrPeriod] = trSum / atrPeriod;
 
     const alpha = 1 / atrPeriod;
-    for (let i = atrPeriod + 1; i < data.length; i++) {
-        atrs[i] = alpha * (trs[i] || 0) + (1 - alpha) * atrs[i - 1];
+    for (let i = atrPeriod + 1; i < n; i++) {
+        atrs[i] = alpha * trs[i] + (1 - alpha) * atrs[i - 1];
     }
 
-    // Heikin Ashi Calculation
-    const haCloses: number[] = new Array(data.length).fill(0);
-    if (!data[0]) return result;
-    let prevHaOpen = data[0].open;
-    let prevHaClose = (data[0].open + data[0].high + data[0].low + data[0].close) / 4;
-    haCloses[0] = prevHaClose;
-
-    for (let i = 1; i < data.length; i++) {
-        if (!data[i]) continue;
-        const haClose = (data[i].open + data[i].high + data[i].low + data[i].close) / 4;
-        const haOpen = (prevHaOpen + prevHaClose) / 2;
-        haCloses[i] = haClose;
-        
-        prevHaOpen = haOpen;
-        prevHaClose = haClose;
+    // Source series: Heikin Ashi close = (O + H + L + C) / 4, or standard close
+    const srcSeries = new Array<number>(n);
+    for (let i = 0; i < n; i++) {
+        srcSeries[i] = h ? (opens[i] + highs[i] + lows[i] + closes[i]) / 4 : closes[i];
     }
 
-    let xATRTrailingStop = 0.0;
-    let pos = 0;
-    
-    for (let i = 1; i < data.length; i++) {
-        if (!data[i] || !data[i - 1] || data[i].time === undefined) continue;
-        const src = h ? haCloses[i] : data[i].close;
-        const src1 = h ? haCloses[i - 1] : data[i - 1].close;
+    // Seed trailing stop cleanly once ATR is warmed up at `atrPeriod` (avoid nLoss=0 warmup zigzags)
+    const initLoss = sens * atrs[atrPeriod];
+    let xATRTrailingStop = srcSeries[atrPeriod] - initLoss;
+    let pos: 1 | -1 | 0 = 1;
+
+    if (data[atrPeriod] && data[atrPeriod].time !== undefined) {
+        const seedSrc = srcSeries[atrPeriod];
+        const barbuy = seedSrc > xATRTrailingStop;
+        const barsell = seedSrc < xATRTrailingStop;
+        result.push({
+            time: data[atrPeriod].time,
+            trailingStop: xATRTrailingStop,
+            direction: pos,
+            isBuy: false,
+            isSell: false,
+            color: barbuy ? 'green' : barsell ? 'red' : 'blue'
+        });
+    }
+
+    for (let i = atrPeriod + 1; i < n; i++) {
+        if (!data[i] || data[i].time === undefined) continue;
+        const src = srcSeries[i];
+        const src1 = srcSeries[i - 1];
         const nLoss = sens * atrs[i];
-        
+
         let newXATRTrailingStop = xATRTrailingStop;
-        
+
         if (src > xATRTrailingStop && src1 > xATRTrailingStop) {
             newXATRTrailingStop = Math.max(xATRTrailingStop, src - nLoss);
         } else if (src < xATRTrailingStop && src1 < xATRTrailingStop) {
@@ -844,32 +868,34 @@ export const calculateUTBotAlerts = (
             newXATRTrailingStop = src + nLoss;
         }
 
-        let newPos = pos;
+        let newPos: 1 | -1 | 0 = pos;
         if (src1 < xATRTrailingStop && src > xATRTrailingStop) {
             newPos = 1;
         } else if (src1 > xATRTrailingStop && src < xATRTrailingStop) {
             newPos = -1;
+        } else if (src > newXATRTrailingStop) {
+            newPos = 1;
+        } else if (src < newXATRTrailingStop) {
+            newPos = -1;
         }
-        
+
         const above = src > newXATRTrailingStop && src1 <= xATRTrailingStop;
         const below = src < newXATRTrailingStop && src1 >= xATRTrailingStop;
-        
+
         const buy = src > newXATRTrailingStop && above;
         const sell = src < newXATRTrailingStop && below;
         const barbuy = src > newXATRTrailingStop;
         const barsell = src < newXATRTrailingStop;
-        
-        if (i >= atrPeriod) {
-            result.push({
-                time: data[i].time,
-                trailingStop: newXATRTrailingStop,
-                direction: newPos as 1 | -1 | 0,
-                isBuy: buy,
-                isSell: sell,
-                color: barbuy ? 'green' : barsell ? 'red' : 'blue'
-            });
-        }
-        
+
+        result.push({
+            time: data[i].time,
+            trailingStop: newXATRTrailingStop,
+            direction: newPos,
+            isBuy: buy,
+            isSell: sell,
+            color: barbuy ? 'green' : barsell ? 'red' : 'blue'
+        });
+
         xATRTrailingStop = newXATRTrailingStop;
         pos = newPos;
     }

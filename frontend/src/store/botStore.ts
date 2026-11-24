@@ -2,12 +2,25 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { IndicatorSettings } from '@/components/features/market/IndicatorSelector';
 
+export interface UTBotSyncPayload {
+    symbol: string;
+    timeframe: string;
+    sensitivity: number;
+    atrPeriod: number;
+    useHeikinAshi: boolean;
+    candleClose: boolean;
+    retestSnipe: boolean;
+    timestamp: number;
+}
+
 interface BotState {
     activeWallHunterId: number | null;
     setActiveWallHunterId: (id: number | null) => void;
     activeBotsByChartId: Record<string, number>;
     setBotForChart: (chartId: string, id: number) => void;
     removeBotForChart: (chartId: string) => void;
+    pendingUtBotSync: UTBotSyncPayload | null;
+    setPendingUtBotSync: (payload: UTBotSyncPayload | null) => void;
     indicatorSettings: IndicatorSettings;
     setIndicatorSettings: (settings: Partial<IndicatorSettings>) => void;
     indicatorSettingsByChartId: Record<string, IndicatorSettings>;
@@ -32,8 +45,34 @@ export const sanitizeIndicatorSettings = (settings: IndicatorSettings): Indicato
         macdFast: Math.max(1, Math.floor(Number(settings.macdFast) || 12)),
         macdSlow: Math.max(1, Math.floor(Number(settings.macdSlow) || 26)),
         macdSignal: Math.max(1, Math.floor(Number(settings.macdSignal) || 9)),
-        utBotSensitivity: Number.isFinite(Number(settings.utBotSensitivity)) && Number(settings.utBotSensitivity) > 0 ? Number(settings.utBotSensitivity) : 1,
-        utBotAtrPeriod: Math.max(1, Math.floor(Number(settings.utBotAtrPeriod) || 10)),
+        utBotSensitivity: Number.isFinite(Number(settings.utBotSensitivity)) && Number(settings.utBotSensitivity) > 0
+            ? Math.min(100, Math.max(0.1, Number(settings.utBotSensitivity)))
+            : 1,
+        utBotAtrPeriod: Math.min(200, Math.max(1, Math.floor(Number(settings.utBotAtrPeriod) || 10))),
+        utBotUseHeikinAshi: Boolean(settings.utBotUseHeikinAshi),
+        utBotTrendFilter: Boolean(settings.utBotTrendFilter),
+        utBotEmaPeriod: Math.min(500, Math.max(5, Math.floor(Number(settings.utBotEmaPeriod) || 50))),
+        utBotChopFilter: Boolean(settings.utBotChopFilter),
+        utBotAdxThreshold: Math.min(60, Math.max(5, Math.floor(Number(settings.utBotAdxThreshold) || 20))),
+        utBotCandleClose: Boolean(settings.utBotCandleClose),
+        utBotCooldownBars: Math.min(20, Math.max(0, Number.isFinite(Number(settings.utBotCooldownBars)) ? Math.floor(Number(settings.utBotCooldownBars)) : 0)),
+        utBotOrderFlowConfirm: Boolean(settings.utBotOrderFlowConfirm),
+        utBotHideWeakSignals: Boolean(settings.utBotHideWeakSignals),
+        utBotShowSLTP: Boolean(settings.utBotShowSLTP),
+        utBotTp1RR: Number.isFinite(Number(settings.utBotTp1RR)) && Number(settings.utBotTp1RR) > 0
+            ? Math.min(10, Math.max(0.5, Number(settings.utBotTp1RR)))
+            : 1.5,
+        utBotTp2RR: Number.isFinite(Number(settings.utBotTp2RR)) && Number(settings.utBotTp2RR) > 0
+            ? Math.min(15, Math.max(1.0, Number(settings.utBotTp2RR)))
+            : 2.5,
+        utBotRetestSniper: Boolean(settings.utBotRetestSniper),
+        utBotDualMode: Boolean(settings.utBotDualMode),
+        utBotSlowSensitivity: Number.isFinite(Number(settings.utBotSlowSensitivity)) && Number(settings.utBotSlowSensitivity) > 0
+            ? Math.min(100, Math.max(0.5, Number(settings.utBotSlowSensitivity)))
+            : 3,
+        utBotSlowAtrPeriod: Math.min(200, Math.max(2, Math.floor(Number(settings.utBotSlowAtrPeriod) || 20))),
+        utBotShowHud: settings.utBotShowHud !== false,
+        utBotEnableAlerts: Boolean(settings.utBotEnableAlerts),
         supertrendAtrPeriod: Math.max(1, Math.floor(Number(settings.supertrendAtrPeriod) || 10)),
         supertrendMultiplier: Number.isFinite(Number(settings.supertrendMultiplier)) && Number(settings.supertrendMultiplier) > 0 ? Number(settings.supertrendMultiplier) : 3,
         msbObZigzagLen: Math.max(1, Math.floor(Number(settings.msbObZigzagLen) || 9)),
@@ -113,6 +152,23 @@ export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
         utBotSensitivity: 1,
         utBotAtrPeriod: 10,
         utBotUseHeikinAshi: false,
+        utBotTrendFilter: false,
+        utBotEmaPeriod: 50,
+        utBotChopFilter: false,
+        utBotAdxThreshold: 20,
+        utBotCandleClose: false,
+        utBotCooldownBars: 0,
+        utBotOrderFlowConfirm: false,
+        utBotHideWeakSignals: false,
+        utBotShowSLTP: false,
+        utBotTp1RR: 1.5,
+        utBotTp2RR: 2.5,
+        utBotRetestSniper: false,
+        utBotDualMode: false,
+        utBotSlowSensitivity: 3,
+        utBotSlowAtrPeriod: 20,
+        utBotShowHud: true,
+        utBotEnableAlerts: false,
         sessionA: { show: true, name: 'New York', session: '1300-2200', color: '#ff5d00', showRange: true, showTrendline: false, showMean: false, showVWAP: false, showMaxMin: false },
         sessionB: { show: true, name: 'London', session: '0700-1600', color: '#2157f3', showRange: true, showTrendline: false, showMean: false, showVWAP: false, showMaxMin: false },
         sessionC: { show: true, name: 'Tokyo', session: '0000-0900', color: '#e91e63', showRange: true, showTrendline: false, showMean: false, showVWAP: false, showMaxMin: false },
@@ -348,6 +404,8 @@ export const useBotStore = create<BotState>()(
                 delete newBots[chartId];
                 return { activeBotsByChartId: newBots };
             }),
+            pendingUtBotSync: null,
+            setPendingUtBotSync: (payload) => set({ pendingUtBotSync: payload }),
             indicatorSettings: DEFAULT_INDICATOR_SETTINGS,
             indicatorSettingsByChartId: {
                 main: DEFAULT_INDICATOR_SETTINGS,
@@ -406,8 +464,12 @@ export const useBotStore = create<BotState>()(
             name: 'bot-store-storage',
             onRehydrateStorage: () => (state) => {
                 if (!state) return;
+                state.pendingUtBotSync = null;
                 if (state.indicatorSettings) {
-                    state.indicatorSettings = sanitizeIndicatorSettings(state.indicatorSettings);
+                    state.indicatorSettings = sanitizeIndicatorSettings({
+                        ...DEFAULT_INDICATOR_SETTINGS,
+                        ...state.indicatorSettings,
+                    });
                 }
                 const sanitizedMap: Record<string, IndicatorSettings> = {};
                 const existingMap = state.indicatorSettingsByChartId || {};

@@ -15,6 +15,7 @@ import { GodModeBotTriggerSettings } from './GodModeBotTriggerSettings';
 import { useDeviceProfile } from '../../../hooks/useDeviceProfile';
 import { beginFloatingModalDrag, endFloatingModalDrag } from '../../../hooks/useFloatingModalDrag';
 import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
+import { useBotStore } from '../../../store/botStore';
 
 const getDefaultProxySymbol = (nativeSym: string) =>
     nativeSym ? `${nativeSym.split('/')[0]}/USDT` : 'BTC/USDT';
@@ -629,7 +630,24 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                     } else {
                         setExistingBot(null);
                     }
-                }).catch(() => { });
+                }).catch(() => { }).finally(() => {
+                    const pendingSync = useBotStore.getState().pendingUtBotSync;
+                    if (pendingSync && pendingSync.symbol === symbol && Date.now() - pendingSync.timestamp < 60000) {
+                        const supportedTfs = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d'];
+                        setForm(prev => ({
+                            ...prev,
+                            enableUtBot: true,
+                            enableUtEntryTrigger: true,
+                            utBotSensitivity: pendingSync.sensitivity,
+                            utBotAtrPeriod: pendingSync.atrPeriod,
+                            utBotUseHeikinAshi: pendingSync.useHeikinAshi,
+                            utBotTimeframe: supportedTfs.includes(pendingSync.timeframe) ? pendingSync.timeframe : prev.utBotTimeframe,
+                            utBotCandleClose: pendingSync.candleClose,
+                            utBotRetestSnipe: pendingSync.retestSnipe,
+                        }));
+                        useBotStore.getState().setPendingUtBotSync(null);
+                    }
+                });
             } catch (e) { }
         }
     }, [isOpen, symbol]);

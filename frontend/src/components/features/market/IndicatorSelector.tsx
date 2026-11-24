@@ -58,6 +58,24 @@ export interface IndicatorSettings {
     utBotSensitivity: number;
     utBotAtrPeriod: number;
     utBotUseHeikinAshi: boolean;
+    // ── UT Bot Pro Scalping Extensions ──
+    utBotTrendFilter: boolean;
+    utBotEmaPeriod: number;
+    utBotChopFilter: boolean;
+    utBotAdxThreshold: number;
+    utBotCandleClose: boolean;
+    utBotCooldownBars: number;
+    utBotOrderFlowConfirm: boolean;
+    utBotHideWeakSignals: boolean;
+    utBotShowSLTP: boolean;
+    utBotTp1RR: number;
+    utBotTp2RR: number;
+    utBotRetestSniper: boolean;
+    utBotDualMode: boolean;
+    utBotSlowSensitivity: number;
+    utBotSlowAtrPeriod: number;
+    utBotShowHud: boolean;
+    utBotEnableAlerts: boolean;
     sessionA: SessionSettings;
     sessionB: SessionSettings;
     sessionC: SessionSettings;
@@ -262,6 +280,70 @@ interface IndicatorSelectorProps {
     onResetAll?: () => void;
 }
 
+interface BufferedNumberInputProps {
+    value: number;
+    min: number;
+    max: number;
+    integer?: boolean;
+    onChange: (val: number) => void;
+    className?: string;
+    placeholder?: string;
+}
+
+/**
+ * Buffered numeric input that preserves partial typing (empty, trailing dot, or
+ * first digit below `min` like typing `2` before `0` for `20`) and clamps on blur.
+ */
+const BufferedNumberInput: React.FC<BufferedNumberInputProps> = ({
+    value,
+    min,
+    max,
+    integer = false,
+    onChange,
+    className = '',
+    placeholder,
+}) => {
+    const [local, setLocal] = useState<string>(() => String(value));
+
+    useEffect(() => {
+        setLocal(prev => {
+            const parsed = integer ? parseInt(prev, 10) : parseFloat(prev);
+            return Number.isFinite(parsed) && parsed === value ? prev : String(value);
+        });
+    }, [value, integer]);
+
+    return (
+        <input
+            type="text"
+            inputMode={integer ? 'numeric' : 'decimal'}
+            value={local}
+            placeholder={placeholder}
+            className={className}
+            onChange={(e) => {
+                const raw = e.target.value;
+                const pattern = integer ? /^\d*$/ : /^\d*\.?\d*$/;
+                if (!pattern.test(raw)) return;
+                setLocal(raw);
+                if (raw === '' || raw === '.') return;
+                const parsed = integer ? parseInt(raw, 10) : parseFloat(raw);
+                if (Number.isFinite(parsed) && parsed >= min && parsed <= max) {
+                    onChange(parsed);
+                }
+            }}
+            onBlur={() => {
+                const parsed = integer ? parseInt(local, 10) : parseFloat(local);
+                const clamped = Number.isFinite(parsed)
+                    ? Math.min(max, Math.max(min, integer ? Math.floor(parsed) : parsed))
+                    : value;
+                setLocal(String(clamped));
+                if (clamped !== value) {
+                    onChange(clamped);
+                }
+            }}
+        />
+    );
+};
+
 export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
     settings,
     onSettingsChange,
@@ -278,6 +360,8 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [multiplierLocal, setMultiplierLocal] = useState(settings.trendFinderVolumeMultiplier?.toString() || '1.5');
+    const [utBotSensLocal, setUtBotSensLocal] = useState(settings.utBotSensitivity?.toString() || '1');
+    const [utBotAtrLocal, setUtBotAtrLocal] = useState(settings.utBotAtrPeriod?.toString() || '10');
     const dropdownRef = useRef<HTMLDivElement>(null);
     const triggerButtonRef = useRef<HTMLButtonElement>(null);
     const portalMenuRef = useRef<HTMLDivElement>(null);
@@ -414,6 +498,24 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
     useEffect(() => {
         setMultiplierLocal(settings.trendFinderVolumeMultiplier?.toString() || '1.5');
     }, [settings.trendFinderVolumeMultiplier]);
+
+    useEffect(() => {
+        setUtBotSensLocal(prev => {
+            const parsed = parseFloat(prev);
+            return Number.isFinite(parsed) && parsed === settings.utBotSensitivity
+                ? prev
+                : String(settings.utBotSensitivity ?? 1);
+        });
+    }, [settings.utBotSensitivity]);
+
+    useEffect(() => {
+        setUtBotAtrLocal(prev => {
+            const parsed = parseInt(prev, 10);
+            return Number.isFinite(parsed) && parsed === settings.utBotAtrPeriod
+                ? prev
+                : String(settings.utBotAtrPeriod ?? 10);
+        });
+    }, [settings.utBotAtrPeriod]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -1303,21 +1405,63 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                 <div className="flex items-center justify-between w-1/2 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded border border-gray-200 dark:border-transparent">
                                     <span className="text-gray-600 dark:text-gray-400 text-[10px] font-bold">Key Value:</span>
                                     <input
-                                        type="number"
-                                        value={settings.utBotSensitivity}
-                                        onChange={(e) => updateSetting('utBotSensitivity', Number(e.target.value))}
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={utBotSensLocal}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                                setUtBotSensLocal(val);
+                                                const parsed = parseFloat(val);
+                                                if (Number.isFinite(parsed) && parsed > 0) {
+                                                    const clamped = Math.min(100, Math.max(0.1, parsed));
+                                                    onSettingsChange({ ...settings, utBotSensitivity: clamped });
+                                                }
+                                            }
+                                        }}
+                                        onBlur={() => {
+                                            const parsed = parseFloat(utBotSensLocal);
+                                            const safe = Number.isFinite(parsed) && parsed > 0
+                                                ? Math.min(100, Math.max(0.1, parsed))
+                                                : (settings.utBotSensitivity || 1);
+                                            setUtBotSensLocal(String(safe));
+                                            if (safe !== settings.utBotSensitivity) {
+                                                onSettingsChange({ ...settings, utBotSensitivity: safe });
+                                            }
+                                        }}
                                         className="w-12 bg-transparent text-gray-800 dark:text-gray-200 focus:outline-none focus:text-brand-primary text-[10px] text-right font-bold"
-                                        min={0.1} max={100} step={0.1}
+                                        placeholder="1"
                                     />
                                 </div>
                                 <div className="flex items-center justify-between w-1/2 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded border border-gray-200 dark:border-transparent">
                                     <span className="text-gray-600 dark:text-gray-400 text-[10px] font-bold">ATR P:</span>
                                     <input
-                                        type="number"
-                                        value={settings.utBotAtrPeriod}
-                                        onChange={(e) => updateSetting('utBotAtrPeriod', Number(e.target.value))}
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={utBotAtrLocal}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (val === '' || /^\d+$/.test(val)) {
+                                                setUtBotAtrLocal(val);
+                                                const parsed = parseInt(val, 10);
+                                                if (Number.isFinite(parsed) && parsed >= 1) {
+                                                    const clamped = Math.min(200, Math.max(1, parsed));
+                                                    onSettingsChange({ ...settings, utBotAtrPeriod: clamped });
+                                                }
+                                            }
+                                        }}
+                                        onBlur={() => {
+                                            const parsed = parseInt(utBotAtrLocal, 10);
+                                            const safe = Number.isFinite(parsed) && parsed >= 1
+                                                ? Math.min(200, Math.max(1, parsed))
+                                                : (settings.utBotAtrPeriod || 10);
+                                            setUtBotAtrLocal(String(safe));
+                                            if (safe !== settings.utBotAtrPeriod) {
+                                                onSettingsChange({ ...settings, utBotAtrPeriod: safe });
+                                            }
+                                        }}
                                         className="w-10 bg-transparent text-gray-800 dark:text-gray-200 focus:outline-none focus:text-brand-primary text-[10px] text-right font-bold"
-                                        min={1} max={200} step={1}
+                                        placeholder="10"
                                     />
                                 </div>
                            </div>
@@ -1333,6 +1477,211 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
                                     <span className="ml-2 text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase group-hover:text-brand-primary transition-colors italic">Heikin Ashi Signal (Pine)</span>
                                 </label>
                            </div>
+
+                           {settings.showUTBot && (
+                               <div className="flex flex-col gap-1.5 mt-2 pt-2 border-t border-gray-200/80 dark:border-white/10 pl-1 text-[10px]">
+                                   <div className="text-[9px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                                       Pro Scalping Controls
+                                   </div>
+
+                                   {/* 1. EMA Trend Filter */}
+                                   <div className="flex items-center justify-between gap-2">
+                                       <label className="flex items-center gap-1.5 cursor-pointer flex-1">
+                                           <input
+                                               type="checkbox"
+                                               checked={Boolean(settings.utBotTrendFilter)}
+                                               onChange={() => onSettingsChange({ ...settings, utBotTrendFilter: !settings.utBotTrendFilter })}
+                                               className="w-3 h-3 rounded text-brand-primary cursor-pointer"
+                                           />
+                                           <span className="text-gray-700 dark:text-gray-300 font-semibold">EMA Trend Filter</span>
+                                       </label>
+                                       {settings.utBotTrendFilter && (
+                                           <div className="flex items-center gap-1 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                                               <span className="text-[9px] text-gray-500">EMA</span>
+                                               <BufferedNumberInput
+                                                   min={5} max={500} integer
+                                                   value={settings.utBotEmaPeriod ?? 50}
+                                                   onChange={(v) => onSettingsChange({ ...settings, utBotEmaPeriod: v })}
+                                                   className="w-10 bg-transparent text-right font-bold text-gray-800 dark:text-gray-200 focus:outline-none"
+                                               />
+                                           </div>
+                                       )}
+                                   </div>
+
+                                   {/* 2. Anti-Chop ADX Filter */}
+                                   <div className="flex items-center justify-between gap-2">
+                                       <label className="flex items-center gap-1.5 cursor-pointer flex-1">
+                                           <input
+                                               type="checkbox"
+                                               checked={Boolean(settings.utBotChopFilter)}
+                                               onChange={() => onSettingsChange({ ...settings, utBotChopFilter: !settings.utBotChopFilter })}
+                                               className="w-3 h-3 rounded text-brand-primary cursor-pointer"
+                                           />
+                                           <span className="text-gray-700 dark:text-gray-300 font-semibold">Anti-Chop (ADX)</span>
+                                       </label>
+                                       {settings.utBotChopFilter && (
+                                           <div className="flex items-center gap-1 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                                               <span className="text-[9px] text-gray-500">Min</span>
+                                               <BufferedNumberInput
+                                                   min={5} max={60} integer
+                                                   value={settings.utBotAdxThreshold ?? 20}
+                                                   onChange={(v) => onSettingsChange({ ...settings, utBotAdxThreshold: v })}
+                                                   className="w-9 bg-transparent text-right font-bold text-gray-800 dark:text-gray-200 focus:outline-none"
+                                               />
+                                           </div>
+                                       )}
+                                   </div>
+
+                                   {/* 3. Candle Close & Cooldown */}
+                                   <div className="flex items-center justify-between gap-2">
+                                       <label className="flex items-center gap-1.5 cursor-pointer flex-1">
+                                           <input
+                                               type="checkbox"
+                                               checked={Boolean(settings.utBotCandleClose)}
+                                               onChange={() => onSettingsChange({ ...settings, utBotCandleClose: !settings.utBotCandleClose })}
+                                               className="w-3 h-3 rounded text-brand-primary cursor-pointer"
+                                           />
+                                           <span className="text-gray-700 dark:text-gray-300 font-semibold">Candle Close Only</span>
+                                       </label>
+                                       <div className="flex items-center gap-1 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded" title="Min bars cooldown between opposite flips">
+                                           <span className="text-[9px] text-gray-500">CD</span>
+                                           <BufferedNumberInput
+                                               min={0} max={20} integer
+                                               value={settings.utBotCooldownBars ?? 0}
+                                               onChange={(v) => onSettingsChange({ ...settings, utBotCooldownBars: v })}
+                                               className="w-8 bg-transparent text-right font-bold text-gray-800 dark:text-gray-200 focus:outline-none"
+                                           />
+                                       </div>
+                                   </div>
+
+                                   {/* 4. Order Flow & L2 Grading */}
+                                   <div className="flex items-center justify-between gap-2">
+                                       <label className="flex items-center gap-1.5 cursor-pointer flex-1">
+                                           <input
+                                               type="checkbox"
+                                               checked={Boolean(settings.utBotOrderFlowConfirm)}
+                                               onChange={() => onSettingsChange({ ...settings, utBotOrderFlowConfirm: !settings.utBotOrderFlowConfirm })}
+                                               className="w-3 h-3 rounded text-brand-primary cursor-pointer"
+                                           />
+                                           <span className="text-gray-700 dark:text-gray-300 font-semibold">Order Flow Grading</span>
+                                       </label>
+                                       {settings.utBotOrderFlowConfirm && (
+                                           <label className="flex items-center gap-1 cursor-pointer text-[9px] text-gray-500 dark:text-gray-400">
+                                               <input
+                                                   type="checkbox"
+                                                   checked={Boolean(settings.utBotHideWeakSignals)}
+                                                   onChange={() => onSettingsChange({ ...settings, utBotHideWeakSignals: !settings.utBotHideWeakSignals })}
+                                                   className="w-3 h-3 rounded text-brand-primary cursor-pointer"
+                                               />
+                                               <span>Hide Weak</span>
+                                           </label>
+                                       )}
+                                   </div>
+
+                                   {/* 5. Retest Sniper */}
+                                   <label className="flex items-center gap-1.5 cursor-pointer">
+                                       <input
+                                           type="checkbox"
+                                           checked={Boolean(settings.utBotRetestSniper)}
+                                           onChange={() => onSettingsChange({ ...settings, utBotRetestSniper: !settings.utBotRetestSniper })}
+                                           className="w-3 h-3 rounded text-brand-primary cursor-pointer"
+                                       />
+                                       <span className="text-gray-700 dark:text-gray-300 font-semibold">Retest Sniper Entries</span>
+                                   </label>
+
+                                   {/* 6. Auto SL / TP Levels */}
+                                   <div className="flex flex-col gap-1">
+                                       <label className="flex items-center gap-1.5 cursor-pointer">
+                                           <input
+                                               type="checkbox"
+                                               checked={Boolean(settings.utBotShowSLTP)}
+                                               onChange={() => onSettingsChange({ ...settings, utBotShowSLTP: !settings.utBotShowSLTP })}
+                                               className="w-3 h-3 rounded text-brand-primary cursor-pointer"
+                                           />
+                                           <span className="text-gray-700 dark:text-gray-300 font-semibold">Auto SL / TP1 / TP2 Lines</span>
+                                       </label>
+                                       {settings.utBotShowSLTP && (
+                                           <div className="flex items-center gap-2 pl-4">
+                                               <div className="flex items-center justify-between w-1/2 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                                                   <span className="text-[9px] text-gray-500">TP1 R:</span>
+                                                   <BufferedNumberInput
+                                                       min={0.5} max={10}
+                                                       value={settings.utBotTp1RR ?? 1.5}
+                                                       onChange={(v) => onSettingsChange({ ...settings, utBotTp1RR: v })}
+                                                       className="w-9 bg-transparent text-right font-bold text-gray-800 dark:text-gray-200 focus:outline-none"
+                                                   />
+                                               </div>
+                                               <div className="flex items-center justify-between w-1/2 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                                                   <span className="text-[9px] text-gray-500">TP2 R:</span>
+                                                   <BufferedNumberInput
+                                                       min={1} max={15}
+                                                       value={settings.utBotTp2RR ?? 2.5}
+                                                       onChange={(v) => onSettingsChange({ ...settings, utBotTp2RR: v })}
+                                                       className="w-9 bg-transparent text-right font-bold text-gray-800 dark:text-gray-200 focus:outline-none"
+                                                   />
+                                               </div>
+                                           </div>
+                                       )}
+                                   </div>
+
+                                   {/* 7. Dual UT Bot (Slow Macro + Fast Trigger) */}
+                                   <div className="flex flex-col gap-1">
+                                       <label className="flex items-center gap-1.5 cursor-pointer">
+                                           <input
+                                               type="checkbox"
+                                               checked={Boolean(settings.utBotDualMode)}
+                                               onChange={() => onSettingsChange({ ...settings, utBotDualMode: !settings.utBotDualMode })}
+                                               className="w-3 h-3 rounded text-brand-primary cursor-pointer"
+                                           />
+                                           <span className="text-gray-700 dark:text-gray-300 font-semibold">Dual-UT Trend Mode</span>
+                                       </label>
+                                       {settings.utBotDualMode && (
+                                           <div className="flex items-center gap-2 pl-4">
+                                               <div className="flex items-center justify-between w-1/2 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                                                   <span className="text-[9px] text-gray-500">Slow Key:</span>
+                                                   <BufferedNumberInput
+                                                       min={0.5} max={100}
+                                                       value={settings.utBotSlowSensitivity ?? 3}
+                                                       onChange={(v) => onSettingsChange({ ...settings, utBotSlowSensitivity: v })}
+                                                       className="w-9 bg-transparent text-right font-bold text-gray-800 dark:text-gray-200 focus:outline-none"
+                                                   />
+                                               </div>
+                                               <div className="flex items-center justify-between w-1/2 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                                                   <span className="text-[9px] text-gray-500">Slow ATR:</span>
+                                                   <BufferedNumberInput
+                                                       min={2} max={200} integer
+                                                       value={settings.utBotSlowAtrPeriod ?? 20}
+                                                       onChange={(v) => onSettingsChange({ ...settings, utBotSlowAtrPeriod: v })}
+                                                       className="w-9 bg-transparent text-right font-bold text-gray-800 dark:text-gray-200 focus:outline-none"
+                                                   />
+                                               </div>
+                                           </div>
+                                       )}
+                                   </div>
+
+                                   {/* 8. Win-Rate HUD & Live Alerts */}
+                                   <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-200/60 dark:border-white/5">
+                                       <label className="flex items-center gap-1.5 cursor-pointer">
+                                           <input
+                                               type="checkbox"
+                                               checked={settings.utBotShowHud !== false}
+                                               onChange={() => onSettingsChange({ ...settings, utBotShowHud: settings.utBotShowHud === false })}
+                                               className="w-3 h-3 rounded text-brand-primary cursor-pointer"
+                                           />
+                                           <span className="text-gray-700 dark:text-gray-300 font-semibold">Win-Rate HUD</span>
+                                       </label>
+                                       <label className="flex items-center gap-1.5 cursor-pointer">
+                                           <input
+                                               type="checkbox"
+                                               checked={Boolean(settings.utBotEnableAlerts)}
+                                               onChange={() => onSettingsChange({ ...settings, utBotEnableAlerts: !settings.utBotEnableAlerts })}
+                                               className="w-3 h-3 rounded text-amber-500 cursor-pointer"
+                                           />
+                                           <span className="text-gray-700 dark:text-gray-300 font-semibold">Sound & Toast</span>
+                                       </label>
+                                   </div>
+                               </div>
+                           )}
                          </div>
 
                          {/* ── Quantum AI v8 Block ── */}

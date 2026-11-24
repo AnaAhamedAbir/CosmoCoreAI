@@ -33,6 +33,9 @@ import { calculateEMA, calculateBollingerBands, BollingerBandsDataPoint, calcula
 import { TrendFinderRenderer } from '../../components/features/market/TrendFinderRenderer';
 import { SessionsRenderer } from '../../components/features/market/SessionsRenderer';
 import { SupertrendRenderer } from '../../components/features/market/SupertrendRenderer';
+import { UTBotPrimitive } from '../../components/features/market/UTBotPrimitive';
+import { UTBotHUD, playUTBotSignalSound } from '../../components/features/market/UTBotHUD';
+import { calculateUTBotPro, UTBotProResult } from '../../utils/utBotPro';
 import { MsbObRenderer } from '../../components/features/market/MsbObRenderer';
 import { SMCRenderer } from '../../components/features/market/SMCRenderer';
 import { calculateSMC, SMCResult, DEFAULT_SMC_SETTINGS } from '../../utils/smartMoneyConcepts';
@@ -203,7 +206,7 @@ interface ChartDragBracketEntry {
 const chartDragBracketRegistry = new Map<string, ChartDragBracketEntry>();
 
 // Chart Component
-const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean; isActiveChart?: boolean; totalChartsCount?: number; chartSlotIndex?: number }>(({ chartId = 'main', exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false, isActiveChart = true, totalChartsCount = 1, chartSlotIndex = 0 }) => {
+const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: string; interval: string; walls: { price: number, type: 'buy' | 'sell', size?: number }[]; currentPrice: number; showFootprint: boolean; showCVD: boolean; showVPVR: boolean; indicatorSettings: IndicatorSettings; tradeEvent: any; botStatus: any; openOrders: OpenLimitOrder[]; advancedMetrics: AdvancedMetricsSettings; advancedMetricsData: any; selectedApiKeyId: string | null; predictionResult: PredictionResult | null; activeMLModelId: string | null; onAIPredictClick?: (price: number) => void; onChartBackgroundClick?: (price: number) => void; showCrosshairAIPredict?: boolean; bestBid?: number; bestAsk?: number; showBidAsk?: boolean; isActiveChart?: boolean; totalChartsCount?: number; chartSlotIndex?: number; onToggleUTBotAlerts?: () => void; onSyncUTBotToBot?: () => void }>(({ chartId = 'main', exchange, symbol, interval, walls, currentPrice, showFootprint, showCVD, showVPVR, indicatorSettings, tradeEvent, botStatus, openOrders, advancedMetrics, advancedMetricsData, selectedApiKeyId, predictionResult, activeMLModelId, onAIPredictClick, onChartBackgroundClick, showCrosshairAIPredict = false, bestBid = 0, bestAsk = 0, showBidAsk = false, isActiveChart = true, totalChartsCount = 1, chartSlotIndex = 0, onToggleUTBotAlerts, onSyncUTBotToBot }) => {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
     const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -220,9 +223,14 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const bbLowerSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const rsiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-    const utBotSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const utBotPrimitiveRef = useRef<UTBotPrimitive | null>(null);
     const prevUTBotStateRef = useRef<boolean>(false);
     const utBotMarkersRef = useRef<any[]>([]);
+    const lastAlertedUtBotSigRef = useRef<string>('');
+    const lastUtBotHudSigRef = useRef<string>('');
+    const lastUtBotCandleCountRef = useRef<number>(0);
+    const [utBotHudData, setUtBotHudData] = useState<Pick<UTBotProResult, 'marketBias' | 'backtest' | 'activeSetup' | 'latestAdx' | 'latestRsi'> | null>(null);
+    const syncUTBotOverlayRef = useRef<(candles: any[], settings: IndicatorSettings, liveLastOnly?: boolean, isInitialLoad?: boolean) => void>(() => {});
     const mlPredictionMarkersRef = useRef<any[]>([]);
     const quantumAiMarkersRef = useRef<any[]>([]);
     const botTradeMarkersRef = useRef<any[]>([]);
@@ -267,8 +275,12 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     const [trendFinderData, setTrendFinderData] = useState<TrendFinderResult | null>(null);
     const indicatorSettingsRef = useRef(indicatorSettings);
     indicatorSettingsRef.current = indicatorSettings;
-    const isOrderFlowOverlayActive = Boolean(showVPVR || showCVD || showFootprint || indicatorSettings.showQuantumAI);
+    const isOrderFlowOverlayActive = Boolean(showVPVR || showCVD || showFootprint || indicatorSettings.showQuantumAI || (indicatorSettings.showUTBot && indicatorSettings.utBotOrderFlowConfirm));
     const { vpvrData, cvdData, footprintData } = useOrderFlowData(symbol, exchange, interval, isOrderFlowOverlayActive);
+    const wallsRef = useRef(walls);
+    wallsRef.current = walls;
+    const footprintDataRef = useRef(footprintData);
+    footprintDataRef.current = footprintData;
     const showHeatmapOverlay = Boolean(showVPVR || indicatorSettings.showHeatmap);
     const { heatmapData: realHeatmapData } = useHeatmapData(symbol, exchange, showHeatmapOverlay);
     useIcebergEvents(symbol);
@@ -445,7 +457,6 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         const bbUpperSeries = chart.addSeries(LineSeries, { color: isDark ? '#22c55e' : '#16a34a', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
         const bbMiddleSeries = chart.addSeries(LineSeries, { color: isDark ? '#3b82f6' : '#2563eb', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
         const bbLowerSeries = chart.addSeries(LineSeries, { color: isDark ? '#ef4444' : '#dc2626', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, priceScaleId: 'right', visible: indicatorSettings.showBB });
-        const utBotSeries = chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 2, lineStyle: LineStyle.Solid, crosshairMarkerVisible: false, lastValueVisible: false, priceScaleId: 'right', visible: indicatorSettings.showUTBot });
         const rsiSeries = chart.addSeries(LineSeries, { color: '#db2777', lineWidth: 2, priceScaleId: 'left', crosshairMarkerVisible: false, lastValueVisible: false, visible: indicatorSettings.showRSI });
 
         const volumeSeries = chart.addSeries(HistogramSeries, {
@@ -558,11 +569,13 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             }
         });
         markersPluginRef.current = createSeriesMarkers(candlestickSeries, []);
+        const utBotPrimitive = new UTBotPrimitive(indicatorSettingsRef.current.showUTBot);
+        candlestickSeries.attachPrimitive(utBotPrimitive);
+        utBotPrimitiveRef.current = utBotPrimitive;
         emaSeriesRef.current = emaSeries;
         bbUpperSeriesRef.current = bbUpperSeries;
         bbMiddleSeriesRef.current = bbMiddleSeries;
         bbLowerSeriesRef.current = bbLowerSeries;
-        utBotSeriesRef.current = utBotSeries;
         rsiSeriesRef.current = rsiSeries;
         volumeSeriesRef.current = volumeSeries;
 
@@ -636,32 +649,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         if (curInd.showRSI && rsiSeriesRef.current) {
                             rsiSeriesRef.current.setData(calculateRSI(candles, rsiP) as any);
                         }
-                        if (curInd.showUTBot && utBotSeriesRef.current) {
-                            const utData = calculateUTBotAlerts(candles, curInd.utBotSensitivity, curInd.utBotAtrPeriod, curInd.utBotUseHeikinAshi);
-                            utBotSeriesRef.current.setData(utData.map(d => ({ time: d.time, value: d.trailingStop })) as any);
-
-                            // Apply default colors
-                            const newCandles = candles.map(c => {
-                                const utPoint = utData.find(d => d.time === c.time);
-                                if (utPoint) {
-                                    const color = utPoint.color === 'green' ? '#22c55e' : utPoint.color === 'red' ? '#ef4444' : '#3b82f6';
-                                    return { ...c, color, wickColor: color };
-                                }
-                                return c;
-                            });
-                            candlestickSeriesRef.current.setData(newCandles);
-                            allCandlesRef.current = newCandles;
-
-                            utBotMarkersRef.current = utData.filter(d => d.isBuy || d.isSell).map(d => ({
-                                time: d.time,
-                                position: d.isBuy ? 'belowBar' : 'aboveBar',
-                                color: d.isBuy ? '#22c55e' : '#ef4444',
-                                shape: d.isBuy ? 'arrowUp' : 'arrowDown',
-                                text: d.isBuy ? 'BUY' : 'SELL'
-                            }));
-                            // Replaced by safeSetMarkers inside effect or wait to sync
-                            // We can just rely on the existing interval/effects, but for instant UI update we call it
-                            setTimeout(safeSetMarkers, 100);
+                        if (curInd.showUTBot && utBotPrimitiveRef.current) {
+                            syncUTBotOverlayRef.current(candles, curInd, false, true);
                         }
                     }
                 }
@@ -1006,10 +995,14 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 chartDragBracketRegistry.delete(registryKey);
             }
             resizeObserver.disconnect();
+            if (utBotPrimitiveRef.current && candlestickSeriesRef.current) {
+                try { candlestickSeriesRef.current.detachPrimitive(utBotPrimitiveRef.current); } catch {}
+            }
             chart.remove();
 
             // Cleanup refs so they respawn on the newly created chart instance
             candlestickSeriesRef.current = null;
+            markersPluginRef.current = null;
             currentPriceLineRef.current = null;
             bidLineRef.current = null;
             askLineRef.current = null;
@@ -1030,7 +1023,13 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             bbUpperSeriesRef.current = null;
             bbMiddleSeriesRef.current = null;
             bbLowerSeriesRef.current = null;
-            utBotSeriesRef.current = null;
+            utBotPrimitiveRef.current = null;
+            prevUTBotStateRef.current = false;
+            utBotMarkersRef.current = [];
+            lastAlertedUtBotSigRef.current = '';
+            lastUtBotHudSigRef.current = '';
+            lastUtBotCandleCountRef.current = 0;
+            setUtBotHudData(null);
             rsiSeriesRef.current = null;
             volumeSeriesRef.current = null;
         };
@@ -1237,7 +1236,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         bbMiddleSeriesRef.current.applyOptions({ visible: showBB, priceLineVisible: false, lastValueVisible: false });
         bbLowerSeriesRef.current.applyOptions({ visible: showBB, priceLineVisible: false, lastValueVisible: false });
         rsiSeriesRef.current.applyOptions({ visible: indicatorSettings.showRSI, priceLineVisible: false, lastValueVisible: false });
-        if (utBotSeriesRef.current) utBotSeriesRef.current.applyOptions({ visible: indicatorSettings.showUTBot, priceLineVisible: false, lastValueVisible: false });
+        if (utBotPrimitiveRef.current) utBotPrimitiveRef.current.setVisible(indicatorSettings.showUTBot);
 
         if (chartRef.current) {
             chartRef.current.priceScale('left').applyOptions({ visible: indicatorSettings.showRSI || indicatorSettings.showMACD });
@@ -1266,44 +1265,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             rsiSeriesRef.current.setData(calculateRSI(data, rsiP) as any);
         }
 
-        if (indicatorSettings.showUTBot && utBotSeriesRef.current) {
-            prevUTBotStateRef.current = true;
-            const utData = calculateUTBotAlerts(data, indicatorSettings.utBotSensitivity, indicatorSettings.utBotAtrPeriod, indicatorSettings.utBotUseHeikinAshi);
-            utBotSeriesRef.current.setData(utData.map(d => ({ time: d.time, value: d.trailingStop })) as any);
-
-            const utMap = new Map<any, any>();
-            for (let i = 0; i < utData.length; i++) utMap.set(utData[i].time, utData[i]);
-
-            const newCandles = data.map(c => {
-                const utPoint = utMap.get(c.time);
-                if (utPoint) {
-                    const color = utPoint.color === 'green' ? '#22c55e' : utPoint.color === 'red' ? '#ef4444' : '#3b82f6';
-                    return { ...c, color, wickColor: color };
-                }
-                return c;
-            });
-            candlestickSeriesRef.current?.setData(newCandles);
-            allCandlesRef.current = newCandles;
-
-            utBotMarkersRef.current = utData.filter(d => d.isBuy || d.isSell).map(d => ({
-                time: d.time,
-                position: d.isBuy ? 'belowBar' : 'aboveBar',
-                color: d.isBuy ? '#22c55e' : '#ef4444',
-                shape: d.isBuy ? 'arrowUp' : 'arrowDown',
-                text: d.isBuy ? 'BUY' : 'SELL'
-            }));
-
-            setTimeout(safeSetMarkers, 50);
-        } else if (!indicatorSettings.showUTBot && utBotSeriesRef.current && prevUTBotStateRef.current) {
-            // Only reset candle colors once when UT Bot transitions from enabled -> disabled
-            prevUTBotStateRef.current = false;
-            const newCandles = data.map(c => ({ ...c, color: undefined, wickColor: undefined }));
-            candlestickSeriesRef.current?.setData(newCandles);
-            allCandlesRef.current = newCandles;
-            utBotMarkersRef.current = [];
-
-            setTimeout(safeSetMarkers, 50);
-        }
+        syncUTBotOverlayRef.current(data, indicatorSettings, false);
 
     }, [
         syncMtfEma,
@@ -1316,6 +1278,23 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         indicatorSettings.utBotSensitivity,
         indicatorSettings.utBotAtrPeriod,
         indicatorSettings.utBotUseHeikinAshi,
+        indicatorSettings.utBotTrendFilter,
+        indicatorSettings.utBotEmaPeriod,
+        indicatorSettings.utBotChopFilter,
+        indicatorSettings.utBotAdxThreshold,
+        indicatorSettings.utBotCandleClose,
+        indicatorSettings.utBotCooldownBars,
+        indicatorSettings.utBotOrderFlowConfirm,
+        indicatorSettings.utBotHideWeakSignals,
+        indicatorSettings.utBotShowSLTP,
+        indicatorSettings.utBotTp1RR,
+        indicatorSettings.utBotTp2RR,
+        indicatorSettings.utBotRetestSniper,
+        indicatorSettings.utBotDualMode,
+        indicatorSettings.utBotSlowSensitivity,
+        indicatorSettings.utBotSlowAtrPeriod,
+        indicatorSettings.utBotShowHud,
+        indicatorSettings.utBotEnableAlerts,
         indicatorSettings.showVolume,
         indicatorSettings.showMACD,
         indicatorSettings.showEMA,
@@ -1898,6 +1877,211 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         }
     };
 
+    // Unified UT Bot Pro overlay updater used by initial history load, setting toggles, and live ticks
+    syncUTBotOverlayRef.current = (
+        candles: any[],
+        settings: IndicatorSettings,
+        liveLastOnly: boolean = false,
+        isInitialLoad: boolean = false
+    ) => {
+        if (!candlestickSeriesRef.current || !utBotPrimitiveRef.current) return;
+
+        if (!settings.showUTBot) {
+            utBotPrimitiveRef.current.setPayload({
+                fastPoints: [],
+                slowPoints: [],
+                activeSetup: null,
+                showSLTP: false,
+                tp1RR: settings.utBotTp1RR || 1.5,
+                tp2RR: settings.utBotTp2RR || 2.5,
+                visible: false,
+            });
+            if (lastUtBotHudSigRef.current !== '') {
+                lastUtBotHudSigRef.current = '';
+                setUtBotHudData(null);
+            }
+            lastAlertedUtBotSigRef.current = '';
+
+            if (prevUTBotStateRef.current) {
+                prevUTBotStateRef.current = false;
+                if (candles.length > 0) {
+                    const cleanedCandles = candles.map(c => ({ ...c, color: undefined, wickColor: undefined }));
+                    candlestickSeriesRef.current.setData(cleanedCandles);
+                    allCandlesRef.current = cleanedCandles;
+                }
+                if (lastCandleRef.current) {
+                    const { color: _c, wickColor: _wc, ...rest } = lastCandleRef.current as any;
+                    lastCandleRef.current = rest;
+                }
+                if (utBotMarkersRef.current.length > 0) {
+                    utBotMarkersRef.current = [];
+                    safeSetMarkers();
+                }
+            }
+            return;
+        }
+
+        prevUTBotStateRef.current = true;
+        const pro = calculateUTBotPro({
+            candles,
+            sensitivity: settings.utBotSensitivity,
+            atrPeriod: settings.utBotAtrPeriod,
+            useHeikinAshi: settings.utBotUseHeikinAshi,
+            trendFilter: settings.utBotTrendFilter,
+            emaPeriod: settings.utBotEmaPeriod,
+            chopFilter: settings.utBotChopFilter,
+            adxThreshold: settings.utBotAdxThreshold,
+            candleClose: settings.utBotCandleClose,
+            cooldownBars: settings.utBotCooldownBars,
+            orderFlowConfirm: settings.utBotOrderFlowConfirm,
+            hideWeakSignals: settings.utBotHideWeakSignals,
+            tp1RR: settings.utBotTp1RR,
+            tp2RR: settings.utBotTp2RR,
+            retestSniper: settings.utBotRetestSniper,
+            dualMode: settings.utBotDualMode,
+            slowSensitivity: settings.utBotSlowSensitivity,
+            slowAtrPeriod: settings.utBotSlowAtrPeriod,
+            walls: wallsRef.current,
+            footprintData: footprintDataRef.current,
+        });
+
+        utBotPrimitiveRef.current.setPayload({
+            fastPoints: pro.fastPoints,
+            slowPoints: pro.slowPoints,
+            activeSetup: pro.activeSetup,
+            showSLTP: Boolean(settings.utBotShowSLTP),
+            tp1RR: settings.utBotTp1RR || 1.5,
+            tp2RR: settings.utBotTp2RR || 2.5,
+            visible: true,
+        });
+
+        // Update HUD state only when meaningful metrics change to prevent 200ms tick re-render churn
+        const hudSig = `${pro.marketBias}|${pro.backtest.wins}/${pro.backtest.losses}/${pro.backtest.netR}|${pro.latestAdx}|${pro.latestRsi}|${pro.activeSetup?.time}:${pro.activeSetup?.kind}:${pro.activeSetup?.grade}:${pro.activeSetup?.sl}:${pro.activeSetup?.isInvalidated}`;
+        if (settings.utBotShowHud !== false) {
+            if (hudSig !== lastUtBotHudSigRef.current) {
+                lastUtBotHudSigRef.current = hudSig;
+                setUtBotHudData({
+                    marketBias: pro.marketBias,
+                    backtest: pro.backtest,
+                    activeSetup: pro.activeSetup,
+                    latestAdx: pro.latestAdx,
+                    latestRsi: pro.latestRsi,
+                });
+            }
+        } else if (lastUtBotHudSigRef.current !== '') {
+            lastUtBotHudSigRef.current = '';
+            setUtBotHudData(null);
+        }
+
+        const nextMarkers = pro.signals.map(s => {
+            if (!s.isConfirmed) {
+                return {
+                    time: s.time,
+                    position: s.side === 'buy' ? 'belowBar' : 'aboveBar',
+                    color: '#f59e0b',
+                    shape: s.side === 'buy' ? 'arrowUp' : 'arrowDown',
+                    text: s.side === 'buy' ? 'PRE BUY' : 'PRE SELL',
+                };
+            }
+            if (s.isSnipe) {
+                return {
+                    time: s.time,
+                    position: s.side === 'buy' ? 'belowBar' : 'aboveBar',
+                    color: s.side === 'buy' ? '#10b981' : '#f97316',
+                    shape: s.side === 'buy' ? 'arrowUp' : 'arrowDown',
+                    text: s.side === 'buy'
+                        ? (settings.utBotOrderFlowConfirm ? `SNIPE L ${s.grade}` : 'SNIPE L')
+                        : (settings.utBotOrderFlowConfirm ? `SNIPE S ${s.grade}` : 'SNIPE S'),
+                };
+            }
+            return {
+                time: s.time,
+                position: s.side === 'buy' ? 'belowBar' : 'aboveBar',
+                color: s.side === 'buy' ? '#22c55e' : '#ef4444',
+                shape: s.side === 'buy' ? 'arrowUp' : 'arrowDown',
+                text: s.side === 'buy'
+                    ? (settings.utBotOrderFlowConfirm ? `BUY ${s.grade}` : 'BUY')
+                    : (settings.utBotOrderFlowConfirm ? `SELL ${s.grade}` : 'SELL'),
+            };
+        });
+
+        const prevMarkers = utBotMarkersRef.current;
+        const markersChanged =
+            prevMarkers.length !== nextMarkers.length ||
+            nextMarkers.some((m, idx) => prevMarkers[idx]?.time !== m.time || prevMarkers[idx]?.text !== m.text);
+        if (markersChanged) {
+            utBotMarkersRef.current = nextMarkers;
+            safeSetMarkers();
+        }
+
+        // Fire real-time sound + toast alert once per newly confirmed live signal
+        if (settings.utBotEnableAlerts && candles.length > 0 && pro.signals.length > 0) {
+            const latestConfirmed = [...pro.signals].reverse().find(s => s.isConfirmed);
+            const liveThresholdIdx = settings.utBotCandleClose ? candles.length - 2 : candles.length - 1;
+            if (latestConfirmed && latestConfirmed.barIndex >= liveThresholdIdx) {
+                const alertKey = `${latestConfirmed.time}:${latestConfirmed.kind}`;
+                if (isInitialLoad) {
+                    // Seed without firing historical sound on initial page load
+                    lastAlertedUtBotSigRef.current = alertKey;
+                } else if (lastAlertedUtBotSigRef.current !== alertKey) {
+                    lastAlertedUtBotSigRef.current = alertKey;
+                    playUTBotSignalSound(latestConfirmed.side, latestConfirmed.grade);
+                    const label = latestConfirmed.kind.replace('_', ' ');
+                    const msg = `${symbol.toUpperCase()} (${interval}) · UT Bot ${label} [${latestConfirmed.grade}] @ ${formatDisplayPrice(latestConfirmed.price)}`;
+                    if (latestConfirmed.side === 'buy') {
+                        toast.success(msg, { duration: 4000 });
+                    } else {
+                        toast.error(msg, { duration: 4000 });
+                    }
+                }
+            }
+        }
+
+        const utData = pro.fastPoints;
+        if (candles.length === 0) return;
+
+        // If a new bar spawned since the last update, fall through to setData once so the just-closed bar gets its final color
+        const barCountChanged = candles.length !== lastUtBotCandleCountRef.current;
+        lastUtBotCandleCountRef.current = candles.length;
+
+        if (liveLastOnly && !barCountChanged) {
+            if (utData.length === 0) return;
+            const lastUT = utData[utData.length - 1];
+            const lastIdx = candles.length - 1;
+            const baseCandle = candles[lastIdx];
+            if (baseCandle && baseCandle.time === lastUT.time) {
+                const candleColor = lastUT.color === 'green' ? '#22c55e' : lastUT.color === 'red' ? '#ef4444' : '#3b82f6';
+                const coloredBar = { ...baseCandle, color: candleColor, wickColor: candleColor };
+                allCandlesRef.current[lastIdx] = coloredBar;
+                if (lastCandleRef.current && lastCandleRef.current.time === coloredBar.time) {
+                    lastCandleRef.current = { ...lastCandleRef.current, color: candleColor, wickColor: candleColor };
+                }
+                candlestickSeriesRef.current.update(coloredBar);
+            }
+            return;
+        }
+
+        const utMap = new Map<any, UTBotDataPoint>();
+        for (let i = 0; i < utData.length; i++) utMap.set(utData[i].time, utData[i]);
+
+        const newCandles = candles.map(c => {
+            const utPoint = utMap.get(c.time);
+            if (utPoint) {
+                const color = utPoint.color === 'green' ? '#22c55e' : utPoint.color === 'red' ? '#ef4444' : '#3b82f6';
+                return { ...c, color, wickColor: color };
+            }
+            return { ...c, color: undefined, wickColor: undefined };
+        });
+        candlestickSeriesRef.current.setData(newCandles);
+        allCandlesRef.current = newCandles;
+        if (newCandles.length > 0) {
+            const lastColored = newCandles[newCandles.length - 1];
+            lastCandleRef.current = lastCandleRef.current && lastCandleRef.current.time === lastColored.time
+                ? { ...lastCandleRef.current, color: lastColored.color, wickColor: lastColored.wickColor }
+                : { ...lastColored };
+        }
+    };
+
     // ── Quantum AI Marker Rendering Effect ──
     useEffect(() => {
         if (!markersPluginRef.current) return;
@@ -2237,8 +2421,9 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 const currentSettings = indicatorSettingsRef.current;
                 if (curData && curData.length > 0) {
                     const emaTfsKey = (currentSettings.emaTimeframes || ['1m']).join(',');
-                    const toggleSig = `${currentSettings.showEMA ? 1 : 0}:${currentSettings.emaPeriod}:${currentSettings.emaRenderMode}:${emaTfsKey}|${currentSettings.showBB ? 1 : 0}:${currentSettings.bbPeriod}:${currentSettings.bbStdDev}|${currentSettings.showRSI ? 1 : 0}:${currentSettings.rsiPeriod}|${currentSettings.showUTBot ? 1 : 0}:${currentSettings.utBotSensitivity}:${currentSettings.utBotAtrPeriod}:${currentSettings.utBotUseHeikinAshi ? 1 : 0}|${currentSettings.showSessions ? 1 : 0}:${currentSettings.timezoneOffset || 0}:${currentSettings.sessionA?.session}:${currentSettings.sessionB?.session}:${currentSettings.sessionC?.session}:${currentSettings.sessionD?.session}`;
-                    const candleKey = `${curData.length}:${lastCandle?.time}:${lastCandle?.close}:${lastCandle?.volume}|${toggleSig}`;
+                    const utSig = `${currentSettings.showUTBot ? 1 : 0}:${currentSettings.utBotSensitivity}:${currentSettings.utBotAtrPeriod}:${currentSettings.utBotUseHeikinAshi ? 1 : 0}:${currentSettings.utBotTrendFilter ? 1 : 0}:${currentSettings.utBotEmaPeriod}:${currentSettings.utBotChopFilter ? 1 : 0}:${currentSettings.utBotAdxThreshold}:${currentSettings.utBotCandleClose ? 1 : 0}:${currentSettings.utBotCooldownBars}:${currentSettings.utBotOrderFlowConfirm ? 1 : 0}:${currentSettings.utBotHideWeakSignals ? 1 : 0}:${currentSettings.utBotShowSLTP ? 1 : 0}:${currentSettings.utBotTp1RR}:${currentSettings.utBotTp2RR}:${currentSettings.utBotRetestSniper ? 1 : 0}:${currentSettings.utBotDualMode ? 1 : 0}:${currentSettings.utBotSlowSensitivity}:${currentSettings.utBotSlowAtrPeriod}:${currentSettings.utBotShowHud ? 1 : 0}:${currentSettings.utBotEnableAlerts ? 1 : 0}`;
+                    const toggleSig = `${currentSettings.showEMA ? 1 : 0}:${currentSettings.emaPeriod}:${currentSettings.emaRenderMode}:${emaTfsKey}|${currentSettings.showBB ? 1 : 0}:${currentSettings.bbPeriod}:${currentSettings.bbStdDev}|${currentSettings.showRSI ? 1 : 0}:${currentSettings.rsiPeriod}|${utSig}|${currentSettings.showSessions ? 1 : 0}:${currentSettings.timezoneOffset || 0}:${currentSettings.sessionA?.session}:${currentSettings.sessionB?.session}:${currentSettings.sessionC?.session}:${currentSettings.sessionD?.session}`;
+                    const candleKey = `${curData.length}:${lastCandle?.time}:${lastCandle?.high}:${lastCandle?.low}:${lastCandle?.close}:${lastCandle?.volume}|${toggleSig}`;
                     if (candleKey === lastProcessedCandleKeyRef.current) return;
                     lastProcessedCandleKeyRef.current = candleKey;
 
@@ -2326,31 +2511,8 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                         const rsiData = calculateRSI(rsiInput, rsiP);
                         if (rsiData.length > 0) rsiSeriesRef.current.update(rsiData[rsiData.length - 1] as any);
                     }
-                    if (currentSettings.showUTBot && utBotSeriesRef.current) {
-                        const utData = calculateUTBotAlerts(curData, currentSettings.utBotSensitivity, currentSettings.utBotAtrPeriod, currentSettings.utBotUseHeikinAshi);
-                        if (utData.length > 0) {
-                            const lastUT = utData[utData.length - 1];
-                            utBotSeriesRef.current.update({ time: lastUT.time, value: lastUT.trailingStop } as any);
-
-                            const candleColor = lastUT.color === 'green' ? '#22c55e' : lastUT.color === 'red' ? '#ef4444' : '#3b82f6';
-                            allCandlesRef.current[allCandlesRef.current.length - 1] = {
-                                ...lastCandle,
-                                color: candleColor,
-                                wickColor: candleColor
-                            };
-                            candlestickSeriesRef.current.update(allCandlesRef.current[allCandlesRef.current.length - 1]);
-
-                            const newMarkers = utData.filter(d => d.isBuy || d.isSell).map(d => ({
-                                time: d.time,
-                                position: d.isBuy ? 'belowBar' : 'aboveBar',
-                                color: d.isBuy ? '#22c55e' : '#ef4444',
-                                shape: d.isBuy ? 'arrowUp' : 'arrowDown',
-                                text: d.isBuy ? 'BUY' : 'SELL'
-                            }));
-                            utBotMarkersRef.current = newMarkers;
-
-                            safeSetMarkers();
-                        }
+                    if (currentSettings.showUTBot && utBotPrimitiveRef.current) {
+                        syncUTBotOverlayRef.current(curData, currentSettings, true);
                     }
 
                     // --- SESSIONS CALCULATION (Only recalculates when candle count or minute bucket changes) ---
@@ -3802,6 +3964,22 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                             currentPrice={currentPrice}
                         />
                     )}
+                    {indicatorSettings.showUTBot && indicatorSettings.utBotShowHud !== false && utBotHudData && (
+                        <UTBotHUD
+                            visible={true}
+                            marketBias={utBotHudData.marketBias}
+                            backtest={utBotHudData.backtest}
+                            activeSetup={utBotHudData.activeSetup}
+                            latestAdx={utBotHudData.latestAdx}
+                            latestRsi={utBotHudData.latestRsi}
+                            alertsEnabled={Boolean(indicatorSettings.utBotEnableAlerts)}
+                            isThermalGuard={isThermalGuard}
+                            isCompactPhone={deviceProfile.isPhoneMobileUI}
+                            formatPrice={formatDisplayPrice}
+                            onToggleAlerts={() => onToggleUTBotAlerts?.()}
+                            onSyncToBot={() => onSyncUTBotToBot?.()}
+                        />
+                    )}
                 </div>
                 {indicatorSettings.showSessions && <SessionsDashboard settings={indicatorSettings} statuses={sessionStatuses} />}
                 {showVPVR && <VolumeProfileWidget chart={chartRef.current} series={candlestickSeriesRef.current} data={vpvrData} />}
@@ -4658,6 +4836,7 @@ const OrderFlowChartPanel = React.memo<{
     const setBotForChart = useBotStore(state => state.setBotForChart);
     const removeBotForChart = useBotStore(state => state.removeBotForChart);
     const activeBotsByChartId = useBotStore(state => state.activeBotsByChartId);
+    const setPendingUtBotSync = useBotStore(state => state.setPendingUtBotSync);
 
     const panelDeviceProfile = useDeviceProfile();
     const chartBotId = activeBotsByChartId[config.id] || null;
@@ -4866,6 +5045,21 @@ const OrderFlowChartPanel = React.memo<{
                         chartSlotIndex={chartSlotIndex}
                         onAIPredictClick={handleAIPredictClick}
                         onChartBackgroundClick={handleChartBackgroundClick}
+                        onToggleUTBotAlerts={() => handlePanelIndicatorChange({ ...indicatorSettings, utBotEnableAlerts: !indicatorSettings.utBotEnableAlerts })}
+                        onSyncUTBotToBot={() => {
+                            setPendingUtBotSync({
+                                symbol: config.symbol,
+                                timeframe: config.interval,
+                                sensitivity: indicatorSettings.utBotSensitivity,
+                                atrPeriod: indicatorSettings.utBotAtrPeriod,
+                                useHeikinAshi: indicatorSettings.utBotUseHeikinAshi,
+                                candleClose: indicatorSettings.utBotCandleClose,
+                                retestSnipe: indicatorSettings.utBotRetestSniper,
+                                timestamp: Date.now(),
+                            });
+                            setIsWallHunterOpen(true);
+                            toast.success(`Synced UT Bot (${indicatorSettings.utBotSensitivity}, ATR ${indicatorSettings.utBotAtrPeriod}) to WallHunter`);
+                        }}
                     />
                 )}
             </div>

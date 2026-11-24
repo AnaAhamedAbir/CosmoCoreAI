@@ -1293,6 +1293,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         indicatorSettings.utBotDualMode,
         indicatorSettings.utBotSlowSensitivity,
         indicatorSettings.utBotSlowAtrPeriod,
+        indicatorSettings.utBotClimaxGuard,
+        indicatorSettings.utBotMaxExtensionAtr,
+        indicatorSettings.utBotPullbackEntry,
+        indicatorSettings.utBotFakeoutReversal,
         indicatorSettings.utBotShowHud,
         indicatorSettings.utBotEnableAlerts,
         indicatorSettings.showVolume,
@@ -1941,6 +1945,10 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
             dualMode: settings.utBotDualMode,
             slowSensitivity: settings.utBotSlowSensitivity,
             slowAtrPeriod: settings.utBotSlowAtrPeriod,
+            climaxGuard: settings.utBotClimaxGuard !== false,
+            maxExtensionAtr: settings.utBotMaxExtensionAtr || 1.6,
+            pullbackEntry: settings.utBotPullbackEntry !== false,
+            fakeoutReversal: settings.utBotFakeoutReversal !== false,
             walls: wallsRef.current,
             footprintData: footprintDataRef.current,
         });
@@ -1981,6 +1989,28 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                     color: '#f59e0b',
                     shape: s.side === 'buy' ? 'arrowUp' : 'arrowDown',
                     text: s.side === 'buy' ? 'PRE BUY' : 'PRE SELL',
+                };
+            }
+            if (s.kind === 'SWEEP_BUY' || s.kind === 'SWEEP_SELL') {
+                return {
+                    time: s.time,
+                    position: s.side === 'buy' ? 'belowBar' : 'aboveBar',
+                    color: s.side === 'buy' ? '#a855f7' : '#ec4899',
+                    shape: s.side === 'buy' ? 'arrowUp' : 'arrowDown',
+                    text: s.side === 'buy'
+                        ? (settings.utBotOrderFlowConfirm ? `SWEEP L ${s.grade}` : 'SWEEP L')
+                        : (settings.utBotOrderFlowConfirm ? `SWEEP S ${s.grade}` : 'SWEEP S'),
+                };
+            }
+            if (s.kind === 'DIP_BUY' || s.kind === 'DIP_SELL') {
+                return {
+                    time: s.time,
+                    position: s.side === 'buy' ? 'belowBar' : 'aboveBar',
+                    color: s.side === 'buy' ? '#06b6d4' : '#f43f5e',
+                    shape: s.side === 'buy' ? 'arrowUp' : 'arrowDown',
+                    text: s.side === 'buy'
+                        ? (settings.utBotOrderFlowConfirm ? `DIP BUY ${s.grade}` : 'DIP BUY')
+                        : (settings.utBotOrderFlowConfirm ? `DIP SELL ${s.grade}` : 'DIP SELL'),
                 };
             }
             if (s.isSnipe) {
@@ -2421,7 +2451,7 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
                 const currentSettings = indicatorSettingsRef.current;
                 if (curData && curData.length > 0) {
                     const emaTfsKey = (currentSettings.emaTimeframes || ['1m']).join(',');
-                    const utSig = `${currentSettings.showUTBot ? 1 : 0}:${currentSettings.utBotSensitivity}:${currentSettings.utBotAtrPeriod}:${currentSettings.utBotUseHeikinAshi ? 1 : 0}:${currentSettings.utBotTrendFilter ? 1 : 0}:${currentSettings.utBotEmaPeriod}:${currentSettings.utBotChopFilter ? 1 : 0}:${currentSettings.utBotAdxThreshold}:${currentSettings.utBotCandleClose ? 1 : 0}:${currentSettings.utBotCooldownBars}:${currentSettings.utBotOrderFlowConfirm ? 1 : 0}:${currentSettings.utBotHideWeakSignals ? 1 : 0}:${currentSettings.utBotShowSLTP ? 1 : 0}:${currentSettings.utBotTp1RR}:${currentSettings.utBotTp2RR}:${currentSettings.utBotRetestSniper ? 1 : 0}:${currentSettings.utBotDualMode ? 1 : 0}:${currentSettings.utBotSlowSensitivity}:${currentSettings.utBotSlowAtrPeriod}:${currentSettings.utBotShowHud ? 1 : 0}:${currentSettings.utBotEnableAlerts ? 1 : 0}`;
+                    const utSig = `${currentSettings.showUTBot ? 1 : 0}:${currentSettings.utBotSensitivity}:${currentSettings.utBotAtrPeriod}:${currentSettings.utBotUseHeikinAshi ? 1 : 0}:${currentSettings.utBotTrendFilter ? 1 : 0}:${currentSettings.utBotEmaPeriod}:${currentSettings.utBotChopFilter ? 1 : 0}:${currentSettings.utBotAdxThreshold}:${currentSettings.utBotCandleClose ? 1 : 0}:${currentSettings.utBotCooldownBars}:${currentSettings.utBotOrderFlowConfirm ? 1 : 0}:${currentSettings.utBotHideWeakSignals ? 1 : 0}:${currentSettings.utBotShowSLTP ? 1 : 0}:${currentSettings.utBotTp1RR}:${currentSettings.utBotTp2RR}:${currentSettings.utBotRetestSniper ? 1 : 0}:${currentSettings.utBotDualMode ? 1 : 0}:${currentSettings.utBotSlowSensitivity}:${currentSettings.utBotSlowAtrPeriod}:${currentSettings.utBotClimaxGuard !== false ? 1 : 0}:${currentSettings.utBotMaxExtensionAtr}:${currentSettings.utBotPullbackEntry !== false ? 1 : 0}:${currentSettings.utBotFakeoutReversal !== false ? 1 : 0}:${currentSettings.utBotShowHud ? 1 : 0}:${currentSettings.utBotEnableAlerts ? 1 : 0}`;
                     const toggleSig = `${currentSettings.showEMA ? 1 : 0}:${currentSettings.emaPeriod}:${currentSettings.emaRenderMode}:${emaTfsKey}|${currentSettings.showBB ? 1 : 0}:${currentSettings.bbPeriod}:${currentSettings.bbStdDev}|${currentSettings.showRSI ? 1 : 0}:${currentSettings.rsiPeriod}|${utSig}|${currentSettings.showSessions ? 1 : 0}:${currentSettings.timezoneOffset || 0}:${currentSettings.sessionA?.session}:${currentSettings.sessionB?.session}:${currentSettings.sessionC?.session}:${currentSettings.sessionD?.session}`;
                     const candleKey = `${curData.length}:${lastCandle?.time}:${lastCandle?.high}:${lastCandle?.low}:${lastCandle?.close}:${lastCandle?.volume}|${toggleSig}`;
                     if (candleKey === lastProcessedCandleKeyRef.current) return;

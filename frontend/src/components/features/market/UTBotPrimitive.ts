@@ -168,10 +168,18 @@ class UTBotPaneRenderer implements IPrimitivePaneRenderer {
         const endX = Math.max(startX + 40, width - 6);
 
         const effTp2RR = Math.max(this._primitive.tp1RR, this._primitive.tp2RR);
+        const entryTag =
+            setup.kind === 'SWEEP_BUY' || setup.kind === 'SWEEP_SELL'
+                ? `SWEEP ${setup.side === 'buy' ? 'L' : 'S'} ${setup.grade}`
+                : setup.kind === 'DIP_BUY' || setup.kind === 'DIP_SELL'
+                    ? `DIP ${setup.side === 'buy' ? 'LONG' : 'SHORT'} ${setup.grade}`
+                    : setup.kind === 'SNIPE_BUY' || setup.kind === 'SNIPE_SELL'
+                        ? `SNIPE ${setup.side === 'buy' ? 'L' : 'S'} ${setup.grade}`
+                        : `${setup.side === 'buy' ? 'LONG' : 'SHORT'} ${setup.grade}`;
         const levels = [
             { price: setup.tp2, label: `TP2 ${effTp2RR}R`, color: '#10b981', fill: 'rgba(16, 185, 129, 0.14)', dash: [4, 4] },
             { price: setup.tp1, label: `TP1 ${this._primitive.tp1RR}R`, color: '#22c55e', fill: 'rgba(34, 197, 94, 0.18)', dash: [5, 3] },
-            { price: setup.entry, label: `${setup.side === 'buy' ? 'LONG' : 'SHORT'} ${setup.grade}`, color: '#38bdf8', fill: 'rgba(56, 189, 248, 0.16)', dash: [2, 3] },
+            { price: setup.entry, label: entryTag, color: '#38bdf8', fill: 'rgba(56, 189, 248, 0.16)', dash: [2, 3] },
             { price: setup.sl, label: 'SL', color: '#ef4444', fill: 'rgba(239, 68, 68, 0.18)', dash: [4, 3] },
         ];
 

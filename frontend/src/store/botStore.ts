@@ -47,13 +47,13 @@ export const sanitizeIndicatorSettings = (settings: IndicatorSettings): Indicato
         macdSignal: Math.max(1, Math.floor(Number(settings.macdSignal) || 9)),
         utBotSensitivity: Number.isFinite(Number(settings.utBotSensitivity)) && Number(settings.utBotSensitivity) > 0
             ? Math.min(100, Math.max(0.1, Number(settings.utBotSensitivity)))
-            : 1,
-        utBotAtrPeriod: Math.min(200, Math.max(1, Math.floor(Number(settings.utBotAtrPeriod) || 10))),
+            : 1.5,
+        utBotAtrPeriod: Math.min(200, Math.max(1, Math.floor(Number(settings.utBotAtrPeriod) || 14))),
         utBotUseHeikinAshi: Boolean(settings.utBotUseHeikinAshi),
         utBotTrendFilter: Boolean(settings.utBotTrendFilter),
         utBotEmaPeriod: Math.min(500, Math.max(5, Math.floor(Number(settings.utBotEmaPeriod) || 50))),
         utBotChopFilter: Boolean(settings.utBotChopFilter),
-        utBotAdxThreshold: Math.min(60, Math.max(5, Math.floor(Number(settings.utBotAdxThreshold) || 20))),
+        utBotAdxThreshold: Math.min(60, Math.max(5, Math.floor(Number(settings.utBotAdxThreshold) || 22))),
         utBotCandleClose: Boolean(settings.utBotCandleClose),
         utBotCooldownBars: Math.min(20, Math.max(0, Number.isFinite(Number(settings.utBotCooldownBars)) ? Math.floor(Number(settings.utBotCooldownBars)) : 0)),
         utBotOrderFlowConfirm: Boolean(settings.utBotOrderFlowConfirm),
@@ -71,6 +71,13 @@ export const sanitizeIndicatorSettings = (settings: IndicatorSettings): Indicato
             ? Math.min(100, Math.max(0.5, Number(settings.utBotSlowSensitivity)))
             : 3,
         utBotSlowAtrPeriod: Math.min(200, Math.max(2, Math.floor(Number(settings.utBotSlowAtrPeriod) || 20))),
+        utBotClimaxGuard: settings.utBotClimaxGuard !== false,
+        utBotMaxExtensionAtr: Number.isFinite(Number(settings.utBotMaxExtensionAtr)) && Number(settings.utBotMaxExtensionAtr) > 0
+            ? Math.min(5, Math.max(0.8, Number(settings.utBotMaxExtensionAtr)))
+            : 1.6,
+        utBotPullbackEntry: settings.utBotPullbackEntry !== false,
+        utBotFakeoutReversal: settings.utBotFakeoutReversal !== false,
+        utBotPresetVersion: Number(settings.utBotPresetVersion) || 2,
         utBotShowHud: settings.utBotShowHud !== false,
         utBotEnableAlerts: Boolean(settings.utBotEnableAlerts),
         supertrendAtrPeriod: Math.max(1, Math.floor(Number(settings.supertrendAtrPeriod) || 10)),
@@ -112,6 +119,33 @@ export const sanitizeIndicatorSettings = (settings: IndicatorSettings): Indicato
     };
 };
 
+export const PRO_UT_BOT_DEFAULTS = {
+    utBotSensitivity: 1.5,
+    utBotAtrPeriod: 14,
+    utBotUseHeikinAshi: true,
+    utBotTrendFilter: false,
+    utBotEmaPeriod: 50,
+    utBotChopFilter: true,
+    utBotAdxThreshold: 22,
+    utBotCandleClose: false,
+    utBotCooldownBars: 2,
+    utBotOrderFlowConfirm: true,
+    utBotHideWeakSignals: false,
+    utBotShowSLTP: true,
+    utBotTp1RR: 1.5,
+    utBotTp2RR: 2.5,
+    utBotRetestSniper: true,
+    utBotDualMode: true,
+    utBotSlowSensitivity: 3,
+    utBotSlowAtrPeriod: 20,
+    utBotClimaxGuard: true,
+    utBotMaxExtensionAtr: 1.6,
+    utBotPullbackEntry: true,
+    utBotFakeoutReversal: true,
+    utBotPresetVersion: 2,
+    utBotShowHud: true,
+    utBotEnableAlerts: false,
+};
 export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
         showEMA: false,
         showBB: true,
@@ -149,26 +183,7 @@ export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
         enableTrendFinderVolumeFilter: false,
         trendFinderVolumeMultiplier: 1.5,
         hideLowConfidenceTrend: false,
-        utBotSensitivity: 1,
-        utBotAtrPeriod: 10,
-        utBotUseHeikinAshi: false,
-        utBotTrendFilter: false,
-        utBotEmaPeriod: 50,
-        utBotChopFilter: false,
-        utBotAdxThreshold: 20,
-        utBotCandleClose: false,
-        utBotCooldownBars: 0,
-        utBotOrderFlowConfirm: false,
-        utBotHideWeakSignals: false,
-        utBotShowSLTP: false,
-        utBotTp1RR: 1.5,
-        utBotTp2RR: 2.5,
-        utBotRetestSniper: false,
-        utBotDualMode: false,
-        utBotSlowSensitivity: 3,
-        utBotSlowAtrPeriod: 20,
-        utBotShowHud: true,
-        utBotEnableAlerts: false,
+        ...PRO_UT_BOT_DEFAULTS,
         sessionA: { show: true, name: 'New York', session: '1300-2200', color: '#ff5d00', showRange: true, showTrendline: false, showMean: false, showVWAP: false, showMaxMin: false },
         sessionB: { show: true, name: 'London', session: '0700-1600', color: '#2157f3', showRange: true, showTrendline: false, showMean: false, showVWAP: false, showMaxMin: false },
         sessionC: { show: true, name: 'Tokyo', session: '0000-0900', color: '#e91e63', showRange: true, showTrendline: false, showMean: false, showVWAP: false, showMaxMin: false },
@@ -465,20 +480,30 @@ export const useBotStore = create<BotState>()(
             onRehydrateStorage: () => (state) => {
                 if (!state) return;
                 state.pendingUtBotSync = null;
+                const migrateUtBotPreset = (cfg: IndicatorSettings): IndicatorSettings => {
+                    if (!cfg.utBotPresetVersion || cfg.utBotPresetVersion < 2) {
+                        return { ...cfg, ...PRO_UT_BOT_DEFAULTS };
+                    }
+                    return cfg;
+                };
                 if (state.indicatorSettings) {
-                    state.indicatorSettings = sanitizeIndicatorSettings({
-                        ...DEFAULT_INDICATOR_SETTINGS,
-                        ...state.indicatorSettings,
-                    });
+                    state.indicatorSettings = sanitizeIndicatorSettings(
+                        migrateUtBotPreset({
+                            ...DEFAULT_INDICATOR_SETTINGS,
+                            ...state.indicatorSettings,
+                        })
+                    );
                 }
                 const sanitizedMap: Record<string, IndicatorSettings> = {};
                 const existingMap = state.indicatorSettingsByChartId || {};
                 for (const [chartId, cfg] of Object.entries(existingMap)) {
                     if (cfg) {
-                        sanitizedMap[chartId] = sanitizeIndicatorSettings({
-                            ...CLEAN_INDICATOR_SETTINGS,
-                            ...cfg,
-                        });
+                        sanitizedMap[chartId] = sanitizeIndicatorSettings(
+                            migrateUtBotPreset({
+                                ...CLEAN_INDICATOR_SETTINGS,
+                                ...cfg,
+                            })
+                        );
                     }
                 }
                 // Keep 'main' synced with indicatorSettings for backward compatibility

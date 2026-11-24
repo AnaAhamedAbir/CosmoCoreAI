@@ -74,6 +74,11 @@ export interface IndicatorSettings {
     utBotDualMode: boolean;
     utBotSlowSensitivity: number;
     utBotSlowAtrPeriod: number;
+    utBotClimaxGuard: boolean;
+    utBotMaxExtensionAtr: number;
+    utBotPullbackEntry: boolean;
+    utBotFakeoutReversal: boolean;
+    utBotPresetVersion?: number;
     utBotShowHud: boolean;
     utBotEnableAlerts: boolean;
     sessionA: SessionSettings;
@@ -1480,9 +1485,85 @@ export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({
 
                            {settings.showUTBot && (
                                <div className="flex flex-col gap-1.5 mt-2 pt-2 border-t border-gray-200/80 dark:border-white/10 pl-1 text-[10px]">
-                                   <div className="text-[9px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-400">
-                                       Pro Scalping Controls
+                                   <div className="flex items-center justify-between gap-1">
+                                       <span className="text-[9px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                                           Pro Scalping Controls
+                                       </span>
+                                       <button
+                                           type="button"
+                                           onClick={() => onSettingsChange({
+                                               ...settings,
+                                               utBotSensitivity: 1.5,
+                                               utBotAtrPeriod: 14,
+                                               utBotUseHeikinAshi: true,
+                                               utBotChopFilter: true,
+                                               utBotAdxThreshold: 22,
+                                               utBotCooldownBars: 2,
+                                               utBotOrderFlowConfirm: true,
+                                               utBotShowSLTP: true,
+                                               utBotTp1RR: 1.5,
+                                               utBotTp2RR: 2.5,
+                                               utBotRetestSniper: true,
+                                               utBotDualMode: true,
+                                               utBotSlowSensitivity: 3,
+                                               utBotSlowAtrPeriod: 20,
+                                               utBotClimaxGuard: true,
+                                               utBotMaxExtensionAtr: 1.6,
+                                               utBotPullbackEntry: true,
+                                               utBotFakeoutReversal: true,
+                                           })}
+                                           title="Apply Recommended Pro BTC/USDC Futures Scalping Preset"
+                                           className="px-1.5 py-0.5 rounded bg-purple-500/15 hover:bg-purple-500/25 text-purple-600 dark:text-purple-300 border border-purple-500/30 text-[8.5px] font-bold cursor-pointer transition-colors"
+                                       >
+                                           ⚡ Pro BTC Preset
+                                       </button>
                                    </div>
+
+                                   {/* Game-Changer 1: Climax Spike Guard */}
+                                   <div className="flex items-center justify-between gap-2">
+                                       <label className="flex items-center gap-1.5 cursor-pointer flex-1" title="Blocks buying the top / selling the bottom of huge climax expansion candles">
+                                           <input
+                                               type="checkbox"
+                                               checked={settings.utBotClimaxGuard !== false}
+                                               onChange={() => onSettingsChange({ ...settings, utBotClimaxGuard: settings.utBotClimaxGuard === false })}
+                                               className="w-3 h-3 rounded text-brand-primary cursor-pointer"
+                                           />
+                                           <span className="text-gray-700 dark:text-gray-300 font-semibold">Climax Spike Guard</span>
+                                       </label>
+                                       {settings.utBotClimaxGuard !== false && (
+                                           <div className="flex items-center gap-1 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded" title="Max candle ATR multiple before deferring entry for pullback">
+                                               <span className="text-[9px] text-gray-500">Max×ATR</span>
+                                               <BufferedNumberInput
+                                                   min={0.8} max={5}
+                                                   value={settings.utBotMaxExtensionAtr ?? 1.6}
+                                                   onChange={(v) => onSettingsChange({ ...settings, utBotMaxExtensionAtr: v })}
+                                                   className="w-8 bg-transparent text-right font-bold text-gray-800 dark:text-gray-200 focus:outline-none"
+                                               />
+                                           </div>
+                                       )}
+                                   </div>
+
+                                   {/* Game-Changer 2: Delayed Pullback (Dip Sniper) */}
+                                   <label className="flex items-center gap-1.5 cursor-pointer" title="Waits for the post-signal opposite pullback dip before firing DIP BUY / DIP SELL">
+                                       <input
+                                           type="checkbox"
+                                           checked={settings.utBotPullbackEntry !== false}
+                                           onChange={() => onSettingsChange({ ...settings, utBotPullbackEntry: settings.utBotPullbackEntry === false })}
+                                           className="w-3 h-3 rounded text-cyan-500 cursor-pointer"
+                                       />
+                                       <span className="text-gray-700 dark:text-gray-300 font-semibold">Delayed Pullback (Dip Entry)</span>
+                                   </label>
+
+                                   {/* Game-Changer 3: Liquidity Sweep Fakeout Reversal */}
+                                   <label className="flex items-center gap-1.5 cursor-pointer" title="Fades trapped stop-hunt breakouts in chop/exhaustion with SWEEP L / SWEEP S">
+                                       <input
+                                           type="checkbox"
+                                           checked={settings.utBotFakeoutReversal !== false}
+                                           onChange={() => onSettingsChange({ ...settings, utBotFakeoutReversal: settings.utBotFakeoutReversal === false })}
+                                           className="w-3 h-3 rounded text-purple-500 cursor-pointer"
+                                       />
+                                       <span className="text-gray-700 dark:text-gray-300 font-semibold">Sweep Fakeout Reversal</span>
+                                   </label>
 
                                    {/* 1. EMA Trend Filter */}
                                    <div className="flex items-center justify-between gap-2">

@@ -30,6 +30,8 @@ def start_forex_training_job(
     """
     Start a new Forex Auto-ML training job.
     """
+    from app.core.quotas import check_ml_training_access
+    check_ml_training_access(current_user)
     job_id = f"forex_train_{int(time.time() * 1000)}"
     
     # Ensure market_type is forex
@@ -136,23 +138,39 @@ def start_forex_collector(
     """
     Start the Forex Tick Data Collector script in the background.
     """
+    import re
     import subprocess
     import os
     import uuid
     from datetime import datetime
+    from app.core.quotas import check_ml_training_access
+
+    check_ml_training_access(current_user)
+
+    clean_symbol = (request.symbol or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9/_-]{3,20}", clean_symbol):
+        raise HTTPException(status_code=400, detail="Invalid symbol format")
+    if request.mode not in ("rows", "date", "live", "historical"):
+        raise HTTPException(status_code=400, detail="Invalid collector mode")
+    if not re.fullmatch(r"[A-Za-z0-9_]{1,10}", str(request.timeframe or "")):
+        raise HTTPException(status_code=400, detail="Invalid timeframe")
+    target_rows = max(100, min(int(request.target_rows), 5_000_000))
+    for dt_val in (request.start_date, request.end_date):
+        if dt_val and not re.fullmatch(r"\d{4}-\d{2}-\d{2}(T[\d:.-]+Z?)?", str(dt_val)):
+            raise HTTPException(status_code=400, detail="Invalid date format")
     
     job_id = f"forex_job_{uuid.uuid4().hex[:8]}"
     new_job = models.ModelTrainingJob(
         id=job_id,
         user_id=current_user.id,
-        symbol=request.symbol.upper(),
+        symbol=clean_symbol,
         timeframe="Tick",
         algorithm="Forex Data Collector",
         status=models.TrainingStatus.RUNNING,
         market_type="forex",
         progress=0.0,
-        config={"target_rows": request.target_rows, "dataset_type": "forex_collector", "mode": request.mode},
-        logs=[f"[{datetime.utcnow().strftime('%H:%M:%S')}] Started Forex Collector for {request.symbol} in {request.mode} mode"]
+        config={"target_rows": target_rows, "dataset_type": "forex_collector", "mode": request.mode},
+        logs=[f"[{datetime.utcnow().strftime('%H:%M:%S')}] Started Forex Collector for {clean_symbol} in {request.mode} mode"]
     )
     db.add(new_job)
     db.commit()
@@ -162,12 +180,12 @@ def start_forex_collector(
     script_path = os.path.join(os.getcwd(), "scripts", script_name)
     
     try:
-        cmd = ["python", script_path, "--symbol", request.symbol.upper(), "--target", str(request.target_rows), "--job_id", job_id, "--mode", request.mode, "--timeframe", request.timeframe]
+        cmd = ["python", script_path, "--symbol", clean_symbol, "--target", str(target_rows), "--job_id", job_id, "--mode", request.mode, "--timeframe", request.timeframe]
         if request.mode == 'date' and request.start_date and request.end_date:
-            logger.info(f"🚀 Starting Forex Collector for {request.symbol} from {request.start_date} to {request.end_date}")
+            logger.info(f"🚀 Starting Forex Collector for {clean_symbol} from {request.start_date} to {request.end_date}")
             cmd.extend(["--start_date", request.start_date, "--end_date", request.end_date])
         else:
-            logger.info(f"🚀 Starting Forex Collector for {request.symbol} for {request.target_rows} rows")
+            logger.info(f"🚀 Starting Forex Collector for {clean_symbol} for {target_rows} rows")
             
         subprocess.Popen(cmd)
         return new_job
@@ -191,34 +209,44 @@ async def upload_tickstory_csv(
     Upload a Tickstory CSV file and parse it in the background.
     """
     import os
+    import re
     import uuid
-    import subprocess
     from datetime import datetime
-    
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Only CSV files are allowed")
+    from app.core.quotas import check_ml_training_access
+    from app.core.storage_isolation import sanitize_filename, ensure_within_directory
+
+    check_ml_training_access(current_user)
+
+    clean_symbol = (symbol or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9/_-]{3,20}", clean_symbol):
+        raise HTTPException(status_code=400, detail="Invalid symbol format")
+
+    try:
+        safe_csv_name = sanitize_filename(file.filename or "", allowed_extensions=(".csv",))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid filename. Only CSV files are allowed")
 
     job_id = f"forex_job_{uuid.uuid4().hex[:8]}"
     new_job = models.ModelTrainingJob(
         id=job_id,
         user_id=current_user.id,
-        symbol=symbol.upper(),
+        symbol=clean_symbol,
         timeframe="Tick",
         algorithm="Tickstory CSV Parser",
         status=models.TrainingStatus.RUNNING,
         market_type="forex",
         progress=0.0,
         config={"dataset_type": "tickstory_upload"},
-        logs=[f"[{datetime.utcnow().strftime('%H:%M:%S')}] Receiving upload for {file.filename}..."]
+        logs=[f"[{datetime.utcnow().strftime('%H:%M:%S')}] Receiving upload for {safe_csv_name}..."]
     )
     db.add(new_job)
     db.commit()
     db.refresh(new_job)
 
-    # Save uploaded file to temp directory
+    # Save uploaded file strictly inside temp directory
     temp_dir = os.path.join(os.getcwd(), "data", "temp")
     os.makedirs(temp_dir, exist_ok=True)
-    temp_file_path = os.path.join(temp_dir, f"{job_id}_{file.filename}")
+    temp_file_path = ensure_within_directory(temp_dir, os.path.join(temp_dir, f"{job_id}_{safe_csv_name}"))
     
     try:
         # Stream the file to disk to avoid memory issues with large files
@@ -270,24 +298,27 @@ def list_forex_snapshots(
 @router.delete("/forex-snapshots/{filename}")
 def delete_forex_snapshot(
     filename: str,
-    current_user: models.User = Depends(deps.get_current_user),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
 ):
     """
-    Delete a downloaded forex snapshot .parquet file.
+    Delete a downloaded forex snapshot .parquet file (Owner/Superuser only).
     """
     import os
-    
-    if ".." in filename or "/" in filename or "\\" in filename:
+    from app.core.storage_isolation import sanitize_filename, ensure_within_directory
+
+    base_dir = os.path.join(os.getcwd(), "data", "raw", "forex_snapshots")
+    try:
+        safe_name = sanitize_filename(filename, allowed_extensions=(".parquet",))
+        file_path = ensure_within_directory(base_dir, os.path.join(base_dir, safe_name))
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid filename")
-        
-    file_path = os.path.join(os.getcwd(), "data", "raw", "forex_snapshots", filename)
     
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
         
     try:
         os.remove(file_path)
-        return {"status": "success", "message": f"Deleted {filename}"}
+        return {"status": "success", "message": f"Deleted {safe_name}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
 
@@ -336,21 +367,26 @@ def get_oanda_instruments(current_user: models.User = Depends(deps.get_current_u
 @router.delete("/dataset/{symbol}")
 def delete_forex_dataset(
     symbol: str, 
-    current_user: models.User = Depends(deps.get_current_user)
+    current_user: models.User = Depends(deps.get_current_active_superuser)
 ):
     """
-    Delete a stored CSV dataset for a given forex symbol to free up disk space.
+    Delete a stored CSV dataset for a given forex symbol to free up disk space (Owner/Superuser only).
     """
     import os
+    from app.core.storage_isolation import sanitize_identifier, ensure_within_directory
     
-    # Sanitize symbol (e.g. replace / with _)
-    clean_symbol = symbol.replace("/", "_")
-    file_path = os.path.join(os.getcwd(), "data", "forex", f"{clean_symbol}_data.csv")
+    # Sanitize symbol (e.g. replace / with _) and block traversal
+    try:
+        clean_symbol = sanitize_identifier(symbol.replace("/", "_"))
+        base_dir = os.path.join(os.getcwd(), "data", "forex")
+        file_path = ensure_within_directory(base_dir, os.path.join(base_dir, f"{clean_symbol}_data.csv"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid symbol")
     
     if os.path.exists(file_path):
         try:
             os.remove(file_path)
-            return {"status": "success", "message": f"Dataset for {symbol} deleted."}
+            return {"status": "success", "message": f"Dataset for {clean_symbol} deleted."}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error deleting file: {e}")
     else:
@@ -430,15 +466,18 @@ async def upload_l2_csv(
     current_user: models.User = Depends(deps.get_current_user)
 ):
     """Upload a new L2 orderbook CSV file."""
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Only CSV files are allowed.")
-    
-    file_path = os.path.join(L2_DATA_DIR, file.filename)
+    from app.core.storage_isolation import sanitize_filename, ensure_within_directory
+
+    try:
+        safe_name = sanitize_filename(file.filename or "", allowed_extensions=(".csv",))
+        file_path = ensure_within_directory(L2_DATA_DIR, os.path.join(L2_DATA_DIR, safe_name))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     
     try:
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        return {"status": "success", "filename": file.filename}
+        return {"status": "success", "filename": safe_name}
     except Exception as e:
         logger.error(f"Error uploading L2 CSV: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {e}")
@@ -446,14 +485,21 @@ async def upload_l2_csv(
 @router.delete("/l2-snapshots/{filename}")
 def delete_l2_snapshot(
     filename: str,
-    current_user: models.User = Depends(deps.get_current_user)
+    current_user: models.User = Depends(deps.get_current_active_superuser)
 ):
-    """Delete an L2 orderbook CSV file."""
-    file_path = os.path.join(L2_DATA_DIR, filename)
+    """Delete an L2 orderbook CSV file (Owner/Superuser only)."""
+    from app.core.storage_isolation import sanitize_filename, ensure_within_directory
+
+    try:
+        safe_name = sanitize_filename(filename, allowed_extensions=(".csv",))
+        file_path = ensure_within_directory(L2_DATA_DIR, os.path.join(L2_DATA_DIR, safe_name))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
     if os.path.exists(file_path):
         try:
             os.remove(file_path)
-            return {"status": "success", "message": f"Deleted {filename}"}
+            return {"status": "success", "message": f"Deleted {safe_name}"}
         except Exception as e:
             logger.error(f"Error deleting L2 snapshot: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to delete file: {e}")
@@ -481,21 +527,25 @@ def list_tick_snapshots(
 @router.delete("/tick-snapshots/{filename}")
 def delete_tick_snapshot(
     filename: str,
-    current_user: models.User = Depends(deps.get_current_user),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
 ):
     """
-    Delete a downloaded tick data .parquet file.
+    Delete a downloaded tick data .parquet file (Owner/Superuser only).
     """
     import os
-    
-    if ".." in filename or "/" in filename or "\\" in filename:
+    from app.core.storage_isolation import sanitize_filename, ensure_within_directory
+
+    base_dir = os.path.join(os.getcwd(), "data", "raw", "forex_snapshots")
+    try:
+        safe_name = sanitize_filename(filename, allowed_extensions=(".parquet",))
+        file_path = ensure_within_directory(base_dir, os.path.join(base_dir, safe_name))
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid filename")
-        
-    file_path = os.path.join(os.getcwd(), "data", "raw", "forex_snapshots", filename)
+
     if os.path.exists(file_path):
         try:
             os.remove(file_path)
-            return {"status": "success", "message": f"Deleted {filename}"}
+            return {"status": "success", "message": f"Deleted {safe_name}"}
         except Exception as e:
             logger.error(f"Error deleting tick snapshot: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to delete file: {e}")

@@ -72,10 +72,7 @@ export default defineConfig(({ mode }) => {
         exclude: ['net'],
       }),
     ],
-    define: {
-      'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
-    },
+    // Never bake server API keys (e.g. GEMINI_API_KEY) into the public client JS bundle.
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),

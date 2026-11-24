@@ -65,7 +65,10 @@ def generate_param_config(key, default_val):
     }
 
 @router.post("/upload")
-async def upload_strategy(file: UploadFile = File(...), current_user: models.User = Depends(deps.get_current_user)):
+async def upload_strategy(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
+):
     try:
         safe_filename = sanitize_filename(file.filename or "", allowed_extensions=(".py",))
     except ValueError as exc:
@@ -184,6 +187,11 @@ class StrategyConfig(BaseModel):
     indicator: str  # 'SMA', 'RSI', 'EMA'
     params: dict  # {'period': 14, 'fast': 10, ...}
 
+_ALLOWED_BUILDER_INDICATORS = {
+    "SMA", "EMA", "WMA", "RSI", "MACD", "ATR", "CCI", "ROC", "Momentum", "Stochastic", "BollingerBands"
+}
+_ALLOWED_BUILDER_TYPES = {"crossover", "oscillator", "signal"}
+
 @router.post("/builder")
 async def build_strategy(config: StrategyConfig, current_user: models.User = Depends(deps.get_current_user)):
     """
@@ -193,6 +201,21 @@ async def build_strategy(config: StrategyConfig, current_user: models.User = Dep
         clean_name = sanitize_identifier(config.name.replace(" ", ""))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    if not clean_name.isidentifier():
+        raise HTTPException(status_code=400, detail="Strategy name must be a valid identifier")
+    if config.indicator not in _ALLOWED_BUILDER_INDICATORS:
+        raise HTTPException(status_code=400, detail=f"Unsupported indicator '{config.indicator}'")
+    if config.type not in _ALLOWED_BUILDER_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported strategy type '{config.type}'")
+
+    sanitized_params = {}
+    for k, v in (config.params or {}).items():
+        if not isinstance(k, str) or not k.isidentifier() or k.startswith("_"):
+            raise HTTPException(status_code=400, detail=f"Invalid parameter name: '{k}'")
+        if not isinstance(v, (int, float, bool)):
+            raise HTTPException(status_code=400, detail=f"Parameter '{k}' must be numeric or boolean")
+        sanitized_params[k] = v
+
     filename = f"{clean_name}.py"
     user_dir = get_user_scoped_dir(UPLOAD_DIR, current_user.id)
     file_path = ensure_within_directory(user_dir, os.path.join(user_dir, filename))
@@ -203,15 +226,15 @@ from app.strategies.base_strategy import BaseStrategy
 
 class {clean_name}(BaseStrategy):
     '''
-    Auto-generated Strategy: {config.name}
+    Auto-generated Strategy: {clean_name}
     Type: {config.type.title()} | Indicator: {config.indicator}
     '''
     params = ("""
     
     # প্যারামস টিপল তৈরি
-    for k, v in config.params.items():
-        code += f"('{k}', {v}), "
-    code += ")\\n\\n"
+    for k, v in sanitized_params.items():
+        code += f"({k!r}, {v!r}), "
+    code += ")\n\n"
 
     # __init__ এবং next লজিক
     code += "    def __init__(self):\\n"

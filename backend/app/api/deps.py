@@ -29,6 +29,10 @@ def get_current_user(
         payload = security.verify_token(token)
         if payload is None:
             raise credentials_exception
+        # Reject refresh and password-reset tokens when used as Bearer access tokens
+        token_type = payload.get("type")
+        if token_type is not None and token_type != "access":
+            raise credentials_exception
         email: str = payload.get("sub")
         if email is None:
             raise credentials_exception

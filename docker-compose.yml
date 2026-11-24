@@ -8,7 +8,9 @@ services:
     volumes:
       - ./backend:/app
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"  # Localhost-only; never expose raw backend port publicly on VPS
+    security_opt:
+      - no-new-privileges:true
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
@@ -38,7 +40,10 @@ services:
     command: celery -A app.core.celery_app worker -Q celery --loglevel=warning --concurrency=2 --max-tasks-per-child=50 --max-memory-per-child=200000
     volumes:
       - ./backend:/app
-      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for log monitoring
+      # NOTE: /var/run/docker.sock intentionally NOT mounted — mounting the Docker socket
+      # inside a worker allows container escape to full VPS host root access.
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - db
       - redis
@@ -67,6 +72,8 @@ services:
     command: celery -A app.core.celery_app worker -Q heavy --loglevel=warning --concurrency=1 --max-tasks-per-child=1
     volumes:
       - ./backend:/app
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - db
       - redis
@@ -93,6 +100,8 @@ services:
     command: celery -A app.core.celery_app beat --loglevel=warning
     volumes:
       - ./backend:/app
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - redis
       - db
@@ -114,6 +123,8 @@ services:
     command: python scripts/telegram_master_bot.py
     volumes:
       - ./backend:/app
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - db
       - redis
@@ -140,6 +151,8 @@ services:
     build: ./frontend
     container_name: cosmoquant_frontend
     restart: always
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./frontend:/app
       - /app/node_modules

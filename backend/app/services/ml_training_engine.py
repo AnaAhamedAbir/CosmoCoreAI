@@ -1027,20 +1027,13 @@ def train_model_task(job_id: str, db: Session):
                     
             add_log(f"Successfully calculated {len(successful_indicators)} features.")
             
-            # --- CUSTOM INDICATORS ---
+            # --- CUSTOM INDICATORS (Arbitrary Python exec disabled for security) ---
             custom_indicators = config.get("custom_indicators", [])
-            for ind in custom_indicators:
-                code_snippet = ind.get("code")
-                if code_snippet:
-                    try:
-                        exec_locals = {"df": df, "pd": pd, "np": np, "config": config}
-                        exec(code_snippet, globals(), exec_locals)
-                        df = exec_locals.get("df", df)
-                        add_log(f"Successfully applied custom indicator: {ind.get('name')}")
-                    except Exception as e:
-                        add_log(f"⚠️ Failed to apply custom indicator '{ind.get('name')}': {e}")
+            if custom_indicators:
+                add_log("⚠️ Custom Python indicator execution is disabled for server security. Use safe Custom Features formulas instead.")
                         
-            # --- CUSTOM FEATURES (Feature Builder) ---
+            # --- CUSTOM FEATURES (Feature Builder — Safe AST Evaluator) ---
+            from app.core.safe_formula import safe_eval_formula
             custom_features = config.get("custom_features", [])
             for cf in custom_features:
                 cf_name = cf.get("name")
@@ -1048,7 +1041,7 @@ def train_model_task(job_id: str, db: Session):
                 if cf_name and cf_formula:
                     try:
                         # Safely evaluate and assign to the dataframe
-                        df[cf_name] = df.eval(cf_formula, engine='python')
+                        df[cf_name] = safe_eval_formula(df, cf_formula)
                         add_log(f"Successfully evaluated custom formula: {cf_name}")
                     except Exception as e:
                         add_log(f"⚠️ Failed to evaluate custom formula '{cf_name}': {e}")
@@ -1224,20 +1217,13 @@ def train_model_task(job_id: str, db: Session):
                     
             add_log(f"Successfully calculated {len(successful_indicators)} features.")
             
-            # --- CUSTOM INDICATORS ---
+            # --- CUSTOM INDICATORS (Arbitrary Python exec disabled for security) ---
             custom_indicators = config.get("custom_indicators", [])
-            for ind in custom_indicators:
-                code_snippet = ind.get("code")
-                if code_snippet:
-                    try:
-                        exec_locals = {"df": df, "pd": pd, "np": np, "config": config}
-                        exec(code_snippet, globals(), exec_locals)
-                        df = exec_locals.get("df", df)
-                        add_log(f"Successfully applied custom indicator: {ind.get('name')}")
-                    except Exception as e:
-                        add_log(f"⚠️ Failed to apply custom indicator '{ind.get('name')}': {e}")
+            if custom_indicators:
+                add_log("⚠️ Custom Python indicator execution is disabled for server security. Use safe Custom Features formulas instead.")
                         
-            # --- CUSTOM FEATURES (Feature Builder) ---
+            # --- CUSTOM FEATURES (Feature Builder — Safe AST Evaluator) ---
+            from app.core.safe_formula import safe_eval_formula
             custom_features = config.get("custom_features", [])
             for cf in custom_features:
                 cf_name = cf.get("name")
@@ -1245,7 +1231,7 @@ def train_model_task(job_id: str, db: Session):
                 if cf_name and cf_formula:
                     try:
                         # Safely evaluate and assign to the dataframe
-                        df[cf_name] = df.eval(cf_formula, engine='python')
+                        df[cf_name] = safe_eval_formula(df, cf_formula)
                         add_log(f"Successfully evaluated custom formula: {cf_name}")
                     except Exception as e:
                         add_log(f"⚠️ Failed to evaluate custom formula '{cf_name}': {e}")

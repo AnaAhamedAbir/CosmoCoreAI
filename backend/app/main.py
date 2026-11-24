@@ -41,9 +41,14 @@ from app.services.oanda_streamer import oanda_streamer # ✅ Import Oanda Stream
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+_is_prod_env = str(settings.ENVIRONMENT or "").strip().lower() in ("production", "prod")
+_expose_docs = bool(settings.ENABLE_API_DOCS) and not _is_prod_env
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    docs_url="/docs" if _expose_docs else None,
+    redoc_url="/redoc" if _expose_docs else None,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json" if _expose_docs else None,
     description="Developed by ABIR AHAMED",
     version="1.0.0"
 )
@@ -71,10 +76,11 @@ app.add_middleware(IPWhitelistMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-# ✅ Mount Prometheus Metrics Endpoint
-from prometheus_client import make_asgi_app
-metrics_app = make_asgi_app()
-app.mount("/metrics", metrics_app)
+# ✅ Mount Prometheus Metrics Endpoint (disabled publicly by default)
+if settings.ENABLE_METRICS and not _is_prod_env:
+    from prometheus_client import make_asgi_app
+    metrics_app = make_asgi_app()
+    app.mount("/metrics", metrics_app)
 
 # ✅ Global variable to hold references to background tasks
 running_tasks = set()
@@ -1159,7 +1165,7 @@ async def websocket_notifications(websocket: WebSocket, token: str = None):
         return
 
     payload = security.verify_token(token)
-    if not payload:
+    if not payload or (payload.get("type") is not None and payload.get("type") != "access"):
         await websocket.close(code=4001)
         return
 

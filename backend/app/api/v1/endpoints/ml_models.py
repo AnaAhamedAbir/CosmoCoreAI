@@ -224,7 +224,7 @@ async def create_custom_model(
     file: UploadFile = File(...),
     metadata_file: UploadFile = File(None),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_user),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
 ) -> Any:
     """
     Create a new custom ML model and upload its first version.
@@ -292,7 +292,7 @@ async def create_custom_model(
 async def upload_model_folder(
     files: List[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_user),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
 ) -> Any:
     """
     Upload an entire model folder directly.
@@ -338,7 +338,7 @@ async def upload_new_version(
     file: UploadFile = File(...),
     metadata_file: UploadFile = File(None),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_user),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
 ) -> Any:
     """
     Upload a new version for an existing model.

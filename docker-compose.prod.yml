@@ -10,6 +10,8 @@ services:
     image: nginx:alpine
     container_name: cosmoquant_nginx
     restart: always
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "80:80"
       - "443:443"
@@ -26,6 +28,8 @@ services:
     environment:
       - ENVIRONMENT=production
       - TRUST_PROXY_HEADERS=true
+      - ENABLE_API_DOCS=false
+      - ENABLE_METRICS=false
 
   frontend:
     ports: !reset []

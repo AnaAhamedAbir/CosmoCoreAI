@@ -254,7 +254,11 @@ def disable_2fa(
     return {"message": "Two-Factor Authentication disabled", "is_2fa_enabled": False}
 
 
-@router.post("/refresh-token", response_model=schemas.Token)
+@router.post(
+    "/refresh-token",
+    response_model=schemas.Token,
+    dependencies=[Depends(rate_limit_by_ip("auth_refresh", max_requests=30, window_seconds=60))],
+)
 def refresh_access_token(token_data: dict, db: Session = Depends(deps.get_db)):
     refresh_token = token_data.get("refresh_token")
     if not refresh_token:
@@ -263,6 +267,10 @@ def refresh_access_token(token_data: dict, db: Session = Depends(deps.get_db)):
     payload = security.verify_token(refresh_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    token_type = payload.get("type")
+    if token_type is not None and token_type != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid token type for refresh")
 
     email = payload.get("sub")
     user = crud.get_user_by_email(db, email=email)
@@ -285,12 +293,13 @@ def refresh_access_token(token_data: dict, db: Session = Depends(deps.get_db)):
     dependencies=[Depends(rate_limit_by_ip("auth_forgot_password", max_requests=5, window_seconds=300))],
 )
 async def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depends(deps.get_db)):
+    import uuid
     user = crud.get_user_by_email(db, email=request.email.strip().lower())
     if not user:
         return {"message": "If the email exists, a reset link has been sent."}
 
     reset_token = security.create_token(
-        data={"sub": user.email, "type": "reset"},
+        data={"sub": user.email, "type": "reset", "jti": uuid.uuid4().hex},
         expires_delta=timedelta(minutes=15),
     )
 
@@ -299,16 +308,38 @@ async def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = 
     return {"message": "If the email exists, a reset link has been sent."}
 
 
-@router.post("/reset-password")
+@router.post(
+    "/reset-password",
+    dependencies=[Depends(rate_limit_by_ip("auth_reset_password", max_requests=10, window_seconds=300))],
+)
 def reset_password(request: schemas.ResetPasswordRequest, db: Session = Depends(deps.get_db)):
+    import hashlib
     payload = security.verify_token(request.token)
     if not payload or payload.get("type") != "reset":
         raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    # Enforce single-use reset token via Redis replay cache
+    token_id = payload.get("jti") or hashlib.sha256(request.token.encode("utf-8")).hexdigest()
+    used_key = f"used_reset_token:{token_id}"
+    try:
+        r = utils.get_redis_client()
+        if r.get(used_key):
+            raise HTTPException(status_code=400, detail="Reset token has already been used")
+    except HTTPException:
+        raise
+    except Exception:
+        r = None
 
     email = payload.get("sub")
     user = crud.update_user_password(db, email, request.new_password)
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if r is not None:
+        try:
+            r.set(used_key, "1", ex=900)
+        except Exception:
+            pass
 
     return {"message": "Password has been reset successfully. Please login with new password."}

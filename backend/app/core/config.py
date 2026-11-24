@@ -13,7 +13,10 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"  # "development" | "staging" | "production"
     FRONTEND_URL: str = "http://localhost:2026"
     TRUST_PROXY_HEADERS: bool = True
+    TRUST_CLOUDFLARE_HEADER: bool = False  # Enable ONLY after locking port 80/443 strictly to Cloudflare IPs
     REQUIRE_EMAIL_VERIFICATION: bool = False
+    ENABLE_API_DOCS: bool = False  # Keep Swagger/OpenAPI disabled by default to hide endpoint map
+    ENABLE_METRICS: bool = False   # Keep Prometheus /metrics disabled publicly by default
 
     # Sole Owner Bootstrap (set via .env in production)
     OWNER_EMAIL: Optional[str] = None

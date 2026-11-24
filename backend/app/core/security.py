@@ -21,10 +21,14 @@ def create_token(data: dict, expires_delta: timedelta) -> str:
     return encoded_jwt
 
 def create_access_token(data: dict) -> str:
-    return create_token(data, timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    payload = data.copy()
+    payload.setdefault("type", "access")
+    return create_token(payload, timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
 
 def create_refresh_token(data: dict) -> str:
-    return create_token(data, timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS))
+    payload = data.copy()
+    payload["type"] = "refresh"
+    return create_token(payload, timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS))
 
 def verify_token(token: str) -> Optional[dict]:
     try:

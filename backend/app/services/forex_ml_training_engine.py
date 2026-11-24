@@ -94,18 +94,10 @@ class ForexMLTrainingEngine:
                 df.ta.macd(fast=12, slow=26, signal=9, append=True)
                 df.ta.bbands(length=20, append=True)
                 
-            # --- CUSTOM INDICATORS ---
+            # --- CUSTOM INDICATORS (Arbitrary Python exec disabled for security) ---
             custom_indicators = self.job.config.get("custom_indicators", [])
-            for ind in custom_indicators:
-                code_snippet = ind.get("code")
-                if code_snippet:
-                    try:
-                        exec_locals = {"df": df, "pd": pd, "np": np, "config": self.job.config}
-                        exec(code_snippet, globals(), exec_locals)
-                        df = exec_locals.get("df", df)
-                        self._log(f"Successfully applied custom indicator: {ind.get('name')}")
-                    except Exception as e:
-                        self._log(f"⚠️ Failed to apply custom indicator '{ind.get('name')}': {e}")
+            if custom_indicators:
+                self._log("⚠️ Custom Python indicator execution is disabled for server security.")
                         
             df.dropna(inplace=True)
             self.job.progress = 30.0

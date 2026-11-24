@@ -125,20 +125,22 @@ def validate_custom_formula(formula: str) -> Dict[str, Any]:
     try:
         # Pre-populate some dummy columns if they don't exist so the formula doesn't break instantly
         # Just a basic safety net for the validation step
+        from app.core.safe_formula import safe_eval_formula, _SAFE_FUNCS, _FORBIDDEN_NAMES
         import re
+
         # Find all words that look like variables
         words = re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', formula)
-        # Exclude math keywords
-        keywords = {'math', 'np', 'log', 'exp', 'sin', 'cos', 'tan', 'sqrt', 'abs'}
-        
+        keywords = set(_SAFE_FUNCS.keys())
+
         for w in words:
+            if w.startswith("_") or w in _FORBIDDEN_NAMES:
+                raise ValueError(f"Disallowed identifier in formula: '{w}'")
             if w not in df.columns and w not in keywords:
                 # Use ones instead of random data for validation to prevent false variance
                 df[w] = np.ones(len(df))
-                
-        # Evaluate using pandas
-        # Allowing engine='python' gives maximum flexibility for local functions
-        result = df.eval(formula, engine='python')
+
+        # Safely evaluate using AST-restricted math evaluator (blocks arbitrary Python execution)
+        result = safe_eval_formula(df, formula)
         
         return {
             "valid": True,

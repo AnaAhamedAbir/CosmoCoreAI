@@ -140,9 +140,17 @@ async def get_crypto_news():
     from app.services.news_service import news_service 
     return await news_service.fetch_news()
 
-@router.post("/test-connection")
-async def test_exchange_connection(request: ConnectionTestRequest):
-    """Test validity of API keys"""
+from app.core.rate_limiter import rate_limit_by_ip as _trading_rate_limit
+
+@router.post(
+    "/test-connection",
+    dependencies=[Depends(_trading_rate_limit("trading_test_conn", max_requests=10, window_seconds=60))],
+)
+async def test_exchange_connection(
+    request: ConnectionTestRequest,
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """Test validity of API keys (authenticated & rate-limited)"""
     exchange_class = getattr(ccxt, request.exchange_id, None)
     if not exchange_class:
         raise HTTPException(status_code=400, detail="Unsupported exchange")

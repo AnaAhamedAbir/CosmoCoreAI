@@ -1027,18 +1027,24 @@ class BacktestEngine:
         # ১. ম্যাপ থেকে চেক করা (স্ট্যান্ডার্ড স্ট্র্যাটেজি)
         strategy_class = STRATEGY_MAP.get(strategy_name)
         
-        # ২. ফাইল থেকে লোড করা (কাস্টম স্ট্র্যাটেজি)
+        # ২. ফাইল থেকে লোড করা (কাস্টম স্ট্র্যাটেজি — strict path traversal protection)
         if not strategy_class:
             try:
+                from app.core.storage_isolation import sanitize_identifier, ensure_within_directory
+
                 current_file_dir = os.path.dirname(os.path.abspath(__file__))
-                custom_strategies_dir = os.path.join(current_file_dir, '..', 'strategies', 'custom')
-                custom_strategies_dir = os.path.normpath(custom_strategies_dir)
+                custom_strategies_dir = os.path.normpath(os.path.join(current_file_dir, '..', 'strategies', 'custom'))
                 
-                file_name = f"{strategy_name}.py" if not strategy_name.endswith(".py") else strategy_name
-                file_path = os.path.join(custom_strategies_dir, file_name)
+                raw_stem = str(strategy_name).removesuffix(".py")
+                safe_stem = sanitize_identifier(raw_stem)
+                file_name = f"{safe_stem}.py"
+                file_path = ensure_within_directory(
+                    custom_strategies_dir,
+                    os.path.join(custom_strategies_dir, file_name),
+                )
                 
                 if os.path.exists(file_path):
-                    module_name = file_name.replace('.py', '')
+                    module_name = safe_stem
                     
                     # পুরোনো মডিউল ক্যাশ থেকে সরানো (রিলোড নিশ্চিত করতে)
                     if module_name in sys.modules: 

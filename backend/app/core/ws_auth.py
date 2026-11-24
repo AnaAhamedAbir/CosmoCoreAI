@@ -53,6 +53,11 @@ async def authenticate_websocket(
         await websocket.close(code=4001, reason="Invalid or expired token")
         return None
 
+    token_type = payload.get("type")
+    if token_type is not None and token_type != "access":
+        await websocket.close(code=4001, reason="Invalid token type")
+        return None
+
     user = None
     email = payload.get("sub")
     if email:

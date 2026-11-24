@@ -115,6 +115,16 @@ async def websocket_indicator_stream(websocket: WebSocket, symbol_param: str):
     import pandas_ta as ta  # noqa: F401 - registers df.ta accessor
     import ccxt.async_support as ccxt
     from app.strategies.helpers.ict_po3_tracker import ICTPowerOfThree
+    from app.core.ws_auth import authenticate_websocket
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = await authenticate_websocket(websocket, db)
+        if not user:
+            return
+    finally:
+        db.close()
 
     await websocket.accept()
     # Decode symbol e.g., BTC-USDT to BTC/USDT

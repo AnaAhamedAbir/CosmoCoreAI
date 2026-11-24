@@ -12,38 +12,61 @@ from app.services.exchange_pool import invalidate as invalidate_exchange_pool
 
 router = APIRouter()
 
+_ALLOWED_AVATAR_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+_MAX_AVATAR_BYTES = 5 * 1024 * 1024  # 5 MB
+
+def _is_valid_image_bytes(data: bytes) -> bool:
+    if len(data) < 12:
+        return False
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    if data.startswith(b"\xff\xd8\xff"):
+        return True
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return True
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return True
+    return False
+
 @router.post("/me/avatar", response_model=schemas.UserResponse)
 def upload_avatar(
     file: UploadFile = File(...),
     current_user: models.User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db)
 ):
-    # Validate file type
-    if not file.content_type.startswith("image/"):
+    from app.core.storage_isolation import ensure_within_directory
+
+    # Strict content-type & extension whitelist (blocks .html / .svg Stored XSS)
+    if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
-    
-    # Create avatar directory if not exists (redundant check but safe)
+    if file.content_type.lower() == "image/svg+xml":
+        raise HTTPException(status_code=400, detail="SVG avatars are not allowed")
+
+    file_extension = os.path.splitext(file.filename or "")[1].lower()
+    if file_extension not in _ALLOWED_AVATAR_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Unsupported image format. Use PNG, JPG, WEBP, or GIF.")
+
+    content = file.file.read(_MAX_AVATAR_BYTES + 1)
+    if len(content) > _MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=413, detail="Avatar image must be 5MB or smaller")
+    if not _is_valid_image_bytes(content):
+        raise HTTPException(status_code=400, detail="Invalid or corrupted image file")
+
     avatar_dir = os.path.join("static", "avatars")
-    if not os.path.exists(avatar_dir):
-        os.makedirs(avatar_dir)
-        
-    # Generate filename
-    file_extension = os.path.splitext(file.filename)[1]
-    filename = f"user_{current_user.id}{file_extension}"
-    file_path = os.path.join(avatar_dir, filename)
-    
-    # Save file
+    os.makedirs(avatar_dir, exist_ok=True)
+
+    filename = f"user_{int(current_user.id)}{file_extension}"
+    file_path = ensure_within_directory(avatar_dir, os.path.join(avatar_dir, filename))
+
     try:
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not upload file: {str(e)}")
-        
-    # Update user avatar URL
-    # Assuming the app is served from the root or handling /static routing
+
     avatar_url = f"/static/avatars/{filename}"
     current_user.avatar_url = avatar_url
-    
+
     db.commit()
     db.refresh(current_user)
     return current_user

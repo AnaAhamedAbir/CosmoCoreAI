@@ -357,6 +357,14 @@ def predict_signal(
     
     Returns: { signal, confidence, price, symbol, algorithm, timestamp }
     """
+    if not current_user.is_superuser:
+        owned_model = db.query(models.CustomMLModel).filter(
+            models.CustomMLModel.id == request.model_id,
+            models.CustomMLModel.user_id == current_user.id,
+        ).first()
+        if not owned_model:
+            raise HTTPException(status_code=404, detail="Model not found")
+
     from app.services.ml_predictor import predict
 
     try:
@@ -384,23 +392,31 @@ def start_l2_collector(
     """
     Start the L2 Orderbook Data Collector script in the background.
     """
+    import re
     import subprocess
     import os
     import uuid
     from datetime import datetime
+    from app.core.quotas import check_ml_training_access
+
+    check_ml_training_access(current_user)
+    clean_symbol = (request.symbol or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9/_:-]{3,25}", clean_symbol):
+        raise HTTPException(status_code=400, detail="Invalid symbol format")
+    target_rows = max(100, min(int(request.target_rows), 5_000_000))
     
     # Create a job to track progress
     job_id = f"l2_job_{uuid.uuid4().hex[:8]}"
     new_job = models.ModelTrainingJob(
         id=job_id,
         user_id=current_user.id,
-        symbol=request.symbol.upper(),
+        symbol=clean_symbol,
         timeframe="Tick",
         algorithm="L2 Data Collector",
         status=models.TrainingStatus.RUNNING,
         progress=0.0,
-        config={"target_rows": request.target_rows, "dataset_type": "l2_collector"},
-        logs=[f"[{datetime.utcnow().strftime('%H:%M:%S')}] Started L2 Collector for {request.symbol} with target {request.target_rows}"]
+        config={"target_rows": target_rows, "dataset_type": "l2_collector"},
+        logs=[f"[{datetime.utcnow().strftime('%H:%M:%S')}] Started L2 Collector for {clean_symbol} with target {target_rows}"]
     )
     db.add(new_job)
     db.commit()
@@ -411,7 +427,7 @@ def start_l2_collector(
     # Run the collector in a non-blocking subprocess
     try:
         subprocess.Popen(
-            ["python", script_path, "--symbol", request.symbol.lower(), "--target", str(request.target_rows), "--job_id", job_id],
+            ["python", script_path, "--symbol", clean_symbol.lower(), "--target", str(target_rows), "--job_id", job_id],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
@@ -445,25 +461,27 @@ def list_l2_snapshots(
 @router.delete("/l2-snapshots/{filename}")
 def delete_l2_snapshot(
     filename: str,
-    current_user: models.User = Depends(deps.get_current_user),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
 ):
     """
-    Delete a downloaded L2 snapshot .parquet file.
+    Delete a downloaded L2 snapshot .parquet file (Owner/Superuser only).
     """
     import os
-    
-    # Basic security check to prevent directory traversal
-    if ".." in filename or "/" in filename or "\\" in filename:
+    from app.core.storage_isolation import sanitize_filename, ensure_within_directory
+
+    base_dir = os.path.join(os.getcwd(), "data", "raw", "l2_snapshots")
+    try:
+        safe_name = sanitize_filename(filename, allowed_extensions=(".parquet",))
+        file_path = ensure_within_directory(base_dir, os.path.join(base_dir, safe_name))
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid filename")
-        
-    file_path = os.path.join(os.getcwd(), "data", "raw", "l2_snapshots", filename)
     
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
         
     try:
         os.remove(file_path)
-        return {"status": "success", "message": f"Deleted {filename}"}
+        return {"status": "success", "message": f"Deleted {safe_name}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
 
@@ -477,23 +495,37 @@ def start_hybrid_collector(
     """
     Start the Hybrid L2+Trades Data Collector script in the background.
     """
+    import re
     import subprocess
     import os
     import uuid
     from datetime import datetime
+    from app.core.quotas import check_ml_training_access
+
+    check_ml_training_access(current_user)
+    clean_symbol = (request.symbol or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9/_:-]{3,25}", clean_symbol):
+        raise HTTPException(status_code=400, detail="Invalid symbol format")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,20}", str(request.resolution or "")):
+        raise HTTPException(status_code=400, detail="Invalid resolution")
+    target_rows = max(100, min(int(request.target_rows), 5_000_000))
+    if request.trigger_type and not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", str(request.trigger_type)):
+        raise HTTPException(status_code=400, detail="Invalid trigger_type")
+    if request.schedule_time and not re.fullmatch(r"[0-9T:Z .-]{1,32}", str(request.schedule_time)):
+        raise HTTPException(status_code=400, detail="Invalid schedule_time")
     
     # Create a job to track progress
     job_id = f"hybrid_job_{uuid.uuid4().hex[:8]}"
     new_job = models.ModelTrainingJob(
         id=job_id,
         user_id=current_user.id,
-        symbol=request.symbol.upper(),
+        symbol=clean_symbol,
         timeframe="Tick",
         algorithm="Hybrid Data Collector",
         status=models.TrainingStatus.RUNNING,
         progress=0.0,
-        config={"target_rows": request.target_rows, "dataset_type": "hybrid_collector"},
-        logs=[f"[{datetime.utcnow().strftime('%H:%M:%S')}] Started Hybrid Collector for {request.symbol} with target {request.target_rows}"]
+        config={"target_rows": target_rows, "dataset_type": "hybrid_collector"},
+        logs=[f"[{datetime.utcnow().strftime('%H:%M:%S')}] Started Hybrid Collector for {clean_symbol} with target {target_rows}"]
     )
     db.add(new_job)
     db.commit()
@@ -503,12 +535,12 @@ def start_hybrid_collector(
     
     # Run the collector in a non-blocking subprocess
     try:
-        cmd = ["python", script_path, "--symbol", request.symbol.lower(), "--target", str(request.target_rows), "--job_id", job_id, "--resolution", request.resolution]
+        cmd = ["python", script_path, "--symbol", clean_symbol.lower(), "--target", str(target_rows), "--job_id", job_id, "--resolution", request.resolution]
         
         if request.trigger_type:
             cmd.extend(["--trigger_type", request.trigger_type])
         if request.trigger_value:
-            cmd.extend(["--trigger_value", str(request.trigger_value)])
+            cmd.extend(["--trigger_value", str(float(request.trigger_value))])
         if request.schedule_time:
             cmd.extend(["--schedule_time", request.schedule_time])
             
@@ -546,24 +578,27 @@ def list_hybrid_snapshots(
 @router.delete("/hybrid-snapshots/{filename}")
 def delete_hybrid_snapshot(
     filename: str,
-    current_user: models.User = Depends(deps.get_current_user),
+    current_user: models.User = Depends(deps.get_current_active_superuser),
 ):
     """
-    Delete a downloaded hybrid snapshot .parquet file.
+    Delete a downloaded hybrid snapshot .parquet file (Owner/Superuser only).
     """
     import os
-    
-    if ".." in filename or "/" in filename or "\\" in filename:
+    from app.core.storage_isolation import sanitize_filename, ensure_within_directory
+
+    base_dir = os.path.join(os.getcwd(), "data", "raw", "hybrid_snapshots")
+    try:
+        safe_name = sanitize_filename(filename, allowed_extensions=(".parquet",))
+        file_path = ensure_within_directory(base_dir, os.path.join(base_dir, safe_name))
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid filename")
-        
-    file_path = os.path.join(os.getcwd(), "data", "raw", "hybrid_snapshots", filename)
     
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
         
     try:
         os.remove(file_path)
-        return {"status": "success", "message": f"Deleted {filename}"}
+        return {"status": "success", "message": f"Deleted {safe_name}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
 

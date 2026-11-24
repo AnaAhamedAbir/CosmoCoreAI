@@ -93,9 +93,19 @@ def get_market_data(
     return formatted_data
 
 # ✅ 6. ফাইল আপলোড
+DATA_FEED_DIR = "app/data_feeds"
+os.makedirs(DATA_FEED_DIR, exist_ok=True)
+
 @router.post("/upload")
 async def upload_market_data(file: UploadFile = File(...), current_user: models.User = Depends(deps.get_current_user)):
-    file_location = f"{DATA_FEED_DIR}/{file.filename}"
+    from app.core.storage_isolation import sanitize_filename, ensure_within_directory
+
+    try:
+        safe_name = sanitize_filename(file.filename or "", allowed_extensions=(".csv", ".parquet"))
+        file_location = ensure_within_directory(DATA_FEED_DIR, os.path.join(DATA_FEED_DIR, safe_name))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     try:
         with open(file_location, "wb+") as file_object:
             shutil.copyfileobj(file.file, file_object)
@@ -103,7 +113,7 @@ async def upload_market_data(file: UploadFile = File(...), current_user: models.
         raise HTTPException(status_code=500, detail=f"Could not save data file: {str(e)}")
         
     return {
-        "filename": file.filename,
+        "filename": safe_name,
         "message": "Data file uploaded successfully."
     }
 

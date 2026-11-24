@@ -26,11 +26,16 @@ async def merge_historical_dataset(
     temp_file_path = None
     
     if file and file.filename:
-        if not file.filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Only CSV files are supported for historical DVC datasets.")
+        from app.core.storage_isolation import sanitize_filename, ensure_within_directory
+        try:
+            safe_csv_name = sanitize_filename(file.filename, allowed_extensions=(".csv",))
+            temp_file_path = ensure_within_directory(
+                UPLOAD_DIR,
+                os.path.join(UPLOAD_DIR, f"temp_{current_user.id}_{safe_csv_name}"),
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid filename. Only CSV files are supported for historical DVC datasets.")
         
-        # Save the uploaded file temporarily
-        temp_file_path = os.path.join(UPLOAD_DIR, f"temp_{current_user.id}_{file.filename}")
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 

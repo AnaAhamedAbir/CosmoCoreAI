@@ -14,30 +14,30 @@ const EconomicCalendarWidget: React.FC = () => {
     ];
 
     return (
-        <div className="rounded-2xl bg-white dark:bg-[#0A0A0A] border border-brand-border-light dark:border-[#1A1A1A] p-6 laptop:p-4 shadow-lg mb-6">
-            <div className="flex justify-between items-center mb-4">
+        <div className="rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 p-4 lg:p-5 shadow-sm dark:shadow-[0_8px_24px_rgba(0,0,0,0.45)]">
+            <div className="flex justify-between items-center mb-3.5">
                 <div className="flex items-center gap-2">
-                    <Calendar className="w-5 h-5 text-yellow-500" />
-                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">Economic Calendar</h2>
+                    <Calendar className="w-4 h-4 text-amber-500" />
+                    <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight">Economic Calendar</h2>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-1 bg-yellow-500/10 text-yellow-600 rounded-full">TODAY</span>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 rounded-md">TODAY</span>
             </div>
-            
-            <div className="space-y-3">
+
+            <div className="space-y-2">
                 {mockEvents.map(evt => (
-                    <div key={evt.id} className="p-3 rounded-xl bg-gray-50 dark:bg-[#000000]/50 border border-gray-100 dark:border-white/5 group hover:border-yellow-500/30 transition-colors">
-                        <div className="flex justify-between items-start mb-2">
+                    <div key={evt.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#0a101d] border border-slate-200/70 dark:border-white/10 group hover:border-amber-500/35 transition-colors">
+                        <div className="flex justify-between items-start mb-1.5">
                             <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-gray-500 w-16">{evt.time}</span>
-                                <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-slate-700 dark:text-gray-300">{evt.currency}</span>
-                                {evt.impact === 'high' && <AlertCircle className="w-3.5 h-3.5 text-red-500" />}
+                                <span className="text-[11px] font-mono font-bold text-slate-500 dark:text-gray-400">{evt.time}</span>
+                                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-gray-200">{evt.currency}</span>
+                                {evt.impact === 'high' && <AlertCircle className="w-3.5 h-3.5 text-rose-500" />}
                             </div>
                         </div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white mb-1 group-hover:text-yellow-600 dark:group-hover:text-yellow-500 transition-colors">{evt.event}</p>
-                        <div className="flex gap-4 text-xs text-gray-500">
-                            <span>Act: <span className="font-bold text-slate-700 dark:text-gray-300">{evt.actual || '--'}</span></span>
-                            <span>Frcst: <span className="font-bold">{evt.forecast}</span></span>
-                            <span>Prev: <span className="font-bold">{evt.previous}</span></span>
+                        <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white mb-1 group-hover:text-amber-600 dark:group-hover:text-amber-300 transition-colors">{evt.event}</p>
+                        <div className="flex gap-4 text-[11px] font-mono text-slate-500 dark:text-gray-400">
+                            <span>Act: <strong className="text-slate-700 dark:text-gray-200">{evt.actual || '--'}</strong></span>
+                            <span>Frcst: <strong>{evt.forecast}</strong></span>
+                            <span>Prev: <strong>{evt.previous}</strong></span>
                         </div>
                     </div>
                 ))}

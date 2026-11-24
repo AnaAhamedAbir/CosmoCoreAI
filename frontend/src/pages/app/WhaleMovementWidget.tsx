@@ -34,33 +34,44 @@ const WhaleMovementWidget: React.FC<{ limit?: number }> = ({ limit = 5 }) => {
     }, [limit]);
 
     return (
-        <div className="rounded-2xl bg-white dark:bg-[#0A0A0A] border border-brand-border-light dark:border-[#1A1A1A] p-6 shadow-lg staggered-fade-in">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                <span className="text-2xl">🐋</span> Recent Whale Movements
-            </h2>
+        <div className="rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 p-4 lg:p-5 shadow-sm dark:shadow-[0_8px_24px_rgba(0,0,0,0.45)]">
+            <div className="flex items-center justify-between mb-3.5">
+                <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                    <span className="text-lg">🐋</span> Whale Tape Alerts
+                </h2>
+                <span className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/25 text-blue-600 dark:text-cyan-300 text-[10px] font-mono font-bold">
+                    LIVE FEED
+                </span>
+            </div>
 
             {isLoading ? (
-                <div className="text-center py-4 text-gray-500">Scanning ocean...</div>
+                <div className="space-y-2 animate-pulse">
+                    {[1, 2, 3].map((i) => (
+                        <div key={i} className="h-12 rounded-xl bg-slate-100 dark:bg-[#0a101d]" />
+                    ))}
+                </div>
             ) : alerts.length === 0 ? (
-                <div className="text-center py-4 text-gray-500">No recent whale activity.</div>
+                <div className="rounded-xl bg-slate-50 dark:bg-[#0a101d]/70 border border-dashed border-slate-200 dark:border-white/10 text-center py-5 px-3 text-xs font-mono text-slate-500 dark:text-gray-400">
+                    No recent whale movements detected.
+                </div>
             ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                     {alerts.map((alert, index) => (
-                        <div key={index} className="flex justify-between items-center p-3 rounded-xl bg-gray-50 dark:bg-[#000000]/50 border border-transparent hover:border-brand-primary/30 transition-all">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg text-blue-600 dark:text-blue-400 font-bold text-xs">
+                        <div key={index} className="flex justify-between items-center p-2.5 rounded-xl bg-slate-50 dark:bg-[#0a101d] border border-slate-200/70 dark:border-white/10 hover:border-cyan-500/35 transition-colors">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="px-2 py-1 bg-cyan-500/15 border border-cyan-500/25 rounded-lg text-cyan-700 dark:text-cyan-300 font-mono font-black text-[10px] shrink-0">
                                     {alert.exchange.toUpperCase().substring(0, 3)}
                                 </div>
-                                <div>
-                                    <p className="font-bold text-sm text-slate-900 dark:text-white">{alert.symbol}</p>
-                                    <p className="text-xs text-gray-500">{new Date(alert.timestamp).toLocaleTimeString()}</p>
+                                <div className="min-w-0">
+                                    <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">{alert.symbol}</p>
+                                    <p className="text-[10.5px] font-mono text-slate-500 dark:text-gray-400">{new Date(alert.timestamp).toLocaleTimeString()}</p>
                                 </div>
                             </div>
-                            <div className="text-right">
-                                <p className="font-bold text-sm text-brand-primary">
+                            <div className="text-right font-mono shrink-0 ml-2">
+                                <p className="font-black text-xs sm:text-sm text-cyan-600 dark:text-cyan-300">
                                     {alert.volume.toFixed(2)} {alert.symbol.split('/')[0] || alert.symbol}
                                 </p>
-                                <p className="text-xs text-gray-500">
+                                <p className="text-[10.5px] text-slate-500 dark:text-gray-400">
                                     @ ${alert.price.toLocaleString()}
                                 </p>
                             </div>

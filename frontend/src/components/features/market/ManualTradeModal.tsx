@@ -2479,7 +2479,7 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
 
   const lastTriggerRef = React.useRef<number>(0);
 
-  // Update limit price when clickedPrice from chart changes via an explicit trigger
+  // Update limit price when clickedPrice from chart changes via an explicit trigger, or open modal directly when openTrigger fires
   React.useEffect(() => {
     // Only auto-open if a new valid trigger has been dispatched after mounting
     if (openTrigger && openTrigger > 0 && openTrigger !== lastTriggerRef.current) {
@@ -2490,9 +2490,9 @@ const ManualTradeModalBase: React.FC<ManualTradeModalProps> = ({
         setLimitPrice(clickedPrice.toString());
         const inferredSide: 'Buy' | 'Sell' = (effectiveCurrentPrice && clickedPrice < effectiveCurrentPrice) ? 'Buy' : 'Sell';
         handleSideChange(inferredSide);
-        setIsOpen(true); // Auto-open modal if closed
-        setIsMinimized(false);
       }
+      setIsOpen(true); // Auto-open modal whether triggered by top button or chart price click
+      setIsMinimized(false);
     } else if (!openTrigger || openTrigger === 0) {
       lastTriggerRef.current = 0;
     }

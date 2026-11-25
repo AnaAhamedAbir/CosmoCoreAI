@@ -390,25 +390,25 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         const chart = createChart(chartContainerRef.current, {
             layout: {
-                background: { type: 'solid', color: 'transparent' } as any,
-                textColor: isDark ? '#94a3b8' : '#475569',
+                background: { type: 'solid', color: '#000000' } as any,
+                textColor: '#94a3b8',
                 fontSize: 14, // larger price-scale tags (live price tag etc.)
             },
             grid: {
-                vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)' },
-                horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)' },
+                vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
+                horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
             },
             timeScale: {
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
             },
             rightPriceScale: {
                 visible: true,
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
                 scaleMargins: { top: 0.1, bottom: 0.2 }, // Leave bottom 20% for RSI
             },
             leftPriceScale: {
                 visible: false,
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
                 scaleMargins: { top: 0.8, bottom: 0 }, // RSI takes bottom 20%
             },
             handleScroll: {
@@ -1035,25 +1035,26 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         };
     }, [symbol, interval, exchange, chartId]);
 
-    // Dynamically apply theme changes to chart layout & indicator colors
+    // Dynamically apply theme changes to chart layout & indicator colors (chart canvas stays deep black #000000)
     useEffect(() => {
         if (!chartRef.current) return;
         chartRef.current.applyOptions({
             layout: {
-                textColor: isDark ? '#94a3b8' : '#475569',
+                background: { type: 'solid', color: '#000000' } as any,
+                textColor: '#94a3b8',
             },
             grid: {
-                vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)' },
-                horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)' },
+                vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
+                horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
             },
             timeScale: {
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
             },
             rightPriceScale: {
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
             },
             leftPriceScale: {
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
             },
         });
         if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.applyOptions({ color: isDark ? '#22c55e' : '#16a34a' });
@@ -3688,9 +3689,9 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     }, [botStatus]);
 
     return (
-        <div className="w-full h-full flex flex-col absolute inset-0">
-            <div className="flex-1 relative">
-                <div ref={chartContainerRef} className="w-full h-full absolute inset-0 z-0 touch-none select-none" />
+        <div className="w-full h-full flex flex-col absolute inset-0 bg-[#000000]">
+            <div className="flex-1 relative bg-[#000000]">
+                <div ref={chartContainerRef} className="w-full h-full absolute inset-0 z-0 touch-none select-none bg-[#000000]" />
                 <CandlestickTooltip candle={tooltipData} position={tooltipPos} chartContainerRef={chartContainerRef} />
                 {showCrosshairAIPredict && (
                     <button
@@ -5176,7 +5177,7 @@ const OrderFlowChartPanel = React.memo<{
                     )}
                 </div>
             </div>
-            <div className="flex-1 relative min-h-0">
+            <div className="flex-1 relative min-h-0 bg-[#000000]">
                 {isTradingViewMode ? (
                     <TradingViewWidget symbol={config.symbol} interval={config.interval} exchange={config.exchange} />
                 ) : (
@@ -6124,8 +6125,11 @@ const OrderFlowHeatmap: React.FC = () => {
                     <div className="flex items-center gap-1.5 shrink-0">
                         <button
                             type="button"
-                            onClick={() => setManualTradeTrigger(Date.now())}
-                            className="px-2 py-1 rounded-lg bg-cyan-500 text-slate-950 text-[10px] font-mono font-black uppercase"
+                            onClick={() => {
+                                setManualTradePrice(null);
+                                setManualTradeTrigger(Date.now());
+                            }}
+                            className="px-2 py-1 rounded-lg bg-cyan-500 text-slate-950 text-[10px] font-mono font-black uppercase cursor-pointer"
                         >
                             ⚡ Trade
                         </button>
@@ -6320,8 +6324,15 @@ const OrderFlowHeatmap: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-1.5">
                         <button
                             type="button"
-                            onClick={() => setManualTradeTrigger(Date.now())}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 text-white text-xs font-mono font-black uppercase tracking-wider shadow-[0_4px_14px_rgba(6,182,212,0.28)] cursor-pointer transition-all active:scale-95"
+                            onClick={() => {
+                                setManualTradePrice(null);
+                                setManualTradeTrigger(Date.now());
+                            }}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-black uppercase tracking-wider cursor-pointer transition-all active:scale-95 ${
+                                isManualTradeOpen
+                                    ? 'bg-cyan-500 text-slate-950 ring-2 ring-cyan-400/50 shadow-[0_4px_16px_rgba(6,182,212,0.4)]'
+                                    : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 text-white shadow-[0_4px_14px_rgba(6,182,212,0.28)]'
+                            }`}
                             title="Open Manual Trade & SmartPeg Terminal"
                         >
                             <Zap className="w-3.5 h-3.5 fill-current" />

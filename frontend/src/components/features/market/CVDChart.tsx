@@ -24,7 +24,7 @@ export const CVDChart: React.FC<CVDChartProps> = ({ mainChart, data }) => {
 
         const chart = createChart(chartContainerRef.current, {
             layout: {
-                background: { type: 'solid', color: 'transparent' } as any,
+                background: { type: 'solid', color: '#000000' } as any,
                 textColor: '#94a3b8',
             },
             grid: {

@@ -798,7 +798,13 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                     </div>
                                 </div>
                             )}
-                            {viewToRender === AppView.MARKET && <div className="border-t border-gray-100 dark:border-gray-800"><MarketTicker /></div>}
+                            {viewToRender === AppView.MARKET && (
+                                <div className="border-t border-gray-100 dark:border-gray-800">
+                                    <MarketTicker
+                                        onCoinClick={(coinSym) => useMarketStore.getState().setGlobalSymbol(`${coinSym}/USDT`)}
+                                    />
+                                </div>
+                            )}
                         </header>
                         <main className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden relative z-0 ${isPhoneMobileUI ? 'p-3' : 'p-8 laptop:p-3 laptop-h:p-2.5'}`}>
                             <Suspense fallback={<div className="flex items-center justify-center h-full min-h-[240px] text-slate-400 text-xs">Loading module...</div>}>

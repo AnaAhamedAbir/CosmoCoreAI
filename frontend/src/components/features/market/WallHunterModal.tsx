@@ -16,6 +16,7 @@ import { useDeviceProfile } from '../../../hooks/useDeviceProfile';
 import { beginFloatingModalDrag, endFloatingModalDrag } from '../../../hooks/useFloatingModalDrag';
 import { FloatingModalCyberFX } from '../../common/FloatingModalCyberFX';
 import { useBotStore } from '../../../store/botStore';
+import CoinLogo from '@/components/common/CoinLogo';
 
 const getDefaultProxySymbol = (nativeSym: string) =>
     nativeSym ? `${nativeSym.split('/')[0]}/USDT` : 'BTC/USDT';
@@ -2017,7 +2018,10 @@ export const WallHunterModal: FC<{ isOpen: boolean; onClose: () => void; symbol:
                                 <div className="grid grid-cols-3 gap-2">
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-mono text-gray-400 font-bold uppercase block">Target Asset</label>
-                                        <input className="w-full bg-[#0a101d] px-2.5 py-1.5 rounded-lg text-amber-300 font-mono font-bold outline-none border border-white/10 text-[12.5px]" value={form.symbol} readOnly />
+                                        <div className="flex items-center gap-2 w-full bg-[#0a101d] px-2.5 py-1.5 rounded-lg border border-white/10">
+                                            <CoinLogo symbol={form.symbol} className="h-4 w-4" />
+                                            <input className="w-full bg-transparent text-amber-300 font-mono font-bold outline-none text-[12.5px] min-w-0" value={form.symbol} readOnly />
+                                        </div>
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-mono text-gray-400 font-bold uppercase block">Exchange</label>

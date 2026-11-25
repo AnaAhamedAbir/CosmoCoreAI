@@ -5,6 +5,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useMarketStore } from '@/store/marketStore';
 import Card from '@/components/common/Card';
 import Button from '@/components/common/Button';
+import CoinLogo, { useSharedCoinLogoMap } from '@/components/common/CoinLogo';
 import { generateTrade, SUPPORTED_EXCHANGES, ExpandIcon, CollapseIcon, MOCK_CRYPTO_NEWS } from '@/constants';
 import type { Trade, Exchange, Timeframe } from '@/types';
 import SmartOrderForm from '@/components/features/trading/SmartOrderForm'; // Import SOR Component
@@ -361,15 +362,29 @@ const Market: React.FC = () => {
     const containerRef = useRef<HTMLDivElement>(null);
 
     const [isWatchlistOpen, setIsWatchlistOpen] = useState(false);
+    const [watchlistSearch, setWatchlistSearch] = useState('');
+    const coinLogoMap = useSharedCoinLogoMap();
     
-    // Derived Mock Watchlist Data based on activeMarket
+    // Derived Watchlist Data based on activeMarket
     const watchlistData = {
-        crypto: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT'],
+        crypto: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT', 'ADA/USDT', 'DOGE/USDT', 'AVAX/USDT', 'SUI/USDT', 'PEPE/USDT'],
         forex: ['EUR/USD', 'GBP/JPY', 'USD/JPY', 'AUD/USD'],
         stocks: ['AAPL', 'TSLA', 'NVDA', 'MSFT'],
         commodities: ['XAU/USD', 'USOIL', 'XAG/USD', 'NGAS']
     };
-    const currentWatchlist = watchlistData[activeMarket] || watchlistData.crypto;
+    const baseWatchlist = watchlistData[activeMarket] || watchlistData.crypto;
+    const cryptoExtraPairs = activeMarket === 'crypto'
+        ? Object.keys(coinLogoMap)
+            .filter((sym) => sym !== 'USDT' && sym !== 'USDC' && sym !== 'POL')
+            .map((sym) => `${sym}/USDT`)
+        : [];
+    const mergedWatchlist = activeMarket === 'crypto'
+        ? Array.from(new Set([...baseWatchlist, ...cryptoExtraPairs]))
+        : baseWatchlist;
+    const currentWatchlist = (watchlistSearch.trim()
+        ? mergedWatchlist.filter((p) => p.toLowerCase().includes(watchlistSearch.trim().toLowerCase()))
+        : mergedWatchlist
+    ).slice(0, 60);
 
     const activeExchange = exchanges.find(ex => ex.id === activeExchangeId);
 
@@ -773,8 +788,10 @@ const Market: React.FC = () => {
             <NewsTickerBar />
 
             {/* Market HUD */}
-            <div className="flex-shrink-0 staggered-fade-in bg-white dark:bg-[#0A0A0A] rounded-2xl border border-brand-border-light dark:border-[#1A1A1A] p-4 laptop:p-2.5 shadow-lg relative overflow-hidden">
-                <div className={`absolute top-0 right-0 w-96 h-full bg-gradient-to-l ${isPositive ? 'from-emerald-500/10' : 'from-rose-500/10'} to-transparent pointer-events-none`}></div>
+            <div className="flex-shrink-0 staggered-fade-in bg-white dark:bg-[#0A0A0A] rounded-2xl border border-brand-border-light dark:border-[#1A1A1A] p-4 laptop:p-2.5 shadow-lg relative z-30">
+                <div className={`absolute inset-0 rounded-2xl overflow-hidden pointer-events-none`}>
+                    <div className={`absolute top-0 right-0 w-96 h-full bg-gradient-to-l ${isPositive ? 'from-emerald-500/10' : 'from-rose-500/10'} to-transparent`}></div>
+                </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-6 laptop:gap-3 relative z-10">
                     {/* Left: Symbol & Selector */}
@@ -787,10 +804,16 @@ const Market: React.FC = () => {
                             <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/10 dark:group-hover:bg-white/5 transition-colors"></div>
                         </div>
                         <div>
-                            <div className="flex items-center gap-2 relative">
+                            <div className="flex items-center gap-2.5 relative">
+                                {activeMarket === 'crypto' && (
+                                    <CoinLogo symbol={activePair} className="h-7 w-7" />
+                                )}
                                 <h2 
                                     className="text-2xl laptop:text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2 cursor-pointer hover:text-brand-primary transition-colors"
-                                    onClick={() => setIsWatchlistOpen(!isWatchlistOpen)}
+                                    onClick={() => {
+                                        setIsWatchlistOpen(!isWatchlistOpen);
+                                        setWatchlistSearch('');
+                                    }}
                                 >
                                     {activePair}
                                     <span className="text-xs text-gray-500">▼</span>
@@ -801,24 +824,39 @@ const Market: React.FC = () => {
                                 
                                 {/* Watchlist Dropdown */}
                                 {isWatchlistOpen && (
-                                    <div className="absolute top-full left-0 mt-2 w-48 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                                        <div className="p-2 border-b border-gray-100 dark:border-white/5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                                            {activeMarket} Watchlist
+                                    <div className="absolute top-full left-0 mt-2 w-64 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                        <div className="p-2.5 border-b border-gray-100 dark:border-white/5 space-y-2">
+                                            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                                {activeMarket} Watchlist
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={watchlistSearch}
+                                                onChange={(e) => setWatchlistSearch(e.target.value)}
+                                                placeholder="Search coin (e.g. BTC, SOL, PEPE)..."
+                                                className="w-full bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-white placeholder-gray-400 focus:outline-none focus:border-brand-primary/50"
+                                            />
                                         </div>
-                                        <div className="max-h-60 overflow-y-auto">
-                                            {currentWatchlist.map(pair => (
+                                        <div className="max-h-64 overflow-y-auto">
+                                            {currentWatchlist.length > 0 ? currentWatchlist.map(pair => (
                                                 <div 
                                                     key={pair}
-                                                    className="px-4 py-3 hover:bg-brand-primary/10 cursor-pointer text-sm font-bold text-slate-800 dark:text-white transition-colors flex justify-between items-center"
+                                                    className="px-3.5 py-2.5 hover:bg-brand-primary/10 cursor-pointer text-sm font-bold text-slate-800 dark:text-white transition-colors flex justify-between items-center gap-2"
                                                     onClick={() => {
                                                         setActivePair(pair);
                                                         setIsWatchlistOpen(false);
+                                                        setWatchlistSearch('');
                                                     }}
                                                 >
-                                                    {pair}
-                                                    {activePair === pair && <span className="w-2 h-2 rounded-full bg-brand-primary"></span>}
+                                                    <span className="flex items-center gap-2.5 min-w-0">
+                                                        {activeMarket === 'crypto' && <CoinLogo symbol={pair} className="h-5 w-5" />}
+                                                        <span className="truncate">{pair}</span>
+                                                    </span>
+                                                    {activePair === pair && <span className="w-2 h-2 rounded-full bg-brand-primary shrink-0"></span>}
                                                 </div>
-                                            ))}
+                                            )) : (
+                                                <div className="px-3.5 py-4 text-xs text-gray-400 text-center">No matching pairs</div>
+                                            )}
                                         </div>
                                     </div>
                                 )}

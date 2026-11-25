@@ -18,13 +18,74 @@ const BADGE_PALETTE = [
     'from-rose-500/30 to-pink-600/30 border-rose-400/40 text-rose-200',
 ];
 
+// Shared singleton CoinGecko logo cache across the entire SPA
+let sharedLogoMap: Record<string, string> = {};
+let logoFetchStarted = false;
+const logoSubscribers = new Set<(map: Record<string, string>) => void>();
+
+export const ensureCoinLogoMapLoaded = (): void => {
+    if (logoFetchStarted || typeof window === 'undefined') return;
+    logoFetchStarted = true;
+    fetch('/api/v1/market-data/coin-logos')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((payload) => {
+            if (payload && typeof payload.logos === 'object' && payload.logos) {
+                sharedLogoMap = payload.logos;
+                logoSubscribers.forEach((cb) => cb(sharedLogoMap));
+            }
+        })
+        .catch(() => {
+            // Allow future retry if initial request failed offline
+            logoFetchStarted = false;
+        });
+};
+
+export const useSharedCoinLogoMap = (): Record<string, string> => {
+    const [map, setMap] = useState<Record<string, string>>(() => sharedLogoMap);
+
+    useEffect(() => {
+        ensureCoinLogoMapLoaded();
+        if (Object.keys(sharedLogoMap).length > 0) {
+            setMap(sharedLogoMap);
+        }
+        const listener = (next: Record<string, string>) => setMap(next);
+        logoSubscribers.add(listener);
+        return () => {
+            logoSubscribers.delete(listener);
+        };
+    }, []);
+
+    return map;
+};
+
 export const normalizeCoinSymbol = (rawSymbol: string): string => {
-    const cleaned = String(rawSymbol || '')
+    let base = String(rawSymbol || '')
         .split('/')[0]
         .split(':')[0]
-        .trim()
-        .toLowerCase();
-    return SYMBOL_ALIAS[cleaned] || cleaned;
+        .trim();
+
+    // Strip lowercase "k" multiplier prefix (e.g., kPEPE, kSHIB) before uppercasing
+    if (/^k[A-Z0-9]{2,}/.test(base)) {
+        base = base.slice(1);
+    }
+
+    base = base.toUpperCase();
+
+    // Handle joined pair symbols like BTCUSDT, ETHUSDT when "/" is absent
+    if (base.length > 4 && (base.endsWith('USDT') || base.endsWith('USDC') || base.endsWith('BUSD'))) {
+        base = base.slice(0, -4);
+    }
+
+    // Strip Futures contract multiplier prefixes (e.g., 1000PEPE, 1000BONK, 1MBABYDOGE)
+    const multMatch = base.match(/^(?:1000000|100000|10000|1000|1M)([A-Z0-9]{2,})$/);
+    if (multMatch) {
+        base = multMatch[1];
+    }
+
+    if (base === 'XBT') base = 'BTC';
+
+    const lower = base.toLowerCase();
+    return SYMBOL_ALIAS[lower] || lower;
 };
 
 interface CoinLogoProps {
@@ -38,30 +99,28 @@ const CoinLogo: React.FC<CoinLogoProps> = ({
     logoUrl,
     className = 'h-5 w-5',
 }) => {
+    const sharedMap = useSharedCoinLogoMap();
     const baseLower = normalizeCoinSymbol(symbol);
-    const displayCode = String(symbol || '?')
-        .split('/')[0]
-        .split(':')[0]
-        .trim()
-        .toUpperCase()
-        .slice(0, 3);
+    const baseUpper = baseLower.toUpperCase();
+    const displayCode = baseUpper.slice(0, 3) || '?';
+    const resolvedRemoteUrl = logoUrl || sharedMap[baseUpper] || null;
 
     const candidates = useMemo(() => {
         const list: string[] = [];
         if (BUNDLED_COIN_SYMBOLS.has(baseLower)) {
             list.push(`/coins/${baseLower}.png`);
         }
-        if (logoUrl && !list.includes(logoUrl)) {
-            list.push(logoUrl);
+        if (resolvedRemoteUrl && !list.includes(resolvedRemoteUrl)) {
+            list.push(resolvedRemoteUrl);
         }
         return list;
-    }, [baseLower, logoUrl]);
+    }, [baseLower, resolvedRemoteUrl]);
 
     const [attemptIdx, setAttemptIdx] = useState(0);
 
     useEffect(() => {
         setAttemptIdx(0);
-    }, [baseLower, logoUrl]);
+    }, [baseLower, resolvedRemoteUrl]);
 
     const currentSrc = candidates[attemptIdx];
     const paletteClass = BADGE_PALETTE[

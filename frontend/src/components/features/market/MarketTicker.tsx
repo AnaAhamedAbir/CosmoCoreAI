@@ -78,6 +78,7 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
     const pendingCoinsRef = useRef<CoinTickerItem[] | null>(null);
     const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastFlushAtRef = useRef<number>(0);
+    const hasWsDataRef = useRef<boolean>(false);
 
     useEffect(() => {
         const handleVisibility = () => {
@@ -143,14 +144,16 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
         };
 
         const loadPublicOverview = async () => {
-            flushCoins(PUBLIC_SEED_COINS);
+            if (!hasWsDataRef.current) {
+                flushCoins(PUBLIC_SEED_COINS);
+            }
 
             // 1. Prefer CosmoQuantAI backend public overview (cached + zero browser CORS/429 risk)
             try {
                 const backendResp = await fetch('/api/v1/market-data/public-overview');
                 if (backendResp.ok) {
                     const data = await backendResp.json();
-                    if (!isUnmounted && Array.isArray(data?.coins) && data.coins.length > 0) {
+                    if (!isUnmounted && !hasWsDataRef.current && Array.isArray(data?.coins) && data.coins.length > 0) {
                         const mapped: CoinTickerItem[] = data.coins.map((item: any) => {
                             const sym = String(item.symbol || '').split('/')[0].toUpperCase();
                             return {
@@ -177,7 +180,7 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
                 const resp = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${symbolsParam}`);
                 if (!resp.ok) return;
                 const rows = await resp.json();
-                if (!Array.isArray(rows) || isUnmounted) return;
+                if (!Array.isArray(rows) || isUnmounted || hasWsDataRef.current) return;
                 const liveCoins: CoinTickerItem[] = rows
                     .map((row: any) => {
                         const symbol = String(row.symbol || '').replace('USDT', '').toUpperCase();
@@ -206,6 +209,10 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
                 }
                 return;
             }
+
+            // Immediately hydrate authenticated ticker too (e.g., Live Market page) instead of blocking on first WS tick
+            loadPublicOverview().catch(() => {});
+
             const wsUrl = await buildAuthenticatedWsUrl('/ws');
             if (isUnmounted) return;
 
@@ -220,6 +227,7 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
                     const message = JSON.parse(event.data);
 
                     if (message.type === 'market_overview' && Array.isArray(message.data)) {
+                        hasWsDataRef.current = true;
                         const newCoins: CoinTickerItem[] = message.data.map((item: any) => {
                             const symbol = String(item.symbol || '').split('/')[0].toUpperCase();
                             return {

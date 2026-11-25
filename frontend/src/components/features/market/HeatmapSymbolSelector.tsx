@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../../../services/api';
-import { Search, ChevronDown, Check, Activity, Zap } from 'lucide-react';
+import { Search, ChevronDown, Check, Activity } from 'lucide-react';
+import CoinLogo, { ensureCoinLogoMapLoaded } from '@/components/common/CoinLogo';
 
 export interface HeatmapSymbolSelectorProps {
     symbol: string;
@@ -82,28 +83,50 @@ export const HeatmapSymbolSelector: React.FC<HeatmapSymbolSelectorProps> = ({ sy
         fetchMarkets();
     }, [exchange]);
 
-    // Filtered markets
-    const filteredMarkets = useMemo(() => {
-        if (!searchQuery) return markets;
-        return markets.filter(m => m.toLowerCase().includes(searchQuery.toLowerCase()));
+    // Preload CoinGecko cached symbol -> logo map
+    useEffect(() => {
+        ensureCoinLogoMapLoaded();
+    }, []);
+
+    // Filtered markets (prioritize prefix matches and cap rendered rows for smooth search)
+    const { visibleMarkets, totalMatchingCount } = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        const matches = q
+            ? markets
+                .filter((m) => m.toLowerCase().includes(q))
+                .sort((a, b) => {
+                    const aStarts = a.toLowerCase().startsWith(q) ? 0 : 1;
+                    const bStarts = b.toLowerCase().startsWith(q) ? 0 : 1;
+                    return aStarts - bStarts || a.localeCompare(b);
+                })
+            : markets;
+        return {
+            visibleMarkets: matches.slice(0, 100),
+            totalMatchingCount: matches.length,
+        };
     }, [markets, searchQuery]);
 
     // Format Symbol visually
-    const renderSymbolDisplay = (sym: string, isSelected: boolean = false) => {
+    const renderSymbolDisplay = (sym: string, isSelected: boolean = false, showLogo: boolean = false) => {
         const isFutures = sym.includes(':');
         const displaySym = sym.replace(/:.*/, ''); // Hide the :USDT part for cleaner look but show badge
+        const logoNode = showLogo ? (
+            <CoinLogo symbol={displaySym} className={compact ? 'h-4 w-4' : 'h-5 w-5'} />
+        ) : null;
         
         if (!displaySym.includes('/')) return (
-            <div className="flex items-center gap-2">
-                <span className={`font-bold ${isSelected ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{displaySym}</span>
+            <div className="flex items-center gap-2 min-w-0">
+                {logoNode}
+                <span className={`font-bold truncate ${isSelected ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{displaySym}</span>
                 {isFutures && <span className="text-[8px] bg-brand-primary/20 text-brand-primary px-1 rounded font-black uppercase">FUT</span>}
             </div>
         );
 
         const [base, quote] = displaySym.split('/');
         return (
-            <div className="flex items-center gap-2">
-                <span className="flex items-baseline">
+            <div className="flex items-center gap-2 min-w-0">
+                {logoNode}
+                <span className="flex items-baseline truncate">
                     <span className={`font-black tracking-tight ${isSelected ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]' : 'text-slate-900 dark:text-white'}`}>{base}</span>
                     <span className={`text-[10px] ml-0.5 tracking-widest font-semibold ${isSelected ? 'text-white/70' : 'text-gray-400 dark:text-gray-500'}`}>/{quote}</span>
                 </span>
@@ -116,7 +139,9 @@ export const HeatmapSymbolSelector: React.FC<HeatmapSymbolSelectorProps> = ({ sy
         <div className="relative z-50" ref={dropdownRef}>
             {/* The Main Trigger Button */}
             <button
+                type="button"
                 onClick={() => {
+                    ensureCoinLogoMapLoaded();
                     setIsDropdownOpen(!isDropdownOpen);
                     setSearchQuery('');
                 }}
@@ -126,8 +151,8 @@ export const HeatmapSymbolSelector: React.FC<HeatmapSymbolSelectorProps> = ({ sy
                     }`}
             >
                 <div className={`flex items-center ${compact ? 'gap-2 min-w-0' : 'gap-3'}`}>
-                    <div className={`${compact ? 'w-6 h-6 rounded-md' : 'w-8 h-8 rounded-lg'} flex items-center justify-center shrink-0 transition-colors ${isDropdownOpen ? 'bg-gradient-to-br from-brand-primary to-purple-500 text-white shadow-inner shadow-white/20' : 'bg-gray-100 dark:bg-black/30 text-gray-500 dark:text-gray-400'}`}>
-                        <Zap size={compact ? 12 : 16} className={isDropdownOpen ? 'animate-pulse' : ''} />
+                    <div className={`${compact ? 'w-6 h-6 rounded-md' : 'w-8 h-8 rounded-lg'} flex items-center justify-center shrink-0 transition-colors ${isDropdownOpen ? 'bg-brand-primary/15 border border-brand-primary/40' : 'bg-gray-100 dark:bg-black/40 border border-gray-200/70 dark:border-white/10'}`}>
+                        <CoinLogo symbol={symbol} className={compact ? 'h-4 w-4' : 'h-5 w-5'} />
                     </div>
                     <div className="flex flex-col items-start leading-[1.1] min-w-0">
                         <span className={`${compact ? 'text-[8px]' : 'text-[9px]'} text-brand-primary/80 font-black uppercase tracking-[0.2em]`}>{exchange}</span>
@@ -160,6 +185,7 @@ export const HeatmapSymbolSelector: React.FC<HeatmapSymbolSelectorProps> = ({ sy
                             />
                             {searchQuery && (
                                 <button
+                                    type="button"
                                     className="mr-3 text-xs bg-gray-200 dark:bg-white/10 hover:bg-gray-300 dark:hover:bg-white/20 text-gray-500 dark:text-gray-300 rounded px-1.5 py-0.5"
                                     onClick={() => setSearchQuery('')}
                                 >
@@ -178,6 +204,7 @@ export const HeatmapSymbolSelector: React.FC<HeatmapSymbolSelectorProps> = ({ sy
                         <div className="space-y-1">
                             {exchanges.map(ex => (
                                 <button
+                                    type="button"
                                     key={ex}
                                     onClick={() => onExchangeChange(ex)}
                                     className={`w-full text-left font-bold capitalize transition-all relative overflow-hidden group ${compact ? 'px-2 py-1.5 rounded-lg text-[10.5px]' : 'px-3 py-2.5 rounded-xl text-xs'} ${exchange === ex
@@ -195,11 +222,11 @@ export const HeatmapSymbolSelector: React.FC<HeatmapSymbolSelectorProps> = ({ sy
                     {/* Right Panel: Trading Pair List */}
                     <div className={`flex-1 overflow-y-auto custom-scrollbar ${compact ? 'p-1.5' : 'p-2'} relative bg-white/50 dark:bg-transparent`}>
                         <div className={`text-gray-400/70 font-black uppercase tracking-[0.15em] flex justify-between items-center sticky top-0 bg-white/95 dark:bg-[#000000]/95 backdrop-blur z-10 rounded-t-lg mb-1 ${compact ? 'text-[8.5px] px-2 py-1' : 'text-[10px] px-3 py-2'}`}>
-                            <span>Trading Pairs <span className="text-gray-300 dark:text-gray-600 font-mono text-[9px]">({filteredMarkets.length})</span></span>
+                            <span>Trading Pairs <span className="text-gray-300 dark:text-gray-600 font-mono text-[9px]">({totalMatchingCount})</span></span>
                             {loadingMarkets && <Activity size={12} className="animate-spin text-brand-primary" />}
                         </div>
 
-                        {filteredMarkets.length === 0 ? (
+                        {visibleMarkets.length === 0 ? (
                             <div className={`flex flex-col items-center justify-center ${compact ? 'h-28' : 'h-48'} text-center px-4 animate-in fade-in duration-300`}>
                                 <Search size={compact ? 20 : 28} className="text-gray-200 dark:text-gray-700 mb-2" />
                                 <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
@@ -213,35 +240,41 @@ export const HeatmapSymbolSelector: React.FC<HeatmapSymbolSelectorProps> = ({ sy
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 gap-1 pb-2">
-                                {filteredMarkets.map((m, i) => {
+                                {visibleMarkets.map((m) => {
                                     const isSelected = symbol === m;
                                     return (
                                         <button
+                                            type="button"
                                             key={m}
                                             onClick={() => {
                                                 onSymbolChange(m);
                                                 setIsDropdownOpen(false);
                                             }}
-                                            className={`flex justify-between items-center font-mono transition-all duration-200 group ${compact ? 'px-2.5 py-1.5 rounded-lg text-xs' : 'px-4 py-3 rounded-xl text-sm'} ${isSelected
+                                            className={`flex justify-between items-center font-mono transition-all duration-200 group ${compact ? 'px-2.5 py-1.5 rounded-lg text-xs' : 'px-4 py-2.5 rounded-xl text-sm'} ${isSelected
                                                 ? 'bg-gradient-to-r from-brand-primary to-purple-600 text-white shadow-md shadow-brand-primary/20 scale-[0.98]'
                                                 : 'text-slate-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 hover:scale-[0.99]'
                                                 }`}
                                         >
-                                            <div className="flex items-center gap-2">
-                                                {renderSymbolDisplay(m, isSelected)}
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                {renderSymbolDisplay(m, isSelected, true)}
                                             </div>
                                             {isSelected ? (
-                                                <div className="bg-white/20 p-1 rounded-full backdrop-blur-sm">
+                                                <div className="bg-white/20 p-1 rounded-full backdrop-blur-sm shrink-0">
                                                     <Check size={compact ? 11 : 14} className="text-white drop-shadow-md" />
                                                 </div>
                                             ) : (
-                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-1 group-hover:translate-x-0">
+                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-1 group-hover:translate-x-0 shrink-0">
                                                     <span className="text-[9px] uppercase font-bold text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded-md">Select</span>
                                                 </div>
                                             )}
                                         </button>
                                     );
                                 })}
+                                {totalMatchingCount > visibleMarkets.length && (
+                                    <p className="text-[10px] font-mono text-center text-gray-400 py-2">
+                                        Showing {visibleMarkets.length} of {totalMatchingCount} pairs — type to filter
+                                    </p>
+                                )}
                             </div>
                         )}
                     </div>

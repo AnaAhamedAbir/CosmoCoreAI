@@ -4396,8 +4396,15 @@ type L2Event = {
     size: number;
 };
 
-const BUCKET_OPTIONS = [0, 10, 25, 50, 100, 500] as const;
-type BucketSize = typeof BUCKET_OPTIONS[number];
+const getAdaptiveBuckets = (refPrice: number): number[] => {
+    if (!Number.isFinite(refPrice) || refPrice <= 0) return [0, 10, 25, 50, 100, 500];
+    if (refPrice >= 10000) return [0, 5, 10, 25, 50, 100];
+    if (refPrice >= 500) return [0, 0.5, 1, 2.5, 5, 10];
+    if (refPrice >= 10) return [0, 0.05, 0.1, 0.25, 0.5, 1];
+    if (refPrice >= 1) return [0, 0.001, 0.005, 0.01, 0.05, 0.1];
+    if (refPrice >= 0.01) return [0, 0.0001, 0.0005, 0.001, 0.005, 0.01];
+    return [0, 0.0000001, 0.0000005, 0.000001, 0.000005];
+};
 
 // ── STEP 2: Depth Chart SVG Sub-component ─────────────────────────────────────
 const DepthChart: React.FC<{
@@ -4464,9 +4471,15 @@ const DepthChart: React.FC<{
     );
 };
 
-const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeThreshold: number }> = ({ bids, asks, maxTotal, volumeThreshold }) => {
+const OrderBook: React.FC<{
+    bids: any[];
+    asks: any[];
+    maxTotal: number;
+    volumeThreshold: number;
+    onPriceSelect?: (price: number, side?: 'buy' | 'sell') => void;
+}> = ({ bids, asks, maxTotal, volumeThreshold, onPriceSelect }) => {
     const [view, setView] = useState<'book' | 'depth'>('book');
-    const [bucket, setBucket] = useState<BucketSize>(0);
+    const [bucket, setBucket] = useState<number>(0);
     const [events, setEvents] = useState<L2Event[]>([]);
     const prevBidsRef = useRef<Map<number, number>>(new Map());
     const prevAsksRef = useRef<Map<number, number>>(new Map());
@@ -4474,6 +4487,20 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
     const eventIdRef = useRef(0);
 
     const isEmpty = bids.length === 0 && asks.length === 0;
+
+    const refMidPrice = useMemo(() => {
+        const b = bids.length > 0 ? Number(bids[0]?.price || 0) : 0;
+        const a = asks.length > 0 ? Number(asks[0]?.price || 0) : 0;
+        return b > 0 && a > 0 ? (b + a) / 2 : b || a || 0;
+    }, [bids, asks]);
+
+    const bucketOptions = useMemo(() => getAdaptiveBuckets(refMidPrice), [refMidPrice]);
+
+    useEffect(() => {
+        if (bucket !== 0 && !bucketOptions.includes(bucket)) {
+            setBucket(0);
+        }
+    }, [bucket, bucketOptions]);
 
     const formatPrice = (price: number) => {
         if (price < 0.000001) return price.toFixed(12);
@@ -4621,40 +4648,59 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
         spoof: { icon: '⚠️', color: '#a855f7', label: 'SPOOF?  ' },
     };
 
+    const bestBidPrice = useMemo(
+        () => (bids.length > 0 ? Math.max(...bids.map((b: any) => Number(b.price || 0))) : 0),
+        [bids]
+    );
+    const bestAskPrice = useMemo(
+        () => (asks.length > 0 ? Math.min(...asks.map((a: any) => Number(a.price || 0))) : 0),
+        [asks]
+    );
+    const spreadInfo = useMemo(() => {
+        if (bestBidPrice <= 0 || bestAskPrice <= 0) return null;
+        const raw = Math.max(0, bestAskPrice - bestBidPrice);
+        const bps = (raw / bestBidPrice) * 10000;
+        return { raw, bps };
+    }, [bestBidPrice, bestAskPrice]);
+
     return (
-        <div className="flex flex-col h-full font-mono text-[11px] select-none overflow-hidden">
+        <div className="flex flex-col h-full font-mono text-[11px] select-none overflow-hidden text-slate-800 dark:text-slate-100">
             {isEmpty ? (
-                <div className="flex-1 flex items-center justify-center text-gray-500 text-xs">Loading order book...</div>
+                <div className="flex-1 flex items-center justify-center text-slate-500 dark:text-gray-400 text-xs">Loading Level-2 order book...</div>
             ) : (<>
                 {/* ── STEP 1: Imbalance Gauge ─────────────────────────────────── */}
-                <div className="px-2 pt-2 pb-1.5 flex-shrink-0 border-b border-white/5">
+                <div className="px-2.5 pt-2 pb-1.5 flex-shrink-0 border-b border-slate-200 dark:border-white/10 bg-slate-50/70 dark:bg-white/[0.02]">
                     <div className="flex justify-between items-center mb-1">
-                        <span className="text-[9px] uppercase tracking-widest font-black" style={{ color: imbalanceColor }}>{imbalanceLabel}</span>
-                        <span className="text-[9px] text-gray-500 tabular-nums">{imbalancePct}% Bid · {100 - imbalancePct}% Ask</span>
+                        <span className="text-[9.5px] uppercase tracking-widest font-black" style={{ color: imbalanceColor }}>{imbalanceLabel}</span>
+                        <span className="text-[9.5px] text-slate-500 dark:text-gray-400 tabular-nums font-bold">{imbalancePct}% Bid · {100 - imbalancePct}% Ask</span>
                     </div>
-                    <div className="relative h-[5px] rounded-full bg-white/5 overflow-hidden">
-                        <div className="absolute left-0 top-0 h-full rounded-full transition-all duration-500"
-                            style={{ width: `${imbalancePct}%`, background: `linear-gradient(90deg, #22c55e80, ${imbalanceColor})` }} />
-                        <div className="absolute left-1/2 top-0 h-full w-px bg-white/20" />
+                    <div className="relative h-1.5 rounded-full bg-rose-500/35 overflow-hidden">
+                        <div className="absolute left-0 top-0 h-full rounded-full transition-all duration-300"
+                            style={{ width: `${imbalancePct}%`, background: `linear-gradient(90deg, #22c55e, ${imbalanceColor})` }} />
+                        <div className="absolute left-1/2 top-0 h-full w-px bg-white/40" />
                     </div>
-                    <div className="flex justify-between text-[8px] text-gray-600 mt-0.5"><span>Bids</span><span>Asks</span></div>
+                    <div className="flex justify-between text-[8.5px] text-slate-500 dark:text-gray-400 mt-0.5 font-semibold">
+                        <span>Bids Dominance</span>
+                        <span className="text-cyan-600 dark:text-cyan-400">Click row to snap price</span>
+                        <span>Asks Dominance</span>
+                    </div>
                 </div>
 
                 {/* ── Toolbar ────────────────────────────────────────────────── */}
-                <div className="flex items-center justify-between px-2 py-1 border-b border-white/5 flex-shrink-0 gap-1">
-                    <div className="flex rounded overflow-hidden border border-white/10 text-[9px]">
+                <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-slate-200 dark:border-white/10 flex-shrink-0 gap-1">
+                    <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-white/10 text-[9px]">
                         {(['book', 'depth'] as const).map(v => (
-                            <button key={v} onClick={() => setView(v)}
-                                className={`px-2 py-0.5 uppercase tracking-wider font-bold transition-all ${view === v ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-white'}`}>{v}
+                            <button key={v} type="button" onClick={() => setView(v)}
+                                className={`px-2 py-0.5 uppercase tracking-wider font-black transition-all cursor-pointer ${view === v ? 'bg-cyan-500 text-slate-950' : 'text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'}`}>{v}
                             </button>
                         ))}
                     </div>
                     {view === 'book' && (
-                        <div className="flex items-center gap-0.5">
-                            <span className="text-[8px] text-gray-600 mr-0.5">Grp</span>
-                            {BUCKET_OPTIONS.map(b => (
-                                <button key={b} onClick={() => setBucket(b)}
-                                    className={`px-1.5 py-0.5 rounded text-[8px] font-bold transition-all ${bucket === b ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:text-gray-300'}`}>
+                        <div className="flex items-center gap-0.5 flex-wrap justify-end">
+                            <span className="text-[8.5px] text-slate-500 dark:text-gray-400 mr-0.5 font-bold">Grp</span>
+                            {bucketOptions.map(b => (
+                                <button key={b} type="button" onClick={() => setBucket(b)}
+                                    className={`px-1.5 py-0.5 rounded text-[8.5px] font-black transition-all cursor-pointer ${bucket === b ? 'bg-cyan-500 text-slate-950' : 'text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'}`}>
                                     {b === 0 ? 'Tick' : b}
                                 </button>
                             ))}
@@ -4670,10 +4716,10 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
                 ) : (
                     <>
                         {/* Column headers */}
-                        <div className="flex text-gray-600 py-1 px-2 uppercase tracking-wider font-bold flex-shrink-0 text-[9px] border-b border-white/5">
-                            <div className="w-1/3 text-left">Price</div>
-                            <div className="w-1/3 text-right">Size</div>
-                            <div className="w-1/3 text-right">Total</div>
+                        <div className="flex text-slate-500 dark:text-gray-400 py-1 px-2.5 uppercase tracking-wider font-bold flex-shrink-0 text-[9px] border-b border-slate-200 dark:border-white/10">
+                            <div className="w-2/5 text-left">Price (USD)</div>
+                            <div className="w-[30%] text-right">Size</div>
+                            <div className="w-[30%] text-right">Cum. Total</div>
                         </div>
 
                         {/* Asks */}
@@ -4681,25 +4727,50 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
                             {displayAsks.map((ask: any, i: number) => {
                                 const isWall = ask.size * ask.price >= sigSize;
                                 return (
-                                    <div key={i} className={`flex px-2 py-[1.5px] leading-tight relative hover:bg-white/5 cursor-pointer shrink-0 ${isWall ? 'ring-1 ring-inset ring-red-500/25' : ''}`}>
-                                        <div className="absolute right-0 top-0 h-full bg-red-500/10 dark:bg-red-500/15 transition-all duration-300 pointer-events-none"
-                                            style={{ width: `${(ask.total / displayMax) * 100}%` }} />
-                                        <div className={`w-1/3 text-left relative z-10 font-bold ${isWall ? 'text-red-400' : 'text-red-500/60'}`}>{formatPrice(ask.price)}</div>
-                                        <div className={`w-1/3 text-right relative z-10 ${isWall ? 'text-white font-bold' : 'text-gray-600'}`}>{formatSize(ask.size)}</div>
-                                        <div className="w-1/3 text-right text-gray-700 relative z-10">{formatSize(ask.total)}</div>
+                                    <div
+                                        key={i}
+                                        onClick={() => onPriceSelect?.(ask.price, 'sell')}
+                                        title={`Click to snap Manual Trade to Ask @ $${formatPrice(ask.price)}`}
+                                        className={`flex items-center px-2.5 py-[2px] leading-tight relative hover:bg-rose-500/10 cursor-pointer shrink-0 transition-colors ${isWall ? 'ring-1 ring-inset ring-rose-500/40 bg-rose-500/5' : ''}`}
+                                    >
+                                        <div className="absolute right-0 top-0 h-full bg-rose-500/15 dark:bg-rose-500/20 transition-all duration-300 pointer-events-none"
+                                            style={{ width: `${Math.min(100, (ask.total / displayMax) * 100)}%` }} />
+                                        <div className={`w-2/5 text-left relative z-10 font-bold flex items-center gap-1 ${isWall ? 'text-rose-600 dark:text-rose-300' : 'text-rose-600/85 dark:text-rose-400/90'}`}>
+                                            <span>{formatPrice(ask.price)}</span>
+                                            {isWall && (
+                                                <span className="px-1 py-0.1 rounded bg-rose-500/20 border border-rose-500/40 text-[7.5px] font-black uppercase text-rose-500 dark:text-rose-300">
+                                                    WALL
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className={`w-[30%] text-right relative z-10 ${isWall ? 'text-slate-900 dark:text-white font-black' : 'text-slate-700 dark:text-slate-200'}`}>
+                                            {formatSize(ask.size)}
+                                        </div>
+                                        <div className="w-[30%] text-right text-slate-500 dark:text-slate-400 relative z-10">
+                                            {formatSize(ask.total)}
+                                        </div>
                                     </div>
                                 );
                             })}
                         </div>
 
-                        {/* Spread */}
-                        <div className="flex-shrink-0 px-2 py-1 border-y border-white/5 bg-black/20">
+                        {/* Spread & Mid Price Bar */}
+                        <div className="flex-shrink-0 px-2.5 py-1.5 border-y border-slate-200 dark:border-white/10 bg-slate-100/80 dark:bg-[#050811]">
                             <div className="flex items-center justify-between text-[10px]">
-                                <span className="text-gray-500 font-sans">Spread</span>
-                                {asks.length > 0 && asks[asks.length - 1] && bids.length > 0 && (
-                                    <span className="text-indigo-400 font-bold">
-                                        {(asks[asks.length - 1].price - bids[0].price).toFixed(10).replace(/\.?0+$/, '')}
-                                    </span>
+                                <span className="text-slate-500 dark:text-gray-400 font-bold uppercase tracking-wider">
+                                    Spread
+                                </span>
+                                {spreadInfo ? (
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-cyan-600 dark:text-cyan-400 font-black">
+                                            ${formatPrice(spreadInfo.raw)}
+                                        </span>
+                                        <span className="px-1.5 py-0.2 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-700 dark:text-cyan-300 text-[9px] font-black">
+                                            {spreadInfo.bps.toFixed(1)} bps
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <span className="text-slate-400">--</span>
                                 )}
                             </div>
                         </div>
@@ -4709,12 +4780,28 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
                             {displayBids.map((bid: any, i: number) => {
                                 const isWall = bid.size * bid.price >= sigSize;
                                 return (
-                                    <div key={i} className={`flex px-2 py-[1.5px] leading-tight relative hover:bg-white/5 cursor-pointer ${isWall ? 'ring-1 ring-inset ring-green-500/25' : ''}`}>
-                                        <div className="absolute right-0 top-0 h-full bg-green-500/10 dark:bg-green-500/15 transition-all duration-300 pointer-events-none"
-                                            style={{ width: `${(bid.total / displayMax) * 100}%` }} />
-                                        <div className={`w-1/3 text-left relative z-10 font-bold ${isWall ? 'text-green-400' : 'text-green-500/60'}`}>{formatPrice(bid.price)}</div>
-                                        <div className={`w-1/3 text-right relative z-10 ${isWall ? 'text-white font-bold' : 'text-gray-600'}`}>{formatSize(bid.size)}</div>
-                                        <div className="w-1/3 text-right text-gray-700 relative z-10">{formatSize(bid.total)}</div>
+                                    <div
+                                        key={i}
+                                        onClick={() => onPriceSelect?.(bid.price, 'buy')}
+                                        title={`Click to snap Manual Trade to Bid @ $${formatPrice(bid.price)}`}
+                                        className={`flex items-center px-2.5 py-[2px] leading-tight relative hover:bg-emerald-500/10 cursor-pointer transition-colors ${isWall ? 'ring-1 ring-inset ring-emerald-500/40 bg-emerald-500/5' : ''}`}
+                                    >
+                                        <div className="absolute right-0 top-0 h-full bg-emerald-500/15 dark:bg-emerald-500/20 transition-all duration-300 pointer-events-none"
+                                            style={{ width: `${Math.min(100, (bid.total / displayMax) * 100)}%` }} />
+                                        <div className={`w-2/5 text-left relative z-10 font-bold flex items-center gap-1 ${isWall ? 'text-emerald-600 dark:text-emerald-300' : 'text-emerald-600/85 dark:text-emerald-400/90'}`}>
+                                            <span>{formatPrice(bid.price)}</span>
+                                            {isWall && (
+                                                <span className="px-1 py-0.1 rounded bg-emerald-500/20 border border-emerald-500/40 text-[7.5px] font-black uppercase text-emerald-600 dark:text-emerald-300">
+                                                    WALL
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className={`w-[30%] text-right relative z-10 ${isWall ? 'text-slate-900 dark:text-white font-black' : 'text-slate-700 dark:text-slate-200'}`}>
+                                            {formatSize(bid.size)}
+                                        </div>
+                                        <div className="w-[30%] text-right text-slate-500 dark:text-slate-400 relative z-10">
+                                            {formatSize(bid.total)}
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -4723,24 +4810,36 @@ const OrderBook: React.FC<{ bids: any[], asks: any[], maxTotal: number, volumeTh
                 )}
 
                 {/* ── STEP 5: Activity Feed / Event Log ───────────────────────── */}
-                <div className="flex-shrink-0 border-t border-white/10 mt-1">
-                    <div className="flex items-center justify-between px-3 py-1 bg-black/20">
-                        <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">⚡ Activity Feed</span>
+                <div className="flex-shrink-0 border-t border-slate-200 dark:border-white/10 mt-1">
+                    <div className="flex items-center justify-between px-3 py-1 bg-slate-100 dark:bg-[#050811]">
+                        <span className="text-[10px] uppercase tracking-widest text-slate-600 dark:text-gray-300 font-black flex items-center gap-1.5">
+                            <span>⚡ Whale & Spoof Tape</span>
+                            {events.length > 0 && (
+                                <span className="px-1.5 py-0.1 rounded bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 text-[9px]">
+                                    {events.length}
+                                </span>
+                            )}
+                        </span>
                         {events.length > 0 && (
-                            <button onClick={() => setEvents([])} className="text-[9px] text-gray-600 hover:text-gray-400 transition-colors uppercase font-bold tracking-wider">clear</button>
+                            <button type="button" onClick={() => setEvents([])} className="text-[9px] text-slate-500 hover:text-rose-500 transition-colors uppercase font-bold tracking-wider cursor-pointer">clear</button>
                         )}
                     </div>
-                    <div className="h-[64px] overflow-y-auto custom-scrollbar">
+                    <div className="h-[68px] overflow-y-auto custom-scrollbar">
                         {events.length === 0 ? (
-                            <div className="text-center text-[10px] text-gray-600 py-6">Monitoring for significant wall activity...</div>
+                            <div className="text-center text-[10px] text-slate-500 dark:text-gray-500 py-6">Monitoring L2 depth for Whale Walls, Absorption & Spoofing...</div>
                         ) : events.map(ev => {
                             const cfg = eventCfg[ev.type];
                             return (
-                                <div key={ev.id} className="flex items-center gap-2 px-3 py-1 hover:bg-white/5 border-b border-white/5 last:border-0 transition-colors">
-                                    <span className="text-[9px] text-gray-500 tabular-nums w-[60px] flex-shrink-0 font-medium">{ev.time}</span>
+                                <div
+                                    key={ev.id}
+                                    onClick={() => onPriceSelect?.(ev.price, ev.side === 'bid' ? 'buy' : 'sell')}
+                                    title={`Click to snap Manual Trade to ${cfg.label.trim()} @ $${formatPrice(ev.price)}`}
+                                    className="flex items-center gap-2 px-3 py-1 hover:bg-cyan-500/10 border-b border-slate-200/60 dark:border-white/5 last:border-0 transition-colors cursor-pointer"
+                                >
+                                    <span className="text-[9px] text-slate-500 dark:text-gray-400 tabular-nums w-[54px] flex-shrink-0 font-medium">{ev.time}</span>
                                     <span className="text-[10px] font-bold flex-shrink-0" style={{ color: cfg.color }}>{cfg.icon} {cfg.label}</span>
-                                    <span className={`text-[10px] font-black flex-shrink-0 ${ev.side === 'bid' ? 'text-green-500' : 'text-red-500'}`}>{ev.side.toUpperCase()}</span>
-                                    <span className="text-[10px] text-gray-300 truncate font-sans tracking-wide">{formatSize(ev.size)} <span className="text-gray-500 text-[9px] font-mono mx-1">@</span> {formatPrice(ev.price)}</span>
+                                    <span className={`text-[10px] font-black flex-shrink-0 ${ev.side === 'bid' ? 'text-emerald-500' : 'text-rose-500'}`}>{ev.side.toUpperCase()}</span>
+                                    <span className="text-[10px] text-slate-700 dark:text-gray-200 truncate font-mono tracking-wide">${formatSize(ev.size)} <span className="text-slate-400 text-[9px] mx-0.5">@</span> ${formatPrice(ev.price)}</span>
                                 </div>
                             );
                         })}
@@ -4940,15 +5039,15 @@ const OrderFlowChartPanel = React.memo<{
     const panelContent = (
         <div 
             className={isFullscreen 
-                ? 'fixed inset-0 z-[99999] flex flex-col bg-[#050505] p-2 md:p-4 overflow-hidden w-screen h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)]' 
-                : `h-full w-full bg-white dark:bg-[#000000] rounded-xl border ${panelDeviceProfile.isThermalGuardActive ? '' : 'transition-all duration-200'} overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.2)] flex flex-col ${panelDeviceProfile.isPhoneMobileUI ? 'min-h-[380px]' : 'min-h-[240px]'} ${
+                ? 'fixed inset-0 z-[99999] flex flex-col bg-[#050811] p-2 md:p-4 overflow-hidden w-screen h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)]' 
+                : `h-full w-full bg-white dark:bg-[#070b14] rounded-2xl border ${panelDeviceProfile.isThermalGuardActive ? '' : 'transition-all duration-200'} overflow-hidden shadow-sm dark:shadow-[0_8px_28px_rgba(0,0,0,0.45)] flex flex-col ${panelDeviceProfile.isPhoneMobileUI ? 'min-h-[380px]' : 'min-h-[240px]'} ${
                     isActive && allChartsCount > 1 
-                        ? 'border-brand-primary/80 ring-2 ring-brand-primary/20 shadow-[0_0_25px_rgba(59,130,246,0.2)]' 
-                        : 'border-gray-200 dark:border-white/5'
+                        ? 'border-cyan-500/75 ring-1 ring-cyan-500/25' 
+                        : 'border-slate-200 dark:border-white/10'
                 }`
             }
         >
-            <div className={`${panelDeviceProfile.isPhoneMobileUI ? 'p-1.5 gap-1.5' : 'p-2 gap-2'} border-b border-gray-200 dark:border-white/5 flex justify-between items-center`}>
+            <div className={`${panelDeviceProfile.isPhoneMobileUI ? 'px-2 py-1.5 gap-1.5' : 'px-3 py-1.5 gap-2'} border-b border-slate-200 dark:border-white/10 bg-slate-50/80 dark:bg-[#050811] flex justify-between items-center`}>
                 <div className={`flex ${panelDeviceProfile.isPhoneMobileUI ? 'flex-nowrap overflow-x-auto hide-scrollbar gap-1.5' : 'flex-wrap items-center gap-1.5'} items-center min-w-0`}>
                     {allChartsCount > 1 && (
                         <button
@@ -4957,15 +5056,15 @@ const OrderFlowChartPanel = React.memo<{
                                 e.stopPropagation();
                                 onSelectActive?.(config.id);
                             }}
-                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+                            className={`px-2 py-1 text-[10px] font-mono font-black uppercase rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
                                 isActive 
-                                    ? 'bg-brand-primary text-white shadow-[0_0_10px_rgba(59,130,246,0.4)] border border-blue-400/50' 
-                                    : 'bg-gray-100 dark:bg-white/5 text-gray-500 hover:text-gray-300 border border-gray-200 dark:border-white/5'
+                                    ? 'bg-cyan-500 text-slate-950' 
+                                    : 'bg-slate-200/70 dark:bg-white/5 text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-white/10'
                             }`}
                             title={isActive ? 'Active Trading Chart' : 'Click to select as Active Trading Chart'}
                         >
-                            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-white animate-pulse' : 'bg-gray-400'}`} />
-                            <span>{isActive ? 'Active' : 'Select'}</span>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-slate-950' : 'bg-gray-400'}`} />
+                            <span>{chartLabel || (isMain ? 'Main' : 'Select')}</span>
                         </button>
                     )}
                     {!isMain && (
@@ -4975,32 +5074,41 @@ const OrderFlowChartPanel = React.memo<{
                         </>
                     )}
 
-                    <IndicatorSelector
-                        compact
-                        usePortal
-                        chartLabel={chartLabel || (isMain ? 'Main' : 'Chart')}
-                        settings={indicatorSettings}
-                        onSettingsChange={handlePanelIndicatorChange}
-                        onResetAll={onResetIndicators ? handlePanelResetIndicators : undefined}
-                    />
+                    {(!isMain || allChartsCount > 1 || isFullscreen) && (
+                        <IndicatorSelector
+                            compact
+                            usePortal
+                            chartLabel={chartLabel || (isMain ? 'Main' : 'Chart')}
+                            settings={indicatorSettings}
+                            onSettingsChange={handlePanelIndicatorChange}
+                            onResetAll={onResetIndicators ? handlePanelResetIndicators : undefined}
+                        />
+                    )}
                     
-                    <div className="flex bg-gray-100 dark:bg-black/20 p-1 rounded-lg border border-gray-200 dark:border-white/5">
+                    <div className="flex bg-slate-200/70 dark:bg-[#0b101d] p-0.5 rounded-lg border border-slate-200 dark:border-white/10">
                         <button 
+                            type="button"
                             onClick={() => setIsTradingViewMode(false)} 
-                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors ${!isTradingViewMode ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}
+                            className={`px-2.5 py-1 text-[10px] font-mono font-bold rounded-md transition-colors cursor-pointer ${!isTradingViewMode ? 'bg-white dark:bg-cyan-500 text-slate-900 dark:text-slate-950 shadow-sm' : 'text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'}`}
                         >
-                            Order Flow
+                            ⚡ L2 OrderFlow
                         </button>
                         <button 
+                            type="button"
                             onClick={() => setIsTradingViewMode(true)} 
-                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors flex items-center gap-1 ${isTradingViewMode ? 'bg-brand-primary text-white shadow-[0_0_10px_rgba(139,92,246,0.3)]' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}
+                            className={`px-2.5 py-1 text-[10px] font-mono font-bold rounded-md transition-colors flex items-center gap-1 cursor-pointer ${isTradingViewMode ? 'bg-white dark:bg-cyan-500 text-slate-900 dark:text-slate-950 shadow-sm' : 'text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'}`}
                         >
-                            TradingView
+                            📈 TradingView
                         </button>
                     </div>
+
+                    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[10px] font-mono font-bold">
+                        <span>🧱 {filteredWalls.length} Whale {filteredWalls.length === 1 ? 'Wall' : 'Walls'}</span>
+                    </span>
                     
                     {chartBotId ? (
                         <button 
+                            type="button"
                             onClick={async () => {
                                 try {
                                     await botService.controlBot(chartBotId, 'stop');
@@ -5012,53 +5120,58 @@ const OrderFlowChartPanel = React.memo<{
                                     console.error("Failed to stop bot from chart panel", err);
                                 }
                             }}
-                            className="px-2 py-1 text-[10px] font-bold rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 flex items-center gap-1 ml-2 transition-colors"
+                            className="px-2.5 py-1 text-[10px] font-mono font-bold rounded-lg bg-rose-500/15 text-rose-600 dark:text-rose-300 hover:bg-rose-500 hover:text-white border border-rose-500/30 flex items-center gap-1 transition-colors cursor-pointer"
                             title="Stop WallHunter Bot"
                         >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                            Stop Bot
+                            <X className="w-3 h-3" />
+                            <span>Stop Bot #{chartBotId}</span>
                         </button>
                     ) : (
                         <div className="flex gap-1">
                             <button 
+                                type="button"
                                 onClick={() => setIsWallHunterOpen(true)}
-                                className="px-2 py-1 text-[10px] font-bold rounded-md bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500/20 border border-yellow-500/20 flex items-center gap-1 ml-2 transition-colors"
-                                title="Deploy WallHunter for this pair"
+                                className="px-2.5 py-1 text-[10px] font-mono font-bold rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500 hover:text-slate-950 border border-amber-500/35 flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Deploy L2 WallHunter Bot for this pair"
                             >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                Deploy Bot
+                                <Zap className="w-3 h-3 fill-current" />
+                                <span>Deploy WallBot</span>
                             </button>
                             <button 
+                                type="button"
                                 onClick={() => setIsForexWallHunterOpen(true)}
-                                className="px-2 py-1 text-[10px] font-bold rounded-md bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center gap-1 ml-1 transition-colors"
+                                className="px-2 py-1 text-[10px] font-mono font-bold rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500 hover:text-slate-950 border border-emerald-500/35 flex items-center gap-1 transition-colors cursor-pointer"
                                 title="Deploy Forex WallHunter for this pair"
                             >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
-                                Forex Bot
+                                <span>Forex Bot</span>
                             </button>
                         </div>
                     )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                     <button 
                         type="button"
                         onClick={handleToggleFullscreen}
-                        className={`p-1.5 rounded-lg transition-all flex items-center justify-center cursor-pointer ${isFullscreen ? 'bg-brand-primary text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] ring-2 ring-brand-primary/40' : 'text-gray-500 hover:text-brand-primary hover:bg-gray-100 dark:hover:bg-white/10'}`}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-colors flex items-center gap-1 cursor-pointer ${isFullscreen ? 'bg-cyan-500 text-slate-950' : 'bg-slate-200/70 dark:bg-white/5 text-slate-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white'}`}
                         title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Chart"}
                     >
                         {isFullscreen ? (
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
+                            <>
+                                <X className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Exit</span>
+                            </>
                         ) : (
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                            </svg>
+                            <>
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                </svg>
+                                <span className="hidden sm:inline">Expand</span>
+                            </>
                         )}
                     </button>
                     {!isMain && (
-                        <button onClick={() => onRemove(config.id)} className="text-gray-500 hover:text-red-500 transition-colors ml-2" title="Close Chart">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                        <button type="button" onClick={() => onRemove(config.id)} className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer" title="Close Split Chart">
+                            <X className="w-4 h-4" />
                         </button>
                     )}
                 </div>
@@ -5918,111 +6031,363 @@ const OrderFlowHeatmap: React.FC = () => {
 
     const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
 
+    // ── Live L2 Orderbook Imbalance & Nearest Whale Wall Radar Telemetry ──
+    const activeDisplayPrice = useMemo(() => {
+        if (activeChart && activeChart.id !== 'main') {
+            return chartPrices[activeChart.id] || currentPrice || 0;
+        }
+        return currentPrice || 0;
+    }, [activeChart, chartPrices, currentPrice]);
+
+    const l2RadarTelemetry = useMemo(() => {
+        const topBids = bids.slice(0, 25);
+        const topAsks = asks.slice(0, 25);
+        const bidVol = topBids.reduce((s, b: any) => s + Number(b.size || b.amount || 0), 0);
+        const askVol = topAsks.reduce((s, a: any) => s + Number(a.size || a.amount || 0), 0);
+        const totalVol = bidVol + askVol;
+        const bidDomPct = totalVol > 0 ? (bidVol / totalVol) * 100 : 50;
+
+        const refPx = activeDisplayPrice || currentPrice || 0;
+
+        // Respect active Whale Filter threshold (volumeThreshold / volumeMode) or active split chart walls
+        let activeWallsList: { price: number; type: 'buy' | 'sell'; size?: number }[] = [];
+        if (activeChart && activeChart.id !== 'main' && chartWallsMapRef.current[activeChart.id]?.length) {
+            activeWallsList = chartWallsMapRef.current[activeChart.id];
+        } else if (volumeThreshold > 0) {
+            asks.forEach((ask: any) => {
+                const val = volumeMode === 'quote' ? ask.size * ask.price : ask.size;
+                if (val >= volumeThreshold) {
+                    activeWallsList.push({ price: ask.price, type: 'sell', size: ask.size });
+                }
+            });
+            bids.forEach((bid: any) => {
+                const val = volumeMode === 'quote' ? bid.size * bid.price : bid.size;
+                if (val >= volumeThreshold) {
+                    activeWallsList.push({ price: bid.price, type: 'buy', size: bid.size });
+                }
+            });
+        } else {
+            activeWallsList = (walls || []) as { price: number; type: 'buy' | 'sell'; size?: number }[];
+        }
+
+        const buyWallCandidates = activeWallsList.filter(
+            (w) => w.type === 'buy' && (refPx <= 0 || w.price <= refPx)
+        );
+        const sellWallCandidates = activeWallsList.filter(
+            (w) => w.type === 'sell' && (refPx <= 0 || w.price >= refPx)
+        );
+
+        buyWallCandidates.sort((a, b) => b.price - a.price);
+        sellWallCandidates.sort((a, b) => a.price - b.price);
+
+        const nearestSupport = buyWallCandidates[0] || null;
+        const nearestResistance = sellWallCandidates[0] || null;
+
+        const supportDistPct =
+            nearestSupport && refPx > 0 ? ((refPx - nearestSupport.price) / refPx) * 100 : null;
+        const resistDistPct =
+            nearestResistance && refPx > 0
+                ? ((nearestResistance.price - refPx) / refPx) * 100
+                : null;
+
+        const formatCompactWallUsd = (w: { price: number; size?: number } | null) => {
+            if (!w || !w.size) return '';
+            const usd = w.price * Number(w.size || 0);
+            if (usd >= 1_000_000) return `$${(usd / 1_000_000).toFixed(1)}M`;
+            if (usd >= 1_000) return `$${(usd / 1_000).toFixed(0)}K`;
+            return `$${usd.toFixed(0)}`;
+        };
+
+        return {
+            bidDomPct,
+            nearestSupport,
+            nearestResistance,
+            nearestSupportUsd: formatCompactWallUsd(nearestSupport),
+            nearestResistanceUsd: formatCompactWallUsd(nearestResistance),
+            supportDistPct,
+            resistDistPct,
+            totalWalls: activeWallsList.length,
+        };
+    }, [bids, asks, walls, currentPrice, activeDisplayPrice, activeChart, volumeThreshold, volumeMode, chartWallsTick]);
+
     return (
-        <div className="flex flex-col h-full bg-brand-light dark:bg-[#000000] text-slate-900 dark:text-white overflow-hidden rounded-xl border border-gray-200 dark:border-white/10">
+        <div className="flex flex-col h-full bg-slate-100 dark:bg-[#04070e] text-slate-900 dark:text-white overflow-hidden rounded-2xl border border-slate-200 dark:border-cyan-500/25 shadow-sm">
             {isPhoneMobileUI && (
-                <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-white dark:bg-[#000000] border-b border-gray-200 dark:border-white/10 shrink-0">
+                <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-white dark:bg-[#070b14] border-b border-slate-200 dark:border-white/10 shrink-0">
                     <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-[11px] font-bold text-slate-900 dark:text-white truncate">{symbol}</span>
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-slate-600 dark:text-slate-300">{interval}</span>
-                        <span className={`text-xs font-mono font-bold ${lastPriceSide === 'buy' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                            {formatDisplayPrice(currentPrice)}
+                        <span className="text-[11px] font-black text-slate-900 dark:text-white truncate">{symbol}</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-700 dark:text-cyan-300 font-bold">{interval}</span>
+                        <span className={`text-xs font-mono font-black ${lastPriceSide === 'buy' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            ${formatDisplayPrice(currentPrice)}
                         </span>
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            const next = !showSubNav;
-                            if (!next && toolbarRef.current) {
-                                toolbarRef.current.style.overflow = 'hidden';
-                            }
-                            setShowSubNav(next);
-                            try { localStorage.setItem('heatmapSubNavVisiblePhone', String(next)); } catch {}
-                        }}
-                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors shrink-0 ${
-                            showSubNav
-                                ? 'bg-brand-primary/15 text-brand-primary border-brand-primary/30'
-                                : 'bg-gray-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border-gray-200 dark:border-white/10'
-                        }`}
-                    >
-                        {showSubNav ? 'Hide Controls' : 'Controls & Filters'}
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => setManualTradeTrigger(Date.now())}
+                            className="px-2 py-1 rounded-lg bg-cyan-500 text-slate-950 text-[10px] font-mono font-black uppercase"
+                        >
+                            ⚡ Trade
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const next = !showSubNav;
+                                if (!next && toolbarRef.current) {
+                                    toolbarRef.current.style.overflow = 'hidden';
+                                }
+                                setShowSubNav(next);
+                                try { localStorage.setItem('heatmapSubNavVisiblePhone', String(next)); } catch {}
+                            }}
+                            className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-colors ${
+                                showSubNav
+                                    ? 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border-cyan-500/35'
+                                    : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10'
+                            }`}
+                        >
+                            {showSubNav ? 'Hide Deck' : 'L2 Deck'}
+                        </button>
+                    </div>
                 </div>
             )}
-            {/* ── Animated collapsible toolbar (header + subnav) ──────────── */}
+
+            {/* ── Animated Institutional SaaS Command Deck (Header + L2 Radar + SubNav) ── */}
             <div
                 ref={toolbarRef}
                 onTransitionEnd={() => {
-                    // Once the open animation finishes, allow overflow so that
-                    // dropdown menus (Indicators, SymbolSelector, AdvancedMetrics)
-                    // can extend beyond the wrapper boundary without being clipped.
                     if (showSubNav && toolbarRef.current) {
                         toolbarRef.current.style.overflow = isPhoneMobileUI ? 'auto' : 'visible';
                     }
                 }}
                 style={{
                     position: 'relative',
-                    zIndex: 30,          // sit above the chart so dropdowns render on top
-                    overflow: 'hidden',  // will be flipped to 'visible' via onTransitionEnd when open
-                    maxHeight: showSubNav ? (isPhoneMobileUI ? '65dvh' : '480px') : '0px',
+                    zIndex: 30,
+                    overflow: 'hidden',
+                    maxHeight: showSubNav ? (isPhoneMobileUI ? '68dvh' : '500px') : '0px',
                     opacity: showSubNav ? 1 : 0,
                     transition: deviceProfile.isThermalGuardActive ? 'none' : 'max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease',
                     willChange: deviceProfile.isThermalGuardActive ? 'auto' : 'max-height, opacity',
                 }}
             >
-                <header className="relative z-20 flex-shrink-0 p-4 laptop:p-2 flex-wrap gap-2 border-b border-gray-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-[#000000]">
-                <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-                    <HeatmapSymbolSelector symbol={symbol} exchange={exchange} onSymbolChange={setSymbol} onExchangeChange={setExchange} />
-                    <TimeframeSelector interval={interval} onIntervalChange={setInterval} />
-                    <IndicatorSelector
-                        usePortal
-                        chartLabel={allCharts.length > 1 ? activeChartLabel : undefined}
-                        settings={activeChartSettings}
-                        onSettingsChange={handleActiveChartSettingsChange}
-                        onResetAll={handleActiveChartReset}
-                    />
+                <div className="h-[2px] w-full bg-gradient-to-r from-cyan-400 via-indigo-500 to-emerald-400 opacity-90" />
 
-                    <button
-                        onClick={() => setIsBotLogsModalOpen(prev => !prev)}
-                        className={`flex items-center space-x-2 px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors ${isBotLogsModalOpen
-                            ? 'bg-purple-600/10 text-purple-600 dark:text-purple-400 border-purple-500/20 shadow-sm'
-                            : 'bg-gray-100 dark:bg-black/30 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-black/10'
-                            }`}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-align-left"><line x1="21" y1="6" x2="3" y2="6" /><line x1="15" y1="12" x2="3" y2="12" /><line x1="17" y1="18" x2="3" y2="18" /></svg>
-                        <span>Bot Logs</span>
-                    </button>
+                <header className="relative z-20 flex-shrink-0 px-3 py-2 flex-wrap gap-2.5 border-b border-slate-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-[#070b14]">
+                    {/* Left: Pair, Interval, Indicators & Live Price Pill */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <HeatmapSymbolSelector symbol={symbol} exchange={exchange} onSymbolChange={setSymbol} onExchangeChange={setExchange} />
+                        <TimeframeSelector interval={interval} onIntervalChange={setInterval} />
+                        <IndicatorSelector
+                            usePortal
+                            chartLabel={allCharts.length > 1 ? activeChartLabel : undefined}
+                            settings={activeChartSettings}
+                            onSettingsChange={handleActiveChartSettingsChange}
+                            onResetAll={handleActiveChartReset}
+                        />
 
-                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10">
-                        <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${lastPriceSide === 'buy' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-                            Live Price:
-                        </span>
-                        <span className={`text-base font-mono font-bold flex items-center gap-1 transition-colors duration-150 ${lastPriceSide === 'buy' ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
-                            <span className="text-xs">{lastPriceSide === 'buy' ? '▲' : '▼'}</span>
-                            {formatDisplayPrice(currentPrice)}
-                        </span>
+                        {/* Live Price & Tick Direction Readout */}
+                        <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-[#0b101d] border border-slate-200 dark:border-white/10">
+                            <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-slate-500 dark:text-gray-400 uppercase">
+                                <span
+                                    className={`w-1.5 h-1.5 rounded-full ${
+                                        lastPriceSide === 'buy' ? 'bg-emerald-500' : 'bg-rose-500'
+                                    } ${deviceProfile.isThermalGuardActive ? '' : 'animate-pulse'}`}
+                                />
+                                {allCharts.length > 1 && activeChart ? activeChart.symbol : 'Live'}
+                            </span>
+                            <span
+                                className={`text-sm sm:text-base font-mono font-black flex items-center gap-1 ${
+                                    lastPriceSide === 'buy'
+                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                        : 'text-rose-600 dark:text-rose-400'
+                                }`}
+                            >
+                                <span className="text-[10px]">{lastPriceSide === 'buy' ? '▲' : '▼'}</span>
+                                ${formatDisplayPrice(activeDisplayPrice)}
+                            </span>
+                        </div>
                     </div>
 
-                    <button
-                        onClick={handleToggleBidAsk}
-                        title={showBidAsk ? 'Hide Bid/Ask lines' : 'Show Bid/Ask lines'}
-                        className={`flex items-center space-x-2 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${showBidAsk
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-sm'
-                            : 'bg-gray-100 dark:bg-black/30 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-black/10'
+                    {/* Center: Live L2 Orderbook Imbalance & Click-to-Snap Whale Wall Radar (Visible across Desktop, Laptop & Redmi Pad Tablet) */}
+                    <div className="hidden md:flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-[#050811] px-2.5 py-1 rounded-xl border border-slate-200 dark:border-white/10">
+                        {/* Bid vs Ask Tug-of-War Gauge */}
+                        <div className="flex items-center gap-1.5 pr-2 border-r border-slate-200 dark:border-white/10" title="Top-25 Level-2 Orderbook Bid vs Ask Volume Imbalance">
+                            <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400">
+                                {l2RadarTelemetry.bidDomPct.toFixed(0)}% B
+                            </span>
+                            <div className="w-16 lg:w-20 h-1.5 rounded-full bg-rose-500/40 overflow-hidden flex">
+                                <div
+                                    className="h-full bg-emerald-500"
+                                    style={{ width: `${Math.min(96, Math.max(4, l2RadarTelemetry.bidDomPct))}%` }}
+                                />
+                            </div>
+                            <span className="text-[10px] font-mono font-black text-rose-600 dark:text-rose-400">
+                                {(100 - l2RadarTelemetry.bidDomPct).toFixed(0)}% A
+                            </span>
+                        </div>
+
+                        {/* Nearest Buy Support Wall (Click to Snap Manual Trade) */}
+                        <button
+                            type="button"
+                            disabled={!l2RadarTelemetry.nearestSupport}
+                            onClick={() => {
+                                if (!l2RadarTelemetry.nearestSupport) return;
+                                handleManualTradeClick(
+                                    activeChartId,
+                                    activeChart?.symbol || symbol,
+                                    l2RadarTelemetry.nearestSupport.price
+                                );
+                                setManualTradeTrigger(Date.now());
+                                toast.success(
+                                    `🟢 Snapped Buy Support Wall @ $${formatDisplayPrice(l2RadarTelemetry.nearestSupport.price)} (${l2RadarTelemetry.nearestSupportUsd})`
+                                );
+                            }}
+                            className={`px-2 py-0.5 rounded-lg border text-[10px] font-mono font-bold flex items-center gap-1 transition-colors ${
+                                l2RadarTelemetry.nearestSupport
+                                    ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 cursor-pointer'
+                                    : 'bg-white/5 border-white/5 text-slate-400 opacity-50 cursor-default'
                             }`}
-                    >
-                        <span className={`w-1.5 h-1.5 rounded-full ${showBidAsk ? 'bg-emerald-400' : 'bg-gray-400'}`}></span>
-                        <span>Bid/Ask {showBidAsk ? 'ON' : 'OFF'}</span>
-                    </button>
-                </div>
-                <div className="flex items-center gap-2">
-                    <span className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${botWsConnected ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>
-                        <span className={`w-2 h-2 rounded-full animate-pulse ${botWsConnected ? 'bg-indigo-500' : 'bg-green-500'}`}></span>
-                        {botWsConnected ? `Bot ${mainChartBotId} Connected` : 'Live Data Socket'}
-                    </span>
-                </div>
-            </header>
+                            title={
+                                l2RadarTelemetry.nearestSupport
+                                    ? `Click to open Manual Trade snapped to Buy Support Wall @ $${formatDisplayPrice(l2RadarTelemetry.nearestSupport.price)} (${l2RadarTelemetry.nearestSupportUsd})`
+                                    : 'No Buy Support Wall above current Whale Filter threshold'
+                            }
+                        >
+                            <span>🟢 Support:</span>
+                            <span className="font-black">
+                                {l2RadarTelemetry.nearestSupport
+                                    ? `$${formatDisplayPrice(l2RadarTelemetry.nearestSupport.price)}`
+                                    : 'None'}
+                            </span>
+                            {l2RadarTelemetry.nearestSupportUsd && (
+                                <span className="px-1 py-0.1 rounded bg-emerald-500/15 text-[9px] font-black">
+                                    {l2RadarTelemetry.nearestSupportUsd}
+                                </span>
+                            )}
+                            {l2RadarTelemetry.supportDistPct !== null && (
+                                <span className="opacity-80">
+                                    (-{Math.abs(l2RadarTelemetry.supportDistPct).toFixed(2)}%)
+                                </span>
+                            )}
+                        </button>
+
+                        {/* Nearest Sell Resistance Wall (Click to Snap Manual Trade) */}
+                        <button
+                            type="button"
+                            disabled={!l2RadarTelemetry.nearestResistance}
+                            onClick={() => {
+                                if (!l2RadarTelemetry.nearestResistance) return;
+                                handleManualTradeClick(
+                                    activeChartId,
+                                    activeChart?.symbol || symbol,
+                                    l2RadarTelemetry.nearestResistance.price
+                                );
+                                setManualTradeTrigger(Date.now());
+                                toast.success(
+                                    `🔴 Snapped Sell Resistance Wall @ $${formatDisplayPrice(l2RadarTelemetry.nearestResistance.price)} (${l2RadarTelemetry.nearestResistanceUsd})`
+                                );
+                            }}
+                            className={`px-2 py-0.5 rounded-lg border text-[10px] font-mono font-bold flex items-center gap-1 transition-colors ${
+                                l2RadarTelemetry.nearestResistance
+                                    ? 'bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/30 text-rose-700 dark:text-rose-300 cursor-pointer'
+                                    : 'bg-white/5 border-white/5 text-slate-400 opacity-50 cursor-default'
+                            }`}
+                            title={
+                                l2RadarTelemetry.nearestResistance
+                                    ? `Click to open Manual Trade snapped to Sell Resistance Wall @ $${formatDisplayPrice(l2RadarTelemetry.nearestResistance.price)} (${l2RadarTelemetry.nearestResistanceUsd})`
+                                    : 'No Sell Resistance Wall above current Whale Filter threshold'
+                            }
+                        >
+                            <span>🔴 Resist:</span>
+                            <span className="font-black">
+                                {l2RadarTelemetry.nearestResistance
+                                    ? `$${formatDisplayPrice(l2RadarTelemetry.nearestResistance.price)}`
+                                    : 'None'}
+                            </span>
+                            {l2RadarTelemetry.nearestResistanceUsd && (
+                                <span className="px-1 py-0.1 rounded bg-rose-500/15 text-[9px] font-black">
+                                    {l2RadarTelemetry.nearestResistanceUsd}
+                                </span>
+                            )}
+                            {l2RadarTelemetry.resistDistPct !== null && (
+                                <span className="opacity-80">
+                                    (+{Math.abs(l2RadarTelemetry.resistDistPct).toFixed(2)}%)
+                                </span>
+                            )}
+                        </button>
+                    </div>
+
+                    {/* Right: Primary Pro Execution & Bot Action Cluster */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() => setManualTradeTrigger(Date.now())}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 text-white text-xs font-mono font-black uppercase tracking-wider shadow-[0_4px_14px_rgba(6,182,212,0.28)] cursor-pointer transition-all active:scale-95"
+                            title="Open Manual Trade & SmartPeg Terminal"
+                        >
+                            <Zap className="w-3.5 h-3.5 fill-current" />
+                            <span>Manual Trade</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsWallHunterOpen(true)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono font-black uppercase tracking-wider cursor-pointer transition-all active:scale-95 ${
+                                selectedHudBotId
+                                    ? 'bg-emerald-500/15 border-emerald-500/45 text-emerald-700 dark:text-emerald-300'
+                                    : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/45 text-amber-700 dark:text-amber-300'
+                            }`}
+                            title={
+                                selectedHudBotId
+                                    ? `WallHunter Bot #${selectedHudBotId} Running — Click to configure`
+                                    : 'Deploy Autonomous L2 WallHunter Bot'
+                            }
+                        >
+                            <span
+                                className={`w-2 h-2 rounded-full ${
+                                    selectedHudBotId ? 'bg-emerald-400' : 'bg-amber-400'
+                                }`}
+                            />
+                            <span>
+                                {selectedHudBotId ? `Bot #${selectedHudBotId} Live` : 'WallHunter Bot'}
+                            </span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsOrderBookModalOpen((v) => !v)}
+                            className={`px-2.5 py-1.5 text-xs font-mono font-bold rounded-xl border transition-colors cursor-pointer ${
+                                isOrderBookModalOpen
+                                    ? 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/40'
+                                    : 'bg-slate-100 dark:bg-[#0b101d] border-slate-200 dark:border-white/10 text-slate-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                            title="Open Floating Level-2 Order Book"
+                        >
+                            L2 Book
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsBotLogsModalOpen((prev) => !prev)}
+                            className={`px-2.5 py-1.5 text-xs font-mono font-bold rounded-xl border transition-colors cursor-pointer ${
+                                isBotLogsModalOpen
+                                    ? 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/40'
+                                    : 'bg-slate-100 dark:bg-[#0b101d] border-slate-200 dark:border-white/10 text-slate-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                            title="Toggle Live Bot Execution Logs"
+                        >
+                            Logs
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsTopTokensModalOpen(true)}
+                            className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-mono font-bold rounded-xl border bg-slate-100 dark:bg-[#0b101d] border-slate-200 dark:border-white/10 text-slate-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                            title="Open Top Tokens & Volatility Scanner"
+                        >
+                            <span>🔥 Scanner</span>
+                        </button>
+                    </div>
+                </header>
 
                 <HeatmapSubNav
                     activeTab={activeTab}
@@ -6038,6 +6403,30 @@ const OrderFlowHeatmap: React.FC = () => {
                     symbol={symbol}
                     onAddChart={addChart}
                     isAddChartDisabled={additionalCharts.length >= 3}
+                    chartsCount={allCharts.length}
+                    showFootprint={Boolean(activeChartSettings.showFootprint)}
+                    showCVD={Boolean(activeChartSettings.showCVD)}
+                    showVPVR={Boolean(activeChartSettings.showHeatmap)}
+                    showBidAsk={showBidAsk}
+                    onToggleFootprint={() =>
+                        handleActiveChartSettingsChange({
+                            ...activeChartSettings,
+                            showFootprint: !activeChartSettings.showFootprint,
+                        })
+                    }
+                    onToggleCVD={() =>
+                        handleActiveChartSettingsChange({
+                            ...activeChartSettings,
+                            showCVD: !activeChartSettings.showCVD,
+                        })
+                    }
+                    onToggleVPVR={() =>
+                        handleActiveChartSettingsChange({
+                            ...activeChartSettings,
+                            showHeatmap: !activeChartSettings.showHeatmap,
+                        })
+                    }
+                    onToggleBidAsk={handleToggleBidAsk}
                 />
             </div>
 
@@ -6047,23 +6436,21 @@ const OrderFlowHeatmap: React.FC = () => {
                 <button
                     onClick={() => {
                         const next = !showSubNav;
-                        // When closing: immediately clamp overflow back to hidden BEFORE
-                        // the slide-up animation runs, so the content is clipped cleanly.
                         if (!next && toolbarRef.current) {
                             toolbarRef.current.style.overflow = 'hidden';
                         }
                         setShowSubNav(next);
                         try { localStorage.setItem('heatmapSubNavVisible', String(next)); } catch {}
                     }}
-                    title={showSubNav ? 'Hide toolbar' : 'Show toolbar'}
+                    title={showSubNav ? 'Collapse Command Deck' : 'Expand Command Deck'}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        width: 28,
+                        width: 32,
                         height: 14,
-                        background: 'rgba(30,41,59,0.85)',
-                        border: '1px solid rgba(255,255,255,0.08)',
+                        background: 'rgba(15,23,42,0.9)',
+                        border: '1px solid rgba(6,182,212,0.28)',
                         borderTop: 'none',
                         borderRadius: '0 0 8px 8px',
                         cursor: 'pointer',
@@ -6073,8 +6460,6 @@ const OrderFlowHeatmap: React.FC = () => {
                         padding: 0,
                         flexShrink: 0,
                     }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(59,130,246,0.25)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'rgba(30,41,59,0.85)')}
                 >
                     <svg
                         width="12"
@@ -6087,16 +6472,16 @@ const OrderFlowHeatmap: React.FC = () => {
                             transform: showSubNav ? 'rotate(180deg)' : 'rotate(0deg)',
                         }}
                     >
-                        <path d="M1 1L6 6L11 1" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M1 1L6 6L11 1" stroke="#38bdf8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                 </button>
             </div>
             )}
 
 
-            <div className="flex-1 min-h-0 flex flex-col p-4 laptop:p-2 overflow-y-auto hide-scrollbar relative bg-gray-50 dark:bg-[#000000]">
+            <div className="flex-1 min-h-0 flex flex-col p-2.5 laptop:p-2 overflow-y-auto hide-scrollbar relative bg-slate-100 dark:bg-[#04070e]">
                 {/* RENDER GRID OF CHARTS */}
-                <div className={`flex-1 w-full grid gap-4 ${allCharts.length === 1 ? 'grid-cols-1' : allCharts.length === 2 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 lg:grid-cols-2 grid-rows-2'}`}>
+                <div className={`flex-1 w-full grid gap-3 ${allCharts.length === 1 ? 'grid-cols-1' : allCharts.length === 2 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 lg:grid-cols-2 grid-rows-2'}`}>
                     {allCharts.map((c, idx) => {
                         const chartSettings = c.id === 'main'
                             ? indicatorSettings
@@ -6146,7 +6531,7 @@ const OrderFlowHeatmap: React.FC = () => {
                 </div>
 
 
-                {/* ACTIVE BOT STATUS HUD — DRAGGABLE */}
+                {/* ACTIVE WALLHUNTER BOT INSTITUTIONAL TELEMETRY HUD — DRAGGABLE */}
                 {selectedHudBotId && botStatus && (
                     <div
                         ref={hudContainerRef}
@@ -6159,123 +6544,218 @@ const OrderFlowHeatmap: React.FC = () => {
                             willChange: 'transform',
                             zIndex: 50,
                             userSelect: 'none',
-                            width: '256px',
+                            width: '286px',
                         }}
                     >
-                        <div className={`${deviceProfile.isThermalGuardActive ? 'bg-[#0B0E14]/95' : 'bg-white/10 dark:bg-black/40 backdrop-blur-xl'} border border-white/20 dark:border-white/10 p-4 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.3)] flex flex-col gap-3`}>
-                            {/* Tabs if multiple bots */}
+                        <div className="relative bg-white dark:bg-[#070b14] border border-slate-200 dark:border-cyan-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+                            <div className="h-[2px] w-full bg-gradient-to-r from-cyan-400 via-indigo-500 to-emerald-400" />
+
+                            {/* Bot Switcher Tabs if multiple bots */}
                             {activeBotIds.length > 1 && (
-                                <div className="flex gap-1 p-1 bg-black/20 rounded-lg overflow-x-auto hide-scrollbar w-full">
-                                    {activeBotIds.map(bId => (
+                                <div className="flex gap-1 p-1.5 bg-slate-100 dark:bg-[#050811] border-b border-slate-200 dark:border-white/10 overflow-x-auto hide-scrollbar">
+                                    {activeBotIds.map((bId) => (
                                         <button
                                             key={bId}
+                                            type="button"
                                             onClick={() => setSelectedHudBotId(bId)}
-                                            className={`px-3 py-1.5 text-xs font-bold rounded-md whitespace-nowrap transition-colors flex-1 ${selectedHudBotId === bId ? 'bg-indigo-500 text-white shadow-sm' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                            className={`px-2.5 py-1 text-[10.5px] font-mono font-black rounded-lg whitespace-nowrap transition-colors flex-1 cursor-pointer ${
+                                                selectedHudBotId === bId
+                                                    ? 'bg-cyan-500 text-slate-950'
+                                                    : 'text-slate-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                                            }`}
                                         >
-                                            Bot {bId}
+                                            Bot #{bId}
                                         </button>
                                     ))}
                                 </div>
                             )}
 
-                            {/* ── Drag Handle ── */}
-                            <h4
+                            {/* Draggable HUD Header */}
+                            <div
                                 onMouseDown={startHudDrag}
-                                className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none"
-                                title="Drag to move"
+                                className="px-3.5 py-2.5 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none"
+                                title="Drag to reposition WallHunter Telemetry HUD"
                             >
-                                {/* grip icon */}
-                                <svg className="w-3 h-3 text-gray-600 flex-shrink-0" viewBox="0 0 10 16" fill="currentColor">
-                                    <circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/>
-                                    <circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/>
-                                    <circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/>
-                                </svg>
-                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${botStatus.position ? 'bg-yellow-400 animate-pulse' : 'bg-indigo-500 animate-pulse'}`} />
-                                {botStatus.position ? `In Trade${botStatus.position_side ? ` (${botStatus.position_side === 'sell' ? 'Short' : 'Long'})` : ''}` : `Bot ${selectedHudBotId} Monitoring L2 Wall`}
-                            </h4>
-
-                            <div className="flex flex-col gap-2">
-                                <div className="flex justify-between items-center bg-black/20 p-2 rounded-lg border border-white/5">
-                                    <span className="text-gray-400 font-mono text-xs">Unrealized PnL:</span>
-                                    <span className={`font-mono font-bold text-lg ${botStatus.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                        ${(botStatus.pnl || 0).toFixed(2)} ({botStatus.pnl_percent > 0 ? '+' : ''}{(botStatus.pnl_percent || 0).toFixed(2)}%)
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <svg className="w-3 h-3 text-cyan-500 flex-shrink-0" viewBox="0 0 10 16" fill="currentColor">
+                                        <circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/>
+                                        <circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/>
+                                        <circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/>
+                                    </svg>
+                                    <span
+                                        className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                            botStatus.position ? 'bg-amber-400' : 'bg-emerald-400'
+                                        }`}
+                                    />
+                                    <span className="text-[11px] font-mono font-black uppercase tracking-wider text-slate-900 dark:text-white truncate">
+                                        {botStatus.position
+                                            ? `In Position (${botStatus.position_side === 'sell' ? 'SHORT' : 'LONG'})`
+                                            : `Bot #${selectedHudBotId} L2 Hunting`}
                                     </span>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div className="bg-black/20 p-2 rounded-lg border border-white/5 flex flex-col col-span-2">
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="text-gray-400 font-mono text-[10px] uppercase flex items-center gap-1">Net PnL (After Fees) {botStatus.global_tp_target ? <span className="bg-indigo-500/20 text-indigo-300 px-1.5 rounded-full text-[8px]">Target: ${botStatus.global_tp_target}</span> : null}</span>
-                                            <span className={`font-mono font-bold ${botStatus.total_pnl && botStatus.total_pnl < 0 ? 'text-red-400' : 'text-green-400'}`}>
-                                                ${(botStatus.total_pnl || 0).toFixed(2)}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center border-t border-white/10 pt-1">
-                                            <span className="text-gray-500 font-mono text-[9px] uppercase">Gross: ${(botStatus.total_gross_pnl || 0).toFixed(2)}</span>
-                                            <span className="text-red-400/80 font-mono text-[9px] uppercase">Fees: -${(botStatus.total_fees_paid || 0).toFixed(2)}</span>
-                                        </div>
-                                    </div>
-                                    <div className="bg-black/20 p-2 rounded-lg border border-white/5 flex flex-col">
-                                        <span className="text-gray-400 font-mono text-[10px] uppercase">Orders Executed</span>
-                                        <span className="font-mono font-bold text-blue-400">
-                                            {botStatus.total_orders || 0}
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsWallHunterOpen(true);
+                                        }}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        className="px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/35 text-cyan-700 dark:text-cyan-300 text-[9.5px] font-mono font-bold cursor-pointer"
+                                        title="Edit Bot Parameters"
+                                    >
+                                        Tune
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsBotLogsModalOpen(true);
+                                        }}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        className="px-1.5 py-0.5 rounded bg-purple-500/15 border border-purple-500/35 text-purple-700 dark:text-purple-300 text-[9.5px] font-mono font-bold cursor-pointer"
+                                        title="Open Execution Logs"
+                                    >
+                                        Logs
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Telemetry Metrics Body */}
+                            <div className="p-3 space-y-2.5 text-xs font-mono">
+                                {/* Unrealized PnL Strip */}
+                                <div className="flex justify-between items-center bg-slate-50 dark:bg-[#050811] px-2.5 py-2 rounded-xl border border-slate-200 dark:border-white/10">
+                                    <span className="text-[10.5px] text-slate-500 dark:text-gray-400 font-bold uppercase">
+                                        Open PnL
+                                    </span>
+                                    <span
+                                        className={`font-black text-sm ${
+                                            (botStatus.pnl || 0) >= 0
+                                                ? 'text-emerald-600 dark:text-emerald-400'
+                                                : 'text-rose-600 dark:text-rose-400'
+                                        }`}
+                                    >
+                                        ${(botStatus.pnl || 0).toFixed(2)} (
+                                        {(botStatus.pnl_percent || 0) > 0 ? '+' : ''}
+                                        {(botStatus.pnl_percent || 0).toFixed(2)}%)
+                                    </span>
+                                </div>
+
+                                {/* Net Realized PnL & Fee Breakdown */}
+                                <div className="bg-slate-50 dark:bg-[#050811] p-2.5 rounded-xl border border-slate-200 dark:border-white/10 space-y-1.5">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[10px] uppercase text-slate-500 dark:text-gray-400 font-bold flex items-center gap-1">
+                                            <span>Net PnL</span>
+                                            {botStatus.global_tp_target ? (
+                                                <span className="bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.2 rounded text-[8.5px]">
+                                                    Goal ${botStatus.global_tp_target}
+                                                </span>
+                                            ) : null}
+                                        </span>
+                                        <span
+                                            className={`font-black text-xs ${
+                                                botStatus.total_pnl && botStatus.total_pnl < 0
+                                                    ? 'text-rose-600 dark:text-rose-400'
+                                                    : 'text-emerald-600 dark:text-emerald-400'
+                                            }`}
+                                        >
+                                            ${(botStatus.total_pnl || 0).toFixed(2)}
                                         </span>
                                     </div>
-                                    <div className="bg-black/20 p-2 rounded-lg border border-white/5 flex flex-col">
-                                        <span className="text-gray-400 font-mono text-[10px] uppercase">Wins</span>
-                                        <span className="font-mono font-bold text-green-400">
-                                            {botStatus.total_wins || 0}
+                                    <div className="flex justify-between items-center border-t border-slate-200 dark:border-white/10 pt-1 text-[9.5px]">
+                                        <span className="text-slate-500 dark:text-gray-400">
+                                            Gross: ${(botStatus.total_gross_pnl || 0).toFixed(2)}
                                         </span>
-                                    </div>
-                                    <div className="bg-black/20 p-2 rounded-lg border border-white/5 flex flex-col">
-                                        <span className="text-gray-400 font-mono text-[10px] uppercase">Losses</span>
-                                        <span className="font-mono font-bold text-red-400">
-                                            {botStatus.total_losses || 0}
-                                        </span>
-                                    </div>
-                                    <div className="bg-black/20 p-2 rounded-lg border border-white/5 flex flex-col">
-                                        <span className="text-gray-400 font-mono text-[10px] uppercase">Longs</span>
-                                        <span className="font-mono font-bold text-green-400">
-                                            {botStatus.total_longs || 0}
-                                        </span>
-                                    </div>
-                                    <div className="bg-black/20 p-2 rounded-lg border border-white/5 flex flex-col">
-                                        <span className="text-gray-400 font-mono text-[10px] uppercase">Shorts</span>
-                                        <span className="font-mono font-bold text-red-400">
-                                            {botStatus.total_shorts || 0}
+                                        <span className="text-rose-500/90">
+                                            Fees: -${(botStatus.total_fees_paid || 0).toFixed(2)}
                                         </span>
                                     </div>
                                 </div>
-                                {botStatus.position && (
-                                    <>
-                                        <div className="flex justify-between text-xs font-mono">
-                                            <span className="text-gray-500">Target TP:</span>
-                                            <span className="text-green-400 font-bold">{formatDisplayPrice(botStatus.tp_price)}</span>
+
+                                {/* 4-Cell Execution Matrix */}
+                                {(() => {
+                                    const wins = Number(botStatus.total_wins || 0);
+                                    const losses = Number(botStatus.total_losses || 0);
+                                    const closedCount = wins + losses;
+                                    const winRatePct =
+                                        closedCount > 0 ? ((wins / closedCount) * 100).toFixed(0) : '--';
+                                    return (
+                                        <div className="grid grid-cols-3 gap-1.5 text-center">
+                                            <div className="bg-slate-50 dark:bg-[#050811] p-1.5 rounded-lg border border-slate-200 dark:border-white/10">
+                                                <span className="block text-[9px] text-slate-500 dark:text-gray-400 uppercase">
+                                                    Win Rate
+                                                </span>
+                                                <span className="font-black text-cyan-600 dark:text-cyan-300 text-xs">
+                                                    {winRatePct}
+                                                    {closedCount > 0 ? '%' : ''}
+                                                </span>
+                                            </div>
+                                            <div className="bg-slate-50 dark:bg-[#050811] p-1.5 rounded-lg border border-slate-200 dark:border-white/10">
+                                                <span className="block text-[9px] text-slate-500 dark:text-gray-400 uppercase">
+                                                    W / L
+                                                </span>
+                                                <span className="font-black text-xs">
+                                                    <span className="text-emerald-500">{wins}</span>
+                                                    <span className="text-gray-500"> / </span>
+                                                    <span className="text-rose-500">{losses}</span>
+                                                </span>
+                                            </div>
+                                            <div className="bg-slate-50 dark:bg-[#050811] p-1.5 rounded-lg border border-slate-200 dark:border-white/10">
+                                                <span className="block text-[9px] text-slate-500 dark:text-gray-400 uppercase">
+                                                    L / S
+                                                </span>
+                                                <span className="font-black text-xs">
+                                                    <span className="text-emerald-500">
+                                                        {botStatus.total_longs || 0}
+                                                    </span>
+                                                    <span className="text-gray-500"> / </span>
+                                                    <span className="text-rose-500">
+                                                        {botStatus.total_shorts || 0}
+                                                    </span>
+                                                </span>
+                                            </div>
                                         </div>
-                                        <div className="flex justify-between text-xs font-mono">
-                                            <span className="text-gray-500">Trailing SL:</span>
-                                            <span className="text-red-400 font-bold">{formatDisplayPrice(botStatus.sl_price)}</span>
+                                    );
+                                })()}
+
+                                {botStatus.position && (
+                                    <div className="pt-1 border-t border-slate-200 dark:border-white/10 space-y-2">
+                                        <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
+                                            <div className="px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 flex justify-between">
+                                                <span className="text-emerald-300">TP</span>
+                                                <span className="font-black text-emerald-400">
+                                                    {formatDisplayPrice(botStatus.tp_price)}
+                                                </span>
+                                            </div>
+                                            <div className="px-2 py-1 rounded-lg bg-rose-500/10 border border-rose-500/25 flex justify-between">
+                                                <span className="text-rose-300">SL</span>
+                                                <span className="font-black text-rose-400">
+                                                    {formatDisplayPrice(botStatus.sl_price)}
+                                                </span>
+                                            </div>
                                         </div>
 
-                                        {/* EMERGENCY EXIT BLOCKS */}
-                                        <div className="mt-2 grid grid-cols-2 gap-2">
+                                        <div className="grid grid-cols-2 gap-1.5">
                                             <button
+                                                type="button"
                                                 onClick={() => handleEmergencySell('market')}
                                                 disabled={isEmergencySelling}
-                                                className={`py-1.5 px-2 text-[10px] font-bold rounded ${botStatus.mode === 'short' ? 'bg-green-500/20 text-green-400 hover:bg-green-500 border-green-500/30' : 'bg-red-500/20 text-red-400 hover:bg-red-500 border-red-500/30'} hover:text-white border transition-colors uppercase flex items-center justify-center gap-1 ${isEmergencySelling ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                className="py-1.5 px-2 text-[10px] font-black rounded-lg bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/35 transition-colors uppercase flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
                                             >
-                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                                {botStatus.mode === 'short' ? 'Market Buy' : 'Market Sell'}
+                                                <Zap className="w-3 h-3" />
+                                                {botStatus.mode === 'short' ? 'Mkt Close' : 'Mkt Sell'}
                                             </button>
                                             <button
+                                                type="button"
                                                 onClick={() => handleEmergencySell('limit')}
                                                 disabled={isEmergencySelling}
-                                                className={`py-1.5 px-2 text-[10px] font-bold rounded ${botStatus.mode === 'short' ? 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500 border-indigo-500/30' : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500 border-blue-500/30'} hover:text-white border transition-colors uppercase flex items-center justify-center gap-1 ${isEmergencySelling ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                className="py-1.5 px-2 text-[10px] font-black rounded-lg bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/35 transition-colors uppercase flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
                                             >
-                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
-                                                {botStatus.mode === 'short' ? 'Limit Buy' : 'Limit Sell'}
+                                                {botStatus.mode === 'short' ? 'Lim Close' : 'Lim Sell'}
                                             </button>
                                         </div>
-                                    </>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -6297,7 +6777,17 @@ const OrderFlowHeatmap: React.FC = () => {
                             onClose={() => setIsOrderBookModalOpen(false)}
                             symbol={symbol}
                         >
-                            <OrderBook bids={bids} asks={asks} maxTotal={maxTotal} volumeThreshold={volumeThreshold} />
+                            <OrderBook
+                                bids={bids}
+                                asks={asks}
+                                maxTotal={maxTotal}
+                                volumeThreshold={volumeThreshold}
+                                onPriceSelect={(px) => {
+                                    handleManualTradeClick(activeChartId, activeChart?.symbol || symbol, px);
+                                    setManualTradeTrigger(Date.now());
+                                    toast.success(`⚡ Snapped L2 price $${formatDisplayPrice(px)} to Manual Trade`);
+                                }}
+                            />
                         </OrderBookFloatingModal>
                     )}
 

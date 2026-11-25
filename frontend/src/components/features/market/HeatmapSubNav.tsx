@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Settings, AlignLeft } from 'lucide-react';
+import { BarChart3, Flame, Layers, Plus } from 'lucide-react';
 import { VolumeFilterControl } from './VolumeFilterControl';
 import { AdvancedMetricsDropdown } from './AdvancedMetricsDropdown';
 import { MLIndicatorsDropdown } from './MLIndicatorsDropdown';
@@ -19,11 +19,18 @@ interface HeatmapSubNavProps {
     symbol: string;
     onAddChart?: () => void;
     isAddChartDisabled?: boolean;
+    chartsCount?: number;
+    showFootprint?: boolean;
+    showCVD?: boolean;
+    showVPVR?: boolean;
+    showBidAsk?: boolean;
+    onToggleFootprint?: () => void;
+    onToggleCVD?: () => void;
+    onToggleVPVR?: () => void;
+    onToggleBidAsk?: () => void;
 }
 
-export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({ 
-    activeTab, 
-    onChange,
+export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({
     volumeThreshold,
     setVolumeThreshold,
     volumeMode,
@@ -34,57 +41,132 @@ export const HeatmapSubNav: React.FC<HeatmapSubNavProps> = ({
     setActiveMLModelId,
     symbol,
     onAddChart,
-    isAddChartDisabled
+    isAddChartDisabled,
+    chartsCount = 1,
+    showFootprint = false,
+    showCVD = false,
+    showVPVR = false,
+    showBidAsk = false,
+    onToggleFootprint,
+    onToggleCVD,
+    onToggleVPVR,
+    onToggleBidAsk,
 }) => {
     return (
-        <div className="flex flex-wrap bg-white dark:bg-[#000000] border-b border-gray-200 dark:border-white/10 px-4 py-2 laptop:px-2.5 laptop:py-1.5 items-center gap-4 laptop:gap-2">
-            <div className="flex items-center gap-2">
-                <div className="flex space-x-1 bg-gray-100 dark:bg-black/30 p-1 rounded-lg">
-                    <button
-                        onClick={() => onChange('heatmap')}
-                        className={`flex items-center space-x-2 px-4 py-2 text-sm font-medium rounded-md border transition-colors ${activeTab === 'heatmap'
-                            ? 'bg-blue-600/10 text-brand-primary border-blue-500/20 shadow-sm'
-                            : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-black/10'
+        <div className="flex flex-wrap items-center justify-between bg-slate-50/90 dark:bg-[#050811] border-b border-slate-200 dark:border-white/10 px-3 py-1.5 gap-2">
+            {/* Left: 1-Click Core L2 Overlay Toggles + OrderFlow Suite + ML Engine */}
+            <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex items-center gap-1 bg-white dark:bg-[#0b101d] p-0.5 rounded-xl border border-slate-200 dark:border-white/10">
+                    {onToggleVPVR && (
+                        <button
+                            type="button"
+                            onClick={onToggleVPVR}
+                            className={`px-2 py-1 rounded-lg text-[10.5px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                                showVPVR
+                                    ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40'
+                                    : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
                             }`}
-                    >
-                        <Activity size={16} />
-                        <span>Heatmap View</span>
-                    </button>
+                            title="Toggle L2 Liquidity Heatmap & Volume Profile (VPVR)"
+                        >
+                            <Flame className="w-3 h-3 text-amber-500" />
+                            <span>L2 Heatmap</span>
+                        </button>
+                    )}
+
+                    {onToggleFootprint && (
+                        <button
+                            type="button"
+                            onClick={onToggleFootprint}
+                            className={`px-2 py-1 rounded-lg text-[10.5px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                                showFootprint
+                                    ? 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40'
+                                    : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                            title="Toggle Bid/Ask Footprint Clusters"
+                        >
+                            <Layers className="w-3 h-3 text-cyan-500" />
+                            <span>Footprint</span>
+                        </button>
+                    )}
+
+                    {onToggleCVD && (
+                        <button
+                            type="button"
+                            onClick={onToggleCVD}
+                            className={`px-2 py-1 rounded-lg text-[10.5px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                                showCVD
+                                    ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40'
+                                    : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                            title="Toggle Cumulative Volume Delta (CVD) Sub-Pane"
+                        >
+                            <BarChart3 className="w-3 h-3 text-emerald-500" />
+                            <span>CVD</span>
+                        </button>
+                    )}
+
+                    {onToggleBidAsk && (
+                        <button
+                            type="button"
+                            onClick={onToggleBidAsk}
+                            className={`px-2 py-1 rounded-lg text-[10.5px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                                showBidAsk
+                                    ? 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/40'
+                                    : 'text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                            title="Toggle Live Best Bid / Best Ask Spread Lines"
+                        >
+                            <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                    showBidAsk ? 'bg-emerald-400' : 'bg-slate-400'
+                                }`}
+                            />
+                            <span>BBO Lines</span>
+                        </button>
+                    )}
                 </div>
+
+                <AdvancedMetricsDropdown
+                    settings={advancedMetrics}
+                    onSettingsChange={onAdvancedMetricsChange}
+                />
+
+                <MLIndicatorsDropdown
+                    activeModelId={activeMLModelId}
+                    onSelectModel={setActiveMLModelId}
+                    symbol={symbol}
+                />
+            </div>
+
+            {/* Right: Whale Wall Threshold Filter + Multi-Chart Grid Split */}
+            <div className="flex flex-wrap items-center gap-2">
+                <VolumeFilterControl
+                    threshold={volumeThreshold}
+                    onThresholdChange={setVolumeThreshold}
+                    mode={volumeMode}
+                    onModeChange={setVolumeMode}
+                />
 
                 {onAddChart && (
                     <button
+                        type="button"
                         onClick={onAddChart}
                         disabled={isAddChartDisabled}
-                        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border transition-all bg-white dark:bg-black/20 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 hover:border-brand-primary/40 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                        title={isAddChartDisabled ? "Maximum 4 charts reached" : "Add another chart panel"}
+                        className="inline-flex items-center gap-1 text-xs font-mono font-bold px-2.5 py-1.5 rounded-xl border transition-colors bg-white dark:bg-[#0b101d] text-slate-700 dark:text-gray-200 border-slate-200 dark:border-white/10 hover:border-cyan-500/45 disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer"
+                        title={
+                            isAddChartDisabled
+                                ? 'Maximum 4 charts active'
+                                : 'Split workspace with an additional chart panel'
+                        }
                     >
-                        <span className="text-brand-primary font-bold text-sm leading-none">+</span>
-                        <span>Add Chart</span>
+                        <Plus className="w-3.5 h-3.5 text-cyan-500" />
+                        <span>Split Chart</span>
+                        <span className="text-[10px] px-1 rounded bg-cyan-500/15 text-cyan-600 dark:text-cyan-300">
+                            {chartsCount}/4
+                        </span>
                     </button>
                 )}
             </div>
-
-            <div className="w-px h-6 bg-gray-200 dark:bg-white/10"></div>
-
-            <AdvancedMetricsDropdown settings={advancedMetrics} onSettingsChange={onAdvancedMetricsChange} />
-
-            <div className="w-px h-6 bg-gray-200 dark:bg-white/10"></div>
-
-            <VolumeFilterControl 
-                threshold={volumeThreshold} 
-                onThresholdChange={setVolumeThreshold} 
-                mode={volumeMode} 
-                onModeChange={setVolumeMode} 
-            />
-
-            <div className="w-px h-6 bg-gray-200 dark:bg-white/10"></div>
-
-            <MLIndicatorsDropdown 
-                activeModelId={activeMLModelId}
-                onSelectModel={setActiveMLModelId}
-                symbol={symbol}
-            />
         </div>
     );
 };

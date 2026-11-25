@@ -268,9 +268,11 @@ async def get_sentiment_heatmap():
         ]
 
 @router.get("/macro-economics")
+@cache(expire=900)
 async def get_macro_economics():
     """
     Get key macro-economic indicators (CPI, Inflation, Interest Rates).
+    Cached for 15 minutes in Redis + 30 minutes in-memory to prevent upstream 429 rate limits.
     """
     try:
         return economic_service.get_latest_indicators()

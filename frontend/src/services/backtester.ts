@@ -16,6 +16,10 @@ export interface BacktestRequest {
     stop_loss?: number;
     take_profit?: number;
     trailing_stop?: number;
+    indicator_id?: number;
+    position_sizing?: 'percent' | 'risk_percent' | 'fixed_usd';
+    position_size_value?: number;
+    direction?: 'both' | 'long' | 'short';
 }
 
 export interface OptimizationRequest {
@@ -31,6 +35,9 @@ export interface OptimizationRequest {
     generations?: number;
     commission?: number;
     slippage?: number;
+    leverage?: number;
+    opt_target?: string;
+    min_trades?: number;
 }
 
 export interface BatchBacktestParams {
@@ -219,6 +226,11 @@ export const downloadBacktestReportApi = async (taskId: string) => {
     return response.data;
 };
 
+export const fetchBacktestHistory = async (limit = 30) => {
+    const response = await apiClient.get('/backtest/history', { params: { limit } });
+    return response.data;
+};
+
 export const backtestService = {
     runBacktest: runBacktestApi,
     runOptimization: runOptimizationApi,
@@ -226,5 +238,6 @@ export const backtestService = {
     runBatchBacktest: runBatchBacktest, // ✅ Added Batch
     getStatus: getTaskStatus,
     revokeTask: revokeBacktestTask,
-    downloadReport: downloadBacktestReportApi
+    downloadReport: downloadBacktestReportApi,
+    getHistory: fetchBacktestHistory,
 };

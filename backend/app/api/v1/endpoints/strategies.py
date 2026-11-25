@@ -409,7 +409,7 @@ async def generate_strategy_config_endpoint(
     from app.core.quotas import check_and_increment_ai_quota
     check_and_increment_ai_quota(current_user)
     try:
-        config = ai_service.generate_strategy_config(request.prompt)
+        config = await ai_service.generate_strategy_config(request.prompt)
         return config
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

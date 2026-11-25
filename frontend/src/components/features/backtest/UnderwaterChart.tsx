@@ -1,10 +1,10 @@
-import React, { useEffect, useRef } from 'react';
-// ১. AreaSeries ইম্পোর্ট করা হয়েছে (v5 এর জন্য জরুরি)
-import { createChart, ColorType, IChartApi, AreaSeries } from 'lightweight-charts';
+import React, { useEffect, useRef, useMemo } from 'react';
+import { createChart, ColorType, IChartApi, AreaSeries, Time } from 'lightweight-charts';
+import { TrendingDown } from 'lucide-react';
 
 interface DrawdownData {
     time: string | number;
-    value: number; // e.g., -5.25 (percentage)
+    value: number;
 }
 
 interface UnderwaterChartProps {
@@ -12,80 +12,88 @@ interface UnderwaterChartProps {
     height?: number;
 }
 
-const UnderwaterChart: React.FC<UnderwaterChartProps> = ({ data = [], height = 200 }) => {
+const UnderwaterChart: React.FC<UnderwaterChartProps> = ({ data = [], height = 180 }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
+
+    const maxDD = useMemo(() => {
+        if (!data.length) return 0;
+        return Math.min(...data.map((d) => (d.value > 0 ? -d.value : d.value)));
+    }, [data]);
 
     useEffect(() => {
         if (!chartContainerRef.current) return;
 
-        // চার্ট তৈরি
         const chart = createChart(chartContainerRef.current, {
             layout: {
-                background: { type: ColorType.Solid, color: '#131722' },
+                background: { type: ColorType.Solid, color: '#0A0A0A' },
                 textColor: '#9CA3AF',
             },
             grid: {
-                vertLines: { color: '#1F2937' },
-                horzLines: { color: '#1F2937' },
+                vertLines: { color: '#18181B' },
+                horzLines: { color: '#18181B' },
             },
             width: chartContainerRef.current.clientWidth,
-            height: height,
+            height,
             timeScale: {
                 timeVisible: true,
                 secondsVisible: false,
-                borderColor: '#374151',
+                borderColor: '#1F1F1F',
             },
             rightPriceScale: {
-                borderColor: '#374151',
-                scaleMargins: {
-                    top: 0.1,
-                    bottom: 0.1,
-                },
+                borderColor: '#1F1F1F',
+                scaleMargins: { top: 0.1, bottom: 0.1 },
             },
         });
         chartRef.current = chart;
 
-        // ২. ফিক্স: chart.addAreaSeries() এর বদলে chart.addSeries(AreaSeries, ...) ব্যবহার করা হয়েছে
         const drawdownSeries = chart.addSeries(AreaSeries, {
-            topColor: 'rgba(239, 68, 68, 0)',     // উপরে স্বচ্ছ
-            bottomColor: 'rgba(239, 68, 68, 0.5)', // নিচে লাল আভা
-            lineColor: '#EF4444',                  // লাল বর্ডার
+            topColor: 'rgba(239, 68, 68, 0)',
+            bottomColor: 'rgba(239, 68, 68, 0.45)',
+            lineColor: '#EF4444',
             lineWidth: 2,
         });
 
-        // ৩. ডেটা ফরম্যাটিং (নেগেটিভ ভ্যালু নিশ্চিত করা)
-        const formattedData = data.map(d => ({
-            time: d.time,
-            value: d.value > 0 ? -d.value : d.value
-        }));
+        const formattedData = data
+            .map((d) => ({
+                time: d.time as Time,
+                value: d.value > 0 ? -d.value : d.value,
+            }))
+            .sort((a, b) => Number(a.time) - Number(b.time));
 
-        drawdownSeries.setData(formattedData as any);
+        drawdownSeries.setData(formattedData);
         chart.timeScale().fitContent();
 
-        // রেসপন্সিভ হ্যান্ডলার
-        const handleResize = () => {
-            if (chartContainerRef.current) {
-                chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.contentRect.width > 0) {
+                    chart.applyOptions({ width: entry.contentRect.width, height });
+                }
             }
-        };
-        window.addEventListener('resize', handleResize);
+        });
+        observer.observe(chartContainerRef.current);
 
         return () => {
-            window.removeEventListener('resize', handleResize);
+            observer.disconnect();
             chart.remove();
+            chartRef.current = null;
         };
     }, [data, height]);
 
     return (
-        <div className="relative w-full">
-            <div className="absolute top-2 left-4 z-10">
-                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Drawdown (Underwater)</h3>
+        <div className="relative w-full bg-white dark:bg-[#0A0A0A] rounded-xl border border-slate-200 dark:border-[#1F1F1F] p-3">
+            <div className="flex items-center justify-between mb-2 px-1">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <TrendingDown size={13} className="text-rose-500" /> Drawdown (Underwater)
+                </h3>
+                <span className="text-[11px] font-mono font-bold text-rose-400">
+                    Peak DD: {maxDD.toFixed(2)}%
+                </span>
             </div>
-            <div ref={chartContainerRef} className="w-full rounded-lg overflow-hidden border border-[#2A2E39]" />
+            <div ref={chartContainerRef} className="w-full" style={{ height }} />
 
             {!data.length && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-gray-500 text-sm">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-slate-500 text-sm rounded-xl">
                     No Drawdown Data
                 </div>
             )}

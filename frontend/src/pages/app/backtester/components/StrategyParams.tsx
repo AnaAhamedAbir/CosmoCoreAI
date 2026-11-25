@@ -1,10 +1,8 @@
 import React, { useRef, useCallback, useEffect } from 'react';
 
-// --- Types ---
-type OptimizationParamValue = { start: number | string; end: number | string; step: number | string; };
+type OptimizationParamValue = { start: number | string; end: number | string; step: number | string };
 type OptimizationParams = Record<string, OptimizationParamValue>;
 
-// --- Helper Components ---
 const RangeSliderInput: React.FC<{
     config: { label: string; min?: number; max?: number; step?: number };
     value: OptimizationParamValue;
@@ -16,14 +14,17 @@ const RangeSliderInput: React.FC<{
     const startNum = Number(start);
     const endNum = Number(end);
     const rangeRef = useRef<HTMLDivElement>(null);
-    const getPercent = useCallback((val: number) => Math.round(((val - min) / (max - min)) * 100), [min, max]);
+    const getPercent = useCallback((val: number) => {
+        if (max === min) return 0;
+        return Math.max(0, Math.min(100, Math.round(((val - min) / (max - min)) * 100)));
+    }, [min, max]);
 
     useEffect(() => {
         const startPercent = getPercent(startNum);
         const endPercent = getPercent(endNum);
         if (rangeRef.current) {
             rangeRef.current.style.left = `${startPercent}%`;
-            rangeRef.current.style.width = `${endPercent - startPercent}%`;
+            rangeRef.current.style.width = `${Math.max(0, endPercent - startPercent)}%`;
         }
     }, [startNum, endNum, getPercent]);
 
@@ -48,29 +49,29 @@ const RangeSliderInput: React.FC<{
         }
     };
 
-    const inputClasses = "w-24 bg-white dark:bg-[#0A0A0A]/50 border border-brand-border-light dark:border-[#1A1A1A] rounded-md p-1.5 text-slate-900 dark:text-white text-sm focus:ring-brand-primary focus:border-brand-primary";
+    const inputClasses = 'w-full bg-white dark:bg-[#0A0A0A] border border-slate-200 dark:border-[#1F1F1F] rounded-md px-2 py-1 text-slate-900 dark:text-white text-xs font-mono focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none';
 
     return (
-        <div className="space-y-3">
+        <div className="space-y-2.5 bg-slate-50 dark:bg-[#0F0F0F] p-2.5 rounded-lg border border-slate-200 dark:border-[#1F1F1F]">
             <div className="range-slider-container">
                 <input type="range" min={min} max={max} step={step} value={startNum} onChange={(e) => handleRangeChange('start', e)} className="thumb thumb--left" aria-label="Start value" />
                 <input type="range" min={min} max={max} step={step} value={endNum} onChange={(e) => handleRangeChange('end', e)} className="thumb thumb--right" aria-label="End value" />
                 <div className="range-slider-track"></div>
                 <div ref={rangeRef} className="range-slider-range"></div>
             </div>
-            <div className={`flex items-center gap-2 ${hideStepInput ? 'justify-between' : 'justify-evenly'}`}>
+            <div className={`grid gap-2 ${hideStepInput ? 'grid-cols-2' : 'grid-cols-3'}`}>
                 <div>
-                    <label className="block text-xs text-gray-400 dark:text-gray-500 mb-1">Start</label>
+                    <label className="block text-[10px] text-slate-400 mb-0.5">Min</label>
                     <input type="number" min={min} max={max} step={step} value={start} onChange={(e) => handleValueChange('start', e.target.value)} className={inputClasses} />
                 </div>
                 {!hideStepInput && (
                     <div>
-                        <label className="block text-xs text-gray-400 dark:text-gray-500 mb-1 text-center">Step</label>
+                        <label className="block text-[10px] text-slate-400 mb-0.5 text-center">Step</label>
                         <input type="number" min={step} step={step} value={stepValue} onChange={(e) => handleValueChange('step', e.target.value)} className={inputClasses} />
                     </div>
                 )}
-                <div className="text-right">
-                    <label className="block text-xs text-gray-400 dark:text-gray-500 mb-1">End</label>
+                <div>
+                    <label className="block text-[10px] text-slate-400 mb-0.5 text-right">Max</label>
                     <input type="number" min={min} max={max} step={step} value={end} onChange={(e) => handleValueChange('end', e.target.value)} className={inputClasses} />
                 </div>
             </div>
@@ -78,7 +79,6 @@ const RangeSliderInput: React.FC<{
     );
 };
 
-// --- StrategyParams Component ---
 interface StrategyParamsProps {
     mode: 'single' | 'optimization';
     activeParamsConfig: Record<string, any>;
@@ -104,30 +104,37 @@ export const StrategyParams: React.FC<StrategyParamsProps> = ({
     setOptimizationMethod,
     hideOptimizationMethod = false,
     gaParams,
-    setGaParams
+    setGaParams,
 }) => {
-    const inputBaseClasses = "w-full bg-white dark:bg-[#0A0A0A]/50 border border-brand-border-light dark:border-[#1A1A1A] rounded-md p-2 text-slate-900 dark:text-white focus:ring-brand-primary focus:border-brand-primary";
+    const inputBaseClasses = 'w-full bg-white dark:bg-[#0A0A0A] border border-slate-200 dark:border-[#1F1F1F] rounded-md px-2.5 py-1.5 text-xs font-mono text-slate-900 dark:text-white focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-none';
 
     const handleParamChange = (key: string, value: string) => {
         const numValue = Number(value);
-        setParams(prev => ({ ...prev, [key]: isNaN(numValue) ? value : numValue }));
+        setParams((prev) => ({ ...prev, [key]: value === '' || isNaN(numValue) ? value : numValue }));
     };
 
     const handleOptimizationParamChange = (key: string, newValue: OptimizationParamValue) => {
-        setOptimizationParams(prev => ({ ...prev, [key]: newValue }));
+        setOptimizationParams((prev) => ({ ...prev, [key]: newValue }));
     };
 
     if (!activeParamsConfig || Object.keys(activeParamsConfig).length === 0) return null;
 
     if (mode === 'single') {
         return (
-            <div className="mt-6 pt-6 border-t border-brand-border-light dark:border-[#1A1A1A] animate-fade-in-down">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Strategy Parameters</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="pt-3 border-t border-slate-200 dark:border-[#1F1F1F] space-y-2.5">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Strategy Parameters</h4>
+                <div className="grid grid-cols-2 gap-2.5">
                     {Object.entries(activeParamsConfig).map(([key, config]: [string, any]) => (
                         <div key={key}>
-                            <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">{config.label}</label>
-                            <input type={config.type} value={params[key] || ''} onChange={(e) => handleParamChange(key, e.target.value)} className={inputBaseClasses} />
+                            <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400 mb-1 truncate" title={config.label || key}>
+                                {config.label || key}
+                            </label>
+                            <input
+                                type={config.type || 'number'}
+                                value={params[key] ?? ''}
+                                onChange={(e) => handleParamChange(key, e.target.value)}
+                                className={inputBaseClasses}
+                            />
                         </div>
                     ))}
                 </div>
@@ -137,36 +144,77 @@ export const StrategyParams: React.FC<StrategyParamsProps> = ({
 
     if (mode === 'optimization') {
         return (
-            <div className="mt-6 pt-6 border-t border-brand-border-light dark:border-[#1A1A1A] animate-fade-in-down">
+            <div className="pt-3 border-t border-slate-200 dark:border-[#1F1F1F] space-y-3">
                 {!hideOptimizationMethod && (
-                    <div className="mb-6">
-                        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">Optimization Method</h3>
-                        <div className="inline-flex bg-gray-100 dark:bg-[#0A0A0A]/50 rounded-lg p-1 space-x-1">
-                            <button onClick={() => setOptimizationMethod('gridSearch')} className={`px-3 py-1.5 text-xs font-semibold rounded-md ${optimizationMethod === 'gridSearch' ? 'bg-white dark:bg-[#0A0A0A] shadow text-brand-primary' : 'text-gray-500'}`}>Grid Search</button>
-                            <button onClick={() => setOptimizationMethod('geneticAlgorithm')} className={`px-3 py-1.5 text-xs font-semibold rounded-md ${optimizationMethod === 'geneticAlgorithm' ? 'bg-white dark:bg-[#0A0A0A] shadow text-brand-primary' : 'text-gray-500'}`}>Genetic Algorithm</button>
-                        </div>
-                    </div>
-                )}
-                {optimizationMethod === 'gridSearch' ? (
-                    Object.entries(activeParamsConfig).map(([key, config]: [string, any]) => (
-                        <div key={key} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start mb-4">
-                            <label className="md:col-span-1 block text-sm text-gray-500 pt-1.5">{config.label}</label>
-                            <div className="md:col-span-3">{optimizationParams[key] && <RangeSliderInput config={config} value={optimizationParams[key]} onChange={(v) => handleOptimizationParamChange(key, v)} />}</div>
-                        </div>
-                    ))
-                ) : (
                     <div>
-                        <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div><label className="block text-sm text-gray-500 mb-1">Pop. Size</label><input type="number" value={gaParams.populationSize} onChange={(e) => setGaParams(p => ({ ...p, populationSize: parseInt(e.target.value) }))} className={inputBaseClasses} /></div>
-                            <div><label className="block text-sm text-gray-500 mb-1">Generations</label><input type="number" value={gaParams.generations} onChange={(e) => setGaParams(p => ({ ...p, generations: parseInt(e.target.value) }))} className={inputBaseClasses} /></div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Search Algorithm</label>
+                        <div className="grid grid-cols-2 bg-slate-100 dark:bg-[#111] rounded-lg p-1 gap-1 border border-slate-200 dark:border-[#1F1F1F]">
+                            <button
+                                onClick={() => setOptimizationMethod('gridSearch')}
+                                className={`py-1.5 text-[11px] font-semibold rounded-md transition-all ${
+                                    optimizationMethod === 'gridSearch'
+                                        ? 'bg-white dark:bg-[#222] shadow-sm text-brand-primary'
+                                        : 'text-slate-500 hover:text-slate-300'
+                                }`}
+                            >
+                                Grid Search
+                            </button>
+                            <button
+                                onClick={() => setOptimizationMethod('geneticAlgorithm')}
+                                className={`py-1.5 text-[11px] font-semibold rounded-md transition-all ${
+                                    optimizationMethod === 'geneticAlgorithm'
+                                        ? 'bg-white dark:bg-[#222] shadow-sm text-brand-primary'
+                                        : 'text-slate-500 hover:text-slate-300'
+                                }`}
+                            >
+                                Genetic Algo
+                            </button>
                         </div>
-                        {Object.entries(activeParamsConfig).map(([key, config]: [string, any]) => (
-                            <div key={key} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start mb-4"><label className="md:col-span-1 block text-sm text-gray-500 pt-1.5">{config.label}</label><div className="md:col-span-3">{optimizationParams[key] && <RangeSliderInput config={config} value={optimizationParams[key]} onChange={(v) => handleOptimizationParamChange(key, v)} hideStepInput={true} />}</div></div>
-                        ))}
                     </div>
                 )}
+
+                {optimizationMethod === 'geneticAlgorithm' && !hideOptimizationMethod && (
+                    <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                            <label className="block text-[10px] text-slate-500 mb-1">Pop. Size</label>
+                            <input
+                                type="number"
+                                value={gaParams.populationSize}
+                                onChange={(e) => setGaParams((p) => ({ ...p, populationSize: parseInt(e.target.value) || 10 }))}
+                                className={inputBaseClasses}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] text-slate-500 mb-1">Generations</label>
+                            <input
+                                type="number"
+                                value={gaParams.generations}
+                                onChange={(e) => setGaParams((p) => ({ ...p, generations: parseInt(e.target.value) || 5 }))}
+                                className={inputBaseClasses}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                <div className="space-y-3">
+                    {Object.entries(activeParamsConfig).map(([key, config]: [string, any]) => (
+                        <div key={key} className="space-y-1">
+                            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                                {config.label || key}
+                            </label>
+                            {optimizationParams[key] && (
+                                <RangeSliderInput
+                                    config={config}
+                                    value={optimizationParams[key]}
+                                    onChange={(v) => handleOptimizationParamChange(key, v)}
+                                    hideStepInput={optimizationMethod === 'geneticAlgorithm' && !hideOptimizationMethod}
+                                />
+                            )}
+                        </div>
+                    ))}
+                </div>
             </div>
-        )
+        );
     }
 
     return null;

@@ -110,6 +110,9 @@ class BacktestRequest(BaseModel):
     take_profit: Optional[float] = 0.0
     trailing_stop: Optional[float] = 0.0
     indicator_id: Optional[int] = None
+    position_sizing: str = "percent"
+    position_size_value: float = 90.0
+    direction: str = "both"
 
 class BatchBacktestRequest(BaseModel):
     symbol: str
@@ -144,6 +147,15 @@ class OptimizationRequest(BaseModel):
     commission: float = 0.001
     slippage: float = 0.0
     leverage: float = 1.0
+    opt_target: str = "profit"
+    min_trades: int = 5
+    custom_data_file: Optional[str] = None
+    stop_loss: Optional[float] = 0.0
+    take_profit: Optional[float] = 0.0
+    trailing_stop: Optional[float] = 0.0
+    position_sizing: str = "percent"
+    position_size_value: float = 90.0
+    direction: str = "both"
 
 class WalkForwardRequest(BaseModel):
     symbol: str
@@ -163,6 +175,13 @@ class WalkForwardRequest(BaseModel):
     leverage: float = 1.0
     opt_target: str = "profit"
     min_trades: int = 5
+    custom_data_file: Optional[str] = None
+    stop_loss: Optional[float] = 0.0
+    take_profit: Optional[float] = 0.0
+    trailing_stop: Optional[float] = 0.0
+    position_sizing: str = "percent"
+    position_size_value: float = 90.0
+    direction: str = "both"
 
 class DownloadRequest(BaseModel):
     exchange: str

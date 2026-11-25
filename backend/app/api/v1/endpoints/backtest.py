@@ -62,6 +62,9 @@ def run_backtest(
         take_profit=request.take_profit,
         trailing_stop=request.trailing_stop,
         indicator_id=request.indicator_id, # ✅ Pass Indicator ID
+        position_sizing=request.position_sizing,
+        position_size_value=request.position_size_value,
+        direction=request.direction,
         user_id=current_user.id,
     ), queue="heavy")
     register_task_owner(task.id, current_user.id)
@@ -80,6 +83,7 @@ def run_walk_forward(
         params_dict[k] = v.model_dump() if hasattr(v, 'model_dump') else v
 
     # টাস্ক কল করা (সতর্কতা: এখানে কোনো ডুপ্লিকেট আর্গুমেন্ট নেই)
+    safe_data_file = _safe_custom_data_file(getattr(request, 'custom_data_file', None))
     task = run_walk_forward_task.apply_async(kwargs=dict(
         symbol=request.symbol,
         timeframe=request.timeframe,
@@ -98,6 +102,13 @@ def run_walk_forward(
         leverage=request.leverage,
         opt_target=getattr(request, 'opt_target', 'profit'), # ✅ Pass
         min_trades=getattr(request, 'min_trades', 2),  # ✅ ফিক্স: ডিফল্ট ৫ থেকে কমিয়ে ২ করা হলো
+        custom_data_file=safe_data_file,
+        stop_loss=getattr(request, 'stop_loss', 0.0),
+        take_profit=getattr(request, 'take_profit', 0.0),
+        trailing_stop=getattr(request, 'trailing_stop', 0.0),
+        position_sizing=getattr(request, 'position_sizing', 'percent'),
+        position_size_value=getattr(request, 'position_size_value', 90.0),
+        direction=getattr(request, 'direction', 'both'),
         user_id=current_user.id,
     ), queue="heavy")
     register_task_owner(task.id, current_user.id)
@@ -179,6 +190,7 @@ def run_optimization(
     for k, v in request.params.items():
         params_dict[k] = v.model_dump() if hasattr(v, 'model_dump') else v
     
+    safe_data_file = _safe_custom_data_file(getattr(request, 'custom_data_file', None))
     task = run_optimization_task.apply_async(kwargs=dict(
         symbol=request.symbol,
         timeframe=request.timeframe,
@@ -193,6 +205,15 @@ def run_optimization(
         commission=request.commission,
         slippage=request.slippage,
         leverage=request.leverage, # ✅ Pass Leverage
+        opt_target=getattr(request, 'opt_target', 'profit'),
+        min_trades=getattr(request, 'min_trades', 5),
+        custom_data_file=safe_data_file,
+        stop_loss=getattr(request, 'stop_loss', 0.0),
+        take_profit=getattr(request, 'take_profit', 0.0),
+        trailing_stop=getattr(request, 'trailing_stop', 0.0),
+        position_sizing=getattr(request, 'position_sizing', 'percent'),
+        position_size_value=getattr(request, 'position_size_value', 90.0),
+        direction=getattr(request, 'direction', 'both'),
         user_id=current_user.id,
     ), queue="heavy")
     register_task_owner(task.id, current_user.id)
@@ -430,3 +451,38 @@ def download_backtest_report(
     safe_symbol = symbol.replace("/", "_")
     filename = f"report_{safe_symbol}_{timeframe}_{task_id}.{format}"
     return FileResponse(file_path, media_type='application/pdf' if format == 'pdf' else 'text/html', filename=filename)
+
+
+@router.get("/history")
+def get_backtest_history(
+    limit: int = 30,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    rows = (
+        db.query(models.Backtest)
+        .filter(models.Backtest.owner_id == current_user.id)
+        .order_by(models.Backtest.created_at.desc())
+        .limit(max(1, min(limit, 100)))
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "task_id": r.task_id,
+            "strategy": r.strategy,
+            "symbol": r.symbol,
+            "timeframe": r.timeframe,
+            "start_date": r.start_date.isoformat() if r.start_date else None,
+            "end_date": r.end_date.isoformat() if r.end_date else None,
+            "initial_cash": r.initial_cash,
+            "final_equity": r.final_equity,
+            "profit_percent": r.profit_percent,
+            "max_drawdown": r.max_drawdown,
+            "win_rate": r.win_rate,
+            "sharpe_ratio": r.sharpe_ratio,
+            "status": r.status,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]

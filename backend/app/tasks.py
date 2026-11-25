@@ -218,7 +218,7 @@ def _emit_backtest_notification(
 
 
 @celery_app.task(bind=True)
-def run_backtest_task(self, symbol: str, timeframe: str, strategy_name: str, initial_cash: float, params: dict, start_date: str = None, end_date: str = None, custom_data_file: str = None, commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0, secondary_timeframe: str = None, stop_loss: float = 0.0, take_profit: float = 0.0, trailing_stop: float = 0.0, indicator_id: int = None, user_id: int = None):
+def run_backtest_task(self, symbol: str, timeframe: str, strategy_name: str, initial_cash: float, params: dict, start_date: str = None, end_date: str = None, custom_data_file: str = None, commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0, secondary_timeframe: str = None, stop_loss: float = 0.0, take_profit: float = 0.0, trailing_stop: float = 0.0, indicator_id: int = None, position_sizing: str = "percent", position_size_value: float = 90.0, direction: str = "both", user_id: int = None):
     from app.services.backtest_engine import BacktestEngine
     from app.services.report_generator import generate_report
     db = _new_db()
@@ -258,10 +258,38 @@ def run_backtest_task(self, symbol: str, timeframe: str, strategy_name: str, ini
             stop_loss=stop_loss,
             take_profit=take_profit,
             trailing_stop=trailing_stop,
-            indicator_id=indicator_id
+            indicator_id=indicator_id,
+            position_sizing=position_sizing,
+            position_size_value=position_size_value,
+            direction=direction,
         )
         if result.get("status") == "success":
             generate_report(self.request.id, result.get("daily_returns", "{}"), symbol, timeframe)
+            if user_id:
+                try:
+                    from datetime import datetime
+                    from app.models.backtest import Backtest
+                    adv = result.get("advanced_metrics") or {}
+                    rec = Backtest(
+                        owner_id=user_id,
+                        strategy=strategy_name,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        start_date=datetime.fromisoformat(start_date) if start_date else None,
+                        end_date=datetime.fromisoformat(end_date) if end_date else None,
+                        initial_cash=float(initial_cash or 0),
+                        final_equity=float(result.get("final_value") or 0),
+                        profit_percent=float(result.get("profit_percent") or 0),
+                        max_drawdown=float(adv.get("max_drawdown") or 0),
+                        win_rate=float((result.get("trade_analysis") or {}).get("win_rate") or adv.get("win_rate") or 0),
+                        sharpe_ratio=float(adv.get("sharpe") or 0),
+                        status="COMPLETED",
+                        task_id=self.request.id,
+                    )
+                    db.add(rec)
+                    db.commit()
+                except Exception:
+                    db.rollback()
 
         print_pretty_result(result)
         publish_task_status('BACKTEST', self.request.id, 'completed', 100, result)
@@ -299,7 +327,7 @@ def run_backtest_task(self, symbol: str, timeframe: str, strategy_name: str, ini
         db.close()
 
 @celery_app.task(bind=True)
-def run_optimization_task(self, symbol: str, timeframe: str, strategy_name: str, initial_cash: float, params: dict, start_date: str = None, end_date: str = None, method="grid", population_size=50, generations=10, commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0, user_id: int = None):
+def run_optimization_task(self, symbol: str, timeframe: str, strategy_name: str, initial_cash: float, params: dict, start_date: str = None, end_date: str = None, method="grid", population_size=50, generations=10, commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0, opt_target: str = "profit", min_trades: int = 5, custom_data_file: str = None, stop_loss: float = 0.0, take_profit: float = 0.0, trailing_stop: float = 0.0, position_sizing: str = "percent", position_size_value: float = 90.0, direction: str = "both", user_id: int = None):
     from app.services.backtest_engine import BacktestEngine
     db = _new_db()
     engine = BacktestEngine()
@@ -358,7 +386,16 @@ def run_optimization_task(self, symbol: str, timeframe: str, strategy_name: str,
             abort_callback=check_abort,
             commission=commission,
             slippage=slippage,
-            leverage=leverage
+            leverage=leverage,
+            opt_target=opt_target,
+            min_trades=min_trades,
+            custom_data_file=custom_data_file,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            trailing_stop=trailing_stop,
+            position_sizing=position_sizing,
+            position_size_value=position_size_value,
+            direction=direction,
         )
         
         try:
@@ -398,7 +435,9 @@ def run_optimization_task(self, symbol: str, timeframe: str, strategy_name: str,
 @celery_app.task(bind=True)
 def run_walk_forward_task(self, symbol, timeframe, strategy_name, initial_cash, params, start_date, end_date, 
                           train_window_days, test_window_days, method, population_size, generations, 
-                          commission, slippage, leverage, opt_target='profit', min_trades=2, user_id: int = None):
+                          commission, slippage, leverage, opt_target='profit', min_trades=2,
+                          custom_data_file=None, stop_loss=0.0, take_profit=0.0, trailing_stop=0.0,
+                          position_sizing='percent', position_size_value=90.0, direction='both', user_id: int = None):
     
     def progress_callback(percent, meta=None):
         self.update_state(
@@ -427,6 +466,9 @@ def run_walk_forward_task(self, symbol, timeframe, strategy_name, initial_cash, 
             method=method, population_size=population_size, generations=generations,
             commission=commission, slippage=slippage, leverage=leverage,
             opt_target=opt_target, min_trades=min_trades,
+            custom_data_file=custom_data_file,
+            stop_loss=stop_loss, take_profit=take_profit, trailing_stop=trailing_stop,
+            position_sizing=position_sizing, position_size_value=position_size_value, direction=direction,
             progress_callback=progress_callback
         )
         

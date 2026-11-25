@@ -110,8 +110,57 @@ export interface BacktestRequest {
   stop_loss?: number;
   take_profit?: number;
   trailing_stop?: number;
+  position_sizing?: 'percent' | 'risk_percent' | 'fixed_usd';
+  position_size_value?: number;
+  direction?: 'both' | 'long' | 'short';
 }
 
+export interface ClosedTrade {
+  id: number;
+  side: 'LONG' | 'SHORT';
+  entry_time: number;
+  exit_time: number;
+  entry_price: number;
+  exit_price: number;
+  size: number;
+  pnl: number;
+  pnl_net: number;
+  commission: number;
+  return_pct: number;
+  duration_bars: number;
+  duration_seconds: number;
+  mae_pct: number;
+  mfe_pct: number;
+  r_multiple: number | null;
+}
+
+export interface AnalyticsBreakdown {
+  expectancy: number;
+  sqn: number;
+  max_consecutive_wins: number;
+  max_consecutive_losses: number;
+  avg_duration_hours: number;
+  by_weekday: { day: string; trades: number; win_rate: number; pnl: number }[];
+  by_hour: { hour: string; trades: number; win_rate: number; pnl: number }[];
+}
+
+export interface BacktestHistoryItem {
+  id: number;
+  task_id: string;
+  strategy: string;
+  symbol: string;
+  timeframe: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  initial_cash: number;
+  final_equity: number;
+  profit_percent: number;
+  max_drawdown: number;
+  win_rate: number;
+  sharpe_ratio: number;
+  status: string;
+  created_at?: string | null;
+}
 
 // 1. নতুন ইন্টারফেস যোগ করুন
 export interface MonteCarloMetrics {
@@ -123,6 +172,8 @@ export interface MonteCarloMetrics {
   risk_of_ruin_percent: number;
   expected_max_drawdown: number;
   worst_case_drawdown_95: number;
+  percentile_bands?: { trade: number; p5: number; p25: number; p50: number; p75: number; p95: number }[];
+  distribution?: { range: string; count: number }[];
 }
 
 export interface BacktestResult {
@@ -148,7 +199,9 @@ export interface BacktestResult {
     volatility: number;
     win_rate: number;
     profit_factor: number;
-    expectancy: number;
+    expectancy?: number;
+    recovery_factor?: number;
+    expected_return?: number;
     cagr: number;
   };
 
@@ -156,7 +209,10 @@ export interface BacktestResult {
   metrics?: BacktestMetrics;
   monte_carlo?: MonteCarloMetrics; // 👈 এই লাইনটি যোগ করুন (অপশনাল হিসেবে)
   trade_analysis?: TradeAnalysisMetrics;
-  equity_curve?: { name: string; value: number }[]; // ✅ Updated for Recharts
+  equity_curve?: { time?: number; name?: string; value: number }[]; // ✅ Updated for Recharts & Lightweight Charts
+  benchmark_curve?: { time: number; value: number }[];
+  closed_trades?: ClosedTrade[];
+  analytics_breakdown?: AnalyticsBreakdown;
 
   // ভিজ্যুয়ালাইজেশন ডেটা
   heatmap_data?: { year: number; month: number; value: number }[];

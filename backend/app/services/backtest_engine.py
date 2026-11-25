@@ -88,17 +88,37 @@ class EquityAnalyzer(bt.Analyzer):
         return self.equity_data
 
 class FractionalPercentSizer(bt.Sizer):
+    """Configurable sizer supporting percent-of-equity, fixed-USD, and risk-based sizing."""
     params = (
         ('percents', 90),
+        ('mode', 'percent'),
+        ('value', 90.0),
+        ('stop_loss', 0.0),
     )
+
     def _getsizing(self, comminfo, cash, data, isbuy):
         position = self.broker.getposition(data)
         if position.size == 0:
             close_price = data.close[0]
             if close_price <= 0:
                 return 0
-            size = self.broker.get_value() * (self.params.percents / 100) / close_price
-            return size
+            equity = self.broker.get_value()
+            mode = self.params.mode or 'percent'
+            val = float(self.params.value if self.params.value is not None else self.params.percents)
+
+            if mode == 'fixed_usd':
+                alloc = max(0.0, min(val, equity * 0.95))
+            elif mode == 'risk_percent':
+                sl_pct = float(self.params.stop_loss or 0.0)
+                if sl_pct > 0:
+                    risk_amt = equity * (max(0.1, min(val, 100.0)) / 100.0)
+                    alloc = min(risk_amt / (sl_pct / 100.0), equity * 0.95)
+                else:
+                    alloc = equity * (max(1.0, min(val, 100.0)) / 100.0)
+            else:
+                alloc = equity * (max(1.0, min(val, 100.0)) / 100.0)
+
+            return alloc / close_price
         return position.size
 
 class BacktestEngine:
@@ -109,6 +129,7 @@ class BacktestEngine:
             secondary_timeframe: str = None,  # ✅ Secondary Timeframe (Trend)
             stop_loss: float = 0.0, take_profit: float = 0.0, trailing_stop: float = 0.0,
             indicator_id: int = None, # ✅ NEW: Custom Indicator ID
+            position_sizing: str = "percent", position_size_value: float = 90.0, direction: str = "both",
             df_data: pd.DataFrame = None): # ✅ NEW ARGUMENT
         
         resample_compression = 1
@@ -266,8 +287,10 @@ class BacktestEngine:
         if 'take_profit' in clean_params: valid_params['take_profit'] = clean_params['take_profit']
         if 'trailing_stop' in clean_params: valid_params['trailing_stop'] = clean_params['trailing_stop']
 
+        run_strategy_class = self._wrap_direction_strategy(strategy_class, direction)
+
         try:
-            cerebro.addstrategy(strategy_class, **valid_params)
+            cerebro.addstrategy(run_strategy_class, **valid_params)
         except Exception as e:
             return {"error": f"Failed to initialize strategy parameters: {str(e)}"}
 
@@ -286,7 +309,13 @@ class BacktestEngine:
         if slippage > 0:
             cerebro.broker.set_slippage_perc(perc=slippage)
         
-        cerebro.addsizer(FractionalPercentSizer, percents=90)
+        cerebro.addsizer(
+            FractionalPercentSizer,
+            percents=position_size_value if position_sizing == 'percent' else 90,
+            mode=position_sizing,
+            value=position_size_value,
+            stop_loss=stop_loss,
+        )
         
         cerebro.addanalyzer(bt.analyzers.PyFolio, _name='pyfolio')
         cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
@@ -415,6 +444,12 @@ class BacktestEngine:
         except Exception as e:
             print(f"❌ Report Generation Error: {e}")
 
+        # Compute Buy & Hold benchmark curve & enriched round-trip trade analytics
+        benchmark_curve = self._compute_benchmark_curve(df, initial_cash)
+        closed_trades, analytics_breakdown = self._extract_closed_trades_and_breakdown(
+            first_strat, df, initial_cash, stop_loss
+        )
+
         # ✅ PRINT: with Leverage Info
         print(f"\n📊 Backtest Result for {symbol} ({timeframe}) | Lev: {leverage}x")
         print(f"------------------------------------------------")
@@ -438,15 +473,200 @@ class BacktestEngine:
             "heatmap_data": qs_metrics["heatmap"],
             "underwater_data": qs_metrics["underwater"],
             "histogram_data": qs_metrics["histogram"],
-            "histogram_data": qs_metrics["histogram"],
             "report_file": report_file, # 👈 Added report file
-            "trades_log": executed_trades, 
+            "trades_log": executed_trades,
+            "closed_trades": closed_trades,
+            "analytics_breakdown": analytics_breakdown,
             "candle_data": chart_candles,
             "trade_analysis": detailed_trade_analysis,
             "equity_curve": equity_curve,
+            "benchmark_curve": benchmark_curve,
             "daily_returns": returns.to_json(date_format='iso') if 'returns' in locals() else None,
             "monte_carlo": monte_carlo_results
         }
+
+    def _compute_benchmark_curve(self, df: pd.DataFrame, initial_cash: float):
+        """Build a Buy & Hold equity curve aligned with candle timestamps."""
+        try:
+            if df is None or df.empty or 'close' not in df.columns:
+                return []
+            first_close = float(df['close'].iloc[0])
+            if first_close <= 0:
+                return []
+            scale = initial_cash / first_close
+            times = df['time'].tolist() if 'time' in df.columns else (df.index.astype('int64') // 10**9).tolist()
+            closes = df['close'].tolist()
+            return [{"time": int(t), "value": round(float(c) * scale, 2)} for t, c in zip(times, closes)]
+        except Exception:
+            return []
+
+    def _extract_closed_trades_and_breakdown(self, strategy, df: pd.DataFrame, initial_cash: float, stop_loss: float = 0.0):
+        """Extract round-trip closed trades with MAE/MFE/R-multiple and session/streak breakdown."""
+        closed_trades = []
+        breakdown = {
+            "expectancy": 0.0,
+            "sqn": 0.0,
+            "max_consecutive_wins": 0,
+            "max_consecutive_losses": 0,
+            "avg_duration_hours": 0.0,
+            "by_weekday": [],
+            "by_hour": [],
+        }
+        try:
+            if not hasattr(strategy, '_trades'):
+                return closed_trades, breakdown
+
+            raw_trades = []
+            for feed in strategy._trades:
+                raw_trades.extend(strategy._trades[feed][0])
+
+            # Ensure df index is DatetimeIndex for slicing MAE/MFE
+            df_idx = df
+            if not isinstance(df_idx.index, pd.DatetimeIndex):
+                df_idx = df_idx.copy()
+                df_idx.index = pd.to_datetime(df_idx.index)
+
+            pnls = []
+            durations_sec = []
+            weekday_map = {i: {"day": name, "trades": 0, "wins": 0, "pnl": 0.0} for i, name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])}
+            hour_map = {h: {"hour": f"{h:02d}:00", "trades": 0, "wins": 0, "pnl": 0.0} for h in range(24)}
+
+            for idx, t in enumerate(raw_trades):
+                try:
+                    dt_open = bt.num2date(t.dtopen)
+                    dt_close = bt.num2date(t.dtclose)
+                    entry_ts = int(dt_open.timestamp())
+                    exit_ts = int(dt_close.timestamp())
+
+                    hist = getattr(t, 'history', []) or []
+                    is_long = getattr(t, 'long', True)
+                    entry_price = float(getattr(t, 'price', 0.0) or 0.0)
+                    exit_price = entry_price
+                    trade_size = abs(float(getattr(t, 'size', 0.0) or 0.0))
+
+                    if hist:
+                        first_ev = getattr(hist[0], 'event', None)
+                        last_ev = getattr(hist[-1], 'event', None)
+                        if first_ev is not None:
+                            raw_sz = float(getattr(first_ev, 'size', 0.0) or 0.0)
+                            if raw_sz != 0:
+                                is_long = raw_sz > 0
+                                trade_size = abs(raw_sz)
+                            if getattr(first_ev, 'price', None):
+                                entry_price = float(first_ev.price)
+                        if last_ev is not None and getattr(last_ev, 'price', None):
+                            exit_price = float(last_ev.price)
+
+                    pnl_gross = float(getattr(t, 'pnl', 0.0) or 0.0)
+                    pnl_net = float(getattr(t, 'pnlcomm', pnl_gross) or pnl_gross)
+                    commission_paid = float(getattr(t, 'commission', 0.0) or 0.0)
+                    notional = entry_price * trade_size
+                    ret_pct = (pnl_net / notional * 100.0) if notional > 0 else 0.0
+                    dur_sec = max(0, exit_ts - entry_ts)
+                    durations_sec.append(dur_sec)
+
+                    # MAE / MFE
+                    mae_pct = 0.0
+                    mfe_pct = 0.0
+                    if entry_price > 0 and not df_idx.empty:
+                        try:
+                            o_cmp = pd.Timestamp(dt_open).tz_localize(None)
+                            c_cmp = pd.Timestamp(dt_close).tz_localize(None)
+                            window = df_idx.loc[o_cmp:c_cmp]
+                            if not window.empty:
+                                max_h = float(window['high'].max())
+                                min_l = float(window['low'].min())
+                                if is_long:
+                                    mfe_pct = max(0.0, (max_h - entry_price) / entry_price * 100.0)
+                                    mae_pct = min(0.0, (min_l - entry_price) / entry_price * 100.0)
+                                else:
+                                    mfe_pct = max(0.0, (entry_price - min_l) / entry_price * 100.0)
+                                    mae_pct = min(0.0, (entry_price - max_h) / entry_price * 100.0)
+                        except Exception:
+                            pass
+
+                    r_mult = round(ret_pct / stop_loss, 2) if stop_loss and stop_loss > 0 else None
+
+                    closed_trades.append({
+                        "id": idx + 1,
+                        "side": "LONG" if is_long else "SHORT",
+                        "entry_time": entry_ts,
+                        "exit_time": exit_ts,
+                        "entry_price": round(entry_price, 6),
+                        "exit_price": round(exit_price, 6),
+                        "size": round(trade_size, 6),
+                        "pnl": round(pnl_gross, 2),
+                        "pnl_net": round(pnl_net, 2),
+                        "commission": round(commission_paid, 4),
+                        "return_pct": round(ret_pct, 2),
+                        "duration_bars": int(getattr(t, 'barlen', 0) or 0),
+                        "duration_seconds": dur_sec,
+                        "mae_pct": round(mae_pct, 2),
+                        "mfe_pct": round(mfe_pct, 2),
+                        "r_multiple": r_mult,
+                    })
+
+                    pnls.append(pnl_net)
+                    wd = dt_open.weekday()
+                    hr = dt_open.hour
+                    weekday_map[wd]["trades"] += 1
+                    weekday_map[wd]["pnl"] += pnl_net
+                    if pnl_net > 0:
+                        weekday_map[wd]["wins"] += 1
+                    hour_map[hr]["trades"] += 1
+                    hour_map[hr]["pnl"] += pnl_net
+                    if pnl_net > 0:
+                        hour_map[hr]["wins"] += 1
+                except Exception:
+                    continue
+
+            if pnls:
+                pnl_arr = np.array(pnls, dtype=float)
+                wins = pnl_arr[pnl_arr > 0]
+                losses = pnl_arr[pnl_arr <= 0]
+                win_prob = len(wins) / len(pnl_arr)
+                avg_w = float(np.mean(wins)) if len(wins) else 0.0
+                avg_l = float(np.mean(losses)) if len(losses) else 0.0
+                breakdown["expectancy"] = round((win_prob * avg_w) + ((1.0 - win_prob) * avg_l), 2)
+                std_pnl = float(np.std(pnl_arr))
+                breakdown["sqn"] = round((math.sqrt(len(pnl_arr)) * float(np.mean(pnl_arr)) / std_pnl), 2) if std_pnl > 0 else 0.0
+
+                cur_w = cur_l = max_w = max_l = 0
+                for p in pnls:
+                    if p > 0:
+                        cur_w += 1
+                        cur_l = 0
+                        max_w = max(max_w, cur_w)
+                    else:
+                        cur_l += 1
+                        cur_w = 0
+                        max_l = max(max_l, cur_l)
+                breakdown["max_consecutive_wins"] = max_w
+                breakdown["max_consecutive_losses"] = max_l
+                breakdown["avg_duration_hours"] = round((sum(durations_sec) / len(durations_sec)) / 3600.0, 2) if durations_sec else 0.0
+
+            breakdown["by_weekday"] = [
+                {
+                    "day": v["day"],
+                    "trades": v["trades"],
+                    "win_rate": round((v["wins"] / v["trades"] * 100.0), 1) if v["trades"] else 0.0,
+                    "pnl": round(v["pnl"], 2),
+                }
+                for v in weekday_map.values()
+            ]
+            breakdown["by_hour"] = [
+                {
+                    "hour": v["hour"],
+                    "trades": v["trades"],
+                    "win_rate": round((v["wins"] / v["trades"] * 100.0), 1) if v["trades"] else 0.0,
+                    "pnl": round(v["pnl"], 2),
+                }
+                for v in hour_map.values() if v["trades"] > 0
+            ]
+        except Exception as e:
+            print(f"⚠️ Closed trades extraction error: {e}")
+
+        return closed_trades, breakdown
 
     def _format_trade_analysis(self, strategy):
         try:
@@ -537,6 +757,7 @@ class BacktestEngine:
         trades_pnl = np.array(trades_pnl)
         final_equities = []
         max_drawdowns = []
+        all_curves = []
         ruin_count = 0
         
         # ২. সিমুলেশন লুপ
@@ -546,6 +767,7 @@ class BacktestEngine:
             
             # ইকুইটি কার্ভ তৈরি করা (Cumulative Sum)
             equity_curve = np.cumsum(np.insert(shuffled_pnl, 0, initial_cash))
+            all_curves.append(equity_curve)
             
             final_equity = equity_curve[-1]
             final_equities.append(final_equity)
@@ -564,13 +786,40 @@ class BacktestEngine:
         max_drawdowns = np.sort(max_drawdowns)
 
         median_return = np.median(final_equities) - initial_cash
-        worst_case_return = np.percentile(final_equities, 5) - initial_cash # ৯৫% কনফিডেন্স
-        best_case_return = np.percentile(final_equities, 95) - initial_cash
-        
         avg_drawdown = np.mean(max_drawdowns)
         worst_drawdown = np.percentile(max_drawdowns, 5) # মনে রাখবেন ড্রডাউন নেগেটিভ ভ্যালু
-        
         risk_of_ruin = (ruin_count / simulations) * 100
+
+        # Percentile fan chart bands across trade index (up to 60 sampled steps)
+        percentile_bands = []
+        try:
+            curve_matrix = np.array(all_curves)
+            total_pts = curve_matrix.shape[1]
+            indices = np.unique(np.linspace(0, total_pts - 1, min(60, total_pts), dtype=int))
+            for idx in indices:
+                col = curve_matrix[:, idx]
+                percentile_bands.append({
+                    "trade": int(idx),
+                    "p5": round(float(np.percentile(col, 5)), 2),
+                    "p25": round(float(np.percentile(col, 25)), 2),
+                    "p50": round(float(np.percentile(col, 50)), 2),
+                    "p75": round(float(np.percentile(col, 75)), 2),
+                    "p95": round(float(np.percentile(col, 95)), 2),
+                })
+        except Exception:
+            percentile_bands = []
+
+        # Final equity distribution histogram
+        distribution = []
+        try:
+            counts, edges = np.histogram(final_equities, bins=12)
+            for i in range(len(counts)):
+                distribution.append({
+                    "range": f"${int(edges[i]):,}",
+                    "count": int(counts[i]),
+                })
+        except Exception:
+            distribution = []
 
         return {
             "simulations": simulations,
@@ -580,8 +829,29 @@ class BacktestEngine:
             "best_case_equity_95": round(float(np.percentile(final_equities, 95)), 2),
             "risk_of_ruin_percent": round(risk_of_ruin, 2),
             "expected_max_drawdown": round(float(avg_drawdown), 2),
-            "worst_case_drawdown_95": round(float(worst_drawdown), 2)
+            "worst_case_drawdown_95": round(float(worst_drawdown), 2),
+            "percentile_bands": percentile_bands,
+            "distribution": distribution,
         }
+
+    def _wrap_direction_strategy(self, strategy_class, direction: str = "both"):
+        if direction not in ("long", "short"):
+            return strategy_class
+        _base = strategy_class
+        _dir = direction
+
+        class DirectionFilteredStrategy(_base):
+            def buy(self, *args, **kwargs):
+                if _dir == "short" and self.position.size >= 0:
+                    return None
+                return super().buy(*args, **kwargs)
+
+            def sell(self, *args, **kwargs):
+                if _dir == "long" and self.position.size <= 0:
+                    return None
+                return super().sell(*args, **kwargs)
+
+        return DirectionFilteredStrategy
 
     def optimize(self, db: Session, symbol: str, timeframe: str, strategy_name: str, initial_cash: float, params: dict, 
                  start_date: str = None, end_date: str = None, custom_data_file: str = None, 
@@ -589,7 +859,9 @@ class BacktestEngine:
                  commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0,
                  df_data: pd.DataFrame = None, # 👈 NEW: Allow passing dataframe directly
                  opt_target: str = "profit", # ✅ New
-                 min_trades: int = 5):       # ✅ New
+                 min_trades: int = 5,        # ✅ New
+                 stop_loss: float = 0.0, take_profit: float = 0.0, trailing_stop: float = 0.0,
+                 position_sizing: str = "percent", position_size_value: float = 90.0, direction: str = "both"):
         
         df = None
 
@@ -682,7 +954,12 @@ class BacktestEngine:
                 instance_params = dict(zip(param_names, combo))
                 
                 # ✅ Pass the pre-loaded 'strategy_class' instead of 'strategy_name'
-                metrics = self._run_single_backtest(df, strategy_class, initial_cash, instance_params, fixed_params, commission, slippage, leverage)
+                metrics = self._run_single_backtest(
+                    df, strategy_class, initial_cash, instance_params, fixed_params,
+                    commission, slippage, leverage,
+                    stop_loss=stop_loss, take_profit=take_profit, trailing_stop=trailing_stop,
+                    position_sizing=position_sizing, position_size_value=position_size_value, direction=direction,
+                )
                 
                 # ✅ Filter by Min Trades
                 if metrics['total_trades'] < min_trades:
@@ -714,7 +991,9 @@ class BacktestEngine:
                 pop_size=population_size, generations=generations, 
                 progress_callback=progress_callback, abort_callback=abort_callback,
                 commission=commission, slippage=slippage, leverage=leverage,
-                opt_target=opt_target, min_trades=min_trades # ✅ Pass args
+                opt_target=opt_target, min_trades=min_trades, # ✅ Pass args
+                stop_loss=stop_loss, take_profit=take_profit, trailing_stop=trailing_stop,
+                position_sizing=position_sizing, position_size_value=position_size_value, direction=direction,
             )
 
         # ✅ Dynamic Sorting Logic Helper
@@ -733,18 +1012,39 @@ class BacktestEngine:
                      method="grid", population_size=20, generations=5, 
                      commission: float = 0.001, slippage: float = 0.0, leverage: float = 1.0,
                      opt_target="profit", min_trades=5, # ✅ New
+                     custom_data_file: str = None,
+                     stop_loss: float = 0.0, take_profit: float = 0.0, trailing_stop: float = 0.0,
+                     position_sizing: str = "percent", position_size_value: float = 90.0, direction: str = "both",
                      progress_callback=None):
         
         print(f"🚀 Starting Walk-Forward Analysis for {symbol}...")
-        
-        candles = market_service.get_candles_from_db(db, symbol, timeframe, start_date, end_date)
-        if not candles or len(candles) < (train_window_days + test_window_days):
-            return {"error": "Insufficient data for Walk-Forward Analysis."}
 
-        full_df = pd.DataFrame(candles, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
-        full_df['datetime'] = pd.to_datetime(full_df['datetime'])
-        full_df.set_index('datetime', inplace=True)
-        full_df.sort_index(inplace=True)
+        full_df = None
+        if custom_data_file:
+            file_path = f"app/data_feeds/{custom_data_file}"
+            if os.path.exists(file_path):
+                try:
+                    full_df = pd.read_csv(file_path)
+                    full_df.columns = [c.lower().strip() for c in full_df.columns]
+                    date_col = 'datetime' if 'datetime' in full_df.columns else ('date' if 'date' in full_df.columns else None)
+                    if date_col:
+                        full_df['datetime'] = pd.to_datetime(full_df[date_col], errors='coerce')
+                        full_df.dropna(subset=['datetime'], inplace=True)
+                        full_df.set_index('datetime', inplace=True)
+                        full_df = full_df[['open', 'high', 'low', 'close', 'volume']]
+                        full_df.sort_index(inplace=True)
+                except Exception as e:
+                    return {"error": f"Error reading CSV file: {str(e)}"}
+
+        if full_df is None:
+            candles = market_service.get_candles_from_db(db, symbol, timeframe, start_date, end_date)
+            if not candles or len(candles) < (train_window_days + test_window_days):
+                return {"error": "Insufficient data for Walk-Forward Analysis."}
+
+            full_df = pd.DataFrame(candles, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
+            full_df['datetime'] = pd.to_datetime(full_df['datetime'])
+            full_df.set_index('datetime', inplace=True)
+            full_df.sort_index(inplace=True)
 
         full_start_date = full_df.index[0]
         full_end_date = full_df.index[-1]
@@ -795,7 +1095,9 @@ class BacktestEngine:
                 commission=commission, slippage=slippage, leverage=leverage,
                 df_data=train_slice_df, # 👈 Sliced Training Data
                 opt_target=opt_target, # ✅ Pass
-                min_trades=min_trades  # ✅ Pass
+                min_trades=min_trades,  # ✅ Pass
+                stop_loss=stop_loss, take_profit=take_profit, trailing_stop=trailing_stop,
+                position_sizing=position_sizing, position_size_value=position_size_value, direction=direction,
             )
 
             # সেরা প্যারামিটার নির্বাচন
@@ -816,6 +1118,8 @@ class BacktestEngine:
                 initial_cash=cumulative_equity,
                 params=best_params, # সেরা প্যারামিটার ব্যবহার
                 commission=commission, slippage=slippage, leverage=leverage,
+                stop_loss=stop_loss, take_profit=take_profit, trailing_stop=trailing_stop,
+                position_sizing=position_sizing, position_size_value=position_size_value, direction=direction,
                 df_data=test_slice_df # 👈 Sliced Testing Data
             )
 
@@ -857,7 +1161,9 @@ class BacktestEngine:
     # ২. Genetic Algorithm আপডেট
     def _run_genetic_algorithm(self, df, strategy_class, initial_cash, param_ranges, fixed_params, pop_size=50, generations=10, 
                                progress_callback=None, abort_callback=None, commission=0.001, slippage=0.0, leverage=1.0,
-                               opt_target="profit", min_trades=5): # ✅ Args added
+                               opt_target="profit", min_trades=5,
+                               stop_loss=0.0, take_profit=0.0, trailing_stop=0.0,
+                               position_sizing="percent", position_size_value=90.0, direction="both"):
         
         param_keys = list(param_ranges.keys())
         population = []
@@ -882,7 +1188,12 @@ class BacktestEngine:
                     metrics = history_cache[param_signature]
                 else:
                     # ✅ Pass pre-loaded strategy_class
-                    metrics = self._run_single_backtest(df, strategy_class, initial_cash, individual, fixed_params, commission, slippage, leverage)
+                    metrics = self._run_single_backtest(
+                        df, strategy_class, initial_cash, individual, fixed_params,
+                        commission, slippage, leverage,
+                        stop_loss=stop_loss, take_profit=take_profit, trailing_stop=trailing_stop,
+                        position_sizing=position_sizing, position_size_value=position_size_value, direction=direction,
+                    )
                     metrics['params'] = individual
                     history_cache[param_signature] = metrics
                 
@@ -940,7 +1251,9 @@ class BacktestEngine:
         return list(unique_results.values())
 
     # ✅ UPDATED: Accepts strategy_class object instead of name string
-    def _run_single_backtest(self, df, strategy_class, initial_cash, variable_params, fixed_params, commission=0.001, slippage=0.0, leverage=1.0):
+    def _run_single_backtest(self, df, strategy_class, initial_cash, variable_params, fixed_params, commission=0.001, slippage=0.0, leverage=1.0,
+                             stop_loss=0.0, take_profit=0.0, trailing_stop=0.0,
+                             position_sizing="percent", position_size_value=90.0, direction="both"):
         full_params = {**fixed_params, **variable_params}
         clean_params = {}
         for k, v in full_params.items():
@@ -948,6 +1261,13 @@ class BacktestEngine:
             except: 
                 try: clean_params[k] = float(v)
                 except: clean_params[k] = v
+
+        stop_loss = float(stop_loss) if stop_loss is not None else 0.0
+        take_profit = float(take_profit) if take_profit is not None else 0.0
+        trailing_stop = float(trailing_stop) if trailing_stop is not None else 0.0
+        if stop_loss > 0: clean_params['stop_loss'] = stop_loss
+        if take_profit > 0: clean_params['take_profit'] = take_profit
+        if trailing_stop > 0: clean_params['trailing_stop'] = trailing_stop
 
         cerebro = bt.Cerebro(stdstats=False) 
         
@@ -961,11 +1281,12 @@ class BacktestEngine:
         
         if 'stop_loss' in clean_params: valid_params['stop_loss'] = clean_params['stop_loss']
         if 'take_profit' in clean_params: valid_params['take_profit'] = clean_params['take_profit']
+        if 'trailing_stop' in clean_params: valid_params['trailing_stop'] = clean_params['trailing_stop']
 
-        cerebro.addstrategy(strategy_class, **valid_params)
+        run_strategy_class = self._wrap_direction_strategy(strategy_class, direction)
+        cerebro.addstrategy(run_strategy_class, **valid_params)
         
         cerebro.broker.setcash(initial_cash)
-        cerebro.broker.setcommission(commission=commission, commtype=bt.CommInfoBase.COMM_PERC, margin=None, mult=1.0, stocklike=True)
         
         # ✅ Leveage / Futures Logic
         is_futures = leverage > 1.0
@@ -978,7 +1299,13 @@ class BacktestEngine:
 
         if slippage > 0: cerebro.broker.set_slippage_perc(perc=slippage)
             
-        cerebro.addsizer(bt.sizers.PercentSizer, percents=90)
+        cerebro.addsizer(
+            FractionalPercentSizer,
+            percents=position_size_value if position_sizing == 'percent' else 90,
+            mode=position_sizing,
+            value=position_size_value,
+            stop_loss=stop_loss,
+        )
         cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
         cerebro.addanalyzer(bt.analyzers.DrawDown, _name="drawdown")
         cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name="sharpe", riskfreerate=0.0)

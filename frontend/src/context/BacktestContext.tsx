@@ -45,6 +45,13 @@ interface BacktestContextType {
     trailingStop: number;
     setTrailingStop: (v: number) => void;
 
+    positionSizing: 'percent' | 'risk_percent' | 'fixed_usd';
+    setPositionSizing: (m: 'percent' | 'risk_percent' | 'fixed_usd') => void;
+    positionSizeValue: number;
+    setPositionSizeValue: (v: number) => void;
+    direction: 'both' | 'long' | 'short';
+    setDirection: (d: 'both' | 'long' | 'short') => void;
+
     strategies: string[];
     setStrategies: React.Dispatch<React.SetStateAction<string[]>>;
     customStrategies: string[];
@@ -98,6 +105,10 @@ export const BacktestProvider: React.FC<{ children: ReactNode }> = ({ children }
     const [takeProfit, setTakeProfit] = useState(0.0);
     const [trailingStop, setTrailingStop] = useState(0.0);
 
+    const [positionSizing, setPositionSizing] = useState<'percent' | 'risk_percent' | 'fixed_usd'>('percent');
+    const [positionSizeValue, setPositionSizeValue] = useState<number>(90);
+    const [direction, setDirection] = useState<'both' | 'long' | 'short'>('both');
+
     const [singleResult, setSingleResult] = useState<BacktestResult | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [statusMessage, setStatusMessage] = useState(''); // নতুন স্টেট
@@ -146,7 +157,10 @@ export const BacktestProvider: React.FC<{ children: ReactNode }> = ({ children }
                 secondary_timeframe: options?.secondary_timeframe || secondaryTimeframe || undefined,
                 stop_loss: stopLoss,
                 take_profit: takeProfit,
-                trailing_stop: trailingStop
+                trailing_stop: trailingStop,
+                position_sizing: positionSizing,
+                position_size_value: positionSizeValue,
+                direction: direction,
             });
 
             const taskId = initialResponse.task_id;
@@ -185,10 +199,17 @@ export const BacktestProvider: React.FC<{ children: ReactNode }> = ({ children }
                             // sharpe_ratio: apiResult.sharpe_ratio, // Removed: Not in type
                             leverage: apiResult.leverage, // ✅ Capture Leverage in Result
                             trades_log: apiResult.trades_log,
+                            closed_trades: apiResult.closed_trades,
+                            analytics_breakdown: apiResult.analytics_breakdown,
                             candle_data: apiResult.candle_data,
+                            equity_curve: apiResult.equity_curve,
+                            benchmark_curve: apiResult.benchmark_curve,
                             advanced_metrics: apiResult.advanced_metrics,
-                            heatmap_data: apiResult.histogram_data,
-                            underwater_data: apiResult.underwater_data
+                            trade_analysis: apiResult.trade_analysis,
+                            heatmap_data: apiResult.heatmap_data,
+                            histogram_data: apiResult.histogram_data,
+                            underwater_data: apiResult.underwater_data,
+                            monte_carlo: apiResult.monte_carlo,
                         };
 
                         setSingleResult(mappedResult);
@@ -253,6 +274,9 @@ export const BacktestProvider: React.FC<{ children: ReactNode }> = ({ children }
             stopLoss, setStopLoss,
             takeProfit, setTakeProfit,
             trailingStop, setTrailingStop,
+            positionSizing, setPositionSizing,
+            positionSizeValue, setPositionSizeValue,
+            direction, setDirection,
             // Aliases
             results: singleResult,
             isRunning: isLoading,

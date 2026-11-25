@@ -351,25 +351,25 @@ const Sidebar: React.FC<{
             )}
 
             {/* Brand Header + Quick Filter */}
-            <div className="px-4 pt-4 pb-3 relative z-10 flex-shrink-0">
+            <div className="px-4 pt-0 pb-2.5 relative z-10 flex-shrink-0">
                 <div className="flex items-center justify-center">
                     {effectiveCollapsed ? (
                         <img
                             src="/logo.png"
                             alt="CosmoQuantAI"
-                            className="h-12 w-12 object-contain select-none drop-shadow-[0_0_12px_rgba(6,182,212,0.4)]"
+                            className="h-14 w-14 mt-1 object-contain select-none drop-shadow-[0_0_12px_rgba(6,182,212,0.4)]"
                         />
                     ) : (
-                        <div className="relative flex flex-col items-center w-full select-none">
-                            <span className={`absolute ${isPhoneMobileUI ? 'left-0' : 'right-0'} top-0 px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25`}>
+                        <div className="relative flex flex-col items-center w-full select-none -mt-6">
+                            <span className={`absolute ${isPhoneMobileUI ? 'left-0' : 'right-0'} top-8 px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25 z-20`}>
                                 PRO
                             </span>
                             <img
                                 src="/logo.png"
                                 alt="CosmoQuantAI"
-                                className="h-[84px] w-[84px] object-contain drop-shadow-[0_6px_16px_rgba(15,23,42,0.2)] dark:drop-shadow-[0_0_22px_rgba(6,182,212,0.42)]"
+                                className="h-[136px] w-[136px] object-contain drop-shadow-[0_6px_16px_rgba(15,23,42,0.2)] dark:drop-shadow-[0_0_24px_rgba(6,182,212,0.45)]"
                             />
-                            <span className="mt-1 font-extrabold text-[26px] leading-tight text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
+                            <span className="-mt-4 font-extrabold text-[19px] leading-tight text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
                                 CosmoQuantAI
                             </span>
                         </div>
@@ -378,7 +378,7 @@ const Sidebar: React.FC<{
 
                 {/* Quick Module Search (Expanded only) */}
                 {!effectiveCollapsed && (
-                    <div className="mt-3 relative flex items-center">
+                    <div className="mt-2.5 relative flex items-center">
                         <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-3 pointer-events-none" />
                         <input
                             type="text"

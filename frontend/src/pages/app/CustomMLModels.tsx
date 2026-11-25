@@ -6,6 +6,7 @@ import {
     Activity,
     Cpu,
     Database,
+    Download,
     Layers,
     Pin,
     Play,
@@ -664,6 +665,7 @@ const ModelCard: React.FC<{
     onQuickRetrain: (modelId: string) => void;
     onRetrainStudio: (modelId: string) => void;
     onInspect: (modelId: string, modelName: string, tab?: InspectorTab) => void;
+    onDownloadModel: (modelId: string, modelName: string) => void;
     onDownloadDataset: (modelId: string, modelName: string) => void;
     onOpenSignal: (model: CustomMLModel) => void;
     onPinToggle: (model: CustomMLModel, symbol?: string | null) => void;
@@ -681,6 +683,7 @@ const ModelCard: React.FC<{
     onQuickRetrain,
     onRetrainStudio,
     onInspect,
+    onDownloadModel,
     onDownloadDataset,
     onOpenSignal,
     onPinToggle,
@@ -695,8 +698,14 @@ const ModelCard: React.FC<{
     const isReady = activeVersion?.status === 'Ready';
 
     const modelUpper = String(model.modelType || '').toUpperCase();
-    const isRL = modelUpper.includes('-RL') || ['QR-DQN', 'CQL', 'GAIL'].includes(modelUpper);
-    const isClassification = !!activeVersion?.explainability?.confusionMatrix;
+    const isRL =
+        modelUpper.includes('-RL') ||
+        modelUpper.includes('RL-BASED MOE') ||
+        ['QR-DQN', 'CQL', 'GAIL', 'DECISION-TRANSFORMER', 'LIQUID-NN'].includes(modelUpper);
+    const predTarget = String(activeVersion?.explainability?.prediction_target || '').toLowerCase();
+    const isClassification =
+        !!activeVersion?.explainability?.confusionMatrix ||
+        ['classification', 'multi_task', 'advanced_setup', 'smc_dynamic_mtf'].includes(predTarget);
     const isRegression = !isRL && !isClassification && !!activeVersion?.explainability;
 
     let accLabel = 'Accuracy';
@@ -958,6 +967,16 @@ const ModelCard: React.FC<{
                                 title="Open in Training Studio"
                             >
                                 Studio
+                            </button>
+
+                            <button
+                                type="button"
+                                disabled={!isReady}
+                                onClick={() => onDownloadModel(model.id, model.name)}
+                                className="p-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/25 disabled:opacity-40"
+                                title="Download Model Bundle (.zip)"
+                            >
+                                <Download className="w-3.5 h-3.5" />
                             </button>
 
                             <button
@@ -1512,6 +1531,15 @@ const CustomMLModels: React.FC<{ onNavigate?: (view: AppView, section?: string) 
         });
     };
 
+    const handleDownloadModel = async (modelId: string, modelName: string) => {
+        try {
+            await mlModelsService.downloadModel(modelId, modelName);
+            toast.success('Model bundle download started');
+        } catch (error: any) {
+            toast.error(error?.response?.data?.detail || 'Model bundle not available for download.');
+        }
+    };
+
     const handleDownloadDataset = async (modelId: string, modelName: string) => {
         try {
             await mlModelsService.downloadDataset(modelId, modelName);
@@ -1773,6 +1801,7 @@ const CustomMLModels: React.FC<{ onNavigate?: (view: AppView, section?: string) 
                                     onInspect={(id, name, tab = 'config') =>
                                         setInspectorState({ isOpen: true, modelId: id, modelName: name, tab })
                                     }
+                                    onDownloadModel={handleDownloadModel}
                                     onDownloadDataset={handleDownloadDataset}
                                     onOpenSignal={(m) => setSignalTargetModel(m)}
                                     onPinToggle={(m) => handlePinToggle(m)}

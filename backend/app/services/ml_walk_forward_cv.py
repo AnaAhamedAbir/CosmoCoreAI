@@ -28,18 +28,19 @@ def _cv_tree_model(algorithm: str, X_train: np.ndarray, y_train: np.ndarray,
 
     tscv = TimeSeriesSplit(n_splits=n_splits)
     X_df = pd.DataFrame(X_train, columns=features)
-    y_flat = y_train.ravel()
+    y_flat = y_train[:, 0] if (y_train.ndim > 1 and y_train.shape[1] > 1) else y_train.ravel()
+    is_clf = prediction_target in ("classification", "advanced_setup", "multi_task")
     scores = []
 
     for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X_df)):
         X_fold_train = X_df.iloc[train_idx]
         X_fold_val   = X_df.iloc[val_idx]
-        y_fold_train = y_flat[train_idx]
-        y_fold_val   = y_flat[val_idx]
+        y_fold_train = np.round(y_flat[train_idx]).astype(int) if is_clf else y_flat[train_idx]
+        y_fold_val   = np.round(y_flat[val_idx]).astype(int) if is_clf else y_flat[val_idx]
 
         try:
             if algorithm == "Random Forest":
-                if prediction_target == "classification":
+                if is_clf:
                     from sklearn.ensemble import RandomForestClassifier
                     m = RandomForestClassifier(n_estimators=min(epochs, 50), max_depth=max_depth, random_state=42)
                 else:
@@ -47,7 +48,7 @@ def _cv_tree_model(algorithm: str, X_train: np.ndarray, y_train: np.ndarray,
                     m = RandomForestRegressor(n_estimators=min(epochs, 50), max_depth=max_depth, random_state=42)
 
             elif algorithm == "XGBoost":
-                if prediction_target == "classification":
+                if is_clf:
                     from xgboost import XGBClassifier
                     m = XGBClassifier(n_estimators=min(epochs, 50), learning_rate=learning_rate, max_depth=max_depth, random_state=42, eval_metric='logloss', verbosity=0)
                 else:
@@ -56,14 +57,14 @@ def _cv_tree_model(algorithm: str, X_train: np.ndarray, y_train: np.ndarray,
 
             elif algorithm == "LightGBM":
                 import lightgbm as lgb
-                if prediction_target == "classification":
+                if is_clf:
                     m = lgb.LGBMClassifier(n_estimators=min(epochs, 50), learning_rate=learning_rate, max_depth=max_depth, random_state=42, verbose=-1)
                 else:
                     m = lgb.LGBMRegressor(n_estimators=min(epochs, 50), learning_rate=learning_rate, max_depth=max_depth, random_state=42, verbose=-1)
 
             elif algorithm == "CatBoost":
                 import catboost as cb
-                if prediction_target == "classification":
+                if is_clf:
                     m = cb.CatBoostClassifier(iterations=min(epochs, 50), learning_rate=learning_rate, depth=max_depth, random_seed=42, verbose=False)
                 else:
                     m = cb.CatBoostRegressor(iterations=min(epochs, 50), learning_rate=learning_rate, depth=max_depth, random_seed=42, verbose=False)
@@ -73,15 +74,15 @@ def _cv_tree_model(algorithm: str, X_train: np.ndarray, y_train: np.ndarray,
             m.fit(X_fold_train, y_fold_train)
             preds = m.predict(X_fold_val)
 
-            if prediction_target == "classification":
+            if is_clf:
                 from sklearn.metrics import accuracy_score
-                score = accuracy_score(y_fold_val.astype(int), preds.astype(int))
+                score = accuracy_score(y_fold_val.astype(int), np.round(preds).astype(int))
             else:
                 from sklearn.metrics import r2_score
                 score = max(0.0, r2_score(y_fold_val, preds))
 
             scores.append(score)
-            add_log(f"[CV] Fold {fold_idx+1}/{n_splits}: {'Accuracy' if prediction_target == 'classification' else 'R2'} = {score*100:.1f}%")
+            add_log(f"[CV] Fold {fold_idx+1}/{n_splits}: {'Accuracy' if is_clf else 'R2'} = {score*100:.1f}%")
 
         except Exception as e:
             add_log(f"[CV] Fold {fold_idx+1} failed: {e}")
@@ -101,12 +102,14 @@ def _cv_deep_model(algorithm: str, X_train: np.ndarray, y_train: np.ndarray,
     tscv = TimeSeriesSplit(n_splits=n_splits)
     scores = []
     CV_EPOCHS = 3  # Intentionally small to keep time reasonable
+    y_flat = y_train[:, 0] if (y_train.ndim > 1 and y_train.shape[1] > 1) else y_train.ravel()
+    is_clf = prediction_target in ("classification", "advanced_setup", "multi_task")
 
     for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X_train)):
         X_fold_train = X_train[train_idx]
         X_fold_val   = X_train[val_idx]
-        y_fold_train = y_train.ravel()[train_idx].astype(float)
-        y_fold_val   = y_train.ravel()[val_idx].astype(float)
+        y_fold_train = y_flat[train_idx].astype(float)
+        y_fold_val   = y_flat[val_idx].astype(float)
 
         try:
             input_size = X_fold_train.shape[1]
@@ -162,7 +165,7 @@ def _cv_deep_model(algorithm: str, X_train: np.ndarray, y_train: np.ndarray,
 
             y_tr_t = torch.FloatTensor(y_fold_train)
 
-            if prediction_target == "classification":
+            if is_clf:
                 criterion = nn.BCEWithLogitsLoss()
             else:
                 criterion = nn.MSELoss()
@@ -183,16 +186,16 @@ def _cv_deep_model(algorithm: str, X_train: np.ndarray, y_train: np.ndarray,
             with torch.no_grad():
                 val_out = model(X_val_t).squeeze(-1).numpy()
 
-            if prediction_target == "classification":
+            if is_clf:
                 from sklearn.metrics import accuracy_score
                 preds = (1 / (1 + np.exp(-val_out)) > 0.5).astype(int)
-                score = accuracy_score(y_fold_val.astype(int), preds)
+                score = accuracy_score(np.round(y_fold_val).astype(int), preds)
             else:
                 from sklearn.metrics import r2_score
                 score = max(0.0, r2_score(y_fold_val, val_out))
 
             scores.append(score)
-            add_log(f"[CV-DL] Fold {fold_idx+1}/{n_splits}: {'Accuracy' if prediction_target == 'classification' else 'R2'} = {score*100:.1f}%")
+            add_log(f"[CV-DL] Fold {fold_idx+1}/{n_splits}: {'Accuracy' if is_clf else 'R2'} = {score*100:.1f}%")
 
         except Exception as e:
             add_log(f"[CV-DL] Fold {fold_idx+1} failed: {e}")

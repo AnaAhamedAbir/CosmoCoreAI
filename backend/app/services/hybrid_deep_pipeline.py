@@ -418,8 +418,11 @@ _KNOWN_TRADE_FEATURES = {
 }
 
 _EXCLUDE_COLS = {
-    'Target', 'Open', 'High', 'Low', 'Close', 'Volume', 'price',
-    'qty', 'is_buyer_maker', 'Adj Close', 'microprice', 'timestamp', 'datetime', 'CVD_Proxy', 'vwap', 'VWAP'
+    'Target', 'Target_Direction', 'Target_SL', 'Target_TP', 'Target_Class', 'Target_Reg',
+    'Open', 'High', 'Low', 'Close', 'Volume', 'price', 'trade_price', 'last_price', 'mid_price',
+    'qty', 'is_buyer_maker', 'Adj Close', 'microprice', 'timestamp', 'datetime', 'CVD_Proxy', 'vwap', 'VWAP',
+    *{f'bid_price_{i}' for i in range(1, 21)},
+    *{f'ask_price_{i}' for i in range(1, 21)},
 }
 
 

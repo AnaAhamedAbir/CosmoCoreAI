@@ -199,15 +199,17 @@ class NewsScraper:
             
             # Using WARNING instead of ERROR to suppress automated terminal alerts
             if response.status_code != 200:
+                if "CryptoPanic" in source_name and response.status_code in (403, 404, 410, 429):
+                    self._redis_set_rss_rate_limit_cooldown(max(self._RSS_COOLDOWN_MINUTES, 60))
+                    logger.info(
+                        f"Skipping {source_name} ({url}) due to HTTP {response.status_code} (cooldown active)."
+                    )
+                    return []
+
                 logger.warning(
                     f"Transient issue fetching RSS from {source_name} ({url}). "
                     f"Status: {response.status_code}"
                 )
-                
-                # If specific to CryptoPanic RSS and blocked, trigger RSS cooldown
-                if "CryptoPanic" in source_name and response.status_code in (403, 429):
-                    self._redis_set_rss_rate_limit_cooldown(self._RSS_COOLDOWN_MINUTES)
-                
                 return []
 
             feed = feedparser.parse(response.content)

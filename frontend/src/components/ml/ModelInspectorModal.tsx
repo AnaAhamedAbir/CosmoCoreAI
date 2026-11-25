@@ -49,7 +49,11 @@ const STAT_COLOR_STYLES: Record<string, { borderHover: string; glow: string; ico
 
 function isRLArchitecture(algorithm?: string): boolean {
     const upper = (algorithm || '').toUpperCase();
-    return upper.includes('-RL') || ['QR-DQN', 'CQL', 'GAIL'].includes(upper);
+    return (
+        upper.includes('-RL') ||
+        upper.includes('RL-BASED MOE') ||
+        ['QR-DQN', 'CQL', 'GAIL', 'DECISION-TRANSFORMER', 'LIQUID-NN'].includes(upper)
+    );
 }
 
 export const ExplainabilityView: React.FC<{ data: any; algorithm?: string }> = ({ data, algorithm }) => {

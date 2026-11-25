@@ -66,71 +66,38 @@ class LivePyTorchModel:
         self.prediction_target = prediction_target
         
         # Build Architecture
+        from app.models.classic_dl_models import SimpleLSTM, SimpleGRU, CNN1D, DeepLOB
         if algorithm == "LSTM":
-            class SimpleLSTM(nn.Module):
-                def __init__(self, input_size):
-                    super().__init__()
-                    self.lstm = nn.LSTM(input_size, 64, 2, batch_first=True)
-                    self.fc   = nn.Linear(64, out_size)
-                def forward(self, x):
-                    out, _ = self.lstm(x)
-                    return self.fc(out[:, -1, :])
             if prediction_target == "multi_task":
                 from app.services.mtl.wrapper import DualHeadModel
-                base_model = SimpleLSTM(input_size)
-                base_model.fc = nn.Linear(64, 64)
+                base_model = SimpleLSTM(input_size=input_size, hidden_size=64, num_layers=2, output_size=64)
                 self.model = DualHeadModel(base_model=base_model, hidden_dim=64)
             else:
-                self.model = SimpleLSTM(input_size)
+                self.model = SimpleLSTM(input_size=input_size, hidden_size=64, num_layers=2, output_size=out_size)
 
         elif algorithm == "GRU":
-            class SimpleGRU(nn.Module):
-                def __init__(self, input_size):
-                    super().__init__()
-                    self.gru = nn.GRU(input_size, 64, 2, batch_first=True)
-                    self.fc  = nn.Linear(64, out_size)
-                def forward(self, x):
-                    out, _ = self.gru(x)
-                    return self.fc(out[:, -1, :])
             if prediction_target == "multi_task":
                 from app.services.mtl.wrapper import DualHeadModel
-                base_model = SimpleGRU(input_size)
-                base_model.fc = nn.Linear(64, 64)
+                base_model = SimpleGRU(input_size=input_size, hidden_size=64, num_layers=2, output_size=64)
                 self.model = DualHeadModel(base_model=base_model, hidden_dim=64)
             else:
-                self.model = SimpleGRU(input_size)
+                self.model = SimpleGRU(input_size=input_size, hidden_size=64, num_layers=2, output_size=out_size)
 
         elif algorithm in ("1D-CNN",):
-            class CNN1D(nn.Module):
-                def __init__(self, input_size):
-                    super().__init__()
-                    self.conv1 = nn.Conv1d(1, 16, 3, padding=1)
-                    self.relu  = nn.ReLU()
-                    self.pool  = nn.MaxPool1d(2)
-                    self.fc1   = nn.Linear(16 * (input_size // 2), 32)
-                    self.fc2   = nn.Linear(32, out_size)
-                def forward(self, x):
-                    x = x.unsqueeze(1)
-                    out = self.pool(self.relu(self.conv1(x)))
-                    out = out.view(out.size(0), -1)
-                    return self.fc2(self.relu(self.fc1(out)))
-            self.model = CNN1D(input_size)
+            if prediction_target == "multi_task":
+                from app.services.mtl.wrapper import DualHeadModel
+                base_model = CNN1D(input_size=input_size, output_size=64)
+                self.model = DualHeadModel(base_model=base_model, hidden_dim=64)
+            else:
+                self.model = CNN1D(input_size=input_size, output_size=out_size)
 
         elif algorithm == "DeepLOB":
-            class DeepLOB(nn.Module):
-                def __init__(self, input_size):
-                    super().__init__()
-                    self.conv1 = nn.Conv1d(1, 16, 2, padding=1)
-                    self.relu  = nn.ReLU()
-                    self.lstm  = nn.LSTM(16, 32, 1, batch_first=True)
-                    self.fc    = nn.Linear(32, out_size)
-                def forward(self, x):
-                    x = x.unsqueeze(1)
-                    x = self.relu(self.conv1(x))
-                    x = x.transpose(1, 2)
-                    out, _ = self.lstm(x)
-                    return self.fc(out[:, -1, :])
-            self.model = DeepLOB(input_size)
+            if prediction_target == "multi_task":
+                from app.services.mtl.wrapper import DualHeadModel
+                base_model = DeepLOB(input_size=input_size, output_size=64)
+                self.model = DualHeadModel(base_model=base_model, hidden_dim=64)
+            else:
+                self.model = DeepLOB(input_size=input_size, output_size=out_size)
 
         elif algorithm == "TCN":
             self.model = TCNModel(input_size=input_size, num_channels=[32, 64, 128], output_size=out_size)

@@ -168,6 +168,14 @@ class PyTorchTrainer:
                     preds_class = (1 / (1 + np.exp(-preds)) > 0.5).astype(int)
                     process_metrics(calculate_classification_metrics(y_test, preds_class), True)
                     preds_to_return = preds_class
+                elif prediction_target == "advanced_setup":
+                    dir_preds = preds[:, 0] if (preds.ndim > 1 and preds.shape[1] > 1) else preds.ravel()
+                    preds_class = (dir_preds >= 0.5).astype(int)
+                    y_dir_true = np.round(y_test[:, 0] if (y_test.ndim > 1 and y_test.shape[1] > 1) else y_test.ravel()).astype(int)
+                    process_metrics(calculate_classification_metrics(y_dir_true, preds_class), True)
+                    if preds.ndim > 1 and preds.shape[1] > 1 and y_test.ndim > 1 and y_test.shape[1] > 1:
+                        process_metrics(calculate_regression_metrics(y_test[:, 1:], preds[:, 1:]), False)
+                    preds_to_return = preds_class
                 else:
                     process_metrics(calculate_regression_metrics(y_test, preds), False)
                     preds_to_return = preds

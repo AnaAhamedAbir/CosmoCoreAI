@@ -563,7 +563,7 @@ def train_model_task(job_id: str, db: Session):
 
         # ── Fine-Tune Detection ─────────────────────────────────────────────
         _prev_path = config.get("previous_model_path")
-        _target_model_id = config.get("target_model_id")
+        _target_model_id = config.get("target_model_id") or config.get("incremental_retrain_model_id")
         
         source_algo = None
         
@@ -1340,6 +1340,10 @@ def train_model_task(job_id: str, db: Session):
         # Drop any remaining rows with NaNs after dropping bad columns
         df.dropna(inplace=True)
 
+        # Preserve raw un-differenced prices across ALL dataset types for backtest & DVC replay
+        if 'raw_prices_backup' not in locals():
+            raw_prices_backup = df.copy()
+
         # ── GLOBAL FRACTIONAL DIFFERENCING ──
         if config.get("fractional_diff", False):
             d_val = config.get("fractional_d_value", 0.5)
@@ -1354,7 +1358,14 @@ def train_model_task(job_id: str, db: Session):
         
         # ── GLOBAL FEATURE CLEANER ──
         # Ensure no non-stationary or raw price columns leak into ANY dataset type (Hybrid, L2, OHLCV, etc.)
-        global_forbidden = ["Close", "Open", "High", "Low", "Volume", "Adj Close", "microprice", "timestamp", "datetime", "CVD_Proxy", "vwap", "VWAP", "Target", "Target_Direction", "Target_SL", "Target_TP"]
+        global_forbidden = [
+            "Close", "Open", "High", "Low", "Volume", "Adj Close", "microprice",
+            "price", "trade_price", "last_price", "mid_price",
+            "timestamp", "datetime", "CVD_Proxy", "vwap", "VWAP",
+            "Target", "Target_Direction", "Target_SL", "Target_TP", "Target_Class", "Target_Reg",
+            *[f"bid_price_{i}" for i in range(1, 21)],
+            *[f"ask_price_{i}" for i in range(1, 21)],
+        ]
         
         if is_fine_tune and _prev_path:
             import re
@@ -1605,6 +1616,15 @@ def train_model_task(job_id: str, db: Session):
 
         else:
             df_scaled['Target'] = np.vstack((y_train, y_test)).ravel()
+
+        if 'raw_prices_backup' in locals() and 'Close' not in df_scaled.columns:
+            for _pcol in ('Close', 'close', 'microprice', 'trade_price', 'price'):
+                if _pcol in raw_prices_backup.columns:
+                    try:
+                        df_scaled['Close'] = raw_prices_backup.loc[df_scaled.index, _pcol].values
+                        break
+                    except Exception:
+                        pass
         
         # ── Walk-Forward Cross-Validation (ALL model types) ──────────────────
         # Runs BEFORE SMOTE to prevent data leakage. Results stored in cv_result for later save.
@@ -1750,7 +1770,7 @@ def train_model_task(job_id: str, db: Session):
                     final_accuracy = metrics_dict.get("Accuracy", 0.0)
                     final_f1 = metrics_dict.get("F1_Score", 0.0)
                 else:
-                    if prediction_target != "multi_task":
+                    if prediction_target not in ("multi_task", "advanced_setup"):
                         final_accuracy = metrics_dict.get("R2_Score", 0.0) # Use R2 for accuracy display
                         final_f1 = metrics_dict.get("MSE", metrics_dict.get("RMSE", 0.0))
             except Exception:
@@ -1970,6 +1990,10 @@ def train_model_task(job_id: str, db: Session):
                 if np.issubdtype(y_pred.dtype, np.floating) or y_pred.dtype == float:
                     y_pred = (y_pred >= 0.5).astype(int)
                 process_metrics(calculate_classification_metrics(y_test if is_multi_output else y_test.ravel(), y_pred), True)
+            elif prediction_target in ("advanced_setup", "multi_task"):
+                y_dir_t = np.round(y_test[:, 0] if is_multi_output else y_test.ravel()).astype(int)
+                y_dir_p = ((y_pred[:, 0] if (y_pred.ndim > 1 and y_pred.shape[1] > 1) else y_pred.ravel()) >= 0.5).astype(int)
+                process_metrics(calculate_classification_metrics(y_dir_t, y_dir_p), True)
             else:
                 process_metrics(calculate_regression_metrics(y_test if is_multi_output else y_test.ravel(), y_pred), False)
                 
@@ -2141,7 +2165,12 @@ def train_model_task(job_id: str, db: Session):
                 y_pred = model.predict(X_test_df)
                 end_time = time.time()
                 final_latency = max(1.0, (end_time - start_time) / max(1, len(X_test)) * 1000)
-                process_metrics(calculate_regression_metrics(y_test if is_multi_output else y_test.ravel(), y_pred), False)
+                if prediction_target in ("advanced_setup", "multi_task"):
+                    y_dir_t = np.round(y_test[:, 0] if is_multi_output else y_test.ravel()).astype(int)
+                    y_dir_p = ((y_pred[:, 0] if (y_pred.ndim > 1 and y_pred.shape[1] > 1) else y_pred.ravel()) >= 0.5).astype(int)
+                    process_metrics(calculate_classification_metrics(y_dir_t, y_dir_p), True)
+                else:
+                    process_metrics(calculate_regression_metrics(y_test if is_multi_output else y_test.ravel(), y_pred), False)
                 
             job.progress = 80.0
             joblib.dump(model, model_path)
@@ -2216,7 +2245,12 @@ def train_model_task(job_id: str, db: Session):
                 final_latency = max(1.0, (end_time - start_time) / max(1, len(X_test)) * 1000)
                 if is_multi_output and (y_pred.ndim == 1 or y_pred.shape[1] == 1):
                     padded = np.zeros((len(y_pred), y_test.shape[1])); padded[:, 0] = y_pred.ravel(); y_pred = padded
-                process_metrics(calculate_regression_metrics(y_test if is_multi_output else y_test.ravel(), y_pred), False)
+                if prediction_target in ("advanced_setup", "multi_task"):
+                    y_dir_t = np.round(y_test[:, 0] if is_multi_output else y_test.ravel()).astype(int)
+                    y_dir_p = ((y_pred[:, 0] if (y_pred.ndim > 1 and y_pred.shape[1] > 1) else y_pred.ravel()) >= 0.5).astype(int)
+                    process_metrics(calculate_classification_metrics(y_dir_t, y_dir_p), True)
+                else:
+                    process_metrics(calculate_regression_metrics(y_test if is_multi_output else y_test.ravel(), y_pred), False)
                 
             job.progress = 80.0
             joblib.dump(model, model_path)
@@ -2250,6 +2284,7 @@ def train_model_task(job_id: str, db: Session):
                 out_size = 3 if prediction_target == "advanced_setup" else 1
                 model = SimpleLSTM(input_size=X_train.shape[1], hidden_size=64, num_layers=2, output_size=out_size)
                 
+            model_path = model_path.replace(".pkl", ".pt")
             final_latency, preds_class = PyTorchTrainer.train_model(
                 model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
                 config=config, job=job, add_log=add_log, process_metrics=process_metrics,
@@ -2288,7 +2323,12 @@ def train_model_task(job_id: str, db: Session):
                 final_latency = max(1.0, (end_time - start_time) / max(1, len(X_test)) * 1000)
                 if is_multi_output and (y_pred.ndim == 1 or y_pred.shape[1] == 1):
                     padded = np.zeros((len(y_pred), y_test.shape[1])); padded[:, 0] = y_pred.ravel(); y_pred = padded
-                process_metrics(calculate_regression_metrics(y_test if is_multi_output else y_test.ravel(), y_pred), False)
+                if prediction_target in ("advanced_setup", "multi_task"):
+                    y_dir_t = np.round(y_test[:, 0] if is_multi_output else y_test.ravel()).astype(int)
+                    y_dir_p = ((y_pred[:, 0] if (y_pred.ndim > 1 and y_pred.shape[1] > 1) else y_pred.ravel()) >= 0.5).astype(int)
+                    process_metrics(calculate_classification_metrics(y_dir_t, y_dir_p), True)
+                else:
+                    process_metrics(calculate_regression_metrics(y_test if is_multi_output else y_test.ravel(), y_pred), False)
                 
             job.progress = 80.0
             joblib.dump(model, model_path)
@@ -2341,7 +2381,12 @@ def train_model_task(job_id: str, db: Session):
                 final_latency = max(1.0, (end_time - start_time) / max(1, len(X_test)) * 1000)
                 if is_multi_output and (y_pred.ndim == 1 or y_pred.shape[1] == 1):
                     padded = np.zeros((len(y_pred), y_test.shape[1])); padded[:, 0] = y_pred.ravel(); y_pred = padded
-                process_metrics(calculate_regression_metrics(y_test if is_multi_output else y_test.ravel(), y_pred), False)
+                if prediction_target in ("advanced_setup", "multi_task"):
+                    y_dir_t = np.round(y_test[:, 0] if is_multi_output else y_test.ravel()).astype(int)
+                    y_dir_p = ((y_pred[:, 0] if (y_pred.ndim > 1 and y_pred.shape[1] > 1) else y_pred.ravel()) >= 0.5).astype(int)
+                    process_metrics(calculate_classification_metrics(y_dir_t, y_dir_p), True)
+                else:
+                    process_metrics(calculate_regression_metrics(y_test if is_multi_output else y_test.ravel(), y_pred), False)
                 
             job.progress = 80.0
             joblib.dump(model, model_path)
@@ -2375,6 +2420,7 @@ def train_model_task(job_id: str, db: Session):
                 out_size = 3 if prediction_target == "advanced_setup" else 1
                 model = SimpleGRU(input_size=X_train.shape[1], hidden_size=64, num_layers=2, output_size=out_size)
                 
+            model_path = model_path.replace(".pkl", ".pt")
             final_latency, preds_class = PyTorchTrainer.train_model(
                 model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
                 config=config, job=job, add_log=add_log, process_metrics=process_metrics,
@@ -2394,6 +2440,7 @@ def train_model_task(job_id: str, db: Session):
                 out_size = 3 if prediction_target == "advanced_setup" else 1
                 model = CNN1D(input_size=X_train.shape[1], output_size=out_size)
                 
+            model_path = model_path.replace(".pkl", ".pt")
             final_latency, preds_class = PyTorchTrainer.train_model(
                 model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
                 config=config, job=job, add_log=add_log, process_metrics=process_metrics,
@@ -2413,6 +2460,7 @@ def train_model_task(job_id: str, db: Session):
                 out_size = 3 if prediction_target == "advanced_setup" else 1
                 model = DeepLOB(input_size=X_train.shape[1], output_size=out_size)
                 
+            model_path = model_path.replace(".pkl", ".pt")
             final_latency, preds_class = PyTorchTrainer.train_model(
                 model=model, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test,
                 config=config, job=job, add_log=add_log, process_metrics=process_metrics,
@@ -2606,7 +2654,7 @@ def train_model_task(job_id: str, db: Session):
             if job.algorithm in ["Random Forest", "XGBoost", "LightGBM", "CatBoost"]:
                 add_log("Generating Real Explainability Metrics (SHAP, Feature Importance, etc.)...")
                 set_progress(80.0)
-                is_cls = (prediction_target == "classification")
+                is_cls = prediction_target in ("classification", "advanced_setup", "multi_task")
                 final_explainability = generate_real_explainability(model, X_test, y_test if is_multi_output else y_test.ravel(), y_pred, features, is_classification=is_cls)
                 if is_ensemble and ensemble_fi_list is not None:
                     final_explainability["featureImportance"] = ensemble_fi_list
@@ -2617,17 +2665,20 @@ def train_model_task(job_id: str, db: Session):
                 
                 # 1. Confusion Matrix
                 try:
-                    if prediction_target in ["classification", "multi_task"]:
+                    if prediction_target in ["classification", "multi_task", "advanced_setup"]:
                         from sklearn.metrics import confusion_matrix
-                        if prediction_target == "multi_task":
-                            y_t = np.round(y_test[:, 0]).astype(int)
-                        elif is_multi_output:
+                        if prediction_target in ["multi_task", "advanced_setup"] or is_multi_output:
                             y_t = np.round(y_test[:, 0]).astype(int)
                         else:
                             y_t = np.round(y_test.ravel()).astype(int)
                             
-                        y_p = np.round(preds_class.ravel()).astype(int)
-                        cm = confusion_matrix(y_t, y_p)
+                        y_p_raw = preds_class[:, 0] if (hasattr(preds_class, "ndim") and preds_class.ndim > 1) else preds_class.ravel()
+                        y_p = np.round(y_p_raw).astype(int)
+                        if len(y_t) != len(y_p):
+                            m_len = min(len(y_t), len(y_p))
+                            y_t = y_t[-m_len:]
+                            y_p = y_p[-m_len:]
+                        cm = confusion_matrix(y_t, y_p, labels=[0, 1])
                         dl_explain["confusionMatrix"] = {
                             "classes": ["Hold/Down", "Up"] if cm.shape[0] == 2 else ["Class 0", "Class 1"],
                             "matrix": cm.tolist()
@@ -2642,9 +2693,9 @@ def train_model_task(job_id: str, db: Session):
                         y_p = preds_class.ravel()
                     else:
                         y_ts = y_test[:, 0] if is_multi_output else y_test.ravel()
-                        y_p = preds_class.ravel()
+                        y_p = preds_class[:, 0] if (hasattr(preds_class, "ndim") and preds_class.ndim > 1) else preds_class.ravel()
 
-                    subset_len = min(50, len(y_ts))
+                    subset_len = min(50, len(y_ts), len(y_p))
                     ts_data = []
                     for i in range(subset_len):
                         ts_data.append({
@@ -2660,20 +2711,12 @@ def train_model_task(job_id: str, db: Session):
                 try:
                     import torch
                     model.eval()
-                    baseline_preds = preds_class.ravel()
+                    baseline_preds = preds_class[:, 0] if (hasattr(preds_class, "ndim") and preds_class.ndim > 1) else preds_class.ravel()
                     from sklearn.metrics import accuracy_score, mean_squared_error
                     
-                    if prediction_target == "multi_task":
-                        y_t_perm = np.round(y_test[:, 0]).astype(int)
-                        b_preds = baseline_preds.astype(int)
-                        if len(y_t_perm) != len(b_preds):
-                            m_len = min(len(y_t_perm), len(b_preds))
-                            baseline_score = accuracy_score(y_t_perm[-m_len:], b_preds[-m_len:])
-                        else:
-                            baseline_score = accuracy_score(y_t_perm, b_preds)
-                    elif prediction_target == "classification":
+                    if prediction_target in ["multi_task", "classification", "advanced_setup"]:
                         y_t_perm = np.round(y_test[:, 0] if is_multi_output else y_test.ravel()).astype(int)
-                        b_preds = baseline_preds.astype(int)
+                        b_preds = (baseline_preds >= 0.5).astype(int)
                         if len(y_t_perm) != len(b_preds):
                             m_len = min(len(y_t_perm), len(b_preds))
                             baseline_score = accuracy_score(y_t_perm[-m_len:], b_preds[-m_len:])
@@ -2705,6 +2748,14 @@ def train_model_task(job_id: str, db: Session):
                         
                         if prediction_target in ["classification", "multi_task"]:
                             perm_preds = (1 / (1 + np.exp(-perm_out)) > 0.5).astype(int).ravel()
+                            if len(y_t_perm) != len(perm_preds):
+                                min_len = min(len(y_t_perm), len(perm_preds))
+                                perm_score = accuracy_score(y_t_perm[-min_len:], perm_preds[-min_len:])
+                            else:
+                                perm_score = accuracy_score(y_t_perm, perm_preds)
+                        elif prediction_target == "advanced_setup":
+                            perm_dir = perm_out[:, 0] if (perm_out.ndim > 1 and perm_out.shape[1] > 1) else perm_out.ravel()
+                            perm_preds = (perm_dir >= 0.5).astype(int)
                             if len(y_t_perm) != len(perm_preds):
                                 min_len = min(len(y_t_perm), len(perm_preds))
                                 perm_score = accuracy_score(y_t_perm[-min_len:], perm_preds[-min_len:])
@@ -2742,7 +2793,7 @@ def train_model_task(job_id: str, db: Session):
         timestamp = int(time.time() * 1000)
         version_id = f"v1.0-{timestamp}"
         
-        target_model_id = config.get("target_model_id")
+        target_model_id = config.get("target_model_id") or config.get("incremental_retrain_model_id")
         is_auto_retrain = config.get("is_auto_retrain", False)
         retrain_interval_hours = config.get("retrain_interval_hours", 6)
         
@@ -2889,6 +2940,7 @@ def train_model_task(job_id: str, db: Session):
         if config.get("dataset_type") == "hybrid_deep":
             trade_feats = config.get("hybrid_deep_trade_features", trade_feats)
 
+        is_clf_meta = prediction_target in ("classification", "multi_task", "advanced_setup")
         metadata_payload = {
             "features":         features,
             "dataset_type":     config.get("dataset_type", "ohlcv"),
@@ -2906,11 +2958,11 @@ def train_model_task(job_id: str, db: Session):
             "scaler_path":      scaler_save_path,
             "cv_result":        cv_result,
             "plp_features":     config.get("plp_features", []),
-            "accuracy":         final_accuracy if prediction_target == "classification" else None,
-            "f1_score":         final_f1 if prediction_target == "classification" else None,
-            "r2_score":         final_accuracy if prediction_target != "classification" else None,
-            "mse":              final_f1 if prediction_target != "classification" else None,
-            "rmse":             final_f1 if prediction_target != "classification" else None,
+            "accuracy":         final_accuracy if is_clf_meta else None,
+            "f1_score":         final_f1 if is_clf_meta else None,
+            "r2_score":         final_accuracy if not is_clf_meta else None,
+            "mse":              final_f1 if not is_clf_meta else None,
+            "rmse":             final_f1 if not is_clf_meta else None,
             "latency":          final_latency
         }
         with open(metadata_path, "w") as f:

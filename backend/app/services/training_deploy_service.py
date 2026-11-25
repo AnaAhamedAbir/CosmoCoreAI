@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
 
 _PINNED_MANUAL_TRADE_PREF_KEY = "pinned_manual_trade_ml"
 _NON_FEATURE_COLUMNS = {
+    "close",
+    "open",
+    "high",
+    "low",
+    "volume",
     "target",
     "target_direction",
     "target_sl",
@@ -37,7 +42,7 @@ _NON_FEATURE_COLUMNS = {
     "date",
     "time",
 }
-_PRICE_CANDIDATE_COLUMNS = ("close", "microprice", "mid_price", "price")
+_PRICE_CANDIDATE_COLUMNS = ("close", "microprice", "mid_price", "price", "trade_price", "last_price", "bid_price_1")
 
 
 class TrainingDeployService:
@@ -175,7 +180,121 @@ class TrainingDeployService:
         return next((p for p in candidates if p and os.path.exists(p)), None)
 
     @staticmethod
-    def _load_model_artifact(model_path: str) -> Any:
+    def _reconstruct_pytorch_model_from_state_dict(
+        state_dict: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+        algorithm: Optional[str] = None,
+    ) -> Any:
+        """Reconstruct a PyTorch nn.Module from its state_dict and metadata."""
+        from app.models.classic_dl_models import (
+            CNN1D,
+            DeepLOB,
+            SimpleGRU,
+            SimpleLSTM,
+            StandardTransformer,
+            TCN,
+        )
+
+        meta = metadata or {}
+        algo = (algorithm or meta.get("algorithm") or "").strip()
+        features = meta.get("features") or []
+        is_dual_head = any(k.startswith("base_model.") for k in state_dict.keys())
+        prefix = "base_model." if is_dual_head else ""
+
+        def _get_shape(key_suffix: str) -> Optional[Tuple[int, ...]]:
+            tensor = state_dict.get(prefix + key_suffix)
+            return tuple(tensor.shape) if tensor is not None and hasattr(tensor, "shape") else None
+
+        fc_shape = _get_shape("fc.weight")
+        fc2_shape = _get_shape("fc2.weight")
+        out_size = (
+            64
+            if is_dual_head
+            else (
+                fc_shape[0]
+                if fc_shape
+                else (fc2_shape[0] if fc2_shape else (3 if meta.get("prediction_target") == "advanced_setup" else 1))
+            )
+        )
+
+        base_model = None
+        lstm_ih = _get_shape("lstm.weight_ih_l0")
+        gru_ih = _get_shape("gru.weight_ih_l0")
+        conv1_w = _get_shape("conv1.weight")
+        input_proj_w = _get_shape("input_proj.weight")
+
+        if conv1_w is not None and lstm_ih is not None:
+            # DeepLOB: conv2 has 32 out_channels -> conv_out_size = 32 * input_size
+            in_size = max(1, lstm_ih[1] // 32)
+            base_model = DeepLOB(input_size=in_size, output_size=out_size)
+        elif lstm_ih is not None:
+            hidden_size = max(1, lstm_ih[0] // 4)
+            in_size = lstm_ih[1]
+            num_layers = sum(1 for k in state_dict.keys() if k.startswith(prefix + "lstm.weight_ih_l"))
+            base_model = SimpleLSTM(
+                input_size=in_size,
+                hidden_size=hidden_size,
+                num_layers=max(1, num_layers),
+                output_size=out_size,
+            )
+        elif gru_ih is not None:
+            hidden_size = max(1, gru_ih[0] // 3)
+            in_size = gru_ih[1]
+            num_layers = sum(1 for k in state_dict.keys() if k.startswith(prefix + "gru.weight_ih_l"))
+            base_model = SimpleGRU(
+                input_size=in_size,
+                hidden_size=hidden_size,
+                num_layers=max(1, num_layers),
+                output_size=out_size,
+            )
+        elif conv1_w is not None and fc2_shape is not None:
+            # CNN1D
+            fc1_shape = _get_shape("fc1.weight")
+            in_size = len(features) if features else (max(4, (fc1_shape[1] // 64) * 4) if fc1_shape else 4)
+            base_model = CNN1D(input_size=in_size, output_size=out_size)
+        elif conv1_w is not None and fc_shape is not None and "network.0.conv1.weight" not in state_dict:
+            # Classic TCN
+            in_size = len(features) if features else max(1, (fc_shape[1] // 64) - 8)
+            base_model = TCN(input_size=in_size, output_size=out_size)
+        elif input_proj_w is not None:
+            in_size = input_proj_w[1]
+            d_model = input_proj_w[0]
+            base_model = StandardTransformer(input_size=in_size, output_size=out_size, d_model=d_model)
+        elif algo == "TCN" or any(k.startswith("network.") for k in state_dict.keys()):
+            from app.services.advanced_ml.architectures import TCNModel
+            in_size = len(features) if features else 1
+            base_model = TCNModel(input_size=in_size, num_channels=[32, 64, 128], output_size=out_size)
+        elif algo == "TabNet" or any(k.startswith("initial_bn.") for k in state_dict.keys()):
+            from app.services.advanced_ml.architectures import TabNetEncoder
+            in_size = len(features) if features else 1
+            base_model = TabNetEncoder(input_dim=in_size, output_dim=out_size)
+        elif algo == "Auto-Encoder" or any(k.startswith("encoder.") for k in state_dict.keys()):
+            from app.services.advanced_ml.architectures import AutoEncoder
+            enc_w = state_dict.get("encoder.0.weight")
+            in_size = int(enc_w.shape[1]) if enc_w is not None else (len(features) if features else 1)
+            base_model = AutoEncoder(input_dim=in_size, hidden_dim=32)
+
+        if base_model is None:
+            raise ValueError(f"Unsupported PyTorch state_dict architecture for algorithm '{algo}'")
+
+        if is_dual_head:
+            from app.services.mtl.wrapper import DualHeadModel
+            cls_w = state_dict.get("classifier.0.weight")
+            hidden_dim = int(cls_w.shape[1]) if cls_w is not None else 64
+            full_model = DualHeadModel(base_model=base_model, hidden_dim=hidden_dim)
+        else:
+            full_model = base_model
+
+        full_model.load_state_dict(state_dict, strict=False)
+        full_model.eval()
+        return full_model
+
+    @staticmethod
+    def _load_model_artifact(
+        model_path: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        algorithm: Optional[str] = None,
+    ) -> Any:
         """Load a .pkl/.joblib or serialized PyTorch model safely."""
         lower_path = model_path.lower()
         if lower_path.endswith((".pkl", ".joblib")):
@@ -186,7 +305,11 @@ class TrainingDeployService:
 
             loaded = torch.load(model_path, map_location="cpu")
             if isinstance(loaded, dict):
-                raise ValueError("Raw PyTorch state_dict without model class cannot be replayed directly")
+                return TrainingDeployService._reconstruct_pytorch_model_from_state_dict(
+                    loaded,
+                    metadata=metadata,
+                    algorithm=algorithm,
+                )
             if hasattr(loaded, "eval"):
                 loaded.eval()
             return loaded
@@ -271,21 +394,23 @@ class TrainingDeployService:
         if prices is None or len(prices) == 0:
             raise ValueError("Dataset contains no price column for paper replay")
 
-        # Recover unscaled Close if Close itself was Standard/MinMax scaled in a DVC snapshot
+        # Recover unscaled Close/price if it was Standard/Robust/MinMax scaled in a DVC snapshot
         if np.any(~np.isfinite(prices)) or np.any(prices <= 0):
             recovered = False
             if is_dvc_snapshot and scaler_x is not None and hasattr(scaler_x, "inverse_transform"):
                 lower_feats = [f.lower() for f in features]
-                if "close" in lower_feats:
-                    try:
-                        close_idx = lower_feats.index("close")
-                        inv = scaler_x.inverse_transform(x_raw)
-                        candidate_prices = inv[:, close_idx]
-                        if np.all(np.isfinite(candidate_prices)) and np.all(candidate_prices > 0):
-                            prices = candidate_prices
-                            recovered = True
-                    except Exception:
-                        pass
+                for cand in _PRICE_CANDIDATE_COLUMNS:
+                    if cand in lower_feats:
+                        try:
+                            p_idx = lower_feats.index(cand)
+                            inv = scaler_x.inverse_transform(x_raw)
+                            candidate_prices = inv[:, p_idx]
+                            if np.all(np.isfinite(candidate_prices)) and np.all(candidate_prices > 0):
+                                prices = candidate_prices
+                                recovered = True
+                                break
+                        except Exception:
+                            pass
             if not recovered:
                 series = pd.Series(prices).replace([np.inf, -np.inf], np.nan).ffill().bfill()
                 if series.isna().all():
@@ -541,7 +666,11 @@ class TrainingDeployService:
                 if len(df_slice) < 5:
                     raise ValueError("Dataset slice too small for replay")
 
-                loaded_model = TrainingDeployService._load_model_artifact(resolved_model_path)
+                loaded_model = TrainingDeployService._load_model_artifact(
+                    resolved_model_path,
+                    metadata=metadata,
+                    algorithm=algorithm,
+                )
 
                 scaler_x = None
                 scaler_path = TrainingDeployService._find_auxiliary_artifact(resolved_model_path, metadata, "scaler")
@@ -894,6 +1023,10 @@ class TrainingDeployService:
             )
 
         cloned_config["incremental_retrain_model_id"] = model_id
+        cloned_config["target_model_id"] = model_id
+        cloned_config["fine_tune"] = True
+        if resolved_path:
+            cloned_config["previous_model_path"] = resolved_path
         job_id = f"train_{int(time.time() * 1000)}"
 
         new_job = ModelTrainingJob(

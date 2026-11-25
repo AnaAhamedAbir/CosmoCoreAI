@@ -28,9 +28,27 @@ from app.schemas.training_studio_tools import (
 )
 
 DATASET_DIR_MAP: Dict[str, str] = {
-    "l2_orderbook": os.path.join("uploads", "l2_snapshots"),
-    "hybrid_deep": os.path.join("uploads", "hybrid_snapshots"),
-    "historical_trades": os.path.join("uploads", "historical_trades"),
+    "l2_orderbook": os.path.join("data", "raw", "l2_snapshots"),
+    "hybrid_deep": os.path.join("data", "raw", "hybrid_snapshots"),
+    "historical_trades": os.path.join("app", "data_feeds"),
+}
+
+DATASET_FALLBACK_DIRS: Dict[str, List[str]] = {
+    "l2_orderbook": [
+        os.path.join("data", "raw", "l2_snapshots"),
+        os.path.join("uploads", "l2_snapshots"),
+        os.path.join("uploads", "datasets"),
+    ],
+    "hybrid_deep": [
+        os.path.join("data", "raw", "hybrid_snapshots"),
+        os.path.join("uploads", "hybrid_snapshots"),
+        os.path.join("uploads", "datasets"),
+    ],
+    "historical_trades": [
+        os.path.join("app", "data_feeds"),
+        os.path.join("uploads", "historical_trades"),
+        os.path.join("uploads", "datasets"),
+    ],
 }
 
 _SUSPICIOUS_COL_RE = re.compile(r"(future|target|next_|lead_)", re.IGNORECASE)
@@ -89,8 +107,15 @@ def _load_local_dataset(data_source: str, dataset_file: Optional[str], lookback_
     if not dataset_file:
         return None, f"No dataset_file provided for data_source='{data_source}'."
 
-    resolved_path = _validate_safe_dataset_path(base_dir, dataset_file)
-    if not os.path.isfile(resolved_path):
+    candidate_dirs = DATASET_FALLBACK_DIRS.get(data_source, [base_dir])
+    resolved_path = None
+    for c_dir in candidate_dirs:
+        cand = _validate_safe_dataset_path(c_dir, dataset_file)
+        if os.path.isfile(cand):
+            resolved_path = cand
+            break
+
+    if not resolved_path:
         return None, f"Dataset file '{os.path.basename(dataset_file)}' not found in '{base_dir}'."
 
     try:

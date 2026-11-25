@@ -1246,15 +1246,32 @@ def _fetch_live_l2_data(symbol: str, db: Session, sequence_length: Optional[int]
         obi, spread, microprice = _compute_micro_features_from_raw(ob.get('bids', []), ob.get('asks', []))
         
         if microprice is not None and microprice > 0:
-            df = pd.DataFrame([{
+            bids_raw = ob.get('bids', [])
+            asks_raw = ob.get('asks', [])
+            row_dict = {
                 "timestamp": pd.to_datetime(exchange.milliseconds(), unit='ms', utc=True),
                 "Close": microprice,
+                "trade_price": microprice,
                 "obi": obi,
                 "spread": spread,
                 "microprice": microprice,
-                "bids": ob.get('bids', []),
-                "asks": ob.get('asks', []),
-            }])
+                "bids": bids_raw,
+                "asks": asks_raw,
+            }
+            for lvl_i in range(20):
+                if lvl_i < len(bids_raw):
+                    row_dict[f"bid_price_{lvl_i+1}"] = float(bids_raw[lvl_i][0])
+                    row_dict[f"bid_volume_{lvl_i+1}"] = float(bids_raw[lvl_i][1])
+                else:
+                    row_dict[f"bid_price_{lvl_i+1}"] = microprice
+                    row_dict[f"bid_volume_{lvl_i+1}"] = 0.0
+                if lvl_i < len(asks_raw):
+                    row_dict[f"ask_price_{lvl_i+1}"] = float(asks_raw[lvl_i][0])
+                    row_dict[f"ask_volume_{lvl_i+1}"] = float(asks_raw[lvl_i][1])
+                else:
+                    row_dict[f"ask_price_{lvl_i+1}"] = microprice
+                    row_dict[f"ask_volume_{lvl_i+1}"] = 0.0
+            df = pd.DataFrame([row_dict])
             df.set_index("timestamp", inplace=True)
             try:
                 df_feats, _ = calculate_l2_advanced_features(df.reset_index())
@@ -1632,13 +1649,14 @@ def _infer_sklearn(model_path: str, X: np.ndarray, prediction_target: str, featu
                         pred[1:] = scaler_y.inverse_transform([pred[1:]])[0]
                     except Exception:
                         pass
-                direction = pred[0]
-                tp_dist = abs(pred[1])
-                sl_dist = abs(pred[2])
+                direction = float(pred[0])
+                sl_dist = abs(float(pred[1]))
+                tp_dist = abs(float(pred[2]))
             signal_str = "BUY" if direction > 0.5 else "SELL"
-            confidence = 0.95
-            _THREAD_LOCAL.bullish_prob = float(direction) if 0.0 <= float(direction) <= 1.0 else (0.95 if signal_str == "BUY" else 0.05)
-            _THREAD_LOCAL.bearish_prob = 1.0 - _THREAD_LOCAL.bullish_prob
+            prob_dir = float(np.clip(direction, 0.05, 0.95)) if 0.0 <= direction <= 1.0 else float(1.0 / (1.0 + np.exp(-direction)))
+            confidence = prob_dir if signal_str == "BUY" else (1.0 - prob_dir)
+            _THREAD_LOCAL.bullish_prob = prob_dir
+            _THREAD_LOCAL.bearish_prob = 1.0 - prob_dir
 
             if signal_str == "BUY":
                 sl_price = current_price * (1 - sl_dist)
@@ -1718,22 +1736,14 @@ def _infer_torch(model_path: str, algorithm: str, X: np.ndarray, prediction_targ
     out_size = 3 if prediction_target == "advanced_setup" else 1
 
     # ── Rebuild Architecture ──────────────────────────────────────────────────
+    from app.models.classic_dl_models import SimpleLSTM, SimpleGRU, CNN1D, DeepLOB
     if algorithm == "LSTM":
-        class SimpleLSTM(nn.Module):
-            def __init__(self, input_size):
-                super().__init__()
-                self.lstm = nn.LSTM(input_size, 64, 2, batch_first=True)
-                self.fc   = nn.Linear(64, out_size)
-            def forward(self, x):
-                out, _ = self.lstm(x)
-                return self.fc(out[:, -1, :])
         if prediction_target == "multi_task":
             from app.services.mtl.wrapper import DualHeadModel
-            base_model = SimpleLSTM(input_size)
-            base_model.fc = nn.Linear(64, 64)
+            base_model = SimpleLSTM(input_size=input_size, hidden_size=64, num_layers=2, output_size=64)
             model = DualHeadModel(base_model=base_model, hidden_dim=64)
         else:
-            model = SimpleLSTM(input_size)
+            model = SimpleLSTM(input_size=input_size, hidden_size=64, num_layers=2, output_size=out_size)
         
         if len(X.shape) == 2:
             X_t = torch.FloatTensor(X).unsqueeze(0)
@@ -1741,65 +1751,34 @@ def _infer_torch(model_path: str, algorithm: str, X: np.ndarray, prediction_targ
             X_t = torch.FloatTensor(X).unsqueeze(1)
 
     elif algorithm == "GRU":
-        class SimpleGRU(nn.Module):
-            def __init__(self, input_size):
-                super().__init__()
-                self.gru = nn.GRU(input_size, 64, 2, batch_first=True)
-                self.fc  = nn.Linear(64, out_size)
-            def forward(self, x):
-                out, _ = self.gru(x)
-                return self.fc(out[:, -1, :])
         if prediction_target == "multi_task":
             from app.services.mtl.wrapper import DualHeadModel
-            base_model = SimpleGRU(input_size)
-            base_model.fc = nn.Linear(64, 64)
+            base_model = SimpleGRU(input_size=input_size, hidden_size=64, num_layers=2, output_size=64)
             model = DualHeadModel(base_model=base_model, hidden_dim=64)
         else:
-            model = SimpleGRU(input_size)
+            model = SimpleGRU(input_size=input_size, hidden_size=64, num_layers=2, output_size=out_size)
         if len(X.shape) == 2:
             X_t = torch.FloatTensor(X).unsqueeze(0)
         else:
             X_t = torch.FloatTensor(X).unsqueeze(1)
 
     elif algorithm in ("1D-CNN",):
-        class CNN1D(nn.Module):
-            def __init__(self, input_size):
-                super().__init__()
-                self.conv1 = nn.Conv1d(1, 16, 3, padding=1)
-                self.relu  = nn.ReLU()
-                self.pool  = nn.MaxPool1d(2)
-                self.fc1   = nn.Linear(16 * (input_size // 2), 32)
-                self.fc2   = nn.Linear(32, out_size)
-            def forward(self, x):
-                x = x.unsqueeze(1)
-                out = self.pool(self.relu(self.conv1(x)))
-                out = out.view(out.size(0), -1)
-                return self.fc2(self.relu(self.fc1(out)))
-        model = CNN1D(input_size)
-        if len(X.shape) == 2:
-            X_t = torch.FloatTensor(X[-1:]).unsqueeze(0)
+        if prediction_target == "multi_task":
+            from app.services.mtl.wrapper import DualHeadModel
+            base_model = CNN1D(input_size=input_size, output_size=64)
+            model = DualHeadModel(base_model=base_model, hidden_dim=64)
         else:
-            X_t = torch.FloatTensor(X)
+            model = CNN1D(input_size=input_size, output_size=out_size)
+        X_t = torch.FloatTensor(X[-1:]) if len(X.shape) == 2 else torch.FloatTensor(X)
 
     elif algorithm == "DeepLOB":
-        class DeepLOB(nn.Module):
-            def __init__(self, input_size):
-                super().__init__()
-                self.conv1 = nn.Conv1d(1, 16, 2, padding=1)
-                self.relu  = nn.ReLU()
-                self.lstm  = nn.LSTM(16, 32, 1, batch_first=True)
-                self.fc    = nn.Linear(32, out_size)
-            def forward(self, x):
-                x = x.unsqueeze(1)
-                x = self.relu(self.conv1(x))
-                x = x.transpose(1, 2)
-                out, _ = self.lstm(x)
-                return self.fc(out[:, -1, :])
-        model = DeepLOB(input_size)
-        if len(X.shape) == 2:
-            X_t = torch.FloatTensor(X[-1:])
+        if prediction_target == "multi_task":
+            from app.services.mtl.wrapper import DualHeadModel
+            base_model = DeepLOB(input_size=input_size, output_size=64)
+            model = DualHeadModel(base_model=base_model, hidden_dim=64)
         else:
-            X_t = torch.FloatTensor(X)
+            model = DeepLOB(input_size=input_size, output_size=out_size)
+        X_t = torch.FloatTensor(X[-1:]) if len(X.shape) == 2 else torch.FloatTensor(X)
 
     elif algorithm == "TCN":
         model = TCNModel(input_size=input_size, num_channels=[32, 64, 128], output_size=out_size)
@@ -1877,11 +1856,14 @@ def _infer_torch(model_path: str, algorithm: str, X: np.ndarray, prediction_targ
                             pred[1:] = scaler_y.inverse_transform([pred[1:]])[0]
                         except Exception:
                             pass
-                    direction = pred[0]
-                    sl_dist = abs(pred[1])
-                    tp_dist = abs(pred[2])
+                    direction = float(pred[0])
+                    sl_dist = abs(float(pred[1]))
+                    tp_dist = abs(float(pred[2]))
                     signal_str = "BUY" if direction > 0.5 else "SELL"
-                    confidence = 0.95
+                    prob_dir = float(np.clip(direction, 0.05, 0.95)) if 0.0 <= direction <= 1.0 else float(1.0 / (1.0 + np.exp(-direction)))
+                    confidence = prob_dir if signal_str == "BUY" else (1.0 - prob_dir)
+                    _THREAD_LOCAL.bullish_prob = prob_dir
+                    _THREAD_LOCAL.bearish_prob = 1.0 - prob_dir
                     if signal_str == "BUY":
                         sl_price = current_price * (1 - sl_dist)
                         tp_price = current_price * (1 + tp_dist)

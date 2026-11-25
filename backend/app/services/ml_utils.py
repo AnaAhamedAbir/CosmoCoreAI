@@ -28,9 +28,22 @@ def calculate_classification_metrics(y_true, y_pred):
 
 def calculate_regression_metrics(y_true, y_pred):
     """Calculate metrics for regression."""
-    r2 = r2_score(y_true, y_pred)
-    mse = mean_squared_error(y_true, y_pred)
-    mae = mean_absolute_error(y_true, y_pred)
+    y_t = np.asarray(y_true, dtype=float)
+    y_p = np.asarray(y_pred, dtype=float)
+    try:
+        if y_t.ndim > 1 and y_t.shape[1] > 1:
+            col_r2s = []
+            for col_idx in range(y_t.shape[1]):
+                if np.var(y_t[:, col_idx]) > 1e-12:
+                    col_r2s.append(float(r2_score(y_t[:, col_idx], y_p[:, col_idx])))
+            r2 = float(np.mean(col_r2s)) if col_r2s else 0.0
+        else:
+            r2 = float(r2_score(y_t, y_p)) if np.var(y_t) > 1e-12 else 0.0
+    except Exception:
+        r2 = 0.0
+    r2 = float(np.clip(r2, -1.0, 1.0))
+    mse = float(mean_squared_error(y_t, y_p))
+    mae = float(mean_absolute_error(y_t, y_p))
     
     metrics = {
         "R2_Score": r2,
@@ -66,8 +79,10 @@ def generate_real_explainability(model, X_test, y_test, y_pred, feature_names, i
     try:
         if is_classification:
             from sklearn.metrics import confusion_matrix
-            y_t = np.round(y_test).astype(int)
-            y_p = np.round(y_pred).astype(int)
+            y_t_1d = y_test[:, 0] if (hasattr(y_test, 'ndim') and y_test.ndim > 1 and y_test.shape[1] > 1) else np.ravel(y_test)
+            y_p_1d = y_pred[:, 0] if (hasattr(y_pred, 'ndim') and y_pred.ndim > 1 and y_pred.shape[1] > 1) else np.ravel(y_pred)
+            y_t = np.round(y_t_1d).astype(int)
+            y_p = (y_p_1d >= 0.5).astype(int) if np.issubdtype(np.asarray(y_p_1d).dtype, np.floating) else np.round(y_p_1d).astype(int)
             labels = sorted(list(set([0, 1]).union(set(y_t), set(y_p))))
             cm = confusion_matrix(y_t, y_p, labels=labels)
             classes = [f"Class {i}" for i in labels]

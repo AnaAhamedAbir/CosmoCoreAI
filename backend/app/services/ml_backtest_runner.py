@@ -133,8 +133,17 @@ def _generate_signals(model, algorithm: str, X_test: np.ndarray, prediction_targ
                         out_tensor = model(X_t)
                         if isinstance(out_tensor, tuple):
                             out_tensor = out_tensor[0]
-                        out = out_tensor.numpy().flatten()
-                        signals = (out > np.median(out)).astype(int).tolist()
+                        out_np = out_tensor.numpy()
+                        if out_np.ndim > 1 and out_np.shape[1] > 1:
+                            out_np = out_np[:, 0]
+                        out = out_np.flatten()
+                        if prediction_target == "advanced_setup":
+                            sig_arr = (out >= 0.5).astype(int)
+                            if sig_arr.sum() == 0 or sig_arr.sum() == len(sig_arr):
+                                sig_arr = (out > np.median(out)).astype(int)
+                            signals = sig_arr.tolist()
+                        else:
+                            signals = (out > np.median(out)).astype(int).tolist()
 
         elif algorithm in ["PPO-RL", "SAC-RL", "A2C-RL", "DDPG-RL", "DQN-RL", "TD3-RL", "QR-DQN", "CQL", "GAIL", "Decision-Transformer", "Liquid-NN"]:
             add_log(f"[Post-Backtest] {algorithm} backtest via signal replay not supported. Skipped.")
@@ -207,13 +216,35 @@ def _build_ohlcv_slice(df: pd.DataFrame, n_signals: int, add_log: Callable) -> O
                     col_map['close'], col_map['volume']]].copy()
         ohlcv.columns = ['open', 'high', 'low', 'close', 'volume']
     else:
-        # Proxy: use 'Close' or 'close' or 'microprice' as the price series
-        price_col = col_map.get('close') or col_map.get('microprice')
-        if not price_col:
-            add_log("[Post-Backtest] No price column found for backtest DataFrame.")
-            return None
+        # Proxy: prefer continuous L2 mid/microprice or Close over sparse trade_price
+        if 'close' in col_map:
+            prices = pd.to_numeric(df[col_map['close']], errors='coerce').values.astype(float)
+        elif 'microprice' in col_map:
+            prices = pd.to_numeric(df[col_map['microprice']], errors='coerce').values.astype(float)
+        elif 'bid_price_1' in col_map and 'ask_price_1' in col_map:
+            b1 = pd.to_numeric(df[col_map['bid_price_1']], errors='coerce').values.astype(float)
+            a1 = pd.to_numeric(df[col_map['ask_price_1']], errors='coerce').values.astype(float)
+            prices = (b1 + a1) / 2.0
+        else:
+            price_col = (
+                col_map.get('trade_price')
+                or col_map.get('mid_price')
+                or col_map.get('price')
+                or col_map.get('last_price')
+            )
+            if not price_col:
+                add_log("[Post-Backtest] No price column found for backtest DataFrame.")
+                return None
+            prices = pd.to_numeric(df[price_col], errors='coerce').values.astype(float)
 
-        prices = df[price_col].values
+        if np.any(~np.isfinite(prices)) or np.any(prices <= 0):
+            s = pd.Series(prices).replace([np.inf, -np.inf], np.nan).where(lambda x: x > 0).ffill().bfill()
+            vals = s.values.astype(float)
+            min_v = float(np.nanmin(vals)) if len(vals) > 0 and not np.isnan(vals).all() else 0.0
+            if not np.isfinite(min_v) or min_v <= 0:
+                vals = np.nan_to_num(vals, nan=100.0) - min(0.0, min_v if np.isfinite(min_v) else 0.0) + 100.0
+            prices = vals
+
         ohlcv = pd.DataFrame({
             'open':   prices,
             'high':   prices * 1.001,
@@ -225,13 +256,27 @@ def _build_ohlcv_slice(df: pd.DataFrame, n_signals: int, add_log: Callable) -> O
     # Take last n_signals rows (test portion)
     ohlcv = ohlcv.tail(n_signals).copy()
     
-    # Ensure datetime index
-    if not isinstance(ohlcv.index, pd.DatetimeIndex):
+    # Ensure strictly increasing DatetimeIndex with >=1s spacing so Backtrader date2num never collides
+    use_synthetic_index = False
+    if isinstance(ohlcv.index, pd.RangeIndex) or pd.api.types.is_integer_dtype(ohlcv.index) or pd.api.types.is_float_dtype(ohlcv.index):
+        use_synthetic_index = True
+    elif not isinstance(ohlcv.index, pd.DatetimeIndex):
         try:
-            ohlcv.index = pd.to_datetime(ohlcv.index)
+            parsed_idx = pd.to_datetime(ohlcv.index)
+            if parsed_idx.max().year <= 1971:
+                use_synthetic_index = True
+            else:
+                ohlcv.index = parsed_idx
         except Exception:
-            # Generate synthetic timestamps
-            ohlcv.index = pd.date_range(start='2024-01-01', periods=len(ohlcv), freq='1h')
+            use_synthetic_index = True
+
+    if not use_synthetic_index and isinstance(ohlcv.index, pd.DatetimeIndex) and len(ohlcv) > 1:
+        span_sec = (ohlcv.index.max() - ohlcv.index.min()).total_seconds()
+        if span_sec < len(ohlcv) or ohlcv.index.duplicated().any():
+            use_synthetic_index = True
+
+    if use_synthetic_index:
+        ohlcv.index = pd.date_range(start='2024-01-01', periods=len(ohlcv), freq='1min')
 
     ohlcv = ohlcv.dropna()
     add_log(f"[Post-Backtest] OHLCV slice prepared: {len(ohlcv)} rows.")

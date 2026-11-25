@@ -612,7 +612,14 @@ def download_model(
 
     file_path = version.file_path
     if not file_path or not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Model file not found on server")
+        from app.services.training_deploy_service import TrainingDeployService
+        resolved_path = TrainingDeployService._resolve_model_artifact_path(file_path)
+        if resolved_path and os.path.exists(resolved_path):
+            file_path = resolved_path
+            version.file_path = resolved_path
+            db.commit()
+        else:
+            raise HTTPException(status_code=404, detail="Model file not found on server")
 
     dir_path = os.path.dirname(file_path)
     safe_model_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in db_model.name)

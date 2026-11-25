@@ -26,18 +26,18 @@ const TickerItem: React.FC<TickerItemProps> = ({ coin, onClick }) => (
     </div>
 );
 
-// Special styled item for HomePage overlay
+// Special styled item for HomePage overlay (always dark-cosmos crisp regardless of light/dark theme)
 const TickerItemOverlay: React.FC<TickerItemProps> = ({ coin, onClick }) => (
     <div
-        className={`flex items-center mx-4 py-2 px-4 rounded-lg bg-white/10 dark:bg-black/20 backdrop-blur-sm border border-white/10 dark:border-white/5 transition-colors ${onClick ? 'cursor-pointer hover:bg-white/20' : ''}`}
+        className={`flex items-center mx-3 my-1 py-1.5 px-3.5 rounded-lg bg-white/[0.04] border border-white/10 transition-colors ${onClick ? 'cursor-pointer hover:bg-cyan-500/10 hover:border-cyan-500/30' : ''}`}
         onClick={onClick}
     >
         {coin.logo}
-        <span className="ml-2 font-semibold text-sm text-slate-800 dark:text-slate-200">{coin.symbol}</span>
-        <span className="ml-3 font-mono text-sm text-slate-700 dark:text-slate-300">
+        <span className="ml-2 font-semibold text-sm text-white">{coin.symbol}</span>
+        <span className="ml-2.5 font-mono text-sm text-slate-200">
             ${coin.price > 100 ? coin.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : coin.price.toFixed(4)}
         </span>
-        <span className={`ml-2 font-mono text-xs font-semibold ${coin.change >= 0 ? 'text-brand-success' : 'text-brand-danger'}`}>
+        <span className={`ml-2 font-mono text-xs font-semibold ${coin.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
             {coin.change >= 0 ? '▲' : '▼'} {Math.abs(coin.change).toFixed(2)}%
         </span>
     </div>
@@ -47,6 +47,19 @@ interface MarketTickerProps {
     variant?: 'default' | 'overlay';
     onCoinClick?: (symbol: string) => void;
 }
+
+const PUBLIC_SEED_COINS = [
+    { id: 'BTC', symbol: 'BTC', price: 97420.5, change: 2.34 },
+    { id: 'ETH', symbol: 'ETH', price: 3685.2, change: 1.82 },
+    { id: 'SOL', symbol: 'SOL', price: 244.6, change: 4.15 },
+    { id: 'BNB', symbol: 'BNB', price: 658.4, change: 0.94 },
+    { id: 'XRP', symbol: 'XRP', price: 1.482, change: -0.65 },
+    { id: 'APT', symbol: 'APT', price: 12.84, change: 3.12 },
+    { id: 'SUI', symbol: 'SUI', price: 3.46, change: 5.08 },
+    { id: 'AVAX', symbol: 'AVAX', price: 42.15, change: 2.04 },
+    { id: 'LINK', symbol: 'LINK', price: 19.62, change: 1.47 },
+    { id: 'DOGE', symbol: 'DOGE', price: 0.412, change: -1.12 },
+];
 
 const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoinClick }) => {
     // Basic Logo Map
@@ -131,11 +144,44 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
             }
         };
 
+        const loadPublicFallback = async () => {
+            const seeded = PUBLIC_SEED_COINS.map((c) => ({
+                ...c,
+                logo: LOGO_MAP[c.symbol] || <UsdtLogo className="h-5 w-5 text-slate-400" />,
+            }));
+            flushCoins(seeded);
+
+            try {
+                const symbolsParam = encodeURIComponent(JSON.stringify(PUBLIC_SEED_COINS.map((c) => `${c.symbol}USDT`)));
+                const resp = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${symbolsParam}`);
+                if (!resp.ok) return;
+                const rows = await resp.json();
+                if (!Array.isArray(rows) || isUnmounted) return;
+                const liveCoins = rows.map((row: any) => {
+                    const symbol = String(row.symbol || '').replace('USDT', '');
+                    return {
+                        id: symbol,
+                        logo: LOGO_MAP[symbol] || <UsdtLogo className="h-5 w-5 text-slate-400" />,
+                        symbol,
+                        price: parseFloat(row.lastPrice),
+                        change: parseFloat(row.priceChangePercent),
+                    };
+                }).filter((c: any) => c.symbol && Number.isFinite(c.price));
+                if (liveCoins.length > 0) flushCoins(liveCoins);
+            } catch {
+                // Keep seeded coins silently if external REST is unavailable
+            }
+        };
+
         const connect = async () => {
             if (isUnmounted) return;
             const token = sessionStorage.getItem('accessToken') || localStorage.getItem('accessToken');
             if (!token) {
-                retryTimeout = setTimeout(connect, 3000);
+                if (variant === 'overlay') {
+                    await loadPublicFallback();
+                } else {
+                    retryTimeout = setTimeout(connect, 3000);
+                }
                 return;
             }
             const wsUrl = await buildAuthenticatedWsUrl('/ws');
@@ -222,7 +268,11 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
     const tickerItems = coins.length > 5 ? [...coins, ...coins] : coins;
     const ItemComponent = variant === 'overlay' ? TickerItemOverlay : TickerItem;
 
-    if (coins.length === 0) return <div className="h-10 w-full animate-pulse bg-gray-100 dark:bg-white/5 mx-4 rounded"></div>;
+    if (coins.length === 0) {
+        return variant === 'overlay'
+            ? <div className="h-10 w-full bg-[#020A1A]/75" />
+            : <div className="h-10 w-full animate-pulse bg-slate-200/70 dark:bg-white/5 mx-4 rounded" />;
+    }
 
     return (
         <div className="w-full overflow-hidden">

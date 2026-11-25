@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Logo } from '@/constants';
 import {
     Menu,
     X,
@@ -52,6 +51,19 @@ const QUICK_JUMP_ITEMS: QuickJumpItem[] = [
     { id: 'eth', label: 'ETH/USDT Live Terminal Chart', category: 'Market', view: 'Home', symbol: 'ETHUSDT', sectionId: 'homepage_chart_card', keywords: 'eth ethereum chart usdt' },
     { id: 'sol', label: 'SOL/USDT Live Terminal Chart', category: 'Market', view: 'Home', symbol: 'SOLUSDT', sectionId: 'homepage_chart_card', keywords: 'sol solana chart usdt' },
 ];
+
+const PublicBrandLogo: React.FC<{ mobile?: boolean }> = ({ mobile = false }) => (
+    <div className={`flex flex-row items-center select-none ${mobile ? 'gap-2' : 'gap-3'}`}>
+        <img
+            src="/logo.png"
+            alt="CosmoQuantAI"
+            className={`${mobile ? 'h-14' : 'h-[84px]'} w-auto object-contain shrink-0 drop-shadow-[0_0_16px_rgba(99,102,241,0.55)]`}
+        />
+        <span className={`font-extrabold text-white tracking-tight whitespace-nowrap ${mobile ? 'text-base' : 'text-xl md:text-2xl'}`}>
+            CosmoQuantAI
+        </span>
+    </div>
+);
 
 const NavLink: React.FC<{
     children: React.ReactNode;
@@ -142,8 +154,8 @@ const PublicHeader: React.FC<{
             : 'bg-[#050A14]/35 backdrop-blur-sm border-white/10 shadow-lg');
 
     return (
-        <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 flex flex-col items-center ${isPhoneMobileUI ? 'pt-2.5 px-2.5' : 'pt-4 px-4'} pointer-events-none`}>
-            <nav className={`pointer-events-auto w-full ${isPhoneMobileUI ? 'max-w-full py-2.5 px-3.5 rounded-xl' : `max-w-[95%] ${scrolled ? 'py-2.5 px-6 rounded-2xl' : 'py-3.5 px-7 rounded-2xl'}`} transition-all duration-500 border flex items-center justify-between gap-2 ${navBgClass}`}>
+        <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 flex flex-col items-center ${isPhoneMobileUI ? 'pt-2 px-2.5' : 'pt-3 px-4'} pointer-events-none`}>
+            <nav className={`pointer-events-auto w-full ${isPhoneMobileUI ? 'max-w-full py-1.5 px-3 rounded-xl' : `max-w-[95%] ${scrolled ? 'py-1.5 px-6 rounded-2xl' : 'py-2 px-7 rounded-2xl'}`} transition-all duration-500 border flex items-center justify-between gap-2 ${navBgClass}`}>
 
                 {/* Left: Logo + Nav */}
                 <div className="flex items-center gap-3 lg:gap-8 min-w-0">
@@ -162,7 +174,7 @@ const PublicHeader: React.FC<{
                         onClick={() => { onNavigate('Home'); setIsMobileMenuOpen(false); }}
                         className="transform hover:scale-[1.03] transition-transform min-w-0"
                     >
-                        <Logo compact className="!text-white" />
+                        <PublicBrandLogo mobile={isPhoneMobileUI} />
                     </button>
 
                     <div className="hidden md:flex items-center gap-1">
@@ -396,7 +408,7 @@ const PublicFooter: React.FC<{
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
                     <div className="col-span-2 md:col-span-1">
                         <div className="mb-4">
-                            <Logo compact className="!text-white" />
+                            <PublicBrandLogo />
                         </div>
                         <p className="text-sm text-slate-400 leading-relaxed">
                             Algorithmic trading SaaS uniting WallHunter liquidity telemetry, OrderFlow Heatmaps, AI Foundry, and automated cloud execution.
@@ -606,7 +618,7 @@ const PublicWebsite: React.FC<PublicWebsiteProps> = ({ onLogin, onSignUp }) => {
                     currentView={currentView}
                     onNavigate={navigateTo}
                 />
-                <main className="flex-grow pt-20 relative z-10">
+                <main className="flex-grow pt-28 md:pt-32 relative z-10">
                     {renderContent()}
                 </main>
                 <PublicFooter

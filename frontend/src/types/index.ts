@@ -29,9 +29,24 @@ export interface Asset {
   history: { time: string; value: number }[];
 }
 
+export interface BotTradeRecord {
+  id: number;
+  symbol: string;
+  side: string;
+  entry_price: number;
+  exit_price?: number | null;
+  quantity: number;
+  pnl: number;
+  pnl_percent: number;
+  status: string;
+  opened_at: string;
+  closed_at?: string | null;
+}
+
 export interface ActiveBot {
   id: string;
   name: string;
+  description?: string;
   exchange?: string; // ✅ নতুন
   market: string;
   strategy: string;
@@ -41,8 +56,12 @@ export interface ActiveBot {
   tradeUnit?: string; // ✅ নতুন
   trade_unit?: string; // ✅ For backend compatibility
   apiKeyId?: string; // ✅ নতুন
+  api_key_id?: string | null;
+  is_paper_trading?: boolean;
+  win_rate?: number;
   pnl: number;
   pnlPercent: number;
+  pnl_percent?: number;
   totalPnl?: number;
   status: 'active' | 'inactive' | 'paused';
   isRegimeAware?: boolean;
@@ -50,8 +69,9 @@ export interface ActiveBot {
   customModelId?: string;
   sentimentScore?: number;
   staticStopLoss?: number;
+  created_at?: string;
   config?: {
-    strategyParams: Record<string, any>;
+    strategyParams?: Record<string, any>;
     riskParams?: any;
     deploymentTarget?: string;
     [key: string]: any;

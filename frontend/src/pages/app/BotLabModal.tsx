@@ -174,6 +174,16 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                 marginMode: deploymentTarget === 'Futures' ? marginMode : 'ISOLATED'
             };
 
+            const safeTradeValue = Math.max(0.0001, Number(tradeValue) || 0);
+            const numericTakeProfit = tpMode === 'Simple' && Number(riskParams.takeProfit) > 0
+                ? Number(riskParams.takeProfit)
+                : null;
+            const numericStopLoss = Number(riskParams.stopLoss) > 0 ? Number(riskParams.stopLoss) : null;
+            const trailingStopVal = advanced.trailingSl ? Math.max(0, Number(advanced.trailingSlVal) || 0) : 0;
+            const parsedLimitPrice = orderType === 'Limit' && limitPrice && Number(limitPrice) > 0
+                ? Number(limitPrice)
+                : null;
+
             const finalTimeframe = botMode === 'scalp' ? '1m' : timeframe;
             let finalConfig = {};
             let selectedStrategyName = strategy;
@@ -181,21 +191,31 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
             if (botMode === 'standard') {
                 finalConfig = {
                     ...strategyParams,
-                    leverage: leverage,
-                    stop_loss: finalRiskParams.stopLoss,
-                    take_profit: finalRiskParams.takeProfit,
-                    amount_per_trade: Number(tradeValue),
+                    leverage: deploymentTarget === 'Futures' ? leverage : 1,
+                    margin_mode: deploymentTarget === 'Futures' ? marginMode : undefined,
+                    stop_loss: numericStopLoss,
+                    take_profit: numericTakeProfit,
+                    trailing_stop: trailingStopVal,
+                    amount_per_trade: safeTradeValue,
                     riskParams: finalRiskParams,
                     advanced,
                     notifications,
                     deploymentTarget,
                     orderType,
-                    limitPrice: orderType === 'Limit' && limitPrice ? Number(limitPrice) : null
+                    limitPrice: parsedLimitPrice,
+                    ...(activeMarket === 'forex' || activeMarket === 'stocks' ? { tradfi_settings: tradfiSettings } : {}),
                 };
             } else {
                 selectedStrategyName = 'Smart Scalper (Ping-Pong)';
                 finalConfig = {
                     mode: 'scalp',
+                    leverage: deploymentTarget === 'Futures' ? leverage : 1,
+                    amount_per_trade: safeTradeValue,
+                    stop_loss: numericStopLoss,
+                    take_profit: numericTakeProfit,
+                    trailing_stop: trailingStopVal,
+                    orderType,
+                    limitPrice: parsedLimitPrice,
                     scalp_settings: {
                         entry_trigger: scalpConfig.entryType,
                         entry_price: Number(scalpConfig.entryPrice),
@@ -216,7 +236,7 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                 market: assetPair,
                 strategy: selectedStrategyName,
                 timeframe: finalTimeframe,
-                trade_value: Number(tradeValue),
+                trade_value: safeTradeValue,
                 trade_unit: unit,
                 api_key_id: isPaperTrading ? null : apiKeyId,
                 is_regime_aware: advanced.regimeFilter,
@@ -249,8 +269,9 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                         <div className="flex items-center gap-4">
                             <Dialog.Title className="text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-tight">Deploy New Protocol</Dialog.Title>
                             <button
+                                type="button"
                                 onClick={() => setShowAIModal(true)}
-                                className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-violet-600/20 to-fuchsia-600/20 border border-violet-500/30 rounded-full text-xs font-bold text-violet-300 hover:bg-violet-600/30 transition-all hover:scale-105"
+                                className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-violet-600/20 to-fuchsia-600/20 border border-violet-500/30 rounded-full text-xs font-bold text-violet-700 dark:text-violet-300 hover:bg-violet-600/30 transition-all hover:scale-105"
                             >
                                 <Zap size={14} className="fill-current" /> Ask AI
                             </button>
@@ -266,14 +287,14 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                     <button
                                         type="button"
                                         onClick={() => setIsPaperTrading(true)}
-                                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${isPaperTrading ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${isPaperTrading ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
                                     >
                                         Simulation Mode
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setIsPaperTrading(false)}
-                                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${!isPaperTrading ? 'bg-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${!isPaperTrading ? 'bg-red-600 text-white shadow-lg' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
                                     >
                                         Real Trade
                                     </button>
@@ -307,7 +328,7 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                                 <option value="MICRO">Micro Lots</option>
                                             </select>
                                         ) : (
-                                            <span className={`${inputClasses} !w-24 flex items-center justify-center text-xs bg-gray-800`}>
+                                            <span className={`${inputClasses} !w-24 flex items-center justify-center text-xs bg-gray-100 dark:bg-gray-800`}>
                                                 Shares
                                             </span>
                                         )}
@@ -374,13 +395,13 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div>
                                             <label className={labelClasses}>Deployment Target</label>
-                                            <div className="flex bg-black/40 rounded-xl p-1 border border-white/10">
+                                            <div className="flex bg-gray-100 dark:bg-black/40 rounded-xl p-1 border border-gray-200 dark:border-white/10">
                                                 {(['Spot', 'Futures', 'Margin'] as const).map(target => (
                                                     <button
                                                         key={target}
                                                         type="button"
                                                         onClick={() => setDeploymentTarget(target)}
-                                                        className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${deploymentTarget === target ? 'bg-cyan-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}
+                                                        className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${deploymentTarget === target ? 'bg-cyan-600 text-white shadow-md' : 'text-gray-600 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                                                     >
                                                         {target}
                                                     </button>
@@ -389,13 +410,13 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                         </div>
                                         <div>
                                             <label className={labelClasses}>Order Type</label>
-                                            <div className="flex bg-black/40 rounded-xl p-1 border border-white/10">
+                                            <div className="flex bg-gray-100 dark:bg-black/40 rounded-xl p-1 border border-gray-200 dark:border-white/10">
                                                 {(['Market', 'Limit'] as const).map(type => (
                                                     <button
                                                         key={type}
                                                         type="button"
                                                         onClick={() => setOrderType(type)}
-                                                        className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${orderType === type ? 'bg-cyan-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}
+                                                        className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${orderType === type ? 'bg-cyan-600 text-white shadow-md' : 'text-gray-600 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                                                     >
                                                         {type}
                                                     </button>
@@ -404,12 +425,27 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                         </div>
                                     </div>
 
+                                    {orderType === 'Limit' && (
+                                        <div>
+                                            <label className={labelClasses}>Limit Entry Price (Quote)</label>
+                                            <input
+                                                type="number"
+                                                step="any"
+                                                min="0"
+                                                className={inputClasses}
+                                                placeholder="Enter limit price (e.g. 64500)"
+                                                value={limitPrice}
+                                                onChange={e => setLimitPrice(e.target.value)}
+                                            />
+                                        </div>
+                                    )}
+
                                     {deploymentTarget === 'Futures' && (
-                                        <div className="p-4 bg-cyan-900/10 border border-cyan-500/20 rounded-xl space-y-4">
+                                        <div className="p-4 bg-cyan-50 dark:bg-cyan-900/10 border border-cyan-500/20 rounded-xl space-y-4">
                                             <div>
                                                 <div className="flex justify-between items-center mb-2">
                                                     <label className={labelClasses}>Leverage</label>
-                                                    <span className="text-cyan-400 font-bold text-sm bg-cyan-500/10 px-2 py-0.5 rounded">{leverage}x</span>
+                                                    <span className="text-cyan-600 dark:text-cyan-400 font-bold text-sm bg-cyan-500/10 px-2 py-0.5 rounded">{leverage}x</span>
                                                 </div>
                                                 <input
                                                     type="range"
@@ -418,7 +454,7 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                                     step="1"
                                                     value={leverage}
                                                     onChange={e => setLeverage(Number(e.target.value))}
-                                                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                                    className="w-full h-2 bg-gray-300 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                                                 />
                                                 <div className="flex justify-between text-[10px] text-gray-500 mt-1">
                                                     <span>1x</span>
@@ -431,13 +467,13 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                             </div>
                                             <div>
                                                 <label className={labelClasses}>Margin Mode</label>
-                                                <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/10">
+                                                <div className="flex bg-gray-100 dark:bg-black/40 rounded-lg p-0.5 border border-gray-200 dark:border-white/10">
                                                     {(['ISOLATED', 'CROSSED'] as const).map(mode => (
                                                         <button
                                                             key={mode}
                                                             type="button"
                                                             onClick={() => setMarginMode(mode)}
-                                                            className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${marginMode === mode ? 'bg-cyan-600 text-white shadow-sm' : 'text-gray-500 hover:text-white'}`}
+                                                            className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${marginMode === mode ? 'bg-cyan-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                                                         >
                                                             {mode === 'ISOLATED' ? 'Isolated' : 'Cross'}
                                                         </button>
@@ -447,9 +483,9 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                         </div>
                                     )}
 
-                                    <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                            <Settings size={14} className="text-cyan-400" /> Strategy Parameters
+                                    <div className="bg-gray-50 dark:bg-white/5 p-4 rounded-xl border border-gray-200 dark:border-white/10">
+                                        <h4 className="text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                            <Settings size={14} className="text-cyan-500 dark:text-cyan-400" /> Strategy Parameters
                                         </h4>
                                         <div className="grid grid-cols-2 gap-4">
                                             {Object.keys(strategyParams).map(key => (
@@ -466,11 +502,11 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                         </div>
                                     </div>
 
-                                    <div className="h-px bg-white/10"></div>
+                                    <div className="h-px bg-gray-200 dark:bg-white/10"></div>
 
                                     {/* Risk Management */}
                                     <div>
-                                        <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-rose-400" /> Risk Management</h3>
+                                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-rose-500 dark:text-rose-400" /> Risk Management</h3>
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                             <div>
                                                 <label className={labelClasses}>Stop Loss %</label>
@@ -479,13 +515,13 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                             <div className="md:col-span-2">
                                                 <div className="flex justify-between items-center mb-2">
                                                     <label className={labelClasses}>Take Profit Mode</label>
-                                                    <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/10">
+                                                    <div className="flex bg-gray-100 dark:bg-black/40 rounded-lg p-0.5 border border-gray-200 dark:border-white/10">
                                                         {(['Simple', 'Partial'] as const).map(mode => (
                                                             <button
                                                                 key={mode}
                                                                 type="button"
                                                                 onClick={() => setTpMode(mode)}
-                                                                className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition-all ${tpMode === mode ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500'}`}
+                                                                className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition-all ${tpMode === mode ? 'bg-slate-700 dark:bg-gray-700 text-white shadow-sm' : 'text-gray-600 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                                                             >
                                                                 {mode}
                                                             </button>
@@ -499,7 +535,7 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">% target</span>
                                                     </div>
                                                 ) : (
-                                                    <div className="bg-black/20 border border-white/5 rounded-xl p-4">
+                                                    <div className="bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/5 rounded-xl p-4">
                                                         <div className="flex gap-2 mb-3">
                                                             <input type="number" placeholder="Target %" className={inputClasses} value={newTP.target} onChange={e => setNewTP({ ...newTP, target: e.target.value })} />
                                                             <input type="number" placeholder="Sell %" className={inputClasses} value={newTP.amount} onChange={e => setNewTP({ ...newTP, amount: e.target.value })} />
@@ -507,12 +543,12 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                                         </div>
                                                         <div className="space-y-2">
                                                             {partialTPs.map((tp, idx) => (
-                                                                <div key={idx} className="flex justify-between items-center text-xs p-2 bg-white/5 rounded-lg border border-white/5">
-                                                                    <span className="text-gray-300">Target <span className="text-emerald-400 font-bold">{tp.target}%</span> | Sell <span className="text-white font-bold">{tp.amount}%</span></span>
-                                                                    <button type="button" onClick={() => setPartialTPs(partialTPs.filter((_, i) => i !== idx))} className="text-gray-500 hover:text-rose-400">&times;</button>
+                                                                <div key={idx} className="flex justify-between items-center text-xs p-2 bg-white dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/5">
+                                                                    <span className="text-gray-700 dark:text-gray-300">Target <span className="text-emerald-600 dark:text-emerald-400 font-bold">{tp.target}%</span> | Sell <span className="text-gray-900 dark:text-white font-bold">{tp.amount}%</span></span>
+                                                                    <button type="button" onClick={() => setPartialTPs(partialTPs.filter((_, i) => i !== idx))} className="text-gray-500 hover:text-rose-500 dark:hover:text-rose-400">&times;</button>
                                                                 </div>
                                                             ))}
-                                                            {partialTPs.length === 0 && <p className="text-[10px] text-center text-gray-600">No partial targets set.</p>}
+                                                            {partialTPs.length === 0 && <p className="text-[10px] text-center text-gray-500 dark:text-gray-600">No partial targets set.</p>}
                                                         </div>
                                                     </div>
                                                 )}
@@ -520,18 +556,18 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                         </div>
                                     </div>
 
-                                    <div className="h-px bg-white/10"></div>
+                                    <div className="h-px bg-gray-200 dark:bg-white/10"></div>
 
                                     {/* Advanced Tools */}
                                     <div>
-                                        <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Cpu size={16} className="text-purple-400" /> Advanced Tools</h3>
+                                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2"><Cpu size={16} className="text-purple-500 dark:text-purple-400" /> Advanced Tools</h3>
                                         <div className="space-y-3">
-                                            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+                                            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/5">
                                                 <div className="flex items-center gap-3">
-                                                    <div onClick={() => setAdvanced(prev => ({ ...prev, trailingSl: !prev.trailingSl }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${advanced.trailingSl ? 'bg-cyan-500' : 'bg-gray-700'}`}>
+                                                    <div onClick={() => setAdvanced(prev => ({ ...prev, trailingSl: !prev.trailingSl }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${advanced.trailingSl ? 'bg-cyan-500' : 'bg-gray-400 dark:bg-gray-700'}`}>
                                                         <div className={`w-2 h-2 bg-white rounded-full m-1 transform transition-transform ${advanced.trailingSl ? 'translate-x-4' : ''}`}></div>
                                                     </div>
-                                                    <span className="text-sm text-gray-300">Trailing Stop Loss</span>
+                                                    <span className="text-sm text-gray-700 dark:text-gray-300">Trailing Stop Loss</span>
                                                 </div>
                                                 {advanced.trailingSl && (
                                                     <div className="flex items-center gap-2">
@@ -541,12 +577,12 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                                 )}
                                             </div>
 
-                                            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+                                            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/5">
                                                 <div className="flex items-center gap-3">
-                                                    <div onClick={() => setAdvanced(prev => ({ ...prev, dailyLoss: !prev.dailyLoss }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${advanced.dailyLoss ? 'bg-cyan-500' : 'bg-gray-700'}`}>
+                                                    <div onClick={() => setAdvanced(prev => ({ ...prev, dailyLoss: !prev.dailyLoss }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${advanced.dailyLoss ? 'bg-cyan-500' : 'bg-gray-400 dark:bg-gray-700'}`}>
                                                         <div className={`w-2 h-2 bg-white rounded-full m-1 transform transition-transform ${advanced.dailyLoss ? 'translate-x-4' : ''}`}></div>
                                                     </div>
-                                                    <span className="text-sm text-gray-300">Daily Loss Limit</span>
+                                                    <span className="text-sm text-gray-700 dark:text-gray-300">Daily Loss Limit</span>
                                                 </div>
                                                 {advanced.dailyLoss && (
                                                     <div className="flex items-center gap-2">
@@ -556,21 +592,21 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                                 )}
                                             </div>
 
-                                            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+                                            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/5">
                                                 <div className="flex items-center gap-3">
-                                                    <div onClick={() => setAdvanced(prev => ({ ...prev, regimeFilter: !prev.regimeFilter }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${advanced.regimeFilter ? 'bg-cyan-500' : 'bg-gray-700'}`}>
+                                                    <div onClick={() => setAdvanced(prev => ({ ...prev, regimeFilter: !prev.regimeFilter }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${advanced.regimeFilter ? 'bg-cyan-500' : 'bg-gray-400 dark:bg-gray-700'}`}>
                                                         <div className={`w-2 h-2 bg-white rounded-full m-1 transform transition-transform ${advanced.regimeFilter ? 'translate-x-4' : ''}`}></div>
                                                     </div>
-                                                    <span className="text-sm text-gray-300">Market Regime Filter (AI Aware)</span>
+                                                    <span className="text-sm text-gray-700 dark:text-gray-300">Market Regime Filter (AI Aware)</span>
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+                                            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/5">
                                                 <div className="flex items-center gap-3">
-                                                    <div onClick={() => setNotifications(prev => ({ ...prev, telegram: !prev.telegram }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${notifications.telegram ? 'bg-blue-500' : 'bg-gray-700'}`}>
+                                                    <div onClick={() => setNotifications(prev => ({ ...prev, telegram: !prev.telegram }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${notifications.telegram ? 'bg-blue-500' : 'bg-gray-400 dark:bg-gray-700'}`}>
                                                         <div className={`w-2 h-2 bg-white rounded-full m-1 transform transition-transform ${notifications.telegram ? 'translate-x-4' : ''}`}></div>
                                                     </div>
-                                                    <span className="text-sm text-gray-300">Telegram Notifications</span>
+                                                    <span className="text-sm text-gray-700 dark:text-gray-300">Telegram Notifications</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -579,49 +615,49 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                     {/* TradFi Edge Settings (Forex/Stocks only) */}
                                     {(activeMarket === 'forex' || activeMarket === 'stocks') && (
                                         <>
-                                            <div className="h-px bg-white/10 mt-6"></div>
+                                            <div className="h-px bg-gray-200 dark:bg-white/10 mt-6"></div>
                                             <div className="bg-gradient-to-br from-yellow-500/10 to-yellow-600/5 p-4 rounded-xl border border-yellow-500/20 mt-6">
-                                                <h3 className="text-sm font-bold text-yellow-500 mb-4 flex items-center gap-2">
+                                                <h3 className="text-sm font-bold text-yellow-600 dark:text-yellow-500 mb-4 flex items-center gap-2">
                                                     <Globe size={16} /> TradFi Edge Settings
                                                 </h3>
                                                 
                                                 <div className="space-y-3">
-                                                    <div className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-white/5">
+                                                    <div className="flex items-center justify-between p-3 bg-white/70 dark:bg-black/20 rounded-xl border border-gray-200 dark:border-white/5">
                                                         <div className="flex items-center gap-3">
-                                                            <div onClick={() => setTradfiSettings(prev => ({ ...prev, londonSession: !prev.londonSession }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${tradfiSettings.londonSession ? 'bg-yellow-500' : 'bg-gray-700'}`}>
+                                                            <div onClick={() => setTradfiSettings(prev => ({ ...prev, londonSession: !prev.londonSession }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${tradfiSettings.londonSession ? 'bg-yellow-500' : 'bg-gray-400 dark:bg-gray-700'}`}>
                                                                 <div className={`w-2 h-2 bg-white rounded-full m-1 transform transition-transform ${tradfiSettings.londonSession ? 'translate-x-4' : ''}`}></div>
                                                             </div>
-                                                            <span className="text-sm text-gray-300">London Session Only</span>
+                                                            <span className="text-sm text-gray-700 dark:text-gray-300">London Session Only</span>
                                                         </div>
                                                     </div>
                                                     
-                                                    <div className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-white/5">
+                                                    <div className="flex items-center justify-between p-3 bg-white/70 dark:bg-black/20 rounded-xl border border-gray-200 dark:border-white/5">
                                                         <div className="flex items-center gap-3">
-                                                            <div onClick={() => setTradfiSettings(prev => ({ ...prev, nySession: !prev.nySession }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${tradfiSettings.nySession ? 'bg-yellow-500' : 'bg-gray-700'}`}>
+                                                            <div onClick={() => setTradfiSettings(prev => ({ ...prev, nySession: !prev.nySession }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${tradfiSettings.nySession ? 'bg-yellow-500' : 'bg-gray-400 dark:bg-gray-700'}`}>
                                                                 <div className={`w-2 h-2 bg-white rounded-full m-1 transform transition-transform ${tradfiSettings.nySession ? 'translate-x-4' : ''}`}></div>
                                                             </div>
-                                                            <span className="text-sm text-gray-300">New York Session Only</span>
+                                                            <span className="text-sm text-gray-700 dark:text-gray-300">New York Session Only</span>
                                                         </div>
                                                     </div>
 
-                                                    <div className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-white/5">
+                                                    <div className="flex items-center justify-between p-3 bg-white/70 dark:bg-black/20 rounded-xl border border-gray-200 dark:border-white/5">
                                                         <div className="flex items-center gap-3">
-                                                            <div onClick={() => setTradfiSettings(prev => ({ ...prev, newsFilter: !prev.newsFilter }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${tradfiSettings.newsFilter ? 'bg-red-500' : 'bg-gray-700'}`}>
+                                                            <div onClick={() => setTradfiSettings(prev => ({ ...prev, newsFilter: !prev.newsFilter }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${tradfiSettings.newsFilter ? 'bg-red-500' : 'bg-gray-400 dark:bg-gray-700'}`}>
                                                                 <div className={`w-2 h-2 bg-white rounded-full m-1 transform transition-transform ${tradfiSettings.newsFilter ? 'translate-x-4' : ''}`}></div>
                                                             </div>
                                                             <div>
-                                                                <span className="text-sm text-gray-300 block">News Filter</span>
+                                                                <span className="text-sm text-gray-700 dark:text-gray-300 block">News Filter</span>
                                                                 <span className="text-[10px] text-gray-500">Pause 15m before High-Impact News</span>
                                                             </div>
                                                         </div>
                                                     </div>
                                                     
-                                                    <div className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-white/5">
+                                                    <div className="flex items-center justify-between p-3 bg-white/70 dark:bg-black/20 rounded-xl border border-gray-200 dark:border-white/5">
                                                         <div className="flex items-center gap-3">
-                                                            <div onClick={() => setTradfiSettings(prev => ({ ...prev, weekendRule: !prev.weekendRule }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${tradfiSettings.weekendRule ? 'bg-yellow-500' : 'bg-gray-700'}`}>
+                                                            <div onClick={() => setTradfiSettings(prev => ({ ...prev, weekendRule: !prev.weekendRule }))} className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${tradfiSettings.weekendRule ? 'bg-yellow-500' : 'bg-gray-400 dark:bg-gray-700'}`}>
                                                                 <div className={`w-2 h-2 bg-white rounded-full m-1 transform transition-transform ${tradfiSettings.weekendRule ? 'translate-x-4' : ''}`}></div>
                                                             </div>
-                                                            <span className="text-sm text-gray-300">Close before Weekend Gap</span>
+                                                            <span className="text-sm text-gray-700 dark:text-gray-300">Close before Weekend Gap</span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -631,19 +667,19 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                 </div>
                             ) : (
                                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 bg-violet-500/5 p-6 rounded-2xl border border-violet-500/20">
-                                    <h4 className="flex items-center gap-2 text-violet-400 font-bold uppercase text-xs tracking-wider mb-4"><Zap size={14} /> Scalping Engine Config</h4>
+                                    <h4 className="flex items-center gap-2 text-violet-600 dark:text-violet-400 font-bold uppercase text-xs tracking-wider mb-4"><Zap size={14} /> Scalping Engine Config</h4>
 
                                     {/* HFT Deployment Options */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                                         <div>
                                             <label className={labelClasses}>Deployment Target</label>
-                                            <div className="flex bg-black/40 rounded-xl p-1 border border-white/10">
+                                            <div className="flex bg-gray-100 dark:bg-black/40 rounded-xl p-1 border border-gray-200 dark:border-white/10">
                                                 {(['Spot', 'Futures'] as const).map(target => (
                                                     <button
                                                         key={target}
                                                         type="button"
                                                         onClick={() => setDeploymentTarget(target)}
-                                                        className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${deploymentTarget === target ? 'bg-violet-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}
+                                                        className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${deploymentTarget === target ? 'bg-violet-600 text-white shadow-md' : 'text-gray-600 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                                                     >
                                                         {target}
                                                     </button>
@@ -652,13 +688,13 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                         </div>
                                         <div>
                                             <label className={labelClasses}>Order Type</label>
-                                            <div className="flex bg-black/40 rounded-xl p-1 border border-white/10">
+                                            <div className="flex bg-gray-100 dark:bg-black/40 rounded-xl p-1 border border-gray-200 dark:border-white/10">
                                                 {(['Market', 'Limit'] as const).map(type => (
                                                     <button
                                                         key={type}
                                                         type="button"
                                                         onClick={() => setOrderType(type)}
-                                                        className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${orderType === type ? 'bg-violet-600 text-white shadow-md' : 'text-gray-500 hover:text-white'}`}
+                                                        className={`flex-1 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${orderType === type ? 'bg-violet-600 text-white shadow-md' : 'text-gray-600 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                                                     >
                                                         {type}
                                                     </button>
@@ -666,6 +702,21 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                             </div>
                                         </div>
                                     </div>
+
+                                    {orderType === 'Limit' && (
+                                        <div>
+                                            <label className={labelClasses}>Limit Entry Price (Quote)</label>
+                                            <input
+                                                type="number"
+                                                step="any"
+                                                min="0"
+                                                className={inputClasses}
+                                                placeholder="Enter limit price"
+                                                value={limitPrice}
+                                                onChange={e => setLimitPrice(e.target.value)}
+                                            />
+                                        </div>
+                                    )}
 
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
@@ -688,7 +739,7 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                         </div>
 
                                         {/* Net Profit Calculator */}
-                                        <div className="col-span-2 bg-black/20 p-4 rounded-xl border border-white/5 space-y-3">
+                                        <div className="col-span-2 bg-white/70 dark:bg-black/20 p-4 rounded-xl border border-gray-200 dark:border-white/5 space-y-3">
                                             <h5 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
                                                 <TrendingUp size={12} className="text-emerald-400" /> ROI Calculator
                                             </h5>
@@ -728,11 +779,11 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
                                             </div>
                                         </div>
 
-                                        <div className="col-span-2 flex items-center justify-between bg-black/20 p-3 rounded-xl border border-white/5">
-                                            <span className="text-sm font-bold text-white">Auto-Ping-Pong Loop</span>
+                                        <div className="col-span-2 flex items-center justify-between bg-white/70 dark:bg-black/20 p-3 rounded-xl border border-gray-200 dark:border-white/5">
+                                            <span className="text-sm font-bold text-gray-900 dark:text-white">Auto-Ping-Pong Loop</span>
                                             <div
                                                 onClick={() => updateScalp('autoLoop', !scalpConfig.autoLoop)}
-                                                className={`w-12 h-6 rounded-full flex items-center padding-1 cursor-pointer transition-colors ${scalpConfig.autoLoop ? 'bg-emerald-500' : 'bg-gray-600'}`}
+                                                className={`w-12 h-6 rounded-full flex items-center padding-1 cursor-pointer transition-colors ${scalpConfig.autoLoop ? 'bg-emerald-500' : 'bg-gray-400 dark:bg-gray-600'}`}
                                             >
                                                 <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform mx-1 ${scalpConfig.autoLoop ? 'translate-x-6' : ''}`}></div>
                                             </div>
@@ -744,7 +795,7 @@ const BotLabModal: React.FC<BotLabModalProps> = ({ isOpen, onClose, onSuccess })
 
 
                             <div className="pt-6 border-t border-gray-200 dark:border-white/10 flex justify-end gap-3">
-                                <Button variant="secondary" onClick={onClose} className="bg-transparent border border-white/10 text-white hover:bg-white/5">Abort</Button>
+                                <Button variant="secondary" type="button" onClick={onClose} className="bg-transparent border border-gray-200 dark:border-white/10 text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-white/5">Abort</Button>
                                 <Button type="submit" disabled={loading} className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border-0 shadow-lg shadow-cyan-500/30">
                                     {loading ? 'Deploying...' : 'Deploy Protocol'}
                                 </Button>

@@ -1,11 +1,10 @@
-import apiClient from './client'; // আপনার client.ts এর এক্সপোর্ট নাম (default export হলে apiClient)
-import { ActiveBot } from '@/types';
+import apiClient from './client';
+import { ActiveBot, BotTradeRecord } from '@/types';
 
 export const botService = {
-    // ✅ ফিক্স: '/bots/' এর বদলে '/v1/bots/' ব্যবহার করা হয়েছে
     getAllBots: async (skip: number = 0, limit: number = 100): Promise<ActiveBot[]> => {
         const response = await apiClient.get('/bots/', {
-            params: { skip, limit }
+            params: { skip, limit },
         });
         return response.data;
     },
@@ -22,7 +21,7 @@ export const botService = {
 
     controlBot: async (botId: string | number, action: 'start' | 'stop' | 'pause'): Promise<ActiveBot> => {
         const response = await apiClient.post(`/bots/${botId}/action`, null, {
-            params: { action }
+            params: { action },
         });
         return response.data;
     },
@@ -39,5 +38,25 @@ export const botService = {
     emergencySell: async (botId: string | number, type: 'market' | 'limit'): Promise<any> => {
         const response = await apiClient.post(`/bots/${botId}/emergency_sell`, { sell_type: type });
         return response.data;
-    }
+    },
+
+    getBotTrades: async (botId: string | number, skip: number = 0, limit: number = 100): Promise<BotTradeRecord[]> => {
+        const response = await apiClient.get(`/bots/${botId}/trades`, {
+            params: { skip, limit },
+        });
+        return response.data;
+    },
+
+    panicStop: async (
+        target: 'all' | 'losing' | 'strategy_type',
+        value?: string,
+        liquidatePositions: boolean = false
+    ): Promise<{ message: string; stopped_count: number; details?: any[] }> => {
+        const response = await apiClient.post('/bots/panic', {
+            target,
+            value,
+            liquidate_positions: liquidatePositions,
+        });
+        return response.data;
+    },
 };

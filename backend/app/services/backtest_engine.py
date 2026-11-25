@@ -225,7 +225,7 @@ class BacktestEngine:
         if take_profit > 0: clean_params['take_profit'] = take_profit
         if trailing_stop > 0: clean_params['trailing_stop'] = trailing_stop
 
-        cerebro = bt.Cerebro()
+        cerebro = bt.Cerebro(tradehistory=True)
         data_feed = bt.feeds.PandasData(dataname=df)
         
         # Add Primary Data

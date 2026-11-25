@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useMarketStore } from '@/store/marketStore';
 import { useBotStore } from '@/store/botStore';
 import Button from '@/components/common/Button';
@@ -12,7 +12,10 @@ import BotCard from '@/components/features/bots/BotCard';
 import BotDetailsModal from '@/components/features/bots/BotDetailsModal';
 import BacktestResultModal from '@/components/features/backtest/BacktestResultModal';
 import BotLabHeader from '@/components/features/bots/BotLabHeader';
-import { Hammer, Plus, ChevronDown } from 'lucide-react';
+import {
+    Hammer, Plus, ChevronDown, Search, LayoutGrid, List,
+    Settings, Activity, Trash2, Copy, BarChart2, ShieldAlert
+} from 'lucide-react';
 import VisualStrategyBuilderModal from './VisualStrategyBuilderModal';
 import DEXExecutionWidget from '@/components/features/bots/DEXExecutionWidget';
 
@@ -32,8 +35,14 @@ const BotLab: React.FC = () => {
     const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
     const [offset, setOffset] = useState(0);
     const [hasMore, setHasMore] = useState(true);
+    const [isDeFiOpen, setIsDeFiOpen] = useState(false);
 
-    // Server-side stats state
+    // Pro Fleet Filter, Sort & View States
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'paper' | 'live' | 'winning' | 'losing'>('all');
+    const [sortBy, setSortBy] = useState<'active_first' | 'pnl_desc' | 'pnl_asc' | 'roi_desc' | 'name'>('active_first');
+    const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+
     const [stats, setStats] = useState({ total_pnl: 0, average_win_rate: 0, active_bots: 0, total_bots: 0 });
 
     useEffect(() => { loadBots(false); }, []);
@@ -43,36 +52,63 @@ const BotLab: React.FC = () => {
             const limit = 20;
             const currentOffset = isLoadMore ? offset : 0;
 
-            const botsPromise = botService.getAllBots(currentOffset, limit);
-            // Only fetch stats on initial load to avoid unnecessary calls
-            const statsPromise = !isLoadMore ? botService.getBotStats() : Promise.resolve(null);
-
             const [newBots, statsData] = await Promise.all([
-                botsPromise,
-                statsPromise
+                botService.getAllBots(currentOffset, limit),
+                !isLoadMore ? botService.getBotStats() : Promise.resolve(null),
             ]);
 
             if (isLoadMore) {
-                setBots(prev => [...prev, ...newBots]);
+                setBots((prev) => [...prev, ...newBots]);
             } else {
                 setBots(newBots);
                 if (statsData) setStats(statsData);
             }
 
             setOffset(currentOffset + limit);
-            // If we received fewer bots than the limit, we've reached the end
             setHasMore(newBots.length === limit);
-
         } catch (error) {
             console.error(error);
-            showToast("Failed to load bots", "error");
+            showToast('Failed to load bots', 'error');
         }
     };
+
+    const filteredBots = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        const filtered = bots.filter((b) => {
+            if (q) {
+                const matches =
+                    b.name?.toLowerCase().includes(q) ||
+                    b.market?.toLowerCase().includes(q) ||
+                    b.strategy?.toLowerCase().includes(q) ||
+                    b.exchange?.toLowerCase().includes(q);
+                if (!matches) return false;
+            }
+            if (statusFilter === 'active') return b.status === 'active';
+            if (statusFilter === 'inactive') return b.status !== 'active';
+            if (statusFilter === 'paper') return b.is_paper_trading !== false;
+            if (statusFilter === 'live') return b.is_paper_trading === false;
+            if (statusFilter === 'winning') return (b.pnl ?? 0) > 0;
+            if (statusFilter === 'losing') return (b.pnl ?? 0) < 0;
+            return true;
+        });
+
+        return [...filtered].sort((a, b) => {
+            if (sortBy === 'active_first') {
+                if (a.status === 'active' && b.status !== 'active') return -1;
+                if (b.status === 'active' && a.status !== 'active') return 1;
+                return (b.pnl ?? 0) - (a.pnl ?? 0);
+            }
+            if (sortBy === 'pnl_desc') return (b.pnl ?? 0) - (a.pnl ?? 0);
+            if (sortBy === 'pnl_asc') return (a.pnl ?? 0) - (b.pnl ?? 0);
+            if (sortBy === 'roi_desc') return (b.pnlPercent ?? b.pnl_percent ?? 0) - (a.pnlPercent ?? a.pnl_percent ?? 0);
+            return (a.name || '').localeCompare(b.name || '');
+        });
+    }, [bots, searchQuery, statusFilter, sortBy]);
 
     const handleRunBacktest = async (bot: ActiveBot) => {
         if (backtestingBotId) return;
         setBacktestingBotId(bot.id);
-        showToast(`Initiating Quantum Analysis for ${bot.name}...`, 'info');
+        showToast(`Running 3M simulation for ${bot.name}...`, 'info');
 
         try {
             const endDate = new Date();
@@ -88,7 +124,10 @@ const BotLab: React.FC = () => {
                 end_date: endDate.toISOString().split('T')[0],
                 params: bot.config?.strategyParams || {},
                 commission: 0.001,
-                slippage: 0
+                slippage: 0,
+                leverage: bot.config?.leverage || 1,
+                stop_loss: bot.config?.stop_loss || bot.config?.riskParams?.stopLoss || 0,
+                take_profit: bot.config?.take_profit || bot.config?.riskParams?.takeProfit || 0,
             };
 
             const initialRes = await runBacktestApi(payload);
@@ -100,8 +139,8 @@ const BotLab: React.FC = () => {
                     if (statusRes.status === 'Completed') {
                         clearInterval(interval);
                         setBacktestingBotId(null);
-                        if (statusRes.result?.error) {
-                            showToast(`Simulation Error: ${statusRes.result.error}`, 'error');
+                        if (statusRes.result?.error || statusRes.result?.status === 'error') {
+                            showToast(`Simulation Error: ${statusRes.result.error || statusRes.result.message}`, 'error');
                         } else {
                             const raw = statusRes.result;
                             const metrics = raw.advanced_metrics || {};
@@ -111,18 +150,18 @@ const BotLab: React.FC = () => {
                                 strategy: bot.strategy,
                                 date: new Date().toISOString().split('T')[0],
                                 profitPercent: raw.profit_percent ?? 0,
-                                profit_percent: raw.profit_percent ?? 0, // Legacy support
+                                profit_percent: raw.profit_percent ?? 0,
                                 maxDrawdown: metrics.max_drawdown ?? 0,
-                                winRate: metrics.win_rate ?? 0,
+                                winRate: raw.trade_analysis?.win_rate ?? metrics.win_rate ?? 0,
                                 sharpeRatio: metrics.sharpe ?? 0,
                                 totalTrades: raw.total_trades ?? 0,
                                 finalValue: raw.final_value ?? 0,
                                 equity_curve: Array.isArray(raw.equity_curve)
                                     ? raw.equity_curve.map((val: any, index: number) => ({
-                                        name: typeof val === 'object' ? (val.name || index.toString()) : index.toString(),
-                                        value: typeof val === 'object' ? val.value : val
+                                        name: typeof val === 'object' ? (val.name || (val.time ? new Date(val.time * 1000).toLocaleDateString() : index.toString())) : index.toString(),
+                                        value: typeof val === 'object' ? val.value : val,
                                     }))
-                                    : []
+                                    : [],
                             });
                             setSelectedBot(bot);
                             setIsBacktestModalOpen(true);
@@ -131,109 +170,133 @@ const BotLab: React.FC = () => {
                     } else if (statusRes.status === 'Failed') {
                         clearInterval(interval);
                         setBacktestingBotId(null);
-                        showToast(`Simulation Failed`, 'error');
+                        showToast('Simulation Failed', 'error');
                     }
-                } catch (e) {
+                } catch {
                     clearInterval(interval);
                     setBacktestingBotId(null);
                 }
-            }, 1000);
-        } catch (error) {
+            }, 1500);
+        } catch {
             setBacktestingBotId(null);
             showToast('Failed to start simulation', 'error');
         }
     };
 
     const handleSaveVisualStrategy = async (name: string, config: any) => {
-        showToast(`Compiling and deploying strategy "${name}"...`, 'info');
+        showToast(`Compiling and deploying "${name}"...`, 'info');
         try {
             const botPayload = {
-                name: name,
+                name,
+                exchange: 'binance',
                 market: globalSymbol || 'BTC/USDT',
                 strategy: 'Custom Visual Protocol',
-                pnl: 0,
-                pnlPercent: 0,
-                status: 'active',
-                isRegimeAware: true,
-                config: config,
+                timeframe: '1h',
+                trade_value: 100,
+                is_paper_trading: true,
+                config: { amount_per_trade: 100, ...config },
             };
-
             const newBot = await botService.createBot(botPayload);
-            setBots(prev => [newBot, ...prev]);
+            setBots((prev) => [newBot, ...prev]);
             setIsVisualBuilderOpen(false);
             showToast(`Strategy "${name}" deployed successfully.`, 'success');
+            loadBots(false);
         } catch (error) {
             console.error('Failed to create bot:', error);
-            showToast(`Failed to deploy strategy "${name}". Please try again.`, 'error');
+            showToast(`Failed to deploy strategy "${name}".`, 'error');
         }
     };
 
     const handleToggleStatus = async (id: string, currentStatus?: string) => {
-        const bot = bots.find(b => b.id === id);
+        const bot = bots.find((b) => b.id === id);
         if (!bot) return;
 
-        // Use real-time status from Child (WebSocket) if available, otherwise fallback to local state
         const statusToUse = currentStatus || bot.status;
         const action = statusToUse === 'active' ? 'stop' : 'start';
 
         try {
-            // Optimistic Update
-            setBots(prev => prev.map(b => b.id === id ? { ...b, status: action === 'start' ? 'active' : 'inactive' } : b));
-
+            setBots((prev) => prev.map((b) => (b.id === id ? { ...b, status: action === 'start' ? 'active' : 'inactive' } : b)));
             await botService.controlBot(id, action);
+
             if (action === 'start') {
                 setActiveWallHunterId(Number(id));
-                // Sync the global chart symbol/exchange so the user sees the right chart in Order Flow Heatmap
-                if (bot.market) {
-                    setGlobalSymbol(bot.market);
-                }
-                if (bot.exchange) {
-                    setGlobalExchange(bot.exchange);
-                }
-            } else if (action === 'stop') {
-                // Clear active bot if it was stopped
+                if (bot.market) setGlobalSymbol(bot.market);
+                if (bot.exchange) setGlobalExchange(bot.exchange);
+            } else {
                 const currentActive = useBotStore.getState().activeWallHunterId;
-                if (Number(currentActive) === Number(id)) {
-                    setActiveWallHunterId(null);
-                }
+                if (Number(currentActive) === Number(id)) setActiveWallHunterId(null);
             }
             showToast(`${bot.name} ${action === 'start' ? 'Online' : 'Offline'}`, 'success');
+            botService.getBotStats().then(setStats).catch(() => {});
         } catch (error) {
-            console.error("Toggle Error:", error);
-            loadBots(); // Revert/Refresh on error
-            showToast("Command failed", "error");
+            console.error('Toggle Error:', error);
+            loadBots(false);
+            showToast('Command failed', 'error');
+        }
+    };
+
+    const handleCloneBot = async (bot: ActiveBot) => {
+        try {
+            const clonePayload = {
+                name: `${bot.name} (Copy)`,
+                description: bot.description || '',
+                exchange: bot.exchange || 'binance',
+                market: bot.market,
+                strategy: bot.strategy,
+                timeframe: bot.timeframe || '1h',
+                trade_value: Math.max(1, Number(bot.trade_value ?? bot.tradeValue ?? 100)),
+                trade_unit: bot.trade_unit ?? bot.tradeUnit ?? 'QUOTE',
+                api_key_id: bot.is_paper_trading === false ? (bot.api_key_id ?? bot.apiKeyId ?? null) : null,
+                is_paper_trading: bot.is_paper_trading !== false,
+                config: {
+                    ...(bot.config || {}),
+                    amount_per_trade: Math.max(1, Number(bot.config?.amount_per_trade ?? bot.trade_value ?? bot.tradeValue ?? 100)),
+                    take_profit: bot.config?.take_profit && Number(bot.config.take_profit) > 0 ? Number(bot.config.take_profit) : null,
+                },
+            };
+            const created = await botService.createBot(clonePayload);
+            setBots((prev) => [created, ...prev]);
+            showToast(`Cloned "${bot.name}"`, 'success');
+        } catch (err: any) {
+            showToast(err?.response?.data?.detail || 'Failed to clone bot', 'error');
+        }
+    };
+
+    const handleEmergencySell = async (bot: ActiveBot) => {
+        if (!window.confirm(`Emergency Market Close open position for "${bot.name}" (${bot.market})?`)) return;
+        try {
+            const res = await botService.emergencySell(bot.id, 'market');
+            showToast(res?.message || `Emergency market close executed for ${bot.name}`, 'info');
+            loadBots(false);
+        } catch (err: any) {
+            showToast(err?.response?.data?.detail || 'Emergency close failed', 'error');
         }
     };
 
     const handleDeleteBot = async (id: string) => {
-        const bot = bots.find(b => b.id === id);
-        if (bot?.status === 'active' && !window.confirm("⚠️ WARNING: Unit is ACTIVE. Terminate anyway?")) return;
-        if (!window.confirm("Confirm deletion?")) return;
+        const bot = bots.find((b) => b.id === id);
+        if (bot?.status === 'active' && !window.confirm('WARNING: Unit is ACTIVE. Terminate and delete?')) return;
+        if (!window.confirm(`Confirm decommissioning "${bot?.name || id}"?`)) return;
         try {
             await botService.deleteBot(id);
-            setBots(prev => prev.filter(b => b.id !== id));
-            showToast("Unit decommissioned", "success");
-        } catch (e) { showToast("Decommission failed", "error"); }
+            setBots((prev) => prev.filter((b) => b.id !== id));
+            showToast('Unit decommissioned', 'success');
+            botService.getBotStats().then(setStats).catch(() => {});
+        } catch {
+            showToast('Decommission failed', 'error');
+        }
     };
 
-    const [isDeFiOpen, setIsDeFiOpen] = useState(false);
-
     return (
-        <div className="h-full flex flex-col animate-fade-in relative overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-transparent">
-            {/* Background Decor */}
-            <div className="fixed inset-0 z-[-1] pointer-events-none">
-                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full dark:bg-cyan-900/10 bg-cyan-200/30 blur-[120px]"></div>
-                <div className="absolute bottom-[0%] right-[0%] w-[40%] h-[40%] rounded-full dark:bg-violet-900/10 bg-violet-200/30 blur-[120px]"></div>
-            </div>
-
-            {isCreating && <BotLabModal isOpen={isCreating} onClose={() => setIsCreating(false)} onSuccess={() => { loadBots(); setIsCreating(false); }} />}
+        <div className="h-full flex flex-col animate-fade-in relative overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-[#050505]">
+            {isCreating && <BotLabModal isOpen={isCreating} onClose={() => setIsCreating(false)} onSuccess={() => { loadBots(false); setIsCreating(false); }} />}
             {isVisualBuilderOpen && <VisualStrategyBuilderModal onClose={() => setIsVisualBuilderOpen(false)} onSave={handleSaveVisualStrategy} />}
 
             {isDeFiOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in" onClick={(e) => e.target === e.currentTarget && setIsDeFiOpen(false)}>
-                    <div className="relative max-w-lg w-full transform transition-all scale-100">
-                        <div className="absolute -top-8 right-0 text-white/50 hover:text-white cursor-pointer" onClick={() => setIsDeFiOpen(false)}>
-                            Close
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && setIsDeFiOpen(false)}>
+                    <div className="relative max-w-lg w-full">
+                        <div className="flex justify-end mb-2">
+                            <button className="text-xs text-slate-400 hover:text-white" onClick={() => setIsDeFiOpen(false)}>Close</button>
                         </div>
                         <DEXExecutionWidget />
                     </div>
@@ -244,6 +307,7 @@ const BotLab: React.FC = () => {
                 <BotDetailsModal
                     bot={selectedDetailBot}
                     onClose={() => setSelectedDetailBot(null)}
+                    onEmergencySell={handleEmergencySell}
                 />
             )}
 
@@ -255,78 +319,244 @@ const BotLab: React.FC = () => {
                 />
             )}
 
-            <div className="flex-none p-4 md:p-8 laptop:p-3 pb-0 space-y-8 laptop:space-y-4">
-                <div className="flex flex-col md:flex-row justify-between items-end gap-4 staggered-fade-in">
+            {/* Top Command Header */}
+            <div className="flex-none p-4 md:p-6 pb-3 space-y-4">
+                <div className="flex flex-wrap justify-between items-center gap-3">
                     <div>
-                        <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r dark:from-white dark:to-gray-400 from-gray-900 to-gray-600">Bot Laboratory</h2>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 font-light">
-                            Advanced Algorithm Management Interface <span className="text-cyan-600 dark:text-cyan-500 font-mono text-xs px-2 py-0.5 bg-cyan-100/80 dark:bg-cyan-950/30 rounded border border-cyan-400/30 dark:border-cyan-500/20">v2.4.0</span>
+                        <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                            Bot Laboratory
+                            <span className="text-brand-primary font-mono text-[11px] px-2 py-0.5 bg-brand-primary/10 rounded border border-brand-primary/20">
+                                FLEET TERMINAL
+                            </span>
+                        </h2>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                            Algorithmic Execution, Risk Surveillance & Real-Time Telemetry
                         </p>
                     </div>
-                    <div className="flex gap-3">
-                        <Button variant="outline" onClick={() => setIsDeFiOpen(true)} className="flex items-center gap-2 border-gray-200 dark:border-white/10 hover:border-orange-500 hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/20 text-gray-600 dark:text-gray-300">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4Z" /></svg>
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" onClick={() => setIsDeFiOpen(true)} className="text-xs flex items-center gap-1.5 border-slate-200 dark:border-[#1F1F1F]">
                             DeFi Direct
                         </Button>
-                        <Button variant="outline" onClick={() => setIsVisualBuilderOpen(true)} className="flex items-center gap-2 border-gray-200 dark:border-white/10 hover:border-violet-500 hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/20 text-gray-600 dark:text-gray-300">
-                            <Hammer size={16} /> Visual Builder
+                        <Button variant="outline" onClick={() => setIsVisualBuilderOpen(true)} className="text-xs flex items-center gap-1.5 border-slate-200 dark:border-[#1F1F1F]">
+                            <Hammer size={14} /> Visual Builder
                         </Button>
-                        <Button variant="primary" onClick={() => setIsCreating(true)} className="flex items-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 border-none shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)]">
-                            <Plus size={18} /> New Unit
+                        <Button variant="primary" onClick={() => setIsCreating(true)} className="text-xs flex items-center gap-1.5">
+                            <Plus size={15} /> Deploy New Unit
                         </Button>
                     </div>
                 </div>
 
-                <BotLabHeader bots={bots} stats={stats} onOpenCreate={() => setIsCreating(true)} />
+                <BotLabHeader
+                    bots={bots}
+                    stats={stats}
+                    onOpenCreate={() => setIsCreating(true)}
+                    onFleetChanged={() => loadBots(false)}
+                />
+
+                {/* Fleet Filter, Sort & View Toolbar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-[#0A0A0A] border border-slate-200 dark:border-[#1F1F1F] rounded-xl p-2.5">
+                    <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[220px]">
+                        <div className="relative flex-1 max-w-xs">
+                            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Search bot, pair, strategy..."
+                                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-[#111] border border-slate-200 dark:border-[#1F1F1F] rounded-lg text-xs text-slate-900 dark:text-white outline-none focus:border-brand-primary"
+                            />
+                        </div>
+
+                        <div className="flex flex-wrap gap-1">
+                            {([
+                                { id: 'all', label: 'All' },
+                                { id: 'active', label: 'Active' },
+                                { id: 'inactive', label: 'Stopped' },
+                                { id: 'live', label: 'Live' },
+                                { id: 'paper', label: 'Paper' },
+                                { id: 'winning', label: 'Winning' },
+                                { id: 'losing', label: 'Losing' },
+                            ] as const).map((pill) => (
+                                <button
+                                    key={pill.id}
+                                    onClick={() => setStatusFilter(pill.id)}
+                                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors ${
+                                        statusFilter === pill.id
+                                            ? 'bg-brand-primary text-white'
+                                            : 'bg-slate-100 dark:bg-[#141414] text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                                    }`}
+                                >
+                                    {pill.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <select
+                            value={sortBy}
+                            onChange={(e) => setSortBy(e.target.value as any)}
+                            className="bg-slate-50 dark:bg-[#111] border border-slate-200 dark:border-[#1F1F1F] rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
+                        >
+                            <option value="active_first">Sort: Active First</option>
+                            <option value="pnl_desc">Sort: Highest PnL</option>
+                            <option value="pnl_asc">Sort: Lowest PnL</option>
+                            <option value="roi_desc">Sort: Highest ROI %</option>
+                            <option value="name">Sort: Name A-Z</option>
+                        </select>
+
+                        <div className="flex bg-slate-100 dark:bg-[#111] p-0.5 rounded-lg border border-slate-200 dark:border-[#1F1F1F]">
+                            <button
+                                onClick={() => setViewMode('grid')}
+                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-[#222] text-brand-primary shadow-sm' : 'text-slate-500'}`}
+                                title="Card Grid View"
+                            >
+                                <LayoutGrid size={14} />
+                            </button>
+                            <button
+                                onClick={() => setViewMode('table')}
+                                className={`p-1.5 rounded-md transition-colors ${viewMode === 'table' ? 'bg-white dark:bg-[#222] text-brand-primary shadow-sm' : 'text-slate-500'}`}
+                                title="Fleet Matrix Table"
+                            >
+                                <List size={14} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 px-4 md:px-8 laptop:px-3 pb-8 laptop:pb-4">
-                {bots.map((bot, index) => (
-                    <BotCard
-                        key={bot.id}
-                        bot={bot}
-                        index={index}
-                        isLoading={backtestingBotId === bot.id}
-                        onRunBacktest={handleRunBacktest}
-                        onToggleStatus={handleToggleStatus}
-                        onDelete={handleDeleteBot}
-                        onDetails={setSelectedDetailBot}
-                        onSettings={bot => { setSettingsBot(bot); setIsSettingsModalOpen(true); }}
-                    />
-                ))}
+            {/* Fleet Display: Grid or High-Density Matrix Table */}
+            <div className="px-4 md:px-6 pb-8">
+                {viewMode === 'grid' ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {filteredBots.map((bot, index) => (
+                            <BotCard
+                                key={bot.id}
+                                bot={bot}
+                                index={index}
+                                isLoading={backtestingBotId === bot.id}
+                                onRunBacktest={handleRunBacktest}
+                                onToggleStatus={handleToggleStatus}
+                                onDelete={handleDeleteBot}
+                                onDetails={setSelectedDetailBot}
+                                onSettings={(b) => { setSettingsBot(b); setIsSettingsModalOpen(true); }}
+                                onClone={handleCloneBot}
+                                onEmergencySell={handleEmergencySell}
+                            />
+                        ))}
 
-                {!hasMore && (
-                    <button
-                        onClick={() => setIsCreating(true)}
-                        className="group relative h-full min-h-[320px] border border-dashed border-gray-200 dark:border-white/10 hover:border-cyan-500/50 rounded-3xl flex flex-col items-center justify-center text-center hover:bg-cyan-500/5 dark:hover:bg-cyan-500/5 bg-white/50 dark:bg-transparent transition-all duration-300"
-                    >
-                        <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-[#0A0A0A] flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 shadow-xl group-hover:bg-cyan-500 group-hover:text-black text-gray-400 dark:text-gray-500">
-                            <Plus size={32} />
+                        {!hasMore && (
+                            <button
+                                onClick={() => setIsCreating(true)}
+                                className="group min-h-[220px] border border-dashed border-slate-300 dark:border-[#262626] hover:border-brand-primary rounded-2xl flex flex-col items-center justify-center text-center hover:bg-brand-primary/5 bg-white/50 dark:bg-[#0A0A0A]/50 transition-all"
+                            >
+                                <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-[#141414] flex items-center justify-center mb-3 group-hover:bg-brand-primary group-hover:text-white text-slate-400 transition-colors">
+                                    <Plus size={22} />
+                                </div>
+                                <h3 className="text-sm font-bold text-slate-500 group-hover:text-brand-primary">Deploy New Unit</h3>
+                                <p className="text-xs text-slate-400 mt-1">Configure Spot, Margin, or Futures bot</p>
+                            </button>
+                        )}
+                    </div>
+                ) : (
+                    <div className="bg-white dark:bg-[#0A0A0A] border border-slate-200 dark:border-[#1F1F1F] rounded-xl overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs text-left">
+                                <thead className="bg-slate-50 dark:bg-[#111] text-slate-500 uppercase text-[10px]">
+                                    <tr>
+                                        <th className="px-4 py-3">Status</th>
+                                        <th className="px-4 py-3">Unit</th>
+                                        <th className="px-4 py-3">Mode</th>
+                                        <th className="px-4 py-3">Market</th>
+                                        <th className="px-4 py-3">Strategy</th>
+                                        <th className="px-4 py-3 text-right">Size</th>
+                                        <th className="px-4 py-3 text-right">Net PnL</th>
+                                        <th className="px-4 py-3 text-right">ROI %</th>
+                                        <th className="px-4 py-3 text-right">Win %</th>
+                                        <th className="px-4 py-3 text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 dark:divide-[#1F1F1F] font-mono">
+                                    {filteredBots.map((bot) => {
+                                        const roi = Number(bot.pnlPercent ?? bot.pnl_percent ?? 0);
+                                        const isPaper = bot.is_paper_trading !== false;
+                                        return (
+                                            <tr key={bot.id} className="hover:bg-slate-50 dark:hover:bg-[#111] transition-colors">
+                                                <td className="px-4 py-2.5">
+                                                    <button
+                                                        onClick={() => handleToggleStatus(bot.id, bot.status)}
+                                                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                                            bot.status === 'active' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-500/15 text-slate-400'
+                                                        }`}
+                                                    >
+                                                        {bot.status === 'active' ? 'ONLINE' : 'OFFLINE'}
+                                                    </button>
+                                                </td>
+                                                <td className="px-4 py-2.5 font-sans font-bold text-slate-900 dark:text-white">{bot.name}</td>
+                                                <td className="px-4 py-2.5">
+                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPaper ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
+                                                        {isPaper ? 'PAPER' : 'LIVE'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">
+                                                    {bot.market} <span className="text-slate-500">({bot.timeframe || '1h'})</span>
+                                                </td>
+                                                <td className="px-4 py-2.5 font-sans text-slate-500">{bot.strategy}</td>
+                                                <td className="px-4 py-2.5 text-right text-slate-700 dark:text-slate-300">${bot.trade_value ?? bot.tradeValue ?? 0}</td>
+                                                <td className={`px-4 py-2.5 text-right font-bold ${(bot.pnl ?? 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                    {(bot.pnl ?? 0) >= 0 ? '+' : '-'}${Math.abs(bot.pnl ?? 0).toFixed(2)}
+                                                </td>
+                                                <td className={`px-4 py-2.5 text-right font-bold ${roi >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                    {roi >= 0 ? '+' : ''}{roi.toFixed(2)}%
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right text-blue-400">{Number(bot.win_rate ?? 0).toFixed(1)}%</td>
+                                                <td className="px-4 py-2.5">
+                                                    <div className="flex items-center justify-center gap-1">
+                                                        <button onClick={() => setSelectedDetailBot(bot)} className="p-1 text-slate-400 hover:text-blue-400" title="Details"><Activity size={13} /></button>
+                                                        <button onClick={() => { setSettingsBot(bot); setIsSettingsModalOpen(true); }} className="p-1 text-slate-400 hover:text-white" title="Settings"><Settings size={13} /></button>
+                                                        <button onClick={() => handleCloneBot(bot)} className="p-1 text-slate-400 hover:text-purple-400" title="Clone"><Copy size={13} /></button>
+                                                        <button onClick={() => handleRunBacktest(bot)} className="p-1 text-slate-400 hover:text-brand-primary" title="Simulate"><BarChart2 size={13} /></button>
+                                                        {bot.status === 'active' && (
+                                                            <button onClick={() => handleEmergencySell(bot)} className="p-1 text-amber-400 hover:text-amber-300" title="Emergency Close"><ShieldAlert size={13} /></button>
+                                                        )}
+                                                        <button onClick={() => handleDeleteBot(bot.id)} className="p-1 text-slate-400 hover:text-rose-400" title="Delete"><Trash2 size={13} /></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                    {filteredBots.length === 0 && (
+                                        <tr>
+                                            <td colSpan={10} className="px-4 py-8 text-center text-slate-500 font-sans">
+                                                No bots match current search/filter criteria.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
-                        <h3 className="text-lg font-bold text-gray-400 dark:text-gray-500 group-hover:text-cyan-400 transition-colors">Initialize New Unit</h3>
-                        <p className="text-xs text-gray-400 dark:text-gray-600 group-hover:text-cyan-500/70 mt-2 max-w-[200px]">Access global market strategies</p>
-                    </button>
+                    </div>
+                )}
+
+                {hasMore && (
+                    <div className="flex justify-center pt-6">
+                        <Button
+                            variant="secondary"
+                            onClick={() => loadBots(true)}
+                            className="px-6 py-2 text-xs flex items-center gap-2"
+                        >
+                            Load More Bots <ChevronDown size={14} />
+                        </Button>
+                    </div>
                 )}
             </div>
-
-            {hasMore && (
-                <div className="flex justify-center pb-12">
-                    <Button
-                        variant="secondary"
-                        onClick={() => loadBots(true)}
-                        className="bg-white dark:bg-[#0A0A0A]/50 hover:bg-gray-50 dark:hover:bg-[#0A0A0A]/50 border-gray-200 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white px-8 py-3 rounded-full flex items-center gap-2 transition-all shadow-lg hover:shadow-cyan-500/10"
-                    >
-                        Load More Bots <ChevronDown size={16} />
-                    </Button>
-                </div>
-            )}
 
             <BotSettingsModal
                 isOpen={isSettingsModalOpen}
                 onClose={() => setIsSettingsModalOpen(false)}
                 bot={settingsBot}
-                onUpdate={bot => {
-                    setBots(prev => prev.map(b => b.id === bot.id ? bot : b));
+                onUpdate={(bot) => {
+                    setBots((prev) => prev.map((b) => (b.id === bot.id ? bot : b)));
                     if (selectedBot?.id === bot.id) setSelectedBot(bot);
                 }}
             />

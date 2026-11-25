@@ -474,11 +474,18 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({
                     </span>
                 </div>
 
+                {(singleResult.total_trades ?? 0) === 0 && (!singleResult.trades_log || singleResult.trades_log.length === 0) && (
+                    <div className="px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs font-medium">
+                        0 trades were triggered by <span className="font-bold">{singleResult.strategy}</span> in this date range/timeframe — so no Buy/Sell markers appear on the chart. Try expanding the date range or tuning entry thresholds.
+                    </div>
+                )}
+
                 {chartView === 'split' && (
                     <div className="space-y-3">
                         <BacktestChart
                             data={singleResult.candle_data || []}
                             trades={singleResult.trades_log || []}
+                            closedTrades={closedTrades}
                             focusedTrade={focusedTrade}
                             onClearFocus={() => setFocusedTrade(null)}
                             height={340}
@@ -498,6 +505,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({
                     <BacktestChart
                         data={singleResult.candle_data || []}
                         trades={singleResult.trades_log || []}
+                        closedTrades={closedTrades}
                         focusedTrade={focusedTrade}
                         onClearFocus={() => setFocusedTrade(null)}
                         height={460}

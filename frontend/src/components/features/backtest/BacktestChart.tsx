@@ -6,6 +6,7 @@ import {
     CandlestickSeries,
     HistogramSeries,
     ISeriesApi,
+    ISeriesMarkersPluginApi,
     Time,
     createSeriesMarkers,
     LineSeries,
@@ -26,13 +27,16 @@ interface CandleData {
 
 interface TradeMarker {
     time: number;
-    type: 'buy' | 'sell';
+    type?: string;
+    side?: string;
     price: number;
+    size?: number;
 }
 
 interface BacktestChartProps {
     data: any[];
     trades: TradeMarker[];
+    closedTrades?: ClosedTrade[];
     focusedTrade?: ClosedTrade | null;
     onClearFocus?: () => void;
     height?: number;
@@ -105,6 +109,8 @@ const calculateBollingerBands = (data: CandleData[], period: number, stdDevMulti
     return { upper, middle, lower };
 };
 
+const normalizeTs = (raw: number) => (raw > 1e12 ? Math.floor(raw / 1000) : Math.floor(raw));
+
 const findClosestCandle = (sortedData: CandleData[], targetTime: number) => {
     let left = 0;
     let right = sortedData.length - 1;
@@ -128,9 +134,11 @@ const findClosestCandle = (sortedData: CandleData[], targetTime: number) => {
 
 const formatChartData = (rawData: any[]): CandleData[] => {
     if (!rawData || rawData.length === 0) return [];
-    if (!Array.isArray(rawData[0])) return rawData as CandleData[];
+    if (!Array.isArray(rawData[0])) {
+        return (rawData as CandleData[]).map((c) => ({ ...c, time: normalizeTs(Number(c.time)) }));
+    }
     return rawData.map((c: any[]) => ({
-        time: c[0] as number,
+        time: normalizeTs(Number(c[0])),
         open: c[1],
         high: c[2],
         low: c[3],
@@ -142,6 +150,7 @@ const formatChartData = (rawData: any[]): CandleData[] => {
 const BacktestChart: React.FC<BacktestChartProps> = ({
     data = [],
     trades = [],
+    closedTrades = [],
     focusedTrade = null,
     onClearFocus,
     height = 420,
@@ -150,10 +159,12 @@ const BacktestChart: React.FC<BacktestChartProps> = ({
     const chartRef = useRef<IChartApi | null>(null);
     const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
     const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+    const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
     const focusSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const indicatorSeriesRefs = useRef<Map<string, ISeriesApi<'Line'>[]>>(new Map());
 
     const [showVolume, setShowVolume] = useState(true);
+    const [showSignals, setShowSignals] = useState(true);
     const [indicators, setIndicators] = useState<IndicatorConfig[]>([
         { id: 'sma20', name: 'SMA 20', type: 'SMA', period: 20, color: '#F59E0B', visible: false },
         { id: 'ema50', name: 'EMA 50', type: 'EMA', period: 50, color: '#3B82F6', visible: false },
@@ -167,6 +178,28 @@ const BacktestChart: React.FC<BacktestChartProps> = ({
         raw.forEach((item) => uniqueDataMap.set(item.time, item));
         return Array.from(uniqueDataMap.values()).sort((a, b) => a.time - b.time);
     }, [data]);
+
+    // Normalize trade markers from trades_log or fallback to closedTrades
+    const normalizedTrades = useMemo<TradeMarker[]>(() => {
+        if (Array.isArray(trades) && trades.length > 0) return trades;
+        if (Array.isArray(closedTrades) && closedTrades.length > 0) {
+            const derived: TradeMarker[] = [];
+            closedTrades.forEach((ct) => {
+                derived.push({
+                    time: ct.entry_time,
+                    type: ct.side === 'LONG' ? 'buy' : 'sell',
+                    price: ct.entry_price,
+                });
+                derived.push({
+                    time: ct.exit_time,
+                    type: ct.side === 'LONG' ? 'sell' : 'buy',
+                    price: ct.exit_price,
+                });
+            });
+            return derived;
+        }
+        return [];
+    }, [trades, closedTrades]);
 
     // 1. Initialize Chart + ResizeObserver
     useEffect(() => {
@@ -207,6 +240,7 @@ const BacktestChart: React.FC<BacktestChartProps> = ({
             wickDownColor: '#EF4444',
         });
         candlestickSeriesRef.current = series;
+        markersPluginRef.current = createSeriesMarkers(series, []);
 
         const volumeSeries = chart.addSeries(HistogramSeries, {
             priceFormat: { type: 'volume' },
@@ -232,6 +266,7 @@ const BacktestChart: React.FC<BacktestChartProps> = ({
             chartRef.current = null;
             candlestickSeriesRef.current = null;
             volumeSeriesRef.current = null;
+            markersPluginRef.current = null;
             focusSeriesRef.current = null;
         };
     }, [height]);
@@ -256,27 +291,39 @@ const BacktestChart: React.FC<BacktestChartProps> = ({
         }
 
         const validMarkers: SeriesMarker<Time>[] = [];
-        trades.forEach((trade) => {
-            const tradeTime = Number(trade.time);
-            const closest = findClosestCandle(formattedData, tradeTime);
-            if (closest && Math.abs(closest.time - tradeTime) <= 86400) {
-                validMarkers.push({
-                    time: closest.time as Time,
-                    position: trade.type === 'buy' ? 'belowBar' : 'aboveBar',
-                    color: trade.type === 'buy' ? '#10B981' : '#EF4444',
-                    shape: trade.type === 'buy' ? 'arrowUp' : 'arrowDown',
-                    text: `${trade.type.toUpperCase()} @ ${Number(trade.price).toFixed(2)}`,
-                    size: 1.4,
-                });
-            }
-        });
-        validMarkers.sort((a, b) => (a.time as number) - (b.time as number));
-        createSeriesMarkers(candlestickSeriesRef.current, validMarkers);
+        if (showSignals) {
+            normalizedTrades.forEach((trade) => {
+                const tradeTime = normalizeTs(Number(trade.time));
+                if (!Number.isFinite(tradeTime)) return;
+                const closest = findClosestCandle(formattedData, tradeTime);
+                if (closest && Math.abs(closest.time - tradeTime) <= 86400 * 7) {
+                    const rawDir = String(trade.type || trade.side || '').toLowerCase();
+                    const isBuy = rawDir === 'buy' || rawDir === 'long' || (!rawDir && Number(trade.size) > 0);
+                    const label = isBuy ? 'BUY' : 'SELL';
+                    const priceTxt = Number.isFinite(Number(trade.price)) ? Number(trade.price).toFixed(2) : '';
+                    validMarkers.push({
+                        time: closest.time as Time,
+                        position: isBuy ? 'belowBar' : 'aboveBar',
+                        color: isBuy ? '#10B981' : '#EF4444',
+                        shape: isBuy ? 'arrowUp' : 'arrowDown',
+                        text: priceTxt ? `${label} @ ${priceTxt}` : label,
+                        size: 1.5,
+                    });
+                }
+            });
+            validMarkers.sort((a, b) => (a.time as number) - (b.time as number));
+        }
+
+        if (markersPluginRef.current) {
+            markersPluginRef.current.setMarkers(validMarkers);
+        } else {
+            markersPluginRef.current = createSeriesMarkers(candlestickSeriesRef.current, validMarkers);
+        }
 
         if (chartRef.current && !focusedTrade) {
             chartRef.current.timeScale().fitContent();
         }
-    }, [formattedData, trades, showVolume, focusedTrade]);
+    }, [formattedData, normalizedTrades, showVolume, showSignals, focusedTrade]);
 
     // 3. Handle Indicators Layer
     useEffect(() => {
@@ -343,8 +390,8 @@ const BacktestChart: React.FC<BacktestChartProps> = ({
 
         if (!focusedTrade) return;
 
-        const entryCandle = findClosestCandle(formattedData, focusedTrade.entry_time);
-        const exitCandle = findClosestCandle(formattedData, focusedTrade.exit_time);
+        const entryCandle = findClosestCandle(formattedData, normalizeTs(focusedTrade.entry_time));
+        const exitCandle = findClosestCandle(formattedData, normalizeTs(focusedTrade.exit_time));
         if (!entryCandle || !exitCandle) return;
 
         const isWin = focusedTrade.pnl_net >= 0;
@@ -396,6 +443,16 @@ const BacktestChart: React.FC<BacktestChartProps> = ({
                     <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider mr-1">
                         <Activity size={13} className="text-brand-primary" /> Overlays
                     </span>
+                    <button
+                        onClick={() => setShowSignals((v) => !v)}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all border ${
+                            showSignals
+                                ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/40'
+                                : 'bg-transparent text-slate-500 border-slate-300 dark:border-[#1F1F1F] hover:text-slate-300'
+                        }`}
+                    >
+                        {showSignals ? <Eye size={11} /> : <EyeOff size={11} />} Signals ({normalizedTrades.length})
+                    </button>
                     <button
                         onClick={() => setShowVolume((v) => !v)}
                         className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all border ${

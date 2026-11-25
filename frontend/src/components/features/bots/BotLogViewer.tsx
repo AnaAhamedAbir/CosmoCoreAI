@@ -58,7 +58,7 @@ const BotLogViewer: React.FC<BotLogViewerProps> = ({ botId, botName, className =
         };
 
         (async () => {
-            const wsUrl = await buildAuthenticatedWsUrl(`/ws/logs/${botId}`);
+            const wsUrl = await buildAuthenticatedWsUrl(`/api/v1/bots/${botId}/ws/logs`);
             if (!wsUrl || cancelled) return;
 
             console.log("Connecting into the Matrix...", wsUrl);

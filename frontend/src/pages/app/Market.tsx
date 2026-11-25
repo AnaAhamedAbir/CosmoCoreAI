@@ -886,11 +886,13 @@ const Market: React.FC = () => {
             const prevPrice = lastPriceRef.current;
             if (newPrice !== prevPrice) {
                 setPriceUpdateStatus(newPrice > prevPrice ? 'up' : 'down');
-                if (priceFlashTimerRef.current) clearTimeout(priceFlashTimerRef.current);
-                priceFlashTimerRef.current = setTimeout(() => {
-                    priceFlashTimerRef.current = null;
-                    if (isMounted) setPriceUpdateStatus('none');
-                }, 500);
+                if (!isThermalGuardActive()) {
+                    if (priceFlashTimerRef.current) clearTimeout(priceFlashTimerRef.current);
+                    priceFlashTimerRef.current = setTimeout(() => {
+                        priceFlashTimerRef.current = null;
+                        if (isMounted) setPriceUpdateStatus('none');
+                    }, 500);
+                }
             }
             lastPriceRef.current = newPrice;
             setLastPrice(newPrice);

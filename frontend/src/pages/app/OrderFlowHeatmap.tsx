@@ -4607,9 +4607,17 @@ const OrderBook: React.FC<{
     const imbalanceLabel = imbalance > 0.65 ? 'Strong Buy' : imbalance < 0.35 ? 'Strong Sell' : imbalance > 0.55 ? 'Buy Bias' : imbalance < 0.45 ? 'Sell Bias' : 'Balanced';
 
     // ── STEP 6: Price Bucket Grouping ─────────────────────────────────────────
+    const isOrderBookThermalGuard = isThermalGuardActive();
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const { displayBids, displayAsks, displayMax } = useMemo(() => {
-        if (bucket === 0) return { displayBids: bids, displayAsks: asks, displayMax: maxTotal };
+        const rowCap = isOrderBookThermalGuard ? 20 : 60;
+        if (bucket === 0) {
+            return {
+                displayBids: bids.slice(0, rowCap),
+                displayAsks: asks.slice(0, rowCap),
+                displayMax: maxTotal,
+            };
+        }
         const group = (levels: any[], side: 'bid' | 'ask') => {
             const map = new Map<number, { price: number; size: number; total: number }>();
             levels.forEach((l: any) => {
@@ -4620,14 +4628,14 @@ const OrderBook: React.FC<{
             });
             const arr = Array.from(map.values()).sort((a, b) => side === 'bid' ? b.price - a.price : a.price - b.price);
             let cum = 0; arr.forEach(l => { cum += l.size; l.total = cum; });
-            return arr;
+            return arr.slice(0, rowCap);
         };
         const gb = group(bids, 'bid');
         const ga = group(asks, 'ask');
         const mxB = gb.length ? gb[gb.length - 1].total : 0;
         const mxA = ga.length ? ga[ga.length - 1].total : 0;
         return { displayBids: gb, displayAsks: ga, displayMax: Math.max(mxB, mxA, 1) };
-    }, [bids, asks, bucket, maxTotal]);
+    }, [bids, asks, bucket, maxTotal, isOrderBookThermalGuard]);
 
     // ── STEP 2: Depth Chart data ──────────────────────────────────────────────
     // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -4676,7 +4684,7 @@ const OrderBook: React.FC<{
                         <span className="text-[9.5px] text-slate-500 dark:text-gray-400 tabular-nums font-bold">{imbalancePct}% Bid · {100 - imbalancePct}% Ask</span>
                     </div>
                     <div className="relative h-1.5 rounded-full bg-rose-500/35 overflow-hidden">
-                        <div className="absolute left-0 top-0 h-full rounded-full transition-all duration-300"
+                        <div className={`absolute left-0 top-0 h-full rounded-full ${isOrderBookThermalGuard ? '' : 'transition-all duration-300'}`}
                             style={{ width: `${imbalancePct}%`, background: `linear-gradient(90deg, #22c55e, ${imbalanceColor})` }} />
                         <div className="absolute left-1/2 top-0 h-full w-px bg-white/40" />
                     </div>
@@ -4734,7 +4742,7 @@ const OrderBook: React.FC<{
                                         title={`Click to snap Manual Trade to Ask @ $${formatPrice(ask.price)}`}
                                         className={`flex items-center px-2.5 py-[2px] leading-tight relative hover:bg-rose-500/10 cursor-pointer shrink-0 transition-colors ${isWall ? 'ring-1 ring-inset ring-rose-500/40 bg-rose-500/5' : ''}`}
                                     >
-                                        <div className="absolute right-0 top-0 h-full bg-rose-500/15 dark:bg-rose-500/20 transition-all duration-300 pointer-events-none"
+                                        <div className={`absolute right-0 top-0 h-full bg-rose-500/15 dark:bg-rose-500/20 ${isOrderBookThermalGuard ? '' : 'transition-all duration-300'} pointer-events-none`}
                                             style={{ width: `${Math.min(100, (ask.total / displayMax) * 100)}%` }} />
                                         <div className={`w-2/5 text-left relative z-10 font-bold flex items-center gap-1 ${isWall ? 'text-rose-600 dark:text-rose-300' : 'text-rose-600/85 dark:text-rose-400/90'}`}>
                                             <span>{formatPrice(ask.price)}</span>
@@ -4787,7 +4795,7 @@ const OrderBook: React.FC<{
                                         title={`Click to snap Manual Trade to Bid @ $${formatPrice(bid.price)}`}
                                         className={`flex items-center px-2.5 py-[2px] leading-tight relative hover:bg-emerald-500/10 cursor-pointer transition-colors ${isWall ? 'ring-1 ring-inset ring-emerald-500/40 bg-emerald-500/5' : ''}`}
                                     >
-                                        <div className="absolute right-0 top-0 h-full bg-emerald-500/15 dark:bg-emerald-500/20 transition-all duration-300 pointer-events-none"
+                                        <div className={`absolute right-0 top-0 h-full bg-emerald-500/15 dark:bg-emerald-500/20 ${isOrderBookThermalGuard ? '' : 'transition-all duration-300'} pointer-events-none`}
                                             style={{ width: `${Math.min(100, (bid.total / displayMax) * 100)}%` }} />
                                         <div className={`w-2/5 text-left relative z-10 font-bold flex items-center gap-1 ${isWall ? 'text-emerald-600 dark:text-emerald-300' : 'text-emerald-600/85 dark:text-emerald-400/90'}`}>
                                             <span>{formatPrice(bid.price)}</span>
@@ -4990,12 +4998,13 @@ const OrderFlowChartPanel = React.memo<{
     const ownOpenOrders = useOpenOrders(selectedApiKeyId, config.symbol, panelDeviceProfile.timings.openOrdersPollMs, !usingParentOpenOrders);
     const openOrders = usingParentOpenOrders ? parentOpenOrders! : ownOpenOrders;
 
-    // Report live currentPrice back up to parent
+    // Report live currentPrice back up to parent ONLY for secondary split charts (!isMain)
+    // so main chart ticks never trigger a duplicate setChartPrices re-render in parent.
     useEffect(() => {
-        if (currentPrice && currentPrice > 0 && onPriceChange) {
+        if (!isMain && currentPrice && currentPrice > 0 && onPriceChange) {
             onPriceChange(config.id, currentPrice);
         }
-    }, [config.id, currentPrice, onPriceChange]);
+    }, [isMain, config.id, currentPrice, onPriceChange]);
 
     const filteredWalls = useMemo(() => {
         if (volumeThreshold <= 0) return walls;
@@ -5500,21 +5509,18 @@ const OrderFlowHeatmap: React.FC = () => {
     const [selectedApiKeyId, setSelectedApiKeyId] = useState<string | null>(null);
     const openOrders = useOpenOrders(selectedApiKeyId, symbol, deviceProfile.timings.openOrdersPollMs);
 
-    // Keep 'main' chart price synced in chartPrices
-    const [lastPriceSide, setLastPriceSide] = useState<'buy' | 'sell'>('buy');
+    // Zero-extra-render synchronous price side tracking (avoids a 2nd full OrderFlowHeatmap render on every tick)
+    const lastPriceSideRef = useRef<'buy' | 'sell'>('buy');
     const prevHeaderPriceRef = useRef<number>(0);
-
-    useEffect(() => {
-        if (tradeEvent?.side === 'buy' || tradeEvent?.side === 'sell') {
-            setLastPriceSide(tradeEvent.side);
-        } else if (currentPrice && prevHeaderPriceRef.current && currentPrice !== prevHeaderPriceRef.current) {
-            setLastPriceSide(currentPrice > prevHeaderPriceRef.current ? 'buy' : 'sell');
-        }
-        if (currentPrice) {
-            prevHeaderPriceRef.current = currentPrice;
-            setChartPrices(prev => (prev['main'] === currentPrice ? prev : { ...prev, main: currentPrice }));
-        }
-    }, [currentPrice, tradeEvent]);
+    if (tradeEvent?.side === 'buy' || tradeEvent?.side === 'sell') {
+        lastPriceSideRef.current = tradeEvent.side;
+    } else if (currentPrice && prevHeaderPriceRef.current && currentPrice !== prevHeaderPriceRef.current) {
+        lastPriceSideRef.current = currentPrice > prevHeaderPriceRef.current ? 'buy' : 'sell';
+    }
+    if (currentPrice) {
+        prevHeaderPriceRef.current = currentPrice;
+    }
+    const lastPriceSide = lastPriceSideRef.current;
 
     const activeChart = useMemo(() => {
         return allCharts.find(c => c.id === activeChartId) || allCharts[0];
@@ -5534,7 +5540,7 @@ const OrderFlowHeatmap: React.FC = () => {
             symbol: c.symbol,
             exchange: c.exchange,
             isMain: c.isMain,
-            price: chartPrices[c.id] || (c.isMain ? currentPrice : undefined)
+            price: c.isMain ? currentPrice : (chartPrices[c.id] || currentPrice)
         }));
     }, [allCharts, chartPrices, currentPrice]);
 
@@ -5886,7 +5892,9 @@ const OrderFlowHeatmap: React.FC = () => {
                                             className="group relative w-[42px] h-[42px] shrink-0"
                                             title="Update WallHunter Config"
                                         >
-                                            <div className="absolute inset-0 bg-indigo-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            {!deviceProfile.isThermalGuardActive && isFloatingToolbarOpen && (
+                                                <div className="absolute inset-0 bg-indigo-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            )}
                                             <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center border border-slate-900/15 dark:border-white/20 shadow-md dark:shadow-[0_0_12px_rgba(99,102,241,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
                                                 <svg className="w-4.5 h-4.5 text-white group-hover:rotate-90 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -5913,7 +5921,9 @@ const OrderFlowHeatmap: React.FC = () => {
                                             className="group relative w-[42px] h-[42px] shrink-0"
                                             title="Abort WallHunter"
                                         >
-                                            <div className="absolute inset-0 bg-red-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            {!deviceProfile.isThermalGuardActive && isFloatingToolbarOpen && (
+                                                <div className="absolute inset-0 bg-red-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            )}
                                             <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-red-500 to-red-700 rounded-full flex items-center justify-center border-2 border-slate-900/15 dark:border-white/20 shadow-md dark:shadow-[0_0_12px_rgba(239,68,68,0.5)] group-hover:scale-110 transition-transform cursor-pointer">
                                                 <svg className="w-5 h-5 text-white group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
@@ -5932,7 +5942,9 @@ const OrderFlowHeatmap: React.FC = () => {
                                             className="relative w-[42px] h-[42px] shrink-0 group opacity-100 transition-opacity duration-300"
                                             title="Deploy Forex WallHunter"
                                         >
-                                            <div className="absolute inset-0 bg-emerald-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            {!deviceProfile.isThermalGuardActive && isFloatingToolbarOpen && (
+                                                <div className="absolute inset-0 bg-emerald-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            )}
                                             <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full flex items-center justify-center border-2 border-slate-900/15 dark:border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
                                                 <svg className="w-5 h-5 text-white group-hover:-rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
@@ -5948,7 +5960,9 @@ const OrderFlowHeatmap: React.FC = () => {
                                             className="relative w-[42px] h-[42px] shrink-0 group opacity-100 transition-opacity duration-300"
                                             title="Deploy WallHunter"
                                         >
-                                            <div className="absolute inset-0 bg-yellow-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            {!deviceProfile.isThermalGuardActive && isFloatingToolbarOpen && (
+                                                <div className="absolute inset-0 bg-yellow-500 rounded-full blur-sm opacity-25 dark:opacity-40 group-hover:opacity-100 transition-opacity animate-pulse" />
+                                            )}
                                             <div className="relative w-[42px] h-[42px] bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center border-2 border-slate-900/15 dark:border-white/20 shadow-md group-hover:scale-110 transition-transform cursor-pointer">
                                                 <svg className="w-5 h-5 text-white group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -5983,7 +5997,9 @@ const OrderFlowHeatmap: React.FC = () => {
                     >
                         {!isFloatingToolbarOpen && !hasDiscoveredFloatingTools && (
                             <span className="absolute -top-1 -right-1 flex h-3 w-3 pointer-events-none">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-80" />
+                                {!deviceProfile.isThermalGuardActive && (
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-80" />
+                                )}
                                 <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500 border border-white dark:border-[#070b14]" />
                             </span>
                         )}
@@ -5998,7 +6014,7 @@ const OrderFlowHeatmap: React.FC = () => {
                             <>
                                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-[0_0_12px_rgba(6,182,212,0.45)] shrink-0">
                                     {selectedHudBotId ? (
-                                        <Zap className="w-4 h-4 fill-amber-300 text-amber-300 animate-pulse" />
+                                        <Zap className={`w-4 h-4 fill-amber-300 text-amber-300 ${deviceProfile.isThermalGuardActive ? '' : 'animate-pulse'}`} />
                                     ) : (
                                         <SlidersHorizontal className="w-4 h-4 group-hover:rotate-12 transition-transform" />
                                     )}
@@ -6009,7 +6025,7 @@ const OrderFlowHeatmap: React.FC = () => {
                                             Trade & Bot Tools
                                         </span>
                                         {selectedHudBotId ? (
-                                            <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 border border-emerald-500/45 text-emerald-600 dark:text-emerald-300 text-[8.5px] font-mono font-black uppercase animate-pulse">
+                                            <span className={`px-1.5 py-0.2 rounded bg-emerald-500/20 border border-emerald-500/45 text-emerald-600 dark:text-emerald-300 text-[8.5px] font-mono font-black uppercase ${deviceProfile.isThermalGuardActive ? '' : 'animate-pulse'}`}>
                                                 BOT LIVE
                                             </span>
                                         ) : (
@@ -6040,7 +6056,17 @@ const OrderFlowHeatmap: React.FC = () => {
         return currentPrice || 0;
     }, [activeChart, chartPrices, currentPrice]);
 
-    const l2RadarTelemetry = useMemo(() => {
+    // Decouple L2 Depth & Wall filtering/sorting from high-frequency currentPrice ticks
+    // and skip completely on phone (<768px) where the center L2 Radar is hidden.
+    const l2DepthAndWallsSummary = useMemo(() => {
+        if (isPhoneMobileUI || !showSubNav) {
+            return {
+                bidDomPct: 50,
+                sortedBuyWalls: [] as { price: number; type: 'buy' | 'sell'; size?: number }[],
+                sortedSellWalls: [] as { price: number; type: 'buy' | 'sell'; size?: number }[],
+                totalWalls: 0,
+            };
+        }
         const topBids = bids.slice(0, 25);
         const topAsks = asks.slice(0, 25);
         const bidVol = topBids.reduce((s, b: any) => s + Number(b.size || b.amount || 0), 0);
@@ -6048,9 +6074,6 @@ const OrderFlowHeatmap: React.FC = () => {
         const totalVol = bidVol + askVol;
         const bidDomPct = totalVol > 0 ? (bidVol / totalVol) * 100 : 50;
 
-        const refPx = activeDisplayPrice || currentPrice || 0;
-
-        // Respect active Whale Filter threshold (volumeThreshold / volumeMode) or active split chart walls
         let activeWallsList: { price: number; type: 'buy' | 'sell'; size?: number }[] = [];
         if (activeChart && activeChart.id !== 'main' && chartWallsMapRef.current[activeChart.id]?.length) {
             activeWallsList = chartWallsMapRef.current[activeChart.id];
@@ -6071,18 +6094,47 @@ const OrderFlowHeatmap: React.FC = () => {
             activeWallsList = (walls || []) as { price: number; type: 'buy' | 'sell'; size?: number }[];
         }
 
-        const buyWallCandidates = activeWallsList.filter(
-            (w) => w.type === 'buy' && (refPx <= 0 || w.price <= refPx)
-        );
-        const sellWallCandidates = activeWallsList.filter(
-            (w) => w.type === 'sell' && (refPx <= 0 || w.price >= refPx)
-        );
+        const sortedBuyWalls = activeWallsList
+            .filter((w) => w.type === 'buy')
+            .sort((a, b) => b.price - a.price);
+        const sortedSellWalls = activeWallsList
+            .filter((w) => w.type === 'sell')
+            .sort((a, b) => a.price - b.price);
 
-        buyWallCandidates.sort((a, b) => b.price - a.price);
-        sellWallCandidates.sort((a, b) => a.price - b.price);
+        return {
+            bidDomPct,
+            sortedBuyWalls,
+            sortedSellWalls,
+            totalWalls: activeWallsList.length,
+        };
+    }, [bids, asks, walls, activeChart, volumeThreshold, volumeMode, chartWallsTick, isPhoneMobileUI, showSubNav]);
 
-        const nearestSupport = buyWallCandidates[0] || null;
-        const nearestResistance = sellWallCandidates[0] || null;
+    // Under thermal guard (Redmi Pad 2 Pro), quantize reference price to 4 sig-figs so sub-tick jitters don't churn radar distances
+    const radarRefPrice = useMemo(() => {
+        const raw = activeDisplayPrice || currentPrice || 0;
+        if (!deviceProfile.isThermalGuardActive || raw <= 0) return raw;
+        return Number(raw.toPrecision(4));
+    }, [activeDisplayPrice, currentPrice, deviceProfile.isThermalGuardActive]);
+
+    const l2RadarTelemetry = useMemo(() => {
+        if (isPhoneMobileUI || !showSubNav) {
+            return {
+                bidDomPct: 50,
+                nearestSupport: null,
+                nearestResistance: null,
+                nearestSupportUsd: '',
+                nearestResistanceUsd: '',
+                supportDistPct: null,
+                resistDistPct: null,
+                totalWalls: 0,
+            };
+        }
+
+        const refPx = radarRefPrice;
+        const nearestSupport =
+            l2DepthAndWallsSummary.sortedBuyWalls.find((w) => refPx <= 0 || w.price <= refPx) || null;
+        const nearestResistance =
+            l2DepthAndWallsSummary.sortedSellWalls.find((w) => refPx <= 0 || w.price >= refPx) || null;
 
         const supportDistPct =
             nearestSupport && refPx > 0 ? ((refPx - nearestSupport.price) / refPx) * 100 : null;
@@ -6100,16 +6152,16 @@ const OrderFlowHeatmap: React.FC = () => {
         };
 
         return {
-            bidDomPct,
+            bidDomPct: l2DepthAndWallsSummary.bidDomPct,
             nearestSupport,
             nearestResistance,
             nearestSupportUsd: formatCompactWallUsd(nearestSupport),
             nearestResistanceUsd: formatCompactWallUsd(nearestResistance),
             supportDistPct,
             resistDistPct,
-            totalWalls: activeWallsList.length,
+            totalWalls: l2DepthAndWallsSummary.totalWalls,
         };
-    }, [bids, asks, walls, currentPrice, activeDisplayPrice, activeChart, volumeThreshold, volumeMode, chartWallsTick]);
+    }, [l2DepthAndWallsSummary, radarRefPrice, isPhoneMobileUI, showSubNav]);
 
     return (
         <div className="flex flex-col h-full bg-slate-100 dark:bg-[#04070e] text-slate-900 dark:text-white overflow-hidden rounded-2xl border border-slate-200 dark:border-cyan-500/25 shadow-sm">

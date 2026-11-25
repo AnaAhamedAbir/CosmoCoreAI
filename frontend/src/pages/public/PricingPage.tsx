@@ -1,8 +1,8 @@
-
 import React, { useEffect, useState } from 'react';
-import Button from '@/components/common/Button';
-import { CheckCircleIcon } from '@/constants';
 import { billingService, type PlatformNoCodeConfig } from '@/services/adminService';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
+import type { BriefingTopic } from './PublicBriefingModal';
+import { Check, ChevronDown } from 'lucide-react';
 
 type BillingCycle = 'monthly' | 'yearly';
 
@@ -19,145 +19,189 @@ interface PricingTier {
 
 const PRICING_TIERS: PricingTier[] = [
     {
-        name: "Hobbyist",
-        monthlyPrice: "$0",
-        yearlyPrice: "$0",
-        description: "Perfect for learning the ropes and testing basic strategies.",
-        features: ["1 Connected Exchange", "10 Backtests / month", "1 Active Bot (Pre-made)", "Basic Portfolio Tracking", "Community Support"],
-        cta: "Start for Free",
+        name: 'Starter',
+        monthlyPrice: '$0',
+        yearlyPrice: '$0',
+        description: 'Explore live telemetry, backtesting, and automated Paper bots risk-free.',
+        features: [
+            'Paper Trading & 1 Live Exchange',
+            'WallHunter Liquidity Preview',
+            '10 Historical Backtests / mo',
+            '1 Active Automated Bot',
+            'Basic Smart Chase SL Brackets',
+            'Community Documentation',
+        ],
+        cta: 'Start Free Workspace',
         isFeatured: false,
-        highlightColor: "border-white/10 shadow-[0_0_15px_rgba(6,182,212,0.02)]"
+        highlightColor: 'border-white/10',
     },
     {
-        name: "Pro Trader",
-        monthlyPrice: "$49",
-        yearlyPrice: "$39",
-        description: "For serious traders who demand power, speed, and AI insights.",
-        features: ["5 Connected Exchanges", "Unlimited Backtests", "10 Active Bots (Custom & AI)", "AI Foundry Access (GPT-4)", "Real-time Sentiment Analysis", "Priority Support"],
-        cta: "Go Pro",
+        name: 'Pro Trader',
+        monthlyPrice: '$49',
+        yearlyPrice: '$39',
+        description: 'Full suite for active algorithmic and order-flow traders.',
+        features: [
+            'Up to 5 Connected Exchanges',
+            'Full WallHunter & OrderFlow Heatmap',
+            'AI Strategy Foundry (Unlimited)',
+            'Smart Chase SL + Multi-Target TP',
+            '10 Concurrent Live / Paper Bots',
+            'Priority Desk Support',
+        ],
+        cta: 'Upgrade to Pro',
         isFeatured: true,
-        highlightColor: "border-cyan-500 shadow-[0_0_30px_rgba(6,182,212,0.2)]"
+        highlightColor: 'border-cyan-500/80 shadow-[0_0_30px_rgba(6,182,212,0.2)]',
     },
     {
-        name: "Enterprise",
-        monthlyPrice: "Custom",
-        yearlyPrice: "Custom",
-        description: "Tailored infrastructure for funds and high-frequency desks.",
-        features: ["Unlimited Exchanges", "Dedicated Cloud Node", "Custom Algorithm Development", "White-glove Onboarding", "SLA & 24/7 Phone Support", "Direct Market Access (DMA)"],
-        cta: "Contact Sales",
+        name: 'Enterprise',
+        monthlyPrice: 'Custom',
+        yearlyPrice: 'Custom',
+        description: 'Dedicated clusters, team roles, and custom adapters for desks.',
+        features: [
+            'Unlimited Exchange Accounts',
+            'Isolated Dedicated Execution Node',
+            'Custom Signal & Webhook Pipelines',
+            'Co-Engineered Algo Modules',
+            'Custom SLA & Onboarding',
+            'Dedicated Solutions Engineer',
+        ],
+        cta: 'Request Enterprise Briefing',
         isFeatured: false,
-        highlightColor: "border-violet-500/50 shadow-[0_0_20px_rgba(139,92,246,0.1)]"
-    }
+        highlightColor: 'border-violet-500/50 shadow-[0_0_20px_rgba(139,92,246,0.1)]',
+    },
 ];
 
 const COMPARISON_FEATURES = [
-    { name: "Backtesting Engine", free: "Standard", pro: "High-Speed Parallel", ent: "Dedicated Server" },
-    { name: "AI Strategy Generation", free: "Limited (3/mo)", pro: "Unlimited", ent: "Unlimited + Fine-tuning" },
-    { name: "Data Granularity", free: "1 Hour", pro: "1 Minute", ent: "Tick Level" },
-    { name: "API Access", free: "Read-only", pro: "Full Access", ent: "High Rate Limits" },
-    { name: "Support", free: "Community", pro: "Email (24h)", ent: "Dedicated Account Manager" },
+    { name: 'WallHunter & OrderFlow Heatmap', free: 'Preview', pro: 'Real-Time Full Depth', ent: 'Multi-Venue Dedicated' },
+    { name: 'Smart Chase SL & Split TP', free: 'Basic Brackets', pro: 'Full Automation', ent: 'Custom Risk Policies' },
+    { name: 'AI Strategy Foundry', free: '3 Prompts / mo', pro: 'Unlimited', ent: 'Unlimited + Private Models' },
+    { name: 'Backtesting Engine', free: 'Standard (1h)', pro: 'Parallel (1m)', ent: 'Dedicated Cluster (Tick)' },
+    { name: 'Connected Exchanges', free: '1 Venue', pro: 'Up to 5 Venues', ent: 'Unlimited + Custom API' },
+    { name: 'Support', free: 'Docs & Guides', pro: 'Priority (24h)', ent: 'Dedicated Engineer' },
 ];
 
 const FAQS = [
-    { q: "Can I switch plans later?", a: "Absolutely. You can upgrade or downgrade your plan at any time from your settings dashboard." },
-    { q: "Is my API key secure?", a: "Yes. We use AES-256 encryption to store your keys and they never leave our secure enclave. We only use them to execute trades you authorize." },
-    { q: "Do you offer a refund?", a: "We offer a 14-day money-back guarantee for the Pro plan if you're not satisfied with the platform." },
-    { q: "What exchanges do you support?", a: "We currently support Binance, Coinbase, Kraken, and KuCoin. More integrations are added monthly." },
+    { q: 'Can I switch or cancel plans later?', a: 'Yes. You can upgrade, downgrade, or cancel anytime directly from your billing settings without lock-in.' },
+    { q: 'How are my exchange API keys protected?', a: 'Keys are encrypted at rest with AES-256 and used strictly with trade-only permissions. CosmoQuantAI never has withdrawal access or custody of funds.' },
+    { q: 'Which exchanges and markets are supported?', a: 'CosmoQuantAI supports major crypto venues including Binance, Bybit, OKX, Coinbase, Kraken, and Bitget, alongside full Paper Trading simulation.' },
+    { q: 'What payment methods are supported for Pro?', a: 'Pro plans support international cards, crypto payments (Binance Pay / USDT), and local BDT wallets (bKash / Nagad).' },
 ];
 
-const PricingPage: React.FC<{ onSelectPlan?: () => void }> = ({ onSelectPlan }) => {
+const PricingPage: React.FC<{
+    onSelectPlan?: () => void;
+    onOpenBriefing?: (topic?: BriefingTopic) => void;
+}> = ({ onSelectPlan, onOpenBriefing }) => {
     const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
     const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
     const [publicCfg, setPublicCfg] = useState<PlatformNoCodeConfig | null>(null);
+    const thermalGuard = isThermalGuardActive();
 
     useEffect(() => {
         billingService.getPublicConfig().then(setPublicCfg).catch(() => {});
     }, []);
 
+    const proMonthlyUsd = publicCfg?.pro_monthly_usd || 49;
+    const proYearlyUsd = publicCfg?.pro_yearly_usd || 468;
+    const proYearlyMonthlyEq = Math.round(proYearlyUsd / 12);
+    const savePct = Math.max(0, Math.round((1 - proYearlyUsd / (proMonthlyUsd * 12)) * 100));
+
     const dynamicTiers = PRICING_TIERS.map((t) => {
-        if (t.name !== 'Pro Trader' || !publicCfg) return t;
-        const monthlyUsd = publicCfg.pro_monthly_usd || 49;
-        const yearlyMonthlyEq = Math.round((publicCfg.pro_yearly_usd || 468) / 12);
+        if (t.name !== 'Pro Trader') return t;
         return {
             ...t,
-            monthlyPrice: `$${monthlyUsd}`,
-            yearlyPrice: `$${yearlyMonthlyEq}`,
+            monthlyPrice: `$${proMonthlyUsd}`,
+            yearlyPrice: `$${proYearlyMonthlyEq}`,
         };
     });
 
     return (
         <div className="bg-transparent min-h-screen font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
             {/* Hero Section */}
-            <div className="relative pt-32 pb-20 overflow-hidden">
-                {/* Cyber background elements */}
+            <div className="relative pt-24 pb-16 overflow-hidden">
                 <div className="absolute inset-0 z-0 pointer-events-none">
-                    <div className="absolute inset-0 opacity-10" style={{
-                        backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(6,182,212,0.3) 1px, transparent 0)',
-                        backgroundSize: '32px 32px'
-                    }}></div>
-                    <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-cyan-500/10 blur-[150px] rounded-full animate-float-medium" />
-                    <div className="absolute top-20 right-1/4 w-[500px] h-[500px] bg-violet-600/10 blur-[150px] rounded-full animate-float-slow" />
+                    <div
+                        className="absolute inset-0 opacity-10"
+                        style={{
+                            backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(6,182,212,0.3) 1px, transparent 0)',
+                            backgroundSize: '32px 32px',
+                        }}
+                    />
+                    {!thermalGuard && (
+                        <>
+                            <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-cyan-500/10 blur-[140px] rounded-full animate-float-medium" />
+                            <div className="absolute top-20 right-1/4 w-[440px] h-[440px] bg-violet-600/10 blur-[140px] rounded-full animate-float-slow" />
+                        </>
+                    )}
                 </div>
-                
+
                 <div className="container mx-auto px-4 text-center relative z-10">
-                    <span className="inline-flex items-center gap-2 py-1 px-3 rounded-full bg-cyan-500/10 text-cyan-400 text-xs font-bold tracking-widest uppercase mb-6 border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+                    <span className="inline-flex items-center gap-2 py-1 px-3.5 rounded-full bg-cyan-500/10 text-cyan-400 text-xs font-bold tracking-widest uppercase mb-6 border border-cyan-500/20">
                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                        SYS.BILLING.NODE
+                        Transparent SaaS Pricing
                     </span>
-                    <h1 className="text-4xl md:text-7xl font-extrabold text-white tracking-tight mb-6 drop-shadow-lg">
-                        Unlock Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-violet-400 to-pink-400 animate-gradient-x">Trading Edge</span>
+                    <h1 className="text-4xl md:text-7xl font-extrabold text-white tracking-tight mb-5">
+                        Unlock Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-violet-400 to-pink-400">Trading Edge</span>
                     </h1>
-                    <p className="text-lg text-slate-400 font-light max-w-2xl mx-auto mb-12">
-                        Powerful tools shouldn't be reserved for Wall Street. Choose a plan that scales with your ambition.
+                    <p className="text-lg text-slate-400 font-light max-w-2xl mx-auto mb-10">
+                        Start free in Paper Trading mode, or unlock full WallHunter, OrderFlow Heatmap, and unlimited AI Foundry execution.
                     </p>
 
                     {/* Billing Toggle */}
-                    <div className="flex justify-center items-center gap-4 mb-16">
-                        <span className={`text-sm font-bold uppercase tracking-wider ${billingCycle === 'monthly' ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'text-slate-500'}`}>Monthly</span>
-                        <button 
-                            onClick={() => setBillingCycle(prev => prev === 'monthly' ? 'yearly' : 'monthly')}
-                            className="relative w-16 h-8 bg-[#0D1117] border border-white/10 rounded-full p-1 transition-all focus:outline-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]"
+                    <div className="flex justify-center items-center gap-4 mb-10">
+                        <span className={`text-sm font-bold uppercase tracking-wider ${billingCycle === 'monthly' ? 'text-white' : 'text-slate-500'}`}>Monthly</span>
+                        <button
+                            type="button"
+                            aria-label="Toggle billing cycle"
+                            onClick={() => setBillingCycle((prev) => (prev === 'monthly' ? 'yearly' : 'monthly'))}
+                            className="relative w-16 h-8 bg-[#0D1117] border border-white/15 rounded-full p-1 transition-all focus:outline-none"
                         >
-                            <div className={`w-6 h-6 bg-gradient-to-r from-cyan-400 to-cyan-500 rounded-full shadow-[0_0_15px_rgba(6,182,212,0.8)] transform transition-transform duration-300 ${billingCycle === 'yearly' ? 'translate-x-8 from-violet-400 to-violet-500 shadow-[0_0_15px_rgba(139,92,246,0.8)]' : ''}`}></div>
+                            <div className={`w-6 h-6 bg-gradient-to-r from-cyan-400 to-cyan-500 rounded-full shadow-md transform transition-transform duration-300 ${billingCycle === 'yearly' ? 'translate-x-8 from-violet-400 to-violet-500' : ''}`} />
                         </button>
-                        <span className={`text-sm font-bold uppercase tracking-wider ${billingCycle === 'yearly' ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'text-slate-500'}`}>
-                            Yearly <span className="ml-2 inline-block bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide shadow-[0_0_10px_rgba(6,182,212,0.2)]">Save 20%</span>
+                        <span className={`text-sm font-bold uppercase tracking-wider ${billingCycle === 'yearly' ? 'text-white' : 'text-slate-500'}`}>
+                            Yearly
+                            {savePct > 0 && (
+                                <span className="ml-2 inline-block bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wide">
+                                    Save {savePct}%
+                                </span>
+                            )}
                         </span>
                     </div>
                 </div>
             </div>
 
             {/* Pricing Cards */}
-            <div className="container mx-auto px-4 sm:px-6 lg:px-8 pb-24 relative z-10">
-                <div className="grid lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
-                    {dynamicTiers.map((tier, index) => (
-                        <div 
-                            key={tier.name} 
-                            className={`relative bg-[#070F20]/60 backdrop-blur-2xl border rounded-[2rem] p-8 md:p-10 flex flex-col transition-all duration-500 hover:-translate-y-2 hover:bg-[#070F20]/80 group ${tier.highlightColor} ${tier.isFeatured ? 'z-10 lg:scale-105' : ''}`}
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 pb-20 relative z-10">
+                <div className="grid lg:grid-cols-3 gap-7 max-w-7xl mx-auto items-stretch">
+                    {dynamicTiers.map((tier) => (
+                        <div
+                            key={tier.name}
+                            className={`relative bg-[#070F20]/70 ${thermalGuard ? '' : 'backdrop-blur-2xl'} border rounded-[2rem] p-8 md:p-9 flex flex-col transition-all duration-500 hover:-translate-y-1.5 group ${tier.highlightColor} ${tier.isFeatured ? 'z-10 lg:scale-[1.03]' : ''}`}
                         >
                             {tier.isFeatured && (
-                                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-cyan-500/20 border border-cyan-400 text-cyan-400 text-[10px] font-bold px-4 py-1.5 rounded-full uppercase tracking-widest shadow-[0_0_15px_rgba(6,182,212,0.5)] backdrop-blur-md">
+                                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#07162B] border border-cyan-400 text-cyan-300 text-[10px] font-bold px-4 py-1.5 rounded-full uppercase tracking-widest shadow-[0_0_15px_rgba(6,182,212,0.4)]">
                                     <span className="inline-block w-1.5 h-1.5 bg-cyan-400 rounded-full mr-2 animate-pulse" />
                                     Most Popular
                                 </div>
                             )}
 
-                            <div className="mb-8">
-                                <h3 className="text-2xl font-bold text-white mb-2 group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-white group-hover:to-slate-400 transition-all">{tier.name}</h3>
-                                <p className="text-sm text-slate-400 h-10 leading-relaxed font-light">{tier.description}</p>
+                            <div className="mb-7">
+                                <h3 className="text-2xl font-bold text-white mb-2">{tier.name}</h3>
+                                <p className="text-sm text-slate-400 leading-relaxed font-light min-h-[2.5rem]">{tier.description}</p>
                             </div>
 
-                            <div className="mb-8">
+                            <div className="mb-7">
                                 <div className="flex items-baseline">
-                                    <span className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 drop-shadow-md">
+                                    <span className="text-5xl font-extrabold text-white">
                                         {billingCycle === 'monthly' ? tier.monthlyPrice : tier.yearlyPrice}
                                     </span>
                                     {tier.monthlyPrice !== 'Custom' && (
-                                        <span className="text-slate-500 ml-2 font-mono text-sm">/ month</span>
+                                        <span className="text-slate-400 ml-2 font-mono text-sm">/ month</span>
                                     )}
                                 </div>
-                                {billingCycle === 'yearly' && tier.monthlyPrice !== 'Custom' && tier.monthlyPrice !== '$0' && (
-                                    <p className="text-xs text-cyan-400 mt-2 font-mono font-bold tracking-wider">Billed ${parseInt(tier.yearlyPrice.replace('$','')) * 12} yearly</p>
+                                {billingCycle === 'yearly' && tier.name === 'Pro Trader' && (
+                                    <p className="text-xs text-cyan-400 mt-2 font-mono font-bold tracking-wider">
+                                        Billed ${proYearlyUsd.toLocaleString()} yearly
+                                    </p>
                                 )}
                                 {tier.name === 'Pro Trader' && (
                                     <p className="text-xs text-emerald-400 mt-2 font-mono font-semibold">
@@ -173,28 +217,27 @@ const PricingPage: React.FC<{ onSelectPlan?: () => void }> = ({ onSelectPlan }) 
                                 <button
                                     type="button"
                                     onClick={onSelectPlan}
-                                    className="w-full py-4 rounded-xl font-bold bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all hover:scale-[1.02] mb-10 relative overflow-hidden group/btn"
+                                    className="w-full py-4 rounded-xl font-bold bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all hover:scale-[1.02] mb-9"
                                 >
-                                    <span className="absolute inset-0 bg-white/10 opacity-0 group-hover/btn:opacity-100 transition-opacity" />
                                     {tier.cta}
                                 </button>
                             ) : (
                                 <button
                                     type="button"
-                                    onClick={tier.name === 'Enterprise' ? () => { window.location.href = 'mailto:support@cosmoquant.ai?subject=Enterprise%20Plan%20Inquiry'; } : onSelectPlan}
-                                    className="w-full py-4 rounded-xl font-bold bg-[#0D1117] border border-white/10 text-white hover:bg-white/5 hover:border-cyan-500/30 transition-all mb-10 shadow-[0_0_15px_rgba(0,0,0,0.5)] text-sm"
+                                    onClick={tier.name === 'Enterprise' ? () => onOpenBriefing?.('enterprise') : onSelectPlan}
+                                    className="w-full py-4 rounded-xl font-bold bg-[#0D1117] border border-white/15 text-white hover:bg-white/5 hover:border-cyan-500/40 transition-all mb-9 text-sm"
                                 >
                                     {tier.cta}
                                 </button>
                             )}
 
-                            <div className="flex-grow pt-8 border-t border-white/10">
-                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-6">What's included</p>
-                                <ul className="space-y-4">
-                                    {tier.features.map((feature, i) => (
-                                        <li key={i} className="flex items-center gap-3">
-                                            <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${tier.isFeatured ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)]' : 'bg-white/5 text-slate-400 border border-white/10'}`}>
-                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                            <div className="flex-grow pt-7 border-t border-white/10">
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-5">What&apos;s Included</p>
+                                <ul className="space-y-3.5">
+                                    {tier.features.map((feature) => (
+                                        <li key={feature} className="flex items-center gap-3">
+                                            <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${tier.isFeatured ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-white/5 text-slate-400 border border-white/10'}`}>
+                                                <Check className="w-3 h-3" strokeWidth={3} />
                                             </div>
                                             <span className="text-sm text-slate-300">{feature}</span>
                                         </li>
@@ -207,26 +250,26 @@ const PricingPage: React.FC<{ onSelectPlan?: () => void }> = ({ onSelectPlan }) 
             </div>
 
             {/* Comparison Table */}
-            <div className="relative border-y border-white/5 py-24 bg-[#050A15]/50 backdrop-blur-xl">
+            <div className={`relative border-y border-white/5 py-20 bg-[#050A15]/60 ${thermalGuard ? '' : 'backdrop-blur-xl'}`}>
                 <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl relative z-10">
-                    <h2 className="text-3xl font-extrabold text-white text-center mb-16 tracking-tight">System Specifications</h2>
-                    <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#070F20]/80 shadow-2xl backdrop-blur-md">
-                        <table className="w-full text-left border-collapse min-w-[700px]">
+                    <h2 className="text-3xl font-extrabold text-white text-center mb-12 tracking-tight">Plan Comparison</h2>
+                    <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#070F20]/85 shadow-2xl">
+                        <table className="w-full text-left border-collapse min-w-[680px]">
                             <thead>
                                 <tr className="border-b border-white/10 bg-[#0D1117]">
-                                    <th className="py-5 px-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-1/3">Features</th>
-                                    <th className="py-5 px-4 text-center font-bold text-white w-1/5">Hobbyist</th>
+                                    <th className="py-5 px-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-1/3">Capability</th>
+                                    <th className="py-5 px-4 text-center font-bold text-white w-1/5">Starter</th>
                                     <th className="py-5 px-4 text-center font-bold text-cyan-400 w-1/5">Pro Trader</th>
                                     <th className="py-5 px-4 text-center font-bold text-violet-400 w-1/5">Enterprise</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
-                                {COMPARISON_FEATURES.map((row, index) => (
-                                    <tr key={index} className="hover:bg-white/5 transition-colors group">
-                                        <td className="py-4 px-6 text-sm font-medium text-slate-300 group-hover:text-white transition-colors">{row.name}</td>
-                                        <td className="py-4 px-4 text-sm text-center text-slate-500 font-mono tracking-tight group-hover:text-slate-400">{row.free}</td>
-                                        <td className="py-4 px-4 text-sm text-center font-bold text-cyan-400 font-mono tracking-tight drop-shadow-[0_0_5px_rgba(6,182,212,0.5)]">{row.pro}</td>
-                                        <td className="py-4 px-4 text-sm text-center text-slate-500 font-mono tracking-tight group-hover:text-violet-300">{row.ent}</td>
+                                {COMPARISON_FEATURES.map((row) => (
+                                    <tr key={row.name} className="hover:bg-white/5 transition-colors">
+                                        <td className="py-4 px-6 text-sm font-medium text-slate-200">{row.name}</td>
+                                        <td className="py-4 px-4 text-sm text-center text-slate-400 font-mono">{row.free}</td>
+                                        <td className="py-4 px-4 text-sm text-center font-bold text-cyan-400 font-mono">{row.pro}</td>
+                                        <td className="py-4 px-4 text-sm text-center text-violet-300 font-mono">{row.ent}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -236,23 +279,22 @@ const PricingPage: React.FC<{ onSelectPlan?: () => void }> = ({ onSelectPlan }) 
             </div>
 
             {/* FAQ Section */}
-            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-24 max-w-3xl relative z-10">
-                <h2 className="text-3xl font-extrabold text-white text-center mb-12 tracking-tight">Frequently Asked Questions</h2>
-                <div className="space-y-4">
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-20 max-w-3xl relative z-10">
+                <h2 className="text-3xl font-extrabold text-white text-center mb-10 tracking-tight">Frequently Asked Questions</h2>
+                <div className="space-y-3.5">
                     {FAQS.map((faq, index) => (
-                        <div key={index} className="border border-white/5 rounded-2xl overflow-hidden bg-[#0D1117]/80 backdrop-blur-md hover:border-cyan-500/20 transition-all hover:bg-[#0D1117]">
-                            <button 
+                        <div key={faq.q} className="border border-white/10 rounded-2xl overflow-hidden bg-[#0D1117]/85 hover:border-cyan-500/25 transition-all">
+                            <button
+                                type="button"
                                 onClick={() => setOpenFaqIndex(openFaqIndex === index ? null : index)}
-                                className="w-full flex justify-between items-center p-6 text-left focus:outline-none group"
+                                className="w-full flex justify-between items-center p-5 sm:p-6 text-left focus:outline-none group"
                             >
-                                <span className="font-bold text-white group-hover:text-cyan-400 transition-colors">{faq.q}</span>
-                                <div className={`w-8 h-8 rounded-full border border-white/10 flex items-center justify-center transition-all duration-300 group-hover:border-cyan-500/30 group-hover:bg-cyan-500/10 ${openFaqIndex === index ? 'rotate-180 bg-cyan-500/10 border-cyan-500/30 text-cyan-400' : 'text-slate-500'}`}>
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                                    </svg>
+                                <span className="font-bold text-white group-hover:text-cyan-400 transition-colors pr-4">{faq.q}</span>
+                                <div className={`w-8 h-8 rounded-full border border-white/10 flex items-center justify-center shrink-0 transition-transform duration-300 ${openFaqIndex === index ? 'rotate-180 bg-cyan-500/15 border-cyan-500/30 text-cyan-400' : 'text-slate-400'}`}>
+                                    <ChevronDown className="w-4 h-4" />
                                 </div>
                             </button>
-                            <div className={`px-6 text-sm text-slate-400 leading-relaxed font-light overflow-hidden transition-all duration-300 ${openFaqIndex === index ? 'max-h-40 pb-6 opacity-100' : 'max-h-0 opacity-0'}`}>
+                            <div className={`px-5 sm:px-6 text-sm text-slate-400 leading-relaxed font-light overflow-hidden transition-all duration-300 ${openFaqIndex === index ? 'max-h-40 pb-6 opacity-100' : 'max-h-0 opacity-0'}`}>
                                 {faq.a}
                             </div>
                         </div>
@@ -264,4 +306,3 @@ const PricingPage: React.FC<{ onSelectPlan?: () => void }> = ({ onSelectPlan }) 
 };
 
 export default PricingPage;
-

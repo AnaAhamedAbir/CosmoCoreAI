@@ -1,81 +1,92 @@
-
-import React from 'react';
-import Button from '@/components/common/Button';
-import Card from '@/components/common/Card';
-import { MOCK_PORTFOLIO_PROJECTS, MOCK_CLIENT_TESTIMONIALS, CheckCircleIcon } from '@/constants';
+import React, { useState, useEffect } from 'react';
+import { MOCK_PORTFOLIO_PROJECTS, MOCK_CLIENT_TESTIMONIALS } from '@/constants';
 import type { PortfolioProject } from '@/types';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
+import type { BriefingTopic } from './PublicBriefingModal';
+import { ArrowRight, X, CheckCircle2, Layers, Cpu, Calendar } from 'lucide-react';
 
 interface PortfolioPageProps {
     onSignUp: () => void;
+    onOpenBriefing?: (topic?: BriefingTopic) => void;
 }
 
 const MetricBadge: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-    <div className="flex flex-col bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg p-2 text-center min-w-[80px] shadow-sm dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]">
-        <span className="text-[10px] uppercase tracking-wider text-slate-500">{label}</span>
-        <span className="text-sm font-bold text-cyan-600 dark:text-cyan-400">{value}</span>
+    <div className="flex flex-col bg-white/5 border border-white/10 rounded-xl p-2.5 text-center">
+        <span className="text-[10px] uppercase tracking-wider text-slate-400 truncate">{label}</span>
+        <span className="text-sm font-bold text-cyan-400 mt-0.5">{value}</span>
     </div>
 );
 
-const ProjectCard: React.FC<{ project: PortfolioProject; index: number }> = ({ project, index }) => (
-    <div 
-        className="group relative bg-white dark:bg-[#070F20]/60 backdrop-blur-xl border border-slate-200 dark:border-white/10 shadow-lg dark:shadow-[0_0_20px_rgba(6,182,212,0.05)] rounded-3xl overflow-hidden hover:shadow-xl dark:hover:shadow-[0_0_30px_rgba(6,182,212,0.2)] hover:border-cyan-400 dark:hover:border-cyan-500/30 transition-all duration-500 hover:-translate-y-2 flex flex-col h-full staggered-fade-in"
+const ProjectCard: React.FC<{
+    project: PortfolioProject;
+    index: number;
+    thermalGuard: boolean;
+    onInspect: (project: PortfolioProject) => void;
+}> = ({ project, index, thermalGuard, onInspect }) => (
+    <div
+        onClick={() => onInspect(project)}
+        className={`group cursor-pointer relative bg-[#070F20]/70 ${thermalGuard ? '' : 'backdrop-blur-xl'} border border-white/10 shadow-[0_0_20px_rgba(6,182,212,0.05)] rounded-3xl overflow-hidden hover:shadow-[0_0_30px_rgba(6,182,212,0.2)] hover:border-cyan-500/35 transition-all duration-500 hover:-translate-y-1.5 flex flex-col h-full`}
         style={{ animationDelay: `${index * 100}ms` }}
     >
-        {/* Image Overlay Effect */}
-        <div className="relative h-56 overflow-hidden border-b border-slate-200 dark:border-white/10">
-            <div className="absolute inset-0 bg-slate-900/5 dark:bg-[#020610]/40 group-hover:bg-transparent transition-colors duration-500 z-10"></div>
-            <img 
-                src={project.imageUrl} 
-                alt={project.title} 
-                className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-700" 
+        <div className="relative h-52 overflow-hidden border-b border-white/10">
+            <div className="absolute inset-0 bg-[#020610]/30 group-hover:bg-transparent transition-colors duration-500 z-10" />
+            <img
+                src={project.imageUrl}
+                alt={project.title}
+                className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700"
             />
             <div className="absolute top-4 left-4 z-20">
-                <span className="px-3 py-1 text-xs font-bold bg-white/90 dark:bg-[#020610]/80 backdrop-blur-md rounded-full text-cyan-600 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20 shadow-sm dark:shadow-[0_0_10px_rgba(6,182,212,0.2)]">
+                <span className="px-3 py-1 text-xs font-bold bg-[#020610]/85 border border-cyan-500/25 rounded-full text-cyan-300">
                     {project.category}
                 </span>
             </div>
         </div>
 
-        <div className="p-6 md:p-8 flex flex-col flex-grow relative bg-gradient-to-b from-transparent to-slate-50/80 dark:to-[#020610]/80">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3 group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-cyan-600 group-hover:to-violet-600 dark:group-hover:from-cyan-400 dark:group-hover:to-violet-400 transition-all">
+        <div className="p-6 md:p-7 flex flex-col flex-grow relative">
+            <h3 className="text-xl font-bold text-white mb-2.5 group-hover:text-cyan-300 transition-colors">
                 {project.title}
             </h3>
-            
-            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-6 flex-grow">
+
+            <p className="text-sm text-slate-400 leading-relaxed mb-6 flex-grow">
                 {project.description}
             </p>
 
-            {/* Metrics Grid */}
             <div className="grid grid-cols-3 gap-2 mb-6">
                 {project.metrics.map((metric, idx) => (
                     <MetricBadge key={idx} label={metric.label} value={metric.value} />
                 ))}
             </div>
 
-            {/* Tags & Action */}
-            <div className="pt-5 border-t border-slate-200 dark:border-white/10 flex justify-between items-center mt-auto">
+            <div className="pt-4 border-t border-white/10 flex justify-between items-center mt-auto">
                 <div className="flex flex-wrap gap-2">
-                    {project.tags.slice(0, 3).map(tag => (
-                        <span key={tag} className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">#{tag}</span>
+                    {project.tags.slice(0, 3).map((tag) => (
+                        <span key={tag} className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">#{tag}</span>
                     ))}
                 </div>
-                <button className="text-sm font-bold text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 flex items-center gap-1 group-hover:translate-x-1 transition-all drop-shadow-sm dark:drop-shadow-[0_0_8px_rgba(6,182,212,0.5)]">
-                    Inspect &rarr;
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onInspect(project);
+                    }}
+                    className="text-sm font-bold text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1 group-hover:translate-x-1 transition-all"
+                >
+                    View Case Study <ArrowRight className="w-4 h-4" />
                 </button>
             </div>
         </div>
     </div>
 );
 
-const SkillCategory: React.FC<{ title: string; skills: string[] }> = ({ title, skills }) => (
-    <div className="bg-white dark:bg-[#070F20]/50 backdrop-blur-xl border border-slate-200 dark:border-white/10 shadow-lg dark:shadow-[0_0_15px_rgba(139,92,246,0.05)] rounded-2xl p-8 hover:border-violet-400 dark:hover:border-violet-500/30 transition-all hover:shadow-xl dark:hover:shadow-[0_0_30px_rgba(139,92,246,0.15)] group">
-        <h4 className="text-xl font-bold text-slate-900 dark:text-white mb-5 flex items-center gap-3">
-            <div className="w-2.5 h-2.5 rounded-full bg-violet-500 shadow-[0_0_10px_rgba(139,92,246,0.5)] dark:shadow-[0_0_10px_rgba(139,92,246,0.8)] group-hover:animate-pulse"></div>
+const SkillCategory: React.FC<{ title: string; skills: string[]; thermalGuard: boolean }> = ({ title, skills, thermalGuard }) => (
+    <div className={`bg-[#070F20]/65 ${thermalGuard ? '' : 'backdrop-blur-xl'} border border-white/10 rounded-2xl p-7 hover:border-violet-500/35 transition-all group`}>
+        <h4 className="text-lg font-bold text-white mb-4 flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-violet-500" />
             {title}
         </h4>
-        <div className="flex flex-wrap gap-2.5">
-            {skills.map(skill => (
-                <span key={skill} className="px-3.5 py-1.5 bg-slate-100 dark:bg-[#0D1117] border border-slate-200 dark:border-white/5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 shadow-sm dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)] cursor-default hover:text-slate-900 dark:hover:text-white hover:border-violet-400 dark:hover:border-violet-500/50 transition-colors">
+        <div className="flex flex-wrap gap-2">
+            {skills.map((skill) => (
+                <span key={skill} className="px-3 py-1.5 bg-[#0D1117] border border-white/10 rounded-lg text-xs font-medium text-slate-300">
                     {skill}
                 </span>
             ))}
@@ -83,128 +94,238 @@ const SkillCategory: React.FC<{ title: string; skills: string[] }> = ({ title, s
     </div>
 );
 
-const PortfolioPage: React.FC<PortfolioPageProps> = ({ onSignUp }) => {
-    const coreSkills = ['Python (Pandas, NumPy)', 'Rust', 'C++', 'Quantitative Analysis', 'Statistical Arbitrage'];
-    const mlSkills = ['TensorFlow', 'PyTorch', 'LSTM / GRU Networks', 'Reinforcement Learning', 'Sentiment NLP'];
-    const infraSkills = ['Docker & Kubernetes', 'AWS / GCP', 'WebSocket APIs', 'Low Latency Systems', 'PostgreSQL / TimescaleDB'];
+const PortfolioPage: React.FC<PortfolioPageProps> = ({ onSignUp, onOpenBriefing }) => {
+    const [selectedProject, setSelectedProject] = useState<PortfolioProject | null>(null);
+    const thermalGuard = isThermalGuardActive();
+
+    const coreSkills = ['Python (Pandas, NumPy)', 'Rust Execution', 'Orderbook Microstructure', 'Volatility Regimes', 'Statistical Arbitrage'];
+    const mlSkills = ['PyTorch & TensorFlow', 'LSTM Sequence Models', 'WallHunter Scoring', 'Feature Pipelines', 'Market Sentiment NLP'];
+    const infraSkills = ['Docker & Cloud Nodes', 'WebSocket Adapters', 'Binance / Bybit / OKX', 'TimescaleDB', 'Trade-Only AES Encryption'];
+
+    useEffect(() => {
+        if (!selectedProject) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setSelectedProject(null);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [selectedProject]);
 
     return (
-        <div className="bg-slate-50 dark:bg-transparent text-slate-900 dark:text-white min-h-screen selection:bg-cyan-500/30 selection:text-cyan-900 dark:selection:text-cyan-200 transition-colors duration-300">
-            
+        <div className="bg-transparent text-white min-h-screen selection:bg-cyan-500/30 selection:text-cyan-200">
             {/* Hero Section */}
-            <div className="relative pt-32 pb-20 overflow-hidden">
-                {/* Cyber grid and animated background */}
+            <div className="relative pt-24 pb-16 overflow-hidden">
                 <div className="absolute inset-0 z-0 pointer-events-none">
-                    <div className="absolute inset-0 opacity-20 dark:opacity-10" style={{
-                        backgroundImage: 'linear-gradient(rgba(6,182,212,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.15) 1px, transparent 1px)',
-                        backgroundSize: '40px 40px'
-                    }} />
-                    <div className="absolute top-20 left-1/4 w-[500px] h-[500px] bg-cyan-300/30 dark:bg-cyan-500/10 rounded-full blur-[120px] animate-float-medium" />
-                    <div className="absolute top-40 right-1/4 w-[400px] h-[400px] bg-violet-300/30 dark:bg-violet-600/10 rounded-full blur-[100px] animate-float-slow" />
+                    <div
+                        className="absolute inset-0 opacity-10"
+                        style={{
+                            backgroundImage: 'linear-gradient(rgba(6,182,212,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.15) 1px, transparent 1px)',
+                            backgroundSize: '40px 40px',
+                        }}
+                    />
+                    {!thermalGuard && (
+                        <>
+                            <div className="absolute top-16 left-1/4 w-[460px] h-[460px] bg-cyan-500/10 rounded-full blur-[130px] animate-float-medium" />
+                            <div className="absolute top-36 right-1/4 w-[380px] h-[380px] bg-violet-600/10 rounded-full blur-[110px] animate-float-slow" />
+                        </>
+                    )}
                 </div>
-                
+
                 <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
-                    <span className="inline-flex items-center gap-2 py-1 px-3 rounded-full bg-cyan-100 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 text-xs font-bold tracking-widest uppercase mb-6 border border-cyan-300 dark:border-cyan-500/20 shadow-sm dark:shadow-[0_0_15px_rgba(6,182,212,0.2)]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 dark:bg-cyan-400 animate-pulse" />
-                        SYS.PORTFOLIO.ARCHIVE
+                    <span className="inline-flex items-center gap-2 py-1 px-3.5 rounded-full bg-cyan-500/10 text-cyan-400 text-xs font-bold tracking-widest uppercase mb-6 border border-cyan-500/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                        Case Studies &amp; Benchmarks
                     </span>
-                    <h1 className="text-5xl md:text-7xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-8 drop-shadow-sm dark:drop-shadow-lg">
-                        Architecting <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 via-violet-600 to-pink-600 dark:from-cyan-400 dark:via-violet-400 dark:to-pink-400 animate-gradient-x">Alpha</span>
+                    <h1 className="text-4xl sm:text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-6">
+                        Production Quant <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-violet-400 to-pink-400">Architecture</span>
                     </h1>
-                    <p className="mt-4 max-w-2xl mx-auto text-lg text-slate-600 dark:text-slate-400 leading-relaxed font-light">
-                        I design institutional-grade algorithmic trading systems, custom machine learning models, and high-frequency execution engines for discerning clients.
+                    <p className="max-w-2xl mx-auto text-lg text-slate-400 leading-relaxed font-light">
+                        Explore how CosmoQuantAI powers systematic execution, real-time order-book wall detection, and regime-aware risk controls across active trading desks.
                     </p>
                 </div>
             </div>
 
-            <div className="container mx-auto px-4 sm:px-6 lg:px-8 space-y-24 pb-24">
-                
-                {/* Featured Projects */}
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 space-y-20 pb-24">
+                {/* Featured Case Studies */}
                 <section className="relative z-10">
-                    <div className="flex items-center justify-between mb-12">
-                        <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Mission Logs</h2>
-                        <div className="hidden md:block h-px flex-1 bg-gradient-to-r from-cyan-400 dark:from-cyan-500/50 to-transparent ml-8"></div>
+                    <div className="flex items-center justify-between mb-10">
+                        <h2 className="text-3xl font-extrabold text-white tracking-tight">System Case Studies</h2>
+                        <div className="hidden md:block h-px flex-1 bg-gradient-to-r from-cyan-500/40 to-transparent ml-8" />
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-7">
                         {MOCK_PORTFOLIO_PROJECTS.map((project, index) => (
-                            <ProjectCard key={project.id} project={project} index={index} />
+                            <ProjectCard
+                                key={project.id}
+                                project={project}
+                                index={index}
+                                thermalGuard={thermalGuard}
+                                onInspect={setSelectedProject}
+                            />
                         ))}
                     </div>
                 </section>
-                
-                {/* Tech Stack Radar */}
+
+                {/* Tech Stack */}
                 <section className="relative z-10">
-                    <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-12 text-center tracking-tight">Technical Arsenal</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                        <SkillCategory title="Core Quant" skills={coreSkills} />
-                        <SkillCategory title="AI & Machine Learning" skills={mlSkills} />
-                        <SkillCategory title="Infrastructure & DevOps" skills={infraSkills} />
+                    <h2 className="text-3xl font-extrabold text-white mb-10 text-center tracking-tight">Technology Stack</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <SkillCategory title="Core Quantitative Engines" skills={coreSkills} thermalGuard={thermalGuard} />
+                        <SkillCategory title="AI & Signal Intelligence" skills={mlSkills} thermalGuard={thermalGuard} />
+                        <SkillCategory title="Execution Infrastructure" skills={infraSkills} thermalGuard={thermalGuard} />
                     </div>
                 </section>
-                
+
                 {/* Testimonials */}
                 <section className="relative z-10">
-                    <div className="absolute inset-0 bg-gradient-to-b from-slate-200/50 dark:from-[#070F20]/50 to-transparent -skew-y-2 transform origin-left scale-110 rounded-3xl z-0 border-y border-slate-300 dark:border-white/5"></div>
-                    <div className="relative z-10 py-16">
-                        <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-12 text-center tracking-tight">Encrypted Comms (Feedback)</h2>
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            {MOCK_CLIENT_TESTIMONIALS.map((testimonial, i) => (
-                                <div key={testimonial.id} className="bg-white/80 dark:bg-[#0D1117]/80 backdrop-blur-md p-8 rounded-3xl border border-slate-200 dark:border-white/10 relative hover:border-cyan-400 dark:hover:border-cyan-500/30 transition-all shadow-lg dark:shadow-none hover:shadow-xl dark:hover:shadow-[0_0_20px_rgba(6,182,212,0.1)] group">
-                                    <div className="text-6xl text-cyan-200 dark:text-cyan-500/10 font-serif absolute top-4 left-6 group-hover:text-cyan-300 dark:group-hover:text-cyan-500/20 transition-colors">"</div>
-                                    <p className="text-slate-600 dark:text-slate-300 italic relative z-10 mb-8 leading-relaxed">
-                                        {testimonial.quote}
-                                    </p>
-                                    <div className="flex items-center gap-4 border-t border-slate-200 dark:border-white/10 pt-6">
-                                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-100 to-violet-100 dark:from-cyan-500/20 dark:to-violet-600/20 border border-slate-200 dark:border-white/10 flex items-center justify-center text-lg font-bold text-cyan-700 dark:text-cyan-400 group-hover:border-cyan-400 dark:group-hover:border-cyan-500/50 transition-colors">
-                                            {testimonial.author[0]}
-                                        </div>
-                                        <div>
-                                            <p className="font-bold text-sm text-slate-900 dark:text-white">{testimonial.author}</p>
-                                            <p className="text-xs text-slate-500 font-mono tracking-wider">{testimonial.role}</p>
-                                        </div>
+                    <h2 className="text-3xl font-extrabold text-white mb-10 text-center tracking-tight">What Desks Say</h2>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-7">
+                        {MOCK_CLIENT_TESTIMONIALS.map((testimonial) => (
+                            <div
+                                key={testimonial.id}
+                                className={`bg-[#070F20]/75 ${thermalGuard ? '' : 'backdrop-blur-md'} p-7 rounded-3xl border border-white/10 relative hover:border-cyan-500/30 transition-all group`}
+                            >
+                                <div className="text-5xl text-cyan-500/20 font-serif mb-2">&ldquo;</div>
+                                <p className="text-slate-300 italic relative z-10 mb-7 leading-relaxed text-sm">
+                                    {testimonial.quote}
+                                </p>
+                                <div className="flex items-center gap-3.5 border-t border-white/10 pt-5">
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-violet-600/20 border border-white/10 flex items-center justify-center text-sm font-bold text-cyan-300">
+                                        {testimonial.author[0]}
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-sm text-white">{testimonial.author}</p>
+                                        <p className="text-xs text-slate-400 font-mono">{testimonial.role}</p>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
+                            </div>
+                        ))}
                     </div>
                 </section>
-                
-                {/* CTA Section */}
-                <section className="relative rounded-[2rem] overflow-hidden bg-white dark:bg-[#070F20]/90 border border-cyan-300 dark:border-cyan-500/20 text-slate-900 dark:text-white py-20 px-8 text-center shadow-xl dark:shadow-[0_0_50px_rgba(6,182,212,0.15)] backdrop-blur-2xl">
-                    {/* Abstract Tech Background */}
-                    <div className="absolute inset-0 z-0">
-                        <div className="absolute inset-0 opacity-30 dark:opacity-10" style={{
-                            backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(6,182,212,0.5) 1px, transparent 0)',
-                            backgroundSize: '24px 24px'
-                        }}></div>
-                        <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-200 dark:bg-cyan-500/10 rounded-full blur-[100px] animate-float-medium"></div>
-                        <div className="absolute bottom-0 left-0 w-96 h-96 bg-violet-200 dark:bg-violet-600/10 rounded-full blur-[100px] animate-float-slow text-pink-500"></div>
-                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 via-violet-500 to-pink-500" />
-                    </div>
 
+                {/* CTA Section */}
+                <section className={`relative rounded-[2rem] overflow-hidden bg-[#070F20]/85 ${thermalGuard ? '' : 'backdrop-blur-2xl'} border border-cyan-500/25 text-white py-16 px-8 text-center shadow-[0_0_50px_rgba(6,182,212,0.12)]`}>
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 via-violet-500 to-pink-500" />
                     <div className="relative z-10 max-w-3xl mx-auto">
-                        <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-6 text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">Ready to Build Your Edge?</h2>
-                        <p className="text-lg text-slate-600 dark:text-slate-400 mb-10 leading-relaxed max-w-2xl mx-auto">
-                            Whether you need a custom HFT bot, a risk management system, or a full-stack trading platform, let's engineer a solution that fits your strategy.
+                        <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-5">
+                            Ready to Automate Your Strategy?
+                        </h2>
+                        <p className="text-lg text-slate-400 mb-9 leading-relaxed max-w-2xl mx-auto">
+                            Launch a free Paper Trading workspace in seconds, or book a technical briefing with CosmoQuantAI engineers for custom desk integrations.
                         </p>
-                        <div className="flex flex-col sm:flex-row gap-5 justify-center">
-                            <button className="relative overflow-hidden px-8 py-4 rounded-xl font-bold bg-gradient-to-r from-cyan-600 to-violet-600 dark:from-cyan-500 dark:to-violet-600 text-white shadow-lg dark:shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-xl dark:hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all hover:scale-[1.02] group">
-                                <span className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                Initiate Comms
-                            </button>
-                            <button 
+                        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                            <button
+                                type="button"
                                 onClick={onSignUp}
-                                className="px-8 py-4 rounded-xl font-bold bg-slate-100 dark:bg-[#0D1117] border border-slate-300 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/5 hover:border-cyan-400 dark:hover:border-cyan-500/30 text-slate-900 dark:text-white transition-all shadow-md z-10 relative"
+                                className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all hover:scale-[1.02]"
                             >
-                                Deploy Serverless Node
+                                Launch Free Workspace
+                                <ArrowRight className="w-4 h-4" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onOpenBriefing?.('custom_algo')}
+                                className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold bg-[#0D1117] border border-white/15 hover:border-cyan-500/40 hover:bg-white/5 text-white transition-all"
+                            >
+                                <Calendar className="w-4 h-4 text-cyan-400" />
+                                Book Technical Briefing
                             </button>
                         </div>
                     </div>
                 </section>
             </div>
+
+            {/* Case Study Detail Modal */}
+            {selectedProject && (
+                <div
+                    className={`fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/75 ${thermalGuard ? '' : 'backdrop-blur-md'}`}
+                    onClick={() => setSelectedProject(null)}
+                >
+                    <div
+                        className="relative w-full max-w-2xl rounded-3xl bg-[#070F20] border border-cyan-500/25 shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="h-1 bg-gradient-to-r from-cyan-500 via-violet-500 to-emerald-400" />
+                        <button
+                            type="button"
+                            onClick={() => setSelectedProject(null)}
+                            aria-label="Close case study"
+                            className="absolute top-4 right-4 z-20 w-9 h-9 rounded-xl bg-black/60 border border-white/15 text-slate-300 hover:text-white flex items-center justify-center"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+
+                        <div className="h-48 relative border-b border-white/10">
+                            <img src={selectedProject.imageUrl} alt={selectedProject.title} className="w-full h-full object-cover" />
+                            <span className="absolute bottom-4 left-6 px-3 py-1 rounded-full bg-[#020610]/90 border border-cyan-500/30 text-xs font-bold text-cyan-300">
+                                {selectedProject.category}
+                            </span>
+                        </div>
+
+                        <div className="p-6 sm:p-8 space-y-6">
+                            <div>
+                                <h3 className="text-2xl font-extrabold text-white mb-2">{selectedProject.title}</h3>
+                                <p className="text-sm text-slate-300 leading-relaxed">{selectedProject.description}</p>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-3">
+                                {selectedProject.metrics.map((m) => (
+                                    <MetricBadge key={m.label} label={m.label} value={m.value} />
+                                ))}
+                            </div>
+
+                            {selectedProject.architecture && (
+                                <div className="p-4 rounded-2xl bg-[#0D1117] border border-white/10">
+                                    <p className="text-[11px] font-bold uppercase tracking-wider text-cyan-400 mb-1.5 flex items-center gap-1.5">
+                                        <Cpu className="w-3.5 h-3.5" /> Pipeline Architecture
+                                    </p>
+                                    <p className="text-xs font-mono text-slate-300 leading-relaxed">{selectedProject.architecture}</p>
+                                </div>
+                            )}
+
+                            {selectedProject.highlights && (
+                                <div>
+                                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2.5 flex items-center gap-1.5">
+                                        <Layers className="w-3.5 h-3.5 text-violet-400" /> Key Capabilities
+                                    </p>
+                                    <ul className="space-y-2">
+                                        {selectedProject.highlights.map((h) => (
+                                            <li key={h} className="flex items-start gap-2 text-sm text-slate-300">
+                                                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                                                <span>{h}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            <div className="flex flex-col sm:flex-row gap-3 pt-2 border-t border-white/10">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedProject(null);
+                                        onSignUp();
+                                    }}
+                                    className="flex-1 py-3 px-5 rounded-xl font-bold text-sm bg-gradient-to-r from-cyan-500 to-violet-600 text-white"
+                                >
+                                    Try in Workspace
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedProject(null);
+                                        onOpenBriefing?.('custom_algo');
+                                    }}
+                                    className="py-3 px-5 rounded-xl font-semibold text-sm bg-white/5 border border-white/10 text-slate-200 hover:bg-white/10"
+                                >
+                                    Request Similar Build
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
 export default PortfolioPage;
-

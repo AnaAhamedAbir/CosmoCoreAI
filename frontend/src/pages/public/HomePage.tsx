@@ -1,12 +1,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI } from '@google/genai';
-import Button from '@/components/common/Button';
 import {
-    BacktesterIcon, BotLabIcon, AIFoundryIcon,
-    InteractiveBrokersLogo, CoinbaseLogo, BitfinexLogo, TradierLogo, TradingTechnologiesLogo, TerminalLinkLogo, AlpacaLogo,
-    TradeStationLogo, CharlesSchwabLogo, KrakenLogo, SscEzeLogo, SamcoLogo, ZerodhaLogo, TdAmeritradeLogo, BinanceLogo,
-    IdeaIcon, TestIcon, DeployIcon,
+    BacktesterIcon, BotLabIcon,
+    InteractiveBrokersLogo, CoinbaseLogo, BitfinexLogo, AlpacaLogo,
+    CharlesSchwabLogo, KrakenLogo, BinanceLogo,
+    IdeaIcon,
     MOCK_CRYPTO_NEWS
 } from '@/constants';
 import { useTheme } from '@/context/ThemeContext';
@@ -14,6 +12,22 @@ import MarketTicker from '@/components/features/market/MarketTicker';
 import { useToast } from '@/context/ToastContext';
 import { isThermalGuardActive } from '@/utils/deviceProfile';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
+import type { PublicView } from './PublicWebsite';
+import type { BriefingTopic } from './PublicBriefingModal';
+import {
+    ArrowRight,
+    PlayCircle,
+    Sparkles,
+    ShieldCheck,
+    Radar,
+    Zap,
+    Activity,
+    Globe,
+    Copy,
+    Check,
+    Calendar,
+    X,
+} from 'lucide-react';
 
 // Scroll Animation Hook
 const useScrollAnimation = (threshold = 0.1) => {
@@ -329,21 +343,6 @@ export const CosmicStarBackground: React.FC = () => {
 };
 
 // ============================
-// Floating Orbs
-// ============================
-const FloatingOrbs: React.FC = () => {
-    if (isThermalGuardActive()) return null;
-    return (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] animate-float-slow" />
-            <div className="absolute top-1/3 right-1/4 w-80 h-80 bg-violet-500/10 rounded-full blur-[100px] animate-float-medium" />
-            <div className="absolute bottom-1/4 left-1/3 w-72 h-72 bg-blue-500/8 rounded-full blur-[90px] animate-float-fast" />
-            <div className="absolute top-2/3 right-1/3 w-64 h-64 bg-pink-500/8 rounded-full blur-[80px] animate-float-slow" style={{ animationDelay: '2s' }} />
-        </div>
-    );
-};
-
-// ============================
 // Cyber Card / Glow Card
 // ============================
 const CyberCard: React.FC<{ children: React.ReactNode; className?: string; glowColor?: string }> = ({
@@ -352,9 +351,10 @@ const CyberCard: React.FC<{ children: React.ReactNode; className?: string; glowC
     const divRef = useRef<HTMLDivElement>(null);
     const [pos, setPos] = useState({ x: 0, y: 0 });
     const [opacity, setOpacity] = useState(0);
+    const thermalGuard = isThermalGuardActive();
 
     const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!divRef.current) return;
+        if (thermalGuard || !divRef.current) return;
         const rect = divRef.current.getBoundingClientRect();
         setPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     };
@@ -371,27 +371,28 @@ const CyberCard: React.FC<{ children: React.ReactNode; className?: string; glowC
         <div
             ref={divRef}
             onMouseMove={handleMouseMove}
-            onMouseEnter={() => setOpacity(1)}
+            onMouseEnter={() => { if (!thermalGuard) setOpacity(1); }}
             onMouseLeave={() => setOpacity(0)}
-            className={`relative overflow-hidden rounded-2xl border border-white/8 bg-white/3 backdrop-blur-xl ${className}`}
-            style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)' }}
+            className={`relative overflow-hidden rounded-2xl border border-white/10 bg-[#070F20]/70 ${thermalGuard ? '' : 'backdrop-blur-xl'} ${className}`}
         >
-            {/* Spotlight glow */}
-            <div
-                className="pointer-events-none absolute -inset-px transition-opacity duration-300 rounded-2xl"
-                style={{
-                    opacity,
-                    background: `radial-gradient(500px circle at ${pos.x}px ${pos.y}px, ${colorMap[glowColor] || colorMap.cyan}, transparent 40%)`,
-                }}
-            />
-            {/* Border glow */}
-            <div
-                className="pointer-events-none absolute inset-0 rounded-2xl transition-opacity duration-300"
-                style={{
-                    opacity: opacity * 0.5,
-                    boxShadow: `inset 0 0 0 1px ${colorMap[glowColor]?.replace('0.15', '0.5') || 'rgba(6,182,212,0.5)'}`,
-                }}
-            />
+            {!thermalGuard && (
+                <>
+                    <div
+                        className="pointer-events-none absolute -inset-px transition-opacity duration-300 rounded-2xl"
+                        style={{
+                            opacity,
+                            background: `radial-gradient(500px circle at ${pos.x}px ${pos.y}px, ${colorMap[glowColor] || colorMap.cyan}, transparent 40%)`,
+                        }}
+                    />
+                    <div
+                        className="pointer-events-none absolute inset-0 rounded-2xl transition-opacity duration-300"
+                        style={{
+                            opacity: opacity * 0.5,
+                            boxShadow: `inset 0 0 0 1px ${colorMap[glowColor]?.replace('0.15', '0.5') || 'rgba(6,182,212,0.5)'}`,
+                        }}
+                    />
+                </>
+            )}
             <div className="relative h-full z-10">{children}</div>
         </div>
     );
@@ -400,58 +401,86 @@ const CyberCard: React.FC<{ children: React.ReactNode; className?: string; glowC
 // ============================
 // News Ticker
 // ============================
-const LandingPageNewsTicker: React.FC = () => {
+const LandingPageNewsTicker: React.FC<{ onSignUp: () => void }> = ({ onSignUp }) => {
     const [selectedNews, setSelectedNews] = useState<any>(null);
+    const thermalGuard = isThermalGuardActive();
 
     return (
         <>
-            <div className="w-full bg-[#020A1A]/90 border-t border-cyan-500/10 py-2 px-4 overflow-hidden flex items-center relative z-20 backdrop-blur-sm">
-                <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-lg flex-shrink-0 mr-4">
+            <div className={`w-full bg-[#020A1A]/85 border-t border-cyan-500/15 py-2 px-4 overflow-hidden flex items-center relative z-20 ${thermalGuard ? '' : 'backdrop-blur-sm'}`}>
+                <div className="flex items-center gap-2 px-2.5 py-1 bg-rose-500/10 border border-rose-500/25 rounded-lg flex-shrink-0 mr-4">
                     <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
                     </span>
-                    <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider whitespace-nowrap">Breaking News</span>
+                    <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider whitespace-nowrap">Market Wire</span>
                 </div>
                 <div className="flex-1 overflow-hidden relative h-6">
                     <div className="animate-marquee-slow whitespace-nowrap absolute top-0 left-0 flex items-center h-full text-sm text-slate-400" style={{ animationDuration: '120s' }}>
-                        {[...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS].map((news, i) => (
-                            <div
+                        {[...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS].map((news, i) => (
+                            <button
+                                type="button"
                                 key={`${news.id}-${i}`}
-                                className="mx-8 flex flex-shrink-0 items-center cursor-pointer hover:text-cyan-400 transition-colors"
+                                className="mx-7 flex flex-shrink-0 items-center cursor-pointer hover:text-cyan-400 transition-colors"
                                 onClick={() => setSelectedNews(news)}
                             >
-                                <span className="font-bold text-slate-600 text-xs mr-2">[{news.source}]</span>
+                                <span className="font-bold text-slate-500 text-xs mr-2">[{news.source}]</span>
                                 {news.text}
-                            </div>
+                            </button>
                         ))}
                     </div>
                 </div>
             </div>
 
             {selectedNews && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md" onClick={() => setSelectedNews(null)}>
+                <div className={`fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 ${thermalGuard ? '' : 'backdrop-blur-md'}`} onClick={() => setSelectedNews(null)}>
                     <div
-                        className="bg-[#070F20] w-full max-w-md rounded-2xl shadow-2xl border border-cyan-500/20 overflow-hidden"
+                        className="bg-[#070F20] w-full max-w-md rounded-2xl shadow-2xl border border-cyan-500/25 overflow-hidden"
                         onClick={e => e.stopPropagation()}
                     >
-                        <div className="h-1 bg-gradient-to-r from-cyan-500 via-violet-500 to-pink-500" />
+                        <div className="h-1 bg-gradient-to-r from-cyan-500 via-violet-500 to-emerald-400" />
                         <div className="p-6 relative">
-                            <button onClick={() => setSelectedNews(null)} className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors">
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedNews(null)}
+                                aria-label="Close news details"
+                                className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
+                            >
+                                <X className="w-5 h-5" />
                             </button>
                             <div className="flex items-center gap-3 mb-4">
-                                <span className="px-2.5 py-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] font-bold uppercase tracking-wider">{selectedNews.source}</span>
-                                <span className="text-xs text-slate-500 font-mono">{new Date().toLocaleTimeString()}</span>
+                                <span className="px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-bold uppercase tracking-wider">{selectedNews.source}</span>
+                                <span className="text-xs text-slate-500 font-mono">Headline Snapshot</span>
                             </div>
                             <h3 className="text-lg font-bold text-white leading-snug mb-4">{selectedNews.text}</h3>
-                            <div className="p-4 bg-white/3 rounded-xl border border-white/5 mb-4">
-                                <p className="text-sm text-slate-400 leading-relaxed">
-                                    <strong className="block mb-1 text-slate-300 text-xs uppercase tracking-wider">AI Sentiment Analysis</strong>
-                                    Sentiment: <span className={`font-bold capitalize ${selectedNews.sentiment === 'positive' ? 'text-green-400' : selectedNews.sentiment === 'negative' ? 'text-red-400' : 'text-yellow-400'}`}>{selectedNews.sentiment}</span>
+                            <div className="p-4 bg-white/5 rounded-xl border border-white/10 mb-5">
+                                <p className="text-sm text-slate-300 leading-relaxed">
+                                    <strong className="block mb-1 text-slate-400 text-xs uppercase tracking-wider">Sentiment Polarity</strong>
+                                    Classified:{' '}
+                                    <span className={`font-bold capitalize ${selectedNews.sentiment === 'positive' ? 'text-emerald-400' : selectedNews.sentiment === 'negative' ? 'text-rose-400' : 'text-amber-400'}`}>
+                                        {selectedNews.sentiment}
+                                    </span>
                                 </p>
                             </div>
-                            <button onClick={() => setSelectedNews(null)} className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/8 transition-all">Close</button>
+                            <div className="flex gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedNews(null);
+                                        onSignUp();
+                                    }}
+                                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 text-xs font-bold text-white"
+                                >
+                                    Analyze in Terminal
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedNews(null)}
+                                    className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 hover:bg-white/10 transition-all"
+                                >
+                                    Close
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -463,20 +492,30 @@ const LandingPageNewsTicker: React.FC = () => {
 // ============================
 // Market Intelligence Section
 // ============================
-const MarketIntelligenceSection: React.FC = () => {
+const MarketIntelligenceSection: React.FC<{
+    onSelectChartPair: (pairSymbol: string) => void;
+}> = ({ onSelectChartPair }) => {
     const ref = useScrollAnimation();
     const [activeSignal, setActiveSignal] = useState(0);
 
     const signals = [
-        { pair: 'BTC/USDT', signal: 'BULLISH DIV', conf: 88, type: 'long' },
-        { pair: 'SOL/USDT', signal: 'BREAKOUT', conf: 92, type: 'long' },
-        { pair: 'PEPE/USDT', signal: 'VOL SPIKE', conf: 75, type: 'short' },
-        { pair: 'ETH/BTC', signal: 'SUPPORT HIT', conf: 81, type: 'long' },
+        { pair: 'BTC/USDT', tvSymbol: 'BTCUSDT', signal: 'WALL ABSORPTION', conf: 88, type: 'long' },
+        { pair: 'SOL/USDT', tvSymbol: 'SOLUSDT', signal: 'LIQUIDITY SWEEP', conf: 92, type: 'long' },
+        { pair: 'ETH/USDT', tvSymbol: 'ETHUSDT', signal: 'ASK WALL CLUSTER', conf: 79, type: 'short' },
+        { pair: 'BNB/USDT', tvSymbol: 'BNBUSDT', signal: 'SUPPORT RECLAIM', conf: 84, type: 'long' },
+    ];
+
+    const sectorFlow = [
+        { n: 'AI', v: 85, barClass: 'bg-cyan-500/70 border-cyan-400/50', textClass: 'text-cyan-300' },
+        { n: 'DeFi', v: 52, barClass: 'bg-violet-500/70 border-violet-400/50', textClass: 'text-violet-300' },
+        { n: 'L1', v: 64, barClass: 'bg-blue-500/70 border-blue-400/50', textClass: 'text-blue-300' },
+        { n: 'Perps', v: 78, barClass: 'bg-pink-500/70 border-pink-400/50', textClass: 'text-pink-300' },
+        { n: 'Memes', v: 92, barClass: 'bg-emerald-500/70 border-emerald-400/50', textClass: 'text-emerald-300' },
     ];
 
     useEffect(() => {
         const isThermalGuard = isThermalGuardActive();
-        const intervalMs = isThermalGuard ? 5000 : 2000;
+        const intervalMs = isThermalGuard ? 5000 : 2500;
         const timer = setInterval(() => {
             if (isThermalGuard && typeof document !== 'undefined' && document.hidden) return;
             setActiveSignal(prev => (prev + 1) % signals.length);
@@ -485,92 +524,116 @@ const MarketIntelligenceSection: React.FC = () => {
     }, []);
 
     return (
-        <div ref={ref} className="py-24 bg-transparent fade-in-up border-b border-white/5">
+        <div ref={ref} className="py-20 bg-transparent fade-in-up border-b border-white/5">
             <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-                {/* Section header */}
-                <div className="text-center mb-14">
+                <div className="text-center mb-12">
                     <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-bold uppercase tracking-widest mb-4">
                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                        Real-Time Intelligence
+                        Telemetry Preview
                     </div>
                     <h2 className="text-3xl md:text-4xl font-extrabold text-white">
-                        Markets at a{' '}
+                        Liquidity &amp; Sentiment at a{' '}
                         <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-violet-400">Glance</span>
                     </h2>
+                    <p className="text-sm text-slate-400 mt-3 max-w-xl mx-auto">
+                        Sample telemetry snapshot from WallHunter and OrderFlow scanners. Click any pair below to load its chart above.
+                    </p>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Market Mood */}
-                    <CyberCard glowColor="green" className="p-6 group">
+                    {/* Market Sentiment */}
+                    <CyberCard glowColor="green" className="p-6">
                         <div className="flex items-center justify-between mb-6">
                             <div>
-                                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Fear & Greed</p>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Market Regime Index</p>
                                 <h3 className="text-4xl font-extrabold text-white">68</h3>
-                                <p className="text-sm font-semibold text-green-400 mt-0.5">Greed</p>
+                                <p className="text-sm font-semibold text-emerald-400 mt-0.5">Constructive Risk-On</p>
                             </div>
                             <div className="w-16 h-16 relative">
                                 <svg viewBox="0 0 36 36" className="w-16 h-16 -rotate-90">
-                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
-                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="url(#greedGrad)" strokeWidth="3"
-                                        strokeDasharray={`${68 * 0.999} ${100 - 68 * 0.999}`} strokeLinecap="round" />
+                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
+                                    <circle
+                                        cx="18"
+                                        cy="18"
+                                        r="15.9"
+                                        fill="none"
+                                        stroke="url(#greedGrad)"
+                                        strokeWidth="3"
+                                        strokeDasharray={`${68 * 0.999} ${100 - 68 * 0.999}`}
+                                        strokeLinecap="round"
+                                    />
                                     <defs>
                                         <linearGradient id="greedGrad" x1="0%" y1="0%" x2="100%" y2="0%">
                                             <stop offset="0%" stopColor="#10b981" />
-                                            <stop offset="100%" stopColor="#06d654" />
+                                            <stop offset="100%" stopColor="#22d3ee" />
                                         </linearGradient>
                                     </defs>
                                 </svg>
-                                <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-green-400">68%</div>
+                                <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-emerald-400">68%</div>
                             </div>
                         </div>
-                        <div className="grid grid-cols-5 gap-1">
-                            {['Extreme\nFear', 'Fear', 'Neutral', 'Greed', 'Extreme\nGreed'].map((label, i) => (
-                                <div key={i} className={`h-1.5 rounded-full ${i < 3 ? 'bg-white/10' : i === 3 ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]' : 'bg-white/5'}`} />
+                        <div className="grid grid-cols-5 gap-1.5 mb-2">
+                            {[0, 1, 2, 3, 4].map((i) => (
+                                <div key={i} className={`h-1.5 rounded-full ${i < 3 ? 'bg-white/15' : i === 3 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]' : 'bg-white/5'}`} />
                             ))}
+                        </div>
+                        <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                            <span>Fear</span>
+                            <span>Neutral</span>
+                            <span className="text-emerald-400">Greed</span>
                         </div>
                     </CyberCard>
 
-                    {/* AI Signal Stream */}
+                    {/* Clickable Signal Stream */}
                     <CyberCard glowColor="cyan" className="p-6">
-                        <div className="flex justify-between items-center mb-5">
+                        <div className="flex justify-between items-center mb-4">
                             <div>
-                                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-0.5">AI Signal Stream</p>
-                                <p className="text-xs text-slate-600">Updated every 30s</p>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5">WallHunter Alert Stream</p>
+                                <p className="text-[11px] text-slate-500">Click row to inspect chart</p>
                             </div>
-                            <div className="flex items-center gap-1.5 px-2 py-1 bg-green-500/10 rounded-lg border border-green-500/20">
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
                                 <span className="relative flex h-1.5 w-1.5">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
                                 </span>
-                                <span className="text-[10px] text-green-400 font-bold">LIVE</span>
+                                <span className="text-[10px] text-emerald-400 font-bold">PREVIEW</span>
                             </div>
                         </div>
-                        <div className="space-y-2.5">
+                        <div className="space-y-2">
                             {signals.map((sig, idx) => (
-                                <div key={idx} className={`flex items-center justify-between p-3 rounded-xl border transition-all duration-500 ${idx === activeSignal
-                                    ? 'bg-cyan-500/10 border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.1)]'
-                                    : 'bg-white/3 border-white/5 opacity-50'
-                                    }`}>
+                                <button
+                                    key={sig.pair}
+                                    type="button"
+                                    onClick={() => onSelectChartPair(sig.tvSymbol)}
+                                    className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all duration-300 text-left ${idx === activeSignal
+                                        ? 'bg-cyan-500/10 border-cyan-500/35'
+                                        : 'bg-white/[0.03] border-white/5 hover:border-white/20 opacity-80 hover:opacity-100'
+                                        }`}
+                                >
                                     <span className="font-mono font-bold text-sm text-white">{sig.pair}</span>
-                                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg ${sig.type === 'long' ? 'bg-green-500/15 text-green-400 border border-green-500/20' : 'bg-red-500/15 text-red-400 border border-red-500/20'}`}>{sig.signal}</span>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${sig.type === 'long' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/15 text-rose-400 border border-rose-500/20'}`}>
+                                        {sig.signal}
+                                    </span>
                                     <span className="text-xs font-mono font-bold text-cyan-400">{sig.conf}%</span>
-                                </div>
+                                </button>
                             ))}
                         </div>
                     </CyberCard>
 
-                    {/* Sector Flow */}
+                    {/* Touch-friendly Sector Flow */}
                     <CyberCard glowColor="violet" className="p-6 flex flex-col">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6">Sector Flow (24h)</p>
-                        <div className="flex-1 flex items-end gap-3">
-                            {[{ n: 'AI', v: 85, c: 'cyan' }, { n: 'DeFi', v: 45, c: 'violet' }, { n: 'L1', v: 60, c: 'blue' }, { n: 'Game', v: 30, c: 'pink' }, { n: 'Meme', v: 95, c: 'green' }].map((sec) => (
-                                <div key={sec.n} className="flex-1 flex flex-col items-center gap-2 group cursor-pointer">
-                                    <span className="text-xs font-bold text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">{sec.v}%</span>
-                                    <div className="w-full rounded-t-lg overflow-hidden relative" style={{ height: `${Math.max(sec.v * 1.2, 20)}px` }}>
-                                        <div className={`absolute inset-0 opacity-20 ${sec.c === 'cyan' ? 'bg-cyan-500' : sec.c === 'violet' ? 'bg-violet-500' : sec.c === 'blue' ? 'bg-blue-500' : sec.c === 'pink' ? 'bg-pink-500' : 'bg-green-500'}`} />
-                                        <div className={`absolute bottom-0 left-0 right-0 h-0 group-hover:h-full transition-all duration-500 ${sec.c === 'cyan' ? 'bg-cyan-500/40' : sec.c === 'violet' ? 'bg-violet-500/40' : sec.c === 'blue' ? 'bg-blue-500/40' : sec.c === 'pink' ? 'bg-pink-500/40' : 'bg-green-500/40'}`} />
+                        <div className="flex items-center justify-between mb-4">
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Capital Rotation (24h)</p>
+                            <span className="text-[10px] font-mono text-violet-300">Sample Flow</span>
+                        </div>
+                        <div className="flex-1 flex items-end gap-3 pt-2">
+                            {sectorFlow.map((sec) => (
+                                <div key={sec.n} className="flex-1 flex flex-col items-center gap-1.5">
+                                    <span className={`text-[11px] font-mono font-bold ${sec.textClass}`}>{sec.v}%</span>
+                                    <div className="w-full rounded-t-lg overflow-hidden relative bg-white/5 border border-white/10" style={{ height: `${Math.max(sec.v * 1.15, 24)}px` }}>
+                                        <div className={`w-full h-full border-t ${sec.barClass}`} />
                                     </div>
-                                    <span className="text-[10px] font-bold text-slate-500">{sec.n}</span>
+                                    <span className="text-[10px] font-bold text-slate-400">{sec.n}</span>
                                 </div>
                             ))}
                         </div>
@@ -587,24 +650,25 @@ const MarketIntelligenceSection: React.FC = () => {
 const StatsSection: React.FC = () => {
     const ref = useScrollAnimation();
     const stats = [
-        { label: 'Strategies Backtested', value: '2.5M+', icon: '📊', color: 'cyan' },
-        { label: 'Trading Volume Processed', value: '$12B+', icon: '💰', color: 'violet' },
-        { label: 'Live Bots Active', value: '15,000+', icon: '🤖', color: 'green' },
-        { label: 'System Uptime', value: '99.99%', icon: '⚡', color: 'blue' },
+        { label: 'Signal Routing Speed', value: '< 15ms', icon: <Zap className="w-6 h-6 text-cyan-400" />, color: 'cyan' },
+        { label: 'Cloud Worker Uptime', value: '99.98%', icon: <ShieldCheck className="w-6 h-6 text-emerald-400" />, color: 'green' },
+        { label: 'Supported Exchanges', value: '6+ Major', icon: <Globe className="w-6 h-6 text-violet-400" />, color: 'violet' },
+        { label: 'Automated Risk Guard', value: '24 / 7', icon: <Activity className="w-6 h-6 text-blue-400" />, color: 'blue' },
     ];
 
     return (
-        <div ref={ref} className="py-24 border-t border-white/5 fade-in-up relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-transparent pointer-events-none" />
-            <div className="container mx-auto px-4 relative z-10">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                    {stats.map((stat, i) => (
-                        <CyberCard key={i} glowColor={stat.color} className="p-8 text-center group">
-                            <div className="text-3xl mb-3">{stat.icon}</div>
-                            <h3 className="text-4xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 mb-2">
+        <div ref={ref} className="py-20 border-t border-white/5 fade-in-up relative overflow-hidden">
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+                    {stats.map((stat) => (
+                        <CyberCard key={stat.label} glowColor={stat.color} className="p-6 sm:p-7 text-center">
+                            <div className="w-11 h-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-3.5">
+                                {stat.icon}
+                            </div>
+                            <h3 className="text-3xl md:text-4xl font-extrabold text-white mb-1.5">
                                 {stat.value}
                             </h3>
-                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{stat.label}</p>
+                            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{stat.label}</p>
                         </CyberCard>
                     ))}
                 </div>
@@ -614,107 +678,139 @@ const StatsSection: React.FC = () => {
 };
 
 // ============================
-// Features Bento Grid
+// Features Bento Grid + Workflow
 // ============================
-const BentoGrid: React.FC = () => {
+const BentoGrid: React.FC<{
+    onNavigate: (view: PublicView) => void;
+    onScrollToDemo: () => void;
+    onSignUp: () => void;
+}> = ({ onNavigate, onScrollToDemo, onSignUp }) => {
     const ref = useScrollAnimation(0.1);
+    const thermalGuard = isThermalGuardActive();
+
+    const workflowSteps = [
+        { step: '01', title: 'Scan or Prompt Strategy', desc: 'Use WallHunter liquidity telemetry or plain English in AI Foundry.' },
+        { step: '02', title: 'Backtest & Calibrate', desc: 'Validate equity curve, drawdown, and Smart Chase stops in Paper mode.' },
+        { step: '03', title: 'Deploy 24/7 Cloud Bots', desc: 'Connect trade-only API keys with automatic daily risk circuit breakers.' },
+    ];
 
     return (
-        <div ref={ref} className="py-32 relative fade-in-up bg-transparent">
+        <div id="platform-workflow" ref={ref} className="py-24 relative fade-in-up bg-transparent scroll-mt-24">
             <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-                <div className="text-center max-w-3xl mx-auto mb-20">
-                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-xs font-bold uppercase tracking-widest mb-6">
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                        Platform Suite
+                <div className="text-center max-w-3xl mx-auto mb-14">
+                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-xs font-bold uppercase tracking-widest mb-5">
+                        <Zap className="w-3.5 h-3.5" />
+                        Platform Architecture
                     </div>
                     <h2 className="text-4xl md:text-5xl font-extrabold text-white leading-tight">
-                        Everything you need to{' '}
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-violet-400 to-pink-400">Build Alpha.</span>
+                        Everything You Need to{' '}
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-violet-400 to-pink-400">Execute With Precision.</span>
                     </h2>
-                    <p className="mt-6 text-lg text-slate-400">
-                        A unified ecosystem replacing fragmented tools. From idea to execution in minutes.
+                    <p className="mt-4 text-base sm:text-lg text-slate-400">
+                        One unified SaaS workspace combining liquidity detection, order-flow heatmaps, AI code synthesis, and automated bracket protection.
                     </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-6 gap-5">
-                    {/* AI Foundry - Large */}
-                    <CyberCard glowColor="cyan" className="md:col-span-4 group min-h-[320px] flex flex-col">
-                        <div className="p-8 pb-0 flex-grow">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-[0_0_20px_rgba(6,182,212,0.4)] group-hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] transition-all group-hover:scale-110 duration-300">
-                                    <AIFoundryIcon />
-                                </div>
-                                <div>
-                                    <h4 className="text-xl font-bold text-white">AI Foundry</h4>
-                                    <p className="text-xs text-cyan-400 font-mono">Natural Language → Code</p>
-                                </div>
+                {/* 3-Step Workflow Strip */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
+                    {workflowSteps.map((w) => (
+                        <div key={w.step} className="rounded-2xl border border-white/10 bg-[#070F20]/75 p-5 flex items-start gap-4">
+                            <span className="text-xs font-mono font-bold text-cyan-300 bg-cyan-500/15 border border-cyan-500/30 px-2.5 py-1 rounded-lg shrink-0">
+                                {w.step}
+                            </span>
+                            <div>
+                                <h3 className="text-sm font-bold text-white mb-1">{w.title}</h3>
+                                <p className="text-xs text-slate-400 leading-relaxed">{w.desc}</p>
                             </div>
-                            <p className="text-slate-400 max-w-md text-sm leading-relaxed">
-                                Convert natural language into production-grade Python. Describe your strategy and our fine-tuned LLM builds the logic automatically.
+                        </div>
+                    ))}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-5">
+                    {/* WallHunter & OrderFlow Heatmap - Large */}
+                    <CyberCard glowColor="cyan" className="md:col-span-4 group min-h-[320px] flex flex-col">
+                        <div className="p-7 pb-0 flex-grow">
+                            <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-[0_0_20px_rgba(6,182,212,0.35)]">
+                                        <Radar className="w-6 h-6" />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xl font-bold text-white">WallHunter &amp; OrderFlow Heatmap</h4>
+                                        <p className="text-xs text-cyan-400 font-mono">Institutional Depth &amp; Liquidity Radar</p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => onNavigate('Services')}
+                                    className="text-xs font-semibold px-3.5 py-1.5 rounded-xl border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10 transition-colors inline-flex items-center gap-1"
+                                >
+                                    Explore Suite <ArrowRight className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                            <p className="text-slate-400 max-w-xl text-sm leading-relaxed">
+                                Pinpoint heavy bid/ask resting walls, spoofing shifts, and liquidation clusters overlaid directly with live price flow before entering a position.
                             </p>
                         </div>
-                        {/* Code preview */}
-                        <div className="relative h-44 mt-6 border-t border-white/5 bg-black/30 rounded-b-2xl overflow-hidden">
-                            <div className="absolute top-4 left-6 right-6 bottom-0 bg-[#0D1117] rounded-t-xl shadow-2xl p-4 border border-white/8 transform translate-y-3 group-hover:translate-y-0 transition-transform duration-500">
-                                <div className="flex gap-2 mb-3">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
-                                    <div className="w-2.5 h-2.5 rounded-full bg-yellow-500" />
-                                    <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
-                                    <span className="ml-2 text-[10px] text-slate-500 font-mono">strategy.py</span>
+                        <div className="relative mt-6 border-t border-white/10 bg-[#0D1117]/90 p-5">
+                            <div className="grid grid-cols-3 gap-3 text-xs font-mono">
+                                <div className="rounded-xl bg-rose-500/10 border border-rose-500/25 p-3">
+                                    <span className="text-[10px] text-rose-300 block uppercase">Ask Wall Cluster</span>
+                                    <span className="text-sm font-bold text-white">$98,450</span>
+                                    <span className="text-[10px] text-rose-400 block mt-0.5">$4.8M Resting</span>
                                 </div>
-                                <div className="font-mono text-xs leading-5">
-                                    <span className="text-violet-400">def</span> <span className="text-yellow-300">on_tick</span><span className="text-slate-300">(self, data):</span><br />
-                                    &nbsp;&nbsp;<span className="text-slate-500"># AI Generated Logic ✨</span><br />
-                                    &nbsp;&nbsp;<span className="text-violet-400">if</span> <span className="text-slate-300">data.rsi &lt; </span><span className="text-green-400">30</span><span className="text-slate-300">:</span><br />
-                                    &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-slate-300">self.</span><span className="text-cyan-400">buy</span><span className="text-slate-300">(size=</span><span className="text-green-400">0.1</span><span className="text-slate-300">)</span>
+                                <div className="rounded-xl bg-cyan-500/10 border border-cyan-500/25 p-3">
+                                    <span className="text-[10px] text-cyan-300 block uppercase">Sweep Trigger</span>
+                                    <span className="text-sm font-bold text-white">Smart Chase</span>
+                                    <span className="text-[10px] text-cyan-400 block mt-0.5">Auto-Bracket Ready</span>
+                                </div>
+                                <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/25 p-3">
+                                    <span className="text-[10px] text-emerald-300 block uppercase">Bid Defense</span>
+                                    <span className="text-sm font-bold text-white">$96,920</span>
+                                    <span className="text-[10px] text-emerald-400 block mt-0.5">$6.2M Absorbed</span>
                                 </div>
                             </div>
                         </div>
                     </CyberCard>
 
-                    {/* Bot Lab - Tall */}
+                    {/* Bot Lab & Smart Chase */}
                     <CyberCard glowColor="green" className="md:col-span-2 group min-h-[320px] flex flex-col">
-                        <div className="p-8">
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white mb-5 shadow-[0_0_20px_rgba(34,197,94,0.4)] group-hover:scale-110 transition-transform duration-300">
+                        <div className="p-7 flex-grow flex flex-col">
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white mb-5 shadow-[0_0_20px_rgba(34,197,94,0.35)]">
                                 <BotLabIcon />
                             </div>
-                            <h4 className="text-xl font-bold text-white mb-2">Bot Lab</h4>
-                            <p className="text-xs text-green-400 font-mono mb-3">Cloud Deployment</p>
-                            <p className="text-slate-400 text-sm leading-relaxed">
-                                Deploy strategies to the cloud with 99.9% uptime. Monitor active PnL from a single glass dashboard.
+                            <h4 className="text-xl font-bold text-white mb-1.5">Bot Lab &amp; Smart Chase SL</h4>
+                            <p className="text-xs text-emerald-400 font-mono mb-3">Cloud Execution &amp; Protection</p>
+                            <p className="text-slate-400 text-sm leading-relaxed mb-5">
+                                Deploy Paper or Live bots 24/7 with trailing Smart Chase stop-losses, split TPs, and automatic breakeven shifts.
                             </p>
-                        </div>
-                        <div className="flex-grow relative overflow-hidden flex items-center justify-center pb-6">
-                            {/* Animated radial bot network */}
-                            <div className="relative w-36 h-36">
-                                <div className="absolute top-1/2 left-1/2 w-5 h-5 bg-green-500 rounded-full -translate-x-1/2 -translate-y-1/2 z-10 shadow-[0_0_20px_rgba(34,197,94,0.8)] animate-pulse" />
-                                {[0, 60, 120, 180, 240, 300].map((deg, i) => (
-                                    <div key={i} className="absolute top-1/2 left-1/2 w-[68px] h-px bg-gradient-to-r from-green-500/60 to-transparent origin-left" style={{ transform: `rotate(${deg}deg)` }}>
-                                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-slate-800 border border-green-500/50 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                                    </div>
-                                ))}
-                                {/* Rotating ring */}
-                                <div className={`absolute inset-0 rounded-full border border-green-500/20 ${isThermalGuardActive() ? '' : 'animate-spin'}`} style={isThermalGuardActive() ? undefined : { animationDuration: '8s' }} />
-                                <div className={`absolute inset-4 rounded-full border border-cyan-500/10 ${isThermalGuardActive() ? '' : 'animate-spin'}`} style={isThermalGuardActive() ? undefined : { animationDuration: '5s', animationDirection: 'reverse' }} />
+                            <div className="mt-auto relative flex items-center justify-center py-2">
+                                <div className="relative w-28 h-28">
+                                    <div className="absolute top-1/2 left-1/2 w-4 h-4 bg-emerald-500 rounded-full -translate-x-1/2 -translate-y-1/2 z-10 shadow-[0_0_16px_rgba(34,197,94,0.8)]" />
+                                    {[0, 60, 120, 180, 240, 300].map((deg, i) => (
+                                        <div key={i} className="absolute top-1/2 left-1/2 w-[52px] h-px bg-gradient-to-r from-emerald-500/60 to-transparent origin-left" style={{ transform: `rotate(${deg}deg)` }}>
+                                            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-slate-800 border border-emerald-400/60" />
+                                        </div>
+                                    ))}
+                                    <div className={`absolute inset-0 rounded-full border border-emerald-500/25 ${thermalGuard ? '' : 'animate-spin'}`} style={thermalGuard ? undefined : { animationDuration: '9s' }} />
+                                </div>
                             </div>
                         </div>
                     </CyberCard>
 
-                    {/* Backtester - Tall */}
-                    <CyberCard glowColor="blue" className="md:col-span-2 group min-h-[320px] flex flex-col">
-                        <div className="p-8">
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white mb-5 shadow-[0_0_20px_rgba(59,130,246,0.4)] group-hover:scale-110 transition-transform duration-300">
+                    {/* Backtester */}
+                    <CyberCard glowColor="blue" className="md:col-span-2 group min-h-[290px] flex flex-col">
+                        <div className="p-7">
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white mb-5 shadow-[0_0_20px_rgba(59,130,246,0.35)]">
                                 <BacktesterIcon />
                             </div>
-                            <h4 className="text-xl font-bold text-white mb-2">Backtesting</h4>
-                            <p className="text-xs text-blue-400 font-mono mb-3">Historical Analysis</p>
+                            <h4 className="text-xl font-bold text-white mb-1.5">Parallel Backtesting</h4>
+                            <p className="text-xs text-blue-400 font-mono mb-3">Historical Validation</p>
                             <p className="text-slate-400 text-sm leading-relaxed">
-                                Validate logic against TBs of historical data. Visualize equity curves and max drawdown instantly.
+                                Validate entry logic, Sharpe ratio, and max drawdown across multi-year feeds before going live.
                             </p>
                         </div>
-                        {/* Equity curve */}
-                        <div className="mt-auto h-28 w-full relative overflow-hidden">
-                            <div className="absolute inset-0 bg-gradient-to-t from-blue-500/10 to-transparent" />
+                        <div className="mt-auto h-24 w-full relative overflow-hidden">
                             <svg className="absolute bottom-0 left-0 right-0 w-full h-24" preserveAspectRatio="none" viewBox="0 0 200 60">
                                 <defs>
                                     <linearGradient id="chartGrad" x1="0" y1="0" x2="1" y2="0">
@@ -722,51 +818,53 @@ const BentoGrid: React.FC = () => {
                                         <stop offset="100%" stopColor="#06b6d4" />
                                     </linearGradient>
                                 </defs>
-                                <path d="M0 55 Q 30 50, 50 40 T 90 20 T 130 25 T 180 8 L200 5" fill="none" stroke="url(#chartGrad)" strokeWidth="2.5" className="drop-shadow-md" />
-                                <path d="M0 60 L0 55 Q 30 50, 50 40 T 90 20 T 130 25 T 180 8 L200 5 V60 H0 Z" fill="url(#chartGrad)" fillOpacity="0.15" />
+                                <path d="M0 55 Q 30 50, 50 40 T 90 20 T 130 25 T 180 8 L200 5" fill="none" stroke="url(#chartGrad)" strokeWidth="2.5" />
+                                <path d="M0 60 L0 55 Q 30 50, 50 40 T 90 20 T 130 25 T 180 8 L200 5 V60 H0 Z" fill="url(#chartGrad)" fillOpacity="0.18" />
                             </svg>
                         </div>
                     </CyberCard>
 
-                    {/* Visual Builder - Wide */}
-                    <CyberCard glowColor="violet" className="md:col-span-4 group min-h-[300px] flex flex-col">
+                    {/* AI Foundry & Visual Strategy Builder */}
+                    <CyberCard glowColor="violet" className="md:col-span-4 group min-h-[290px] flex flex-col">
                         <div className="grid md:grid-cols-2 h-full">
-                            <div className="p-8 flex flex-col justify-center">
-                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center text-white mb-5 shadow-[0_0_20px_rgba(139,92,246,0.4)] group-hover:scale-110 transition-transform duration-300">
+                            <div className="p-7 flex flex-col justify-center">
+                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center text-white mb-5 shadow-[0_0_20px_rgba(139,92,246,0.35)]">
                                     <IdeaIcon className="w-6 h-6" />
                                 </div>
-                                <h4 className="text-xl font-bold text-white mb-2">Visual Strategy Builder</h4>
-                                <p className="text-xs text-violet-400 font-mono mb-3">No-Code Editor</p>
+                                <h4 className="text-xl font-bold text-white mb-1.5">AI Foundry &amp; Visual Builder</h4>
+                                <p className="text-xs text-violet-400 font-mono mb-3">Natural Language + Node Logic</p>
                                 <p className="text-slate-400 text-sm leading-relaxed mb-5">
-                                    No code? No problem. Drag, drop, and connect indicators, triggers, and actions. Logic visualization made simple.
+                                    Turn plain-English trading rules or drag-and-drop indicator blocks into clean, backtest-ready strategies in seconds.
                                 </p>
-                                <div>
-                                    <button className="text-xs font-semibold px-4 py-2 rounded-xl border border-violet-500/30 text-violet-400 hover:bg-violet-500/10 transition-all">
-                                        Try Builder Demo →
+                                <div className="flex flex-wrap gap-2.5">
+                                    <button
+                                        type="button"
+                                        onClick={onScrollToDemo}
+                                        className="text-xs font-semibold px-4 py-2 rounded-xl bg-violet-500/20 border border-violet-500/40 text-violet-200 hover:bg-violet-500/30 transition-all inline-flex items-center gap-1.5"
+                                    >
+                                        Try Interactive Demo <ArrowRight className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={onSignUp}
+                                        className="text-xs font-semibold px-4 py-2 rounded-xl border border-white/15 text-slate-300 hover:border-cyan-400/50 hover:text-white transition-all"
+                                    >
+                                        Open Workspace
                                     </button>
                                 </div>
                             </div>
-                            <div className="relative min-h-[200px] border-l border-white/5 overflow-hidden flex items-center justify-center p-6">
-                                <div className="relative w-full max-w-xs group-hover:scale-105 transform transition-transform duration-500">
-                                    {/* Node graph */}
-                                    <div className="absolute top-0 left-8 w-28 h-10 rounded-xl bg-blue-500/10 backdrop-blur border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.2)] flex items-center justify-center text-[10px] font-mono text-blue-400">
-                                        📥 Data Input
-                                    </div>
-                                    <svg className="absolute top-10 left-20 w-1 h-10" overflow="visible">
-                                        <path d="M0 0 V 40" stroke="rgba(100,116,139,0.5)" strokeWidth="1.5" strokeDasharray="3 3" />
-                                    </svg>
-                                    <div className="absolute top-20 left-2 w-32 h-11 rounded-xl bg-yellow-500/10 backdrop-blur border border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.15)] flex flex-col items-center justify-center p-2">
-                                        <span className="text-[10px] font-mono text-yellow-400">⚡ RSI Condition</span>
-                                        <div className="w-5/6 h-1 bg-slate-700 mt-1.5 rounded-full overflow-hidden">
-                                            <div className="w-2/3 h-full bg-gradient-to-r from-yellow-500 to-orange-500" />
-                                        </div>
-                                    </div>
-                                    <svg className="absolute top-[118px] left-16 w-12 h-12" overflow="visible">
-                                        <path d="M0 0 Q 0 24, 24 24" stroke="rgba(100,116,139,0.5)" strokeWidth="1.5" fill="none" />
-                                    </svg>
-                                    <div className="absolute top-32 left-32 w-28 h-10 rounded-xl bg-green-500/10 backdrop-blur border border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.2)] flex items-center justify-center text-[10px] font-mono text-green-400">
-                                        ✅ Execute Buy
-                                    </div>
+                            <div className="relative min-h-[200px] border-t md:border-t-0 md:border-l border-white/10 p-6 flex flex-col justify-center gap-3 bg-[#0D1117]/60">
+                                <div className="rounded-xl bg-blue-500/10 border border-blue-500/30 px-4 py-2.5 text-xs font-mono text-blue-300 flex items-center justify-between">
+                                    <span>1. Data Trigger</span>
+                                    <span className="text-[10px] text-blue-400">1H / 15M Feed</span>
+                                </div>
+                                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-2.5 text-xs font-mono text-amber-300 flex items-center justify-between">
+                                    <span>2. Filter Logic</span>
+                                    <span className="text-[10px] text-amber-400">RSI + Wall Cluster</span>
+                                </div>
+                                <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-2.5 text-xs font-mono text-emerald-300 flex items-center justify-between">
+                                    <span>3. Smart Execution</span>
+                                    <span className="text-[10px] text-emerald-400">Chase SL + Split TP</span>
                                 </div>
                             </div>
                         </div>
@@ -778,14 +876,140 @@ const BentoGrid: React.FC = () => {
 };
 
 // ============================
-// AI Strategy Generator
+// Working Interactive AI Strategy Synthesizer
 // ============================
-const AIStrategyGenerator: React.FC = () => {
+interface StrategyPreset {
+    id: string;
+    label: string;
+    prompt: string;
+    metrics: { winRate: string; profitFactor: string; maxDrawdown: string };
+    code: string;
+}
+
+const STRATEGY_PRESETS: StrategyPreset[] = [
+    {
+        id: 'wallhunter',
+        label: 'WallHunter Liquidity Sweep',
+        prompt: 'Enter long on BTC/USDT when a bid liquidity sweep absorbs sell pressure below VWAP, with Smart Chase SL and 2R split TP.',
+        metrics: { winRate: '64.2%', profitFactor: '2.18', maxDrawdown: '-6.4%' },
+        code: `class WallHunterLiquiditySweep(CosmoStrategy):
+    symbol = "BTC/USDT"
+    timeframe = "15m"
+    chase_sl_atr = 1.25
+
+    def on_bar(self, bar, orderbook):
+        sweep = orderbook.detect_liquidity_sweep(side="bid", min_usd=1_500_000)
+        reclaim = bar.close > self.vwap(bar)
+        if sweep and reclaim and not self.position:
+            stop_price = bar.low - (1.25 * self.atr(14))
+            self.enter_long(size_pct=2.0, stop_loss=stop_price, smart_chase=True)
+            self.set_split_tp(tp1_rr=1.5, tp2_rr=2.5, move_sl_be_on_tp1=True)`,
+    },
+    {
+        id: 'rsi',
+        label: 'RSI Mean Reversion',
+        prompt: 'Buy BTC when RSI(14) crosses below 30 inside lower Bollinger Band and exit near RSI 65.',
+        metrics: { winRate: '61.5%', profitFactor: '1.94', maxDrawdown: '-7.8%' },
+        code: `class RsiBollingerReversion(CosmoStrategy):
+    symbol = "BTC/USDT"
+    timeframe = "1h"
+
+    def on_bar(self, bar):
+        rsi = self.rsi(bar.close, period=14)
+        upper, mid, lower = self.bollinger(bar.close, period=20, std=2.0)
+        if rsi < 30 and bar.close <= lower and not self.position:
+            self.enter_long(size_pct=1.5, smart_chase=True)
+        elif self.position and (rsi > 65 or bar.close >= upper):
+            self.close_position()`,
+    },
+    {
+        id: 'ema_vol',
+        label: 'EMA + Volume Breakout',
+        prompt: 'Long ETH/USDT when EMA(21) crosses above EMA(55) with 1.8x average volume confirmation.',
+        metrics: { winRate: '57.8%', profitFactor: '2.06', maxDrawdown: '-8.2%' },
+        code: `class EmaVolumeBreakout(CosmoStrategy):
+    symbol = "ETH/USDT"
+    timeframe = "4h"
+
+    def on_bar(self, bar):
+        fast = self.ema(bar.close, 21)
+        slow = self.ema(bar.close, 55)
+        vol_spike = bar.volume > (1.8 * self.sma(self.volume_series, 20))
+        if self.crossed_above(fast, slow) and vol_spike:
+            self.enter_long(size_pct=2.0, trailing_stop_pct=1.8, smart_chase=True)
+        elif self.crossed_below(fast, slow):
+            self.close_position()`,
+    },
+    {
+        id: 'bb_squeeze',
+        label: 'Bollinger Volatility Squeeze',
+        prompt: 'Trade SOL/USDT breakout after Bollinger Band width compresses below 20-day low with MACD alignment.',
+        metrics: { winRate: '59.1%', profitFactor: '2.31', maxDrawdown: '-9.1%' },
+        code: `class BollingerSqueezeBreakout(CosmoStrategy):
+    symbol = "SOL/USDT"
+    timeframe = "1h"
+
+    def on_bar(self, bar):
+        upper, mid, lower = self.bollinger(bar.close, 20, 2.0)
+        in_squeeze = (upper - lower) / mid < self.percentile_band_width(20, 15)
+        macd_hist = self.macd(bar.close).hist
+        if in_squeeze and bar.close > upper and macd_hist > 0:
+            self.enter_long(size_pct=1.5, stop_loss=mid, smart_chase=True)`,
+    },
+];
+
+const synthesizeStrategyFromPrompt = (rawPrompt: string): StrategyPreset => {
+    const p = rawPrompt.toLowerCase();
+    if (p.includes('wall') || p.includes('sweep') || p.includes('liquidity') || p.includes('heatmap')) {
+        return STRATEGY_PRESETS[0];
+    }
+    if (p.includes('squeeze') || p.includes('macd')) {
+        return STRATEGY_PRESETS[3];
+    }
+    if (p.includes('ema') || p.includes('cross') || p.includes('volume') || p.includes('breakout')) {
+        return STRATEGY_PRESETS[2];
+    }
+
+    const pairMatch = rawPrompt.toUpperCase().match(/\b(BTC|ETH|SOL|BNB|XRP|DOGE|AVAX|ARB)\b/);
+    const pair = pairMatch ? `${pairMatch[1]}/USDT` : 'BTC/USDT';
+    const tfMatch = rawPrompt.match(/\b(1m|5m|15m|30m|1h|4h|1d)\b/i);
+    const timeframe = tfMatch ? tfMatch[1].toLowerCase() : '1h';
+    const rsiThresholdMatch = rawPrompt.match(/(?:below|under|<)\s*(\d{2})/i);
+    const rsiExitMatch = rawPrompt.match(/(?:above|over|>)\s*(\d{2})/i);
+    const rsiLow = rsiThresholdMatch ? rsiThresholdMatch[1] : '30';
+    const rsiHigh = rsiExitMatch ? rsiExitMatch[1] : '70';
+
+    return {
+        id: 'custom',
+        label: 'Synthesized Custom Rule',
+        prompt: rawPrompt,
+        metrics: { winRate: '60.8%', profitFactor: '1.97', maxDrawdown: '-7.5%' },
+        code: `class CustomSynthesizedStrategy(CosmoStrategy):
+    symbol = "${pair}"
+    timeframe = "${timeframe}"
+    use_smart_chase_sl = True
+
+    def on_bar(self, bar):
+        # Compiled from natural-language rule
+        rsi = self.rsi(bar.close, period=14)
+        ema_trend = self.ema(bar.close, period=50)
+
+        if rsi < ${rsiLow} and bar.close >= ema_trend * 0.985 and not self.position:
+            self.enter_long(size_pct=1.5, smart_chase=True)
+            self.set_split_tp(tp1_rr=1.5, tp2_rr=2.5, move_sl_be_on_tp1=True)
+        elif self.position and rsi > ${rsiHigh}:
+            self.close_position()`,
+    };
+};
+
+const AIStrategyGenerator: React.FC<{ onSignUp: () => void }> = ({ onSignUp }) => {
     const { showToast } = useToast();
-    const ref = useScrollAnimation(0.2);
-    const [prompt, setPrompt] = useState('Buy BTC when RSI(14) crosses below 30 and sell when it crosses above 70.');
-    const [generatedCode, setGeneratedCode] = useState('');
+    const ref = useScrollAnimation(0.15);
+    const [prompt, setPrompt] = useState(STRATEGY_PRESETS[0].prompt);
+    const [activeResult, setActiveResult] = useState<StrategyPreset>(STRATEGY_PRESETS[0]);
     const [isLoading, setIsLoading] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const thermalGuard = isThermalGuardActive();
 
     const highlightSyntax = (code: string) => {
         const pythonKeywords = ['def', 'return', 'import', 'from', 'class', 'if', 'else', 'elif', 'for', 'while', 'in', 'and', 'or', 'not', 'is', 'None', 'True', 'False'];
@@ -798,101 +1022,146 @@ const AIStrategyGenerator: React.FC = () => {
             .replace(/([a-zA-Z_]\w*)\s*(?=\()/g, '<span class="token-function">$1</span>');
     };
 
-    const handleGenerate = async () => {
-        if (!prompt.trim()) { showToast('Please enter a description.', 'error'); return; }
-        setIsLoading(true); setGeneratedCode('');
-        try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: { systemInstruction: "You are an expert trading algorithm developer. Generate concise Python pseudocode using backtrader style. No markdown blocks.", maxOutputTokens: 300 }
-            });
-            setGeneratedCode(response.text);
-        } catch (error) {
-            console.error(error);
-            setGeneratedCode("# Error generating code. Please try again.");
-        } finally {
-            setIsLoading(false);
+    const runSynthesis = (inputPrompt: string) => {
+        if (!inputPrompt.trim()) {
+            showToast('Please enter a strategy rule or select a preset.', 'error');
+            return;
         }
+        setIsLoading(true);
+        window.setTimeout(() => {
+            setActiveResult(synthesizeStrategyFromPrompt(inputPrompt));
+            setIsLoading(false);
+        }, 280);
+    };
+
+    const handlePresetClick = (preset: StrategyPreset) => {
+        setPrompt(preset.prompt);
+        setIsLoading(true);
+        window.setTimeout(() => {
+            setActiveResult(preset);
+            setIsLoading(false);
+        }, 200);
+    };
+
+    const handleCopy = () => {
+        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+            navigator.clipboard.writeText(activeResult.code).catch(() => {});
+        }
+        setCopied(true);
+        showToast('Strategy Python blueprint copied.', 'success');
+        window.setTimeout(() => setCopied(false), 1800);
     };
 
     return (
-        <div ref={ref} className="py-28 bg-transparent fade-in-up relative overflow-hidden">
-            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiMwNmI2ZDQiIGZpbGwtb3BhY2l0eT0iMC4wMiI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIvPjxwYXRoIGQ9Ik0wIDBMMCAxIDE5IDEgMTkgMCIvPjwvZz48L2c+PC9zdmc+')] opacity-30" />
+        <div id="ai-strategy-demo" ref={ref} className="py-24 bg-transparent fade-in-up relative overflow-hidden scroll-mt-24">
             <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-                <div className="grid lg:grid-cols-2 gap-16 items-center">
-                    {/* Terminal */}
+                <div className="grid lg:grid-cols-2 gap-12 items-center">
+                    {/* Terminal Preview */}
                     <div className="order-2 lg:order-1">
                         <CyberCard glowColor="cyan" className="overflow-hidden">
-                            <div className="bg-[#0D1117] px-4 py-3 flex items-center gap-3 border-b border-white/5">
+                            <div className="bg-[#0D1117] px-4 py-3 flex items-center gap-3 border-b border-white/10">
                                 <div className="flex gap-1.5">
-                                    <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                                    <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-                                    <div className="w-3 h-3 rounded-full bg-green-500/80" />
+                                    <div className="w-3 h-3 rounded-full bg-rose-500/80" />
+                                    <div className="w-3 h-3 rounded-full bg-amber-500/80" />
+                                    <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
                                 </div>
                                 <div className="flex items-center gap-2 ml-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
-                                    <span className="text-xs text-slate-400 font-mono">strategy_gen.py</span>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                                    <span className="text-xs text-slate-300 font-mono">ai_foundry_blueprint.py</span>
                                 </div>
-                                <div className="ml-auto flex items-center gap-1.5 text-[10px] text-slate-500 font-mono">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-500" /> gemini-2.5-flash
-                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleCopy}
+                                    className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[11px] font-mono text-slate-300 hover:text-white hover:border-cyan-400/40 transition-colors"
+                                >
+                                    {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                    {copied ? 'Copied' : 'Copy'}
+                                </button>
                             </div>
-                            <div className="p-6 h-[380px] overflow-y-auto font-mono text-sm bg-[#0D1117]">
+
+                            <div className="p-5 sm:p-6 min-h-[290px] max-h-[340px] overflow-y-auto font-mono text-xs sm:text-sm bg-[#0D1117]">
                                 {isLoading ? (
-                                    <div className="flex flex-col items-center justify-center h-full gap-4">
-                                        <div className="relative w-12 h-12">
-                                            <div className="absolute inset-0 border-2 border-cyan-500/30 rounded-full" />
-                                            <div className="absolute inset-0 border-2 border-transparent border-t-cyan-500 rounded-full animate-spin" />
+                                    <div className="flex flex-col items-center justify-center h-[240px] gap-3">
+                                        <div className="relative w-10 h-10">
+                                            <div className="absolute inset-0 border-2 border-cyan-500/25 rounded-full" />
+                                            <div className="absolute inset-0 border-2 border-transparent border-t-cyan-400 rounded-full animate-spin" />
                                         </div>
-                                        <p className="text-cyan-400 text-sm animate-pulse">Synthesizing Alpha...</p>
+                                        <p className="text-cyan-400 text-xs font-mono">Compiling Strategy Blueprint...</p>
                                     </div>
-                                ) : generatedCode ? (
-                                    <code className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: highlightSyntax(generatedCode) }} />
                                 ) : (
-                                    <div className="text-slate-600">
-                                        <p className="mb-1"><span className="text-cyan-500/60">&gt;&gt;</span> Waiting for input...</p>
-                                        <p><span className="text-cyan-500/60">&gt;&gt;</span> Describe your strategy on the right to generate code.</p>
-                                        <div className="mt-6 flex items-center gap-2">
-                                            <div className="w-2 h-4 bg-cyan-500/80 animate-pulse" />
-                                        </div>
-                                    </div>
+                                    <pre className="whitespace-pre-wrap leading-relaxed">
+                                        <code dangerouslySetInnerHTML={{ __html: highlightSyntax(activeResult.code) }} />
+                                    </pre>
                                 )}
+                            </div>
+
+                            <div className="bg-[#080E1A] px-5 py-3.5 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex items-center gap-4 text-xs font-mono">
+                                    <span className="text-slate-400">Sim Win: <strong className="text-emerald-400">{activeResult.metrics.winRate}</strong></span>
+                                    <span className="text-slate-400">PF: <strong className="text-cyan-400">{activeResult.metrics.profitFactor}</strong></span>
+                                    <span className="text-slate-400">DD: <strong className="text-rose-400">{activeResult.metrics.maxDrawdown}</strong></span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={onSignUp}
+                                    className="text-xs font-bold text-cyan-300 hover:text-white inline-flex items-center gap-1 transition-colors"
+                                >
+                                    Backtest in Workspace <ArrowRight className="w-3.5 h-3.5" />
+                                </button>
                             </div>
                         </CyberCard>
                     </div>
 
-                    {/* Form */}
+                    {/* Interactive Prompt Form */}
                     <div className="order-1 lg:order-2">
-                        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-bold uppercase tracking-widest mb-6">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
-                            Powered by Gemini 2.5 Flash
+                        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs font-bold uppercase tracking-widest mb-5">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            Interactive AI Foundry Preview
                         </div>
-                        <h2 className="text-4xl font-extrabold text-white mb-4 leading-tight">
-                            Talk Trading.{' '}
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-violet-400">Get Code.</span>
+                        <h2 className="text-3xl sm:text-4xl font-extrabold text-white mb-4 leading-tight">
+                            Describe Your Rules.{' '}
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-violet-400">Get Clean Code.</span>
                         </h2>
-                        <p className="text-lg text-slate-400 mb-8 leading-relaxed">
-                            Skip the boilerplate. Describe any technical indicator, entry/exit logic, or risk parameter in plain English — our fine-tuned AI models build the foundation instantly.
+                        <p className="text-base sm:text-lg text-slate-400 mb-6 leading-relaxed">
+                            Test a preset or write your own entry, indicator, and Smart Chase stop-loss logic below — preview the compiled blueprint before signing up.
                         </p>
 
-                        <div className="relative rounded-2xl border border-white/10 bg-white/3 backdrop-blur focus-within:border-cyan-500/40 focus-within:shadow-[0_0_20px_rgba(6,182,212,0.1)] transition-all">
+                        {/* Preset Chips */}
+                        <div className="flex flex-wrap gap-2 mb-4">
+                            {STRATEGY_PRESETS.map((preset) => (
+                                <button
+                                    key={preset.id}
+                                    type="button"
+                                    onClick={() => handlePresetClick(preset)}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                                        activeResult.id === preset.id
+                                            ? 'bg-cyan-500/15 border-cyan-400/50 text-cyan-200'
+                                            : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/25'
+                                    }`}
+                                >
+                                    {preset.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className={`relative rounded-2xl border border-white/15 bg-white/[0.04] ${thermalGuard ? '' : 'backdrop-blur'} focus-within:border-cyan-500/50 transition-all`}>
                             <textarea
                                 value={prompt}
                                 onChange={(e) => setPrompt(e.target.value)}
-                                rows={4}
-                                className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-600 resize-none p-5 pr-4 text-sm leading-relaxed outline-none"
-                                placeholder="E.g., Buy Ethereum when MACD crosses signal line and volume is above 20-day average..."
+                                rows={3}
+                                className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-500 resize-none p-4 sm:p-5 text-sm leading-relaxed outline-none"
+                                placeholder="E.g., Long BTC on 15m when RSI drops below 30 and reclaim VWAP with Smart Chase SL..."
                             />
-                            <div className="flex items-center justify-between px-4 pb-4">
-                                <span className="text-xs text-slate-600">Supports: RSI, MACD, EMA, Bollinger, Volume strategies</span>
+                            <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-4">
+                                <span className="text-xs text-slate-400">Supports: WallHunter, RSI, EMA, MACD, Bollinger, VWAP</span>
                                 <button
-                                    onClick={handleGenerate}
+                                    type="button"
+                                    onClick={() => runSynthesis(prompt)}
                                     disabled={isLoading}
-                                    className="relative overflow-hidden px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white text-sm font-semibold shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105"
+                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white text-sm font-semibold shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all disabled:opacity-50 hover:scale-[1.02]"
                                 >
-                                    {isLoading ? 'Generating...' : '✨ Generate Strategy'}
+                                    <Sparkles className="w-4 h-4" />
+                                    {isLoading ? 'Compiling...' : 'Generate Blueprint'}
                                 </button>
                             </div>
                         </div>
@@ -908,27 +1177,34 @@ const AIStrategyGenerator: React.FC = () => {
 // ============================
 const PartnersSection: React.FC = () => {
     const logos = [
-        { name: "Binance", component: <BinanceLogo className="h-7 w-auto" /> },
-        { name: "Coinbase", component: <CoinbaseLogo className="h-6 w-auto" /> },
-        { name: "Kraken", component: <KrakenLogo className="h-6 w-auto" /> },
-        { name: "Alpaca", component: <AlpacaLogo className="h-6 w-auto" /> },
-        { name: "Bitfinex", component: <BitfinexLogo className="h-6 w-auto" /> },
-        { name: "Interactive", component: <InteractiveBrokersLogo className="h-6 w-auto" /> },
-        { name: "Schwab", component: <CharlesSchwabLogo className="h-7 w-auto" /> },
-        { name: "TD", component: <TdAmeritradeLogo className="h-6 w-auto" /> },
+        { name: 'Binance', component: <BinanceLogo className="h-7 w-auto" /> },
+        { name: 'Coinbase', component: <CoinbaseLogo className="h-6 w-auto" /> },
+        { name: 'Kraken', component: <KrakenLogo className="h-6 w-auto" /> },
+        { name: 'Bybit', component: <span className="text-sm font-extrabold tracking-widest uppercase text-slate-200 font-mono">BYBIT</span> },
+        { name: 'OKX', component: <span className="text-sm font-extrabold tracking-widest uppercase text-slate-200 font-mono">OKX</span> },
+        { name: 'Bitfinex', component: <BitfinexLogo className="h-6 w-auto" /> },
+        { name: 'Alpaca', component: <AlpacaLogo className="h-6 w-auto" /> },
+        { name: 'Interactive Brokers', component: <InteractiveBrokersLogo className="h-6 w-auto" /> },
+        { name: 'Charles Schwab', component: <CharlesSchwabLogo className="h-7 w-auto" /> },
     ];
 
     return (
-        <div className="py-16 bg-transparent border-y border-white/5">
-            <div className="text-center mb-10">
-                <p className="text-xs font-semibold text-slate-600 uppercase tracking-widest">Integrated with leading platforms</p>
+        <div className="py-12 bg-transparent border-y border-white/5">
+            <div className="text-center mb-7">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+                    Built for Leading Crypto &amp; Multi-Asset Venues
+                </p>
             </div>
-            <div className="relative w-full overflow-hidden">
-                <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-[#020610] to-transparent z-10" />
-                <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-[#020610] to-transparent z-10" />
-                <div className="flex animate-marquee-slow whitespace-nowrap">
-                    {[...logos, ...logos, ...logos, ...logos].map((logo, index) => (
-                        <div key={index} className="mx-12 flex flex-shrink-0 items-center justify-center opacity-25 hover:opacity-70 grayscale hover:grayscale-0 transition-all duration-500">
+            <div
+                className="relative w-full overflow-hidden"
+                style={{
+                    WebkitMaskImage: 'linear-gradient(to right, transparent, black 8%, black 92%, transparent)',
+                    maskImage: 'linear-gradient(to right, transparent, black 8%, black 92%, transparent)',
+                }}
+            >
+                <div className="flex animate-marquee-slow whitespace-nowrap items-center">
+                    {[...logos, ...logos, ...logos].map((logo, index) => (
+                        <div key={`${logo.name}-${index}`} className="mx-10 flex flex-shrink-0 items-center justify-center opacity-50 hover:opacity-95 transition-opacity duration-300">
                             {logo.component}
                         </div>
                     ))}
@@ -941,51 +1217,65 @@ const PartnersSection: React.FC = () => {
 // ============================
 // CTA Section
 // ============================
-const CustomServicesSection: React.FC = () => {
+const CustomServicesSection: React.FC<{
+    onOpenBriefing: (topic?: BriefingTopic) => void;
+    onNavigate: (view: PublicView) => void;
+}> = ({ onOpenBriefing, onNavigate }) => {
     const ref = useScrollAnimation();
     return (
-        <div ref={ref} className="py-32 relative overflow-hidden fade-in-up bg-transparent">
-            {/* Grid lines decoration */}
-            <div className="absolute inset-0 opacity-10" style={{
-                backgroundImage: 'linear-gradient(rgba(6,182,212,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.3) 1px, transparent 1px)',
-                backgroundSize: '60px 60px'
-            }} />
+        <div ref={ref} className="py-24 relative overflow-hidden fade-in-up bg-transparent">
+            <div
+                className="absolute inset-0 opacity-10 pointer-events-none"
+                style={{
+                    backgroundImage: 'linear-gradient(rgba(6,182,212,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.3) 1px, transparent 1px)',
+                    backgroundSize: '60px 60px',
+                }}
+            />
 
             <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
                 <div className="max-w-4xl mx-auto text-center">
-                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-bold uppercase tracking-widest mb-8">
+                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs font-bold uppercase tracking-widest mb-7">
                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                        Custom Solutions
+                        CosmoQuantAI Engineering Desk
                     </div>
                     <h2 className="text-4xl md:text-6xl font-extrabold text-white mb-6 leading-tight">
-                        Need a Custom{' '}
+                        Need Dedicated{' '}
                         <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-violet-400 to-pink-400">
-                            Solution?
+                            Quant Infrastructure?
                         </span>
                     </h2>
-                    <p className="text-xl text-slate-400 mb-12 max-w-2xl mx-auto leading-relaxed">
-                        Leverage freelance expertise to design, build, and deploy high-performance trading algorithms tailored specifically to your needs. From HFT bots to complex arbitrage systems.
+                    <p className="text-lg sm:text-xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">
+                        Partner with the CosmoQuantAI engineering team for isolated cloud execution clusters, bespoke strategy adapters, and multi-venue webhook pipelines.
                     </p>
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                        <button className="relative overflow-hidden px-10 py-4 text-lg font-semibold rounded-2xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_50px_rgba(6,182,212,0.6)] transition-all hover:scale-105 group">
-                            <span className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <button
+                            type="button"
+                            onClick={() => onOpenBriefing('custom_algo')}
+                            className="inline-flex items-center justify-center gap-2 px-9 py-4 text-base sm:text-lg font-semibold rounded-2xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_30px_rgba(6,182,212,0.35)] hover:shadow-[0_0_50px_rgba(6,182,212,0.55)] transition-all hover:scale-[1.03]"
+                        >
+                            <Calendar className="w-5 h-5" />
                             Book Consultation
                         </button>
-                        <button className="px-10 py-4 text-lg font-semibold rounded-2xl border border-white/15 text-white hover:border-cyan-500/40 hover:bg-white/5 transition-all hover:scale-105">
-                            View Portfolio
+                        <button
+                            type="button"
+                            onClick={() => onNavigate('Portfolio')}
+                            className="inline-flex items-center justify-center gap-2 px-9 py-4 text-base sm:text-lg font-semibold rounded-2xl border border-white/15 bg-[#070F20]/60 text-white hover:border-cyan-500/45 hover:bg-white/5 transition-all hover:scale-[1.03]"
+                        >
+                            View Case Studies
+                            <ArrowRight className="w-5 h-5" />
                         </button>
                     </div>
 
-                    {/* Trust indicators */}
-                    <div className="mt-16 grid grid-cols-3 gap-6 max-w-lg mx-auto">
+                    {/* Service guarantees */}
+                    <div className="mt-14 grid grid-cols-3 gap-6 max-w-lg mx-auto">
                         {[
-                            { value: '98%', label: 'Client Satisfaction' },
-                            { value: '50+', label: 'Projects Delivered' },
-                            { value: '24h', label: 'Response Time' },
-                        ].map((item, i) => (
-                            <div key={i} className="text-center">
-                                <div className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400">{item.value}</div>
-                                <div className="text-xs text-slate-500 mt-0.5">{item.label}</div>
+                            { value: 'NDA', label: 'IP Confidentiality' },
+                            { value: 'Trade-Only', label: 'Key Isolation' },
+                            { value: '< 24h', label: 'Desk Response' },
+                        ].map((item) => (
+                            <div key={item.label} className="text-center">
+                                <div className="text-xl sm:text-2xl font-extrabold text-white">{item.value}</div>
+                                <div className="text-xs text-slate-400 mt-0.5">{item.label}</div>
                             </div>
                         ))}
                     </div>
@@ -998,14 +1288,34 @@ const CustomServicesSection: React.FC = () => {
 // ============================
 // HOME PAGE
 // ============================
-const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ onLogin, onSignUp }) => {
+const HomePage: React.FC<{
+    onLogin: () => void;
+    onSignUp: () => void;
+    onNavigate: (view: PublicView) => void;
+    onOpenBriefing: (topic?: BriefingTopic) => void;
+    focusedSymbol?: string;
+    focusSectionReq?: { id: string; nonce: number } | null;
+}> = ({ onSignUp, onNavigate, onOpenBriefing, focusedSymbol, focusSectionReq }) => {
     const { theme } = useTheme();
-    const [activeSymbol, setActiveSymbol] = useState('BTCUSDT');
+    const [activeSymbol, setActiveSymbol] = useState(focusedSymbol || 'BTCUSDT');
     const deviceProfile = useDeviceProfile();
     const isPhoneMobileUI = deviceProfile.isPhoneMobileUI;
+    const thermalGuard = isThermalGuardActive();
 
     useEffect(() => {
-        const thermalGuard = isThermalGuardActive();
+        if (focusedSymbol) setActiveSymbol(focusedSymbol);
+    }, [focusedSymbol]);
+
+    useEffect(() => {
+        if (!focusSectionReq?.id) return;
+        const timer = window.setTimeout(() => {
+            const el = document.getElementById(focusSectionReq.id);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 80);
+        return () => window.clearTimeout(timer);
+    }, [focusSectionReq]);
+
+    useEffect(() => {
         const createWidget = () => {
             const container = document.getElementById('homepage_chart');
             if (!container || !window.TradingView) return;
@@ -1028,18 +1338,18 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
                 hotlist: !thermalGuard,
                 calendar: !thermalGuard,
                 save_image: false,
-                studies: ["MASimple@tv-basicstudies", "RSI@tv-basicstudies"]
+                studies: ['MASimple@tv-basicstudies', 'RSI@tv-basicstudies'],
             });
         };
 
         if (!thermalGuard) {
-            const timer = setTimeout(createWidget, 500);
+            const timer = setTimeout(createWidget, 450);
             return () => clearTimeout(timer);
         }
 
         const container = document.getElementById('homepage_chart');
         if (!container || typeof IntersectionObserver === 'undefined') {
-            const timer = setTimeout(createWidget, 500);
+            const timer = setTimeout(createWidget, 450);
             return () => clearTimeout(timer);
         }
 
@@ -1056,120 +1366,152 @@ const HomePage: React.FC<{ onLogin: () => void; onSignUp: () => void; }> = ({ on
         );
         observer.observe(container);
         return () => observer.disconnect();
-    }, [theme, activeSymbol]);
+    }, [theme, activeSymbol, thermalGuard]);
+
+    const scrollToElement = (id: string) => {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
 
     const handleTickerClick = (symbol: string) => {
         setActiveSymbol(`${symbol.toUpperCase()}USDT`);
+        scrollToElement('homepage_chart_card');
     };
 
     return (
         <div className="relative overflow-hidden bg-transparent">
             {/* ========== HERO ========== */}
-            <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-transparent">
-                <div className={`container mx-auto px-4 relative z-10 flex flex-col items-center text-center ${isPhoneMobileUI ? 'pt-14 pb-28' : 'pt-24 pb-32'}`}>
-                    {/* Badge */}
-                    <div className={`inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 ${isPhoneMobileUI ? 'text-[10px] mb-6' : 'text-xs mb-10'} font-bold uppercase tracking-widest animate-fade-in-down shadow-[0_0_20px_rgba(6,182,212,0.1)]`}>
+            <div className="relative min-h-screen flex flex-col justify-between overflow-hidden bg-transparent">
+                <div className={`container mx-auto px-4 relative z-10 flex flex-col items-center text-center ${isPhoneMobileUI ? 'pt-12 pb-10' : 'pt-20 pb-14'}`}>
+                    {/* SaaS Positioning Pill */}
+                    <div className={`inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 ${isPhoneMobileUI ? 'text-[10px] mb-5' : 'text-xs mb-8'} font-bold uppercase tracking-widest animate-fade-in-down`}>
                         <span className="relative flex h-1.5 w-1.5">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400"></span>
                         </span>
-                        Now in Public Beta — Start Free Today
+                        WallHunter • OrderFlow Heatmap • AI Automation
                     </div>
 
                     {/* Headline */}
-                    <h1 className={`${isPhoneMobileUI ? 'text-4xl mb-5' : 'text-5xl md:text-7xl lg:text-8xl mb-8'} font-extrabold tracking-tighter text-white animate-fade-in-down leading-none`} style={{ animationDelay: '0.1s' }}>
+                    <h1 className={`${isPhoneMobileUI ? 'text-4xl mb-5' : 'text-5xl md:text-7xl lg:text-8xl mb-7'} font-extrabold tracking-tighter text-white animate-fade-in-down leading-none`} style={{ animationDelay: '0.1s' }}>
                         Stop Guessing.{' '}
                         <br className="hidden md:block" />
                         <span className="relative">
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-violet-400 to-pink-400">
                                 Start Quantifying.
                             </span>
-                            {/* Underline glow */}
                             <span className="absolute -bottom-2 left-0 right-0 h-px bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent" />
                         </span>
                     </h1>
 
                     {/* Subtitle */}
-                    <p className={`max-w-2xl ${isPhoneMobileUI ? 'text-base mb-7 px-1' : 'text-xl mb-12'} text-slate-400 leading-relaxed animate-fade-in-down`} style={{ animationDelay: '0.2s' }}>
-                        The all-in-one platform for algorithmic trading. Build, backtest, and deploy strategies without managing infrastructure.
+                    <p className={`max-w-2xl ${isPhoneMobileUI ? 'text-base mb-7 px-1' : 'text-xl mb-10'} text-slate-300/90 leading-relaxed animate-fade-in-down`} style={{ animationDelay: '0.2s' }}>
+                        The unified algorithmic trading SaaS. Scan order-book liquidity walls, synthesize strategies with AI Foundry, backtest, and execute 24/7 with Smart Chase risk protection.
                     </p>
 
-                    {/* CTA Buttons */}
+                    {/* Wired CTA Buttons */}
                     <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 animate-fade-in-down mb-6 w-full sm:w-auto items-center" style={{ animationDelay: '0.3s' }}>
                         <button
+                            type="button"
                             onClick={onSignUp}
-                            className={`relative overflow-hidden ${isPhoneMobileUI ? 'w-full max-w-xs px-6 py-3.5 text-base justify-center' : 'px-10 py-4 text-lg'} font-semibold rounded-2xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_50px_rgba(6,182,212,0.6)] transition-all hover:scale-105 group flex items-center`}
+                            className={`relative overflow-hidden ${isPhoneMobileUI ? 'w-full max-w-xs px-6 py-3.5 text-base justify-center' : 'px-9 py-4 text-lg'} font-semibold rounded-2xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_50px_rgba(6,182,212,0.6)] transition-all hover:scale-105 flex items-center gap-2`}
                         >
-                            <span className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            <span className="flex items-center gap-2">
-                                🚀 Get Started for Free
-                            </span>
+                            <span>Start Free Workspace</span>
+                            <ArrowRight className="w-5 h-5" />
                         </button>
                         <button
-                            className={`${isPhoneMobileUI ? 'w-full max-w-xs px-6 py-3.5 text-base justify-center' : 'px-10 py-4 text-lg'} font-semibold rounded-2xl border border-white/15 text-white hover:border-cyan-500/40 hover:bg-white/5 transition-all hover:scale-105 flex items-center gap-2`}
+                            type="button"
+                            onClick={() => scrollToElement('platform-workflow')}
+                            className={`${isPhoneMobileUI ? 'w-full max-w-xs px-6 py-3.5 text-base justify-center' : 'px-9 py-4 text-lg'} font-semibold rounded-2xl border border-white/15 bg-[#070F20]/60 text-white hover:border-cyan-500/45 hover:bg-white/5 transition-all hover:scale-105 flex items-center gap-2`}
                         >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            See How It Works
+                            <PlayCircle className="w-5 h-5 text-cyan-400" />
+                            <span>See How It Works</span>
                         </button>
                     </div>
 
-                    {/* Social proof */}
-                    <div className="flex items-center gap-3 text-xs sm:text-sm text-slate-500 animate-fade-in-down" style={{ animationDelay: '0.4s' }}>
+                    {/* Clean SaaS Trust Strip */}
+                    <div className="flex flex-wrap items-center justify-center gap-3 text-xs sm:text-sm text-slate-400 animate-fade-in-down" style={{ animationDelay: '0.4s' }}>
                         <div className="flex -space-x-2">
-                            {['🧑', '👩', '🧔', '👨', '👩‍'].map((emoji, i) => (
-                                <div key={i} className="w-7 h-7 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600 flex items-center justify-center text-xs">
-                                    {emoji}
+                            {['WH', 'OF', 'SC', 'AI'].map((badge) => (
+                                <div key={badge} className="w-7 h-7 rounded-full bg-[#0D162B] border border-cyan-500/35 flex items-center justify-center text-[10px] font-mono font-bold text-cyan-300">
+                                    {badge}
                                 </div>
                             ))}
                         </div>
-                        <span>Join <span className="text-cyan-400 font-semibold">15,000+</span> traders already using CosmoQuantAI</span>
+                        <span>Paper Trading included • No credit card required • Trade-only API security</span>
                     </div>
 
-                    {/* Chart */}
-                    <div className={`${isPhoneMobileUI ? 'mt-10' : 'mt-20'} w-full max-w-6xl relative animate-fade-in-slide-up`}>
-                        {/* Glow behind chart */}
-                        <div className="absolute -inset-4 bg-cyan-500/5 rounded-3xl blur-2xl" />
-                        <div className="relative rounded-2xl overflow-hidden border border-white/8 shadow-[0_0_60px_rgba(6,182,212,0.1)] bg-[#0D1117]">
-                            {/* Top accent bar */}
+                    {/* Chart Terminal Window */}
+                    <div id="homepage_chart_card" className={`${isPhoneMobileUI ? 'mt-8' : 'mt-14'} w-full max-w-6xl relative animate-fade-in-slide-up scroll-mt-24`}>
+                        {!thermalGuard && (
+                            <div className="absolute -inset-4 bg-cyan-500/5 rounded-3xl blur-2xl pointer-events-none" />
+                        )}
+                        <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-[0_0_60px_rgba(6,182,212,0.12)] bg-[#0D1117]">
                             <div className="h-0.5 bg-gradient-to-r from-cyan-500 via-violet-500 to-pink-500" />
-                            {/* Window chrome */}
-                            <div className="flex items-center gap-2 px-4 py-3 bg-[#0D1117] border-b border-white/5">
-                                <div className="flex gap-1.5">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
-                                    <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/70" />
-                                    <div className="w-2.5 h-2.5 rounded-full bg-green-500/70" />
-                                </div>
-                                <span className="ml-2 text-xs text-slate-500 font-mono truncate">CosmoQuant Terminal — Live Chart</span>
-                                <div className="ml-auto flex items-center gap-1.5 shrink-0">
-                                    <span className="relative flex h-1.5 w-1.5">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
+                            <div className="flex items-center justify-between gap-2 px-4 py-3 bg-[#0D1117] border-b border-white/10">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <div className="flex gap-1.5 shrink-0">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500/75" />
+                                        <div className="w-2.5 h-2.5 rounded-full bg-amber-500/75" />
+                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/75" />
+                                    </div>
+                                    <span className="ml-2 text-xs text-slate-400 font-mono truncate">
+                                        CosmoQuant Terminal — BINANCE:{activeSymbol}
                                     </span>
-                                    <span className="text-[10px] text-green-400 font-mono">LIVE</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <div className="hidden sm:flex items-center gap-1">
+                                        {['BTCUSDT', 'ETHUSDT', 'SOLUSDT'].map((sym) => (
+                                            <button
+                                                key={sym}
+                                                type="button"
+                                                onClick={() => setActiveSymbol(sym)}
+                                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-colors ${
+                                                    activeSymbol === sym
+                                                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/35'
+                                                        : 'text-slate-400 hover:text-white'
+                                                }`}
+                                            >
+                                                {sym.replace('USDT', '')}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="relative flex h-1.5 w-1.5">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                        </span>
+                                        <span className="text-[10px] text-emerald-400 font-mono">LIVE</span>
+                                    </div>
                                 </div>
                             </div>
-                            <div id="homepage_chart" className={`w-full ${isPhoneMobileUI ? 'h-[360px]' : 'h-[500px] md:h-[580px]'}`} />
+                            <div id="homepage_chart" className={`w-full ${isPhoneMobileUI ? 'h-[340px]' : 'h-[480px] md:h-[540px]'}`} />
                         </div>
                     </div>
                 </div>
 
-                {/* Bottom tickers */}
-                <div className="absolute bottom-0 left-0 w-full z-20 flex flex-col">
-                    <div className="border-t border-white/5 bg-[#020610]/90 backdrop-blur-md">
+                {/* Bottom Tickers */}
+                <div className="w-full z-20 flex flex-col mt-4">
+                    <div className={`border-t border-white/10 bg-[#020610]/75 ${thermalGuard ? '' : 'backdrop-blur-md'}`}>
                         <MarketTicker variant="overlay" onCoinClick={handleTickerClick} />
                     </div>
-                    <LandingPageNewsTicker />
+                    <LandingPageNewsTicker onSignUp={onSignUp} />
                 </div>
             </div>
 
             <PartnersSection />
-            <MarketIntelligenceSection />
-            <BentoGrid />
-            <AIStrategyGenerator />
+            <MarketIntelligenceSection onSelectChartPair={handleTickerClick} />
+            <BentoGrid
+                onNavigate={onNavigate}
+                onScrollToDemo={() => scrollToElement('ai-strategy-demo')}
+                onSignUp={onSignUp}
+            />
+            <AIStrategyGenerator onSignUp={onSignUp} />
             <StatsSection />
-            <CustomServicesSection />
+            <CustomServicesSection onOpenBriefing={onOpenBriefing} onNavigate={onNavigate} />
         </div>
     );
 };
 
 export default HomePage;
+

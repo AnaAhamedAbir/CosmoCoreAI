@@ -1668,64 +1668,175 @@ export const TaskManagerIcon = () => (
 
 // Blog Mock Data
 export const MOCK_BLOG_POSTS: BlogPost[] = [
-    { id: '1', title: 'Tutorial: Building Your First RSI Bot with AI Foundry', category: 'Tutorials', excerpt: 'Learn how to go from a simple English prompt to a live trading bot using our powerful AI tools in under 5 minutes.', imageUrl: 'https://via.placeholder.com/400x250', isFeatured: true, author: 'Jane Doe', date: 'June 15, 2024' },
-    { id: '2', title: 'Deep Dive: Predicting Volatility with LSTM Models', category: 'AI & ML', excerpt: 'Explore the theory and practice behind using Long Short-Term Memory networks to forecast market volatility and improve your strategy.', imageUrl: 'https://via.placeholder.com/400x250', isFeatured: true, author: 'John Smith', date: 'June 12, 2024' },
-    { id: '3', title: 'Market Analysis: Is a Crypto Summer Coming?', category: 'Market Analysis', excerpt: 'We analyze key on-chain metrics and macroeconomic indicators to gauge the likelihood of a sustained bull run in the coming months.', imageUrl: 'https://via.placeholder.com/400x250', isFeatured: true, author: 'Alex Johnson', date: 'June 10, 2024' },
-    { id: '4', title: 'Mastering the Golden Cross Strategy', category: 'Strategies', excerpt: 'A comprehensive guide to identifying, backtesting, and deploying the classic Golden Cross trend-following strategy on our platform.', imageUrl: 'https://via.placeholder.com/400x250', isFeatured: false, author: 'Jane Doe', date: 'June 05, 2024' },
-    { id: '5', title: 'Top 5 Risk Management Mistakes to Avoid', category: 'Strategies', excerpt: 'Learn from common pitfalls that plague even experienced traders. Protecting your capital is the first step to consistent profitability.', imageUrl: 'https://via.placeholder.com/400x250', isFeatured: false, author: 'Admin', date: 'May 28, 2024' },
-    { id: '6', title: 'How to Use the Backtester for Portfolio-Level Analysis', category: 'Tutorials', excerpt: 'Go beyond single-asset backtesting. Discover how to simulate strategies across your entire portfolio for a more holistic view.', imageUrl: 'https://via.placeholder.com/400x250', isFeatured: false, author: 'John Smith', date: 'May 22, 2024' },
+    {
+        id: '1',
+        title: 'Deploying a Liquidity-Sweep Bot with WallHunter & AI Foundry',
+        category: 'Tutorials',
+        excerpt: 'Go from natural-language trade rules to backtested execution logic with automated Smart Chase stop protection in under 5 minutes.',
+        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'><defs><linearGradient id='b1' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%23071124'/><stop offset='100%25' stop-color='%230F172A'/></linearGradient></defs><rect width='640' height='360' fill='url(%23b1)'/><path d='M40 270 L140 220 L230 245 L330 140 L430 175 L590 80' fill='none' stroke='%2306B6D4' stroke-width='4'/><circle cx='330' cy='140' r='8' fill='%2322D3EE'/><circle cx='590' cy='80' r='8' fill='%238B5CF6'/><text x='40' y='52' fill='%2338BDF8' font-family='monospace' font-size='16' font-weight='bold'>WALLHUNTER • AI FOUNDRY</text></svg>",
+        isFeatured: true,
+        author: 'CosmoQuant Research',
+        date: 'November 18, 2026',
+        readTime: '6 min read',
+        tags: ['WallHunter', 'AI Foundry', 'Smart Chase SL'],
+        content: [
+            'Retail breakout entries frequently get trapped right above obvious order-book clusters. Using CosmoQuantAI WallHunter alongside AI Foundry lets you encode liquidity-sweep confirmation rules without hand-writing boilerplate exchange connectors.',
+            'First, describe the entry filter in plain English inside AI Foundry: detect sweep wicks into rested ask/bid walls followed by delta absorption on the 5-minute timeframe.',
+            'Next, validate the signal across historical perpetual futures data inside the Parallel Backtester, inspecting maximum drawdown, profit factor, and win-rate stability under 0.05% taker slippage.',
+            'Finally, attach Smart Chase SL and split take-profit rules before promoting the bot to Paper or Live Exchange mode with automated circuit-breaker limits.'
+        ],
+    },
+    {
+        id: '2',
+        title: 'Modeling Short-Term Volatility Regimes Using OrderFlow Heatmaps',
+        category: 'AI & ML',
+        excerpt: 'How combining multi-level orderbook imbalance with adaptive LSTM volatility filters reduces false whipsaw entries during CPI and FOMC sessions.',
+        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'><defs><linearGradient id='b2' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%23090E1E'/><stop offset='100%25' stop-color='%231E1B4B'/></linearGradient></defs><rect width='640' height='360' fill='url(%23b2)'/><rect x='60' y='110' width='520' height='14' rx='4' fill='%2306B6D4' opacity='0.35'/><rect x='60' y='145' width='440' height='14' rx='4' fill='%238B5CF6' opacity='0.5'/><rect x='60' y='180' width='500' height='14' rx='4' fill='%2310B981' opacity='0.4'/><rect x='60' y='215' width='360' height='14' rx='4' fill='%23F43F5E' opacity='0.45'/><text x='60' y='64' fill='%23A78BFA' font-family='monospace' font-size='16' font-weight='bold'>ORDERFLOW • REGIME LSTM</text></svg>",
+        isFeatured: true,
+        author: 'Elena Vance, Quant Strategist',
+        date: 'November 12, 2026',
+        readTime: '8 min read',
+        tags: ['OrderFlow Heatmap', 'LSTM', 'Volatility'],
+        content: [
+            'Single-indicator strategies often fail when market microstructure transitions abruptly from range-bound liquidity harvesting into high-velocity breakout expansion.',
+            'By feeding normalized bid-ask wall density gradients from the OrderFlow Heatmap into a lightweight sequence classifier, bots can automatically widen stop buffers or pause mean-reversion triggers ahead of volatility spikes.',
+            'Inside CosmoQuantAI, regime filters run in real time alongside standard RSI, VWAP, and EMA triggers so execution stays disciplined across changing liquidity conditions.'
+        ],
+    },
+    {
+        id: '3',
+        title: 'Cross-Venue Liquidity Fragmentation in 2026 Perpetual Markets',
+        category: 'Market Analysis',
+        excerpt: 'Comparing order-book depth, funding dispersion, and liquidation cascades across Binance, Bybit, and OKX during peak session overlaps.',
+        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'><defs><linearGradient id='b3' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%2306131F'/><stop offset='100%25' stop-color='%230B2530'/></linearGradient></defs><rect width='640' height='360' fill='url(%23b3)'/><path d='M50 250 C140 245 180 120 290 155 C380 185 450 95 590 70' fill='none' stroke='%2310B981' stroke-width='4'/><text x='50' y='60' fill='%2334D399' font-family='monospace' font-size='16' font-weight='bold'>PERP LIQUIDITY REPORT</text></svg>",
+        isFeatured: true,
+        author: 'Marcus Chen, Execution Eng.',
+        date: 'November 04, 2026',
+        readTime: '5 min read',
+        tags: ['Perpetuals', 'Market Structure', 'Liquidity'],
+        content: [
+            'Perpetual futures liquidity shifts dynamically between major venues depending on funding rate skew and regional session hours.',
+            'Monitoring aggregated orderbook depth alongside real-time whale cluster alerts helps traders anticipate where stop-hunts are most likely to trigger sharp reversals before trend continuation.'
+        ],
+    },
+    {
+        id: '4',
+        title: 'Smart Chase Trailing Stop-Loss vs Fixed Hard Stops',
+        category: 'Strategies',
+        excerpt: 'Benchmarking capital preservation and upside capture using adaptive Smart Chase brackets across high-beta altcoin pairs.',
+        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'><defs><linearGradient id='b4' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%230A0F1D'/><stop offset='100%25' stop-color='%23172554'/></linearGradient></defs><rect width='640' height='360' fill='url(%23b4)'/><polyline points='50,270 170,210 260,235 380,120 470,150 590,75' fill='none' stroke='%2360A5FA' stroke-width='4'/><line x1='50' y1='200' x2='590' y2='115' stroke='%2322D3EE' stroke-dasharray='8 6' stroke-width='2'/><text x='50' y='58' fill='%2393C5FD' font-family='monospace' font-size='16' font-weight='bold'>SMART CHASE EXECUTION</text></svg>",
+        isFeatured: false,
+        author: 'CosmoQuant Research',
+        date: 'October 28, 2026',
+        readTime: '4 min read',
+        tags: ['Risk Management', 'Smart Chase SL'],
+        content: [
+            'Static stop losses frequently get tagged by normal microstructure noise right before a clean directional move plays out.',
+            'With Smart Chase SL and multi-tranche take profits inside CosmoQuantAI, traders can lock in breakeven after TP1 hits and trail structural swings automatically.'
+        ],
+    },
+    {
+        id: '5',
+        title: 'Five Systematic Position-Sizing Rules That Protect Drawdown',
+        category: 'Strategies',
+        excerpt: 'Practical volatility-adjusted sizing, daily loss circuit breakers, and correlation caps every automated trading desk should enforce.',
+        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'><defs><linearGradient id='b5' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%23110B1E'/><stop offset='100%25' stop-color='%231E1B2E'/></linearGradient></defs><rect width='640' height='360' fill='url(%23b5)'/><rect x='70' y='210' width='70' height='80' rx='6' fill='%2306B6D4' opacity='0.5'/><rect x='170' y='170' width='70' height='120' rx='6' fill='%238B5CF6' opacity='0.6'/><rect x='270' y='130' width='70' height='160' rx='6' fill='%2310B981' opacity='0.65'/><rect x='370' y='155' width='70' height='135' rx='6' fill='%2306B6D4' opacity='0.55'/><rect x='470' y='100' width='70' height='190' rx='6' fill='%2334D399' opacity='0.75'/><text x='70' y='58' fill='%23E879F9' font-family='monospace' font-size='16' font-weight='bold'>RISK GUARD TELEMETRY</text></svg>",
+        isFeatured: false,
+        author: 'Marcus Chen, Execution Eng.',
+        date: 'October 19, 2026',
+        readTime: '6 min read',
+        tags: ['Risk Guard', 'Position Sizing'],
+        content: [
+            'Even high-expectancy alpha strategies suffer prolonged drawdown if simultaneous correlated positions breach portfolio risk thresholds.',
+            'Enforcing per-trade risk caps, exchange leverage ceilings, and automatic daily equity drawdown pauses keeps automated bots resilient during black-swan events.'
+        ],
+    },
+    {
+        id: '6',
+        title: 'Portfolio-Level Stress Testing Before Flipping Live Capital',
+        category: 'Tutorials',
+        excerpt: 'Learn how to benchmark multi-pair correlation, slippage sensitivity, and funding fee drag inside the CosmoQuantAI Backtester.',
+        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'><defs><linearGradient id='b6' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%23081226'/><stop offset='100%25' stop-color='%230F172A'/></linearGradient></defs><rect width='640' height='360' fill='url(%23b6)'/><path d='M50 250 Q160 220 260 165 T470 120 L590 70' fill='none' stroke='%2322D3EE' stroke-width='4'/><text x='50' y='58' fill='%2322D3EE' font-family='monospace' font-size='16' font-weight='bold'>PORTFOLIO BACKTESTER</text></svg>",
+        isFeatured: false,
+        author: 'Elena Vance, Quant Strategist',
+        date: 'October 09, 2026',
+        readTime: '5 min read',
+        tags: ['Backtester', 'Portfolio Analysis'],
+        content: [
+            'Single-pair equity curves hide portfolio concentration risk. Running cross-asset backtests with realistic fee and slippage models uncovers hidden drawdown overlaps early.',
+            'Pair paper-trading forward validation with historical regime slices inside CosmoQuantAI before allocating production capital.'
+        ],
+    },
 ];
 
 export const MOCK_STRATEGY_OF_THE_WEEK: StrategyOfTheWeek = {
     id: 'sotw1',
-    title: 'Mean Reversion with Bollinger Bands',
-    description: 'This strategy operates on the principle that prices tend to revert to their mean. It sells when the price hits the upper Bollinger Band and buys when it hits the lower band, making it ideal for ranging markets.',
-    aiPrompt: 'Create a mean-reversion strategy on the 1-hour chart. Sell when price crosses above the upper Bollinger Band (20, 2) and buy when price crosses below the lower band.',
+    title: 'WallHunter Bollinger Mean Reversion',
+    description: 'Combines upper/lower Bollinger Band (20, 2) stretches with order-book exhaustion filters to capture clean mean-reversion swings while Smart Chase protects against trend breakouts.',
+    aiPrompt: 'Create a mean-reversion strategy on the 1-hour chart. Short when price rejects above the upper Bollinger Band (20, 2) near overhead resistance walls, and long on lower band reclaim with Smart Chase SL.',
     results: {
         profit: 34.2,
         drawdown: 8.9,
     },
-    imageUrl: 'https://via.placeholder.com/400x200/1E293B/FFFFFF?text=Chart+Placeholder',
+    imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='320' viewBox='0 0 640 320'><rect width='640' height='320' fill='%230D1117'/><path d='M40 240 L160 190 L280 210 L420 110 L600 70' fill='none' stroke='%2306B6D4' stroke-width='4'/></svg>",
 };
 
 export const MOCK_PORTFOLIO_PROJECTS: PortfolioProject[] = [
     {
         id: 'p1',
-        title: 'AI-Powered Volatility Prediction for Options Trading',
+        title: 'AI-Powered Volatility & Liquidity Regime Engine',
         category: 'Machine Learning',
-        description: 'Developed a custom LSTM model to forecast short-term volatility spikes in the SPX, allowing for more profitable options straddle strategies. The model was trained on historical VIX data, market volume, and macroeconomic indicators.',
-        tags: ['Python', 'TensorFlow', 'Options', 'LSTM'],
+        description: 'Multi-feature LSTM and gradient-boosted volatility forecasting pipeline trained on realized variance, orderbook depth skew, and macro session structure.',
+        tags: ['Python', 'PyTorch', 'OrderFlow', 'LSTM'],
         imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><defs><linearGradient id='g1' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%230F172A'/><stop offset='100%25' stop-color='%231E293B'/></linearGradient></defs><rect width='400' height='250' fill='url(%23g1)'/><path d='M20 180 Q100 120 180 150 T380 70' fill='none' stroke='%2306B6D4' stroke-width='3'/><text x='200' y='215' fill='%2394A3B8' font-family='monospace' font-size='14' text-anchor='middle'>VOLATILITY MODEL</text></svg>",
         metrics: [
-            { label: 'Backtested Sharpe Ratio', value: '2.15' },
+            { label: 'Backtest Sharpe', value: '2.15' },
             { label: 'Profit Factor', value: '3.2' },
             { label: 'Max Drawdown', value: '-12.5%' },
+        ],
+        architecture: 'Streaming WebSocket ingestion -> Feature normalizer -> Regime classifier -> Automated leverage & bracket scaler.',
+        highlights: [
+            'Adaptive stop-buffer expansion ahead of macro volatility events',
+            'Automated regime tagging integrated directly with Paper & Live Bot Lab',
+            'Zero-leakage walk-forward cross-validation pipeline'
         ],
     },
     {
         id: 'p2',
-        title: 'Multi-Exchange Crypto Arbitrage Bot',
-        category: 'High-Frequency Trading',
-        description: 'A high-frequency arbitrage bot built in Rust that connects to Binance, Kraken, and Coinbase via WebSocket APIs to identify and execute on fleeting price discrepancies between exchanges. Includes a robust risk management module.',
-        tags: ['Rust', 'WebSocket', 'Arbitrage', 'Crypto'],
-        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><defs><linearGradient id='g2' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%230F172A'/><stop offset='100%25' stop-color='%231E293B'/></linearGradient></defs><rect width='400' height='250' fill='url(%23g2)'/><path d='M20 140 L120 90 L220 145 L320 65 L380 95' fill='none' stroke='%238B5CF6' stroke-width='3'/><text x='200' y='215' fill='%2394A3B8' font-family='monospace' font-size='14' text-anchor='middle'>ARBITRAGE ENGINE</text></svg>",
+        title: 'Multi-Venue WallHunter & Execution Router',
+        category: 'Low-Latency Execution',
+        description: 'High-throughput WebSocket engine monitoring rested liquidity walls across Binance, Bybit, OKX, and Kraken with deterministic Smart Chase order routing.',
+        tags: ['WebSocket', 'Smart Chase', 'Multi-Venue', 'Crypto'],
+        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><defs><linearGradient id='g2' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%230F172A'/><stop offset='100%25' stop-color='%231E293B'/></linearGradient></defs><rect width='400' height='250' fill='url(%23g2)'/><path d='M20 140 L120 90 L220 145 L320 65 L380 95' fill='none' stroke='%238B5CF6' stroke-width='3'/><text x='200' y='215' fill='%2394A3B8' font-family='monospace' font-size='14' text-anchor='middle'>WALLHUNTER ROUTER</text></svg>",
         metrics: [
-            { label: 'Average Daily Return', value: '0.8%' },
-            { label: 'Execution Latency', value: '< 10ms' },
-            { label: 'Win Rate', value: '85%' },
+            { label: 'Signal Routing', value: '< 15ms' },
+            { label: 'Uptime SLA', value: '99.98%' },
+            { label: 'Win Rate (Sim)', value: '68.4%' },
+        ],
+        architecture: 'Async L2 orderbook snapshot + delta aggregator -> Wall stability scorer -> Smart Chase bracket dispatcher.',
+        highlights: [
+            'Spoofing filter tracking wall persistence and pull frequency',
+            'Synchronized multi-target TP splits with instant breakeven trigger',
+            'Encrypted read/trade-only API key isolation with IP guardrails'
         ],
     },
     {
         id: 'p3',
-        title: 'Regime-Aware Trend Following Strategy for Forex',
+        title: 'Regime-Aware Trend & Hedging Portfolio System',
         category: 'Quantitative Strategy',
-        description: 'A systematic trend-following strategy for major FX pairs (EUR/USD, GBP/USD). It uses a Markov-Switching model to classify the market into different volatility regimes and adjusts EMA crossover parameters accordingly.',
-        tags: ['Python', 'Pandas', 'Forex', 'Market Regimes'],
-        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><defs><linearGradient id='g3' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%230F172A'/><stop offset='100%25' stop-color='%231E293B'/></linearGradient></defs><rect width='400' height='250' fill='url(%23g3)'/><path d='M20 170 C100 170 150 90 240 110 C310 125 340 60 380 50' fill='none' stroke='%2310B981' stroke-width='3'/><text x='200' y='215' fill='%2394A3B8' font-family='monospace' font-size='14' text-anchor='middle'>FX REGIME STRATEGY</text></svg>",
+        description: 'Systematic multi-asset trend-following module classifying trending vs. mean-reverting volatility states to calibrate position sizing and trailing stops.',
+        tags: ['Python', 'Pandas', 'Regimes', 'Risk Guard'],
+        imageUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><defs><linearGradient id='g3' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%230F172A'/><stop offset='100%25' stop-color='%231E293B'/></linearGradient></defs><rect width='400' height='250' fill='url(%23g3)'/><path d='M20 170 C100 170 150 90 240 110 C310 125 340 60 380 50' fill='none' stroke='%2310B981' stroke-width='3'/><text x='200' y='215' fill='%2394A3B8' font-family='monospace' font-size='14' text-anchor='middle'>REGIME STRATEGY</text></svg>",
         metrics: [
-            { label: 'CAGR', value: '18.2%' },
-            { label: 'Sortino Ratio', value: '1.9' },
-            { label: 'Max Drawdown', value: '-15.8%' },
+            { label: 'Sim CAGR', value: '24.6%' },
+            { label: 'Sortino Ratio', value: '1.95' },
+            { label: 'Max Drawdown', value: '-11.4%' },
+        ],
+        architecture: 'Markov regime detector -> Correlation matrix limiter -> ATR-scaled bracket executor.',
+        highlights: [
+            'Automatic exposure throttling during high cross-pair correlation',
+            'Portfolio-wide daily loss kill-switch protection',
+            'Seamless transition from Historical Backtester to Cloud Paper Bot'
         ],
     },
 ];
@@ -1733,21 +1844,21 @@ export const MOCK_PORTFOLIO_PROJECTS: PortfolioProject[] = [
 export const MOCK_CLIENT_TESTIMONIALS: ClientTestimonial[] = [
     {
         id: 't1',
-        quote: "The custom algorithm developed for our fund has become a core part of our alpha generation. The professionalism and deep expertise were evident from day one. Highly recommended.",
+        quote: "WallHunter and OrderFlow Heatmap completely replaced three disconnected browser tabs for our desk. Setting Smart Chase brackets takes seconds.",
         author: "Alex Johnson",
-        role: "Founder, QuantumLeap Capital"
+        role: "Managing Partner, QuantumLeap Desk"
     },
     {
         id: 't2',
-        quote: "Working with them was a game-changer. They took a complex idea for a market-making bot and turned it into a robust, profitable reality. The attention to detail in risk management was particularly impressive.",
+        quote: "Having AI Foundry, portfolio backtesting, and automated cloud risk controls in one terminal cut our strategy iteration time by more than half.",
         author: "Samantha Rivera",
-        role: "Head of Algo Trading, DeFi Ventures"
+        role: "Head of Systematic Trading, Northstar Digital"
     },
     {
         id: 't3',
-        quote: "Not just a coder, but a true quant. They understood the nuances of the market and provided valuable insights that improved upon my initial strategy concept. The final product exceeded all expectations.",
+        quote: "Clean execution telemetry, strict trade-only API security, and reliable paper-to-live promotion. Built for real traders rather than hype.",
         author: "David Chen",
-        role: "Private Fund Manager"
+        role: "Portfolio Strategist"
     }
 ];
 

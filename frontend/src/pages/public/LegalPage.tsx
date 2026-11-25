@@ -1,5 +1,6 @@
 import React from 'react';
 import { Shield, FileText, Cookie, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 export type LegalDocType = 'terms' | 'privacy' | 'cookies' | 'risk';
 
@@ -18,6 +19,7 @@ const DOC_TABS: { id: LegalDocType; label: string; icon: React.ReactNode }[] = [
 
 const LegalPage: React.FC<LegalPageProps> = ({ docType, onSelectDoc, onBack }) => {
     const year = new Date().getFullYear();
+    const thermalGuard = isThermalGuardActive();
 
     return (
         <div className="min-h-screen py-20 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto">
@@ -30,7 +32,7 @@ const LegalPage: React.FC<LegalPageProps> = ({ docType, onSelectDoc, onBack }) =
                 Back to Platform Overview
             </button>
 
-            <div className="bg-[#070F20]/80 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-8">
+            <div className={`bg-[#070F20]/85 ${thermalGuard ? '' : 'backdrop-blur-xl'} border border-white/10 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-8`}>
                 <div>
                     <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1 rounded-full">
                         Compliance & Legal Documentation

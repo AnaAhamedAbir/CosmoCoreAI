@@ -539,6 +539,9 @@ export interface BlogPost {
   isFeatured: boolean;
   author: string;
   date: string;
+  readTime?: string;
+  tags?: string[];
+  content?: string[];
 }
 
 export interface StrategyOfTheWeek {
@@ -561,6 +564,8 @@ export interface PortfolioProject {
   tags: string[];
   imageUrl: string;
   metrics: { label: string; value: string }[];
+  architecture?: string;
+  highlights?: string[];
 }
 
 export interface ClientTestimonial {

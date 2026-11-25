@@ -4,6 +4,7 @@ import Button from '@/components/common/Button';
 import { loginUser, verifyEmailCode, resendVerificationCode } from '@/services/auth';
 import apiClient from '@/services/client';
 import { Logo, GoogleLogo, GithubLogo } from '@/constants';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 interface LoginFormModalProps {
     onClose: () => void;
@@ -24,6 +25,7 @@ const LoginFormModal: React.FC<LoginFormModalProps> = ({ onClose, onLoginSuccess
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const thermalGuard = isThermalGuardActive();
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -104,7 +106,7 @@ const LoginFormModal: React.FC<LoginFormModalProps> = ({ onClose, onLoginSuccess
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 15 }}
                 transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                className="relative w-full max-w-md bg-[#070F20]/80 backdrop-blur-xl rounded-3xl border border-white/10 shadow-[0_0_50px_rgba(6,182,212,0.15)] overflow-hidden"
+                className={`relative w-full max-w-md bg-[#070F20]/90 ${thermalGuard ? '' : 'backdrop-blur-xl'} rounded-3xl border border-white/10 shadow-[0_0_50px_rgba(6,182,212,0.15)] overflow-hidden`}
                 style={{ willChange: 'transform, opacity', transform: 'translateZ(0)' }}
                 onClick={e => e.stopPropagation()}
             >
@@ -116,8 +118,12 @@ const LoginFormModal: React.FC<LoginFormModalProps> = ({ onClose, onLoginSuccess
                         backgroundImage: 'linear-gradient(rgba(6,182,212,0.2) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.2) 1px, transparent 1px)',
                         backgroundSize: '30px 30px'
                     }} />
-                    <div className="absolute -top-32 -left-32 w-80 h-80 bg-cyan-500/10 rounded-full blur-[100px] animate-float-medium" />
-                    <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-violet-600/10 rounded-full blur-[100px] animate-float-slow" />
+                    {!thermalGuard && (
+                        <>
+                            <div className="absolute -top-32 -left-32 w-80 h-80 bg-cyan-500/10 rounded-full blur-[100px] animate-float-medium" />
+                            <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-violet-600/10 rounded-full blur-[100px] animate-float-slow" />
+                        </>
+                    )}
                 </div>
 
                 <button 

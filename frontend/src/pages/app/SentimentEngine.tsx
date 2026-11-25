@@ -88,6 +88,7 @@ const SentimentEngine: React.FC = () => {
         pollStats,
         handleVote,
         influencers,
+        socialDominance,
         sentimentSources,
         filteredSources,
         activeFilter,
@@ -223,6 +224,11 @@ const SentimentEngine: React.FC = () => {
         () => (activePair.includes('/') ? activePair.split('/')[0] : activePair),
         [activePair]
     );
+
+    const latestReferencePrice = useMemo(() => {
+        if (!Array.isArray(chartData) || chartData.length === 0) return 0;
+        return Number(chartData[chartData.length - 1]?.price || 0);
+    }, [chartData]);
 
     return (
         <div className="space-y-4 pb-8">
@@ -898,6 +904,48 @@ const SentimentEngine: React.FC = () => {
 
             {activeWorkspaceTab === 'narratives' && (
                 <div className="space-y-6">
+                    {/* Cross-Asset Social Dominance Mindshare Strip */}
+                    {Array.isArray(socialDominance) && socialDominance.length > 0 && (
+                        <div className="rounded-2xl bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 p-4 shadow-sm">
+                            <div className="flex items-center justify-between mb-2.5">
+                                <span className="text-xs font-mono font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                                    📡 Cross-Asset Social Mindshare Dominance
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-500 dark:text-gray-400">
+                                    Click asset to inspect narrative
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                {socialDominance.map((item: any, idx: number) => {
+                                    const sym = String(item.symbol || item.asset || item.name || '').toUpperCase();
+                                    const share = Number(item.dominance ?? item.share ?? item.value ?? 0);
+                                    if (!sym) return null;
+                                    const pairStr = sym.includes('/') ? sym : `${sym}/USDT`;
+                                    const isCurrent = activePair.toUpperCase() === pairStr;
+                                    return (
+                                        <button
+                                            key={`${sym}-${idx}`}
+                                            type="button"
+                                            onClick={() => setActivePair(pairStr)}
+                                            className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-2 transition-colors cursor-pointer ${
+                                                isCurrent
+                                                    ? 'bg-cyan-500/15 border-cyan-500/45 text-cyan-700 dark:text-cyan-300'
+                                                    : 'bg-slate-50 dark:bg-[#050811] border-slate-200 dark:border-white/10 text-slate-700 dark:text-gray-300 hover:border-cyan-500/30'
+                                            }`}
+                                        >
+                                            <span className="font-black">{sym}</span>
+                                            {share > 0 && (
+                                                <span className="px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 text-[10px]">
+                                                    {share.toFixed(1)}%
+                                                </span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Narrative Mindshare Cloud + Top Emerging Narratives */}
                     <SentimentNarratives
                         narratives={narratives}
@@ -971,7 +1019,11 @@ const SentimentEngine: React.FC = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Left 1 Col: Smart Execution Widget */}
                     <div className="lg:col-span-1">
-                        <SmartExecutionWidget />
+                        <SmartExecutionWidget
+                            symbol={activePair}
+                            referencePrice={latestReferencePrice}
+                            defaultSide={alphaTelemetry.clampedAlpha < 0 ? 'sell' : 'buy'}
+                        />
                     </div>
 
                     {/* Right 2 Cols: Pre-Trade Sentiment Confluence Matrix & Direct Terminal Launchers */}

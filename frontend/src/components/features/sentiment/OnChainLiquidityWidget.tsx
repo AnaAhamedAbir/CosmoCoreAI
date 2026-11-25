@@ -1,93 +1,115 @@
 import React, { useEffect, useState } from 'react';
 import { OnChainMetric } from '../../../types/on_chain';
-// Assuming axios or fetch is used. For modularity, usually imported from a service.
-// But as per instructions "Modular Architecture... Small, single-responsibility files"
-// I'll keep the fetch logic simple or assume a service exists. 
-// Instructions: "Build a modular widget that displays..."
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 const OnChainLiquidityWidget: React.FC<{ symbol: string }> = ({ symbol }) => {
-    // Mocking fetch or using direct fetch for now as instructed "Do not assume business logic outside of the instructions"
-    // I will simulate the data fetching or use a hypothetical service if available.
-    // Given zero-inference: "Action: Build a modular widget... A comparison bar... A text badge"
-
-    // I will implement with local state and fetch logic inline or mocked for display if API not ready,
-    // but API IS ready (GET /on-chain/{symbol}).
-
+    const thermalGuard = isThermalGuardActive();
     const [data, setData] = useState<OnChainMetric | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
 
     useEffect(() => {
         const fetchData = async () => {
+            if (typeof document !== 'undefined' && document.hidden) return;
             try {
-                // Adjust base URL as needed, assuming proxy or env set up
-                // Extract base symbol (e.g. "BTC" from "BTC/USDT") to avoid slash routing issues
                 const baseSymbol = symbol.includes('/') ? symbol.split('/')[0] : symbol;
-                const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/on-chain/${baseSymbol}`);
+                const response = await fetch(
+                    `${import.meta.env.VITE_API_URL || ''}/api/v1/on-chain/${baseSymbol}`
+                );
                 if (response.ok) {
                     const result = await response.json();
                     setData(result);
                 }
             } catch (error) {
-                console.error("Failed to fetch on-chain metrics", error);
+                console.error('Failed to fetch on-chain metrics', error);
             } finally {
                 setLoading(false);
             }
         };
 
         fetchData();
-        const interval = setInterval(fetchData, 30000); // Poll every 30s
+        const interval = setInterval(fetchData, thermalGuard ? 45000 : 30000);
         return () => clearInterval(interval);
-    }, [symbol]);
+    }, [symbol, thermalGuard]);
 
-    if (loading) return <div className="animate-pulse h-32 bg-slate-100 dark:bg-gray-800 rounded-xl"></div>;
-    if (!data) return <div className="text-slate-500 dark:text-gray-400">No On-Chain Data</div>;
+    if (loading) {
+        return (
+            <div className="animate-pulse h-40 bg-slate-100 dark:bg-[#070b14] rounded-2xl border border-slate-200 dark:border-white/10" />
+        );
+    }
 
-    const totalVol = data.exchange_inflow_volume + data.exchange_outflow_volume;
-    const inflowPct = totalVol ? (data.exchange_inflow_volume / totalVol) * 100 : 50;
+    const inflowVol = Number(data?.exchange_inflow_volume || 0);
+    const outflowVol = Number(data?.exchange_outflow_volume || 0);
+    const netStatus = data?.net_flow_status || 'Balanced Flow';
+    const totalVol = inflowVol + outflowVol;
+    const inflowPct = totalVol > 0 ? (inflowVol / totalVol) * 100 : 50;
 
-    const isBullish = data.net_flow_status === 'Strong Buying Pressure';
-    const isBearish = data.net_flow_status === 'High Sell Pressure';
+    const isBullish = netStatus === 'Strong Buying Pressure' || outflowVol > inflowVol;
+    const isBearish = netStatus === 'High Sell Pressure' || inflowVol > outflowVol;
 
     return (
-        <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 p-4 rounded-xl shadow-md dark:shadow-lg hover:shadow-cyan-500/10 transition-all">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-gray-100 mb-2 flex items-center justify-between">
-                On-Chain Exchange Flow
-                <span className={`text-xs px-2 py-1 rounded-full border ${isBullish ? 'bg-green-50 dark:bg-green-900/40 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800' :
-                    isBearish ? 'bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800' :
-                        'bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300 border-slate-200 dark:border-gray-600'
-                    }`}>
-                    {data.net_flow_status}
+        <div className="bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 p-5 rounded-2xl shadow-sm flex flex-col justify-between">
+            <div className="flex items-center justify-between gap-2 mb-3">
+                <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                        On-Chain Exchange Liquidity ({symbol.split('/')[0]})
+                    </h3>
+                    <p className="text-[10.5px] font-mono text-slate-500 dark:text-gray-400">
+                        Tracked CEX Wallet Inflow vs Outflow Pressure
+                    </p>
+                </div>
+                <span
+                    className={`text-[10px] font-mono font-black uppercase px-2.5 py-1 rounded-lg border ${
+                        isBullish
+                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border-emerald-500/35'
+                            : isBearish
+                              ? 'bg-rose-500/15 text-rose-600 dark:text-rose-300 border-rose-500/35'
+                              : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-gray-300 border-slate-200 dark:border-white/10'
+                    }`}
+                >
+                    {netStatus}
                 </span>
-            </h3>
+            </div>
 
-            <div className="mt-4 space-y-2">
-                <div className="flex justify-between text-sm text-slate-500 dark:text-gray-400">
-                    <span>Inflow (Sell Pressure): <span className="text-red-600 dark:text-red-400 font-semibold">${data.exchange_inflow_volume.toLocaleString()}</span></span>
-                    <span>Outflow (Buy Pressure): <span className="text-green-600 dark:text-green-400 font-semibold">${data.exchange_outflow_volume.toLocaleString()}</span></span>
+            <div className="space-y-2.5 my-2">
+                <div className="flex justify-between text-xs font-mono">
+                    <span className="text-slate-500 dark:text-gray-400">
+                        Inflow (Sell):{' '}
+                        <strong className="text-rose-600 dark:text-rose-400">
+                            ${inflowVol.toLocaleString()}
+                        </strong>
+                    </span>
+                    <span className="text-slate-500 dark:text-gray-400">
+                        Outflow (Buy):{' '}
+                        <strong className="text-emerald-600 dark:text-emerald-400">
+                            ${outflowVol.toLocaleString()}
+                        </strong>
+                    </span>
                 </div>
 
-                {/* Comparison Bar */}
-                <div className="h-4 bg-slate-200 dark:bg-gray-700 rounded-full overflow-hidden flex relative">
+                <div className="h-3 bg-slate-200 dark:bg-[#050811] rounded-full overflow-hidden flex relative border border-slate-200 dark:border-white/10">
                     <div
-                        className="h-full bg-gradient-to-r from-red-600 to-red-400 transition-all duration-500"
+                        className="h-full bg-gradient-to-r from-rose-600 to-rose-400"
                         style={{ width: `${inflowPct}%` }}
                     />
                     <div
-                        className="h-full bg-gradient-to-r from-green-400 to-green-600 transition-all duration-500"
+                        className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600"
                         style={{ width: `${100 - inflowPct}%` }}
                     />
-
-                    {/* Marker */}
-                    <div className="absolute top-0 bottom-0 w-0.5 bg-black/50 left-1/2" />
+                    <div className="absolute top-0 bottom-0 w-0.5 bg-white/60 left-1/2" />
                 </div>
-                <div className="flex justify-between text-xs text-gray-500">
-                    <span>{inflowPct.toFixed(1)}%</span>
-                    <span>{(100 - inflowPct).toFixed(1)}%</span>
+
+                <div className="flex justify-between text-[10.5px] font-mono text-slate-500 dark:text-gray-400">
+                    <span>{inflowPct.toFixed(1)}% Inflow</span>
+                    <span>{(100 - inflowPct).toFixed(1)}% Outflow</span>
                 </div>
             </div>
 
-            <div className="mt-4 text-xs text-center text-gray-500">
-                Last updated: {new Date(data.timestamp).toLocaleTimeString()}
+            <div className="pt-2 border-t border-slate-100 dark:border-white/5 text-[10px] font-mono text-slate-400 flex justify-between">
+                <span>Source: On-Chain Telemetry</span>
+                <span>
+                    Updated:{' '}
+                    {data?.timestamp ? new Date(data.timestamp).toLocaleTimeString() : 'Live'}
+                </span>
             </div>
         </div>
     );

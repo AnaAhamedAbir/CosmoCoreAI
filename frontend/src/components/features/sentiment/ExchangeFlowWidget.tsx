@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 interface ExchangeFlowData {
     inflow_eth: number;
@@ -9,39 +10,45 @@ interface ExchangeFlowData {
 }
 
 const ExchangeFlowWidget: React.FC = () => {
+    const thermalGuard = isThermalGuardActive();
     const [data, setData] = useState<ExchangeFlowData | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
 
     useEffect(() => {
         const fetchData = async () => {
+            if (typeof document !== 'undefined' && document.hidden) return;
             try {
-                // Adjust base URL as needed
-                const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/on-chain/exchange-flow`);
+                const response = await fetch(
+                    `${import.meta.env.VITE_API_URL || ''}/api/v1/on-chain/exchange-flow`
+                );
                 if (response.ok) {
                     const result = await response.json();
                     setData(result);
                 }
             } catch (error) {
-                console.error("Failed to fetch exchange flow metrics", error);
+                console.error('Failed to fetch exchange flow metrics', error);
             } finally {
                 setLoading(false);
             }
         };
 
         fetchData();
-        const interval = setInterval(fetchData, 60000); // 1 min poll (Block time is ~12s, but 1m is safe)
+        const interval = setInterval(fetchData, thermalGuard ? 90000 : 60000);
         return () => clearInterval(interval);
-    }, []);
+    }, [thermalGuard]);
 
-    if (loading) return <div className="animate-pulse h-32 bg-slate-100 dark:bg-gray-900/50 rounded-xl" />;
+    if (loading) {
+        return (
+            <div className="animate-pulse h-40 bg-slate-100 dark:bg-[#070b14] rounded-2xl border border-slate-200 dark:border-white/10" />
+        );
+    }
 
-    // Default zero state if no data or missing fields
     const safeData = {
-        inflow_eth: data?.inflow_eth ?? 0,
-        outflow_eth: data?.outflow_eth ?? 0,
-        net_flow: data?.net_flow ?? 0,
+        inflow_eth: Number(data?.inflow_eth ?? 0),
+        outflow_eth: Number(data?.outflow_eth ?? 0),
+        net_flow: Number(data?.net_flow ?? 0),
         sentiment: data?.sentiment || 'Neutral',
-        tx_count: data?.tx_count ?? 0
+        tx_count: Number(data?.tx_count ?? 0),
     };
 
     const totalFlow = safeData.inflow_eth + safeData.outflow_eth;
@@ -51,56 +58,82 @@ const ExchangeFlowWidget: React.FC = () => {
     const isNeutral = safeData.net_flow === 0;
 
     return (
-        <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 p-4 rounded-xl shadow-md dark:shadow-lg relative overflow-hidden group">
-            {/* Background Glow Effect */}
-            <div className={`absolute -right-10 -top-10 w-32 h-32 blur-[80px] rounded-full opacity-15 dark:opacity-20 group-hover:opacity-30 dark:group-hover:opacity-40 transition-opacity ${isBullish ? 'bg-green-500' : 'bg-red-500'}`}></div>
-
-            <h3 className="text-lg font-bold text-slate-900 dark:text-gray-100 mb-4 flex items-center justify-between relative z-10">
-                Exchange Netflow (Live)
-                <span className={`text-xs px-2 py-1 rounded-full border border-opacity-30 ${isBullish ? 'bg-green-50 dark:bg-green-900/40 text-green-600 dark:text-green-400 border-green-500' :
-                    isNeutral ? 'bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-400 border-slate-300 dark:border-gray-500' :
-                        'bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-400 border-red-500'
-                    }`}>
-                    {safeData.sentiment ? safeData.sentiment.toUpperCase() : 'NEUTRAL'}
+        <div className="bg-white dark:bg-[#070b14] border border-slate-200 dark:border-white/10 p-5 rounded-2xl shadow-sm flex flex-col justify-between relative overflow-hidden">
+            <div className="flex items-center justify-between gap-2 mb-3">
+                <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                        Aggregate Exchange Netflow (Live)
+                    </h3>
+                    <p className="text-[10.5px] font-mono text-slate-500 dark:text-gray-400">
+                        Block-Level Settlement Inflow vs Outflow
+                    </p>
+                </div>
+                <span
+                    className={`text-[10px] font-mono font-black uppercase px-2.5 py-1 rounded-lg border ${
+                        isBullish
+                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border-emerald-500/35'
+                            : isNeutral
+                              ? 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-gray-300 border-slate-200 dark:border-white/10'
+                              : 'bg-rose-500/15 text-rose-600 dark:text-rose-300 border-rose-500/35'
+                    }`}
+                >
+                    {safeData.sentiment.toUpperCase()}
                 </span>
-            </h3>
+            </div>
 
-            <div className="relative z-10 space-y-4">
-                {/* Stats Row */}
-                <div className="flex justify-between items-end text-sm">
-                    <div className="text-left">
-                        <p className="text-slate-500 dark:text-gray-500 text-xs uppercase tracking-wider">Inflow (Sell)</p>
-                        <p className="text-red-600 dark:text-red-400 font-mono font-bold text-lg">{safeData.inflow_eth.toFixed(2)} <span className="text-xs">ETH</span></p>
+            <div className="space-y-2.5 my-2">
+                <div className="flex justify-between items-end text-xs font-mono">
+                    <div>
+                        <span className="text-slate-500 dark:text-gray-400 block text-[10px] uppercase">
+                            Inflow (Sell)
+                        </span>
+                        <span className="text-rose-600 dark:text-rose-400 font-black text-base">
+                            {safeData.inflow_eth.toFixed(2)} <span className="text-xs">ETH</span>
+                        </span>
                     </div>
-
                     <div className="text-right">
-                        <p className="text-slate-500 dark:text-gray-500 text-xs uppercase tracking-wider">Outflow (Buy)</p>
-                        <p className="text-green-600 dark:text-green-400 font-mono font-bold text-lg">{safeData.outflow_eth.toFixed(2)} <span className="text-xs">ETH</span></p>
+                        <span className="text-slate-500 dark:text-gray-400 block text-[10px] uppercase">
+                            Outflow (Buy)
+                        </span>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-black text-base">
+                            {safeData.outflow_eth.toFixed(2)} <span className="text-xs">ETH</span>
+                        </span>
                     </div>
                 </div>
 
-                {/* Split Progress Bar */}
-                <div className="h-3 bg-slate-200 dark:bg-gray-800 rounded-full overflow-hidden flex relative shadow-inner">
+                <div className="h-3 bg-slate-200 dark:bg-[#050811] rounded-full overflow-hidden flex relative border border-slate-200 dark:border-white/10">
                     <div
-                        className="h-full bg-gradient-to-r from-red-600 to-red-400 transition-all duration-700 ease-out relative"
+                        className="h-full bg-gradient-to-r from-rose-600 to-rose-400"
                         style={{ width: `${inflowPct}%` }}
-                    >
-                        {inflowPct > 10 && <span className="absolute right-1 top-0 bottom-0 text-[8px] text-white dark:text-black/50 font-bold flex items-center pr-1">{inflowPct.toFixed(0)}%</span>}
-                    </div>
-
+                    />
                     <div
-                        className="h-full bg-gradient-to-r from-green-400 to-green-600 transition-all duration-700 ease-out relative"
+                        className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600"
                         style={{ width: `${100 - inflowPct}%` }}
-                    >
-                        {inflowPct < 90 && <span className="absolute left-1 top-0 bottom-0 text-[8px] text-white dark:text-black/50 font-bold flex items-center pl-1">{(100 - inflowPct).toFixed(0)}%</span>}
-                    </div>
+                    />
                 </div>
+            </div>
 
-                {/* Footer Info */}
-                <div className="flex justify-between items-center text-xs text-slate-500 dark:text-gray-500 pt-2 border-t border-slate-200 dark:border-gray-800">
-                    <span>Analyzed <span className="text-slate-800 dark:text-gray-300 font-semibold">{safeData.tx_count}</span> Tx/Block</span>
-                    <span>Net: <span className={isBullish ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>{safeData.net_flow > 0 ? '+' : ''}{safeData.net_flow.toFixed(2)} ETH</span></span>
-                </div>
+            <div className="flex justify-between items-center text-[10.5px] font-mono text-slate-500 dark:text-gray-400 pt-2 border-t border-slate-100 dark:border-white/5">
+                <span>
+                    Analyzed:{' '}
+                    <strong className="text-slate-800 dark:text-gray-200">
+                        {safeData.tx_count}
+                    </strong>{' '}
+                    Tx/Block
+                </span>
+                <span>
+                    Net:{' '}
+                    <strong
+                        className={
+                            isBullish
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-rose-600 dark:text-rose-400'
+                        }
+                    >
+                        {safeData.net_flow > 0 ? '+' : ''}
+                        {safeData.net_flow.toFixed(2)} ETH
+                    </strong>
+                </span>
             </div>
         </div>
     );

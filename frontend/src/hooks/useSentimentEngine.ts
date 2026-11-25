@@ -120,73 +120,89 @@ export const useSentimentEngine = () => {
 
         setIsHeatmapLoading(true); // Using heatmap loading as global sync indicator
         try {
-            console.log("☁️ Syncing Sentiment Data...", activePair);
+            // Fetch all 7 sentiment intelligence streams in parallel with allSettled so one slow/optional endpoint never breaks the terminal
+            const [
+                newsSettled,
+                fgSettled,
+                chartSettled,
+                heatmapSettled,
+                pollSettled,
+                inflSettled,
+                domSettled,
+            ] = await Promise.allSettled([
+                api.get('/sentiment/news', { params: { model: aiModel }, signal }),
+                api.get('/sentiment/fear-greed', { signal }),
+                api.get('/sentiment/correlation', { params: { symbol: activePair, period: timeframe }, signal }),
+                api.get('/sentiment/heatmap', { signal }),
+                api.get('/sentiment/poll-stats', { params: { symbol: activePair }, signal }),
+                api.get('/sentiment/influencers', { signal }),
+                api.get('/sentiment/social-dominance', { signal }),
+            ]);
 
-            // --- A. Fetch News ---
-            const newsResponse = await api.get('/sentiment/news', {
-                params: { model: aiModel },
-                signal
-            });
-            const rawNews = Array.isArray(newsResponse.data) ? newsResponse.data : [];
-            const formattedNews = rawNews.map((item: any) => ({
-                id: item.id?.toString() || Math.random().toString(),
-                source: item.source || 'Unknown',
-                content: item.content || item.text,
-                sentiment: item.sentiment || 'Neutral',
-                timestamp: item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString(),
-                url: item.url,
-                type: item.type,
-                impact_level: item.impact_level, // ✅ Added Impact Level
-                impact_score: item.impact_score  // ✅ Added Impact Score
-            }));
-            const finalNews = formattedNews.slice(0, 50);
-            setSentimentSources(finalNews);
-            localStorage.setItem(`sentiment_sources_${activePair}`, JSON.stringify(finalNews));
+            if (signal.aborted) return;
 
-            // --- B. Fetch Fear & Greed ---
-            const fgResponse = await api.get('/sentiment/fear-greed', { signal });
-            if (fgResponse.data.value) {
-                const idx = parseInt(fgResponse.data.value);
-                const lbl = fgResponse.data.value_classification;
+            // --- A. News ---
+            if (newsSettled.status === 'fulfilled') {
+                const rawNews = Array.isArray(newsSettled.value.data) ? newsSettled.value.data : [];
+                const formattedNews = rawNews.map((item: any) => ({
+                    id: item.id?.toString() || Math.random().toString(),
+                    source: item.source || 'Unknown',
+                    content: item.content || item.text,
+                    sentiment: item.sentiment || 'Neutral',
+                    timestamp: item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString(),
+                    url: item.url,
+                    type: item.type,
+                    impact_level: item.impact_level,
+                    impact_score: item.impact_score,
+                }));
+                const finalNews = formattedNews.slice(0, 50);
+                setSentimentSources(finalNews);
+                try {
+                    localStorage.setItem(`sentiment_sources_${activePair}`, JSON.stringify(finalNews));
+                } catch {}
+            }
+
+            // --- B. Fear & Greed ---
+            if (fgSettled.status === 'fulfilled' && fgSettled.value.data?.value) {
+                const idx = parseInt(fgSettled.value.data.value);
+                const lbl = fgSettled.value.data.value_classification || 'Neutral';
                 setFearGreedIndex(idx);
                 setFearGreedLabel(lbl);
-                localStorage.setItem('sentiment_fear_greed', JSON.stringify({ index: idx, label: lbl }));
+                try {
+                    localStorage.setItem('sentiment_fear_greed', JSON.stringify({ index: idx, label: lbl }));
+                } catch {}
             }
 
-            // --- C. Fetch Chart & Correlation ---
-            const chartResponse = await api.get('/sentiment/correlation', {
-                params: { symbol: activePair, period: timeframe },
-                signal
-            });
-            if (Array.isArray(chartResponse.data)) {
-                setChartData(chartResponse.data);
-                localStorage.setItem(`sentiment_chart_${activePair}_${timeframe}`, JSON.stringify(chartResponse.data));
-                calculateCorrelation(chartResponse.data);
+            // --- C. Chart & Correlation ---
+            if (chartSettled.status === 'fulfilled' && Array.isArray(chartSettled.value.data)) {
+                setChartData(chartSettled.value.data);
+                try {
+                    localStorage.setItem(`sentiment_chart_${activePair}_${timeframe}`, JSON.stringify(chartSettled.value.data));
+                } catch {}
+                calculateCorrelation(chartSettled.value.data);
             }
 
-            // --- D. Fetch Heatmap ---
-            const heatmapRes = await api.get('/sentiment/heatmap', { signal });
-            const hData = heatmapRes.data || [];
-            setHeatmapData(hData);
-            localStorage.setItem('sentiment_heatmap', JSON.stringify(hData));
+            // --- D. Heatmap ---
+            if (heatmapSettled.status === 'fulfilled') {
+                const hData = heatmapSettled.value.data || [];
+                setHeatmapData(hData);
+                try {
+                    localStorage.setItem('sentiment_heatmap', JSON.stringify(hData));
+                } catch {}
+            }
 
-            // --- E. Fetch New Features ---
-            const pollRes = await api.get('/sentiment/poll-stats', { 
-                params: { symbol: activePair },
-                signal 
-            });
-            setPollStats(pollRes.data);
-
-            const inflRes = await api.get('/sentiment/influencers', { signal });
-            setInfluencers(inflRes.data);
-
-            const domRes = await api.get('/sentiment/social-dominance', { signal });
-            setSocialDominance(domRes.data || []);
-
-            showToast('Sentiment Data Synced Successfully', 'success');
+            // --- E. Poll, Influencers & Social Dominance ---
+            if (pollSettled.status === 'fulfilled' && pollSettled.value.data) {
+                setPollStats(pollSettled.value.data);
+            }
+            if (inflSettled.status === 'fulfilled' && Array.isArray(inflSettled.value.data)) {
+                setInfluencers(inflSettled.value.data);
+            }
+            if (domSettled.status === 'fulfilled' && Array.isArray(domSettled.value.data)) {
+                setSocialDominance(domSettled.value.data);
+            }
         } catch (err: any) {
             if (err.name === 'AbortError' || err.code === "ERR_CANCELED") {
-                console.log('Fetch aborted');
                 return;
             }
             console.error("Failed to sync data", err);
@@ -327,7 +343,9 @@ export const useSentimentEngine = () => {
             try {
                 const savedSources = localStorage.getItem(`sentiment_sources_${activePair}`);
                 const savedFearGreed = localStorage.getItem('sentiment_fear_greed');
-                const savedChart = localStorage.getItem(`sentiment_chart_${activePair}`);
+                const savedChart =
+                    localStorage.getItem(`sentiment_chart_${activePair}_${timeframe}`) ||
+                    localStorage.getItem(`sentiment_chart_${activePair}`);
                 const savedHeatmap = localStorage.getItem('sentiment_heatmap');
 
                 if (savedSources) setSentimentSources(JSON.parse(savedSources));

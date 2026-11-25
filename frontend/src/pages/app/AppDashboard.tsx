@@ -1,14 +1,13 @@
 import * as React from 'react';
 import { useState, useCallback, useMemo, useRef, useEffect, Suspense } from 'react';
-import { Logo, DashboardIcon, PortfolioIcon, BacktesterIcon, BotLabIcon, MarketIcon, SentimentIcon, FilingsIcon, SettingsIcon, LogoutIcon, OnChainIcon, RegimeIcon, CorrelationIcon, MLModelIcon, IndicatorStudioIcon, EducationIcon, AIFoundryIcon, AlternativeDataIcon, MLModelMarketplaceIcon, RealTimeDataIcon, QuantScreenerIcon, AlertsWatchlistIcon, AnalystResearchIcon, InstitutionalHoldingsIcon, BlockTradeDetectorIcon, UnusualOptionsActivityIcon, LiquidationMapIcon, PineScriptIcon, TokenUnlockIcon, AssistantIcon, GeneralIcon, TradingIcon, AlphaEngineIcon, StudioIcon, ChevronDownIcon, UserCircleIcon, CreditCardIcon, KeyIcon, TaskManagerIcon } from '@/constants';
+import { Logo, DashboardIcon, PortfolioIcon, BacktesterIcon, BotLabIcon, MarketIcon, SentimentIcon, FilingsIcon, LogoutIcon, OnChainIcon, RegimeIcon, CorrelationIcon, MLModelIcon, IndicatorStudioIcon, EducationIcon, AIFoundryIcon, AlternativeDataIcon, MLModelMarketplaceIcon, QuantScreenerIcon, AlertsWatchlistIcon, AnalystResearchIcon, InstitutionalHoldingsIcon, BlockTradeDetectorIcon, UnusualOptionsActivityIcon, LiquidationMapIcon, PineScriptIcon, TokenUnlockIcon, ChevronDownIcon, UserCircleIcon, CreditCardIcon, KeyIcon, TaskManagerIcon } from '@/constants';
 // FIX: Updated AppView import to break circular dependency.
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getPathFromView, getViewFromPath } from '@/utils/routeUtils';
 import { AppView, TradingBot, IndicatorData } from '@/types';
-import { Cpu, LayoutDashboard, Database, Activity, LineChart, BrainCircuit, CloudLightning, Bot, Zap, History, Layers, Shield, Bell, Palette, Menu, X, Monitor, Smartphone, Search, Sparkles, Wallet, ArrowUpRight } from 'lucide-react';
+import { Cpu, Database, Activity, LineChart, Bot, Layers, Shield, Bell, Palette, Menu, X, Monitor, Smartphone, Search, Sparkles, Wallet, ArrowUpRight } from 'lucide-react';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { setPhoneViewMode } from '@/utils/deviceProfile';
-import Button from '@/components/common/Button';
 import AIAssistantModal from './AIAssistantModal';
 import ThemeToggle from '@/components/common/ThemeToggle';
 import MarketTicker from '@/components/features/market/MarketTicker';
@@ -354,17 +353,19 @@ const Sidebar: React.FC<{
             {/* Brand Header + Quick Filter */}
             <div className="px-4 pt-4 pb-3 relative z-10 flex-shrink-0">
                 <div className={`flex items-center ${effectiveCollapsed ? 'justify-center' : 'justify-between'} gap-2`}>
-                    <div className={`transition-transform duration-300 origin-left ${
-                        effectiveCollapsed
-                            ? 'scale-[0.48] -ml-1'
-                            : 'scale-95'
-                    }`}>
-                        <Logo />
-                    </div>
-                    {!effectiveCollapsed && (
-                        <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25 flex-shrink-0">
-                            PRO
-                        </span>
+                    {effectiveCollapsed ? (
+                        <img
+                            src="/logo.png"
+                            alt="CosmoQuantAI"
+                            className="h-8 w-8 object-contain select-none"
+                        />
+                    ) : (
+                        <>
+                            <Logo compact />
+                            <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25 flex-shrink-0">
+                                PRO
+                            </span>
+                        </>
                     )}
                 </div>
 
@@ -844,7 +845,7 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
 
     return (
         <BacktestProvider>
-            <div className={`flex h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-full max-w-[100vw] overflow-hidden bg-brand-light dark:bg-[#000000] ${deviceProfile.isThermalGuardActive ? '' : 'transition-all duration-300'}`}>
+            <div className={`flex h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-full max-w-[100vw] overflow-hidden bg-brand-light dark:bg-[#050810] ${deviceProfile.isThermalGuardActive ? '' : 'transition-all duration-300'}`}>
                 <Sidebar 
                         onLogout={onLogout} 
                         isCollapsed={isSidebarCollapsed} 

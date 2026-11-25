@@ -41,6 +41,19 @@ from app.services.oanda_streamer import oanda_streamer # ✅ Import Oanda Stream
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+class _QuietPollingAccessFilter(logging.Filter):
+    """Suppress noisy 200/304 polling access logs for update-status while keeping errors visible."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "/api/v1/system/update-status" in msg and (" 200" in msg or " 304" in msg):
+            return False
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_QuietPollingAccessFilter())
+
 _is_prod_env = str(settings.ENVIRONMENT or "").strip().lower() in ("production", "prod")
 _expose_docs = bool(settings.ENABLE_API_DOCS) and not _is_prod_env
 

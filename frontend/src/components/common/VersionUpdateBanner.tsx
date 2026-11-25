@@ -16,9 +16,25 @@ const VersionUpdateBanner: React.FC = () => {
 
   useEffect(() => {
     let alive = true;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const IDLE_POLL_MS = 30000;
+    const ACTIVE_UPDATE_POLL_MS = 3000;
+
+    const scheduleNext = (delayMs: number) => {
+      if (!alive) return;
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        void checkUpdateStatus();
+      }, delayMs);
+    };
 
     const checkUpdateStatus = async () => {
-      if (typeof document !== 'undefined' && document.hidden) return;
+      if (!alive) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        scheduleNext(IDLE_POLL_MS);
+        return;
+      }
+      let nextDelay = wasUpdatingRef.current ? ACTIVE_UPDATE_POLL_MS : IDLE_POLL_MS;
       try {
         const res = await fetch(`/api/v1/system/update-status?_t=${Date.now()}`, {
           cache: 'no-store',
@@ -30,6 +46,7 @@ const VersionUpdateBanner: React.FC = () => {
           wasUpdatingRef.current = true;
           setIsUpdating(true);
           setUpdateMsg('Version update in progress — reconnecting automatically...');
+          nextDelay = ACTIVE_UPDATE_POLL_MS;
           return;
         }
 
@@ -45,6 +62,7 @@ const VersionUpdateBanner: React.FC = () => {
           wasUpdatingRef.current = true;
           setIsUpdating(true);
           setUpdateMsg(data.message || 'Version update in progress...');
+          nextDelay = ACTIVE_UPDATE_POLL_MS;
         } else {
           const versionChanged =
             Boolean(data.version) &&
@@ -63,10 +81,13 @@ const VersionUpdateBanner: React.FC = () => {
             }, 2500);
           } else {
             setIsUpdating(false);
+            nextDelay = IDLE_POLL_MS;
           }
         }
       } catch {
         // Ignore transient offline errors when checking update state
+      } finally {
+        scheduleNext(nextDelay);
       }
     };
 
@@ -75,15 +96,24 @@ const VersionUpdateBanner: React.FC = () => {
       wasUpdatingRef.current = true;
       setIsUpdating(true);
       setUpdateMsg('Version update in progress — reconnecting automatically...');
+      scheduleNext(ACTIVE_UPDATE_POLL_MS);
     };
+
+    const handleVisibilityChange = () => {
+      if (alive && typeof document !== 'undefined' && !document.hidden) {
+        void checkUpdateStatus();
+      }
+    };
+
     window.addEventListener('app:version-updating', handleGatewayBump);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     void checkUpdateStatus();
-    const timer = setInterval(() => void checkUpdateStatus(), 3000);
     return () => {
       alive = false;
-      clearInterval(timer);
+      if (timeoutId) clearTimeout(timeoutId);
       window.removeEventListener('app:version-updating', handleGatewayBump);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 

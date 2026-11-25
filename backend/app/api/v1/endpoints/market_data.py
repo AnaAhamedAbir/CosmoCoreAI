@@ -117,6 +117,22 @@ async def upload_market_data(file: UploadFile = File(...), current_user: models.
         "message": "Data file uploaded successfully."
     }
 
+@router.get("/coin-logos")
+async def get_coin_logos():
+    """Return cached symbol -> official coin logo URL mapping."""
+    from app.services.coin_logo_service import coin_logo_service
+    logos = await coin_logo_service.get_logo_map()
+    return {"logos": logos}
+
+
+@router.get("/public-overview")
+async def get_public_market_overview():
+    """Return top crypto ticker snapshot enriched with official coin logos for public views."""
+    from app.services.coin_logo_service import coin_logo_service
+    coins = await coin_logo_service.get_public_overview()
+    return {"coins": coins}
+
+
 @router.get("/timeframes/{exchange_id}")
 async def get_timeframes(exchange_id: str):
     try:

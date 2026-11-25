@@ -1,20 +1,21 @@
 
 import React from 'react';
+import CoinLogo from '@/components/common/CoinLogo';
 // FIX: Added all missing type imports to resolve 'Cannot find name' errors.
 import type { Asset, ActiveBot, BacktestResult, PricingTier, Candle, SentimentData, SentimentSource, SentimentLabel, InsiderFiling, OnChainMetric, MarketRegime, TokenUnlockEvent, RegimeDataPoint, CointegratedPair, CustomMLModel, ModelVersion, MarketplaceModel, FinancialStatementData, FinancialStatementRow, EconomicEvent, NewsArticle, ScreenerResult, SectorPerformance, Watchlist, Alert, AnalystRating, ResearchReport, BlockTrade, DarkPoolPrint, UnusualVolumeSpike, UnusualOptionTrade, StrategyTemplate, SampleJob, Holding, Trade, Exchange, BlogPost, StrategyOfTheWeek, PortfolioProject, ClientTestimonial, EducationResource, CmcArticle, CmcTrendingCoin, CmcGlossaryTerm, CmcLearnCampaign } from './types';
 
-// New Logo Components
+// Official Coin Logo Components (delegating to modular CoinLogo)
 export const BtcLogo = ({ className = "h-8 w-8" }: { className?: string }) => (
-    <svg className={className} viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="currentColor" color="#f7931a"><path d="M30,16A14,14,0,1,1,16,2,14,14,0,0,1,30,16ZM21.5,16.21h-2.3a1.5,1.5,0,0,0-1.29-1.32l.73-2.93-1.7-.42-.71,2.84a1.51,1.51,0,0,0-1.28-.73h-.5V10.87l4.47-1.12-1.12-4.47-4.47,1.12v.11h-.64a1.5,1.5,0,0,0-1.48,1.38l-1,4.21a1.5,1.5,0,0,0,0,.2,1.5,1.5,0,0,0-1.45-1.58H10.5v2.36h.28a1.5,1.5,0,0,0,1.48-1.38l1-4.21a1.5,1.5,0,0,0,0-.2,1.5,1.5,0,0,0,1.45-1.58h.64V8.58L10.5,7.46l1.12-4.47L16.09,4.1v-.1h.5a1.5,1.5,0,0,0,1.48-1.38l.73-2.93,1.7.42-.73,2.93A1.5,1.5,0,0,0,21.07,7h.14l4.47-1.12L24.56,10.4,21.5,11.12V13.5h.3a1.5,1.5,0,0,0,1.47-1.34l.36-1.43,1.71.43-.36,1.43a1.5,1.5,0,0,0-1.47,1.64v.94Zm-4.14,2.36h-4v4.72h4a2.36,2.36,0,0,0,0-4.72Zm.59,2.36a.59.59,0,0,1,0,1.18h-2.22V19.39h2.22a.59.59,0,0,1,0,1.18Z" /></svg>
+    <CoinLogo symbol="BTC" className={className} />
 );
 export const EthLogo = ({ className = "h-8 w-8" }: { className?: string }) => (
-    <svg className={className} viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="none"><path fill="#8a92b2" d="M16 2L15.5 17.5 16 20.5 24.5 12z"></path><path fill="#627eea" d="M16 2L7.5 12 16 20.5V2z"></path><path fill="#8a92b2" d="M16 22.5L15.5 24.5 16 30 24.5 14z"></path><path fill="#627eea" d="M16 30V22.5L7.5 14z"></path><path fill="#465785" d="M16 20.5L24.5 12 16 8z"></path><path fill="#8a92b2" d="M7.5 12L16 20.5V8z"></path></svg>
+    <CoinLogo symbol="ETH" className={className} />
 );
 export const SolLogo = ({ className = "h-8 w-8" }: { className?: string }) => (
-    <svg className={className} viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="sol-gradient" x1="53.8%" x2="53.8%" y1="0%" y2="100%"><stop offset="0%" stopColor="#00FFA3"></stop><stop offset="100%" stopColor="#DC1FFF"></stop></linearGradient></defs><path fill="url(#sol-gradient)" d="M1024 288.525c-51.2 0-89.6 25.6-115.2 51.2-25.6 25.6-51.2 64-115.2 64s-89.6-25.6-115.2-51.2c-25.6-25.6-51.2-64-115.2-64-64 0-89.6 25.6-115.2 51.2-25.6 25.6-51.2 64-115.2 64-64 0-89.6-25.6-115.2-51.2C89.6 256.425 64 224.425 0 224.425v511.9c51.2 0 89.6-25.6 115.2-51.2 25.6-25.6 51.2-64 115.2-64s89.6 25.6 115.2 51.2c25.6 25.6 51.2 64 115.2 64 64 0 89.6-25.6 115.2-51.2 25.6-25.6 51.2-64 115.2-64s89.6 25.6 115.2 51.2c25.6 25.6 51.2 64 115.2 64 64 0 89.6-25.6 115.2-51.2 25.6-25.6 51.2-64 115.2-64v-512c-51.2 0-89.6 25.6-115.2 51.2-25.6 25.6-51.2 64-115.2 64z"></path></svg>
+    <CoinLogo symbol="SOL" className={className} />
 );
 export const UsdtLogo = ({ className = "h-8 w-8" }: { className?: string }) => (
-    <svg className={className} viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" fill="currentColor" color="#26A17B"><circle cx="64" cy="64" r="64"></circle><path fill="#fff" d="M79.5 32.3h-31c-6.9 0-12.5 5.6-12.5 12.5v.2h14.4v-6h19v6h14.4v-.2c.1-6.9-5.5-12.5-12.3-12.5zM36 49.2c-6.9 0-12.5 5.6-12.5 12.5v.3h14.4v29.5h6.2V62h13.2v29.5h6.2V62h13.2v29.5h6.2V62h14.4v-.3c0-6.9-5.6-12.5-12.5-12.5H36z"></path></svg>
+    <CoinLogo symbol="USDT" className={className} />
 );
 export const BinanceLogo = ({ className = "w-8 h-8" }: { className?: string }) => (
     <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -28,23 +29,13 @@ export const KucoinLogo = ({ className = "w-8 h-8" }: { className?: string }) =>
     </svg>
 );
 export const AptosLogo = ({ className = "h-8 w-8" }: { className?: string }) => (
-    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" color="#000000" strokeWidth="1.5">
-        <path d="M7.75 2.5L2.5 7.75V16.25L7.75 21.5H16.25L21.5 16.25V7.75L16.25 2.5H7.75Z" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M12 7.75L17.25 16.25H6.75L12 7.75Z" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M9.875 13.375H14.125" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <CoinLogo symbol="APT" className={className} />
 );
 export const SeiLogo = ({ className = "h-8 w-8" }: { className?: string }) => (
-    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M4 12L12 4L20 12L12 20L4 12Z" fill="#9945FF" />
-    </svg>
+    <CoinLogo symbol="SEI" className={className} />
 );
 export const SuiLogo = ({ className = "h-8 w-8" }: { className?: string }) => (
-    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2C6.48,2,2,6.48,2,12s4.48,10,10,10 10-4.48,10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="#0288D1" />
-        <path d="M12 7l-4 4h8l-4-4z" fill="#0288D1" />
-        <path d="M12 17l4-4h-8l4 4z" fill="#0288D1" />
-    </svg>
+    <CoinLogo symbol="SUI" className={className} />
 );
 
 // New logos for partners section

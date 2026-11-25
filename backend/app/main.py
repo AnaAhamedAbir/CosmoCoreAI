@@ -531,6 +531,7 @@ async def fetch_market_data_background():
                     # random.shuffle(top_50)  <-- Removed to prevent ticker jumping/glitching on update
                     
                     overview_data = []
+                    from app.services.coin_logo_service import coin_logo_service
                     for ticker in top_50:
                         def safe_float(val):
                             try: return float(val) if val is not None else 0.0
@@ -543,9 +544,11 @@ async def fetch_market_data_background():
                             "volume": safe_float(ticker.get('quoteVolume')),
                             "high": safe_float(ticker.get('high')),
                             "low": safe_float(ticker.get('low')),
+                            "logoUrl": coin_logo_service.get_logo_sync(ticker['symbol']),
                         })
                     
                     if overview_data:
+                        coin_logo_service.set_latest_overview(overview_data)
                         payload = {
                             "type": "market_overview",
                             "data": overview_data
@@ -714,6 +717,12 @@ async def startup_event():
                 logger.info("✅ MarketDataStreamer Binance spot & futures instances pre-warmed!")
             except Exception as mdse:
                 logger.warning(f"Could not pre-warm MarketDataStreamer: {mdse}")
+            # Pre-warm CoinGecko official coin logo cache (24h TTL in Redis + memory)
+            try:
+                from app.services.coin_logo_service import coin_logo_service
+                await coin_logo_service.refresh_if_stale()
+            except Exception as cle:
+                logger.warning(f"Could not pre-warm CoinLogoService: {cle}")
         except Exception as e:
             logger.error(f"Pre-warming failed: {e}")
             

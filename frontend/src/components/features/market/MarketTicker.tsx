@@ -1,21 +1,28 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { BtcLogo, EthLogo, SolLogo, BinanceLogo, AptosLogo, SeiLogo, SuiLogo, UsdtLogo } from '@/constants';
-import { getThermalProfile, isThermalGuardActive } from '@/utils/deviceProfile';
+import CoinLogo from '@/components/common/CoinLogo';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 import { buildAuthenticatedWsUrl } from '@/utils/wsAuth';
 
+interface CoinTickerItem {
+    id: string;
+    symbol: string;
+    price: number;
+    change: number;
+    logoUrl?: string | null;
+}
+
 interface TickerItemProps {
-    coin: any;
+    coin: CoinTickerItem;
+    resolvedLogoUrl?: string | null;
     onClick?: () => void;
 }
 
-// A generic style for the ticker items
-const TickerItem: React.FC<TickerItemProps> = ({ coin, onClick }) => (
+const TickerItem: React.FC<TickerItemProps> = ({ coin, resolvedLogoUrl, onClick }) => (
     <div
-        className={`flex items-center mx-4 py-2 transition-opacity ${onClick ? 'cursor-pointer hover:opacity-70' : ''}`}
+        className={`flex items-center mx-4 py-2 transition-opacity ${onClick ? 'cursor-pointer hover:opacity-75' : ''}`}
         onClick={onClick}
     >
-        {coin.logo}
+        <CoinLogo symbol={coin.symbol} logoUrl={coin.logoUrl || resolvedLogoUrl} className="h-5 w-5" />
         <span className="ml-2 font-semibold text-sm text-slate-800 dark:text-slate-200">{coin.symbol}</span>
         <span className="ml-3 font-mono text-sm text-slate-700 dark:text-slate-300">
             ${coin.price > 100 ? coin.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : coin.price.toFixed(4)}
@@ -26,13 +33,12 @@ const TickerItem: React.FC<TickerItemProps> = ({ coin, onClick }) => (
     </div>
 );
 
-// Special styled item for HomePage overlay (always dark-cosmos crisp regardless of light/dark theme)
-const TickerItemOverlay: React.FC<TickerItemProps> = ({ coin, onClick }) => (
+const TickerItemOverlay: React.FC<TickerItemProps> = ({ coin, resolvedLogoUrl, onClick }) => (
     <div
         className={`flex items-center mx-3 my-1 py-1.5 px-3.5 rounded-lg bg-white/[0.04] border border-white/10 transition-colors ${onClick ? 'cursor-pointer hover:bg-cyan-500/10 hover:border-cyan-500/30' : ''}`}
         onClick={onClick}
     >
-        {coin.logo}
+        <CoinLogo symbol={coin.symbol} logoUrl={coin.logoUrl || resolvedLogoUrl} className="h-5 w-5" />
         <span className="ml-2 font-semibold text-sm text-white">{coin.symbol}</span>
         <span className="ml-2.5 font-mono text-sm text-slate-200">
             ${coin.price > 100 ? coin.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : coin.price.toFixed(4)}
@@ -48,47 +54,28 @@ interface MarketTickerProps {
     onCoinClick?: (symbol: string) => void;
 }
 
-const PUBLIC_SEED_COINS = [
+const PUBLIC_SEED_COINS: CoinTickerItem[] = [
     { id: 'BTC', symbol: 'BTC', price: 97420.5, change: 2.34 },
     { id: 'ETH', symbol: 'ETH', price: 3685.2, change: 1.82 },
     { id: 'SOL', symbol: 'SOL', price: 244.6, change: 4.15 },
     { id: 'BNB', symbol: 'BNB', price: 658.4, change: 0.94 },
     { id: 'XRP', symbol: 'XRP', price: 1.482, change: -0.65 },
-    { id: 'APT', symbol: 'APT', price: 12.84, change: 3.12 },
-    { id: 'SUI', symbol: 'SUI', price: 3.46, change: 5.08 },
+    { id: 'ADA', symbol: 'ADA', price: 0.985, change: 2.18 },
+    { id: 'DOGE', symbol: 'DOGE', price: 0.412, change: -1.12 },
     { id: 'AVAX', symbol: 'AVAX', price: 42.15, change: 2.04 },
     { id: 'LINK', symbol: 'LINK', price: 19.62, change: 1.47 },
-    { id: 'DOGE', symbol: 'DOGE', price: 0.412, change: -1.12 },
+    { id: 'SUI', symbol: 'SUI', price: 3.46, change: 5.08 },
+    { id: 'APT', symbol: 'APT', price: 12.84, change: 3.12 },
+    { id: 'DOT', symbol: 'DOT', price: 8.64, change: 1.25 },
 ];
 
 const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoinClick }) => {
-    // Basic Logo Map
-    const LOGO_MAP: Record<string, React.ReactNode> = {
-        'BTC': <BtcLogo className="h-5 w-5" />,
-        'ETH': <EthLogo className="h-5 w-5" />,
-        'SOL': <SolLogo className="h-5 w-5" />,
-        'BNB': <BinanceLogo className="h-5 w-5" />,
-        'APT': <AptosLogo className="h-5 w-5" />,
-        'SEI': <SeiLogo className="h-5 w-5" />,
-        'SUI': <SuiLogo className="h-5 w-5" />,
-        'DOGE': <UsdtLogo className="h-5 w-5 text-yellow-500" />,
-        'ADA': <UsdtLogo className="h-5 w-5 text-blue-500" />,
-        'XRP': <UsdtLogo className="h-5 w-5 text-gray-500" />,
-        'DOT': <UsdtLogo className="h-5 w-5 text-pink-500" />,
-        'AVAX': <UsdtLogo className="h-5 w-5 text-red-500" />,
-        'MATIC': <UsdtLogo className="h-5 w-5 text-purple-500" />,
-        'LINK': <UsdtLogo className="h-5 w-5 text-blue-400" />,
-        'UNI': <UsdtLogo className="h-5 w-5 text-pink-400" />,
-        'TRX': <UsdtLogo className="h-5 w-5 text-red-600" />,
-        'LTC': <UsdtLogo className="h-5 w-5 text-gray-400" />,
-        'SHIB': <UsdtLogo className="h-5 w-5 text-orange-600" />,
-    };
-
-    const [coins, setCoins] = useState<any[]>([]);
+    const [coins, setCoins] = useState<CoinTickerItem[]>([]);
+    const [logoMap, setLogoMap] = useState<Record<string, string>>({});
     const [isPageHidden, setIsPageHidden] = useState<boolean>(() =>
         typeof document !== 'undefined' ? document.hidden : false
     );
-    const pendingCoinsRef = useRef<any[] | null>(null);
+    const pendingCoinsRef = useRef<CoinTickerItem[] | null>(null);
     const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastFlushAtRef = useRef<number>(0);
 
@@ -108,11 +95,22 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
     }, []);
 
     useEffect(() => {
-        let socket: WebSocket | null = null;
-        let retryTimeout: NodeJS.Timeout;
         let isUnmounted = false;
 
-        const flushCoins = (nextCoins: any[]) => {
+        // Fetch cached official CoinGecko symbol -> logo map from backend once
+        fetch('/api/v1/market-data/coin-logos')
+            .then((r) => (r.ok ? r.json() : null))
+            .then((payload) => {
+                if (!isUnmounted && payload && typeof payload.logos === 'object' && payload.logos) {
+                    setLogoMap(payload.logos);
+                }
+            })
+            .catch(() => {});
+
+        let socket: WebSocket | null = null;
+        let retryTimeout: ReturnType<typeof setTimeout> | undefined;
+
+        const flushCoins = (nextCoins: CoinTickerItem[]) => {
             if (isUnmounted) return;
             if (typeof document !== 'undefined' && document.hidden) {
                 pendingCoinsRef.current = nextCoins;
@@ -144,32 +142,56 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
             }
         };
 
-        const loadPublicFallback = async () => {
-            const seeded = PUBLIC_SEED_COINS.map((c) => ({
-                ...c,
-                logo: LOGO_MAP[c.symbol] || <UsdtLogo className="h-5 w-5 text-slate-400" />,
-            }));
-            flushCoins(seeded);
+        const loadPublicOverview = async () => {
+            flushCoins(PUBLIC_SEED_COINS);
 
+            // 1. Prefer CosmoQuantAI backend public overview (cached + zero browser CORS/429 risk)
+            try {
+                const backendResp = await fetch('/api/v1/market-data/public-overview');
+                if (backendResp.ok) {
+                    const data = await backendResp.json();
+                    if (!isUnmounted && Array.isArray(data?.coins) && data.coins.length > 0) {
+                        const mapped: CoinTickerItem[] = data.coins.map((item: any) => {
+                            const sym = String(item.symbol || '').split('/')[0].toUpperCase();
+                            return {
+                                id: sym,
+                                symbol: sym,
+                                price: Number(item.price) || 0,
+                                change: Number(item.changePercent) || 0,
+                                logoUrl: item.logoUrl || null,
+                            };
+                        }).filter((c: CoinTickerItem) => c.symbol && c.price > 0);
+                        if (mapped.length > 0) {
+                            flushCoins(mapped);
+                            return;
+                        }
+                    }
+                }
+            } catch {
+                // Fall back to direct public exchange snapshot below if backend is offline
+            }
+
+            // 2. Direct Binance public 24h ticker fallback when standalone frontend runs without backend
             try {
                 const symbolsParam = encodeURIComponent(JSON.stringify(PUBLIC_SEED_COINS.map((c) => `${c.symbol}USDT`)));
                 const resp = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${symbolsParam}`);
                 if (!resp.ok) return;
                 const rows = await resp.json();
                 if (!Array.isArray(rows) || isUnmounted) return;
-                const liveCoins = rows.map((row: any) => {
-                    const symbol = String(row.symbol || '').replace('USDT', '');
-                    return {
-                        id: symbol,
-                        logo: LOGO_MAP[symbol] || <UsdtLogo className="h-5 w-5 text-slate-400" />,
-                        symbol,
-                        price: parseFloat(row.lastPrice),
-                        change: parseFloat(row.priceChangePercent),
-                    };
-                }).filter((c: any) => c.symbol && Number.isFinite(c.price));
+                const liveCoins: CoinTickerItem[] = rows
+                    .map((row: any) => {
+                        const symbol = String(row.symbol || '').replace('USDT', '').toUpperCase();
+                        return {
+                            id: symbol,
+                            symbol,
+                            price: parseFloat(row.lastPrice),
+                            change: parseFloat(row.priceChangePercent),
+                        };
+                    })
+                    .filter((c: CoinTickerItem) => c.symbol && Number.isFinite(c.price));
                 if (liveCoins.length > 0) flushCoins(liveCoins);
             } catch {
-                // Keep seeded coins silently if external REST is unavailable
+                // Keep seeded coins silently
             }
         };
 
@@ -178,7 +200,7 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
             const token = sessionStorage.getItem('accessToken') || localStorage.getItem('accessToken');
             if (!token) {
                 if (variant === 'overlay') {
-                    await loadPublicFallback();
+                    await loadPublicOverview();
                 } else {
                     retryTimeout = setTimeout(connect, 3000);
                 }
@@ -189,14 +211,6 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
 
             socket = new WebSocket(wsUrl);
 
-            socket.onopen = () => {
-                if (isUnmounted) {
-                    socket?.close();
-                    return;
-                }
-                console.log('✅ Market Ticker connected to Global WS');
-            };
-
             socket.onmessage = (event) => {
                 if (isUnmounted) return;
                 if (isThermalGuardActive() && typeof document !== 'undefined' && document.hidden) {
@@ -206,32 +220,30 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
                     const message = JSON.parse(event.data);
 
                     if (message.type === 'market_overview' && Array.isArray(message.data)) {
-                        const newCoins = message.data.map((item: any) => {
-                            const symbol = item.symbol.split('/')[0]; // BTC/USDT -> BTC
+                        const newCoins: CoinTickerItem[] = message.data.map((item: any) => {
+                            const symbol = String(item.symbol || '').split('/')[0].toUpperCase();
                             return {
                                 id: symbol,
-                                logo: LOGO_MAP[symbol] || <UsdtLogo className="h-5 w-5 text-slate-400" />,
-                                symbol: symbol,
+                                symbol,
                                 price: parseFloat(item.price),
-                                change: parseFloat(item.changePercent)
+                                change: parseFloat(item.changePercent),
+                                logoUrl: item.logoUrl || null,
                             };
                         });
                         flushCoins(newCoins);
                     }
                 } catch (e) {
-                    console.error("Ticker Parse Error:", e);
+                    console.error('Ticker Parse Error:', e);
                 }
             };
 
             socket.onclose = () => {
                 if (isUnmounted) return;
-                // console.log('Ticker WS closed, retrying...');
                 retryTimeout = setTimeout(connect, 3000);
             };
 
             socket.onerror = () => {
                 if (isUnmounted) return;
-                // console.error("Ticker WS Error:", err);
                 if (socket?.readyState === WebSocket.OPEN) {
                     socket.close();
                 }
@@ -242,7 +254,7 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
 
         return () => {
             isUnmounted = true;
-            clearTimeout(retryTimeout);
+            if (retryTimeout) clearTimeout(retryTimeout);
             if (flushTimerRef.current) {
                 clearTimeout(flushTimerRef.current);
                 flushTimerRef.current = null;
@@ -259,12 +271,8 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
                 }
             }
         };
-    }, []);
+    }, [variant]);
 
-    // Fallback to initial mock if no data yet (optional, but better to show nothing or loading)
-    // Actually, let's just render what we have. If empty, maybe show skeleton or nothing.
-
-    // Duplicate for seamless scroll only if we have enough items
     const tickerItems = coins.length > 5 ? [...coins, ...coins] : coins;
     const ItemComponent = variant === 'overlay' ? TickerItemOverlay : TickerItem;
 
@@ -282,6 +290,7 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
                         <ItemComponent
                             key={`${coin.id}-${index}`}
                             coin={coin}
+                            resolvedLogoUrl={logoMap[coin.symbol]}
                             onClick={onCoinClick ? () => onCoinClick(coin.symbol) : undefined}
                         />
                     ))}

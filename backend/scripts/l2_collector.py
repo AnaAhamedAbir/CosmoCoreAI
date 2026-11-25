@@ -3,6 +3,7 @@ import websockets
 import json
 import pandas as pd
 import os
+import re
 import time
 from datetime import datetime
 import argparse
@@ -16,12 +17,14 @@ if BACKEND_DIR not in sys.path:
 
 from app.db.session import SessionLocal
 from app.models.model_training import ModelTrainingJob, TrainingStatus
+from app.services.l2_data_collector import L2DataCollector
 
 # Configuration
 SYMBOL = "btcusdt"
 DEPTH_LEVELS = 20
 UPDATE_SPEED = "100ms"
 CHUNK_SIZE = 20000
+MAX_CONSECUTIVE_TIMEOUTS = 6
 DATA_DIR = os.path.join(BACKEND_DIR, "data", "raw", "l2_snapshots")
 
 def add_job_log(db, job_id, msg):
@@ -38,15 +41,17 @@ def add_job_log(db, job_id, msg):
         print(f"Failed to update log: {e}")
 
 async def collect_l2_data(target_rows: int, symbol: str = SYMBOL, job_id: str = None):
-    # Binance websocket symbols must be lowercase and have no slash
-    symbol_ws = symbol.replace("/", "").lower()
-    url = f"wss://stream.binance.com:9443/ws/{symbol_ws}@depth{DEPTH_LEVELS}@{UPDATE_SPEED}"
+    symbol_ws, is_futures = L2DataCollector.parse_symbol(symbol)
+    ws_base = "wss://fstream.binance.com/ws" if is_futures else "wss://stream.binance.com:9443/ws"
+    url = f"{ws_base}/{symbol_ws}@depth{DEPTH_LEVELS}@{UPDATE_SPEED}"
+    symbol_safe = re.sub(r"[^A-Za-z0-9_-]+", "_", symbol.upper()).strip("_")
     os.makedirs(DATA_DIR, exist_ok=True)
     session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     buffer = []
     total_collected = 0
     chunk_index = 0
     chunk_files = []
+    consecutive_timeouts = 0
 
     db = SessionLocal()
     add_job_log(db, job_id, f"Starting L2 Collector for {symbol.upper()}")
@@ -54,30 +59,43 @@ async def collect_l2_data(target_rows: int, symbol: str = SYMBOL, job_id: str = 
 
     last_logged_percent = -1
 
+    async def handle_cancellation():
+        if not job_id:
+            return False
+        db.expire_all()
+        job = db.query(ModelTrainingJob).filter(ModelTrainingJob.id == job_id).first()
+        if job and (job.status == TrainingStatus.FAILED or job.status == TrainingStatus.PAUSED or (job.error_message and "cancel" in job.error_message.lower())):
+            add_job_log(db, job_id, "🛑 Collector was cancelled by user.")
+            if job.user_id:
+                from app.services.notification import NotificationService
+                await NotificationService.send_message(db, job.user_id, f"🛑 *Collector Cancelled*\nSymbol: {symbol.upper()}\nTarget: {target_rows:,}", parse_mode="Markdown", in_app_category="ml_training")
+            return True
+        return False
+
     try:
-        async with websockets.connect(url) as websocket:
+        async with websockets.connect(url, open_timeout=10, close_timeout=1) as websocket:
             while total_collected < target_rows:
-                # Check cancellation every 100 iterations
-                if total_collected % 100 == 0 and job_id:
-                    db.expire_all()
-                    job = db.query(ModelTrainingJob).filter(ModelTrainingJob.id == job_id).first()
-                    if job and (job.status == TrainingStatus.FAILED or job.status == TrainingStatus.PAUSED or (job.error_message and "cancel" in job.error_message.lower())):
-                        add_job_log(db, job_id, "🛑 Collector was cancelled by user.")
-                        if job.user_id:
-                            from app.services.notification import NotificationService
-                            await NotificationService.send_message(db, job.user_id, f"🛑 *Collector Cancelled*\nSymbol: {symbol.upper()}\nTarget: {target_rows:,}", parse_mode="Markdown", in_app_category="ml_training")
-                        break
+                if total_collected % 100 == 0 and await handle_cancellation():
+                    break
 
                 try:
                     msg = await asyncio.wait_for(websocket.recv(), timeout=5)
+                    consecutive_timeouts = 0
                 except asyncio.TimeoutError:
+                    consecutive_timeouts += 1
+                    if await handle_cancellation():
+                        break
+                    if consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
+                        raise TimeoutError(
+                            f"No L2 WebSocket data received for {symbol.upper()} from {url} within {MAX_CONSECUTIVE_TIMEOUTS * 5}s"
+                        )
                     continue
 
                 data = json.loads(msg)
                 row = {"timestamp": pd.Timestamp.now()}
                 
-                bids = data.get("bids", [])
-                asks = data.get("asks", [])
+                bids = data.get("bids") if "bids" in data else data.get("b", [])
+                asks = data.get("asks") if "asks" in data else data.get("a", [])
                 
                 for i in range(DEPTH_LEVELS):
                     if i < len(bids):
@@ -109,7 +127,6 @@ async def collect_l2_data(target_rows: int, symbol: str = SYMBOL, job_id: str = 
                 if len(buffer) >= CHUNK_SIZE or total_collected >= target_rows:
                     chunk_index += 1
                     df = pd.DataFrame(buffer)
-                    symbol_safe = symbol.replace("/", "_").upper()
                     chunk_filename = os.path.join(DATA_DIR, f"{symbol_safe}_temp_chunk_{session_id}_{chunk_index}.parquet")
                     df.to_parquet(chunk_filename, index=False)
                     chunk_files.append(chunk_filename)
@@ -135,7 +152,6 @@ async def collect_l2_data(target_rows: int, symbol: str = SYMBOL, job_id: str = 
         try:
             dfs = [pd.read_parquet(f) for f in chunk_files]
             final_df = pd.concat(dfs, ignore_index=True)
-            symbol_safe = symbol.replace("/", "_").upper()
             
             final_filename = os.path.join(DATA_DIR, f"{symbol_safe}_L2_{target_rows}_{session_id}.parquet")
             final_df.to_parquet(final_filename, index=False)

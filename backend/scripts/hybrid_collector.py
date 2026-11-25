@@ -3,6 +3,7 @@ import websockets
 import json
 import pandas as pd
 import os
+import re
 from datetime import datetime
 import argparse
 import sys
@@ -14,11 +15,13 @@ if BACKEND_DIR not in sys.path:
 
 from app.db.session import SessionLocal
 from app.models.model_training import ModelTrainingJob, TrainingStatus
+from app.services.l2_data_collector import L2DataCollector
 
 SYMBOL = "btcusdt"
 DEPTH_LEVELS = 20
 UPDATE_SPEED = "100ms"
 CHUNK_SIZE = 20000
+MAX_CONSECUTIVE_TIMEOUTS = 6
 DATA_DIR = os.path.join(BACKEND_DIR, "data", "raw", "hybrid_snapshots")
 
 # Shared state for trades
@@ -30,6 +33,40 @@ latest_trade = {
     "sell_volume": 0.0
 }
 trade_lock = asyncio.Lock()
+
+
+def resolve_stream_config(symbol: str, resolution: str = "100ms") -> dict:
+    """Resolve Binance Spot vs Futures WebSocket URLs and safe filename prefix."""
+    symbol_ws, is_futures = L2DataCollector.parse_symbol(symbol)
+    ws_base = "wss://fstream.binance.com/ws" if is_futures else "wss://stream.binance.com:9443/ws"
+    binance_speed = (
+        "100ms"
+        if resolution in ["10ms", "50ms", "100ms"]
+        else ("500ms" if is_futures else "1000ms")
+    )
+    symbol_safe = re.sub(r"[^A-Za-z0-9_-]+", "_", symbol.upper()).strip("_")
+    return {
+        "symbol_ws": symbol_ws,
+        "is_futures": is_futures,
+        "symbol_safe": symbol_safe,
+        "trade_url": f"{ws_base}/{symbol_ws}@trade",
+        "l2_url": f"{ws_base}/{symbol_ws}@depth{DEPTH_LEVELS}@{binance_speed}",
+    }
+
+
+def _check_job_cancelled(db, job_id: str):
+    """Return (is_cancelled, user_id) for the given job_id."""
+    if not job_id:
+        return False, None
+    db.expire_all()
+    job = db.query(ModelTrainingJob).filter(ModelTrainingJob.id == job_id).first()
+    if job and (
+        job.status == TrainingStatus.FAILED
+        or job.status == TrainingStatus.PAUSED
+        or (job.error_message and "cancel" in job.error_message.lower())
+    ):
+        return True, job.user_id
+    return False, None
 
 def add_job_log(db, job_id, msg):
     print(f"[{datetime.now()}] {msg}")
@@ -44,14 +81,13 @@ def add_job_log(db, job_id, msg):
     except Exception as e:
         print(f"Failed to update log: {e}")
 
-async def trade_listener(symbol_ws: str, stop_event: asyncio.Event):
-    url = f"wss://stream.binance.com:9443/ws/{symbol_ws}@trade"
+async def trade_listener(trade_url: str, stop_event: asyncio.Event):
     while not stop_event.is_set():
         try:
-            async with websockets.connect(url) as websocket:
+            async with websockets.connect(trade_url, open_timeout=10, close_timeout=1) as websocket:
                 while not stop_event.is_set():
                     try:
-                        msg = await asyncio.wait_for(websocket.recv(), timeout=2.0)
+                        msg = await asyncio.wait_for(websocket.recv(), timeout=1.0)
                         data = json.loads(msg)
                         price = float(data['p'])
                         qty = float(data['q'])
@@ -71,9 +107,9 @@ async def trade_listener(symbol_ws: str, stop_event: asyncio.Event):
         except Exception:
             await asyncio.sleep(2)  # Reconnect delay
 
-async def l2_listener(target_rows: int, symbol_ws: str, symbol_orig: str, session_id: str, job_id: str, stop_event: asyncio.Event, resolution: str, trigger_type: str, trigger_value: float):
-    binance_speed = "100ms" if resolution in ["10ms", "50ms", "100ms"] else "1000ms"
-    url = f"wss://stream.binance.com:9443/ws/{symbol_ws}@depth{DEPTH_LEVELS}@{binance_speed}"
+async def l2_listener(target_rows: int, stream_cfg: dict, symbol_orig: str, session_id: str, job_id: str, stop_event: asyncio.Event, resolution: str, trigger_type: str, trigger_value: float):
+    url = stream_cfg["l2_url"]
+    symbol_safe = stream_cfg["symbol_safe"]
     buffer = []
     total_collected = 0
     total_trades_collected = 0
@@ -81,6 +117,7 @@ async def l2_listener(target_rows: int, symbol_ws: str, symbol_orig: str, sessio
     chunk_files = []
     last_logged_percent = -1
     initial_price = None
+    consecutive_timeouts = 0
     
     db = SessionLocal()
     add_job_log(db, job_id, f"Starting Hybrid Collector for {symbol_orig.upper()}")
@@ -88,23 +125,34 @@ async def l2_listener(target_rows: int, symbol_ws: str, symbol_orig: str, sessio
     if trigger_type == "price_volatility" and trigger_value:
         add_job_log(db, job_id, f"🛡️ Smart Trigger Enabled: Stop if price moves by {trigger_value}%")
 
+    async def handle_cancellation():
+        cancelled, user_id = _check_job_cancelled(db, job_id)
+        if not cancelled:
+            return False
+        add_job_log(db, job_id, "🛑 Hybrid Collector was cancelled by user.")
+        if user_id:
+            from app.services.notification import NotificationService
+            await NotificationService.send_message(db, user_id, f"🛑 *Hybrid Collector Cancelled*\nSymbol: {symbol_orig.upper()}\nTarget: {target_rows:,}", parse_mode="Markdown")
+        stop_event.set()
+        return True
+
     try:
-        async with websockets.connect(url) as websocket:
+        async with websockets.connect(url, open_timeout=10, close_timeout=1) as websocket:
             while total_collected < target_rows and not stop_event.is_set():
-                if total_collected % 100 == 0 and job_id:
-                    db.expire_all()
-                    job = db.query(ModelTrainingJob).filter(ModelTrainingJob.id == job_id).first()
-                    if job and (job.status == TrainingStatus.FAILED or job.status == TrainingStatus.PAUSED or (job.error_message and "cancel" in job.error_message.lower())):
-                        add_job_log(db, job_id, "🛑 Hybrid Collector was cancelled by user.")
-                        if job.user_id:
-                            from app.services.notification import NotificationService
-                            await NotificationService.send_message(db, job.user_id, f"🛑 *Hybrid Collector Cancelled*\nSymbol: {symbol_orig.upper()}\nTarget: {target_rows:,}", parse_mode="Markdown")
-                        stop_event.set()
-                        break
+                if total_collected % 100 == 0 and await handle_cancellation():
+                    break
 
                 try:
                     msg = await asyncio.wait_for(websocket.recv(), timeout=5)
+                    consecutive_timeouts = 0
                 except asyncio.TimeoutError:
+                    consecutive_timeouts += 1
+                    if await handle_cancellation():
+                        break
+                    if consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
+                        raise TimeoutError(
+                            f"No L2 WebSocket data received for {symbol_orig.upper()} from {url} within {MAX_CONSECUTIVE_TIMEOUTS * 5}s"
+                        )
                     continue
 
                 data = json.loads(msg)
@@ -126,8 +174,9 @@ async def l2_listener(target_rows: int, symbol_ws: str, symbol_orig: str, sessio
                     latest_trade["buy_volume"] = 0.0
                     latest_trade["sell_volume"] = 0.0
 
-                bids = data.get("bids", [])
-                asks = data.get("asks", [])
+                # Spot depth uses 'bids'/'asks'; Futures depth uses 'b'/'a'
+                bids = data.get("bids") if "bids" in data else data.get("b", [])
+                asks = data.get("asks") if "asks" in data else data.get("a", [])
                 
                 for i in range(DEPTH_LEVELS):
                     if i < len(bids):
@@ -180,7 +229,6 @@ async def l2_listener(target_rows: int, symbol_ws: str, symbol_orig: str, sessio
                 if len(buffer) >= CHUNK_SIZE or total_collected >= target_rows:
                     chunk_index += 1
                     df = pd.DataFrame(buffer)
-                    symbol_safe = symbol_orig.replace("/", "_").upper()
                     chunk_filename = os.path.join(DATA_DIR, f"{symbol_safe}_temp_chunk_{session_id}_{chunk_index}.parquet")
                     df.to_parquet(chunk_filename, index=False)
                     chunk_files.append(chunk_filename)
@@ -205,10 +253,17 @@ async def l2_listener(target_rows: int, symbol_ws: str, symbol_orig: str, sessio
     return chunk_files, db
 
 async def collect_hybrid_data(target_rows: int, symbol: str = SYMBOL, job_id: str = None, resolution: str = "100ms", trigger_type: str = None, trigger_value: float = None, schedule_time: str = None):
-    symbol_ws = symbol.replace("/", "").lower()
+    stream_cfg = resolve_stream_config(symbol, resolution)
+    symbol_safe = stream_cfg["symbol_safe"]
     os.makedirs(DATA_DIR, exist_ok=True)
     session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     stop_event = asyncio.Event()
+    async with trade_lock:
+        latest_trade["trade_price"] = None
+        latest_trade["trade_volume"] = 0.0
+        latest_trade["trade_count"] = 0
+        latest_trade["buy_volume"] = 0.0
+        latest_trade["sell_volume"] = 0.0
     db = SessionLocal()
 
     if schedule_time:
@@ -224,11 +279,18 @@ async def collect_hybrid_data(target_rows: int, symbol: str = SYMBOL, job_id: st
             add_job_log(db, job_id, f"⚠️ Failed to parse schedule_time: {e}. Starting immediately.")
     db.close()
 
-    task1 = asyncio.create_task(trade_listener(symbol_ws, stop_event))
-    task2 = asyncio.create_task(l2_listener(target_rows, symbol_ws, symbol, session_id, job_id, stop_event, resolution, trigger_type, trigger_value))
+    task1 = asyncio.create_task(trade_listener(stream_cfg["trade_url"], stop_event))
+    task2 = asyncio.create_task(l2_listener(target_rows, stream_cfg, symbol, session_id, job_id, stop_event, resolution, trigger_type, trigger_value))
 
     chunk_files, db = await task2
-    await task1
+    try:
+        await asyncio.wait_for(task1, timeout=3.0)
+    except asyncio.TimeoutError:
+        task1.cancel()
+        try:
+            await task1
+        except asyncio.CancelledError:
+            pass
 
     # Merge Process
     if chunk_files:
@@ -236,7 +298,6 @@ async def collect_hybrid_data(target_rows: int, symbol: str = SYMBOL, job_id: st
         try:
             dfs = [pd.read_parquet(f) for f in chunk_files]
             final_df = pd.concat(dfs, ignore_index=True)
-            symbol_safe = symbol.replace("/", "_").upper()
             
             final_filename = os.path.join(DATA_DIR, f"{symbol_safe}_HYBRID_{target_rows}_{session_id}.parquet")
             final_df.to_parquet(final_filename, index=False)

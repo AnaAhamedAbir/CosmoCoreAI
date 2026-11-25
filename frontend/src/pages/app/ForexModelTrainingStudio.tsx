@@ -144,6 +144,8 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
     const [dataSource, setDataSource] = useState<string>('ohlcv');
 
     const [showTerminal, setShowTerminal] = useState(false);
+    const [mobileColumnTab, setMobileColumnTab] = useState<'all' | 'core' | 'neural' | 'data'>('all');
+    const [algoSearchQuery, setAlgoSearchQuery] = useState('');
     const logsEndRef = useRef<HTMLDivElement>(null);
 
     // Scraper States
@@ -686,27 +688,128 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
 
     return (
         <>
-            <div className="h-full flex flex-col space-y-3 relative overflow-hidden bg-slate-50 dark:bg-black/20 rounded-3xl">
-            {/* Background Orbs adapted for Forex (Teal/Blue vibe) */}
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-teal-600/10 dark:bg-teal-600/20 blur-[120px] rounded-full pointer-events-none"></div>
-            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/10 dark:bg-blue-600/20 blur-[120px] rounded-full pointer-events-none"></div>
-
-            <header className="flex items-center gap-4 z-10 px-2 mt-2">
-                <h2 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    <Globe className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-                    Forex ML Intelligence Studio
-                </h2>
-                <div className="w-px h-4 bg-slate-300 dark:bg-white/20"></div>
-                <div className="text-slate-600 dark:text-slate-400 text-xs font-medium tracking-wide flex items-center gap-2">
-                    Decentralized Market Modeling with Macro-Economic Pipelines
+            <div className="h-full flex flex-col space-y-2.5 relative overflow-hidden">
+            {/* Pro SaaS Command Header */}
+            <header className="flex flex-wrap items-center justify-between gap-2.5 z-10 px-3 py-2.5 rounded-2xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 shadow-sm flex-shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500/20 to-emerald-500/20 border border-teal-500/35 flex items-center justify-center flex-shrink-0">
+                        <Globe className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                    </div>
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight truncate">
+                                Forex &amp; TradFi ML Intelligence Studio
+                            </h2>
+                            <span className={`px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-wider border ${
+                                isTraining
+                                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300 border-amber-500/35'
+                                    : 'bg-teal-500/15 text-teal-600 dark:text-teal-300 border-teal-500/35'
+                            }`}>
+                                {isTraining ? 'TRAINING ACTIVE' : 'TRADFI READY'}
+                            </span>
+                        </div>
+                        <p className="text-slate-500 dark:text-slate-400 text-[11px] truncate mt-0.5">
+                            Institutional Macro-Economic, Triple-Barrier &amp; Tick-Enhanced Smart Money Modeling
+                        </p>
+                    </div>
                 </div>
+                {activeJob && (
+                    <button
+                        type="button"
+                        onClick={() => setShowTerminal(true)}
+                        className="px-3 h-8 rounded-xl text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 bg-slate-100 dark:bg-[#0B1120] hover:border-teal-500/45 text-teal-600 dark:text-teal-300 border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer"
+                    >
+                        <Terminal className="w-3.5 h-3.5" /> Console ({activeJob.progress.toFixed(0)}%)
+                    </button>
+                )}
             </header>
 
+            {/* Institutional Forex Pipeline Telemetry KPI Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 flex-shrink-0">
+                <div className="px-3 py-2 rounded-xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
+                    <div className="min-w-0">
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">01 · Currency Pair</span>
+                        <span className="text-xs font-bold text-slate-900 dark:text-white font-mono truncate block">{symbol} · {timeframe}</span>
+                    </div>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/25">
+                        {broker}
+                    </span>
+                </div>
+                <div className="px-3 py-2 rounded-xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
+                    <div className="min-w-0">
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">02 · Neural / Quant</span>
+                        <span className="text-xs font-bold text-slate-900 dark:text-white truncate block">
+                            {isEnsemble ? `Ensemble (${ensembleMethod.toUpperCase()})` : algorithm}
+                        </span>
+                    </div>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-500/25">
+                        {useAutoMl ? `Optuna ${autoMlTrials}` : `${epochs} ep`}
+                    </span>
+                </div>
+                <div className="px-3 py-2 rounded-xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
+                    <div className="min-w-0">
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">03 · Labeling &amp; Split</span>
+                        <span className="text-xs font-bold text-slate-900 dark:text-white font-mono truncate block">
+                            {useTripleBarrier ? `Triple-Barrier (${ptSlRatio}R)` : predictionTarget.toUpperCase()}
+                        </span>
+                    </div>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-slate-100 dark:bg-[#0B1120] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800">
+                        {trainRatio}/{valRatio}/{testRatio}
+                    </span>
+                </div>
+                <div className="px-3 py-2 rounded-xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
+                    <div className="min-w-0">
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">04 · TradFi Signals</span>
+                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono truncate block">
+                            {selectedForexFeatures.length} Active Signals
+                        </span>
+                    </div>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/25 uppercase">
+                        {dataSource.replace('_', ' ')}
+                    </span>
+                </div>
+                <div className="col-span-2 sm:col-span-1 px-3 py-2 rounded-xl bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
+                    <div className="min-w-0">
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">05 · Walk-Forward</span>
+                        <span className="text-xs font-bold text-slate-900 dark:text-white font-mono truncate block">
+                            {wfoWindows} WFO Windows
+                        </span>
+                    </div>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-500/25 uppercase">
+                        {evalMetric}
+                    </span>
+                </div>
+            </div>
+
+            {/* Mobile / Tablet Column Focus Switcher (< lg) */}
+            <div className="flex lg:hidden items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 flex-shrink-0 overflow-x-auto hide-scrollbar">
+                {[
+                    { id: 'all', label: 'All Stages' },
+                    { id: 'core', label: '01 · Core & Barrier' },
+                    { id: 'neural', label: '02 · Neural & Macro' },
+                    { id: 'data', label: '03 · TradFi Pipeline' },
+                ].map((t) => (
+                    <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setMobileColumnTab(t.id as any)}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider whitespace-nowrap transition-colors cursor-pointer ${
+                            mobileColumnTab === t.id
+                                ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/35'
+                                : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                    >
+                        {t.label}
+                    </button>
+                ))}
+            </div>
+
             <div className="flex-1 flex flex-col min-h-0 relative z-10">
-                <div className="w-full flex flex-col bg-white/85 dark:bg-black/40 backdrop-blur-2xl border border-slate-200 dark:border-white/10 rounded-3xl p-6 laptop:p-3.5 shadow-lg dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative overflow-hidden h-full">
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 laptop:gap-4 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+                <div className="w-full flex flex-col bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 laptop:p-3 shadow-sm relative overflow-hidden h-full">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 laptop:gap-3.5 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
                         
                         {/* COLUMN 1: Core Parameters (Modularized) */}
+                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'core' ? 'hidden lg:flex' : 'flex'} flex-col h-full min-h-0`}>
                         <ForexCoreParametersPanel
                             symbol={symbol}
                             setSymbol={setSymbol}
@@ -800,13 +903,17 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                             autoFeatureCount={autoFeatureCount}
                             setAutoFeatureCount={setAutoFeatureCount}
                         />
+                        </div>
 
                         {/* COLUMN 2: Neural Architecture */}
-                        <div className="flex flex-col h-full bg-white dark:bg-white/5 border border-teal-500/30 rounded-2xl shadow-sm dark:shadow-[0_0_12px_rgba(20,184,166,0.1)] overflow-hidden">
-                            <div className="p-5 bg-slate-50 dark:bg-black/40 border-b border-slate-200 dark:border-white/10 flex-shrink-0 relative z-20">
-                                <h3 className="text-sm font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2 uppercase tracking-widest"><Cpu className="w-4 h-4" /> Neural Architecture</h3>
+                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'neural' ? 'hidden lg:flex' : 'flex'} flex-col h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-indigo-500 rounded-2xl overflow-hidden`}>
+                            <div className="px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
+                                <h3 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 uppercase tracking-wider"><Cpu className="w-4 h-4" /> 02 · Neural &amp; Econometric Engine</h3>
+                                <span className="text-[10px] font-mono text-indigo-600 dark:text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/25 truncate max-w-[130px]">
+                                    {isEnsemble ? `Ensemble (${ensembleMethod})` : algorithm}
+                                </span>
                             </div>
-                            <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar h-full flex flex-col">
+                            <div className="p-4 space-y-5 overflow-y-auto custom-scrollbar h-full flex flex-col">
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Algorithm Selection</label>
@@ -839,16 +946,29 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                                     initial={{ opacity: 0, height: 0 }}
                                                     animate={{ opacity: 1, height: 'auto' }}
                                                     exit={{ opacity: 0, height: 0 }}
-                                                    className="space-y-4 mt-4"
+                                                    className="space-y-3 mt-4"
                                                 >
-                                                    {ALGORITHM_CATEGORIES.map(category => (
+                                                    <input
+                                                        type="text"
+                                                        value={algoSearchQuery}
+                                                        onChange={(e) => setAlgoSearchQuery(e.target.value)}
+                                                        placeholder="Filter econometric & neural engines (e.g., GARCH, HMM, XGBoost)..."
+                                                        className="w-full h-8 px-3 rounded-xl text-xs bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-teal-500/50"
+                                                    />
+                                                    {ALGORITHM_CATEGORIES.map(category => {
+                                                        const q = algoSearchQuery.trim().toLowerCase();
+                                                        const visibleAlgos = q
+                                                            ? category.algos.filter(a => a.id.toLowerCase().includes(q) || a.type.toLowerCase().includes(q) || a.desc.toLowerCase().includes(q))
+                                                            : category.algos;
+                                                        if (visibleAlgos.length === 0) return null;
+                                                        return (
                                                         <div key={category.name} className="space-y-2">
                                                             <div>
                                                                 <h4 className="text-[10px] font-black text-teal-600 dark:text-teal-400 uppercase tracking-widest">{category.name}</h4>
                                                                 <p className="text-[10px] text-slate-500 font-medium">{category.desc}</p>
                                                             </div>
                                                             <div className="grid grid-cols-1 gap-2">
-                                                                {category.algos.map(algo => (
+                                                                {visibleAlgos.map(algo => (
                                                                     <div 
                                                                         key={algo.id} 
                                                                         onClick={() => {
@@ -879,7 +999,8 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                                                 ))}
                                                             </div>
                                                         </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </motion.div>
                                             )}
                                         </AnimatePresence>
@@ -1028,6 +1149,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                         </div>
 
                         {/* COLUMN 3: Forex Data Engine (TradFi Data Pipeline) */}
+                        <div className={`${mobileColumnTab !== 'all' && mobileColumnTab !== 'data' ? 'hidden lg:flex' : 'flex'} flex-col h-full min-h-0`}>
                         <ForexAdvancedPipeline 
                             selectedFeatures={selectedForexFeatures}
                             onToggleFeature={(id) => {
@@ -1076,36 +1198,49 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                             setSelectedHybridFile={setSelectedHybridFile}
                             isMerging={isMerging}
                         />
+                        </div>
 
                         </div>
 
                     </div>
                     
-                    <div className="pt-6 mt-2 relative z-10 flex flex-col gap-3 border-t border-slate-200 dark:border-white/10">
-                        {isTraining && activeJob ? (
-                            <div className="flex gap-3">
-                                <button 
-                                    onClick={() => setShowTerminal(true)}
-                                    className="flex-1 py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-3 bg-cyan-500/15 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/25 dark:hover:bg-cyan-500/30 transition-all duration-300 shadow-lg dark:shadow-xl"
+                    <div className="pt-3 mt-2 relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-200 dark:border-slate-800/80">
+                        <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-mono truncate">
+                            <span className="w-2 h-2 rounded-full bg-teal-400 flex-shrink-0" />
+                            <span className="truncate">
+                                Ready: <strong className="text-slate-800 dark:text-white">{symbol}</strong> ({broker.toUpperCase()} · {timeframe}) · <strong className="text-indigo-600 dark:text-indigo-300">{isEnsemble ? `Ensemble (${ensembleMethod})` : algorithm}</strong> · <strong className="text-emerald-600 dark:text-emerald-400">{selectedForexFeatures.length} features</strong>
+                            </span>
+                        </div>
+                        <div className="flex-1 sm:max-w-xl">
+                            {isTraining && activeJob ? (
+                                <div className="flex gap-2.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowTerminal(true)}
+                                        className="flex-1 py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/35 hover:bg-teal-500/25 transition-colors cursor-pointer"
+                                    >
+                                        <Activity className="w-4 h-4" /> Live Console
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleCancelTraining}
+                                        className="flex-1 py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/35 hover:bg-rose-500/20 transition-colors cursor-pointer"
+                                    >
+                                        <XCircle className="w-4 h-4" /> Stop Job
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={handleStartTraining}
+                                    disabled={isTraining}
+                                    className={`w-full py-3 px-6 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 transition-colors shadow-md bg-gradient-to-r from-teal-600 via-cyan-600 to-indigo-600 hover:from-teal-500 hover:via-cyan-500 hover:to-indigo-500 text-white border border-teal-400/30 cursor-pointer ${isTraining ? 'opacity-50 cursor-wait' : ''}`}
                                 >
-                                    <Activity className="w-5 h-5" /> SHOW LIVE TERMINAL
+                                    <Play className="w-4 h-4 fill-current" />
+                                    <span>Launch TradFi Deep Training Pipeline</span>
                                 </button>
-                                <button 
-                                    onClick={handleCancelTraining}
-                                    className="flex-1 py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-2 bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-all"
-                                >
-                                    <XCircle className="w-5 h-5" /> CANCEL
-                                </button>
-                            </div>
-                        ) : (
-                            <button
-                                onClick={handleStartTraining}
-                                disabled={isTraining}
-                                className={`w-full py-4 rounded-2xl font-black text-[15px] flex items-center justify-center gap-3 transition-all duration-300 shadow-xl bg-gradient-to-r from-teal-500 via-blue-500 to-indigo-600 text-white hover:shadow-[0_0_30px_rgba(20,184,166,0.5)] border border-white/20 hover:scale-[1.02] ${isTraining ? 'opacity-50 cursor-wait' : ''}`}
-                            >
-                                <Play className="w-5 h-5 fill-current" /> START DEEP TRAINING
-                            </button>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1117,7 +1252,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.95 }}
-                        className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm"
+                        className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80"
                     >
                         <div className="w-full max-w-6xl h-[85vh] relative flex flex-col min-h-0">
                             <button 
@@ -1127,7 +1262,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                 <XCircle className="w-8 h-8" />
                             </button>
 
-                            <div className="flex flex-col bg-slate-950/95 dark:bg-black/60 backdrop-blur-2xl border border-cyan-500/20 rounded-3xl shadow-[0_0_50px_rgba(56,189,248,0.1)] overflow-hidden h-full relative z-10 w-full">
+                            <div className="flex flex-col bg-[#070B14] border border-cyan-500/30 rounded-2xl shadow-2xl overflow-hidden h-full relative z-10 w-full">
                                 {/* Header */}
                                 <div className="px-6 py-4 bg-gradient-to-r from-cyan-900/40 to-blue-900/20 border-b border-cyan-500/20 flex items-center justify-between flex-shrink-0">
                                     <div className="flex items-center gap-3">
@@ -1249,7 +1384,7 @@ const ForexModelTrainingStudio: React.FC<ForexModelTrainingStudioProps> = ({ ret
                                 </div>
 
                                 {/* Footer Status Bar */}
-                                <div className="bg-black/80 backdrop-blur-md px-6 py-3 border-t border-cyan-500/30 flex justify-between items-center shrink-0">
+                                <div className="bg-[#0B1120] px-6 py-3 border-t border-cyan-500/30 flex justify-between items-center shrink-0">
                                     <div className="flex items-center gap-3">
                                         {activeJob?.status === 'COMPLETED' ? (
                                             <CheckCircle2 className="w-5 h-5 text-emerald-400" />

@@ -352,20 +352,27 @@ const Sidebar: React.FC<{
 
             {/* Brand Header + Quick Filter */}
             <div className="px-4 pt-4 pb-3 relative z-10 flex-shrink-0">
-                <div className={`flex items-center ${effectiveCollapsed ? 'justify-center' : 'justify-between'} gap-2`}>
+                <div className="flex items-center justify-center">
                     {effectiveCollapsed ? (
                         <img
                             src="/logo.png"
                             alt="CosmoQuantAI"
-                            className="h-8 w-8 object-contain select-none"
+                            className="h-12 w-12 object-contain select-none drop-shadow-[0_0_12px_rgba(6,182,212,0.4)]"
                         />
                     ) : (
-                        <>
-                            <Logo compact />
-                            <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25 flex-shrink-0">
+                        <div className="relative flex flex-col items-center w-full select-none">
+                            <span className="absolute right-0 top-0 px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25">
                                 PRO
                             </span>
-                        </>
+                            <img
+                                src="/logo.png"
+                                alt="CosmoQuantAI"
+                                className="h-[84px] w-[84px] object-contain drop-shadow-[0_6px_16px_rgba(15,23,42,0.2)] dark:drop-shadow-[0_0_22px_rgba(6,182,212,0.42)]"
+                            />
+                            <span className="mt-1 font-extrabold text-[26px] leading-tight text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
+                                CosmoQuantAI
+                            </span>
+                        </div>
                     )}
                 </div>
 

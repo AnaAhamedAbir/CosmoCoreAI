@@ -196,13 +196,16 @@ const ForexSymbolSelector = ({ symbol, setSymbol, broker, setBroker, instruments
 
 export const ForexCoreParametersPanel: React.FC<ForexCoreParametersProps> = (props) => {
     return (
-        <div className="flex flex-col h-full bg-white dark:bg-white/5 border border-teal-500/30 rounded-2xl shadow-lg dark:shadow-[0_0_12px_rgba(20,184,166,0.1)] overflow-hidden">
-            <div className="p-5 bg-slate-50 dark:bg-black/40 border-b border-slate-200 dark:border-white/10 flex-shrink-0 relative z-20">
-                <h3 className="text-sm font-bold text-teal-600 dark:text-teal-400 flex items-center gap-2 uppercase tracking-widest">
-                    <Settings className="w-4 h-4" /> Core Parameters
+        <div className="flex flex-col h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-teal-500 rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between flex-shrink-0 relative z-20">
+                <h3 className="text-xs font-bold text-teal-600 dark:text-teal-400 flex items-center gap-2 uppercase tracking-wider">
+                    <Settings className="w-4 h-4" /> 01 · Core Parameters &amp; Split
                 </h3>
+                <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
+                    {props.useTripleBarrier ? 'TRIPLE-BARRIER' : props.predictionTarget.toUpperCase()}
+                </span>
             </div>
-            <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar h-full">
+            <div className="p-4 space-y-5 overflow-y-auto custom-scrollbar h-full">
                 
                 {/* Upper Half: Asset, Model Name, Targets */}
                 <div className="flex flex-col gap-4">
@@ -226,7 +229,7 @@ export const ForexCoreParametersPanel: React.FC<ForexCoreParametersProps> = (pro
                         value={props.modelName} 
                         onChange={e => props.setModelName(e.target.value)}
                         disabled={props.isTraining}
-                        className="w-full bg-slate-50 dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-500/50 outline-none transition-all disabled:opacity-50 placeholder-slate-400 dark:placeholder-white/30 shadow-inner"
+                        className="w-full bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-500/40 outline-none transition-colors disabled:opacity-50 placeholder-slate-400 dark:placeholder-slate-500"
                         placeholder="e.g., EURUSD_Scalper_V1"
                     />
                 </div>

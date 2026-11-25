@@ -1,19 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { mlModelsService } from '@/services/mlModelsService';
+import { Cpu, Globe } from 'lucide-react';
 import CryptoModelTrainingStudio from './CryptoModelTrainingStudio';
 import ForexModelTrainingStudio from './ForexModelTrainingStudio';
 
 const ModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = ({ retrainModelId }) => {
-    // Determine initial mode based on some global state or default to crypto
     const [mode, setMode] = useState<'crypto' | 'forex'>('crypto');
 
     useEffect(() => {
         if (retrainModelId) {
             mlModelsService.getModelConfig(retrainModelId).then((config) => {
                 if (config) {
-                    const isForex = 
-                        config.dataset_type === 'forex' || 
+                    const isForex =
+                        config.dataset_type === 'forex' ||
                         (config.symbol && config.symbol.includes('_'));
                     if (isForex) {
                         setMode('forex');
@@ -24,69 +23,54 @@ const ModelTrainingStudio: React.FC<{ retrainModelId?: string | null }> = ({ ret
     }, [retrainModelId]);
 
     return (
-        <div className="h-full flex flex-col relative w-full overflow-visible">
-            {/* Global Market Mode Toggle */}
-            <div className="absolute -top-6 laptop:top-0 right-6 laptop:right-3 z-[100] flex items-center gap-2 bg-white/90 dark:bg-[#0a0f1a]/80 backdrop-blur-xl p-1.5 rounded-full border border-slate-200 dark:border-white/10 shadow-lg dark:shadow-[0_0_30px_rgba(168,85,247,0.15)] ring-1 ring-slate-200/60 dark:ring-white/5">
-                <button
-                    onClick={() => setMode('crypto')}
-                    className={`relative flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest transition-all duration-500 overflow-hidden group ${
-                        mode === 'crypto' 
-                        ? 'text-white shadow-[0_0_25px_rgba(168,85,247,0.6)]' 
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
-                    }`}
-                >
-                    {mode === 'crypto' && (
-                        <span className="absolute inset-0 bg-gradient-to-r from-brand-primary via-purple-500 to-indigo-600 opacity-90 animate-gradient-x"></span>
-                    )}
-                    <span className="relative z-10 flex items-center gap-2">
-                        <span className={mode === 'crypto' ? 'animate-pulse text-white' : ''}>₿</span> 
-                        CRYPTO
+        <div className="h-full flex flex-col relative w-full min-h-0">
+            {/* Pro SaaS Top Desk Mode Switcher Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2 border-b border-slate-200 dark:border-slate-800/80 flex-shrink-0">
+                <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                        ML TRAINING WORKBENCH
                     </span>
-                </button>
-                <button
-                    onClick={() => setMode('forex')}
-                    className={`relative flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest transition-all duration-500 overflow-hidden group ${
-                        mode === 'forex' 
-                        ? 'text-white shadow-[0_0_25px_rgba(20,184,166,0.6)]' 
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
-                    }`}
-                >
-                    {mode === 'forex' && (
-                        <span className="absolute inset-0 bg-gradient-to-r from-teal-500 via-emerald-500 to-cyan-600 opacity-90 animate-gradient-x"></span>
-                    )}
-                    <span className="relative z-10 flex items-center gap-2">
-                        <span className={mode === 'forex' ? 'animate-pulse text-white' : ''}>💱</span> 
-                        FOREX
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
+                        Institutional Feature Engineering, Hyperparameter Optimization &amp; 1-Click Deployment
                     </span>
-                </button>
+                </div>
+
+                <div className="inline-flex items-center p-0.5 h-9 rounded-xl bg-slate-100 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 shadow-inner">
+                    <button
+                        type="button"
+                        onClick={() => setMode('crypto')}
+                        className={`flex items-center gap-1.5 px-3.5 h-full rounded-[10px] text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+                            mode === 'crypto'
+                                ? 'bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40 shadow-sm'
+                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-transparent'
+                        }`}
+                    >
+                        <Cpu className="w-3.5 h-3.5" />
+                        <span>Crypto Desk</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setMode('forex')}
+                        className={`flex items-center gap-1.5 px-3.5 h-full rounded-[10px] text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+                            mode === 'forex'
+                                ? 'bg-gradient-to-r from-teal-500/20 to-emerald-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/40 shadow-sm'
+                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-transparent'
+                        }`}
+                    >
+                        <Globe className="w-3.5 h-3.5" />
+                        <span>Forex TradFi</span>
+                    </button>
+                </div>
             </div>
 
-            {/* Render the appropriate isolated component */}
-            <AnimatePresence mode="wait">
+            <div className="flex-1 min-h-0 w-full">
                 {mode === 'crypto' ? (
-                    <motion.div
-                        key="crypto"
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        transition={{ duration: 0.3 }}
-                        className="flex-1 h-full w-full"
-                    >
-                        <CryptoModelTrainingStudio retrainModelId={retrainModelId} />
-                    </motion.div>
+                    <CryptoModelTrainingStudio retrainModelId={retrainModelId} />
                 ) : (
-                    <motion.div
-                        key="forex"
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        transition={{ duration: 0.3 }}
-                        className="flex-1 h-full w-full"
-                    >
-                        <ForexModelTrainingStudio retrainModelId={retrainModelId} />
-                    </motion.div>
+                    <ForexModelTrainingStudio retrainModelId={retrainModelId} />
                 )}
-            </AnimatePresence>
+            </div>
         </div>
     );
 };

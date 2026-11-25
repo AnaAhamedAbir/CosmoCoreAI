@@ -784,16 +784,15 @@ export const ForexAdvancedPipeline: React.FC<ForexAdvancedPipelineProps> = (prop
     };
 
     return (
-        <div className="flex flex-col h-full bg-white/90 dark:bg-[#0A0A0A]/90 border border-teal-500/30 rounded-[22px] shadow-sm dark:shadow-[0_0_20px_rgba(20,184,166,0.1)] overflow-hidden relative">
-            {/* Ambient Background Effects */}
-            <div className="absolute top-0 right-0 w-48 h-48 bg-teal-600/10 blur-[80px] rounded-full pointer-events-none"></div>
-            <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-600/10 blur-[80px] rounded-full pointer-events-none"></div>
-            
-            <div className="p-5 bg-slate-50 dark:bg-black/40 border-b border-slate-200 dark:border-white/10 flex-shrink-0 relative z-20">
-                <div className="flex items-center justify-between mb-4">
-                    <label className="flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-white">
-                        <Database className="w-5 h-5 text-cyan-600 dark:text-cyan-400" /> Data Source Engine
+        <div className="flex flex-col h-full bg-slate-50/60 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 border-t-2 border-t-emerald-500 rounded-2xl overflow-hidden relative">
+            <div className="px-4 py-3 bg-slate-100/80 dark:bg-[#070B14] border-b border-slate-200 dark:border-slate-800/80 flex-shrink-0 relative z-20">
+                <div className="flex items-center justify-between mb-3">
+                    <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                        <Database className="w-4 h-4" /> 03 · TradFi Data &amp; Feature Matrix
                     </label>
+                    <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25">
+                        {props.selectedFeatures.length} features
+                    </span>
                 </div>
                 
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">

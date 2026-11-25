@@ -282,19 +282,22 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
     }, [variant]);
 
     const thermalGuard = isThermalGuardActive();
+    const isLandingOverlay = variant === 'overlay';
+    const shouldAnimateMarquee = !thermalGuard || isLandingOverlay;
     const visibleCoins = thermalGuard ? coins.slice(0, 20) : coins;
-    const tickerItems = thermalGuard
-        ? visibleCoins
-        : (visibleCoins.length > 5 ? [...visibleCoins, ...visibleCoins] : visibleCoins);
-    const ItemComponent = variant === 'overlay' ? TickerItemOverlay : TickerItem;
+    const tickerItems = shouldAnimateMarquee
+        ? (visibleCoins.length > 0 ? [...visibleCoins, ...visibleCoins] : visibleCoins)
+        : visibleCoins;
+    const marqueeDurationSec = Math.max(24, Math.round(visibleCoins.length * 2.5));
+    const ItemComponent = isLandingOverlay ? TickerItemOverlay : TickerItem;
 
     if (coins.length === 0) {
-        return variant === 'overlay'
+        return isLandingOverlay
             ? <div className="h-10 w-full bg-[#020A1A]/75" />
             : <div className="h-10 w-full bg-slate-200/70 dark:bg-white/5 mx-4 rounded" />;
     }
 
-    if (thermalGuard) {
+    if (!shouldAnimateMarquee) {
         return (
             <div className="w-full overflow-x-auto no-scrollbar">
                 <div className="flex whitespace-nowrap">
@@ -313,7 +316,13 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
 
     return (
         <div className="w-full overflow-hidden">
-            <div className="animate-marquee-slow hover:pause-animation" style={{ animationDuration: '500s', animationPlayState: isPageHidden ? 'paused' : 'running' }}>
+            <div
+                className={`animate-marquee-slow ${isLandingOverlay ? 'landing-ticker-marquee' : ''}`}
+                style={{
+                    animationDuration: `${marqueeDurationSec}s`,
+                    animationPlayState: isPageHidden ? 'paused' : 'running',
+                }}
+            >
                 <div className="flex whitespace-nowrap">
                     {tickerItems.map((coin, index) => (
                         <ItemComponent

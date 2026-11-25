@@ -221,11 +221,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 /* For market ticker animation */
 @keyframes marquee-slow {
   0% {
-    transform: translateX(0%);
+    transform: translate3d(0%, 0, 0);
   }
 
   100% {
-    transform: translateX(-50%);
+    transform: translate3d(-50%, 0, 0);
   }
 }
 
@@ -1845,7 +1845,7 @@ html.mobile-thermal-guard [style*="will-change"] {
   will-change: auto !important;
 }
 
-html.mobile-thermal-guard .animate-marquee-slow {
+html.mobile-thermal-guard .animate-marquee-slow:not(.landing-ticker-marquee) {
   animation: none !important;
 }
 

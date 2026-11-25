@@ -85,8 +85,14 @@ export const CosmicStarBackground: React.FC = () => {
         ];
 
         const resize = () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            const parent = canvas.parentElement;
+            const nextWidth = parent ? parent.clientWidth : window.innerWidth;
+            const nextHeight = parent ? parent.clientHeight : window.innerHeight;
+            // Only update canvas backing store when dimensions actually change (ignores mobile URL-bar height shifts)
+            if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+                canvas.width = nextWidth;
+                canvas.height = nextHeight;
+            }
         };
 
         // --- Optimized Batched TypedArray Renderer (Mobile/Tablet Thermal Guard) ---
@@ -322,11 +328,15 @@ export const CosmicStarBackground: React.FC = () => {
     }, [thermalGuard]);
 
     return (
-        <div className="fixed inset-0 z-0 w-full h-full pointer-events-none overflow-hidden bg-black">
+        <div
+            className="fixed top-0 left-0 right-0 z-0 w-full h-[100lvh] min-h-screen pointer-events-none overflow-hidden bg-black"
+            style={{ transform: 'translateZ(0)' }}
+        >
             {/* Distant Galaxy Image Background - Centered, Masked, Static, Balanced Distance */}
             <div 
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] md:w-[800px] md:h-[800px] bg-[url('/distant_galaxy_bg.png')] bg-cover bg-center bg-no-repeat opacity-45"
+                className="absolute top-1/2 left-1/2 w-[600px] h-[600px] md:w-[800px] md:h-[800px] bg-[url('/distant_galaxy_bg.png')] bg-cover bg-center bg-no-repeat opacity-45"
                 style={{ 
+                    transform: 'translate3d(-50%, -50%, 0)',
                     mixBlendMode: thermalGuard ? 'normal' : 'screen',
                     WebkitMaskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%)',
                     maskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%)'
@@ -415,12 +425,12 @@ const LandingPageNewsTicker: React.FC<{ onSignUp: () => void }> = ({ onSignUp })
                     </span>
                     <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider whitespace-nowrap">Market Wire</span>
                 </div>
-                <div className={`flex-1 ${thermalGuard ? 'overflow-x-auto no-scrollbar' : 'overflow-hidden'} relative h-6`}>
+                <div className="flex-1 overflow-hidden relative h-6">
                     <div
-                        className={`${thermalGuard ? 'flex items-center h-full whitespace-nowrap' : 'animate-marquee-slow whitespace-nowrap absolute top-0 left-0 flex items-center h-full'} text-sm text-slate-400`}
-                        style={thermalGuard ? undefined : { animationDuration: '120s' }}
+                        className="animate-marquee-slow landing-ticker-marquee whitespace-nowrap absolute top-0 left-0 flex items-center h-full text-sm text-slate-400"
+                        style={{ animationDuration: '65s' }}
                     >
-                        {(thermalGuard ? MOCK_CRYPTO_NEWS : [...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS]).map((news, i) => (
+                        {[...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS].map((news, i) => (
                             <button
                                 type="button"
                                 key={`${news.id}-${i}`}

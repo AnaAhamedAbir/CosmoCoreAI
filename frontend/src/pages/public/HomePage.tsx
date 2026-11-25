@@ -328,27 +328,32 @@ export const CosmicStarBackground: React.FC = () => {
     }, [thermalGuard]);
 
     return (
-        <div
-            className="fixed top-0 left-0 right-0 z-0 w-full h-[100lvh] min-h-screen pointer-events-none overflow-hidden bg-black"
-            style={{ transform: 'translateZ(0)' }}
-        >
-            {/* Distant Galaxy Image Background - Centered, Masked, Static, Balanced Distance */}
-            <div 
-                className="absolute top-1/2 left-1/2 w-[600px] h-[600px] md:w-[800px] md:h-[800px] bg-[url('/distant_galaxy_bg.png')] bg-cover bg-center bg-no-repeat opacity-45"
-                style={{ 
-                    transform: 'translate3d(-50%, -50%, 0)',
-                    mixBlendMode: thermalGuard ? 'normal' : 'screen',
-                    WebkitMaskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%)',
-                    maskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%)'
-                }}
-            />
-            {/* 3D Starfield Canvas */}
-            <canvas
-                ref={canvasRef}
-                className="absolute inset-0 w-full h-full pointer-events-none"
-                style={thermalGuard ? undefined : { willChange: 'transform', transform: 'translateZ(0)' }}
-            />
-        </div>
+        <>
+            {/* Full-viewport solid black backdrop independent of browser toolbar height */}
+            <div className="fixed inset-0 z-0 pointer-events-none bg-black" />
+            {/* Bottom-anchored constant-lvh stage so top URL/tab bar hide/show on Chrome mobile & tablet never shifts the galaxy */}
+            <div
+                className="fixed bottom-0 left-0 right-0 z-0 w-full h-[100lvh] min-h-screen pointer-events-none overflow-hidden"
+                style={{ transform: 'translateZ(0)' }}
+            >
+                {/* Distant Galaxy Image Background - Centered, Masked, Static, Balanced Distance */}
+                <div 
+                    className="absolute top-1/2 left-1/2 w-[600px] h-[600px] md:w-[800px] md:h-[800px] bg-[url('/distant_galaxy_bg.png')] bg-cover bg-center bg-no-repeat opacity-45"
+                    style={{ 
+                        transform: 'translate3d(-50%, -50%, 0)',
+                        mixBlendMode: thermalGuard ? 'normal' : 'screen',
+                        WebkitMaskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%)',
+                        maskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 70%)'
+                    }}
+                />
+                {/* 3D Starfield Canvas */}
+                <canvas
+                    ref={canvasRef}
+                    className="absolute inset-0 w-full h-full pointer-events-none"
+                    style={thermalGuard ? undefined : { willChange: 'transform', transform: 'translateZ(0)' }}
+                />
+            </div>
+        </>
     );
 };
 
@@ -1397,10 +1402,10 @@ const HomePage: React.FC<{
     return (
         <div className="relative overflow-hidden bg-transparent">
             {/* ========== HERO ========== */}
-            <div className="relative min-h-screen flex flex-col justify-between overflow-hidden bg-transparent">
-                <div className={`container mx-auto px-4 relative z-10 flex flex-col items-center text-center ${isPhoneMobileUI ? 'pt-12 pb-10' : 'pt-20 pb-14'}`}>
+            <div className={`relative ${isPhoneMobileUI ? 'flex flex-col' : 'min-h-screen flex flex-col justify-between'} overflow-hidden bg-transparent`}>
+                <div className={`container mx-auto px-4 relative z-10 flex flex-col items-center text-center ${isPhoneMobileUI ? 'pt-2 pb-4' : 'pt-20 pb-14'}`}>
                     {/* SaaS Positioning Pill */}
-                    <div className={`inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 ${isPhoneMobileUI ? 'text-[10px] mb-5' : 'text-xs mb-8'} font-bold uppercase tracking-widest animate-fade-in-down`}>
+                    <div className={`inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 ${isPhoneMobileUI ? 'text-[10px] mb-3.5' : 'text-xs mb-8'} font-bold uppercase tracking-widest animate-fade-in-down`}>
                         <span className="relative flex h-1.5 w-1.5">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400"></span>
@@ -1409,7 +1414,7 @@ const HomePage: React.FC<{
                     </div>
 
                     {/* Headline */}
-                    <h1 className={`${isPhoneMobileUI ? 'text-4xl mb-5' : 'text-5xl md:text-7xl lg:text-8xl mb-7'} font-extrabold tracking-tighter text-white animate-fade-in-down leading-none`} style={{ animationDelay: '0.1s' }}>
+                    <h1 className={`${isPhoneMobileUI ? 'text-4xl mb-3.5' : 'text-5xl md:text-7xl lg:text-8xl mb-7'} font-extrabold tracking-tighter text-white animate-fade-in-down leading-none`} style={{ animationDelay: '0.1s' }}>
                         Stop Guessing.{' '}
                         <br className="hidden md:block" />
                         <span className="relative">
@@ -1421,26 +1426,26 @@ const HomePage: React.FC<{
                     </h1>
 
                     {/* Subtitle */}
-                    <p className={`max-w-2xl ${isPhoneMobileUI ? 'text-base mb-7 px-1' : 'text-xl mb-10'} text-slate-300/90 leading-relaxed animate-fade-in-down`} style={{ animationDelay: '0.2s' }}>
+                    <p className={`max-w-2xl ${isPhoneMobileUI ? 'text-sm sm:text-base mb-5 px-1' : 'text-xl mb-10'} text-slate-300/90 leading-relaxed animate-fade-in-down`} style={{ animationDelay: '0.2s' }}>
                         The unified algorithmic trading SaaS. Scan order-book liquidity walls, synthesize strategies with AI Foundry, backtest, and execute 24/7 with Smart Chase risk protection.
                     </p>
 
                     {/* Wired CTA Buttons */}
-                    <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 animate-fade-in-down mb-6 w-full sm:w-auto items-center" style={{ animationDelay: '0.3s' }}>
+                    <div className={`flex flex-col sm:flex-row gap-3 sm:gap-4 animate-fade-in-down ${isPhoneMobileUI ? 'mb-4' : 'mb-6'} w-full sm:w-auto items-center justify-center`} style={{ animationDelay: '0.3s' }}>
                         <button
                             type="button"
                             onClick={onSignUp}
-                            className={`relative overflow-hidden ${isPhoneMobileUI ? 'w-full max-w-xs px-6 py-3.5 text-base justify-center' : 'px-9 py-4 text-lg'} font-semibold rounded-2xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_50px_rgba(6,182,212,0.6)] transition-all hover:scale-105 flex items-center gap-2`}
+                            className={`relative overflow-hidden whitespace-nowrap ${isPhoneMobileUI ? 'w-full max-w-xs sm:w-auto px-6 py-3 text-sm sm:text-base justify-center' : 'px-9 py-4 text-lg'} font-semibold rounded-2xl bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_50px_rgba(6,182,212,0.6)] transition-all hover:scale-105 flex items-center gap-2`}
                         >
                             <span>Start Free Workspace</span>
-                            <ArrowRight className="w-5 h-5" />
+                            <ArrowRight className="w-5 h-5 shrink-0" />
                         </button>
                         <button
                             type="button"
                             onClick={() => scrollToElement('platform-workflow')}
-                            className={`${isPhoneMobileUI ? 'w-full max-w-xs px-6 py-3.5 text-base justify-center' : 'px-9 py-4 text-lg'} font-semibold rounded-2xl border border-white/15 bg-[#070F20]/60 text-white hover:border-cyan-500/45 hover:bg-white/5 transition-all hover:scale-105 flex items-center gap-2`}
+                            className={`whitespace-nowrap ${isPhoneMobileUI ? 'w-full max-w-xs sm:w-auto px-6 py-3 text-sm sm:text-base justify-center' : 'px-9 py-4 text-lg'} font-semibold rounded-2xl border border-white/15 bg-[#070F20]/60 text-white hover:border-cyan-500/45 hover:bg-white/5 transition-all hover:scale-105 flex items-center gap-2`}
                         >
-                            <PlayCircle className="w-5 h-5 text-cyan-400" />
+                            <PlayCircle className="w-5 h-5 text-cyan-400 shrink-0" />
                             <span>See How It Works</span>
                         </button>
                     </div>
@@ -1458,7 +1463,7 @@ const HomePage: React.FC<{
                     </div>
 
                     {/* Chart Terminal Window */}
-                    <div id="homepage_chart_card" className={`${isPhoneMobileUI ? 'mt-8' : 'mt-14'} w-full max-w-6xl relative animate-fade-in-slide-up scroll-mt-24`}>
+                    <div id="homepage_chart_card" className={`${isPhoneMobileUI ? 'mt-5' : 'mt-14'} w-full max-w-6xl relative animate-fade-in-slide-up scroll-mt-24`}>
                         {!thermalGuard && (
                             <div className="absolute -inset-4 bg-cyan-500/5 rounded-3xl blur-2xl pointer-events-none" />
                         )}
@@ -1501,13 +1506,13 @@ const HomePage: React.FC<{
                                     </div>
                                 </div>
                             </div>
-                            <div id="homepage_chart" className={`w-full ${isPhoneMobileUI ? 'h-[340px]' : 'h-[480px] md:h-[540px]'}`} />
+                            <div id="homepage_chart" className={`w-full ${isPhoneMobileUI ? 'h-[320px]' : 'h-[480px] md:h-[540px]'}`} />
                         </div>
                     </div>
                 </div>
 
                 {/* Bottom Tickers */}
-                <div className="w-full z-20 flex flex-col mt-4">
+                <div className={`w-full z-20 flex flex-col ${isPhoneMobileUI ? 'mt-2' : 'mt-4'}`}>
                     <div className={`border-t border-white/10 bg-[#020610]/75 ${thermalGuard ? '' : 'backdrop-blur-md'}`}>
                         <MarketTicker variant="overlay" onCoinClick={handleTickerClick} />
                     </div>

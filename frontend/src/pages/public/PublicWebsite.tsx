@@ -547,6 +547,7 @@ const PublicFooter: React.FC<{
 let hasWarpedIn = false;
 
 const PublicWebsite: React.FC<PublicWebsiteProps> = ({ onLogin, onSignUp }) => {
+    const { isPhoneMobileUI } = useDeviceProfile();
     const [currentView, setCurrentView] = useState<PublicView>('Home');
     const [legalDoc, setLegalDoc] = useState<LegalDocType>('terms');
     const [focusedSymbol, setFocusedSymbol] = useState<string>('BTCUSDT');
@@ -621,7 +622,7 @@ const PublicWebsite: React.FC<PublicWebsiteProps> = ({ onLogin, onSignUp }) => {
                     currentView={currentView}
                     onNavigate={navigateTo}
                 />
-                <main className="flex-grow pt-28 md:pt-32 relative z-10">
+                <main className={`flex-grow ${isPhoneMobileUI ? 'pt-20' : 'pt-28 md:pt-32'} relative z-10`}>
                     {renderContent()}
                 </main>
                 <PublicFooter

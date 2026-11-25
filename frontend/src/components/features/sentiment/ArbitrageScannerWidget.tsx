@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowUpRight, ArrowDownRight, Activity, ExternalLink, Search, Radar, Zap, Globe } from 'lucide-react';
 import Card from '@/components/common/Card';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 // Define the Opportunity Type
 interface ArbitrageOpportunity {
@@ -21,7 +22,12 @@ const SUPPORTED_EXCHANGES = [
     { id: 'coinbase', name: 'Coinbase' },
 ];
 
-export const ArbitrageScannerWidget: React.FC = () => {
+interface ArbitrageScannerWidgetProps {
+    onSelectOpportunity?: (symbol: string, exchange: string, action: string) => void;
+}
+
+export const ArbitrageScannerWidget: React.FC<ArbitrageScannerWidgetProps> = ({ onSelectOpportunity }) => {
+    const thermalGuard = isThermalGuardActive();
     const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
@@ -64,11 +70,16 @@ export const ArbitrageScannerWidget: React.FC = () => {
         fetchOpportunities();
     }, [selectedExchange, debouncedSensitivity]);
 
-    // Polling usually happens every 10 seconds.
+    // Polling usually happens every 10 seconds (25s under thermal guard, paused when tab hidden).
     useEffect(() => {
-        const interval = setInterval(fetchOpportunities, 10000);
+        const pollMs = thermalGuard ? 25000 : 12000;
+        const interval = setInterval(() => {
+            if (typeof document === 'undefined' || !document.hidden) {
+                fetchOpportunities();
+            }
+        }, pollMs);
         return () => clearInterval(interval);
-    }, [selectedExchange, debouncedSensitivity]);
+    }, [selectedExchange, debouncedSensitivity, thermalGuard]);
 
     // Filter Logic
     const filteredOpportunities = opportunities.filter(opp =>
@@ -111,19 +122,19 @@ export const ArbitrageScannerWidget: React.FC = () => {
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent opacity-50"></div>
 
             {/* --- Header --- */}
-            <div className="relative z-10 flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#141414]/60 bg-slate-50/90 dark:bg-[#050505]/40 backdrop-blur-md">
+            <div className={`relative z-10 flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#141414]/60 bg-slate-50/90 dark:bg-[#050505]/40 ${thermalGuard ? '' : 'backdrop-blur-md'}`}>
                 <div className="flex items-center gap-3">
                     <div className="relative hidden sm:block">
-                        <div className="absolute inset-0 bg-indigo-500 blur-md opacity-20 animate-pulse"></div>
+                        {!thermalGuard && <div className="absolute inset-0 bg-indigo-500 blur-md opacity-20 animate-pulse"></div>}
                         <div className="relative p-2 rounded-xl bg-white dark:bg-[#0A0A0A] border border-slate-200 dark:border-[#1F1F1F] text-indigo-600 dark:text-indigo-400 shadow-sm dark:shadow-none">
-                            <Radar className="w-5 h-5 animate-[spin_4s_linear_infinite]" />
+                            <Radar className={`w-5 h-5 ${thermalGuard ? '' : 'animate-[spin_4s_linear_infinite]'}`} />
                         </div>
                     </div>
                     <div>
-                        <h3 className="font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400 text-lg tracking-tight">Alpha Scanner</h3>
+                        <h3 className="font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400 text-lg tracking-tight">Divergence Alpha Scanner</h3>
                         <div className="flex items-center gap-2">
-                            <span className="flex w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
-                            <p className="text-[10px] text-emerald-600 dark:text-emerald-500 font-mono font-bold uppercase tracking-wider">Online</p>
+                            <span className={`flex w-1.5 h-1.5 rounded-full bg-emerald-500 ${thermalGuard ? '' : 'animate-pulse'} shadow-[0_0_8px_rgba(16,185,129,0.8)]`}></span>
+                            <p className="text-[10px] text-emerald-600 dark:text-emerald-500 font-mono font-bold uppercase tracking-wider">Online • Click pair to load</p>
                         </div>
                     </div>
                 </div>
@@ -179,9 +190,11 @@ export const ArbitrageScannerWidget: React.FC = () => {
             <div className="relative flex-1 overflow-auto custom-scrollbar p-2 space-y-2">
 
                 {/* Scanner Beam Animation (Overlay) */}
-                <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-10">
-                    <div className="w-full h-[2px] bg-indigo-500 blur-[1px] animate-[scan_3s_linear_infinite] shadow-[0_0_10px_#6366f1]"></div>
-                </div>
+                {!thermalGuard && (
+                    <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-10">
+                        <div className="w-full h-[2px] bg-indigo-500 blur-[1px] animate-[scan_3s_linear_infinite] shadow-[0_0_10px_#6366f1]"></div>
+                    </div>
+                )}
 
                 {loading && opportunities.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-500">
@@ -208,7 +221,11 @@ export const ArbitrageScannerWidget: React.FC = () => {
                         const theme = getTheme(opp.type);
                         return (
                             <div key={`${opp.symbol}-${idx}`}
-                                className={`group relative flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-[#141414]/80 bg-slate-50/70 dark:bg-[#050505]/40 backdrop-blur-sm 
+                                onClick={() => {
+                                    const formattedSym = opp.symbol.includes('/') ? opp.symbol : `${opp.symbol}/USDT`;
+                                    onSelectOpportunity?.(formattedSym, selectedExchange, opp.action);
+                                }}
+                                className={`group relative flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-[#141414]/80 bg-slate-50/70 dark:bg-[#050505]/40 ${thermalGuard ? '' : 'backdrop-blur-sm'} 
                                 ${theme.hoverBorder} hover:bg-slate-100 dark:hover:bg-[#0A0A0A]/80 transition-all duration-300 cursor-pointer overflow-hidden`}
                             >
                                 {/* Hover Gradient Effect */}

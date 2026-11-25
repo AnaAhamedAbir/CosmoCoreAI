@@ -7,6 +7,7 @@ import ChartTooltip from './components/ChartTooltip';
 import { formatToLocalTime } from '@/utils/dateUtils';
 import { useTheme } from '@/context/ThemeContext';
 import Card from '@/components/common/Card';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 interface SentimentChartsProps {
     historyData: any[];
@@ -29,6 +30,7 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = ({
     setTimeframe,
 }) => {
     const { theme } = useTheme();
+    const thermalGuard = isThermalGuardActive();
 
     return (
         <Card className="flex flex-col h-[500px]">
@@ -98,9 +100,9 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = ({
                             />
                             <Brush dataKey="time" height={30} stroke="#6366f1" fill={theme === 'dark' ? '#0A0A0A' : '#F8FAFC'} tickFormatter={() => ''} />
 
-                            <Bar yAxisId="vol" dataKey="social_volume" fill="url(#volumeGradient)" barSize={6} radius={[2, 2, 0, 0]} />
-                            <Area yAxisId="left" type="monotone" dataKey="score" stroke="#818cf8" strokeWidth={3} fill="url(#sentimentGradient)" filter="url(#neonGlow)" activeDot={{ r: 6, strokeWidth: 0, fill: '#818cf8' }} />
-                            <Line yAxisId="right" type="monotone" dataKey="price" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#fff', stroke: '#10b981' }} />
+                            <Bar yAxisId="vol" dataKey="social_volume" fill="url(#volumeGradient)" barSize={6} radius={[2, 2, 0, 0]} isAnimationActive={!thermalGuard} />
+                            <Area yAxisId="left" type="monotone" dataKey="score" stroke="#818cf8" strokeWidth={3} fill="url(#sentimentGradient)" filter={thermalGuard ? undefined : 'url(#neonGlow)'} activeDot={{ r: 6, strokeWidth: 0, fill: '#818cf8' }} isAnimationActive={!thermalGuard} />
+                            <Line yAxisId="right" type="monotone" dataKey="price" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#fff', stroke: '#10b981' }} isAnimationActive={!thermalGuard} />
                         </ComposedChart>
                     </ResponsiveContainer>
                 ) : (
@@ -118,6 +120,7 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = ({
 
 export const SentimentDivergenceChart: React.FC<{ data: any[], correlation: number }> = ({ data, correlation }) => {
     const { theme } = useTheme();
+    const thermalGuard = isThermalGuardActive();
     const gridColor = theme === 'dark' ? '#334155' : '#E2E8F0';
 
     return (
@@ -151,8 +154,8 @@ export const SentimentDivergenceChart: React.FC<{ data: any[], correlation: numb
                                 cursor={{ stroke: theme === 'dark' ? '#ffffff' : '#000000', strokeWidth: 1, strokeDasharray: '4 4', opacity: 0.3 }}
                             />
                             <Legend />
-                            <Area type="monotone" dataKey="retail_score" name="Retail (Twitter/Reddit)" stroke="#F43F5E" fill="url(#retailGradient)" fillOpacity={0.3} />
-                            <Line type="monotone" dataKey="smart_money_score" name="Smart Money (Whales/News)" stroke="#10B981" strokeWidth={3} dot={false} />
+                            <Area type="monotone" dataKey="retail_score" name="Retail (Twitter/Reddit)" stroke="#F43F5E" fill="url(#retailGradient)" fillOpacity={0.3} isAnimationActive={!thermalGuard} />
+                            <Line type="monotone" dataKey="smart_money_score" name="Smart Money (Whales/News)" stroke="#10B981" strokeWidth={3} dot={false} isAnimationActive={!thermalGuard} />
                         </ComposedChart>
                     </ResponsiveContainer>
                 ) : (

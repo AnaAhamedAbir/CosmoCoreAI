@@ -4,6 +4,7 @@ import Button from '@/components/common/Button';
 import { Loader2, RefreshCw, Maximize2 } from 'lucide-react';
 import { ResponsiveContainer, Treemap, Tooltip } from 'recharts';
 import { SentimentHeatmapItem } from '@/types';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 const ModernHeatmapContent = (props: any) => {
     const { x, y, width, height, name, sentimentScore, marketCap } = props;
@@ -41,11 +42,12 @@ const ModernHeatmapContent = (props: any) => {
 
     const showDetail = width > 60 && height > 50;
     const showMini = width > 30 && height > 30;
+    const thermalGuard = isThermalGuardActive();
 
     return (
         <foreignObject x={x + 2} y={y + 2} width={width - 4} height={height - 4}>
             <div
-                className={`w-full h-full rounded-xl border ${borderColor} bg-gradient-to-br ${gradient} backdrop-blur-md flex flex-col items-center justify-center transition-all duration-300 hover:scale-[0.98] hover:brightness-105 dark:hover:brightness-110 overflow-hidden relative group`}
+                className={`w-full h-full rounded-xl border ${borderColor} bg-gradient-to-br ${gradient} ${thermalGuard ? '' : 'backdrop-blur-md transition-all duration-300 hover:scale-[0.98]'} flex flex-col items-center justify-center overflow-hidden relative group`}
             >
                 <div className="absolute inset-0 opacity-10 bg-[url('/noise.svg')] mix-blend-overlay"></div>
                 <div className="z-10 flex flex-col items-center text-center p-1">
@@ -77,8 +79,9 @@ interface SentimentHeatmapProps {
 }
 
 export const SentimentHeatmap: React.FC<SentimentHeatmapProps> = ({ heatmapData, isHeatmapLoading, onSync }) => {
+    const thermalGuard = isThermalGuardActive();
     return (
-        <Card className="min-h-[450px] flex flex-col relative overflow-hidden border-slate-200 dark:border-[#141414] bg-white/50 dark:bg-[#0B1121]/80 backdrop-blur-xl">
+        <Card className={`min-h-[450px] flex flex-col relative overflow-hidden border-slate-200 dark:border-white/10 bg-white dark:bg-[#070b14] ${thermalGuard ? '' : 'backdrop-blur-xl'}`}>
             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 z-10">
                 <div className="flex items-center gap-3">
                     <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl text-white shadow-lg shadow-indigo-500/20">
@@ -119,7 +122,8 @@ export const SentimentHeatmap: React.FC<SentimentHeatmapProps> = ({ heatmapData,
                             stroke="transparent"
                             fill="#8884d8"
                             content={<ModernHeatmapContent />}
-                            animationDuration={800}
+                            isAnimationActive={!thermalGuard}
+                            animationDuration={thermalGuard ? 0 : 600}
                         >
                             <Tooltip
                                 cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 2 }}

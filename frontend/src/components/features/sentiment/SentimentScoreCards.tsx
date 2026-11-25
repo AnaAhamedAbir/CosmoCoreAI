@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import Card from '@/components/common/Card';
 import InfoTooltip from '@/components/common/InfoTooltip';
+import { isThermalGuardActive } from '@/utils/deviceProfile';
 
 // --- Sub Component: SentimentOrb ---
-const SentimentOrb = ({ score, momentum, volume, netflow }: any) => {
+const SentimentOrb = ({ score, momentum, volume, netflow, onActionClick }: any) => {
+    const thermalGuard = isThermalGuardActive();
     // Determine State
     const mood = score > 0.2 ? "Bullish" : score < -0.2 ? "Bearish" : "Neutral";
 
@@ -83,20 +85,22 @@ const SentimentOrb = ({ score, momentum, volume, netflow }: any) => {
                 <div className="absolute inset-0 border border-slate-300/70 dark:border-[#1F1F1F]/50 rounded-full opacity-70 dark:opacity-50"></div>
 
                 {/* 2. Rotating Dash Ring (Clockwise) */}
-                <div className="absolute inset-2 border-2 border-dashed border-slate-300 dark:border-slate-600/60 rounded-full animate-[spin_10s_linear_infinite]"
-                    style={{ animationDuration: `${rotationSpeed * 1.5}s` }}></div>
+                <div className={`absolute inset-2 border-2 border-dashed border-slate-300 dark:border-slate-600/60 rounded-full ${thermalGuard ? '' : 'animate-[spin_10s_linear_infinite]'}`}
+                    style={thermalGuard ? undefined : { animationDuration: `${rotationSpeed * 1.5}s` }}></div>
 
                 {/* 3. Counter-Rotating Arc Ring (Holographic) */}
-                <div className={`absolute inset-4 rounded-full border-t-2 border-b-2 border-l-0 border-r-0 ${theme.ringBorder} animate-[spin_8s_linear_infinite_reverse] blur-[1px]`}
-                    style={{ animationDuration: `${rotationSpeed}s` }}>
+                <div className={`absolute inset-4 rounded-full border-t-2 border-b-2 border-l-0 border-r-0 ${theme.ringBorder} ${thermalGuard ? '' : 'animate-[spin_8s_linear_infinite_reverse] blur-[1px]'}`}
+                    style={thermalGuard ? undefined : { animationDuration: `${rotationSpeed}s` }}>
                 </div>
 
                 {/* 4. Pulsing Glow Layer */}
-                <div className={`absolute w-56 h-56 ${theme.pulseBg} rounded-full blur-xl animate-pulse ${theme.shadow}`}></div>
+                {!thermalGuard && (
+                    <div className={`absolute w-56 h-56 ${theme.pulseBg} rounded-full blur-xl animate-pulse ${theme.shadow}`}></div>
+                )}
 
                 {/* 5. Center Core (Glassmorphism) */}
                 <div className={`relative w-48 h-48 rounded-full bg-gradient-to-br from-white/95 to-slate-100/95 dark:from-slate-800/90 dark:to-slate-900/90 flex flex-col items-center justify-center 
-                    backdrop-blur-xl border border-slate-200/90 dark:border-white/10 shadow-xl dark:shadow-2xl z-10 overflow-hidden group transition-all duration-500 hover:scale-105`}>
+                    ${thermalGuard ? '' : 'backdrop-blur-xl'} border border-slate-200/90 dark:border-white/10 shadow-xl dark:shadow-2xl z-10 overflow-hidden group transition-all duration-500 hover:scale-105`}>
 
                     {/* Inner Shine */}
                     <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-white/60 dark:from-white/10 to-transparent opacity-60 dark:opacity-50 pointer-events-none"></div>
@@ -117,19 +121,25 @@ const SentimentOrb = ({ score, momentum, volume, netflow }: any) => {
                     </div>
 
                     {/* Orbiting Particle */}
-                    <div className="absolute inset-0 animate-[spin_3s_linear_infinite]">
-                        <div className={`absolute top-2 left-1/2 w-1.5 h-1.5 ${theme.dotClass} rounded-full shadow-[0_0_10px_currentColor]`}></div>
-                    </div>
+                    {!thermalGuard && (
+                        <div className="absolute inset-0 animate-[spin_3s_linear_infinite]">
+                            <div className={`absolute top-2 left-1/2 w-1.5 h-1.5 ${theme.dotClass} rounded-full shadow-[0_0_10px_currentColor]`}></div>
+                        </div>
+                    )}
                 </div>
             </div>
 
             {/* --- Bottom Status Panel (HUD Style) --- */}
             <div className="mt-8 w-full px-8 flex flex-col items-center gap-4 relative z-10">
                 {/* Dynamic Unified Trade Button */}
-                <button className={`w-full group relative overflow-hidden px-4 py-3 rounded-xl border ${theme.btnClass} transition-all shadow-sm dark:shadow-[0_0_20px_rgba(0,0,0,0.2)]`}>
+                <button
+                    type="button"
+                    onClick={onActionClick}
+                    className={`w-full group relative overflow-hidden px-4 py-3 rounded-xl border ${theme.btnClass} transition-all shadow-sm dark:shadow-[0_0_20px_rgba(0,0,0,0.2)] cursor-pointer`}
+                >
                     <div className={`absolute inset-0 ${theme.btnOverlay} translate-y-full group-hover:translate-y-0 transition-transform duration-300`}></div>
                     <div className="relative flex items-center justify-center gap-3">
-                        <span className="text-xl animate-bounce">
+                        <span className={`text-xl ${thermalGuard ? '' : 'animate-bounce'}`}>
                             {score > 0.1 ? '🚀' : score < -0.1 ? '🔻' : '⚖️'}
                         </span>
                         <span className={`text-sm font-black uppercase tracking-widest ${theme.btnText}`}>
@@ -166,6 +176,7 @@ const SentimentOrb = ({ score, momentum, volume, netflow }: any) => {
 
 // --- Sub Component: FearGreedFlux ---
 const FearGreedFlux = ({ score, classification }: any) => {
+    const thermalGuard = isThermalGuardActive();
     const [timeLeft, setTimeLeft] = useState<string>('--h --m');
 
     // Countdown logic
@@ -252,8 +263,8 @@ const FearGreedFlux = ({ score, classification }: any) => {
                                 stroke={isActive ? theme.hex : '#334155'}
                                 strokeWidth="4"
                                 strokeLinecap="round"
-                                className={`transition-all duration-300 ${isActive ? 'opacity-100' : 'opacity-20'}`}
-                                style={{ filter: isActive ? 'url(#glow-arc)' : 'none' }}
+                                className={`${thermalGuard ? '' : 'transition-all duration-300'} ${isActive ? 'opacity-100' : 'opacity-20'}`}
+                                style={{ filter: isActive && !thermalGuard ? 'url(#glow-arc)' : 'none' }}
                             />
                         );
                     })}
@@ -295,10 +306,11 @@ interface SentimentScoreCardsProps {
         currentNetflow: string;
         fearGreedIndex: number;
         fearGreedLabel: string;
-    }
+    };
+    onActionClick?: () => void;
 }
 
-export const SentimentScoreCards: React.FC<SentimentScoreCardsProps> = ({ data }) => {
+export const SentimentScoreCards: React.FC<SentimentScoreCardsProps> = ({ data, onActionClick }) => {
     return (
         <div className="space-y-6">
             <Card className="h-[420px] !p-0 overflow-hidden relative">
@@ -308,6 +320,7 @@ export const SentimentScoreCards: React.FC<SentimentScoreCardsProps> = ({ data }
                     momentum={data.currentMomentum}
                     volume={data.currentVolume}
                     netflow={data.currentNetflow}
+                    onActionClick={onActionClick}
                 />
             </Card>
             <Card className="h-64 !p-0 overflow-hidden">

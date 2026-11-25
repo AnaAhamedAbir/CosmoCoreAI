@@ -357,11 +357,11 @@ const Sidebar: React.FC<{
                         <img
                             src="/logo.png"
                             alt="CosmoQuantAI"
-                            className="h-14 w-14 mt-1 object-contain select-none drop-shadow-[0_0_12px_rgba(6,182,212,0.4)]"
+                            className="h-14 w-14 mt-2.5 object-contain select-none drop-shadow-[0_0_12px_rgba(6,182,212,0.4)]"
                         />
                     ) : (
-                        <div className="relative flex flex-col items-center w-full select-none -mt-6">
-                            <span className={`absolute ${isPhoneMobileUI ? 'left-0' : 'right-0'} top-8 px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25 z-20`}>
+                        <div className="relative flex flex-col items-center w-full select-none -mt-[14px]">
+                            <span className={`absolute ${isPhoneMobileUI ? 'left-0' : 'right-0'} top-6 px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25 z-20`}>
                                 PRO
                             </span>
                             <img

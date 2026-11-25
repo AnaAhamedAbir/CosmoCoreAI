@@ -355,6 +355,35 @@ export interface CointegratedPair {
   spreadHistory: { time: number; value: number }[];
 }
 
+export type MLModelArchitecture =
+  | 'LSTM'
+  | 'Random Forest'
+  | 'XGBoost'
+  | 'LightGBM'
+  | 'CatBoost'
+  | 'TabNet'
+  | 'GRU'
+  | 'TCN'
+  | '1D-CNN'
+  | 'DeepLOB'
+  | 'Transformer'
+  | 'PPO-RL'
+  | 'SAC-RL'
+  | 'A2C-RL'
+  | 'DDPG-RL'
+  | 'TD3-RL'
+  | 'DQN-RL'
+  | 'QR-DQN'
+  | 'CQL'
+  | 'GAIL'
+  | 'Decision-Transformer'
+  | 'Liquid-NN'
+  | 'Auto-Encoder'
+  | 'ARIMA'
+  | 'Ensemble'
+  | 'Other'
+  | (string & {});
+
 export interface ModelVersion {
   id: string;
   version: number;
@@ -371,12 +400,15 @@ export interface ModelVersion {
 export interface CustomMLModel {
   id: string;
   name: string;
-  modelType: 'LSTM' | 'Random Forest' | 'XGBoost' | 'LightGBM' | 'CatBoost' | 'GRU' | '1D-CNN' | 'DeepLOB' | 'Transformer' | 'PPO-RL' | 'ARIMA' | 'Other' | 'Ensemble';
+  modelType: MLModelArchitecture;
   marketType?: 'crypto' | 'forex' | 'stocks';
-  activeVersionId: string;
+  activeVersionId: string | null;
   is_auto_retrain?: number;
   retrain_interval_hours?: number;
   data_lookback_hours?: number;
+  created_at?: string;
+  updated_at?: string;
+  datasetPath?: string;
   versions: ModelVersion[];
 }
 

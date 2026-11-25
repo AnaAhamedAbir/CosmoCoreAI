@@ -5,6 +5,7 @@ const mapModel = (data: any): CustomMLModel => {
     return {
         ...data,
         modelType: data.model_type,
+        marketType: data.market_type,
         activeVersionId: data.active_version_id,
         versions: data.versions?.map((v: any) => ({
             ...v,

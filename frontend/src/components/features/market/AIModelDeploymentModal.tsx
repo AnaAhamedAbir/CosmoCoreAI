@@ -16,9 +16,11 @@ interface AIModelDeploymentModalProps {
     symbol: string;
     exchange: string;
     onDeploySuccess: (botId: string) => void;
+    initialModelId?: string;
+    initialTimeframe?: string;
 }
 
-export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ isOpen, onClose, symbol, exchange, onDeploySuccess }) => {
+export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ isOpen, onClose, symbol, exchange, onDeploySuccess, initialModelId, initialTimeframe }) => {
     const [models, setModels] = useState<CustomMLModel[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isDeploying, setIsDeploying] = useState(false);
@@ -27,7 +29,7 @@ export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ 
     const [selectedModelId, setSelectedModelId] = useState<string>('');
     const [selectedApiKey, setSelectedApiKey] = useState<string>('');
     const [tradeAmount, setTradeAmount] = useState<number>(100);
-    const [timeframe, setTimeframe] = useState<string>('15m');
+    const [timeframe, setTimeframe] = useState<string>(initialTimeframe || '15m');
     
     const { apiKeys } = useSettings();
     const { isThermalGuardActive } = useDeviceProfile();
@@ -42,9 +44,12 @@ export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ 
 
     useEffect(() => {
         if (isOpen) {
+            if (initialTimeframe) {
+                setTimeframe(initialTimeframe);
+            }
             loadModels();
         }
-    }, [isOpen]);
+    }, [isOpen, initialModelId, initialTimeframe]);
 
     const loadModels = async () => {
         try {
@@ -53,7 +58,9 @@ export const AIModelDeploymentModal: React.FC<AIModelDeploymentModalProps> = ({ 
             // Only show models that have an active version ready
             const readyModels = data.filter(m => m.activeVersionId);
             setModels(readyModels);
-            if (readyModels.length > 0) {
+            if (initialModelId && readyModels.some(m => m.id === initialModelId)) {
+                setSelectedModelId(initialModelId);
+            } else if (readyModels.length > 0) {
                 setSelectedModelId(readyModels[0].id);
             }
             if (apiKeys && apiKeys.length > 0) {

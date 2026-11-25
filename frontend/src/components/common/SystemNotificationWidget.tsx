@@ -1230,90 +1230,73 @@ const SystemNotificationWidget: React.FC = () => {
         id="system-notification-widget-trigger"
         onClick={handleTriggerClick}
         aria-label="Toggle system notifications"
-        className={`relative flex items-center gap-2 px-2.5 sm:px-3 h-9 rounded-xl border transition-all duration-300 cursor-pointer select-none overflow-hidden shrink-0 active:scale-95 ${
+        className={`relative flex items-center gap-2 px-2.5 sm:px-3 h-9 rounded-xl border transition-colors cursor-pointer select-none overflow-hidden shrink-0 ${
           open ? 'ring-1 ring-cyan-400/50' : ''
         }`}
         style={{
           background: hasUnread
             ? isDark
-              ? 'linear-gradient(135deg, rgba(6,182,212,0.16), rgba(245,158,11,0.12))'
-              : 'linear-gradient(135deg, rgba(6,182,212,0.14), rgba(245,158,11,0.10))'
+              ? 'linear-gradient(135deg, rgba(6,182,212,0.16), rgba(99,102,241,0.12))'
+              : 'linear-gradient(135deg, rgba(6,182,212,0.12), rgba(99,102,241,0.08))'
             : isDark
-              ? 'rgba(255,255,255,0.04)'
-              : 'rgba(15,23,42,0.04)',
+              ? '#0B1120'
+              : 'rgba(241,245,249,0.95)',
           borderColor: hasUnread
             ? 'rgba(34,211,238,0.45)'
             : isDark
-              ? 'rgba(255,255,255,0.08)'
-              : 'rgba(15,23,42,0.12)',
-          boxShadow: hasUnread ? '0 0 18px rgba(34,211,238,0.18)' : 'none',
+              ? 'rgba(30,41,59,0.85)'
+              : 'rgba(203,213,225,0.9)',
         }}
       >
-        {/* Cyber Button Flash Feedback */}
+        {/* Flash Feedback */}
         {btnFlash && (
           <span
             className="absolute inset-0 rounded-xl pointer-events-none animate-cyber-btn-flash"
             style={{
               background: isDark
-                ? 'linear-gradient(135deg, rgba(34,211,238,0.40), rgba(167,139,250,0.30))'
-                : 'linear-gradient(135deg, rgba(6,182,212,0.30), rgba(99,102,241,0.20))',
-              boxShadow: 'inset 0 0 12px rgba(34,211,238,0.6)',
+                ? 'linear-gradient(135deg, rgba(34,211,238,0.35), rgba(99,102,241,0.25))'
+                : 'linear-gradient(135deg, rgba(6,182,212,0.25), rgba(99,102,241,0.15))',
             }}
           />
         )}
 
-        {/* Hover shimmer */}
+        {/* Static live WS dot (thermal safe) */}
         <div
-          className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity pointer-events-none"
-          style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent)' }}
+          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${connected ? 'bg-emerald-400' : 'bg-slate-500'}`}
         />
-
-        {/* Pulsing live WS dot */}
-        <div className="relative flex-shrink-0">
-          <div
-            className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-gray-500'}`}
-            style={connected ? { boxShadow: '0 0 6px #34d399' } : undefined}
-          />
-          {connected && <div className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-60" />}
-        </div>
 
         {/* Bell Icon */}
         <Bell
-          className={`w-4 h-4 flex-shrink-0 transition-colors ${
+          className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${
             hasUnread
               ? isDark
                 ? 'text-cyan-300'
                 : 'text-cyan-600'
               : isDark
-                ? 'text-gray-400'
+                ? 'text-slate-400'
                 : 'text-slate-600'
           }`}
         />
 
         {/* Label hidden on < sm */}
         <span
-          className={`text-xs font-semibold hidden sm:inline transition-colors whitespace-nowrap ${
+          className={`text-[11px] font-bold tracking-wider uppercase hidden sm:inline transition-colors whitespace-nowrap ${
             hasUnread
               ? isDark
                 ? 'text-cyan-300'
                 : 'text-cyan-700'
               : isDark
-                ? 'text-gray-400'
+                ? 'text-slate-300'
                 : 'text-slate-600'
           }`}
-          style={hasUnread && isDark ? { textShadow: '0 0 8px rgba(34,211,238,0.75)' } : undefined}
         >
-          {hasUnread ? `${unreadCounts.total} NEW` : 'SYS NOTIFY'}
+          {hasUnread ? `${unreadCounts.total} New` : 'Notify'}
         </span>
 
         {/* Unread count badge */}
         {hasUnread && (
           <span
-            className="min-w-[18px] h-[18px] px-1 text-slate-950 text-[9px] font-black rounded-full flex items-center justify-center"
-            style={{
-              background: 'linear-gradient(135deg, #22d3ee, #fbbf24)',
-              boxShadow: '0 0 10px rgba(34,211,238,0.65)',
-            }}
+            className="min-w-[18px] h-[18px] px-1 text-slate-950 text-[9px] font-black rounded-full flex items-center justify-center bg-cyan-400"
           >
             {badgeText}
           </span>

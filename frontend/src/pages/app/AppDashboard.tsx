@@ -5,7 +5,7 @@ import { Logo, DashboardIcon, PortfolioIcon, BacktesterIcon, BotLabIcon, MarketI
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getPathFromView, getViewFromPath } from '@/utils/routeUtils';
 import { AppView, TradingBot, IndicatorData } from '@/types';
-import { Cpu, LayoutDashboard, Database, Activity, LineChart, BrainCircuit, CloudLightning, Bot, Zap, History, Layers, Shield, Bell, Palette, Menu, X, Monitor, Smartphone } from 'lucide-react';
+import { Cpu, LayoutDashboard, Database, Activity, LineChart, BrainCircuit, CloudLightning, Bot, Zap, History, Layers, Shield, Bell, Palette, Menu, X, Monitor, Smartphone, Search, Sparkles, Wallet, ArrowUpRight } from 'lucide-react';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { setPhoneViewMode } from '@/utils/deviceProfile';
 import Button from '@/components/common/Button';
@@ -72,7 +72,7 @@ interface AppDashboardProps {
     onLogout: () => void;
 }
 
-// Ultra-Modern NavItem Component
+// Pro SaaS Institutional NavItem Component
 const NavItem: React.FC<{
     icon: React.ReactNode;
     label: string;
@@ -84,36 +84,32 @@ const NavItem: React.FC<{
     <Link
         to={path}
         onClick={onClick}
-        className={`group relative flex items-center w-full px-4 py-3 mb-2 rounded-2xl transition-all duration-300 ease-out overflow-hidden
+        title={isCollapsed ? label : undefined}
+        className={`group relative flex items-center w-full px-3 py-2 mb-0.5 rounded-xl transition-colors duration-200 overflow-hidden border
             ${isActive
-                ? 'text-white shadow-lg shadow-brand-primary/25 translate-x-1'
-                : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white hover:translate-x-1'
+                ? 'bg-cyan-50/90 dark:bg-gradient-to-r dark:from-cyan-500/15 dark:to-indigo-500/10 border-cyan-200 dark:border-cyan-500/35 text-cyan-900 dark:text-white shadow-sm'
+                : 'border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-100/80 dark:hover:bg-white/[0.04] hover:text-slate-900 dark:hover:text-white'
             }`}
     >
-        {/* Active Background with Gradient */}
+        {/* Left active vertical bar */}
         {isActive && (
-            <div className="absolute inset-0 bg-gradient-to-r from-red-600 to-red-500 opacity-100 transition-opacity duration-300"></div>
+            <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-cyan-500 dark:bg-cyan-400" />
         )}
 
-        {/* Hover Background (Subtle) */}
-        {!isActive && (
-            <div className="absolute inset-0 bg-gradient-to-r from-gray-100 to-transparent dark:from-white/5 dark:to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-        )}
-
-        {/* Icon Container */}
-        <span className={`relative z-10 w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg transition-colors duration-300 
-            ${isActive ? 'bg-white/20 text-white' : 'bg-transparent text-slate-400 group-hover:text-red-500 group-hover:bg-red-500/10'}`}>
+        <span className={`relative z-10 w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg transition-colors duration-200
+            ${isActive
+                ? 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-300'
+                : 'bg-transparent text-slate-400 dark:text-slate-500 group-hover:text-cyan-600 dark:group-hover:text-cyan-400'
+            }`}>
             {icon}
         </span>
 
-        {/* Label */}
-        <span className={`relative z-10 ml-3 text-sm font-medium tracking-wide truncate whitespace-nowrap transition-[opacity,transform] duration-300 ease-out ${isCollapsed ? 'opacity-0 -translate-x-2 pointer-events-none' : 'opacity-100 translate-x-0 delay-100'}`}>
+        <span className={`relative z-10 ml-3 text-[13px] font-semibold tracking-wide truncate whitespace-nowrap transition-opacity duration-200 ${isCollapsed ? 'opacity-0 w-0 pointer-events-none' : 'opacity-100'}`}>
             {label}
         </span>
 
-        {/* Active Indicator Dot */}
-        {isActive && (
-            <span className="absolute right-3 w-1.5 h-1.5 rounded-full bg-white animate-pulse shadow-[0_0_8px_white] z-10"></span>
+        {isActive && !isCollapsed && (
+            <span className="ml-auto w-1.5 h-1.5 rounded-full bg-cyan-500 dark:bg-cyan-400 flex-shrink-0" />
         )}
     </Link>
 );
@@ -132,6 +128,7 @@ const Sidebar: React.FC<{
     const { userProfile } = useSettings();
     const { activeMarket } = useMarketStore();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
+    const [navQuery, setNavQuery] = useState('');
     const profileRef = useRef<HTMLDivElement>(null);
 
     const previousMarket = useRef(activeMarket);
@@ -157,10 +154,45 @@ const Sidebar: React.FC<{
         };
     }, []);
 
-    const DropdownMenuItem: React.FC<{ icon: React.ReactNode; label: string; onClick: () => void; }> = ({ icon, label, onClick }) => (
-        <button onClick={onClick} className="flex items-center w-full px-4 py-3.5 mb-1 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-brand-primary/5 dark:hover:bg-brand-primary/10 hover:text-brand-primary transition-all rounded-xl group">
-            <span className="w-5 h-5 mr-3 text-gray-400 group-hover:text-brand-primary transition-colors">{icon}</span>
-            {label}
+    const tierLabel = userProfile.is_superuser
+        ? 'Platform Owner'
+        : userProfile.plan_tier === 'enterprise'
+            ? 'Enterprise Desk'
+            : userProfile.plan_tier === 'pro' || userProfile.is_pro
+                ? 'Pro Quant · $50/mo'
+                : 'Starter · Free';
+
+    const initials = useMemo(() => {
+        const name = (userProfile.fullName || 'AA').trim();
+        const parts = name.split(/\s+/).filter(Boolean);
+        if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+        return name.substring(0, 2).toUpperCase();
+    }, [userProfile.fullName]);
+
+    const DropdownMenuItem: React.FC<{ icon: React.ReactNode; label: string; hint?: string; accent?: boolean; onClick: () => void; }> = ({ icon, label, hint, accent, onClick }) => (
+        <button
+            type="button"
+            onClick={onClick}
+            className={`flex items-center justify-between w-full px-3 py-2.5 mb-1 text-left rounded-xl border transition-colors cursor-pointer group ${
+                accent
+                    ? 'bg-cyan-500/10 border-cyan-500/30 hover:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300'
+                    : 'border-transparent hover:bg-slate-100 dark:hover:bg-white/[0.04] hover:border-slate-200 dark:hover:border-slate-800 text-slate-700 dark:text-slate-200'
+            }`}
+        >
+            <div className="flex items-center gap-3 min-w-0">
+                <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${
+                    accent
+                        ? 'bg-cyan-500/15 text-cyan-500'
+                        : 'bg-slate-100 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 group-hover:text-cyan-500 dark:group-hover:text-cyan-400'
+                }`}>
+                    {icon}
+                </span>
+                <div className="min-w-0">
+                    <div className="text-[13px] font-semibold truncate">{label}</div>
+                    {hint && <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{hint}</div>}
+                </div>
+            </div>
+            <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
         </button>
     );
 
@@ -251,7 +283,7 @@ const Sidebar: React.FC<{
             {
                 title: 'Developer Studio',
                 items: [
-                    { view: AppView.NURAL_CORE, icon: <Cpu size={20} />, label: 'Neural Core' },
+                    { view: AppView.NURAL_CORE, icon: <Cpu size={18} />, label: 'Neural Core' },
                     { view: AppView.ML_MODEL_MARKETPLACE, icon: <MLModelMarketplaceIcon />, label: 'Algo Marketplace' },
                     { view: AppView.CUSTOM_INDICATOR_STUDIO, icon: <IndicatorStudioIcon />, label: 'Indicator Studio' },
                     { view: AppView.PINE_SCRIPT_STUDIO, icon: <PineScriptIcon />, label: 'Pine Editor' },
@@ -267,7 +299,7 @@ const Sidebar: React.FC<{
                 ? [{
                     title: 'Owner Command',
                     items: [
-                        { view: AppView.OWNER_ADMIN, icon: <Shield className="w-5 h-5" />, label: 'Owner Admin' },
+                        { view: AppView.OWNER_ADMIN, icon: <Shield className="w-[18px] h-[18px]" />, label: 'Owner Admin' },
                     ]
                 }]
                 : []),
@@ -276,12 +308,26 @@ const Sidebar: React.FC<{
 
     const effectiveCollapsed = isPhoneMobileUI ? false : isCollapsed;
 
+    const filteredCategories = useMemo(() => {
+        const q = navQuery.trim().toLowerCase();
+        if (!q || effectiveCollapsed) return navCategories;
+        return navCategories
+            .map((cat) => ({
+                ...cat,
+                items: cat.items.filter((item) => item.label.toLowerCase().includes(q)),
+            }))
+            .filter((cat) => cat.items.length > 0);
+    }, [navCategories, navQuery, effectiveCollapsed]);
+
     const sidebarAside = (
         <aside className={`${
             isPhoneMobileUI
                 ? `${isMobileOpen ? 'fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[272px] max-w-[84vw] z-[90] translate-x-0 pointer-events-auto' : 'hidden'}`
-                : `${effectiveCollapsed ? 'w-20' : 'w-72'} h-full max-h-full flex-shrink-0 transition-all duration-[350ms] ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width] z-30 relative`
-        } bg-[#F8FAFC] dark:bg-[#000000] border-r border-gray-200 dark:border-white/5 flex flex-col shadow-[5px_0_20px_rgba(0,0,0,0.05)] group`}>
+                : `${effectiveCollapsed ? 'w-20' : 'w-72'} h-full max-h-full flex-shrink-0 transition-[width] duration-300 ease-out will-change-[width] z-30 relative`
+        } bg-[#F8FAFC] dark:bg-[#070B14] border-r border-slate-200 dark:border-slate-800/80 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.06)] dark:shadow-[4px_0_28px_rgba(0,0,0,0.45)] group`}>
+
+            {/* Subtle Top Accent Hairline */}
+            <div className="h-[1px] w-full bg-gradient-to-r from-cyan-500/50 via-indigo-500/40 to-transparent flex-shrink-0" />
 
             {/* Mobile Drawer Close Button */}
             {isPhoneMobileUI ? (
@@ -289,72 +335,113 @@ const Sidebar: React.FC<{
                     type="button"
                     onClick={onCloseMobile}
                     aria-label="Close navigation menu"
-                    className="absolute right-3 top-3 w-8 h-8 bg-white/90 dark:bg-[#111111] border border-gray-200 dark:border-gray-700 rounded-xl flex items-center justify-center text-gray-500 hover:text-brand-primary shadow-md z-30 active:scale-95"
+                    className="absolute right-3 top-3 w-8 h-8 bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-center text-slate-500 hover:text-cyan-500 shadow-sm z-30 active:scale-95 cursor-pointer"
                 >
                     <X className="w-4 h-4" />
                 </button>
             ) : (
-                /* Collapse Toggle Button (PC / Tablet unchanged) */
+                /* Collapse Toggle Button (PC / Tablet) */
                 <button
+                    type="button"
                     onClick={onToggle}
-                    className="absolute -right-3 top-20 w-6 h-6 bg-white dark:bg-[#111111] border border-gray-200 dark:border-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-brand-primary shadow-md z-30 transition-all duration-300 hover:scale-110 active:scale-95 ease-out"
+                    aria-label={effectiveCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    className="absolute -right-3 top-14 w-6 h-6 bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700/80 rounded-full flex items-center justify-center text-slate-400 hover:text-cyan-400 hover:border-cyan-500/50 shadow-md z-30 transition-colors cursor-pointer"
                 >
-                    <ChevronDownIcon className={`w-4 h-4 transition-transform duration-300 ease-in-out ${effectiveCollapsed ? '-rotate-90' : 'rotate-90'}`} />
+                    <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-300 ${effectiveCollapsed ? '-rotate-90' : 'rotate-90'}`} />
                 </button>
             )}
 
-            {/* Glowing Background Effect */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute top-0 left-0 w-full h-96 bg-brand-primary/5 dark:bg-brand-primary/10 blur-[80px] pointer-events-none"></div>
-            </div>
-
-            <div className="p-6 pb-4 laptop:p-3 laptop:pb-2 relative z-10 flex-shrink-0 overflow-hidden">
-                <div className={`flex items-center justify-center mb-2 transition-all duration-[350ms] ease-in-out will-change-transform ${
-                    effectiveCollapsed 
-                        ? 'opacity-80 scale-50 -translate-y-4' 
-                        : 'opacity-100 scale-100 translate-y-0'
-                } [&_img]:transition-transform [&_img]:duration-[350ms] [&_span]:transition-all [&_span]:duration-[350ms] ${
-                    effectiveCollapsed ? '[&_span]:opacity-0 [&_span]:translate-y-2 [&_span]:scale-90 [&_span]:pointer-events-none' : '[&_span]:opacity-100 [&_span]:translate-y-0 [&_span]:scale-100'
-                }`}>
-                    <Logo />
-                </div>
-                {/* Stylish Divider */}
-                <div className={`h-px w-full bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent my-6 laptop:my-2 transition-all duration-[350ms] ease-in-out ${effectiveCollapsed ? 'opacity-0 scale-x-0' : 'opacity-100 scale-x-100'}`}></div>
-            </div>
-
-            <nav className="flex-1 min-h-0 space-y-2 overflow-y-auto px-4 laptop:px-2.5 custom-scrollbar pb-4 laptop:pb-2 relative z-10">
-                {navCategories.map(category => (
-                    <div key={category.title} className="mb-8 last:mb-0">
-                        {/* Gradient Text Header */}
-                        <div className="relative h-4 mb-3">
-                            <h3 className={`absolute inset-0 px-4 whitespace-nowrap text-[10px] font-extrabold uppercase tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-slate-500 to-slate-400 dark:from-gray-400 dark:to-gray-600 select-none transition-opacity duration-300 ${effectiveCollapsed ? 'opacity-0' : 'opacity-100 delay-100'}`}>
-                                {category.title}
-                            </h3>
-                            <div className={`absolute left-4 right-4 top-1/2 h-px bg-gray-200 dark:bg-gray-800 transition-opacity duration-300 ${effectiveCollapsed ? 'opacity-30' : 'opacity-0'}`} />
-                        </div>
-                        <div className="space-y-1">
-                            {category.items.map(item => (
-                                <NavItem
-                                    key={item.view}
-                                    icon={item.icon}
-                                    label={item.label}
-                                    path={getPathFromView(item.view)}
-                                    isActive={currentView === item.view}
-                                    isCollapsed={effectiveCollapsed}
-                                    onClick={isPhoneMobileUI ? onCloseMobile : undefined}
-                                />
-                            ))}
-                        </div>
+            {/* Brand Header + Quick Filter */}
+            <div className="px-4 pt-4 pb-3 relative z-10 flex-shrink-0">
+                <div className={`flex items-center ${effectiveCollapsed ? 'justify-center' : 'justify-between'} gap-2`}>
+                    <div className={`transition-transform duration-300 origin-left ${
+                        effectiveCollapsed
+                            ? 'scale-[0.48] -ml-1'
+                            : 'scale-95'
+                    }`}>
+                        <Logo />
                     </div>
-                ))}
+                    {!effectiveCollapsed && (
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25 flex-shrink-0">
+                            PRO
+                        </span>
+                    )}
+                </div>
+
+                {/* Quick Module Search (Expanded only) */}
+                {!effectiveCollapsed && (
+                    <div className="mt-3 relative flex items-center">
+                        <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-3 pointer-events-none" />
+                        <input
+                            type="text"
+                            value={navQuery}
+                            onChange={(e) => setNavQuery(e.target.value)}
+                            placeholder="Jump to module..."
+                            className="w-full h-8 pl-8 pr-7 rounded-xl text-xs bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/90 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                        />
+                        {navQuery && (
+                            <button
+                                type="button"
+                                onClick={() => setNavQuery('')}
+                                aria-label="Clear filter"
+                                className="absolute right-2 p-0.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                            >
+                                <X className="w-3 h-3" />
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                <div className={`h-px w-full bg-slate-200/80 dark:bg-slate-800/70 mt-3 ${effectiveCollapsed ? 'opacity-40' : 'opacity-100'}`} />
+            </div>
+
+            {/* Vertical Feature List */}
+            <nav className="flex-1 min-h-0 overflow-y-auto px-3 custom-scrollbar pb-4 relative z-10">
+                {filteredCategories.length === 0 ? (
+                    <div className="px-3 py-8 text-center text-xs text-slate-400 dark:text-slate-500">
+                        No modules match "{navQuery}"
+                    </div>
+                ) : (
+                    filteredCategories.map(category => (
+                        <div key={category.title} className="mb-4 last:mb-0">
+                            <div className="relative h-5 mb-1.5 flex items-center justify-between px-2.5">
+                                {!effectiveCollapsed ? (
+                                    <>
+                                        <h3 className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500 select-none">
+                                            {category.title}
+                                        </h3>
+                                        <span className="text-[9px] font-mono text-slate-400/80 dark:text-slate-600">
+                                            {category.items.length}
+                                        </span>
+                                    </>
+                                ) : (
+                                    <div className="w-full h-px bg-slate-200 dark:bg-slate-800/80" />
+                                )}
+                            </div>
+                            <div className="space-y-0.5">
+                                {category.items.map(item => (
+                                    <NavItem
+                                        key={item.view}
+                                        icon={item.icon}
+                                        label={item.label}
+                                        path={getPathFromView(item.view)}
+                                        isActive={currentView === item.view}
+                                        isCollapsed={effectiveCollapsed}
+                                        onClick={isPhoneMobileUI ? onCloseMobile : undefined}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    ))
+                )}
             </nav>
 
-            {/* Profile Section */}
-            <div className="p-4 laptop:p-2.5 relative z-20 flex-shrink-0" ref={profileRef}>
-                {/* Backdrop Overlay */}
+            {/* Profile & Account Footer */}
+            <div className="p-3 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#050810] relative z-20 flex-shrink-0" ref={profileRef}>
+                {/* Backdrop Overlay (thermal-safe without heavy blur) */}
                 {isProfileOpen && (
-                    <div 
-                        className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-[100] transition-opacity duration-300 opacity-100 pointer-events-auto"
+                    <div
+                        className="fixed inset-0 bg-slate-950/70 z-[100] transition-opacity duration-200 opacity-100 pointer-events-auto"
                         onClick={(e) => {
                             e.stopPropagation();
                             setIsProfileOpen(false);
@@ -362,107 +449,188 @@ const Sidebar: React.FC<{
                     />
                 )}
 
-                {/* Slide-over Profile Drawer */}
-                <div 
-                    className={`fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-80 max-w-[85vw] bg-white dark:bg-[#0A0A0A] shadow-[10px_0_30px_rgba(0,0,0,0.1)] dark:shadow-[10px_0_30px_rgba(0,0,0,0.5)] border-r border-gray-200 dark:border-gray-800 z-[110] transform transition-transform duration-[350ms] ease-in-out ${isProfileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+                {/* Slide-over My Account Drawer */}
+                <div
+                    className={`fixed top-0 left-0 h-[var(--app-height,100dvh)] max-h-[var(--app-height,100dvh)] w-[336px] max-w-[88vw] bg-white dark:bg-[#070B14] shadow-2xl border-r border-slate-200 dark:border-slate-800 z-[110] transform transition-transform duration-300 ease-out ${isProfileOpen ? 'translate-x-0' : '-translate-x-full'}`}
                     onClick={(e) => e.stopPropagation()}
                 >
                     <div className="flex flex-col h-full">
+                        {/* Drawer Top Accent */}
+                        <div className="h-[2px] w-full bg-gradient-to-r from-cyan-500 via-indigo-500 to-emerald-500 flex-shrink-0" />
+
                         {/* Drawer Header */}
-                        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-800/50">
-                            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                <UserCircleIcon className="w-5 h-5 text-brand-primary" />
-                                My Account
-                            </h2>
-                            <button 
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800/80">
+                            <div>
+                                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-wider">
+                                    <UserCircleIcon className="w-4 h-4 text-cyan-500" />
+                                    My Account
+                                </h2>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    Workspace Identity & Subscription
+                                </p>
+                            </div>
+                            <button
+                                type="button"
                                 onClick={() => setIsProfileOpen(false)}
-                                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 text-gray-500 transition-colors"
+                                aria-label="Close account drawer"
+                                className="p-1.5 rounded-xl bg-slate-100 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
-                        
-                        {/* User Summary Info */}
-                        <div className="p-6 border-b border-gray-100 dark:border-gray-800/50 bg-gray-50/50 dark:bg-white/[0.02]">
-                            <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-brand-primary to-purple-500 text-white flex items-center justify-center font-bold text-xl shadow-md ring-4 ring-white dark:ring-[#000000]">
-                                    {userProfile.fullName ? userProfile.fullName.substring(0, 2).toUpperCase() : 'AA'}
+
+                        {/* Subscription & Identity Card */}
+                        <div className="p-4 border-b border-slate-200 dark:border-slate-800/80">
+                            <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-[#0B1120] border border-cyan-500/30 text-white shadow-lg">
+                                <div className="flex items-center gap-3.5">
+                                    <div className="relative flex-shrink-0">
+                                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-600 text-white flex items-center justify-center font-bold text-base shadow-md">
+                                            {initials}
+                                        </div>
+                                        <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0B1120]" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <h3 className="font-bold text-sm text-white truncate">{userProfile.fullName || 'Quant Trader'}</h3>
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                                {tierLabel}
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <h3 className="font-bold text-lg text-slate-900 dark:text-white truncate">{userProfile.fullName || 'User'}</h3>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5 mt-0.5">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
-                                        {userProfile.is_superuser
-                                            ? 'Platform Owner'
-                                            : userProfile.plan_tier === 'enterprise'
-                                                ? 'Enterprise Plan'
-                                                : userProfile.plan_tier === 'pro' || userProfile.is_pro
-                                                    ? 'Pro Trader Plan'
-                                                    : 'Hobbyist (Free)'}
-                                    </p>
+                                <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between text-[11px]">
+                                    <span className="text-slate-400">Desk Access: <strong className="text-emerald-300">Active</strong></span>
+                                    <button
+                                        type="button"
+                                        onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }}
+                                        className="text-cyan-300 hover:text-cyan-200 font-semibold flex items-center gap-1 cursor-pointer"
+                                    >
+                                        Manage Plan <ArrowUpRight className="w-3 h-3" />
+                                    </button>
                                 </div>
                             </div>
                         </div>
 
                         {/* Drawer Menu Items */}
-                        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1">
+                        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                            <div>
+                                <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                                    Account &amp; Connectivity
+                                </p>
+                                <DropdownMenuItem
+                                    icon={<UserCircleIcon className="w-4 h-4" />}
+                                    label="Profile Settings"
+                                    hint="Identity, timezone & desk defaults"
+                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/profile'); setIsProfileOpen(false); }}
+                                />
+                                <DropdownMenuItem
+                                    icon={<CreditCardIcon className="w-4 h-4" />}
+                                    label="Billing & Subscription"
+                                    hint="Pro Quant plan & invoices"
+                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }}
+                                />
+                                <DropdownMenuItem
+                                    icon={<Shield className="w-4 h-4" />}
+                                    label="Security & 2FA"
+                                    hint="Session locks & authenticator"
+                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/security'); setIsProfileOpen(false); }}
+                                />
+                                <DropdownMenuItem
+                                    icon={<KeyIcon className="w-4 h-4" />}
+                                    label="API Keys & Brokers"
+                                    hint="Exchange execution credentials"
+                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/api-keys'); setIsProfileOpen(false); }}
+                                />
+                            </div>
+
+                            <div>
+                                <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                                    Terminal Preferences
+                                </p>
+                                <DropdownMenuItem
+                                    icon={<Bell className="w-4 h-4" />}
+                                    label="Notifications"
+                                    hint="Telegram, alerts & signal routing"
+                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/notifications'); setIsProfileOpen(false); }}
+                                />
+                                <DropdownMenuItem
+                                    icon={<Palette className="w-4 h-4" />}
+                                    label="Appearance & Thermal"
+                                    hint="Dark desk theme & Eco Guard"
+                                    onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/appearance'); setIsProfileOpen(false); }}
+                                />
+                            </div>
+
                             {userProfile.is_superuser && (
-                                <DropdownMenuItem icon={<Shield className="w-5 h-5 text-violet-500" />} label="Owner Admin Console" onClick={() => { navigate(getPathFromView(AppView.OWNER_ADMIN)); setIsProfileOpen(false); }} />
-                            )}
-                            <DropdownMenuItem icon={<UserCircleIcon />} label="Profile Settings" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/profile'); setIsProfileOpen(false); }} />
-                            <DropdownMenuItem icon={<CreditCardIcon />} label="Billing & Subscription" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/billing'); setIsProfileOpen(false); }} />
-                            <DropdownMenuItem icon={<Shield className="w-5 h-5" />} label="Security" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/security'); setIsProfileOpen(false); }} />
-                            <DropdownMenuItem icon={<KeyIcon />} label="API Keys" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/api-keys'); setIsProfileOpen(false); }} />
-                            <DropdownMenuItem icon={<Bell className="w-5 h-5" />} label="Notifications" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/notifications'); setIsProfileOpen(false); }} />
-                            <DropdownMenuItem icon={<Palette className="w-5 h-5" />} label="Appearance" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/appearance'); setIsProfileOpen(false); }} />
-                            {userProfile.is_superuser && (
-                                <DropdownMenuItem icon={<Database className="w-5 h-5" />} label="Data Management" onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/data'); setIsProfileOpen(false); }} />
+                                <div>
+                                    <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-500">
+                                        Owner Administration
+                                    </p>
+                                    <DropdownMenuItem
+                                        accent
+                                        icon={<Shield className="w-4 h-4" />}
+                                        label="Owner Admin Console"
+                                        hint="Platform health, users & telemetry"
+                                        onClick={() => { navigate(getPathFromView(AppView.OWNER_ADMIN)); setIsProfileOpen(false); }}
+                                    />
+                                    <DropdownMenuItem
+                                        icon={<Database className="w-4 h-4" />}
+                                        label="Data Management"
+                                        hint="Cache pools, ingestion & retention"
+                                        onClick={() => { navigate(getPathFromView(AppView.SETTINGS) + '/data'); setIsProfileOpen(false); }}
+                                    />
+                                </div>
                             )}
                         </div>
 
                         {/* Logout Footer */}
-                        <div className="p-6 border-t border-gray-100 dark:border-gray-800/50">
-                            <button 
+                        <div className="p-4 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#050810]">
+                            <button
+                                type="button"
                                 onClick={onLogout}
-                                className="flex items-center justify-center w-full gap-2 px-4 py-3.5 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 font-bold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors shadow-sm"
+                                className="flex items-center justify-center w-full gap-2 px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 font-bold text-xs uppercase tracking-wider hover:bg-rose-500 hover:text-white transition-colors cursor-pointer"
                             >
                                 <LogoutIcon />
-                                Logout
+                                <span>Sign Out Session</span>
                             </button>
                         </div>
                     </div>
                 </div>
 
-                {/* Profile Button */}
+                {/* User Account Button */}
                 <button
+                    type="button"
                     onClick={() => setIsProfileOpen(!isProfileOpen)}
-                    className={`flex items-center w-full p-3 rounded-2xl border transition-all duration-300 group
-                        ${isProfileOpen
-                            ? 'bg-white dark:bg-[#111111] border-brand-primary shadow-lg shadow-brand-primary/10'
-                            : 'bg-white dark:bg-white/5 border-gray-200 dark:border-white/5 hover:border-brand-primary/50 hover:bg-gray-50 dark:hover:bg-white/10'
-                        }`}
+                    title={effectiveCollapsed ? `${userProfile.fullName || 'User'} · My Account` : 'Open My Account'}
+                    className={`flex items-center w-full p-2 rounded-2xl border transition-colors cursor-pointer group ${
+                        effectiveCollapsed ? 'justify-center' : ''
+                    } ${isProfileOpen
+                        ? 'bg-cyan-500/10 border-cyan-500/45 shadow-sm'
+                        : 'bg-white dark:bg-[#0B1120] border-slate-200 dark:border-slate-800/80 hover:border-cyan-500/40'
+                    }`}
                 >
-                    <div className="relative">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-brand-primary to-purple-500 text-white flex items-center justify-center font-bold text-sm shadow-md ring-2 ring-white dark:ring-[#000000]">AA</div>
-                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-[#000000] rounded-full"></div>
-                    </div>
-                    <div className="ml-3 flex-1 min-w-0 text-left transition-all duration-[350ms] ease-in-out will-change-[opacity,width]" style={{ width: effectiveCollapsed ? '0px' : 'auto', opacity: effectiveCollapsed ? 0 : 1, overflow: 'hidden' }}>
-                        <p className="font-bold text-sm text-slate-900 dark:text-white truncate group-hover:text-brand-primary transition-colors">{userProfile.fullName}</p>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate font-medium flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-brand-warning"></span>
-                            {userProfile.is_superuser
-                                ? 'Platform Owner'
-                                : userProfile.plan_tier === 'enterprise'
-                                    ? 'Enterprise Plan'
-                                    : userProfile.plan_tier === 'pro' || userProfile.is_pro
-                                        ? 'Pro Trader Plan'
-                                        : 'Hobbyist (Free)'}
-                        </p>
+                    <div className="relative flex-shrink-0">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
+                            {initials}
+                        </div>
+                        <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 border-2 border-white dark:border-[#0B1120] rounded-full" />
                     </div>
                     {!effectiveCollapsed && (
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ease-in-out ${isProfileOpen ? 'bg-brand-primary/10 text-brand-primary rotate-180' : 'bg-transparent text-gray-400 group-hover:text-brand-primary'}`}>
-                            <ChevronDownIcon className="h-5 w-5" />
-                        </div>
+                        <>
+                            <div className="ml-2.5 flex-1 min-w-0 text-left">
+                                <p className="font-bold text-xs text-slate-900 dark:text-white truncate group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors">
+                                    {userProfile.fullName || 'Quant Trader'}
+                                </p>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono flex items-center gap-1 mt-0.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 flex-shrink-0" />
+                                    {tierLabel}
+                                </p>
+                            </div>
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-transform duration-200 text-slate-400 group-hover:text-cyan-400 ${isProfileOpen ? 'rotate-180 text-cyan-400' : ''}`}>
+                                <ChevronDownIcon className="h-4 w-4" />
+                            </div>
+                        </>
                     )}
                 </button>
             </div>
@@ -474,7 +642,7 @@ const Sidebar: React.FC<{
             <>
                 {isMobileOpen && (
                     <div
-                        className="fixed inset-0 bg-slate-900/50 dark:bg-black/70 backdrop-blur-xs z-[85] transition-opacity duration-300"
+                        className="fixed inset-0 bg-slate-950/70 z-[85] transition-opacity duration-200"
                         onClick={onCloseMobile}
                     />
                 )}
@@ -689,7 +857,8 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                         onCloseMobile={() => setIsMobileSidebarOpen(false)}
                     />
                     <div className="flex-1 min-w-0 min-h-0 h-full flex flex-col overflow-hidden relative z-0">
-                        <header className="relative z-50 flex-shrink-0 bg-white/80 dark:bg-[#000000]/80 backdrop-blur-md border-b border-gray-200 dark:border-[#1A1A1A]/50">
+                        <header className="relative z-50 flex-shrink-0 bg-white/95 dark:bg-[#070B14]/95 border-b border-slate-200 dark:border-slate-800/80">
+                            <div className="h-[1px] w-full bg-gradient-to-r from-cyan-500/50 via-indigo-500/40 to-emerald-500/40" />
                             <GlobalAnnouncementBar />
                             {isPhoneMobileUI ? (
                                 <>
@@ -700,13 +869,18 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                                 type="button"
                                                 onClick={() => setIsMobileSidebarOpen(true)}
                                                 aria-label="Open navigation menu"
-                                                className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-slate-700 dark:text-slate-200 active:scale-95 shrink-0"
+                                                className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-100 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/80 text-slate-700 dark:text-slate-200 active:scale-95 shrink-0 cursor-pointer"
                                             >
-                                                <Menu className="w-5 h-5" />
+                                                <Menu className="w-4 h-4" />
                                             </button>
-                                            <h1 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight truncate min-w-0">
-                                                {viewToRender}
-                                            </h1>
+                                            <div className="min-w-0">
+                                                <h1 className="text-xs font-bold text-slate-900 dark:text-white tracking-tight truncate">
+                                                    {viewToRender}
+                                                </h1>
+                                                <span className="text-[9px] font-mono uppercase tracking-widest text-cyan-500 block leading-none mt-0.5">
+                                                    Live Desk
+                                                </span>
+                                            </div>
                                         </div>
 
                                         <div className="flex items-center gap-1.5 shrink-0">
@@ -714,20 +888,26 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                                 type="button"
                                                 onClick={() => setPhoneViewMode('desktop')}
                                                 title="Switch to full Desktop Layout"
-                                                className="flex items-center gap-1 px-2 h-8 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-500/25 text-[10px] font-bold uppercase tracking-wider active:scale-95"
+                                                className="flex items-center gap-1 px-2 h-9 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 text-[10px] font-bold uppercase tracking-wider cursor-pointer"
                                             >
                                                 <Monitor className="w-3.5 h-3.5" />
-                                                <span>Desktop</span>
+                                                <span>Desk</span>
                                             </button>
                                             <SystemNotificationWidget />
-                                            <Button variant="outline" onClick={() => setIsAssistantOpen(true)} className="!p-1.5 rounded-full border-gray-200 dark:border-gray-700 text-gray-500 hover:text-brand-primary">
-                                                <AssistantIcon className="h-4 w-4" />
-                                            </Button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsAssistantOpen(true)}
+                                                title="Open AI Quant Copilot"
+                                                aria-label="Open AI Quant Copilot"
+                                                className="w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-r from-cyan-500/15 to-indigo-500/15 border border-cyan-500/35 text-cyan-600 dark:text-cyan-300 cursor-pointer"
+                                            >
+                                                <Sparkles className="w-4 h-4" />
+                                            </button>
                                             <ThemeToggle />
                                         </div>
                                     </div>
                                     {/* Mobile Row 2: Market Switcher + Telemetry + Panic + Wallet */}
-                                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-t border-gray-100 dark:border-white/5 overflow-x-auto hide-scrollbar">
+                                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-t border-slate-100 dark:border-slate-800/60 overflow-x-auto hide-scrollbar">
                                         <div className="shrink-0">
                                             <MarketSwitcher />
                                         </div>
@@ -736,70 +916,115 @@ const AppDashboard: React.FC<AppDashboardProps> = ({ onLogout }) => {
                                             <PanicButton />
                                             {showWalletConnect && (
                                                 walletAddress ? (
-                                                    <Button variant="secondary" onClick={handleDisconnectWallet} className="px-2 py-1 text-[10px] h-8">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleDisconnectWallet}
+                                                        className="flex items-center gap-1.5 px-2.5 h-9 rounded-xl text-[10px] font-mono font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-300 cursor-pointer whitespace-nowrap"
+                                                    >
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                                                         {`${walletAddress.substring(0, 4)}..${walletAddress.substring(walletAddress.length - 3)}`}
-                                                    </Button>
+                                                    </button>
                                                 ) : (
-                                                    <Button variant="secondary" onClick={handleConnectWallet} className="px-2.5 py-1 text-[10px] h-8 shadow-sm bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10">
-                                                        Wallet
-                                                    </Button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleConnectWallet}
+                                                        className="flex items-center gap-1.5 px-2.5 h-9 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/80 text-slate-700 dark:text-slate-200 cursor-pointer whitespace-nowrap"
+                                                    >
+                                                        <Wallet className="w-3.5 h-3.5 text-cyan-400" />
+                                                        <span>Wallet</span>
+                                                    </button>
                                                 )
                                             )}
                                         </div>
                                     </div>
                                 </>
                             ) : (
-                                <div className="flex items-center justify-between gap-2 px-8 laptop:px-4 h-16 laptop:h-12 min-w-0">
-                                    {/* Left — Page Title */}
-                                    <h1 className="text-xl laptop:text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2 truncate min-w-0 shrink">
-                                        {viewToRender}
-                                    </h1>
-
-                                    {/* Center — Market Switcher & Owner System Alert Monitor / Customer Device Widget */}
-                                    <div className="flex items-center justify-center gap-4 laptop:gap-2 shrink-0">
-                                        <MarketSwitcher />
-                                        {userProfile.is_superuser ? <SystemAlertWidget /> : <ClientDeviceWidget />}
-                                        <SystemNotificationWidget />
+                                <div className="flex items-center justify-between gap-3 px-6 laptop:px-4 h-14 laptop:h-12 min-w-0">
+                                    {/* Left — Live Terminal Breadcrumb & Market Switcher */}
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <span className="hidden xl:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                                LIVE DESK
+                                            </span>
+                                            <h1 className="text-base xl:text-lg font-bold text-slate-900 dark:text-white tracking-tight truncate">
+                                                {viewToRender}
+                                            </h1>
+                                        </div>
+                                        <div className="hidden md:block w-px h-5 bg-slate-200 dark:bg-slate-800/90 flex-shrink-0" />
+                                        <div className="flex-shrink-0">
+                                            <MarketSwitcher />
+                                        </div>
                                     </div>
 
-                                    {/* Right — Action Buttons */}
-                                    <div className="flex items-center gap-4 laptop:gap-2 justify-end shrink-0">
+                                    {/* Right — Command Controls: Telemetry, Notify, Kill Switch, Wallet, AI Copilot, Theme */}
+                                    <div className="flex items-center gap-2 justify-end shrink-0">
                                         {deviceProfile.isPhone && (
                                             <button
                                                 type="button"
                                                 onClick={() => setPhoneViewMode('mobile')}
                                                 title="Return to Mobile-Optimized View"
-                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-bold uppercase tracking-wider whitespace-nowrap"
+                                                className="flex items-center gap-1.5 px-3 h-9 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap cursor-pointer"
                                             >
                                                 <Smartphone className="w-3.5 h-3.5" />
                                                 <span>Mobile UI</span>
                                             </button>
                                         )}
+
+                                        {/* Telemetry & Notification Group */}
+                                        <div className="flex items-center gap-2">
+                                            {userProfile.is_superuser ? <SystemAlertWidget /> : <ClientDeviceWidget />}
+                                            <SystemNotificationWidget />
+                                        </div>
+
+                                        <div className="w-px h-5 bg-slate-200 dark:bg-slate-800/90 hidden sm:block" />
+
+                                        {/* Risk & Execution Group */}
+                                        <PanicButton />
+
                                         {showWalletConnect && (
                                             <div>
-                                                 {walletAddress ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xs font-mono bg-gray-100 dark:bg-[#0A0A0A]/50 px-2 py-1 rounded text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
-                                                            {`${walletAddress.substring(0, 6)}...${walletAddress.substring(walletAddress.length - 4)}`}
-                                                        </span>
-                                                        <Button variant="secondary" onClick={handleDisconnectWallet} className="px-3 py-1 text-xs h-8">Disconnect</Button>
-                                                    </div>
+                                                {walletAddress ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleDisconnectWallet}
+                                                        title="Click to disconnect wallet"
+                                                        className="flex items-center gap-2 px-3 h-9 rounded-xl bg-emerald-500/10 hover:bg-rose-500/10 border border-emerald-500/30 hover:border-rose-500/35 text-emerald-700 dark:text-emerald-300 hover:text-rose-500 dark:hover:text-rose-300 text-xs font-mono font-bold transition-colors cursor-pointer whitespace-nowrap"
+                                                    >
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                                        <span>{`${walletAddress.substring(0, 6)}...${walletAddress.substring(walletAddress.length - 4)}`}</span>
+                                                    </button>
                                                 ) : (
-                                                    <Button variant="secondary" onClick={handleConnectWallet} className="px-3 py-1 text-xs h-8 shadow-sm bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10">Connect Wallet</Button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleConnectWallet}
+                                                        className="flex items-center gap-1.5 px-3 h-9 rounded-xl bg-slate-100 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/80 hover:border-cyan-500/45 text-slate-700 dark:text-slate-200 hover:text-cyan-600 dark:hover:text-cyan-300 text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer whitespace-nowrap"
+                                                    >
+                                                        <Wallet className="w-3.5 h-3.5 text-cyan-400" />
+                                                        <span className="hidden lg:inline">Connect Wallet</span>
+                                                        <span className="lg:hidden">Wallet</span>
+                                                    </button>
                                                 )}
                                             </div>
                                         )}
-                                        <PanicButton />
-                                        <Button variant="outline" onClick={() => setIsAssistantOpen(true)} className="!p-2 rounded-full border-gray-200 dark:border-gray-700 text-gray-500 hover:text-brand-primary">
-                                            <AssistantIcon className="h-5 w-5" />
-                                        </Button>
-                                        <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
+
+                                        {/* AI Copilot & Theme */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsAssistantOpen(true)}
+                                            title="Open AI Quant Copilot"
+                                            className="flex items-center gap-1.5 px-2.5 xl:px-3 h-9 rounded-xl bg-gradient-to-r from-cyan-500/15 to-indigo-500/15 hover:from-cyan-500/25 hover:to-indigo-500/25 border border-cyan-500/35 text-cyan-700 dark:text-cyan-300 text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer whitespace-nowrap"
+                                        >
+                                            <Sparkles className="w-3.5 h-3.5" />
+                                            <span className="hidden xl:inline">Quant AI</span>
+                                        </button>
+
                                         <ThemeToggle />
                                     </div>
                                 </div>
                             )}
                             {viewToRender === AppView.MARKET && (
-                                <div className="border-t border-gray-100 dark:border-gray-800">
+                                <div className="border-t border-slate-200 dark:border-slate-800/80">
                                     <MarketTicker
                                         onCoinClick={(coinSym) => useMarketStore.getState().setGlobalSymbol(`${coinSym}/USDT`)}
                                     />

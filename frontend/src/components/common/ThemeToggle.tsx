@@ -34,26 +34,19 @@ const ThemeToggle: React.FC = () => {
         <button
             type="button"
             onClick={handleToggle}
-            className={`group relative p-2 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 active:scale-90 select-none ${
-                isDark 
-                    ? 'text-amber-400 hover:text-amber-300 bg-white/[0.04] hover:bg-amber-400/10 hover:shadow-[0_0_20px_rgba(251,191,36,0.35)] focus:ring-amber-400/50 focus:ring-offset-[#050505] border border-white/5 hover:border-amber-400/30' 
-                    : 'text-indigo-600 hover:text-indigo-500 bg-slate-100 hover:bg-indigo-50 hover:shadow-[0_0_20px_rgba(99,102,241,0.35)] focus:ring-indigo-500/50 focus:ring-offset-white border border-slate-200/80 hover:border-indigo-400/30'
+            className={`group relative w-9 h-9 rounded-xl flex items-center justify-center border transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500/40 select-none cursor-pointer ${
+                isDark
+                    ? 'text-amber-400 hover:text-amber-300 bg-[#0B1120] hover:bg-amber-400/10 border-slate-800/80 hover:border-amber-400/40'
+                    : 'text-indigo-600 hover:text-indigo-500 bg-slate-100 hover:bg-indigo-50 border-slate-200 hover:border-indigo-400/40'
             }`}
             aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
             title={`Switch to ${isDark ? 'light' : 'dark'} mode`}
         >
-            <div className={`transition-transform duration-500 cubic-bezier(0.34, 1.56, 0.64, 1) ${
-                isRotating ? 'rotate-[360deg] scale-110' : 'rotate-0 scale-100'
+            <div className={`transition-transform duration-300 ${
+                isRotating ? 'rotate-180 scale-105' : 'rotate-0 scale-100'
             }`}>
-                {isDark ? <SunIcon /> : <MoonIcon />}
+                {isDark ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
             </div>
-
-            {/* Glowing ambient ring */}
-            <span 
-                className={`absolute inset-0 rounded-full blur-[2px] transition-opacity duration-300 pointer-events-none ${
-                    isRotating ? 'opacity-100 scale-110' : 'opacity-0 scale-95'
-                } ${isDark ? 'bg-amber-400/25 ring-2 ring-amber-400/40' : 'bg-indigo-500/25 ring-2 ring-indigo-500/40'}`}
-            />
         </button>
     );
 };

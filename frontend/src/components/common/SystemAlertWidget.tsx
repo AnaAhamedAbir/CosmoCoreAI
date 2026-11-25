@@ -610,54 +610,46 @@ const SystemAlertWidget: React.FC = () => {
         ref={triggerRef}
         id="system-alert-widget-trigger"
         onClick={handleOpen}
-        className={`relative flex items-center gap-2 px-3 h-9 rounded-xl border transition-all duration-300 cursor-pointer select-none overflow-hidden active:scale-95 ${open ? 'ring-1 ring-violet-500/50' : ''}`}
+        className={`relative flex items-center gap-2 px-2.5 sm:px-3 h-9 rounded-xl border transition-colors cursor-pointer select-none overflow-hidden ${open ? 'ring-1 ring-cyan-500/45' : ''}`}
         style={{
           background: hasAlert
-            ? 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(124,58,237,0.10))'
-            : isDark ? 'rgba(255,255,255,0.04)' : 'rgba(241,245,249,0.95)',
-          borderColor: hasAlert ? 'rgba(239,68,68,0.4)' : isDark ? 'rgba(255,255,255,0.08)' : 'rgba(203,213,225,0.9)',
-          boxShadow: hasAlert ? '0 0 20px rgba(239,68,68,0.15)' : 'none',
+            ? 'linear-gradient(135deg, rgba(239,68,68,0.16), rgba(15,23,42,0.5))'
+            : isDark ? '#0B1120' : 'rgba(241,245,249,0.95)',
+          borderColor: hasAlert ? 'rgba(239,68,68,0.45)' : isDark ? 'rgba(30,41,59,0.85)' : 'rgba(203,213,225,0.9)',
         }}
       >
-        {/* Cyber Button Flash Feedback */}
+        {/* Flash Feedback */}
         {btnFlash && (
           <span
             className="absolute inset-0 rounded-xl pointer-events-none animate-cyber-btn-flash"
             style={{
               background: isDark
-                ? 'linear-gradient(135deg, rgba(124,58,237,0.40), rgba(6,182,212,0.30))'
-                : 'linear-gradient(135deg, rgba(99,102,241,0.30), rgba(6,182,212,0.20))',
-              boxShadow: 'inset 0 0 12px rgba(124,58,237,0.6)',
+                ? 'linear-gradient(135deg, rgba(6,182,212,0.35), rgba(99,102,241,0.25))'
+                : 'linear-gradient(135deg, rgba(6,182,212,0.25), rgba(99,102,241,0.15))',
             }}
           />
         )}
 
-        {/* Shimmer on hover */}
-        <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity"
-          style={{ background: isDark ? 'linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent)' : 'linear-gradient(90deg, transparent, rgba(0,0,0,0.03), transparent)' }} />
-
-        {/* Live dot */}
-        <div className="relative flex-shrink-0">
-          <div className={`w-1.5 h-1.5 rounded-full ${bothLive ? 'bg-emerald-500' : isDark ? 'bg-gray-600' : 'bg-gray-400'}`}
-            style={bothLive ? { boxShadow: '0 0 6px #34d399' } : {}} />
-          {bothLive && <div className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-60" />}
-        </div>
+        {/* Live dot (static to preserve mobile battery & thermal guard) */}
+        <div
+          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+            hasAlert ? 'bg-rose-400' : bothLive ? 'bg-emerald-400' : isDark ? 'bg-slate-600' : 'bg-slate-400'
+          }`}
+        />
 
         {/* Hex icon */}
-        <svg className={`w-4 h-4 flex-shrink-0 transition-colors ${hasAlert ? 'text-red-500' : 'text-slate-500 dark:text-gray-500'}`}
+        <svg className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${hasAlert ? 'text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}
           fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
             d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
         </svg>
 
-        <span className={`text-xs font-semibold hidden sm:inline transition-colors ${hasAlert ? 'text-red-500' : 'text-slate-700 dark:text-gray-400'}`}
-          style={hasAlert ? { textShadow: '0 0 8px #f87171' } : {}}>
-          {hasAlert ? `${unreadCount} ALERT${unreadCount > 1 ? 'S' : ''}` : 'SYS MONITOR'}
+        <span className={`text-[11px] font-bold tracking-wider uppercase hidden sm:inline whitespace-nowrap transition-colors ${hasAlert ? 'text-rose-500 dark:text-rose-300' : 'text-slate-600 dark:text-slate-300'}`}>
+          {hasAlert ? `${unreadCount} Alert${unreadCount > 1 ? 's' : ''}` : 'Sys Monitor'}
         </span>
 
         {hasAlert && (
-          <span className="min-w-[18px] h-[18px] px-1 text-white text-[9px] font-black rounded-full flex items-center justify-center animate-pulse"
-            style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 0 8px #ef4444' }}>
+          <span className="min-w-[18px] h-[18px] px-1 text-white text-[9px] font-black rounded-full flex items-center justify-center bg-rose-600">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}

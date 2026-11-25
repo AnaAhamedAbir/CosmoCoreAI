@@ -11,33 +11,37 @@ const MarketSwitcher: React.FC = () => {
     ];
 
     return (
-        <div className="flex bg-gray-100 dark:bg-[#0A0A0A]/80 p-1 rounded-xl border border-gray-200 dark:border-white/10 shadow-inner">
+        <div className="inline-flex items-center p-0.5 h-9 rounded-xl bg-slate-100 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800/80 shadow-inner">
             {markets.map((market) => {
                 const isActive = activeMarket === market.id;
-                
-                // Active Colors based on market type
+
                 let activeClasses = '';
                 if (isActive) {
                     if (market.id === 'crypto') {
-                        activeClasses = 'bg-brand-primary text-white shadow-brand-primary/20 shadow-md';
+                        activeClasses = 'bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/35 shadow-sm';
                     } else {
-                        // Gold theme for TradFi
-                        activeClasses = 'bg-gradient-to-r from-yellow-600 to-yellow-500 text-white shadow-yellow-500/20 shadow-md';
+                        activeClasses = 'bg-gradient-to-r from-amber-500/20 to-orange-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 shadow-sm';
                     }
                 }
 
                 return (
                     <button
+                        type="button"
                         key={market.id}
                         onClick={() => setActiveMarket(market.id)}
                         className={`
-                            relative flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-bold
-                            transition-all duration-300 ease-in-out
-                            ${isActive ? activeClasses : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/5'}
+                            relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3 h-full rounded-[10px] text-[11px] font-bold uppercase tracking-wider
+                            transition-colors cursor-pointer whitespace-nowrap
+                            ${isActive ? activeClasses : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-transparent'}
                         `}
                     >
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                            isActive
+                                ? market.id === 'crypto' ? 'bg-cyan-400' : 'bg-amber-400'
+                                : 'bg-slate-400/50'
+                        }`} />
                         {market.icon}
-                        <span className="whitespace-nowrap">{market.label}</span>
+                        <span className="whitespace-nowrap hidden sm:inline">{market.label}</span>
                     </button>
                 );
             })}

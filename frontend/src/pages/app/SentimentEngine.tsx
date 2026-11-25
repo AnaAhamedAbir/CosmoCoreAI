@@ -42,10 +42,12 @@ import { SentimentNarratives } from '@/components/features/sentiment/SentimentNa
 import { SentimentSignalAnalysis } from '@/components/features/sentiment/SentimentSignalAnalysis';
 import OnChainLiquidityWidget from '@/components/features/sentiment/OnChainLiquidityWidget';
 import ExchangeFlowWidget from '@/components/features/sentiment/ExchangeFlowWidget';
+import FearGreedWidget from '@/components/features/sentiment/FearGreedWidget';
 import { HighImpactWidget } from '@/components/features/sentiment/HighImpactWidget';
 import { DarkPoolWidget } from '@/components/features/sentiment/DarkPoolWidget';
 import SmartExecutionWidget from '@/components/features/trading/SmartExecutionWidget';
 import { ArbitrageScannerWidget } from '@/components/features/sentiment/ArbitrageScannerWidget';
+import { SentimentCommandCenter } from '@/components/features/sentiment/SentimentCommandCenter';
 import { MacroEconomicWidget } from '@/components/features/sentiment/MacroEconomicWidget';
 
 // Skeletons
@@ -54,6 +56,7 @@ import { ChartSkeleton } from '@/components/features/sentiment/skeletons/ChartSk
 import { HeatmapSkeleton } from '@/components/features/sentiment/skeletons/HeatmapSkeleton';
 
 type SentimentWorkspaceTab =
+    | 'all'
     | 'overview'
     | 'narratives'
     | 'whales'
@@ -117,7 +120,7 @@ const SentimentEngine: React.FC = () => {
     } = useSentimentEngine();
 
     const [activeWorkspaceTab, setActiveWorkspaceTab] =
-        useState<SentimentWorkspaceTab>('overview');
+        useState<SentimentWorkspaceTab>('all');
     const [reportLang, setReportLang] = useState<'en' | 'bn'>('en');
     const [showExecutiveBriefDrawer, setShowExecutiveBriefDrawer] = useState<boolean>(false);
     const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
@@ -769,11 +772,17 @@ const SentimentEngine: React.FC = () => {
                 </div>
             </div>
 
-            {/* ── 3. SAAS WORKSPACE NAVIGATION TABS (Tab-Gated Mounting for Thermal Safety) ── */}
+            {/* ── 3. SAAS WORKSPACE NAVIGATION TABS (Full Desk by default + Focused Section Filters) ── */}
             <div className="flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-[#070b14] p-1.5 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">
                 <div className="flex flex-wrap items-center gap-1">
                     {(
                         [
+                            {
+                                id: 'all',
+                                label: 'All Intelligence (Full Desk)',
+                                icon: <Layers className="w-3.5 h-3.5" />,
+                                badge: '18 Modules',
+                            },
                             {
                                 id: 'overview',
                                 label: 'Overview & Divergence',
@@ -850,11 +859,24 @@ const SentimentEngine: React.FC = () => {
                 )}
             </div>
 
-            {/* ── 4. ACTIVE WORKSPACE BODY ── */}
-            {activeWorkspaceTab === 'overview' && (
+            {/* ── 4. ACTIVE WORKSPACE BODY (All 18 Original Modules Preserved & Organized) ── */}
+            <SentimentCommandCenter
+                report={marketReport}
+                isLoading={isReportLoading}
+                onGenerate={generateMarketReport}
+            />
+
+            {(activeWorkspaceTab === 'all' || activeWorkspaceTab === 'overview') && (
                 <div className="space-y-6">
+                    {/* Top Divergence Alpha Scanner Hotlist */}
+                    <div className="h-72">
+                        <ArbitrageScannerWidget
+                            onSelectOpportunity={handleSelectScannerOpportunity}
+                        />
+                    </div>
+
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Left Column: Smart Money Reactor + Fear/Greed + High Impact Catalysts */}
+                        {/* Left Column: Smart Money Reactor + Fear/Greed + On-Chain Liquidity & Exchange Flow */}
                         <div className="lg:col-span-1 space-y-6">
                             {isHeatmapLoading && !currentMetrics ? (
                                 <MetricsSkeleton />
@@ -868,10 +890,12 @@ const SentimentEngine: React.FC = () => {
                                     onActionClick={() => setActiveWorkspaceTab('execution')}
                                 />
                             )}
-                            <HighImpactWidget news={filteredSources} />
+                            <FearGreedWidget />
+                            <OnChainLiquidityWidget symbol={activePair} />
+                            <ExchangeFlowWidget />
                         </div>
 
-                        {/* Right Column: Dual-Axis Sentiment vs Price + Smart Money vs Retail Divergence */}
+                        {/* Right Column: Dual-Axis Sentiment vs Price + Smart Money vs Retail Divergence + High Impact Catalysts */}
                         <div className="lg:col-span-2 flex flex-col space-y-6">
                             {isHeatmapLoading && !chartData ? (
                                 <ChartSkeleton />
@@ -890,19 +914,35 @@ const SentimentEngine: React.FC = () => {
                                     />
                                 </>
                             )}
-
-                            {/* Divergence Alpha Scanner (1-Click Asset Switch) */}
-                            <div className="h-[340px]">
-                                <ArbitrageScannerWidget
-                                    onSelectOpportunity={handleSelectScannerOpportunity}
-                                />
-                            </div>
+                            <HighImpactWidget news={filteredSources} />
                         </div>
                     </div>
                 </div>
             )}
 
-            {activeWorkspaceTab === 'narratives' && (
+            {(activeWorkspaceTab === 'all' || activeWorkspaceTab === 'macro_heatmap') && (
+                <div className="space-y-6">
+                    {isHeatmapLoading && heatmapData.length === 0 ? (
+                        <HeatmapSkeleton />
+                    ) : (
+                        <SentimentHeatmap
+                            heatmapData={heatmapData}
+                            isHeatmapLoading={isHeatmapLoading}
+                            onSync={syncData}
+                        />
+                    )}
+
+                    <MacroEconomicWidget />
+
+                    <CommunityVoting
+                        votes={pollStats}
+                        onVote={handleVote}
+                        influencers={influencers}
+                    />
+                </div>
+            )}
+
+            {(activeWorkspaceTab === 'all' || activeWorkspaceTab === 'narratives') && (
                 <div className="space-y-6">
                     {/* Cross-Asset Social Dominance Mindshare Strip */}
                     {Array.isArray(socialDominance) && socialDominance.length > 0 && (
@@ -957,26 +997,45 @@ const SentimentEngine: React.FC = () => {
                         selectedWord={selectedTopic}
                     />
 
-                    {/* Signal Source Breakdown + Multi-LLM Intelligence Synthesizer */}
-                    <SentimentSignalAnalysis
-                        sourceBreakdownData={sourceBreakdownData}
-                        sentimentSources={sentimentSources}
-                        aiSummary={aiSummary}
-                        isSummaryLoading={isSummaryLoading}
-                        selectedProvider={selectedProvider}
-                        setSelectedProvider={setSelectedProvider}
-                        onGenerateSummary={handleGenerateSummary}
-                    />
+                    {/* Signal Source Breakdown + Multi-LLM Intelligence Synthesizer & Smart Execution Widget */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2">
+                            <SentimentSignalAnalysis
+                                sourceBreakdownData={sourceBreakdownData}
+                                sentimentSources={sentimentSources}
+                                aiSummary={aiSummary}
+                                isSummaryLoading={isSummaryLoading}
+                                selectedProvider={selectedProvider}
+                                setSelectedProvider={setSelectedProvider}
+                                onGenerateSummary={handleGenerateSummary}
+                            />
+                        </div>
+                        <div className="lg:col-span-1">
+                            <SmartExecutionWidget
+                                symbol={activePair}
+                                referencePrice={latestReferencePrice}
+                                defaultSide={alphaTelemetry.clampedAlpha < 0 ? 'sell' : 'buy'}
+                            />
+                        </div>
+                    </div>
 
-                    {/* Verified Neural News Stream with Fact Checker */}
-                    <SentimentNewsFeed
-                        news={filteredSources}
-                        activeFilter={activeFilter}
-                        setActiveFilter={setActiveFilter}
-                        activeSourceFilter={activeSourceFilter}
-                        onSourceSelect={setActiveSourceFilter}
-                        availableSources={availableSources}
-                    />
+                    {/* Dark Pool, Whale Activity & Verified Neural News Stream */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-1 space-y-6">
+                            <DarkPoolWidget symbol={baseSymbol} />
+                            <WhaleActivityWidget />
+                        </div>
+                        <div className="lg:col-span-2">
+                            <SentimentNewsFeed
+                                news={filteredSources}
+                                activeFilter={activeFilter}
+                                setActiveFilter={setActiveFilter}
+                                activeSourceFilter={activeSourceFilter}
+                                onSourceSelect={setActiveSourceFilter}
+                                availableSources={availableSources}
+                            />
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -990,28 +1049,6 @@ const SentimentEngine: React.FC = () => {
                         <OnChainLiquidityWidget symbol={activePair} />
                         <ExchangeFlowWidget />
                     </div>
-                </div>
-            )}
-
-            {activeWorkspaceTab === 'macro_heatmap' && (
-                <div className="space-y-6">
-                    {isHeatmapLoading && heatmapData.length === 0 ? (
-                        <HeatmapSkeleton />
-                    ) : (
-                        <SentimentHeatmap
-                            heatmapData={heatmapData}
-                            isHeatmapLoading={isHeatmapLoading}
-                            onSync={syncData}
-                        />
-                    )}
-
-                    <MacroEconomicWidget />
-
-                    <CommunityVoting
-                        votes={pollStats}
-                        onVote={handleVote}
-                        influencers={influencers}
-                    />
                 </div>
             )}
 

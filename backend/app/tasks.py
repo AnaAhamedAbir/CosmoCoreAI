@@ -95,13 +95,27 @@ def sync_fetch_news_heavy(model: str):
 @celery_app.task(name="app.tasks.sync_sentiment_analysis_heavy")
 def sync_sentiment_analysis_heavy(symbol: str, enable_ner: bool, model: str):
     from app.services.market_service import MarketService
+    from app.services.news_service import news_service
+    from app.services.ai_service import ai_service
+
     service = MarketService()
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    return loop.run_until_complete(service.get_composite_sentiment(symbol, enable_ner, model))
+
+    async def _run():
+        result = await service.get_composite_sentiment(symbol, model=model)
+        if enable_ner:
+            news_items = await news_service.fetch_news(model=model)
+            headlines = " ".join([item.get("content", "") for item in (news_items or [])[:10]])
+            result["entities"] = ai_service.extract_crypto_entities(headlines) if headlines else {"coins": [], "orgs": [], "events": []}
+        else:
+            result["entities"] = None
+        return result
+
+    return loop.run_until_complete(_run())
 
 def publish_task_status(task_type, task_id, status, progress, data=None, user_id=None):
     try:

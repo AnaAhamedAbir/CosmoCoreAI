@@ -202,8 +202,18 @@ class MarketService:
         finally:
             await exchange.close()
 
+    def _normalize_binance_spot_symbol(self, symbol: str) -> str:
+        base_sym = (symbol or "BTC/USDT").split(":")[0].strip()
+        if "/" not in base_sym:
+            return "BTC/USDT"
+        base, quote = base_sym.split("/", 1)
+        if quote.upper() == "USD":
+            quote = "USDT"
+        return f"{base.upper()}/{quote.upper()}"
+
     @cache(expire=10)
     async def get_real_time_sentiment_metrics(self, symbol: str) -> dict:
+        spot_symbol = self._normalize_binance_spot_symbol(symbol)
         exchange = ccxt.binance({
             'timeout': 10000, # 10 seconds
             'enableRateLimit': True, 'options': {'adjustForTimeDifference': True},
@@ -211,13 +221,12 @@ class MarketService:
         })
         try:
             # 1. Fetch Ticker for Price and immediate Volume
-            ticker = await self._execute_with_retry(lambda: exchange.fetch_ticker(symbol))
+            ticker = await self._execute_with_retry(lambda: exchange.fetch_ticker(spot_symbol))
             current_price = float(ticker['last'])
             
             # 2. Fetch OHLCV for Volume Anomaly Analysis (1h timeframe, limit=50)
-            # 2. Fetch OHLCV for Volume Anomaly Analysis (1h timeframe, limit=50)
             # We need enough history for SMA20
-            ohlcv = await self._execute_with_retry(lambda: exchange.fetch_ohlcv(symbol, '1h', limit=50))
+            ohlcv = await self._execute_with_retry(lambda: exchange.fetch_ohlcv(spot_symbol, '1h', limit=50))
             
             # Default values
             smart_money_score = 50.0
@@ -283,7 +292,7 @@ class MarketService:
             # 3. Exchange Netflow (Buy vs Sell Volume from recent Trades)
             # This is a good proxy for "Flow"
 
-            trades = await self._execute_with_retry(lambda: exchange.fetch_trades(symbol, limit=500))
+            trades = await self._execute_with_retry(lambda: exchange.fetch_trades(spot_symbol, limit=500))
             buy_vol = 0.0
             sell_vol = 0.0
             
@@ -641,6 +650,7 @@ class MarketService:
         Generates correlation data between Price, News Sentiment, and Smart Money.
         Moved from sentiment.py.
         """
+        spot_symbol = self._normalize_binance_spot_symbol(symbol)
         exchange = ccxt.binance({
             'enableRateLimit': True,
             'options': {'adjustForTimeDifference': True},
@@ -665,7 +675,7 @@ class MarketService:
                 limit = 168     # 168 * 1h = 7 days
                 days_history = 7
 
-            ohlcv = await exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            ohlcv = await exchange.fetch_ohlcv(spot_symbol, timeframe, limit=limit)
         except Exception as e:
             print(f"Error fetching OHLCV for correlation: {e}")
             raise HTTPException(status_code=500, detail="Failed to fetch market data")

@@ -59,14 +59,35 @@ class ComprehensiveReportRequest(BaseModel):
     whale_stats: dict
     language: str = "en"
 
+async def _wait_celery_task_async(task, timeout: float = 300.0):
+    """
+    Thread-safe async waiter for Celery AsyncResult using atomic Redis GET (get_task_meta)
+    instead of task.get()'s shared ResultConsumer Pub/Sub socket (which raises
+    kombu.exceptions.DecodeError when multiple threads wait concurrently).
+    """
+    import asyncio
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        meta = await asyncio.to_thread(task.backend.get_task_meta, task.id)
+        status_str = meta.get("status")
+        if status_str == "SUCCESS":
+            return meta.get("result")
+        if status_str in ("FAILURE", "REVOKED"):
+            err = meta.get("result")
+            raise RuntimeError(str(err) if err else f"Celery task {task.id} {status_str}")
+        await asyncio.sleep(0.25)
+    raise TimeoutError(f"Celery task {task.id} timed out after {timeout}s")
+
+
 @router.get("/news")
 @cache(expire=300)
 async def get_sentiment_news(model: str = "vader"):
     if model.lower() == "finbert":
-        import asyncio
         from app.tasks import sync_fetch_news_heavy
         task = sync_fetch_news_heavy.apply_async(args=[model], queue="heavy")
-        return await asyncio.to_thread(task.get, timeout=300)
+        return await _wait_celery_task_async(task, timeout=300)
     return await news_service.fetch_news(model=model)
 
 @router.get("/fear-greed")
@@ -81,10 +102,9 @@ async def get_sentiment_analysis(symbol: str = "BTC/USDT", enable_ner: bool = Fa
     """
     try:
         if model.lower() == "finbert":
-            import asyncio
             from app.tasks import sync_sentiment_analysis_heavy
             task = sync_sentiment_analysis_heavy.apply_async(args=[symbol, enable_ner, model], queue="heavy")
-            return await asyncio.to_thread(task.get, timeout=300)
+            return await _wait_celery_task_async(task, timeout=300)
             
         service = MarketService()
         result = await service.get_composite_sentiment(symbol, model=model)

@@ -381,10 +381,11 @@ const Market: React.FC = () => {
     const mergedWatchlist = activeMarket === 'crypto'
         ? Array.from(new Set([...baseWatchlist, ...cryptoExtraPairs]))
         : baseWatchlist;
+    const thermalGuard = isThermalGuardActive();
     const currentWatchlist = (watchlistSearch.trim()
         ? mergedWatchlist.filter((p) => p.toLowerCase().includes(watchlistSearch.trim().toLowerCase()))
         : mergedWatchlist
-    ).slice(0, 60);
+    ).slice(0, thermalGuard ? 35 : 60);
 
     const activeExchange = exchanges.find(ex => ex.id === activeExchangeId);
 

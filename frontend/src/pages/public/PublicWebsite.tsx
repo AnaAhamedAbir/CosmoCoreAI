@@ -52,12 +52,15 @@ const QUICK_JUMP_ITEMS: QuickJumpItem[] = [
     { id: 'sol', label: 'SOL/USDT Live Terminal Chart', category: 'Market', view: 'Home', symbol: 'SOLUSDT', sectionId: 'homepage_chart_card', keywords: 'sol solana chart usdt' },
 ];
 
-const PublicBrandLogo: React.FC<{ mobile?: boolean }> = ({ mobile = false }) => (
+const PublicBrandLogo: React.FC<{ mobile?: boolean; thermalGuard?: boolean }> = ({
+    mobile = false,
+    thermalGuard = false,
+}) => (
     <div className={`flex flex-row items-center select-none ${mobile ? 'gap-2' : 'gap-3'}`}>
         <img
             src="/logo.png"
             alt="CosmoQuantAI"
-            className={`${mobile ? 'h-14' : 'h-[84px]'} w-auto object-contain shrink-0 drop-shadow-[0_0_16px_rgba(99,102,241,0.55)]`}
+            className={`${mobile ? 'h-14' : 'h-[84px]'} w-auto object-contain shrink-0 ${thermalGuard ? '' : 'drop-shadow-[0_0_16px_rgba(99,102,241,0.55)]'}`}
         />
         <span className={`font-extrabold text-white tracking-tight whitespace-nowrap ${mobile ? 'text-base' : 'text-xl md:text-2xl'}`}>
             CosmoQuantAI
@@ -174,7 +177,7 @@ const PublicHeader: React.FC<{
                         onClick={() => { onNavigate('Home'); setIsMobileMenuOpen(false); }}
                         className="transform hover:scale-[1.03] transition-transform min-w-0"
                     >
-                        <PublicBrandLogo mobile={isPhoneMobileUI} />
+                        <PublicBrandLogo mobile={isPhoneMobileUI} thermalGuard={thermalGuard} />
                     </button>
 
                     <div className="hidden md:flex items-center gap-1">
@@ -408,7 +411,7 @@ const PublicFooter: React.FC<{
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
                     <div className="col-span-2 md:col-span-1">
                         <div className="mb-4">
-                            <PublicBrandLogo />
+                            <PublicBrandLogo thermalGuard={thermalGuard} />
                         </div>
                         <p className="text-sm text-slate-400 leading-relaxed">
                             Algorithmic trading SaaS uniting WallHunter liquidity telemetry, OrderFlow Heatmaps, AI Foundry, and automated cloud execution.

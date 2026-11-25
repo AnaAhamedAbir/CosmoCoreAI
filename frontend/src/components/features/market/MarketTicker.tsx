@@ -281,13 +281,34 @@ const MarketTicker: React.FC<MarketTickerProps> = ({ variant = 'default', onCoin
         };
     }, [variant]);
 
-    const tickerItems = coins.length > 5 ? [...coins, ...coins] : coins;
+    const thermalGuard = isThermalGuardActive();
+    const visibleCoins = thermalGuard ? coins.slice(0, 20) : coins;
+    const tickerItems = thermalGuard
+        ? visibleCoins
+        : (visibleCoins.length > 5 ? [...visibleCoins, ...visibleCoins] : visibleCoins);
     const ItemComponent = variant === 'overlay' ? TickerItemOverlay : TickerItem;
 
     if (coins.length === 0) {
         return variant === 'overlay'
             ? <div className="h-10 w-full bg-[#020A1A]/75" />
-            : <div className="h-10 w-full animate-pulse bg-slate-200/70 dark:bg-white/5 mx-4 rounded" />;
+            : <div className="h-10 w-full bg-slate-200/70 dark:bg-white/5 mx-4 rounded" />;
+    }
+
+    if (thermalGuard) {
+        return (
+            <div className="w-full overflow-x-auto no-scrollbar">
+                <div className="flex whitespace-nowrap">
+                    {tickerItems.map((coin, index) => (
+                        <ItemComponent
+                            key={`${coin.id}-${index}`}
+                            coin={coin}
+                            resolvedLogoUrl={logoMap[coin.symbol]}
+                            onClick={onCoinClick ? () => onCoinClick(coin.symbol) : undefined}
+                        />
+                    ))}
+                </div>
+            </div>
+        );
     }
 
     return (

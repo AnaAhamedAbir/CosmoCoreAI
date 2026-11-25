@@ -415,9 +415,12 @@ const LandingPageNewsTicker: React.FC<{ onSignUp: () => void }> = ({ onSignUp })
                     </span>
                     <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider whitespace-nowrap">Market Wire</span>
                 </div>
-                <div className="flex-1 overflow-hidden relative h-6">
-                    <div className="animate-marquee-slow whitespace-nowrap absolute top-0 left-0 flex items-center h-full text-sm text-slate-400" style={{ animationDuration: '120s' }}>
-                        {[...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS].map((news, i) => (
+                <div className={`flex-1 ${thermalGuard ? 'overflow-x-auto no-scrollbar' : 'overflow-hidden'} relative h-6`}>
+                    <div
+                        className={`${thermalGuard ? 'flex items-center h-full whitespace-nowrap' : 'animate-marquee-slow whitespace-nowrap absolute top-0 left-0 flex items-center h-full'} text-sm text-slate-400`}
+                        style={thermalGuard ? undefined : { animationDuration: '120s' }}
+                    >
+                        {(thermalGuard ? MOCK_CRYPTO_NEWS : [...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS, ...MOCK_CRYPTO_NEWS]).map((news, i) => (
                             <button
                                 type="button"
                                 key={`${news.id}-${i}`}
@@ -1176,6 +1179,7 @@ const AIStrategyGenerator: React.FC<{ onSignUp: () => void }> = ({ onSignUp }) =
 // Partners Section
 // ============================
 const PartnersSection: React.FC = () => {
+    const thermalGuard = isThermalGuardActive();
     const logos = [
         { name: 'Binance', component: <BinanceLogo className="h-7 w-auto" /> },
         { name: 'Coinbase', component: <CoinbaseLogo className="h-6 w-auto" /> },
@@ -1188,6 +1192,8 @@ const PartnersSection: React.FC = () => {
         { name: 'Charles Schwab', component: <CharlesSchwabLogo className="h-7 w-auto" /> },
     ];
 
+    const displayLogos = thermalGuard ? logos : [...logos, ...logos, ...logos];
+
     return (
         <div className="py-12 bg-transparent border-y border-white/5">
             <div className="text-center mb-7">
@@ -1196,15 +1202,15 @@ const PartnersSection: React.FC = () => {
                 </p>
             </div>
             <div
-                className="relative w-full overflow-hidden"
-                style={{
+                className={`relative w-full ${thermalGuard ? 'overflow-x-auto no-scrollbar px-4' : 'overflow-hidden'}`}
+                style={thermalGuard ? undefined : {
                     WebkitMaskImage: 'linear-gradient(to right, transparent, black 8%, black 92%, transparent)',
                     maskImage: 'linear-gradient(to right, transparent, black 8%, black 92%, transparent)',
                 }}
             >
-                <div className="flex animate-marquee-slow whitespace-nowrap items-center">
-                    {[...logos, ...logos, ...logos].map((logo, index) => (
-                        <div key={`${logo.name}-${index}`} className="mx-10 flex flex-shrink-0 items-center justify-center opacity-50 hover:opacity-95 transition-opacity duration-300">
+                <div className={`flex whitespace-nowrap items-center ${thermalGuard ? 'justify-start gap-2' : 'animate-marquee-slow'}`}>
+                    {displayLogos.map((logo, index) => (
+                        <div key={`${logo.name}-${index}`} className={`${thermalGuard ? 'mx-5' : 'mx-10'} flex flex-shrink-0 items-center justify-center opacity-60 hover:opacity-95 transition-opacity duration-300`}>
                             {logo.component}
                         </div>
                     ))}

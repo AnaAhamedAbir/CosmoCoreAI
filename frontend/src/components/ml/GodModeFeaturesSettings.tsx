@@ -90,10 +90,10 @@ export const GodModeFeaturesSettings: React.FC<GodModeFeaturesSettingsProps> = (
     };
 
     return (
-        <div className="bg-white dark:bg-black/40 border border-brand-primary/20 rounded-xl overflow-hidden shadow-md dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-xl mb-4">
-            <div className="p-3 border-b border-brand-primary/20 bg-brand-primary/5 flex items-center justify-between">
+        <div className="bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/90 rounded-2xl overflow-hidden shadow-sm mb-4">
+            <div className="p-3 border-b border-slate-200 dark:border-slate-800 bg-brand-primary/5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <Crosshair className="w-4 h-4 text-brand-primary animate-pulse" />
+                    <Crosshair className="w-4 h-4 text-brand-primary" />
                     <h3 className="text-[12px] font-black text-brand-primary uppercase tracking-widest">
                         God Mode Features
                     </h3>

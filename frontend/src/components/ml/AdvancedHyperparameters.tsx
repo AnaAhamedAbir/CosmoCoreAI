@@ -15,13 +15,13 @@ const AdvancedHyperparameters: React.FC<AdvancedHyperparametersProps> = ({
     const [isOpen, setIsOpen] = useState(false);
 
     return (
-        <div className="mt-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden transition-all duration-300 shadow-sm dark:shadow-none">
+        <div className="mt-4 bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden transition-colors shadow-sm">
             <button 
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                className="w-full flex items-center justify-between p-3.5 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors cursor-pointer"
                 type="button"
             >
-                <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
                     <Sliders className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                     Advanced Hyperparameters
                 </div>
@@ -29,7 +29,7 @@ const AdvancedHyperparameters: React.FC<AdvancedHyperparametersProps> = ({
             </button>
             
             {isOpen && (
-                <div className="p-4 pt-0 border-t border-slate-200 dark:border-white/5 mt-2 grid grid-cols-2 gap-4">
+                <div className="p-3.5 pt-3 border-t border-slate-200 dark:border-slate-800 grid grid-cols-2 gap-3">
                     <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Learning Rate</label>
                         <input 
@@ -40,7 +40,7 @@ const AdvancedHyperparameters: React.FC<AdvancedHyperparametersProps> = ({
                             value={learningRate} 
                             onChange={e => setLearningRate(parseFloat(e.target.value))}
                             disabled={isTraining}
-                            className="w-full bg-slate-50 dark:bg-black/50 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all shadow-inner disabled:opacity-50"
+                            className="w-full bg-slate-50 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/40 outline-none transition-colors disabled:opacity-50"
                         />
                     </div>
                     <div>
@@ -52,7 +52,7 @@ const AdvancedHyperparameters: React.FC<AdvancedHyperparametersProps> = ({
                             value={maxDepth} 
                             onChange={e => setMaxDepth(parseInt(e.target.value))}
                             disabled={isTraining}
-                            className="w-full bg-slate-50 dark:bg-black/50 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all shadow-inner disabled:opacity-50"
+                            className="w-full bg-slate-50 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500/40 outline-none transition-colors disabled:opacity-50"
                         />
                     </div>
                 </div>

@@ -85,12 +85,7 @@ const LiveMarketPulse: React.FC<LiveMarketPulseProps> = ({ symbol, exchange }) =
     const priceColor = !prevPrice || !price ? 'text-slate-900 dark:text-white' : price >= prevPrice ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
 
     return (
-        <div className="bg-white/80 dark:bg-black/30 backdrop-blur-xl border border-slate-200 dark:border-white/5 rounded-xl p-4 flex flex-col justify-center h-[76px] relative overflow-hidden group transition-all hover:border-cyan-500/30 shadow-sm dark:shadow-none">
-            {/* Background glowing orb */}
-            {!thermalGuard && (
-                <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full blur-[30px] opacity-20 transition-colors duration-1000 ${isUp ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-            )}
-
+        <div className="bg-white dark:bg-[#070B14] border border-slate-200 dark:border-slate-800/90 rounded-xl p-3.5 flex flex-col justify-center h-[76px] relative overflow-hidden group transition-colors hover:border-cyan-500/35 shadow-sm">
             <div className="flex items-center justify-between z-10">
                 <div className="flex items-center gap-2">
                     <Activity className={`w-4 h-4 ${isPulsing ? 'text-cyan-600 dark:text-cyan-400 opacity-100' : 'text-slate-400 dark:text-slate-500 opacity-75 dark:opacity-50'} transition-all`} />

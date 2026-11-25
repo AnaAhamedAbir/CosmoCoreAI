@@ -475,7 +475,7 @@ export const AlternativeDataSettings: React.FC<AlternativeDataSettingsProps> = (
     };
 
     return (
-        <div className="mt-4 overflow-hidden rounded-2xl border border-indigo-200 dark:border-indigo-500/20 shadow-sm dark:shadow-[0_0_20px_rgba(99,102,241,0.07)] bg-white dark:bg-black/40 backdrop-blur-sm">
+        <div className="mt-4 overflow-hidden rounded-2xl border border-indigo-200 dark:border-indigo-500/25 shadow-sm bg-white dark:bg-[#070B14]">
             {/* ── Header ── */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/5 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/10">
                 <div className="flex items-center gap-3">

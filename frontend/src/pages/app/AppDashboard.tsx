@@ -361,7 +361,7 @@ const Sidebar: React.FC<{
                         />
                     ) : (
                         <div className="relative flex flex-col items-center w-full select-none">
-                            <span className="absolute right-0 top-0 px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25">
+                            <span className={`absolute ${isPhoneMobileUI ? 'left-0' : 'right-0'} top-0 px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/25`}>
                                 PRO
                             </span>
                             <img

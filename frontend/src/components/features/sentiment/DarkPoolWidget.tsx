@@ -75,13 +75,9 @@ export const DarkPoolWidget: React.FC<DarkPoolWidgetProps> = ({ symbol = 'BTC' }
     };
 
     return (
-        <Card className="w-full h-[380px] !p-0 border border-slate-200 dark:border-[#1F1F1F]/50 bg-white dark:bg-[#0B0F19] shadow-lg dark:shadow-2xl overflow-hidden relative group">
-            {/* Dynamic Background Mesh */}
-            <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-5 mix-blend-overlay pointer-events-none"></div>
-            <div className={`absolute -top-20 -right-20 w-64 h-64 rounded-full blur-[100px] opacity-20 transition-colors duration-1000 ${data?.sentiment_score && data.sentiment_score > 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-
-            {/* Header with Neon Border */}
-            <div className="relative px-5 py-4 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50/90 dark:bg-white/5 backdrop-blur-sm">
+        <Card className="w-full h-[380px] !p-0 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#070b14] shadow-sm overflow-hidden relative group">
+            {/* Header */}
+            <div className="relative px-5 py-4 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-white/[0.02]">
                 <div className="flex items-center gap-3">
                     <div className="p-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.15)]">
                         <Shield className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
@@ -110,9 +106,7 @@ export const DarkPoolWidget: React.FC<DarkPoolWidgetProps> = ({ symbol = 'BTC' }
                 {/* Visual Sentiment Column */}
                 <div className="flex flex-col justify-between h-full space-y-2">
                     {/* Big Score Card */}
-                    <div className={`flex-1 relative rounded-2xl border p-4 flex flex-col items-center justify-center bg-gradient-to-br transition-all duration-500 ${getSentimentGradient(data?.sentiment_score)}`}>
-                        <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.03)_50%,transparent_75%)] bg-[length:250%_250%] animate-shine pointer-events-none" />
-
+                    <div className={`flex-1 relative rounded-2xl border p-4 flex flex-col items-center justify-center bg-gradient-to-br ${getSentimentGradient(data?.sentiment_score)}`}>
                         <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 mb-2 font-semibold">Net Bias</div>
 
                         {loading ? (

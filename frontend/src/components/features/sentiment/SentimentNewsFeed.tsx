@@ -66,18 +66,29 @@ export const SentimentNewsFeed: React.FC<SentimentNewsFeedProps> = ({
     onSourceSelect,
     availableSources
 }) => {
+    const [showAllNews, setShowAllNews] = useState(false);
+
+    const sortedNews = React.useMemo(() => {
+        return [...news].sort((a, b) => {
+            if (a.impact_level === 'HIGH' && b.impact_level !== 'HIGH') return -1;
+            if (a.impact_level !== 'HIGH' && b.impact_level === 'HIGH') return 1;
+            if (a.impact_level === 'MEDIUM' && b.impact_level === 'LOW') return -1;
+            if (a.impact_level === 'LOW' && b.impact_level === 'MEDIUM') return 1;
+            return 0;
+        });
+    }, [news]);
+
+    const visibleNews = showAllNews ? sortedNews : sortedNews.slice(0, 12);
+
     return (
         <div className="mt-8 space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                 <div className="flex items-center gap-3">
-                    <div className="relative">
-                        <div className="absolute inset-0 bg-blue-500 blur-lg opacity-20 animate-pulse"></div>
-                        <h3 className="relative text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">
-                            📡 Neural Data Stream
-                        </h3>
-                    </div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                        📡 Neural Data Stream
+                    </h3>
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-500/10 text-blue-500 border border-blue-500/20">
-                        LIVE
+                        LIVE ({sortedNews.length})
                     </span>
                 </div>
 
@@ -126,22 +137,7 @@ export const SentimentNewsFeed: React.FC<SentimentNewsFeedProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {news.sort((a, b) => {
-                    // Prioritize HIGH impact
-                    if (a.impact_level === 'HIGH' && b.impact_level !== 'HIGH') return -1;
-                    if (a.impact_level !== 'HIGH' && b.impact_level === 'HIGH') return 1;
-                    // Then Medium
-                    if (a.impact_level === 'MEDIUM' && b.impact_level === 'LOW') return -1;
-                    if (a.impact_level === 'LOW' && b.impact_level === 'MEDIUM') return 1;
-                    return 0; // Keep original order (usually time)
-                }).map((source, index) => {
-                    const isNew = false;
-                    const moodColor = source.sentiment === 'Positive' ? 'emerald' :
-                        source.sentiment === 'Negative' ? 'rose' : 'slate';
-                    const moodGradient = source.sentiment === 'Positive' ? 'from-emerald-500/20 to-transparent' :
-                        source.sentiment === 'Negative' ? 'from-rose-500/20 to-transparent' :
-                            'from-slate-500/20 to-transparent';
-
+                {visibleNews.map((source, index) => {
                     const Wrapper = source.url ? 'a' : 'div';
                     const wrapperProps = source.url ? { href: source.url, target: '_blank', rel: 'noopener noreferrer' } : {};
 
@@ -150,9 +146,8 @@ export const SentimentNewsFeed: React.FC<SentimentNewsFeedProps> = ({
                             key={`${source.id}-${index}`}
                             {...wrapperProps // @ts-ignore
                             }
-                            className={`group relative overflow-hidden rounded-xl border border-slate-200 dark:border-[#141414] bg-white dark:bg-[#050505]/50 backdrop-blur-sm p-5 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:border-${moodColor}-500/30 ${isNew ? 'animate-pulse ring-2 ring-blue-500/50' : ''}`}
+                            className="group relative overflow-hidden rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#070b14] p-5 transition-colors hover:border-cyan-500/40"
                         >
-                            <div className={`absolute inset-0 bg-gradient-to-br ${moodGradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}></div>
                             <div className="relative z-10 flex flex-col h-full justify-between">
                                 <div>
                                     <div className="flex justify-between items-start mb-3">
@@ -186,6 +181,19 @@ export const SentimentNewsFeed: React.FC<SentimentNewsFeedProps> = ({
                     );
                 })}
             </div>
+            {sortedNews.length > 12 && (
+                <div className="flex justify-center pt-2">
+                    <button
+                        type="button"
+                        onClick={() => setShowAllNews((prev) => !prev)}
+                        className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-[#0b101d] hover:bg-cyan-500/15 border border-slate-200 dark:border-white/10 hover:border-cyan-500/40 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 cursor-pointer transition-colors"
+                    >
+                        {showAllNews
+                            ? 'Show Top 12 Signals'
+                            : `Load All ${sortedNews.length} Signals (+${sortedNews.length - 12} more)`}
+                    </button>
+                </div>
+            )}
             {news.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-400 opacity-50">
                     <p>No signals found.</p>

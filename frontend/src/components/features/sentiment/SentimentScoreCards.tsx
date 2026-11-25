@@ -84,23 +84,14 @@ const SentimentOrb = ({ score, momentum, volume, netflow, onActionClick }: any) 
                 {/* 1. Outer Static Ring with Ticks */}
                 <div className="absolute inset-0 border border-slate-300/70 dark:border-[#1F1F1F]/50 rounded-full opacity-70 dark:opacity-50"></div>
 
-                {/* 2. Rotating Dash Ring (Clockwise) */}
-                <div className={`absolute inset-2 border-2 border-dashed border-slate-300 dark:border-slate-600/60 rounded-full ${thermalGuard ? '' : 'animate-[spin_10s_linear_infinite]'}`}
-                    style={thermalGuard ? undefined : { animationDuration: `${rotationSpeed * 1.5}s` }}></div>
+                {/* 2. Inner Dashed Ring (Static for 120fps scroll performance) */}
+                <div className="absolute inset-2 border-2 border-dashed border-slate-300 dark:border-slate-600/60 rounded-full"></div>
 
-                {/* 3. Counter-Rotating Arc Ring (Holographic) */}
-                <div className={`absolute inset-4 rounded-full border-t-2 border-b-2 border-l-0 border-r-0 ${theme.ringBorder} ${thermalGuard ? '' : 'animate-[spin_8s_linear_infinite_reverse] blur-[1px]'}`}
-                    style={thermalGuard ? undefined : { animationDuration: `${rotationSpeed}s` }}>
-                </div>
+                {/* 3. Accent Arc Ring */}
+                <div className={`absolute inset-4 rounded-full border-t-2 border-b-2 border-l-0 border-r-0 ${theme.ringBorder}`}></div>
 
-                {/* 4. Pulsing Glow Layer */}
-                {!thermalGuard && (
-                    <div className={`absolute w-56 h-56 ${theme.pulseBg} rounded-full blur-xl animate-pulse ${theme.shadow}`}></div>
-                )}
-
-                {/* 5. Center Core (Glassmorphism) */}
-                <div className={`relative w-48 h-48 rounded-full bg-gradient-to-br from-white/95 to-slate-100/95 dark:from-slate-800/90 dark:to-slate-900/90 flex flex-col items-center justify-center 
-                    ${thermalGuard ? '' : 'backdrop-blur-xl'} border border-slate-200/90 dark:border-white/10 shadow-xl dark:shadow-2xl z-10 overflow-hidden group transition-all duration-500 hover:scale-105`}>
+                {/* 5. Center Core (Zero backdrop-blur for 120fps scroll) */}
+                <div className="relative w-48 h-48 rounded-full bg-gradient-to-br from-white to-slate-100 dark:from-slate-800 dark:to-slate-900 flex flex-col items-center justify-center border border-slate-200/90 dark:border-white/10 shadow-xl z-10 overflow-hidden group">
 
                     {/* Inner Shine */}
                     <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-white/60 dark:from-white/10 to-transparent opacity-60 dark:opacity-50 pointer-events-none"></div>
@@ -111,7 +102,7 @@ const SentimentOrb = ({ score, momentum, volume, netflow, onActionClick }: any) 
                             <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-slate-500 dark:text-slate-400">Smart Money</span>
                             <InfoTooltip text="Sentiment derived from institutional players, whale wallet movements, and on-chain analysis." />
                         </div>
-                        <span className={`text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b ${theme.gradient} ${theme.textGlow}`}>
+                        <span className={`text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b ${theme.gradient}`}>
                             {score.toFixed(2)}
                         </span>
 
@@ -119,13 +110,6 @@ const SentimentOrb = ({ score, momentum, volume, netflow, onActionClick }: any) 
                             {mood}
                         </div>
                     </div>
-
-                    {/* Orbiting Particle */}
-                    {!thermalGuard && (
-                        <div className="absolute inset-0 animate-[spin_3s_linear_infinite]">
-                            <div className={`absolute top-2 left-1/2 w-1.5 h-1.5 ${theme.dotClass} rounded-full shadow-[0_0_10px_currentColor]`}></div>
-                        </div>
-                    )}
                 </div>
             </div>
 
@@ -135,11 +119,10 @@ const SentimentOrb = ({ score, momentum, volume, netflow, onActionClick }: any) 
                 <button
                     type="button"
                     onClick={onActionClick}
-                    className={`w-full group relative overflow-hidden px-4 py-3 rounded-xl border ${theme.btnClass} transition-all shadow-sm dark:shadow-[0_0_20px_rgba(0,0,0,0.2)] cursor-pointer`}
+                    className={`w-full group relative overflow-hidden px-4 py-3 rounded-xl border ${theme.btnClass} transition-colors shadow-sm cursor-pointer`}
                 >
-                    <div className={`absolute inset-0 ${theme.btnOverlay} translate-y-full group-hover:translate-y-0 transition-transform duration-300`}></div>
                     <div className="relative flex items-center justify-center gap-3">
-                        <span className={`text-xl ${thermalGuard ? '' : 'animate-bounce'}`}>
+                        <span className="text-xl">
                             {score > 0.1 ? '🚀' : score < -0.1 ? '🔻' : '⚖️'}
                         </span>
                         <span className={`text-sm font-black uppercase tracking-widest ${theme.btnText}`}>
@@ -214,9 +197,6 @@ const FearGreedFlux = ({ score, classification }: any) => {
 
     return (
         <div className="flex flex-col items-center justify-center h-full relative overflow-hidden bg-slate-50 dark:bg-[#0A0A0A] p-4">
-            {/* Background Noise */}
-            <div className="absolute inset-0 opacity-20 bg-[url('/noise.svg')]"></div>
-
             {/* Header */}
             <div className="relative z-10 flex flex-col items-center mb-4 mt-4">
                 <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
@@ -226,7 +206,7 @@ const FearGreedFlux = ({ score, classification }: any) => {
                     <InfoTooltip text="Overall market emotion. Extreme fear suggests oversold conditions; extreme greed suggests overbought." />
                 </div>
                 <div className="flex items-center gap-2 mt-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                     <span className="text-[9px] font-mono text-slate-500 uppercase">Live Index</span>
                 </div>
             </div>
@@ -234,15 +214,8 @@ const FearGreedFlux = ({ score, classification }: any) => {
             {/* Main Gauge */}
             <div className="relative w-full max-w-[280px] aspect-[2/1] flex items-end justify-center mb-2">
 
-                {/* SVG Segmented Arc */}
+                {/* SVG Segmented Arc (Zero SVG feGaussianBlur filter for 120fps scroll) */}
                 <svg viewBox="0 0 300 160" className="w-full h-full overflow-visible">
-                    <defs>
-                        <filter id="glow-arc" x="-20%" y="-20%" width="140%" height="140%">
-                            <feGaussianBlur stdDeviation="4" result="blur" />
-                            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                        </filter>
-                    </defs>
-
                     {/* Render Segments */}
                     {Array.from({ length: totalSegments }).map((_, i) => {
                         const angle = 180 + (i / (totalSegments - 1)) * 180;
@@ -263,8 +236,7 @@ const FearGreedFlux = ({ score, classification }: any) => {
                                 stroke={isActive ? theme.hex : '#334155'}
                                 strokeWidth="4"
                                 strokeLinecap="round"
-                                className={`${thermalGuard ? '' : 'transition-all duration-300'} ${isActive ? 'opacity-100' : 'opacity-20'}`}
-                                style={{ filter: isActive && !thermalGuard ? 'url(#glow-arc)' : 'none' }}
+                                className={isActive ? 'opacity-100' : 'opacity-20'}
                             />
                         );
                     })}
@@ -275,12 +247,10 @@ const FearGreedFlux = ({ score, classification }: any) => {
 
                 {/* Central Digital Score */}
                 <div className="absolute bottom-0 flex flex-col items-center transform translate-y-4">
-                    <span className={`text-6xl font-black tracking-tighter transition-colors duration-500 drop-shadow-lg ${theme.text}`}
-                        style={{ textShadow: `0 0 30px ${theme.hex}50` }}
-                    >
+                    <span className={`text-6xl font-black tracking-tighter ${theme.text}`}>
                         {Math.round(score)}
                     </span>
-                    <div className="mt-2 px-3 py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/5 backdrop-blur-md">
+                    <div className="mt-2 px-3 py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111827]">
                         <span className={`text-xs font-bold uppercase tracking-widest ${theme.text}`}>
                             {classification}
                         </span>
@@ -314,7 +284,6 @@ export const SentimentScoreCards: React.FC<SentimentScoreCardsProps> = ({ data, 
     return (
         <div className="space-y-6">
             <Card className="h-[420px] !p-0 overflow-hidden relative">
-                <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-10"></div>
                 <SentimentOrb
                     score={data.currentSmartMoney}
                     momentum={data.currentMomentum}

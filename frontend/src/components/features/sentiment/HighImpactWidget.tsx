@@ -27,16 +27,13 @@ export const HighImpactWidget: React.FC<HighImpactWidgetProps> = ({ news }) => {
     }
 
     return (
-        <div className="relative group rounded-2xl p-[1px] bg-gradient-to-b from-red-500/50 via-orange-500/30 to-transparent shadow-2xl">
-            {/* Animated Glow Effect */}
-            <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 to-orange-600/20 blur-xl opacity-50 animate-pulse pointer-events-none" />
-
-            <div className="relative bg-white dark:bg-slate-950 rounded-2xl overflow-hidden h-full flex flex-col">
+        <div className="relative group rounded-2xl p-[1px] bg-gradient-to-b from-red-500/40 via-orange-500/20 to-transparent shadow-sm">
+            <div className="relative bg-white dark:bg-[#070b14] rounded-2xl overflow-hidden h-full flex flex-col">
                 {/* Header Section */}
-                <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-900 bg-slate-50/50 dark:bg-[#050505]/20 backdrop-blur-sm">
+                <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02]">
                     <div className="flex items-center gap-3">
-                        <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 to-orange-600 shadow-lg shadow-red-500/20">
-                            <Zap className="w-4 h-4 text-white fill-white animate-bounce-slow" />
+                        <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 to-orange-600">
+                            <Zap className="w-4 h-4 text-white fill-white" />
                         </div>
                         <div>
                             <h3 className="font-black text-lg tracking-tight text-slate-900 dark:text-white uppercase">
@@ -47,7 +44,7 @@ export const HighImpactWidget: React.FC<HighImpactWidgetProps> = ({ news }) => {
                             </p>
                         </div>
                     </div>
-                    <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-red-500/10 text-red-600 border border-red-500/20 animate-pulse">
+                    <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-red-500/10 text-red-600 border border-red-500/20">
                         <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
                         LIVE FEED
                     </span>

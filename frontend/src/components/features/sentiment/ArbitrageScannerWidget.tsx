@@ -116,24 +116,21 @@ export const ArbitrageScannerWidget: React.FC<ArbitrageScannerWidgetProps> = ({ 
     };
 
     return (
-        <div className="relative h-full flex flex-col rounded-2xl overflow-hidden border border-slate-200 dark:border-[#1F1F1F]/50 bg-white dark:bg-[#0A0A0A] shadow-lg dark:shadow-2xl">
-            {/* --- Background Effects --- */}
-            <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-5 dark:opacity-20 pointer-events-none"></div>
+        <div className="relative h-full flex flex-col rounded-2xl overflow-hidden border border-slate-200 dark:border-[#1F1F1F]/50 bg-white dark:bg-[#0A0A0A] shadow-lg">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent opacity-50"></div>
 
             {/* --- Header --- */}
-            <div className={`relative z-10 flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#141414]/60 bg-slate-50/90 dark:bg-[#050505]/40 ${thermalGuard ? '' : 'backdrop-blur-md'}`}>
+            <div className="relative z-10 flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#141414]/60 bg-slate-50 dark:bg-[#050505]">
                 <div className="flex items-center gap-3">
                     <div className="relative hidden sm:block">
-                        {!thermalGuard && <div className="absolute inset-0 bg-indigo-500 blur-md opacity-20 animate-pulse"></div>}
                         <div className="relative p-2 rounded-xl bg-white dark:bg-[#0A0A0A] border border-slate-200 dark:border-[#1F1F1F] text-indigo-600 dark:text-indigo-400 shadow-sm dark:shadow-none">
-                            <Radar className={`w-5 h-5 ${thermalGuard ? '' : 'animate-[spin_4s_linear_infinite]'}`} />
+                            <Radar className="w-5 h-5" />
                         </div>
                     </div>
                     <div>
-                        <h3 className="font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400 text-lg tracking-tight">Divergence Alpha Scanner</h3>
+                        <h3 className="font-black text-slate-900 dark:text-white text-lg tracking-tight">Divergence Alpha Scanner</h3>
                         <div className="flex items-center gap-2">
-                            <span className={`flex w-1.5 h-1.5 rounded-full bg-emerald-500 ${thermalGuard ? '' : 'animate-pulse'} shadow-[0_0_8px_rgba(16,185,129,0.8)]`}></span>
+                            <span className="flex w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                             <p className="text-[10px] text-emerald-600 dark:text-emerald-500 font-mono font-bold uppercase tracking-wider">Online • Click pair to load</p>
                         </div>
                     </div>
@@ -189,13 +186,6 @@ export const ArbitrageScannerWidget: React.FC<ArbitrageScannerWidgetProps> = ({ 
             {/* --- Interactive Scanner Grid --- */}
             <div className="relative flex-1 overflow-auto custom-scrollbar p-2 space-y-2">
 
-                {/* Scanner Beam Animation (Overlay) */}
-                {!thermalGuard && (
-                    <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-10">
-                        <div className="w-full h-[2px] bg-indigo-500 blur-[1px] animate-[scan_3s_linear_infinite] shadow-[0_0_10px_#6366f1]"></div>
-                    </div>
-                )}
-
                 {loading && opportunities.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-500">
                         <div className="relative">
@@ -225,8 +215,8 @@ export const ArbitrageScannerWidget: React.FC<ArbitrageScannerWidgetProps> = ({ 
                                     const formattedSym = opp.symbol.includes('/') ? opp.symbol : `${opp.symbol}/USDT`;
                                     onSelectOpportunity?.(formattedSym, selectedExchange, opp.action);
                                 }}
-                                className={`group relative flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-[#141414]/80 bg-slate-50/70 dark:bg-[#050505]/40 ${thermalGuard ? '' : 'backdrop-blur-sm'} 
-                                ${theme.hoverBorder} hover:bg-slate-100 dark:hover:bg-[#0A0A0A]/80 transition-all duration-300 cursor-pointer overflow-hidden`}
+                                className={`group relative flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-[#141414]/80 bg-slate-50 dark:bg-[#050505] 
+                                ${theme.hoverBorder} hover:bg-slate-100 dark:hover:bg-[#0A0A0A] transition-colors cursor-pointer overflow-hidden`}
                             >
                                 {/* Hover Gradient Effect */}
                                 <div className={`absolute inset-0 bg-gradient-to-r ${theme.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-300 pointer-events-none`}></div>

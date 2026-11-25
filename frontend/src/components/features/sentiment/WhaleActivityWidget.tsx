@@ -64,13 +64,9 @@ export const WhaleActivityWidget: React.FC = () => {
     };
 
     return (
-        <Card className="w-full h-[380px] !p-0 border border-slate-200 dark:border-[#1F1F1F]/50 bg-white dark:bg-[#0B0F19] shadow-lg dark:shadow-2xl overflow-hidden relative group">
-            {/* Dynamic Background Mesh */}
-            <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-5 mix-blend-overlay pointer-events-none"></div>
-            <div className="absolute -bottom-20 -left-20 w-64 h-64 rounded-full blur-[100px] opacity-10 bg-blue-600 transition-colors duration-1000" />
-
-            {/* Header with Neon Border */}
-            <div className="relative px-5 py-4 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50/90 dark:bg-white/5 backdrop-blur-sm">
+        <Card className="w-full h-[380px] !p-0 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#070b14] shadow-sm overflow-hidden relative group">
+            {/* Header */}
+            <div className="relative px-5 py-4 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-white/[0.02]">
                 <div className="flex items-center gap-3">
                     <div className="p-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.15)]">
                         <Anchor className="h-4 w-4 text-blue-600 dark:text-blue-400" />

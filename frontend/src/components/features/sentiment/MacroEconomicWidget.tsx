@@ -90,9 +90,9 @@ export const MacroEconomicWidget: React.FC = () => {
     if (error) return <div className="h-64 flex items-center justify-center text-slate-500">{error}</div>;
 
     return (
-        <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-[#1F1F1F]/50 bg-white dark:bg-[#0A0A0A] shadow-lg dark:shadow-xl">
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#070b14] shadow-sm">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#141414]/60 bg-slate-50/90 dark:bg-[#050505]/40 backdrop-blur-md">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02]">
                 <div className="flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400">
                         <Globe className="w-5 h-5" />

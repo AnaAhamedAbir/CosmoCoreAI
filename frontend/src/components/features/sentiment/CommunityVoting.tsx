@@ -18,7 +18,7 @@ const CommunityPoll = ({ stats, onVote }: { stats: any, onVote: any }) => {
     };
 
     return (
-        <div className="h-full flex flex-col relative overflow-hidden rounded-2xl border border-slate-200 dark:border-[#141414] bg-white/50 dark:bg-[#050505]/50 backdrop-blur-md shadow-sm p-5">
+        <div className="h-full flex flex-col relative overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#070b14] shadow-sm p-5">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white text-center mb-1">
                 Market Sentiment Poll
             </h3>

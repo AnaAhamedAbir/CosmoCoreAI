@@ -62,7 +62,7 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = ({
                         <ComposedChart data={historyData} margin={{ top: 10, right: 0, left: 0, bottom: 30 }} syncId="sentiment-sync">
                             <defs>
                                 <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#818cf8" stopOpacity={0.4} />
+                                    <stop offset="5%" stopColor="#818cf8" stopOpacity={0.35} />
                                     <stop offset="50%" stopColor="#818cf8" stopOpacity={0.1} />
                                     <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
                                 </linearGradient>
@@ -70,13 +70,6 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = ({
                                     <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
                                     <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.05} />
                                 </linearGradient>
-                                <filter id="neonGlow" height="300%" width="300%" x="-75%" y="-75%">
-                                    <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-                                    <feMerge>
-                                        <feMergeNode in="coloredBlur" />
-                                        <feMergeNode in="SourceGraphic" />
-                                    </feMerge>
-                                </filter>
                             </defs>
 
                             <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#141414' : '#e2e8f0'} vertical={false} opacity={0.5} />
@@ -100,9 +93,9 @@ export const SentimentPriceChart: React.FC<SentimentChartsProps> = ({
                             />
                             <Brush dataKey="time" height={30} stroke="#6366f1" fill={theme === 'dark' ? '#0A0A0A' : '#F8FAFC'} tickFormatter={() => ''} />
 
-                            <Bar yAxisId="vol" dataKey="social_volume" fill="url(#volumeGradient)" barSize={6} radius={[2, 2, 0, 0]} isAnimationActive={!thermalGuard} />
-                            <Area yAxisId="left" type="monotone" dataKey="score" stroke="#818cf8" strokeWidth={3} fill="url(#sentimentGradient)" filter={thermalGuard ? undefined : 'url(#neonGlow)'} activeDot={{ r: 6, strokeWidth: 0, fill: '#818cf8' }} isAnimationActive={!thermalGuard} />
-                            <Line yAxisId="right" type="monotone" dataKey="price" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#fff', stroke: '#10b981' }} isAnimationActive={!thermalGuard} />
+                            <Bar yAxisId="vol" dataKey="social_volume" fill="url(#volumeGradient)" barSize={6} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            <Area yAxisId="left" type="monotone" dataKey="score" stroke="#818cf8" strokeWidth={2.5} fill="url(#sentimentGradient)" activeDot={{ r: 5, strokeWidth: 0, fill: '#818cf8' }} isAnimationActive={false} />
+                            <Line yAxisId="right" type="monotone" dataKey="price" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#fff', stroke: '#10b981' }} isAnimationActive={false} />
                         </ComposedChart>
                     </ResponsiveContainer>
                 ) : (
@@ -154,8 +147,8 @@ export const SentimentDivergenceChart: React.FC<{ data: any[], correlation: numb
                                 cursor={{ stroke: theme === 'dark' ? '#ffffff' : '#000000', strokeWidth: 1, strokeDasharray: '4 4', opacity: 0.3 }}
                             />
                             <Legend />
-                            <Area type="monotone" dataKey="retail_score" name="Retail (Twitter/Reddit)" stroke="#F43F5E" fill="url(#retailGradient)" fillOpacity={0.3} isAnimationActive={!thermalGuard} />
-                            <Line type="monotone" dataKey="smart_money_score" name="Smart Money (Whales/News)" stroke="#10B981" strokeWidth={3} dot={false} isAnimationActive={!thermalGuard} />
+                            <Area type="monotone" dataKey="retail_score" name="Retail (Twitter/Reddit)" stroke="#F43F5E" fill="url(#retailGradient)" fillOpacity={0.3} isAnimationActive={false} />
+                            <Line type="monotone" dataKey="smart_money_score" name="Smart Money (Whales/News)" stroke="#10B981" strokeWidth={2.5} dot={false} isAnimationActive={false} />
                         </ComposedChart>
                     </ResponsiveContainer>
                 ) : (

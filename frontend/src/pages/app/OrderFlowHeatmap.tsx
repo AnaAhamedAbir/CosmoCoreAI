@@ -390,25 +390,25 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         const chart = createChart(chartContainerRef.current, {
             layout: {
-                background: { type: 'solid', color: '#000000' } as any,
-                textColor: '#94a3b8',
+                background: { type: 'solid', color: isDark ? '#000000' : '#ffffff' } as any,
+                textColor: isDark ? '#94a3b8' : '#334155',
                 fontSize: 14, // larger price-scale tags (live price tag etc.)
             },
             grid: {
-                vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
-                horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
+                vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.06)' },
+                horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.06)' },
             },
             timeScale: {
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.15)',
             },
             rightPriceScale: {
                 visible: true,
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.15)',
                 scaleMargins: { top: 0.1, bottom: 0.2 }, // Leave bottom 20% for RSI
             },
             leftPriceScale: {
                 visible: false,
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.15)',
                 scaleMargins: { top: 0.8, bottom: 0 }, // RSI takes bottom 20%
             },
             handleScroll: {
@@ -1035,26 +1035,26 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
         };
     }, [symbol, interval, exchange, chartId]);
 
-    // Dynamically apply theme changes to chart layout & indicator colors (chart canvas stays deep black #000000)
+    // Dynamically apply theme changes to chart layout & indicator colors (deep black #000000 in dark, clean #ffffff in light)
     useEffect(() => {
         if (!chartRef.current) return;
         chartRef.current.applyOptions({
             layout: {
-                background: { type: 'solid', color: '#000000' } as any,
-                textColor: '#94a3b8',
+                background: { type: 'solid', color: isDark ? '#000000' : '#ffffff' } as any,
+                textColor: isDark ? '#94a3b8' : '#334155',
             },
             grid: {
-                vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
-                horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
+                vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.06)' },
+                horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.06)' },
             },
             timeScale: {
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.15)',
             },
             rightPriceScale: {
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.15)',
             },
             leftPriceScale: {
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.15)',
             },
         });
         if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.applyOptions({ color: isDark ? '#22c55e' : '#16a34a' });
@@ -3689,9 +3689,9 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
     }, [botStatus]);
 
     return (
-        <div className="w-full h-full flex flex-col absolute inset-0 bg-[#000000]">
-            <div className="flex-1 relative bg-[#000000]">
-                <div ref={chartContainerRef} className="w-full h-full absolute inset-0 z-0 touch-none select-none bg-[#000000]" />
+        <div className="w-full h-full flex flex-col absolute inset-0 bg-white dark:bg-[#000000]">
+            <div className="flex-1 relative bg-white dark:bg-[#000000]">
+                <div ref={chartContainerRef} className="w-full h-full absolute inset-0 z-0 touch-none select-none bg-white dark:bg-[#000000]" />
                 <CandlestickTooltip candle={tooltipData} position={tooltipPos} chartContainerRef={chartContainerRef} />
                 {showCrosshairAIPredict && (
                     <button
@@ -5186,7 +5186,7 @@ const OrderFlowChartPanel = React.memo<{
                     )}
                 </div>
             </div>
-            <div className="flex-1 relative min-h-0 bg-[#000000]">
+            <div className="flex-1 relative min-h-0 bg-white dark:bg-[#000000]">
                 {isTradingViewMode ? (
                     <TradingViewWidget symbol={config.symbol} interval={config.interval} exchange={config.exchange} />
                 ) : (

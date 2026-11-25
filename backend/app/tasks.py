@@ -1135,7 +1135,14 @@ def monitor_docker_logs():
     Uses Redis for 5-minute cooldown deduplication to prevent spam.
     """
     try:
-        from app.services.log_monitor_service import scan_docker_logs_and_notify, _get_log_monitor_users
+        from app.services.log_monitor_service import (
+            is_docker_daemon_configured,
+            scan_docker_logs_and_notify,
+            _get_log_monitor_users,
+        )
+
+        if not is_docker_daemon_configured():
+            return "Docker log scan skipped (Docker daemon not mounted/configured)"
 
         # Pre-fetch DB data in sync context to avoid SQLAlchemy MissingGreenlet error
         active_users, wants_broadcast = _get_log_monitor_users()
@@ -1160,7 +1167,14 @@ def broadcast_container_logs():
     Runs every 10 seconds via Celery Beat.
     """
     try:
-        from app.services.log_monitor_service import publish_all_container_logs
+        from app.services.log_monitor_service import (
+            is_docker_daemon_configured,
+            publish_all_container_logs,
+        )
+
+        if not is_docker_daemon_configured():
+            return "Broadcast skipped (Docker daemon not mounted/configured)"
+
         from app.db.session import SessionLocal
         from app.models.notification import NotificationSettings
 

@@ -21,12 +21,32 @@ Architecture:
                            → Telegram notify (ERROR / CRITICAL only)
 """
 
+import os
 import re
 import logging
 from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+_docker_unavailable_logged = False
+
+
+def is_docker_daemon_configured() -> bool:
+    """Return True if DOCKER_HOST is set or the local Docker socket is mounted."""
+    if os.environ.get("DOCKER_HOST"):
+        return True
+    return os.path.exists("/var/run/docker.sock")
+
+
+def _log_docker_unavailable_once() -> None:
+    global _docker_unavailable_logged
+    if not _docker_unavailable_logged:
+        _docker_unavailable_logged = True
+        logger.info(
+            "[LogMonitor] Docker socket is not mounted and DOCKER_HOST is not set; "
+            "skipping Docker container log monitoring/streaming."
+        )
 
 # ============================================================
 # PATTERN DEFINITIONS
@@ -471,6 +491,10 @@ async def scan_docker_logs_and_notify(active_users=None, wants_broadcast=None):
     from app.services.notification import NotificationService
     from app.utils import get_redis_client
 
+    if not is_docker_daemon_configured():
+        _log_docker_unavailable_once()
+        return
+
     try:
         import docker
     except ImportError:
@@ -697,10 +721,14 @@ async def publish_all_container_logs():
     Called by Celery task every 10 seconds.
     Each message: { type, container, display_name, lines: [{line, level}], timestamp }
     """
+    if not is_docker_daemon_configured():
+        _log_docker_unavailable_once()
+        return False
+
     try:
         import docker
     except ImportError:
-        return
+        return False
 
     try:
         from app.utils import get_redis_client

@@ -1,3 +1,4 @@
+import os
 from celery import Celery
 from celery.schedules import crontab
 from app.core.config import settings
@@ -21,38 +22,48 @@ celery_app = Celery(
     backend=settings.REDIS_URL
 )
 
+_ENABLE_DOCKER_LOG_MONITOR = (
+    os.environ.get("ENABLE_DOCKER_LOG_MONITOR", "").strip().lower() in ("1", "true", "yes")
+    or bool(os.environ.get("DOCKER_HOST"))
+    or os.path.exists("/var/run/docker.sock")
+)
+
+_beat_schedule = {
+    "fetch-news-every-10-mins": {
+        "task": "app.tasks.fetch_market_news",
+        "schedule": 600.0,  # 10 minutes in seconds
+    },
+    "prune-db-daily-midnight": {
+        "task": "app.tasks.prune_database",
+        "schedule": crontab(minute=0, hour=0),
+    },
+    "prune-l2-data-hourly": {
+        "task": "app.tasks.prune_l2_data",
+        "schedule": crontab(minute=0), # Run every hour
+    },
+    "auto-retrain-models-hourly": {
+        "task": "app.tasks.auto_retrain_models",
+        "schedule": crontab(minute=30), # Run every hour at minute 30
+    },
+}
+
+if _ENABLE_DOCKER_LOG_MONITOR:
+    _beat_schedule["docker-log-monitor"] = {
+        "task": "app.tasks.monitor_docker_logs",
+        "schedule": 60.0,
+    }
+    _beat_schedule["broadcast-container-logs"] = {
+        "task": "app.tasks.broadcast_container_logs",
+        "schedule": 2.0,  # FAST polling (every 2 seconds) for near real-time!
+    }
+
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
-    beat_schedule={
-        "fetch-news-every-10-mins": {
-            "task": "app.tasks.fetch_market_news",
-            "schedule": 600.0,  # 10 minutes in seconds
-        },
-        "prune-db-daily-midnight": {
-            "task": "app.tasks.prune_database",
-            "schedule": crontab(minute=0, hour=0),
-        },
-        "prune-l2-data-hourly": {
-            "task": "app.tasks.prune_l2_data",
-            "schedule": crontab(minute=0), # Run every hour
-        },
-        "auto-retrain-models-hourly": {
-            "task": "app.tasks.auto_retrain_models",
-            "schedule": crontab(minute=30), # Run every hour at minute 30
-        },
-        "docker-log-monitor": {
-            "task": "app.tasks.monitor_docker_logs",
-            "schedule": 60.0,
-        },
-        "broadcast-container-logs": {
-            "task": "app.tasks.broadcast_container_logs",
-            "schedule": 2.0,  # FAST polling (every 2 seconds) for near real-time!
-        },
-    },
+    beat_schedule=_beat_schedule,
     task_routes={
         'app.tasks.run_backtest_task': {'queue': 'heavy'},
         'app.tasks.run_optimization_task': {'queue': 'heavy'},

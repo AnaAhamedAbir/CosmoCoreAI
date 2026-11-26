@@ -67,22 +67,36 @@ class BackgroundFeatureEngine:
         # Fast non-blocking read since it's just a dict reference update in Python
         return self.latest_features_cache
 
+    async def _get_shared_exchange(self):
+        import ccxt.pro as ccxt_pro
+        exchange_id = 'binanceusdm' if self.is_futures else 'binance'
+        async with BackgroundFeatureEngine._shared_lock:
+            if exchange_id not in BackgroundFeatureEngine._shared_exchanges:
+                exchange_class = getattr(ccxt_pro, exchange_id)
+                ex = exchange_class({
+                    'enableRateLimit': True,
+                    'newUpdates': True,
+                    'options': {'defaultType': 'swap' if self.is_futures else 'spot'},
+                })
+                try:
+                    from app.services.ccxt_service import ccxt_service
+                    from app.services.exchange_pool import apply_prewarmed_markets_off_loop
+                    cache_key = 'binance_swap' if self.is_futures else 'binance_spot'
+                    prewarmed = ccxt_service._market_cache.get(cache_key)
+                    if prewarmed:
+                        await apply_prewarmed_markets_off_loop(ex, prewarmed, is_futures=self.is_futures)
+                except Exception as cp_err:
+                    logger.debug(f"BackgroundFeatureEngine pre-warmed markets skipped: {cp_err}")
+                BackgroundFeatureEngine._shared_exchanges[exchange_id] = ex
+            return BackgroundFeatureEngine._shared_exchanges[exchange_id]
+
     async def prefill_once(self, exchange=None):
         """Synchronously prefills latest_features_cache once via REST if currently empty."""
         if self.latest_features_cache or (not self.needs_trade_features and not self.needs_plp_features):
             return
         try:
             if exchange is None:
-                import ccxt.pro as ccxt_pro
-                exchange_id = 'binanceusdm' if self.is_futures else 'binance'
-                async with BackgroundFeatureEngine._shared_lock:
-                    if exchange_id not in BackgroundFeatureEngine._shared_exchanges:
-                        exchange_class = getattr(ccxt_pro, exchange_id)
-                        BackgroundFeatureEngine._shared_exchanges[exchange_id] = exchange_class({
-                            'enableRateLimit': True,
-                            'newUpdates': True,
-                        })
-                    exchange = BackgroundFeatureEngine._shared_exchanges[exchange_id]
+                exchange = await self._get_shared_exchange()
             initial = await exchange.fetch_trades(self.symbol, limit=500)
             if initial:
                 last_row = await asyncio.to_thread(self._calculate_features_sync, initial)
@@ -93,17 +107,7 @@ class BackgroundFeatureEngine:
             logger.debug(f"BackgroundFeatureEngine: prefill_once skipped for {self.symbol}: {e}")
 
     async def _cache_loop(self):
-        import ccxt.pro as ccxt_pro
-        exchange_id = 'binanceusdm' if self.is_futures else 'binance'
-        
-        async with BackgroundFeatureEngine._shared_lock:
-            if exchange_id not in BackgroundFeatureEngine._shared_exchanges:
-                exchange_class = getattr(ccxt_pro, exchange_id)
-                BackgroundFeatureEngine._shared_exchanges[exchange_id] = exchange_class({
-                    'enableRateLimit': True,
-                    'newUpdates': True,
-                })
-            exchange = BackgroundFeatureEngine._shared_exchanges[exchange_id]
+        exchange = await self._get_shared_exchange()
             
         from app.services.hybrid_deep_pipeline import calculate_trade_tick_features
 

@@ -162,7 +162,7 @@ class CcxtService:
             finally:
                 if api:
                     await api.close()
-                gc.collect()
+                await asyncio.to_thread(gc.collect)
 
     # --- NEW FUTURES & EXECUTION HELPERS ---
     

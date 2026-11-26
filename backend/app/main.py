@@ -346,9 +346,10 @@ async def _init_binance_spot_client():
         'options': {'adjustForTimeDifference': True, 'defaultType': 'spot'}  # Explicitly spot — prevents routing to dapi.binance.com (COIN-M)
     })
     try:
+        from app.services.exchange_pool import apply_prewarmed_markets_off_loop
         spot_mkts = await ccxt_service.get_full_markets('binance', 'spot')
         if spot_mkts and hasattr(client, 'set_markets'):
-            client.set_markets(spot_mkts)
+            await apply_prewarmed_markets_off_loop(client, spot_mkts, is_futures=False)
         else:
             await client.load_markets()
     except Exception as e:
@@ -526,7 +527,7 @@ async def fetch_market_data_background():
                         async def _watch_ob(sym, raw_sym):
                             while True:
                                 try:
-                                    orderbook = await local_exchange_client.watch_order_book(raw_sym)
+                                    orderbook = await local_exchange_client.watch_order_book(raw_sym, limit=100)
                                     depth_data = {
                                         "bids": [{"price": b[0], "amount": b[1], "total": 0} for b in orderbook.get('bids', [])[:20]],
                                         "asks": [{"price": a[0], "amount": a[1], "total": 0} for a in orderbook.get('asks', [])[:20]]
@@ -1031,10 +1032,10 @@ async def startup_event():
                     try:
                         frame = sys._current_frames().get(_loop_tid)
                         if frame is not None:
-                            frames = _traceback.extract_stack(frame, limit=10)
+                            frames = _traceback.extract_stack(frame, limit=14)
                             stack_str = " -> ".join(
                                 f"{_os.path.basename(f.filename)}:{f.lineno}({f.name})"
-                                for f in frames[-6:]
+                                for f in frames[-10:]
                             )
                     except Exception:
                         pass

@@ -25,11 +25,12 @@ class PortfolioPriceService:
                 'newUpdates': True,
                 'options': {'adjustForTimeDifference': True}
             })
-            # Copy pre-warmed markets from ccxt_service if available (0ms)
+            # Copy pre-warmed markets from ccxt_service off-loop if available
             prewarmed = ccxt_service._market_cache.get(f"{ex_key}_spot")
             if prewarmed and hasattr(client, 'set_markets'):
                 try:
-                    client.set_markets(prewarmed)
+                    from app.services.exchange_pool import apply_prewarmed_markets_off_loop
+                    await apply_prewarmed_markets_off_loop(client, prewarmed, is_futures=False)
                 except Exception:
                     await asyncio.wait_for(client.load_markets(), timeout=10.0)
             else:

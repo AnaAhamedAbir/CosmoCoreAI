@@ -69,9 +69,10 @@ class MarketDepthService:
                     
                 exchange = exchange_class(options)
                 
-                # ⚡ Copy pre-warmed markets from ccxt_service if available (0ms load)
+                # ⚡ Copy pre-warmed markets from ccxt_service off-loop if available (0ms event-loop stall)
                 try:
                     from app.services.ccxt_service import ccxt_service
+                    from app.services.exchange_pool import apply_prewarmed_markets_off_loop
                     prewarmed = None
                     if cache_id == 'binance':
                         prewarmed = ccxt_service._market_cache.get('binance_spot')
@@ -79,8 +80,12 @@ class MarketDepthService:
                         prewarmed = ccxt_service._market_cache.get('binance_swap')
 
                     if prewarmed and hasattr(exchange, 'set_markets'):
-                        exchange.set_markets(prewarmed)
-                        logger.info(f"⚡ [MarketDepth] Copied {len(prewarmed)} pre-warmed markets to {cache_id} (0ms)")
+                        cnt = await apply_prewarmed_markets_off_loop(
+                            exchange,
+                            prewarmed,
+                            is_futures=(cache_id == 'binance_futures'),
+                        )
+                        logger.info(f"⚡ [MarketDepth] Copied {cnt} pre-warmed markets to {cache_id} (off-loop)")
                 except Exception as cp_err:
                     logger.debug(f"[MarketDepth] Pre-warmed copy skipped for {cache_id}: {cp_err}")
 

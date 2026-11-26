@@ -328,28 +328,34 @@ async def get_or_create_exchange(
 
         exchange = exchange_class(config)
 
-        # Markets লোড করে রাখুন — general instance এর markets থাকলে 0ms এ দ্রুত কপি করে নিন
+        # Markets লোড করে রাখুন — general instance এর markets থাকলে 0ms event-loop block-এ দ্রুত কপি করে নিন
         general_key = _make_cache_key(api_key_id, is_futures, purpose="general")
         if general_key in _pool and getattr(_pool[general_key][0], 'markets', None):
             gen_ex = _pool[general_key][0]
             copied = False
-            if hasattr(exchange, 'set_markets'):
-                try:
-                    currencies_copy = copy.deepcopy(getattr(gen_ex, 'currencies', None))
-                    exchange.set_markets(copy.deepcopy(list(gen_ex.markets.values())), currencies_copy)
+            try:
+                cnt = await apply_prewarmed_markets_off_loop(
+                    exchange,
+                    gen_ex.markets,
+                    currencies=getattr(gen_ex, 'currencies', None),
+                    is_futures=is_futures,
+                )
+                if cnt > 0:
                     copied = True
-                except Exception as sm_err:
-                    logger.debug(f"[ExchangePool] set_markets copy fallback: {sm_err}")
+            except Exception as sm_err:
+                logger.debug(f"[ExchangePool] set_markets copy fallback: {sm_err}")
             if not copied:
-                exchange.markets = copy.deepcopy(gen_ex.markets)
-                exchange.symbols = list(exchange.markets.keys())
-                exchange.currencies = copy.deepcopy(getattr(gen_ex, 'currencies', {}))
-                exchange.ids = copy.deepcopy(getattr(gen_ex, 'ids', list(exchange.markets.keys())))
-                exchange.markets_by_id = copy.deepcopy(getattr(gen_ex, 'markets_by_id', {}))
-                exchange.currencies_by_id = copy.deepcopy(getattr(gen_ex, 'currencies_by_id', {}))
-            logger.info(f"[ExchangePool] ⚡ Copied pre-loaded markets from general instance for key={api_key_id} purpose={purpose} (0ms)")
+                def _legacy_copy():
+                    exchange.markets = copy.deepcopy(gen_ex.markets)
+                    exchange.symbols = list(exchange.markets.keys())
+                    exchange.currencies = copy.deepcopy(getattr(gen_ex, 'currencies', {}))
+                    exchange.ids = copy.deepcopy(getattr(gen_ex, 'ids', list(exchange.markets.keys())))
+                    exchange.markets_by_id = copy.deepcopy(getattr(gen_ex, 'markets_by_id', {}))
+                    exchange.currencies_by_id = copy.deepcopy(getattr(gen_ex, 'currencies_by_id', {}))
+                await asyncio.to_thread(_legacy_copy)
+            logger.info(f"[ExchangePool] ⚡ Copied pre-loaded markets from general instance for key={api_key_id} purpose={purpose} (off-loop)")
         else:
-            # ⚡ Check ccxt_service pre-warmed markets cache (0ms)
+            # ⚡ Check ccxt_service pre-warmed markets cache (off-loop)
             copied_from_cache = False
             try:
                 from app.services.ccxt_service import ccxt_service
@@ -357,9 +363,14 @@ async def get_or_create_exchange(
                 cache_id = f"{exchange_name.lower()}_{market_type}"
                 prewarmed = ccxt_service._market_cache.get(cache_id)
                 if prewarmed and hasattr(exchange, 'set_markets'):
-                    exchange.set_markets(prewarmed)
-                    copied_from_cache = True
-                    logger.info(f"[ExchangePool] ⚡ Copied pre-warmed markets from ccxt_service for {cache_id} key={api_key_id} (0ms)")
+                    cnt = await apply_prewarmed_markets_off_loop(
+                        exchange,
+                        prewarmed,
+                        is_futures=is_futures,
+                    )
+                    if cnt > 0:
+                        copied_from_cache = True
+                        logger.info(f"[ExchangePool] ⚡ Copied pre-warmed markets from ccxt_service for {cache_id} key={api_key_id} ({cnt} mkts, off-loop)")
             except Exception as cache_e:
                 logger.debug(f"[ExchangePool] Pre-warmed cache copy fallback: {cache_e}")
 
@@ -397,6 +408,53 @@ async def get_or_create_exchange(
             )
 
         return exchange
+
+
+async def apply_prewarmed_markets_off_loop(
+    exchange: Any,
+    raw_markets: Any,
+    currencies: Any = None,
+    is_futures: Optional[bool] = None,
+) -> int:
+    """
+    Populate `exchange.markets` inside a worker thread so copying/parsing thousands of
+    Binance markets never stalls the main asyncio event loop during trading.
+    """
+    if not exchange or not raw_markets:
+        return 0
+
+    items = list(raw_markets.values()) if isinstance(raw_markets, dict) else list(raw_markets)
+    if not items:
+        return 0
+
+    ex_id = str(getattr(exchange, 'id', '') or '').lower()
+    if is_futures is not None and 'binance' in ex_id:
+        if is_futures:
+            filtered = [m for m in items if isinstance(m, dict) and (m.get('swap') or m.get('future'))]
+        else:
+            filtered = [m for m in items if isinstance(m, dict) and m.get('spot')]
+        if filtered:
+            items = filtered
+
+    safe_items = [dict(m) if isinstance(m, dict) else m for m in items]
+    safe_currencies = (
+        {k: (dict(v) if isinstance(v, dict) else v) for k, v in currencies.items()}
+        if isinstance(currencies, dict)
+        else currencies
+    )
+
+    def _apply_sync() -> int:
+        if hasattr(exchange, 'set_markets') and callable(exchange.set_markets):
+            exchange.set_markets(safe_items, safe_currencies)
+            return len(getattr(exchange, 'markets', None) or safe_items)
+        mkts = {m['symbol']: m for m in safe_items if isinstance(m, dict) and m.get('symbol')}
+        exchange.markets = mkts
+        exchange.symbols = list(mkts.keys())
+        if isinstance(safe_currencies, dict):
+            exchange.currencies = safe_currencies
+        return len(mkts)
+
+    return await asyncio.to_thread(_apply_sync)
 
 
 async def invalidate(api_key_id: int):

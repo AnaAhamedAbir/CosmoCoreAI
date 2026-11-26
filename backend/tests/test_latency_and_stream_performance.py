@@ -1694,6 +1694,53 @@ class TestLatencyWarningAndExecutionGuard(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(res_lin["amount"], 0.01)
         self.assertIn((True, True), prewarm_calls)
 
+    async def test_apply_prewarmed_markets_off_loop_filters_and_yields_to_event_loop(self):
+        import threading
+        from app.services.exchange_pool import apply_prewarmed_markets_off_loop
+
+        main_tid = threading.get_ident()
+        call_tids = []
+
+        class _SlowSetMarketsEx:
+            id = "binance"
+            markets = {}
+
+            def set_markets(self, items, currencies=None):
+                call_tids.append(threading.get_ident())
+                time.sleep(0.08)
+                self.markets = {m["symbol"]: m for m in items}
+
+        raw_mixed = {
+            "DOGE/FDUSD": {"id": "DOGEFDUSD", "symbol": "DOGE/FDUSD", "spot": True, "swap": False, "future": False},
+            "BTC/USDC:USDC": {"id": "BTCUSDC", "symbol": "BTC/USDC:USDC", "spot": False, "swap": True, "future": False},
+        }
+
+        ex_spot = _SlowSetMarketsEx()
+        hb_ticks = 0
+
+        async def _heartbeat():
+            nonlocal hb_ticks
+            for _ in range(6):
+                await asyncio.sleep(0.01)
+                hb_ticks += 1
+
+        hb = asyncio.create_task(_heartbeat())
+        cnt_spot = await apply_prewarmed_markets_off_loop(ex_spot, raw_mixed, is_futures=False)
+        await hb
+
+        self.assertEqual(cnt_spot, 1)
+        self.assertIn("DOGE/FDUSD", ex_spot.markets)
+        self.assertNotIn("BTC/USDC:USDC", ex_spot.markets)
+        self.assertEqual(len(call_tids), 1)
+        self.assertNotEqual(call_tids[0], main_tid)
+        self.assertGreaterEqual(hb_ticks, 3)
+
+        ex_fut = _SlowSetMarketsEx()
+        cnt_fut = await apply_prewarmed_markets_off_loop(ex_fut, raw_mixed, is_futures=True)
+        self.assertEqual(cnt_fut, 1)
+        self.assertIn("BTC/USDC:USDC", ex_fut.markets)
+        self.assertNotIn("DOGE/FDUSD", ex_fut.markets)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -212,15 +212,16 @@ class MarketDataStreamer:
                     options['options'] = {'defaultType': 'swap' if is_futures else 'spot'}
                 exchange = exchange_class(options)
 
-                # ⚡ Copy pre-warmed markets from ccxt_service if available (0ms)
+                # ⚡ Copy pre-warmed markets from ccxt_service off-loop if available (0ms event-loop stall)
                 try:
                     from app.services.ccxt_service import ccxt_service
+                    from app.services.exchange_pool import apply_prewarmed_markets_off_loop
                     market_type = 'swap' if is_futures else 'spot'
                     cache_id = f"{exchange_id}_{market_type}"
                     prewarmed = ccxt_service._market_cache.get(cache_id)
                     if prewarmed and hasattr(exchange, 'set_markets'):
-                        exchange.set_markets(prewarmed)
-                        logger.info(f"Streamer ⚡ Copied {len(prewarmed)} pre-warmed markets for {cache_key} (0ms)")
+                        cnt = await apply_prewarmed_markets_off_loop(exchange, prewarmed, is_futures=is_futures)
+                        logger.info(f"Streamer ⚡ Copied {cnt} pre-warmed markets for {cache_key} (off-loop)")
                 except Exception as cp_err:
                     logger.debug(f"Streamer pre-warmed copy fallback: {cp_err}")
 

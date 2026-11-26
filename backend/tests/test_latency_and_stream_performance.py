@@ -718,6 +718,86 @@ class TestLatencyWarningAndExecutionGuard(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(published[0][1]["snippet"], list)
         self.assertEqual(published[1][1]["severity"], "WARNING")
 
+    async def test_exchange_pool_uses_ipv4_and_edit_gtx_uses_parallel_1rtt(self):
+        """
+        Verify exchange_pool uses socket.AF_INET (no IPv6 fallback stalls) and
+        ManualTradeService.edit_manual_trade skips doomed Futures GTX editOrder
+        to execute cancel + create concurrently in 1 RTT wall-clock.
+        """
+        import socket
+        from app.services import exchange_pool
+        from app.services.manual_trade_service import ManualTradeService
+
+        sess = exchange_pool._get_shared_http_session()
+        if sess is not None:
+            self.assertEqual(sess.connector._family, socket.AF_INET)
+
+        fake_ex = MagicMock()
+        fake_ex.id = "binance"
+        fake_ex.urls = {"api": {"ws": {"ws-api": {"future": "wss://ws-fapi.binance.com/ws-fapi/v1"}}}}
+        fake_ex.markets = {"BTC/USDC:USDC": {"id": "BTCUSDC", "symbol": "BTC/USDC:USDC", "linear": True, "inverse": False, "contractSize": 1.0}}
+        fake_ex.has = {"editOrderWs": True, "editOrder": True, "createOrderWs": False}
+        fake_ex.price_to_precision = lambda sym, px: str(round(float(px), 1))
+        fake_ex.amount_to_precision = lambda sym, amt: str(round(float(amt), 3))
+        fake_ex.edit_order_ws = AsyncMock(side_effect=AssertionError("Must skip doomed GTX edit_order_ws"))
+        fake_ex.edit_order = AsyncMock(side_effect=AssertionError("Must skip doomed GTX edit_order"))
+
+        events = []
+
+        async def slow_cancel(*args, **kwargs):
+            await asyncio.sleep(0.12)
+            events.append("cancel_done")
+            return {"id": "111", "status": "canceled"}
+
+        async def slow_create(sym, otype, side, amt, px, params):
+            await asyncio.sleep(0.12)
+            events.append("create_done")
+            return {"id": "222", "symbol": sym, "price": px, "amount": amt, "status": "open"}
+
+        fake_ex.cancel_order = AsyncMock(side_effect=slow_cancel)
+        fake_ex.create_order = AsyncMock(side_effect=slow_create)
+
+        fake_rec = SimpleNamespace(
+            id=99, user_id=5, exchange="binance", api_key="k", secret_key="s", passphrase=None, is_enabled=True
+        )
+        fake_db = MagicMock()
+        fake_db.query.return_value.filter.return_value.first.return_value = fake_rec
+
+        ManualTradeService._ORDER_META_CACHE[(99, "111")] = (
+            {"id": "111", "side": "sell", "price": 62000.0, "amount": 0.01, "isSoftwareSL": False, "mode": "TP", "isPostOnly": True},
+            time.time(),
+        )
+        try:
+            from app.services import manual_trade_service as mts_mod
+
+            with patch.object(ManualTradeService, "_get_exchange", new=AsyncMock(return_value=fake_ex)), \
+                 patch.object(ManualTradeService, "_is_binance_hedge_mode", new=AsyncMock(return_value=False)), \
+                 patch.object(mts_mod.bracket_order_service, "_cancel_futures_order_universal", new=AsyncMock(side_effect=slow_cancel)), \
+                 patch.object(mts_mod.bracket_order_service, "_safe_price_to_precision", side_effect=lambda ex, sym, px: round(float(px), 1)), \
+                 patch.object(mts_mod.bracket_order_service, "_safe_amount_to_precision", side_effect=lambda ex, sym, amt: round(float(amt), 3)):
+                t0 = time.perf_counter()
+                res = await ManualTradeService.edit_manual_trade(
+                    db=fake_db,
+                    user_id=5,
+                    api_key_id=99,
+                    order_id="111",
+                    symbol="BTC/USDC:USDC",
+                    side="sell",
+                    amount=0.01,
+                    new_price=62500.0,
+                )
+                elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+            self.assertEqual(res["id"], "222")
+            self.assertEqual(fake_ex.edit_order_ws.call_count, 0)
+            self.assertEqual(fake_ex.edit_order.call_count, 0)
+            # Both 120ms legs ran concurrently in ~120ms (not 240ms serial!)
+            self.assertLess(elapsed_ms, 210.0)
+        finally:
+            ManualTradeService._ORDER_META_CACHE.pop((99, "111"), None)
+            ManualTradeService._ORDER_META_CACHE.pop((99, "222"), None)
+            await exchange_pool.close_all()
+
 
 if __name__ == "__main__":
     unittest.main()

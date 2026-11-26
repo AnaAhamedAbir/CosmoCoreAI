@@ -45,8 +45,8 @@ class MarketDataStreamer:
     WS_RELEASE_GRACE_SECONDS: float = 45.0   # Short grace after last WS client disconnects
     REAPER_INTERVAL_SECONDS: float = 20.0
     MAX_CONCURRENT_STREAMS: int = 16
-    ORDERBOOK_MIN_INTERVAL_SEC: float = 0.10 # Max 10 Hz per stream
-    TRADES_FLUSH_INTERVAL_SEC: float = 0.10  # Batch trade Redis pushes at <= 10 Hz
+    ORDERBOOK_MIN_INTERVAL_SEC: float = 0.05 # Max 20 Hz per stream
+    TRADES_FLUSH_INTERVAL_SEC: float = 0.025 # Batch trade Redis pushes at <= 40 Hz
     BBO_MIN_INTERVAL_SEC: float = 0.025      # Max 40 Hz when BBO actually changes
     BBO_KEEPALIVE_SEC: float = 15.0          # Refresh BBO TTL even if price is flat
 
@@ -576,6 +576,7 @@ class MarketDataStreamer:
 
         sym_u = symbol.upper()
         bbo_key = f"bbo:{exchange_id}:{symbol}"
+        channel = f"market_depth_stream:{exchange_id}:{symbol}"
         last_bid = 0.0
         last_ask = 0.0
         last_write_mono = 0.0
@@ -587,10 +588,15 @@ class MarketDataStreamer:
             last_ask = ap
             last_write_mono = time.monotonic()
             pending_bbo = None
+            now_wall = time.time()
             await redis.setex(
                 bbo_key,
                 60,
-                json.dumps({"bid": bp, "ask": ap, "ts": time.time()}, separators=(",", ":")),
+                json.dumps({"bid": bp, "ask": ap, "ts": now_wall}, separators=(",", ":")),
+            )
+            await redis.publish(
+                channel,
+                json.dumps({"type": "bbo", "bid": bp, "ask": ap, "ts": int(now_wall * 1000)}, separators=(",", ":")),
             )
 
         while stream_key in self._active_streams:

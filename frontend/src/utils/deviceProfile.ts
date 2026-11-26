@@ -38,7 +38,7 @@ const DESKTOP_EMULATED_VIEWPORT_CONTENT =
   'width=1280, user-scalable=no, interactive-widget=overlays-content';
 
 const DESKTOP_TIMINGS: ThermalTimings = {
-  l2FlushMs: 100,
+  l2FlushMs: 50,
   tradeTickChartMs: 0,
   indicatorIntervalMs: 200,
   bracketOpenPollMs: 1000,
@@ -53,8 +53,8 @@ const DESKTOP_TIMINGS: ThermalTimings = {
 };
 
 const MOBILE_THERMAL_TIMINGS: ThermalTimings = {
-  l2FlushMs: 600,
-  tradeTickChartMs: 120,
+  l2FlushMs: 200,
+  tradeTickChartMs: 40,
   indicatorIntervalMs: 2000,
   bracketOpenPollMs: 1800,
   bracketActivePollMs: 1200,
@@ -63,7 +63,7 @@ const MOBILE_THERMAL_TIMINGS: ThermalTimings = {
   mlWarmupMs: 15000,
   openOrdersPollMs: 4000,
   liquidationFps: 10,
-  modalPriceThrottleMs: 250,
+  modalPriceThrottleMs: 120,
   marketTradeFlushMs: 500,
 };
 

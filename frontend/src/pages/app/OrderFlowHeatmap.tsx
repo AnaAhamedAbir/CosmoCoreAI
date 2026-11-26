@@ -4,7 +4,7 @@ import { createChart, ISeriesApi, CandlestickData, CandlestickSeries, LineSeries
 import { WickSRRenderer } from '../../components/features/market/WickSRRenderer';
 import { LiquiditySweepAbsorptionRenderer } from '../../components/features/market/LiquiditySweepAbsorptionRenderer';
 import { useLiquiditySweepAbsorption } from '../../hooks/useLiquiditySweepAbsorption';
-import { useLevel2MarketData, subscribeLiveTradeTicks } from '@/hooks/useLevel2MarketData';
+import { useLevel2MarketData, subscribeLiveTradeTicks, subscribeLiveBbo } from '@/hooks/useLevel2MarketData';
 import { useDeviceProfile } from '@/hooks/useDeviceProfile';
 import { useOrderFlowData } from '../../hooks/useOrderFlowData';
 import { useHeatmapData } from '../../hooks/useHeatmapData';
@@ -3630,7 +3630,14 @@ const OrderFlowChart = React.memo<{ chartId?: string; exchange: string; symbol: 
 
         sync(bidLineRef, bestBid, '#16a34a', 'BID');
         sync(askLineRef, bestAsk, '#dc2626', 'ASK');
-    }, [showBidAsk, bestBid, bestAsk, symbol, interval, currentPrice]);
+
+        if (!showBidAsk) return;
+        const unsubBbo = subscribeLiveBbo(symbol, exchange, ({ bestBid: liveB, bestAsk: liveA }) => {
+            sync(bidLineRef, liveB, '#16a34a', 'BID');
+            sync(askLineRef, liveA, '#dc2626', 'ASK');
+        });
+        return () => unsubBbo();
+    }, [showBidAsk, bestBid, bestAsk, symbol, exchange, interval, currentPrice]);
 
     // Update Trade & Absorption Markers
     useEffect(() => {
@@ -4984,15 +4991,17 @@ const OrderFlowChartPanel = React.memo<{
     
     const isShared = isMain && !!parentL2Data;
     const fallbackL2 = useLevel2MarketData(isShared ? '' : config.symbol, isShared ? '' : config.exchange);
-    const { bids, asks, walls, currentPrice, tradeEvent } = isShared ? parentL2Data : fallbackL2;
+    const { bids, asks, walls, currentPrice, bestBid: liveBestBid, bestAsk: liveBestAsk, tradeEvent } = isShared ? parentL2Data : fallbackL2;
     const bestBid = useMemo(() => {
         if (panelDeviceProfile.isThermalGuardActive && !showBidAsk) return 0;
+        if (liveBestBid && liveBestBid > 0) return liveBestBid;
         return bids && bids.length ? Math.max(...bids.map((b: any) => b.price)) : 0;
-    }, [bids, panelDeviceProfile.isThermalGuardActive, showBidAsk]);
+    }, [liveBestBid, bids, panelDeviceProfile.isThermalGuardActive, showBidAsk]);
     const bestAsk = useMemo(() => {
         if (panelDeviceProfile.isThermalGuardActive && !showBidAsk) return 0;
+        if (liveBestAsk && liveBestAsk > 0) return liveBestAsk;
         return asks && asks.length ? Math.min(...asks.map((a: any) => a.price)) : 0;
-    }, [asks, panelDeviceProfile.isThermalGuardActive, showBidAsk]);
+    }, [liveBestAsk, asks, panelDeviceProfile.isThermalGuardActive, showBidAsk]);
     const advancedMetricsData = useAdvancedMetrics(config.symbol, config.exchange, config.interval, advancedMetrics);
     const usingParentOpenOrders = Boolean(parentOpenOrders && parentSymbol && config.symbol === parentSymbol);
     const ownOpenOrders = useOpenOrders(selectedApiKeyId, config.symbol, panelDeviceProfile.timings.openOrdersPollMs, !usingParentOpenOrders);
@@ -5502,7 +5511,7 @@ const OrderFlowHeatmap: React.FC = () => {
     const [isIndicatorModalOpen, setIsIndicatorModalOpen] = useState(false);
     const [isAIDeploymentModalOpen, setIsAIDeploymentModalOpen] = useState(false);
     const deviceProfile = useDeviceProfile();
-    const { bids, asks, walls, currentPrice, tradeEvent } = useLevel2MarketData(symbol, exchange);
+    const { bids, asks, walls, currentPrice, bestBid: liveBestBid, bestAsk: liveBestAsk, tradeEvent } = useLevel2MarketData(symbol, exchange);
     const { volumeThreshold, setVolumeThreshold, volumeMode, setVolumeMode } = useVolumeFilter(5000000);
     const mainChartBotId = activeBotsByChartId['main'] || null;
     const { statusData: botStatus, isConnected: botWsConnected } = useWallHunterStatus(selectedHudBotId);
@@ -5702,8 +5711,8 @@ const OrderFlowHeatmap: React.FC = () => {
     }, [handleModalDragBracketStart, handleModalDragBracketMove, handleModalDragBracketEnd]);
 
     const mainParentL2Data = useMemo(
-        () => ({ bids, asks, walls, currentPrice, tradeEvent }),
-        [bids, asks, walls, currentPrice, tradeEvent]
+        () => ({ bids, asks, walls, currentPrice, bestBid: liveBestBid, bestAsk: liveBestAsk, tradeEvent }),
+        [bids, asks, walls, currentPrice, liveBestBid, liveBestAsk, tradeEvent]
     );
     const noopCallback = useCallback(() => {}, []);
 

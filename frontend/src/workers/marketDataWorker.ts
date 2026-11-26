@@ -22,6 +22,18 @@ self.onmessage = (event: MessageEvent) => {
         if (type === 'PROCESS_MESSAGE') {
             const parsed = JSON.parse(payload);
 
+            if (parsed.type === 'bbo') {
+                self.postMessage({
+                    type: 'BBO_READY',
+                    data: {
+                        bestBid: Number(parsed.bid || 0),
+                        bestAsk: Number(parsed.ask || 0),
+                        ts: parsed.ts || Date.now(),
+                    }
+                });
+                return;
+            }
+
             if (parsed.type === 'trade') {
                 self.postMessage({
                     type: 'TRADE_READY',

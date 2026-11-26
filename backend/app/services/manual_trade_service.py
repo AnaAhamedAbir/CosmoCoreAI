@@ -15,11 +15,13 @@ from app import models
 from app.core.security import decrypt_key
 from app.services.exchange_pool import get_or_create_exchange
 try:
-    from app.services.exchange_pool import is_ws_api_ready, prewarm_exchange_connections
+    from app.services.exchange_pool import is_ws_api_ready, prewarm_exchange_connections, schedule_ws_api_prewarm
 except ImportError:
     def is_ws_api_ready(exchange, is_futures: bool = False, is_inverse: bool = False) -> bool:
         return True
     async def prewarm_exchange_connections(exchange, is_futures: bool = False):
+        pass
+    def schedule_ws_api_prewarm(exchange, is_futures: bool = False, is_inverse: bool = False) -> None:
         pass
 from app.services.notification import NotificationService
 from app.services.bracket_order_service import bracket_order_service
@@ -2153,6 +2155,8 @@ class ManualTradeService:
             meta = ManualTradeService._get_contract_meta(exchange, order_req.symbol)
             is_inverse = meta['is_inverse']
             contract_size = meta['contract_size']
+            if is_inverse:
+                schedule_ws_api_prewarm(exchange, is_futures=is_futures, is_inverse=True)
 
             # Leverage and Margin Mode (Futures)
             params = getattr(order_req, 'params', {}) or {}
@@ -2382,37 +2386,16 @@ class ManualTradeService:
                 except Exception as margin_e:
                     logger.debug(f"Pre-flight margin calculation notice: {margin_e}")
 
-            # --- Refresh Auto-Best-Limit Price right after Margin Check (Redis WS BBO 1ms fast-path, REST fallback) ---
+            # --- Refresh Auto-Best-Limit Price right after Margin Check (Live @bookTicker bbo: 1ms fast-path, REST fallback) ---
             if order_req.type.lower() == 'limit' and params.get('autoBestLimit'):
                 try:
-                    from app.services.smart_peg_entry_executor import _get_market_tick
+                    from app.services.smart_peg_entry_executor import _get_market_tick, _fetch_bbo_fast
                     f_bid = 0.0
                     f_ask = 0.0
-                    try:
-                        from app.services.user_order_stream import _get_redis_pub
-                        import json as _json
-                        r_cli = await _get_redis_pub()
-                        if r_cli is not None:
-                            ex_id = str(getattr(api_key_record, 'exchange', 'binance') or 'binance').lower()
-                            raw_ob = await asyncio.wait_for(
-                                r_cli.get(f"latest_orderbook:{ex_id}:{order_req.symbol}"),
-                                timeout=0.05,
-                            )
-                            if raw_ob:
-                                ob_json = _json.loads(raw_ob)
-                                bids_l = ob_json.get('bids') or []
-                                asks_l = ob_json.get('asks') or []
-                                if bids_l and asks_l:
-                                    f_bid = float(bids_l[0].get('price') if isinstance(bids_l[0], dict) else bids_l[0][0])
-                                    f_ask = float(asks_l[0].get('price') if isinstance(asks_l[0], dict) else asks_l[0][0])
-                    except Exception:
-                        pass
-
-                    if f_bid <= 0 or f_ask <= 0:
-                        ob_fresh = await exchange.fetch_order_book(order_req.symbol, limit=5)
-                        if ob_fresh and ob_fresh.get('bids') and ob_fresh.get('asks'):
-                            f_bid = float(ob_fresh['bids'][0][0])
-                            f_ask = float(ob_fresh['asks'][0][0])
+                    ob_fresh = await _fetch_bbo_fast(exchange, order_req.symbol, max_age_seconds=0.8)
+                    if ob_fresh and ob_fresh.get('bids') and ob_fresh.get('asks'):
+                        f_bid = float(ob_fresh['bids'][0][0])
+                        f_ask = float(ob_fresh['asks'][0][0])
 
                     if f_bid > 0 and f_ask > 0:
                         f_tick = _get_market_tick(exchange, order_req.symbol, f_bid)
@@ -2831,11 +2814,30 @@ class ManualTradeService:
                             or 'gtx' in ws_err_s
                             or 'expired' in ws_err_s
                         )
-                        if ex_params.get('postOnly') and is_ws_po_cross and not params.get('autoBestLimit'):
-                            raise HTTPException(
-                                status_code=400,
-                                detail="Exchange Error: Post-Only order would immediately match and take liquidity. Try again or use Smart Peg Entry."
-                            )
+                        if ex_params.get('postOnly') and is_ws_po_cross:
+                            if not params.get('autoBestLimit'):
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail="Exchange Error: Post-Only order would immediately match and take liquidity. Try again or use Smart Peg Entry."
+                                )
+                            # Re-peg price from live @bookTicker / orderbook before REST fallback so retry never repeats stale price
+                            try:
+                                from app.services.smart_peg_entry_executor import _get_market_tick, _fetch_bbo_fast
+                                ob_re = await _fetch_bbo_fast(exchange, order_req.symbol, max_age_seconds=0.3)
+                                if ob_re and ob_re.get('bids') and ob_re.get('asks'):
+                                    rb = float(ob_re['bids'][0][0])
+                                    ra = float(ob_re['asks'][0][0])
+                                    rt = _get_market_tick(exchange, order_req.symbol, rb)
+                                    prev_px = float(order_req.price or 0)
+                                    cp = (rb if rb < ra else (ra - rt)) if order_req.side.lower() == 'buy' else (ra if ra > rb else (rb + rt))
+                                    if order_req.side.lower() == 'buy' and prev_px > 0 and cp >= prev_px:
+                                        cp = min(cp, prev_px - rt)
+                                    elif order_req.side.lower() == 'sell' and prev_px > 0 and cp <= prev_px:
+                                        cp = max(cp, prev_px + rt)
+                                    order_req.price = bracket_order_service._safe_price_to_precision(exchange, order_req.symbol, cp)
+                                    req_price = order_req.price
+                            except Exception:
+                                pass
                         logger.warning(f"⚠️ WebSocket Order Failed ({ws_e}). Falling back to REST API.")
 
             if not is_ws_success:
@@ -2971,8 +2973,9 @@ class ManualTradeService:
                             )
                             if params.get('autoBestLimit') and ex_params.get('postOnly') and is_po_cross and po_attempt < max_po_attempts:
                                 try:
-                                    from app.services.smart_peg_entry_executor import _get_market_tick
-                                    ob_retry = await exchange.fetch_order_book(order_req.symbol, limit=5)
+                                    from app.services.smart_peg_entry_executor import _get_market_tick, _fetch_bbo_fast
+                                    # Use ultra-fresh Redis @bookTicker on attempt 1 (fallback to direct REST if >=250ms old)
+                                    ob_retry = await _fetch_bbo_fast(exchange, order_req.symbol, max_age_seconds=0.25)
                                     if ob_retry and ob_retry.get('bids') and ob_retry.get('asks'):
                                         r_bid = float(ob_retry['bids'][0][0])
                                         r_ask = float(ob_retry['asks'][0][0])
@@ -3205,6 +3208,8 @@ class ManualTradeService:
             exchange = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
             meta = ManualTradeService._get_contract_meta(exchange, symbol)
             is_inverse = bool(meta.get('is_inverse'))
+            if is_inverse:
+                schedule_ws_api_prewarm(exchange, is_futures=is_futures, is_inverse=True)
             oid_str = str(order_id)
 
             # 2. Fast Parameter Lookup from RAM Cache (0ms) instead of slow fetch_order network round-trip (~230ms)
@@ -3302,9 +3307,20 @@ class ManualTradeService:
             except Exception:
                 pass
 
-            # Priority 0: Ultra-Fast WebSocket API edit_order_ws (Spot cancelReplace / Futures modify in ~80-150ms)
+            # Binance Futures PUT /order rejects GTX (postOnly=True) orders with -5026 ("Only GTC order can be modified").
+            # Skip doomed editOrder roundtrip and jump directly to 1-RTT concurrent cancel + create!
+            is_real_binance_futures_gtx = (
+                is_futures
+                and bool(ex_params.get('postOnly'))
+                and not is_conditional_stop
+                and isinstance(getattr(exchange, 'urls', None), dict)
+                and str(getattr(exchange, 'id', '')).lower().startswith('binance')
+            )
+
+            # Priority 0: Ultra-Fast WebSocket API edit_order_ws (Spot cancelReplace / Futures GTC modify in 1 RTT)
             if (
-                exchange.has.get('editOrderWs')
+                not is_real_binance_futures_gtx
+                and exchange.has.get('editOrderWs')
                 and not is_conditional_stop
                 and not ex_params.get('icebergQty')
                 and is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=is_inverse)
@@ -3323,8 +3339,8 @@ class ManualTradeService:
                 except Exception as ws_edit_err:
                     logger.info(f"WS editOrderWs skipped/fallback ({ws_edit_err}), trying REST editOrder")
 
-            # Priority 1: High-Speed Native Atomic REST edit_order (Binance Spot cancelReplace or Futures PUT order)
-            if not is_native_success and exchange.has.get('editOrder') and not is_conditional_stop:
+            # Priority 1: High-Speed Native Atomic REST edit_order (Binance Spot cancelReplace or Futures GTC PUT order)
+            if not is_native_success and not is_real_binance_futures_gtx and exchange.has.get('editOrder') and not is_conditional_stop:
                 try:
                     t_api = time.perf_counter()
                     rest_edit_type, rest_edit_params = (
@@ -3341,43 +3357,79 @@ class ManualTradeService:
                     is_native_success = True
                     logger.info(f"⚡ [NATIVE EDIT] Single-roundtrip editOrder succeeded for {order_id} in {api_ms}ms")
                 except Exception as edit_err:
-                    logger.info(f"Native editOrder skipped/fallback ({edit_err}), proceeding with zero-delay cancel+create")
+                    logger.info(f"Native editOrder skipped/fallback ({edit_err}), proceeding with 1-RTT parallel cancel+create")
 
-            # Priority 2: Zero-Delay Cancel + Create Fallback (no artificial sleep)
+            # Priority 2: 1-RTT Parallel Cancel + Create (eliminates 2x-3x serial RTT delay on GTX / TP / fallback edits)
             if not is_native_success:
                 t_fallback = time.perf_counter()
-                # 1. Cancel previous order (supports both regular and conditional/algo orders)
-                await bracket_order_service._cancel_futures_order_universal(
-                    exchange, order_id, symbol, is_conditional=is_conditional_stop
-                )
 
-                # 2. Re-create order immediately at new_price via WS if possible, else REST
-                if is_futures and is_conditional_stop:
-                    if not ex_params.get('positionSide') and 'reduceOnly' not in ex_params:
-                        ex_params = await bracket_order_service._apply_futures_exit_params(exchange, symbol, side, ex_params)
-                    response = await bracket_order_service._place_futures_conditional_order(
-                        exchange, symbol, order_type, side, amount,
-                        stop_price=new_price, extra_params=ex_params
-                    )
-                else:
+                async def _create_replacement_order(override_params: Optional[dict] = None):
+                    p_use = dict(override_params if override_params is not None else ex_params)
+                    if is_futures and is_conditional_stop:
+                        if not p_use.get('positionSide') and 'reduceOnly' not in p_use:
+                            p_use = await bracket_order_service._apply_futures_exit_params(exchange, symbol, side, p_use)
+                        return await bracket_order_service._place_futures_conditional_order(
+                            exchange, symbol, order_type, side, amount,
+                            stop_price=new_price, extra_params=p_use
+                        )
+                    res_leg = None
                     if (
                         exchange.has.get('createOrderWs')
-                        and not ex_params.get('icebergQty')
+                        and not p_use.get('icebergQty')
                         and is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=is_inverse)
                     ):
                         try:
                             ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
-                                exchange, order_type, ex_params, is_futures, is_edit=False
+                                exchange, order_type, p_use, is_futures, is_edit=False
                             )
-                            response = await exchange.create_order_ws(
+                            res_leg = await exchange.create_order_ws(
                                 symbol, ws_type, side, amount, price_arg, ws_params
                             )
                         except Exception:
-                            response = None
-                    if not response:
-                        response = await exchange.create_order(
-                            symbol, order_type, side, amount, price_arg, ex_params
+                            res_leg = None
+                    if not res_leg:
+                        res_leg = await exchange.create_order(
+                            symbol, order_type, side, amount, price_arg, p_use
                         )
+                    return res_leg
+
+                async def _staggered_create_leg():
+                    # Stagger reduceOnly/Spot-sell replacements by 35ms so cancel arrives first while keeping 1-RTT wall time
+                    if ex_params.get('reduceOnly') or (not is_futures and str(side).lower() == 'sell') or is_conditional_stop:
+                        await asyncio.sleep(0.035)
+                    return await _create_replacement_order()
+
+                c_res, p_res = await asyncio.gather(
+                    bracket_order_service._cancel_futures_order_universal(
+                        exchange, order_id, symbol, is_conditional=is_conditional_stop
+                    ),
+                    _staggered_create_leg(),
+                    return_exceptions=True,
+                )
+
+                if isinstance(c_res, Exception) and not isinstance(p_res, Exception):
+                    # If old order no longer existed, replacement still placed cleanly
+                    logger.debug(f"Parallel edit cancel leg notice (non-fatal): {c_res}")
+                if isinstance(p_res, Exception) or not p_res:
+                    # Handle cancel-race (-2010/-2019/-2022) or Post-Only GTC fallback immediately without re-cancelling
+                    err_s = str(p_res).lower() if isinstance(p_res, Exception) else ''
+                    is_po_reject = ex_params.get('postOnly') and any(
+                        kw in err_s for kw in ('immediately match', '-5022', 'post only', 'postonly', 'post-only', 'gtx', 'expired')
+                    )
+                    if is_po_reject:
+                        ex_params_gtc = dict(ex_params)
+                        ex_params_gtc.pop('postOnly', None)
+                        ex_params_gtc['timeInForce'] = 'GTC'
+                        response = await _create_replacement_order(ex_params_gtc)
+                    elif any(kw in err_s for kw in ('-2010', '-2019', '-2022', 'insufficient', 'reduceonly')):
+                        # Concurrent cancel cleared the balance/position slightly after create arrived -> 1 immediate clean retry
+                        response = await _create_replacement_order()
+                    elif isinstance(p_res, Exception):
+                        raise p_res
+                    else:
+                        raise RuntimeError("Order replacement returned empty response")
+                else:
+                    response = p_res
                     if (
                         ex_params.get('postOnly')
                         and response
@@ -3386,9 +3438,7 @@ class ManualTradeService:
                         ex_params_gtc = dict(ex_params)
                         ex_params_gtc.pop('postOnly', None)
                         ex_params_gtc['timeInForce'] = 'GTC'
-                        response = await exchange.create_order(
-                            symbol, order_type, side, amount, price_arg, ex_params_gtc
-                        )
+                        response = await _create_replacement_order(ex_params_gtc)
                 api_ms = int((time.perf_counter() - t_fallback) * 1000)
 
             # Synchronize new order ID & price with any active software bracket & entry monitor

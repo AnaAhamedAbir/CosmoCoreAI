@@ -1484,10 +1484,12 @@ class BracketOrderService:
                 if not is_unlimited and elapsed_seconds >= max_timeout_mins * 60:
                     break
                 
-                # Adaptive Polling: Ultra-fast initial check (350ms), woken INSTANTLY (<1ms) by UserOrderStream on WS fill
+                # Adaptive Polling: Fast initial check (200ms -> 450ms for 30s), woken INSTANTLY (<1ms) by UserOrderStream on WS fill
                 if elapsed_seconds == 0:
-                    sleep_time = 0.35
-                elif elapsed_seconds < 300: # First 5 mins
+                    sleep_time = 0.20
+                elif elapsed_seconds < 30: # First 30 secs (hot fill window)
+                    sleep_time = 0.45
+                elif elapsed_seconds < 300: # Next ~5 mins
                     sleep_time = 1.5
                 elif elapsed_seconds < 3600: # Next 1 hour
                     sleep_time = 10
@@ -1758,24 +1760,12 @@ class BracketOrderService:
             entry_lock = BracketOrderService.ENTRY_BRACKET_LOCKS.setdefault(lock_key, asyncio.Lock())
             await entry_lock.acquire()
         try:
-            # Resolve dedicated unthrottled order exchange instance (0ms cache hit) so TP/SL placement
-            # never waits ~280ms behind background fetch_order/fetch_open_orders polls in CCXT's throttle queue.
+            # Resolve dedicated unthrottled order exchange instance (0ms credential & pool cache hit)
             order_ex = exchange
             if api_key_record and hasattr(api_key_record, 'api_key') and hasattr(api_key_record, 'secret_key'):
                 try:
-                    dec_api = decrypt_key(api_key_record.api_key)
-                    dec_sec = decrypt_key(api_key_record.secret_key)
-                    raw_pp = getattr(api_key_record, 'passphrase', None)
-                    dec_pp = decrypt_key(raw_pp) if raw_pp else None
-                    cand_ex = await get_or_create_exchange(
-                        api_key_id=api_key_record.id,
-                        exchange_name=api_key_record.exchange,
-                        decrypted_api_key=dec_api,
-                        decrypted_secret=dec_sec,
-                        is_futures=is_futures,
-                        passphrase=dec_pp,
-                        purpose="order",
-                    )
+                    from app.services.manual_trade_service import ManualTradeService
+                    cand_ex = await ManualTradeService._get_exchange(api_key_record, is_futures, purpose="order")
                     if cand_ex is not None:
                         order_ex = cand_ex
                 except Exception:
@@ -2238,6 +2228,20 @@ class BracketOrderService:
                 ex_params = await BracketOrderService._apply_futures_exit_params(order_ex, symbol, opposite_side) if is_futures else {}
                 try:
                     tp_res = None
+                    async def _place_tp_limit(px: float, amt: float, p_dict: dict):
+                        if getattr(order_ex, 'has', {}).get('createOrderWs') and is_ws_api_ready(
+                            order_ex, is_futures=is_futures, is_inverse=is_inverse
+                        ):
+                            try:
+                                from app.services.manual_trade_service import ManualTradeService
+                                ws_type, ws_params = ManualTradeService._sanitize_ws_order_args(
+                                    order_ex, 'limit', p_dict, is_futures, is_edit=False
+                                )
+                                return await order_ex.create_order_ws(symbol, ws_type, opposite_side, amt, px, ws_params)
+                            except Exception:
+                                pass
+                        return await order_ex.create_limit_order(symbol, opposite_side, amt, px, p_dict)
+
                     if tp_order_type == 'limit':
                         # 1ms local Redis BBO check: if final_tp_price already crosses the book,
                         # skip the doomed Post-Only (GTX) attempt to avoid wasting 1 extra RTT (~255ms)
@@ -2266,9 +2270,7 @@ class BracketOrderService:
                             ex_params_po = dict(ex_params)
                             ex_params_po['postOnly'] = True
                             try:
-                                tp_res = await order_ex.create_limit_order(
-                                    symbol, opposite_side, final_amount, final_tp_price, ex_params_po
-                                )
+                                tp_res = await _place_tp_limit(final_tp_price, final_amount, ex_params_po)
                             except Exception as po_e:
                                 logger.warning(f"⚠️ Bracket TP Post-Only rejected ({po_e}). Retrying immediately with standard GTC Limit...")
                                 tp_res = None
@@ -2283,9 +2285,7 @@ class BracketOrderService:
                             ex_params_gtc = dict(ex_params)
                             ex_params_gtc.pop('postOnly', None)
                             ex_params_gtc['timeInForce'] = 'GTC'
-                            tp_res = await order_ex.create_limit_order(
-                                symbol, opposite_side, final_amount, final_tp_price, ex_params_gtc
-                            )
+                            tp_res = await _place_tp_limit(final_tp_price, final_amount, ex_params_gtc)
                             logger.info(f"✅ Bracket Monitor: Standard GTC Limit TP placed successfully! ID: {tp_res.get('id')}")
                         else:
                             logger.info(f"✅ Bracket Monitor: Maker Post-Only TP placed! ID: {tp_res.get('id')}")
@@ -2304,9 +2304,7 @@ class BracketOrderService:
                             ex_params_gtc = dict(ex_params)
                             ex_params_gtc.pop('postOnly', None)
                             ex_params_gtc['timeInForce'] = 'GTC'
-                            tp_res = await order_ex.create_limit_order(
-                                symbol, opposite_side, final_amount, final_tp_price, ex_params_gtc
-                            )
+                            tp_res = await _place_tp_limit(final_tp_price, final_amount, ex_params_gtc)
                             logger.info(f"✅ Bracket Monitor: Spot Limit TP placed at {final_tp_price}! ID: {tp_res.get('id')}")
 
                     tp_placement_ms = max(1, int((time.perf_counter() - t_tp_start) * 1000))
@@ -2721,6 +2719,7 @@ class BracketOrderService:
                     'remaining': float(final_amount),
                     'isSoftwareSL': False,
                     'mode': 'TP',
+                    'isPostOnly': bool(tp_order_type_cfg == 'limit'),
                 }
                 pushed_bracket_lines.append(tp_line)
                 if api_key_id is not None:

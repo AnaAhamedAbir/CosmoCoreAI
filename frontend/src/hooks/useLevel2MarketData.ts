@@ -19,11 +19,19 @@ export interface TradeTickEvent {
     isBuyerMaker?: boolean;
 }
 
+export interface BboTickEvent {
+    bestBid: number;
+    bestAsk: number;
+    timestamp: number;
+}
+
 export interface MarketDepthData {
     bids: OrderBookLevel[];
     asks: OrderBookLevel[];
     walls: { price: number; type: 'buy' | 'sell'; size: number }[];
     currentPrice: number;
+    bestBid?: number;
+    bestAsk?: number;
     tradeEvent: TradeTickEvent | null;
 }
 
@@ -35,9 +43,67 @@ interface TickChannelState {
 }
 
 const liveTickChannels = new Map<string, TickChannelState>();
+const liveBboListeners = new Map<string, Set<(bbo: BboTickEvent) => void>>();
 
 function getTickChannelKey(symbol: string, exchange: string): string {
     return `${exchange}:${symbol}`;
+}
+
+function emitLiveBboTick(symbol: string, exchange: string, bbo: BboTickEvent) {
+    const listeners = liveBboListeners.get(getTickChannelKey(symbol, exchange));
+    if (!listeners || listeners.size === 0) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    listeners.forEach((cb) => {
+        try {
+            cb(bbo);
+        } catch (err) {
+            console.error('Live BBO subscriber error:', err);
+        }
+    });
+}
+
+export function subscribeLiveBbo(
+    symbol: string,
+    exchange: string,
+    cb: (bbo: BboTickEvent) => void
+): () => void {
+    if (!symbol || !exchange) return () => {};
+    const key = getTickChannelKey(symbol, exchange);
+    let set = liveBboListeners.get(key);
+    if (!set) {
+        set = new Set();
+        liveBboListeners.set(key, set);
+    }
+    set.add(cb);
+    return () => {
+        const existing = liveBboListeners.get(key);
+        if (!existing) return;
+        existing.delete(cb);
+        if (existing.size === 0) liveBboListeners.delete(key);
+    };
+}
+
+function buildBinancePublicStreamUrl(symbol: string): string | null {
+    const clean = symbol.trim();
+    if (!clean.includes('/')) return null;
+    const isFutures = clean.includes(':');
+    const [pairPart, settleRaw] = clean.split(':');
+    const [baseRaw, quoteRaw] = pairPart.split('/');
+    if (!baseRaw || !quoteRaw) return null;
+    const base = baseRaw.toLowerCase();
+    const quote = quoteRaw.toLowerCase();
+    const settle = (settleRaw || '').toLowerCase();
+
+    if (isFutures) {
+        if (settle && settle === base) {
+            const streamSym = `${base}${quote}_perp`;
+            return `wss://dstream.binance.com/stream?streams=${streamSym}@aggTrade/${streamSym}@bookTicker`;
+        }
+        const streamSym = `${base}${quote}`;
+        return `wss://fstream.binance.com/stream?streams=${streamSym}@aggTrade/${streamSym}@bookTicker`;
+    }
+    const streamSym = `${base}${quote}`;
+    return `wss://stream.binance.com:9443/stream?streams=${streamSym}@aggTrade/${streamSym}@bookTicker`;
 }
 
 function dispatchTickToListeners(channel: TickChannelState, tick: TradeTickEvent) {
@@ -142,16 +208,22 @@ export function subscribeLiveTradeTicks(
 }
 
 export const useLevel2MarketData = (symbol: string, exchange: string = 'binance') => {
-    const [data, setData] = useState<MarketDepthData>({ bids: [], asks: [], walls: [], currentPrice: 0, tradeEvent: null });
+    const [data, setData] = useState<MarketDepthData>({ bids: [], asks: [], walls: [], currentPrice: 0, bestBid: 0, bestAsk: 0, tradeEvent: null });
 
     useEffect(() => {
         if (!symbol) return;
+        setData({ bids: [], asks: [], walls: [], currentPrice: 0, bestBid: 0, bestAsk: 0, tradeEvent: null });
         let ws: WebSocket | null = null;
+        let directBinanceWs: WebSocket | null = null;
+        let directReconnectTimer: ReturnType<typeof setTimeout> | null = null;
         let isSubscribed = true;
         let worker: Worker | null = null;
         let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
         let pendingData: Partial<MarketDepthData> | null = null;
         let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+        let lastDirectTradeTs = 0;
+        let lastDirectTradeAt = 0;
+        let lastDirectBboAt = 0;
 
         const flushUpdate = () => {
             if (!pendingData || !isSubscribed) {
@@ -218,14 +290,48 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
 
                 worker.onmessage = (e) => {
                     if (!isSubscribed) return;
+                    const now = Date.now();
+                    const directTradeLive = lastDirectTradeAt > 0 && (now - lastDirectTradeAt) < 1500;
+                    const directBboLive = lastDirectBboAt > 0 && (now - lastDirectBboAt) < 1500;
+
                     if (e.data.type === 'DATA_READY') {
+                        const incoming = { ...e.data.data };
+                        if (directTradeLive && incoming.currentPrice) {
+                            delete incoming.currentPrice;
+                        }
+                        if (!directBboLive && incoming.bids?.length && incoming.asks?.length) {
+                            const obBid = Number(incoming.bids[0]?.price || 0);
+                            const obAsk = Number(incoming.asks[0]?.price || 0);
+                            if (obBid > 0 && obAsk > 0) {
+                                incoming.bestBid = obBid;
+                                incoming.bestAsk = obAsk;
+                                emitLiveBboTick(symbol, exchange, { bestBid: obBid, bestAsk: obAsk, timestamp: now });
+                            }
+                        }
                         pendingData = {
                             ...(pendingData || {}),
-                            ...e.data.data
+                            ...incoming
                         };
                         scheduleFlush();
+                    } else if (e.data.type === 'BBO_READY') {
+                        if (directBboLive) return;
+                        const bestBid = Number(e.data.data?.bestBid || 0);
+                        const bestAsk = Number(e.data.data?.bestAsk || 0);
+                        if (bestBid > 0 && bestAsk > 0) {
+                            emitLiveBboTick(symbol, exchange, { bestBid, bestAsk, timestamp: Number(e.data.data?.ts || now) });
+                            pendingData = {
+                                ...(pendingData || {}),
+                                bestBid,
+                                bestAsk,
+                            };
+                            scheduleFlush();
+                        }
                     } else if (e.data.type === 'TRADE_READY') {
                         const rawTick = e.data.data;
+                        const tickTs = Number(rawTick.timestamp || now);
+                        if (directTradeLive && tickTs <= lastDirectTradeTs) {
+                            return;
+                        }
                         const tick: TradeTickEvent = {
                             ...rawTick,
                             quantity: rawTick.quantity ?? rawTick.volume ?? 0,
@@ -276,8 +382,80 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
             }
         };
 
+        const connectDirectBinance = () => {
+            if (!isSubscribed || exchange.toLowerCase() !== 'binance') return;
+            const streamUrl = buildBinancePublicStreamUrl(symbol);
+            if (!streamUrl) return;
+            try {
+                directBinanceWs = new WebSocket(streamUrl);
+                directBinanceWs.onmessage = (ev) => {
+                    if (!isSubscribed) return;
+                    try {
+                        const msg = JSON.parse(ev.data);
+                        const d = msg?.data || msg;
+                        if (!d) return;
+
+                        if (d.e === 'aggTrade' || d.e === 'trade') {
+                            const price = Number(d.p || 0);
+                            const qty = Number(d.q || 0);
+                            if (price > 0) {
+                                const ts = Number(d.T || d.E || Date.now());
+                                const isBuyerMaker = Boolean(d.m);
+                                lastDirectTradeTs = ts;
+                                lastDirectTradeAt = Date.now();
+                                const tick: TradeTickEvent = {
+                                    price,
+                                    volume: qty,
+                                    quantity: qty,
+                                    timestamp: ts,
+                                    side: isBuyerMaker ? 'sell' : 'buy',
+                                    isBuyerMaker,
+                                };
+                                emitLiveTradeTick(symbol, exchange, tick);
+                                pendingData = {
+                                    ...(pendingData || {}),
+                                    currentPrice: price,
+                                    tradeEvent: tick,
+                                };
+                                scheduleFlush();
+                            }
+                        } else if (d.b !== undefined && d.a !== undefined) {
+                            const bestBid = Number(d.b || 0);
+                            const bestAsk = Number(d.a || 0);
+                            if (bestBid > 0 && bestAsk > 0) {
+                                const ts = Number(d.T || d.E || Date.now());
+                                lastDirectBboAt = Date.now();
+                                emitLiveBboTick(symbol, exchange, { bestBid, bestAsk, timestamp: ts });
+                                pendingData = {
+                                    ...(pendingData || {}),
+                                    bestBid,
+                                    bestAsk,
+                                };
+                                scheduleFlush();
+                            }
+                        }
+                    } catch {
+                        // ignore malformed frame
+                    }
+                };
+                directBinanceWs.onerror = () => {
+                    try {
+                        directBinanceWs?.close();
+                    } catch {}
+                };
+                directBinanceWs.onclose = () => {
+                    if (isSubscribed) {
+                        directReconnectTimer = setTimeout(connectDirectBinance, 4000);
+                    }
+                };
+            } catch {
+                // Backend stream serves as automatic seamless fallback
+            }
+        };
+
         if (symbol && exchange) {
             connectToBackend();
+            connectDirectBinance();
         }
 
         return () => {
@@ -291,6 +469,16 @@ export const useLevel2MarketData = (symbol: string, exchange: string = 'binance'
             }
             if (reconnectTimeout) {
                 clearTimeout(reconnectTimeout);
+            }
+            if (directReconnectTimer) {
+                clearTimeout(directReconnectTimer);
+            }
+            if (directBinanceWs) {
+                if (directBinanceWs.readyState === WebSocket.CONNECTING) {
+                    directBinanceWs.onopen = () => directBinanceWs?.close();
+                } else if (directBinanceWs.readyState === WebSocket.OPEN) {
+                    directBinanceWs.close();
+                }
             }
             if (ws) {
                 if (ws.readyState === WebSocket.CONNECTING) {

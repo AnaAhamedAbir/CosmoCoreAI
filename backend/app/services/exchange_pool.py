@@ -34,7 +34,7 @@ _pool_lock = asyncio.Lock()
 _keepalive_task: Optional[asyncio.Task] = None
 _last_prewarm_ts: Dict[int, float] = {}
 _last_global_keepalive_ts: Dict[str, float] = {"spot": 0.0, "futures": 0.0}
-PREWARM_COOLDOWN_SECONDS = 20.0
+PREWARM_COOLDOWN_SECONDS = 12.0
 
 # Shared multi-tenant HTTP session per event loop so 1,000+ users share warm TCP/TLS sockets
 # to api.binance.com, fapi.binance.com, and dapi.binance.com with only 1 keepalive ping per 25s.
@@ -59,11 +59,10 @@ def _get_shared_http_session() -> Optional[Any]:
             ssl=ssl_ctx,
             limit=0,
             limit_per_host=0,
-            ttl_dns_cache=300,
-            keepalive_timeout=55.0,
+            ttl_dns_cache=600,
+            keepalive_timeout=35.0,
             enable_cleanup_closed=True,
-            family=socket.AF_UNSPEC,
-            happy_eyeballs_delay=0,
+            family=socket.AF_INET,
         )
         sess = aiohttp.ClientSession(connector=connector, trust_env=True)
         _shared_sessions[loop_id] = sess
@@ -83,6 +82,17 @@ def _make_cache_key(api_key_id: int, is_futures: bool, purpose: str = "general")
     return f"key_{api_key_id}_{mode}"
 
 
+def _get_ws_api_url(exchange: Any, is_futures: bool = False, is_inverse: bool = False) -> Optional[str]:
+    urls = getattr(exchange, 'urls', None)
+    if not isinstance(urls, dict):
+        return None
+    ws_api_urls = urls.get('api', {}).get('ws', {}).get('ws-api', {})
+    if not isinstance(ws_api_urls, dict) or not ws_api_urls:
+        return None
+    mtype = 'delivery' if (is_futures and is_inverse) else ('future' if is_futures else 'spot')
+    return ws_api_urls.get(mtype)
+
+
 async def _prewarm_ws_client(exchange: Any, url: str):
     """Pre-connects a CCXT Pro WebSocket API client so order frames execute in 1 RTT with 0ms handshake."""
     if not url or not hasattr(exchange, 'client') or not hasattr(exchange, 'open'):
@@ -95,6 +105,17 @@ async def _prewarm_ws_client(exchange: Any, url: str):
             if connected_fut is None or not connected_fut.done() or connected_fut.exception() is not None:
                 backoff = exchange.ws_dial_delay(url) if hasattr(exchange, 'ws_dial_delay') else 0
                 await asyncio.wait_for(client.connect(exchange.session, backoff), timeout=4.0)
+    except Exception:
+        pass
+
+
+def schedule_ws_api_prewarm(exchange: Any, is_futures: bool = False, is_inverse: bool = False) -> None:
+    """Non-blocking background prewarm of the single active order WebSocket API channel."""
+    url = _get_ws_api_url(exchange, is_futures=is_futures, is_inverse=is_inverse)
+    if not url or is_ws_api_ready(exchange, is_futures=is_futures, is_inverse=is_inverse):
+        return
+    try:
+        asyncio.get_running_loop().create_task(_prewarm_ws_client(exchange, url))
     except Exception:
         pass
 
@@ -184,7 +205,7 @@ async def _keepalive_worker():
     """
     while True:
         try:
-            await asyncio.sleep(25)
+            await asyncio.sleep(12)
             async with _pool_lock:
                 entries = list(_pool.items())
             spot_ex = None
@@ -192,14 +213,15 @@ async def _keepalive_worker():
             for key, (ex, _) in entries:
                 if getattr(ex, 'closed', False):
                     continue
-                if '_futures' in str(key):
+                is_fut_entry = '_futures' in str(key)
+                if is_fut_entry:
                     if fut_ex is None:
                         fut_ex = ex
                 else:
                     if spot_ex is None:
                         spot_ex = ex
-                if spot_ex is not None and fut_ex is not None:
-                    break
+                if '_order' in str(key):
+                    schedule_ws_api_prewarm(ex, is_futures=is_fut_entry, is_inverse=False)
             if spot_ex is not None:
                 await prewarm_exchange_connections(spot_ex, is_futures=False, force=True)
             if fut_ex is not None:
@@ -254,6 +276,8 @@ async def get_or_create_exchange(
                             except Exception:
                                 pass
                 logger.debug(f"[ExchangePool] ✅ Cache HIT for key={api_key_id} mode={'futures' if is_futures else 'spot'} purpose={purpose}")
+                if purpose == 'order':
+                    schedule_ws_api_prewarm(exchange, is_futures=is_futures, is_inverse=False)
                 return exchange
             else:
                 # Expired — পুরনোটা বন্ধ করে নতুন তৈরি করব
@@ -355,6 +379,8 @@ async def get_or_create_exchange(
 
         _pool[cache_key] = (exchange, time.time())
         asyncio.create_task(prewarm_exchange_connections(exchange, is_futures=is_futures))
+        if purpose == 'order':
+            schedule_ws_api_prewarm(exchange, is_futures=is_futures, is_inverse=False)
 
         # If general instance was created, pre-warm the dedicated order instance in the background
         if purpose == "general":

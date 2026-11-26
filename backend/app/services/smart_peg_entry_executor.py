@@ -94,6 +94,13 @@ async def _fetch_bbo_fast(exchange, symbol: str, max_age_seconds: float = 1.5) -
     except Exception:
         pass
 
+    try:
+        from app.services.market_data_streamer import market_data_streamer
+        ex_id = str(getattr(exchange, 'id', 'binance') or 'binance').lower()
+        asyncio.create_task(market_data_streamer.start_streaming(ex_id, symbol))
+    except Exception:
+        pass
+
     return await exchange.fetch_order_book(symbol, limit=5)
 
 
@@ -307,23 +314,12 @@ async def execute_smart_peg_entry(
     eff_front_run_ticks = max(1, int(wall_front_run_ticks or 1))
     eff_anti_spoof = bool(anti_spoof_guard)
 
-    # ── STEP 0: Upgrade to dedicated unthrottled order exchange pool instance (purpose='order') ──
+    # ── STEP 0: Upgrade to dedicated unthrottled order exchange pool instance (0ms cached credentials) ──
     if api_key_record and not skip_exchange_upgrade:
         try:
-            from app.services.exchange_pool import get_or_create_exchange
-            from app.core.security import decrypt_key
-            decrypted_api_key = decrypt_key(api_key_record.api_key)
-            decrypted_secret = decrypt_key(api_key_record.secret_key)
-            raw_pp = getattr(api_key_record, 'passphrase', None)
-            passphrase = decrypt_key(raw_pp) if raw_pp else None
-            order_exchange = await get_or_create_exchange(
-                api_key_id=api_key_record.id,
-                exchange_name=api_key_record.exchange,
-                decrypted_api_key=decrypted_api_key,
-                decrypted_secret=decrypted_secret,
-                is_futures=is_futures,
-                passphrase=passphrase,
-                purpose="order"
+            from app.services.manual_trade_service import ManualTradeService
+            order_exchange = await ManualTradeService._get_exchange(
+                api_key_record, is_futures=is_futures, purpose="order"
             )
             if order_exchange:
                 exchange = order_exchange
